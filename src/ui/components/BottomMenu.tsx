@@ -124,7 +124,7 @@ export function BottomMenu({
   );
 
   const menuClasses = isBottomMenu
-    ? "fixed bottom-0 left-0 right-0 rounded-t-3xl"
+    ? "fixed bottom-0 left-0 right-0 rounded-t-3xl pb-[calc(env(safe-area-inset-bottom)+8px)]"
     : "fixed top-0 left-0 right-0 rounded-b-3xl";
 
   return (
@@ -230,17 +230,19 @@ export function MenuButton({
 
   return (
     <motion.button
-      className={`group relative w-full rounded-xl border border-white/10 bg-white/4 p-3 text-left text-white ${disabled || loading
-        ? "cursor-not-allowed opacity-50"
-        : "hover:border-white/15 hover:bg-white/[0.07] active:scale-[0.98]"
-        } focus:outline-none focus-visible:ring-2 focus-visible:ring-white/25`}
+      className={`group relative w-full rounded-xl border border-white/10 bg-white/4 p-3 text-left text-white ${
+        disabled || loading
+          ? "cursor-not-allowed opacity-50"
+          : "hover:border-white/15 hover:bg-white/[0.07] active:scale-[0.98]"
+      } focus:outline-none focus-visible:ring-2 focus-visible:ring-white/25`}
       onClick={handleClick}
       disabled={disabled || loading}
     >
       <div className="flex items-center gap-2">
         <div
-          className={`flex h-9 w-9 items-center justify-center rounded-lg border ${iconAccentClasses} ${disabled || loading ? "opacity-60" : ""
-            }`}
+          className={`flex h-9 w-9 items-center justify-center rounded-lg border ${iconAccentClasses} ${
+            disabled || loading ? "opacity-60" : ""
+          }`}
         >
           {loading ? (
             <Loader2 size={18} className="animate-spin" />
