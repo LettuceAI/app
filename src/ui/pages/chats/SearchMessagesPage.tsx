@@ -84,7 +84,7 @@ export function SearchMessagesPage() {
                 <button
                     onClick={() => backOrReplace(characterId ? Routes.chatSession(characterId, sessionId) : Routes.chat)}
                     className={cn(
-                        "flex shrink-0 items-center justify-center",
+                        "flex shrink-0 items-center justify-center h-8 w-8",
                         radius.full,
                         "border bg-white/5",
                         colors.border.subtle,
