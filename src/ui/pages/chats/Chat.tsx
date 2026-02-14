@@ -1395,7 +1395,7 @@ export function ChatConversationPage() {
                 ? isBackgroundLight
                   ? "rgba(5, 12, 11, 0.44)"
                   : "rgba(5, 12, 11, 0.22)"
-                : theme.contentOverlay
+                : "transparent"
               : "transparent",
           }}
         >

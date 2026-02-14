@@ -1,11 +1,4 @@
-import {
-  useEffect,
-  useState,
-  useRef,
-  useCallback,
-  useMemo,
-  useLayoutEffect,
-} from "react";
+import { useEffect, useState, useRef, useCallback, useMemo, useLayoutEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ChevronDown, Loader2, Sparkles, Image, RefreshCw, PenLine, Check } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -1022,23 +1015,17 @@ export function GroupChatPage() {
       className="relative flex h-screen flex-col overflow-hidden"
       style={{ backgroundColor: backgroundImageData ? undefined : "#050505" }}
     >
-      {/* Background image + gradient overlay */}
+      {/* Background image */}
       {backgroundImageData && (
-        <>
-          <div
-            className="pointer-events-none fixed inset-0 z-0"
-            style={{
-              backgroundImage: `url(${backgroundImageData})`,
-              backgroundSize: "cover",
-              backgroundPosition: "center",
-              backgroundRepeat: "no-repeat",
-            }}
-          />
-          <div
-            className="pointer-events-none fixed inset-0 z-0"
-            style={{ background: "rgba(5,5,5,0.15)" }}
-          />
-        </>
+        <div
+          className="pointer-events-none fixed inset-0 z-0"
+          style={{
+            backgroundImage: `url(${backgroundImageData})`,
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            backgroundRepeat: "no-repeat",
+          }}
+        />
       )}
 
       {/* Content layer - on top of background */}
