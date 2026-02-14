@@ -99,6 +99,8 @@ function getProviderDescription(providerId: string): string {
             return "Gemini 2.5 Flash, 2.5 Pro, and more";
         case "qwen":
             return "Qwen3-VL and newer Qwen models";
+        case "nvidia":
+            return "Nemotron, Llama, DeepSeek, and more via NVIDIA NIM";
         case "custom":
             return "Point LettuceAI to any custom model endpoint";
         default:
@@ -134,6 +136,8 @@ function getProviderDescriptionShort(providerId: string): string {
             return "Gemini 2.5 Flash & Pro";
         case "qwen":
             return "Qwen3-VL models";
+        case "nvidia":
+            return "NVIDIA NIM inference";
         case "custom":
             return "Custom endpoint";
         default:

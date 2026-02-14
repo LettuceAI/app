@@ -159,6 +159,7 @@ mod lmstudio;
 mod mistral;
 mod moonshot;
 mod nanogpt;
+mod nvidia;
 mod ollama;
 mod openai;
 mod qwen;
@@ -187,6 +188,7 @@ pub fn adapter_for(credential: &ProviderCredential) -> Box<dyn ProviderAdapter +
         "zai" | "z.ai" => Box::new(zai::ZAIAdapter),
         "moonshot" | "moonshot-ai" => Box::new(moonshot::MoonshotAdapter),
         "featherless" => Box::new(featherless::FeatherlessAdapter),
+        "nvidia" | "nvidia-nim" => Box::new(nvidia::NvidiaAdapter),
         "qwen" => Box::new(qwen::QwenAdapter),
         "openrouter" => Box::new(openai::OpenRouterAdapter),
         _ => Box::new(openai::OpenAIAdapter),

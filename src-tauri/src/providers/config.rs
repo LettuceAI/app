@@ -65,6 +65,7 @@ fn get_all_provider_configs_internal() -> Vec<ProviderConfig> {
             "Qwen",
             "https://dashscope.aliyuncs.com/compatible-mode/v1",
         ),
+        ("nvidia", "NVIDIA NIM", "https://integrate.api.nvidia.com/v1"),
         ("anannas", "Anannas AI", "https://api.anannas.ai/v1"),
         ("groq", "Groq", "https://api.groq.com"),
         ("ollama", "Ollama (Local)", ""),
