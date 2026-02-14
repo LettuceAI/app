@@ -1,4 +1,4 @@
-import { CSSProperties, useMemo, useState, useEffect, useCallback } from "react";
+import { useMemo, useState, useEffect, useCallback } from "react";
 import {
   ArrowLeft,
   MessageSquarePlus,
@@ -28,7 +28,6 @@ import {
   readSettings,
   saveCharacter,
   createSession,
-  listCharacters,
   listPersonas,
   getSessionMeta,
   saveSession,
@@ -40,7 +39,7 @@ import { BottomMenu, MenuSection } from "../../components";
 import { ProviderParameterSupportInfo } from "../../components/ProviderParameterSupportInfo";
 import { AvatarImage } from "../../components/AvatarImage";
 import { useAvatar } from "../../hooks/useAvatar";
-import { useImageData } from "../../hooks/useImageData";
+import { useChatLayoutContext } from "./ChatLayout";
 import {
   ADVANCED_TEMPERATURE_RANGE,
   ADVANCED_TOP_P_RANGE,
@@ -281,7 +280,7 @@ function ChatSettingsContent({ character }: { character: Character }) {
     currentCharacter?.avatarPath,
     "round",
   );
-  const backgroundImageData = useImageData(currentCharacter?.backgroundImagePath);
+  const { backgroundImageData, reloadCharacter } = useChatLayoutContext();
   const [showModelSelector, setShowModelSelector] = useState(false);
   const [modelSelectorTarget, setModelSelectorTarget] = useState<"primary" | "fallback">("primary");
   const [personas, setPersonas] = useState<Persona[]>([]);
@@ -424,12 +423,7 @@ function ChatSettingsContent({ character }: { character: Character }) {
         defaultModelId: modelId,
       });
       setCurrentCharacter(updatedCharacter);
-
-      /*const urlParams = new URLSearchParams(window.location.search);
-      const sessionId = urlParams.get('sessionId');
-      if (sessionId) {
-        navigate(`/chat/${characterId}?sessionId=${sessionId}`, { replace: true });
-      }*/
+      reloadCharacter();
     } catch (error) {
       console.error("Failed to change character model:", error);
     }
@@ -444,6 +438,7 @@ function ChatSettingsContent({ character }: { character: Character }) {
         fallbackModelId: modelId,
       });
       setCurrentCharacter(updatedCharacter);
+      reloadCharacter();
     } catch (error) {
       console.error("Failed to change fallback model:", error);
     }
@@ -693,32 +688,15 @@ function ChatSettingsContent({ character }: { character: Character }) {
     return fallback?.displayName || fallback?.name || "Unknown model";
   };
 
-  const chatBackgroundStyle = useMemo<CSSProperties | undefined>(() => {
-    if (!backgroundImageData) return undefined;
-    return {
-      backgroundImage: `linear-gradient(rgba(5, 5, 5, 0.25), rgba(5, 5, 5, 0.25)), url(${backgroundImageData})`,
-      backgroundSize: "cover",
-      backgroundPosition: "center",
-      backgroundRepeat: "no-repeat",
-    };
-  }, [backgroundImageData]);
-
   return (
     <div
       className={cn("relative flex min-h-screen flex-col overflow-hidden", colors.text.primary)}
       style={{ backgroundColor: backgroundImageData ? undefined : "#050505" }}
     >
-      {/* Fixed background image (does not scroll with content) */}
-      {backgroundImageData ? (
-        <>
-          <div
-            className="fixed inset-0 -z-10 pointer-events-none"
-            style={chatBackgroundStyle}
-            aria-hidden="true"
-          />
-          <div className="fixed inset-0 -z-10 pointer-events-none bg-black/30" aria-hidden="true" />
-        </>
-      ) : null}
+      {/* Scrim overlay on top of shared background */}
+      {backgroundImageData && (
+        <div className="pointer-events-none fixed inset-0 z-0 bg-black/40" aria-hidden="true" />
+      )}
       {/* Header */}
       <header
         className={cn(
@@ -746,7 +724,7 @@ function ChatSettingsContent({ character }: { character: Character }) {
       </header>
 
       {/* Content */}
-      <main className="flex-1 overflow-y-auto px-3 pt-4 pb-16">
+      <main className="relative z-10 flex-1 overflow-y-auto px-3 pt-4 pb-16">
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
@@ -1563,37 +1541,9 @@ function ChatSettingsContent({ character }: { character: Character }) {
 }
 
 export function ChatSettingsPage() {
-  const { characterId } = useParams<{ characterId: string }>();
-  const [character, setCharacter] = useState<Character | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { character, characterLoading } = useChatLayoutContext();
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      if (!characterId) {
-        setLoading(false);
-        setError("Missing characterId");
-        return;
-      }
-      try {
-        setLoading(true);
-        setError(null);
-        const chars = await listCharacters();
-        const match = chars.find((c) => c.id === characterId) ?? null;
-        if (!cancelled) setCharacter(match);
-      } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [characterId]);
-
-  if (loading) {
+  if (characterLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#050505]">
         <div className="h-10 w-10 animate-spin rounded-full border-4 border-white/10 border-t-white/60" />
@@ -1601,13 +1551,13 @@ export function ChatSettingsPage() {
     );
   }
 
-  if (error || !character) {
+  if (!character) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#050505] px-4">
         <div className="text-center">
           <p className="text-lg text-white">Character not found</p>
           <p className="mt-2 text-sm text-gray-400">
-            {error || "The character you're looking for doesn't exist."}
+            The character you&apos;re looking for doesn&apos;t exist.
           </p>
         </div>
       </div>

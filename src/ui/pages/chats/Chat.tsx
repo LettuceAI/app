@@ -34,12 +34,7 @@ import {
   type TtsPreviewResponse,
   type UserVoice,
 } from "../../../core/storage/audioProviders";
-import { useImageData } from "../../hooks/useImageData";
-import {
-  isImageLight,
-  getThemeForBackground,
-  type ThemeColors,
-} from "../../../core/utils/imageAnalysis";
+import { useChatLayoutContext } from "./ChatLayout";
 import {
   generateUserReply,
   getSessionMeta,
@@ -241,9 +236,7 @@ export function ChatConversationPage() {
   const isGenerating = sending || regeneratingMessageId !== null;
   const lastMessageContentLength = messages[messages.length - 1]?.content.length ?? 0;
 
-  const backgroundImageData = useImageData(character?.backgroundImagePath);
-  const [theme, setTheme] = useState<ThemeColors>(getThemeForBackground(false));
-  const [isBackgroundLight, setIsBackgroundLight] = useState(false);
+  const { backgroundImageData, isBackgroundLight, theme } = useChatLayoutContext();
   const unloadProviderIdRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -294,50 +287,6 @@ export function ChatConversationPage() {
       }
     };
   }, [character?.id]);
-
-  useEffect(() => {
-    if (character) {
-      console.log("[Chat] Character backgroundImagePath:", character.backgroundImagePath || "none");
-      console.log(
-        "[Chat] Background image data loaded:",
-        backgroundImageData ? "present" : "loading/failed",
-      );
-    }
-  }, [character, backgroundImageData]);
-
-  useEffect(() => {
-    if (!backgroundImageData) {
-      setIsBackgroundLight(false);
-      setTheme(getThemeForBackground(false));
-      return;
-    }
-
-    let mounted = true;
-
-    isImageLight(backgroundImageData).then((isLight) => {
-      if (mounted) {
-        setIsBackgroundLight(isLight);
-        setTheme(getThemeForBackground(isLight));
-      }
-    });
-
-    return () => {
-      mounted = false;
-    };
-  }, [backgroundImageData]);
-
-  const chatBackgroundStyle = useMemo<CSSProperties | undefined>(() => {
-    if (!backgroundImageData) {
-      return undefined;
-    }
-
-    return {
-      backgroundImage: `linear-gradient(rgba(5, 5, 5, 0.15), rgba(5, 5, 5, 0.15)), url(${backgroundImageData})`,
-      backgroundSize: "cover",
-      backgroundPosition: "center",
-      backgroundRepeat: "no-repeat",
-    };
-  }, [backgroundImageData]);
 
   const swapOverlayStyle = useMemo<CSSProperties>(() => {
     const tintRgb = isBackgroundLight ? "22, 101, 52" : "16, 185, 129";
@@ -1374,10 +1323,6 @@ export function ChatConversationPage() {
       className="flex h-screen flex-col overflow-hidden"
       style={{ backgroundColor: backgroundImageData ? undefined : "#050505" }}
     >
-      {/* Full-screen background image (behind all content) */}
-      {backgroundImageData && (
-        <div className="pointer-events-none fixed inset-0 z-0" style={chatBackgroundStyle} />
-      )}
       <AnimatePresence>
         {swapPlaces && (
           <motion.div

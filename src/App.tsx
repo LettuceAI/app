@@ -36,6 +36,7 @@ import {
   ChatHistoryPage,
   ChatMemoriesPage,
   SearchMessagesPage,
+  ChatLayout,
 } from "./ui/pages/chats";
 import { ThemeProvider } from "./core/theme/ThemeContext";
 import { toast } from "./ui/components/toast";
@@ -573,7 +574,12 @@ function AppContent() {
             </div>
           )}
           <motion.div
-            key={location.pathname.startsWith("/settings") ? location.pathname : location.key}
+            key={(() => {
+              if (location.pathname.startsWith("/settings")) return location.pathname;
+              const chatMatch = location.pathname.match(/^\/chat\/([^/]+)/);
+              if (chatMatch) return `/chat/${chatMatch[1]}`;
+              return location.key;
+            })()}
             initial={shouldAnimatePage ? { opacity: 0, y: 16 } : false}
             animate={{ opacity: 1, y: 0 }}
             exit={shouldAnimatePage ? { opacity: 0, y: -16 } : { opacity: 1, y: 0 }}
@@ -621,9 +627,11 @@ function AppContent() {
               <Route path="/settings/convert" element={<ConvertPage />} />
               <Route path="/settings/sync" element={<SyncPage />} />
               <Route path="/chat" element={<ChatPage />} />
-              <Route path="/chat/:characterId" element={<ChatConversationPage />} />
+              <Route path="/chat/:characterId" element={<ChatLayout />}>
+                <Route index element={<ChatConversationPage />} />
+                <Route path="settings" element={<ChatSettingsPage />} />
+              </Route>
               <Route path="/chat/:characterId/search" element={<SearchMessagesPage />} />
-              <Route path="/chat/:characterId/settings" element={<ChatSettingsPage />} />
               <Route path="/chat/:characterId/history" element={<ChatHistoryPage />} />
               <Route path="/chat/:characterId/memories" element={<ChatMemoriesPage />} />
               <Route path="/create/character" element={<CreateCharacterPage />} />
