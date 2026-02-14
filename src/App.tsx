@@ -60,6 +60,7 @@ import {
 import {
   GroupChatsListPage,
   GroupChatCreatePage,
+  GroupChatLayout,
   GroupChatPage,
   GroupChatSettingsPage,
   GroupChatHistoryPage,
@@ -578,6 +579,8 @@ function AppContent() {
               if (location.pathname.startsWith("/settings")) return location.pathname;
               const chatMatch = location.pathname.match(/^\/chat\/([^/]+)/);
               if (chatMatch) return `/chat/${chatMatch[1]}`;
+              const groupMatch = location.pathname.match(/^\/group-chats\/([^/]+)/);
+              if (groupMatch) return `/group-chats/${groupMatch[1]}`;
               return location.key;
             })()}
             initial={shouldAnimatePage ? { opacity: 0, y: 16 } : false}
@@ -652,15 +655,11 @@ function AppContent() {
               <Route path="/group-chats" element={<GroupChatsListPage />} />
               <Route path="/group-chats/history" element={<GroupChatHistoryPage />} />
               <Route path="/group-chats/new" element={<GroupChatCreatePage />} />
-              <Route path="/group-chats/:groupSessionId" element={<GroupChatPage />} />
-              <Route
-                path="/group-chats/:groupSessionId/settings"
-                element={<GroupChatSettingsPage />}
-              />
-              <Route
-                path="/group-chats/:groupSessionId/memories"
-                element={<GroupChatMemoriesPage />}
-              />
+              <Route path="/group-chats/:groupSessionId" element={<GroupChatLayout />}>
+                <Route index element={<GroupChatPage />} />
+                <Route path="settings" element={<GroupChatSettingsPage />} />
+                <Route path="memories" element={<GroupChatMemoriesPage />} />
+              </Route>
             </Routes>
           </motion.div>
         </main>

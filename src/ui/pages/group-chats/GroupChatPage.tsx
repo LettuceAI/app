@@ -5,7 +5,6 @@ import {
   useCallback,
   useMemo,
   useLayoutEffect,
-  CSSProperties,
 } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ChevronDown, Loader2, Sparkles, Image, RefreshCw, PenLine, Check } from "lucide-react";
@@ -13,29 +12,16 @@ import { motion, AnimatePresence } from "framer-motion";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
 
 import { storageBridge } from "../../../core/storage/files";
-import {
-  listCharacters,
-  listPersonas,
-  readSettings,
-  generateGroupChatUserReply,
-} from "../../../core/storage/repo";
+import { generateGroupChatUserReply } from "../../../core/storage/repo";
 import type {
-  GroupSession,
+  Character,
   GroupMessage,
   GroupParticipation,
-  Character,
-  Persona,
   ImageAttachment,
-  Settings,
   Model,
 } from "../../../core/storage/schemas";
 import { radius, interactive, cn } from "../../design-tokens";
-import { useImageData } from "../../hooks/useImageData";
-import {
-  getThemeForBackground,
-  isImageLight,
-  type ThemeColors,
-} from "../../../core/utils/imageAnalysis";
+import { useGroupChatLayoutContext } from "./GroupChatLayout";
 import { splitThinkTags } from "../../../core/utils/thinkTags";
 
 import { Routes } from "../../navigation";
@@ -70,11 +56,7 @@ export function GroupChatPage() {
   const navigate = useNavigate();
 
   // State variables
-  const [session, setSession] = useState<GroupSession | null>(null);
-  const [characters, setCharacters] = useState<Character[]>([]);
-  const [personas, setPersonas] = useState<Persona[]>([]);
   const [messages, setMessages] = useState<GroupMessage[]>([]);
-  const [settings, setSettings] = useState<Settings | null>(null);
   const [_participationStats, setParticipationStats] = useState<GroupParticipation[]>([]);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -117,9 +99,9 @@ export function GroupChatPage() {
   const activeRequestIdRef = useRef<string | null>(null);
   const isGenerating = sending || regeneratingMessageId !== null;
 
-  // Background image theming
-  const backgroundImageData = useImageData(session?.backgroundImagePath);
-  const [theme, setTheme] = useState<ThemeColors>(getThemeForBackground(false));
+  // Shared data from layout (stays mounted across sub-route navigations)
+  const { session, sessionLoading, characters, personas, settings, backgroundImageData, theme } =
+    useGroupChatLayoutContext();
   const helpMeReplyEnabled = settings?.advancedSettings?.helpMeReplyEnabled ?? true;
 
   // Get current persona
@@ -128,67 +110,20 @@ export function GroupChatPage() {
     return personas.find((p) => p.id === session.personaId) || null;
   }, [session, personas]);
 
-  // Background style
-  const chatBackgroundStyle = useMemo<CSSProperties | undefined>(() => {
-    if (!backgroundImageData) {
-      return undefined;
-    }
-
-    return {
-      backgroundImage: `linear-gradient(rgba(5, 5, 5, 0.15), rgba(5, 5, 5, 0.15)), url(${backgroundImageData})`,
-      backgroundSize: "cover",
-      backgroundPosition: "center",
-      backgroundRepeat: "no-repeat",
-    };
-  }, [backgroundImageData]);
-
-  useEffect(() => {
-    if (!backgroundImageData) {
-      setTheme(getThemeForBackground(false));
-      return;
-    }
-
-    let mounted = true;
-
-    isImageLight(backgroundImageData).then((isLight) => {
-      if (mounted) {
-        setTheme(getThemeForBackground(isLight));
-      }
-    });
-
-    return () => {
-      mounted = false;
-    };
-  }, [backgroundImageData]);
-
-  // Load session data
+  // Load messages and stats (session, characters, personas, settings come from layout)
   const loadData = useCallback(async () => {
     if (!groupSessionId) return;
 
     try {
-      const [sessionData, chars, personaList, msgs, stats, settingsData] = await Promise.all([
-        storageBridge.groupSessionGet(groupSessionId),
-        listCharacters(),
-        listPersonas(),
+      const [msgs, stats] = await Promise.all([
         storageBridge.groupMessagesList(groupSessionId, MESSAGES_PAGE_SIZE),
         storageBridge.groupParticipationStats(groupSessionId),
-        readSettings(),
       ]);
 
-      if (!sessionData) {
-        setError("Group session not found");
-        setLoading(false);
-        return;
-      }
-
-      setSession(sessionData);
-      setCharacters(chars);
-      setPersonas(personaList);
       setMessages(msgs);
       setParticipationStats(stats);
-      setSettings(settingsData);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load session");
+      setError(err instanceof Error ? err.message : "Failed to load messages");
     } finally {
       setLoading(false);
     }
@@ -1055,9 +990,9 @@ export function GroupChatPage() {
       .filter(Boolean) as Character[];
   }, [session, characters]);
 
-  if (loading) {
+  if (sessionLoading || loading) {
     return (
-      <div className="flex h-full items-center justify-center bg-[#050505]">
+      <div className="flex h-full items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-white/50" />
       </div>
     );
@@ -1065,7 +1000,7 @@ export function GroupChatPage() {
 
   if (!session) {
     return (
-      <div className="flex h-full flex-col items-center justify-center p-4 bg-[#050505]">
+      <div className="flex h-full flex-col items-center justify-center p-4">
         <p className="text-white/50 mb-4">{error || "Group session not found"}</p>
         <button
           onClick={() => navigate(Routes.groupChats)}
@@ -1083,9 +1018,28 @@ export function GroupChatPage() {
   }
 
   return (
-    <div className="relative flex h-screen flex-col overflow-hidden">
-      {/* Background layer - covers entire screen */}
-      <div className="absolute inset-0 bg-[#050505]" style={chatBackgroundStyle} />
+    <div
+      className="relative flex h-screen flex-col overflow-hidden"
+      style={{ backgroundColor: backgroundImageData ? undefined : "#050505" }}
+    >
+      {/* Background image + gradient overlay */}
+      {backgroundImageData && (
+        <>
+          <div
+            className="pointer-events-none fixed inset-0 z-0"
+            style={{
+              backgroundImage: `url(${backgroundImageData})`,
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+              backgroundRepeat: "no-repeat",
+            }}
+          />
+          <div
+            className="pointer-events-none fixed inset-0 z-0"
+            style={{ background: "rgba(5,5,5,0.15)" }}
+          />
+        </>
+      )}
 
       {/* Content layer - on top of background */}
       <div

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 
 import { storageBridge } from "../../../../core/storage/files";
-import { listCharacters, listPersonas } from "../../../../core/storage/repo";
 import type {
   GroupSession,
   GroupParticipation,
@@ -13,10 +12,22 @@ import {
   initialGroupChatSettingsUiState,
 } from "../reducers/groupChatSettingsReducer";
 
-export function useGroupChatSettingsController(groupSessionId?: string) {
-  const [session, setSession] = useState<GroupSession | null>(null);
-  const [characters, setCharacters] = useState<Character[]>([]);
-  const [personas, setPersonas] = useState<Persona[]>([]);
+interface SettingsControllerOptions {
+  layoutSession?: GroupSession | null;
+  layoutCharacters?: Character[];
+  layoutPersonas?: Persona[];
+}
+
+export function useGroupChatSettingsController(
+  groupSessionId?: string,
+  options: SettingsControllerOptions = {},
+) {
+  const { layoutSession, layoutCharacters = [], layoutPersonas = [] } = options;
+
+  // Use layout session as initial value, maintain local copy for mutations
+  const [session, setSession] = useState<GroupSession | null>(layoutSession ?? null);
+  const characters = layoutCharacters;
+  const personas = layoutPersonas;
   const [participationStats, setParticipationStats] = useState<GroupParticipation[]>([]);
   const [messageCount, setMessageCount] = useState<number>(0);
   const [ui, dispatch] = useReducer(groupChatSettingsUiReducer, initialGroupChatSettingsUiState);
@@ -25,37 +36,35 @@ export function useGroupChatSettingsController(groupSessionId?: string) {
     dispatch({ type: "PATCH", patch });
   }, []);
 
+  // Sync session from layout when it changes (e.g. after reloadSession)
+  useEffect(() => {
+    if (layoutSession) {
+      setSession(layoutSession);
+    }
+  }, [layoutSession]);
+
+  // Only fetch stats + message count (session, characters, personas come from layout)
   const loadData = useCallback(async () => {
-    if (!groupSessionId) return;
+    if (!groupSessionId || !layoutSession) return;
 
     try {
       setUi({ loading: true, error: null });
-      const [sessionData, allChars, personaList, stats, msgCount] = await Promise.all([
-        storageBridge.groupSessionGet(groupSessionId),
-        listCharacters(),
-        listPersonas(),
+
+      const [stats, msgCount] = await Promise.all([
         storageBridge.groupParticipationStats(groupSessionId),
         storageBridge.groupMessageCount(groupSessionId),
       ]);
 
-      if (!sessionData) {
-        setUi({ error: "Group session not found" });
-        return;
-      }
-
-      setSession(sessionData);
-      setCharacters(allChars);
-      setPersonas(personaList);
       setParticipationStats(stats);
       setMessageCount(msgCount);
-      setUi({ nameDraft: sessionData.name });
+      setUi({ nameDraft: layoutSession.name });
     } catch (err) {
       console.error("Failed to load group chat settings:", err);
       setUi({ error: "Failed to load group chat settings" });
     } finally {
       setUi({ loading: false });
     }
-  }, [groupSessionId, setUi]);
+  }, [groupSessionId, layoutSession, setUi]);
 
   useEffect(() => {
     void loadData();

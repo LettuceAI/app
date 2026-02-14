@@ -13,13 +13,11 @@ import {
 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import type { CSSProperties } from "react";
-import { useMemo } from "react";
-
 import { typography, radius, spacing, interactive, cn } from "../../design-tokens";
 import { BottomMenu, MenuSection } from "../../components";
 import { Routes, useNavigationManager } from "../../navigation";
 import { useGroupChatSettingsController } from "./hooks/useGroupChatSettingsController";
+import { useGroupChatLayoutContext } from "./GroupChatLayout";
 import { SectionHeader, CharacterAvatar, QuickChip, PersonaSelector } from "./components/settings";
 import { processBackgroundImage } from "../../../core/utils/image";
 import { storageBridge } from "../../../core/storage/files";
@@ -34,6 +32,15 @@ export function GroupChatSettingsPage() {
   const { groupSessionId } = useParams<{ groupSessionId: string }>();
   const navigate = useNavigate();
   const { backOrReplace } = useNavigationManager();
+
+  const {
+    session: layoutSession,
+    characters: layoutCharacters,
+    personas: layoutPersonas,
+    sessionLoading,
+    backgroundImageData,
+    reloadSession,
+  } = useGroupChatLayoutContext();
 
   const {
     session,
@@ -55,8 +62,11 @@ export function GroupChatSettingsPage() {
     handleRemoveCharacter,
     getParticipationPercent,
     participationStats,
-  } = useGroupChatSettingsController(groupSessionId);
-
+  } = useGroupChatSettingsController(groupSessionId, {
+    layoutSession,
+    layoutCharacters,
+    layoutPersonas,
+  });
   const [backgroundImagePath, setBackgroundImagePath] = useState(
     session?.backgroundImagePath || "",
   );
@@ -89,6 +99,7 @@ export function GroupChatSettingsPage() {
       .then(async (dataUrl: string) => {
         setBackgroundImagePath(dataUrl);
         await storageBridge.groupSessionUpdateBackgroundImage(groupSessionId, dataUrl);
+        reloadSession();
       })
       .catch((error: unknown) => {
         console.warn("Failed to process background image", error);
@@ -105,22 +116,13 @@ export function GroupChatSettingsPage() {
     try {
       setBackgroundImagePath("");
       await storageBridge.groupSessionUpdateBackgroundImage(groupSessionId, null);
+      reloadSession();
     } catch (error) {
       console.error("Failed to remove background:", error);
     } finally {
       setSavingBackground(false);
     }
   };
-
-  const chatBackgroundStyle = useMemo<CSSProperties | undefined>(() => {
-    if (!backgroundImagePath) return undefined;
-    return {
-      backgroundImage: `linear-gradient(rgba(5, 5, 5, 0.25), rgba(5, 5, 5, 0.25)), url(${backgroundImagePath})`,
-      backgroundSize: "cover",
-      backgroundPosition: "center",
-      backgroundRepeat: "no-repeat",
-    };
-  }, [backgroundImagePath]);
 
   const {
     loading,
@@ -174,9 +176,9 @@ export function GroupChatSettingsPage() {
   };
 
   // Loading state
-  if (loading) {
+  if (sessionLoading || loading) {
     return (
-      <div className="flex h-full flex-col bg-[#050505] text-white">
+      <div className="flex h-full flex-col text-white">
         <header className="shrink-0 border-b border-white/10 px-4 pb-3 pt-10">
           <div className="flex items-center gap-3">
             <div className="h-8 w-8 animate-pulse rounded-full bg-white/10" />
@@ -200,7 +202,7 @@ export function GroupChatSettingsPage() {
   // Error state
   if (error || !session) {
     return (
-      <div className="flex h-full flex-col items-center justify-center bg-[#050505] text-white p-8">
+      <div className="flex h-full flex-col items-center justify-center text-white p-8">
         <p className="text-lg font-medium text-red-400">{error || "Not found"}</p>
         <button
           onClick={() => navigate(Routes.groupChats)}
@@ -217,22 +219,27 @@ export function GroupChatSettingsPage() {
       className="relative flex h-full flex-col text-white overflow-hidden"
       style={{ backgroundColor: backgroundImagePath ? undefined : "#050505" }}
     >
-      {/* Fixed background image (does not scroll with content) */}
-      {backgroundImagePath ? (
+      {/* Background image + scrim overlay */}
+      {backgroundImagePath && (
         <>
           <div
-            className="fixed inset-0 -z-10 pointer-events-none"
-            style={chatBackgroundStyle}
+            className="pointer-events-none fixed inset-0 z-0"
+            style={{
+              backgroundImage: `url(${backgroundImageData || backgroundImagePath})`,
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+              backgroundRepeat: "no-repeat",
+            }}
             aria-hidden="true"
           />
-          <div className="fixed inset-0 -z-10 pointer-events-none bg-black/30" aria-hidden="true" />
+          <div className="pointer-events-none fixed inset-0 z-0 bg-black/40" aria-hidden="true" />
         </>
-      ) : null}
+      )}
 
       {/* Header */}
       <header
         className={cn(
-          "z-20 shrink-0 border-b border-white/10 px-4 pb-3 pt-10",
+          "relative z-20 shrink-0 border-b border-white/10 px-4 pb-3 pt-10",
           !backgroundImagePath ? "bg-[#050505]" : "",
         )}
       >
@@ -252,7 +259,7 @@ export function GroupChatSettingsPage() {
       </header>
 
       {/* Content */}
-      <main className="flex-1 overflow-y-auto px-3 pt-4 pb-16">
+      <main className="relative z-10 flex-1 overflow-y-auto px-3 pt-4 pb-16">
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
