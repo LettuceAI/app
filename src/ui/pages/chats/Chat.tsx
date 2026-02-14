@@ -1521,7 +1521,7 @@ export function ChatConversationPage() {
       </AnimatePresence>
 
       {/* Footer */}
-      <div className="relative z-10">
+      <div className="relative z-10 pb-[calc(env(safe-area-inset-bottom)+8px)]">
         <ChatFooter
           draft={draft}
           setDraft={setDraft}
