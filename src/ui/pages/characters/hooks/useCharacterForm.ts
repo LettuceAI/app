@@ -324,7 +324,11 @@ export function useCharacterForm(draftCharacter?: any) {
 
         const dynamicEnabled = settings.advancedSettings?.dynamicMemory?.enabled ?? false;
         dispatch({ type: "SET_DYNAMIC_MEMORY_ENABLED", payload: dynamicEnabled });
-        if (!dynamicEnabled) {
+        if (dynamicEnabled) {
+          if (!draftCharacter?.memoryType) {
+            dispatch({ type: "SET_MEMORY_TYPE", payload: "dynamic" });
+          }
+        } else {
           dispatch({ type: "SET_MEMORY_TYPE", payload: "manual" });
         }
 

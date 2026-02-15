@@ -61,6 +61,20 @@ fn read_pure_mode_level(app: &AppHandle) -> String {
     "standard".to_string()
 }
 
+fn is_dynamic_memory_enabled(app: &AppHandle) -> bool {
+    if let Ok(Some(raw)) = internal_read_settings(app) {
+        if let Ok(json) = serde_json::from_str::<Value>(&raw) {
+            return json
+                .get("advancedSettings")
+                .and_then(|v| v.get("dynamicMemory"))
+                .and_then(|v| v.get("enabled"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+        }
+    }
+    false
+}
+
 fn cache_get<T: DeserializeOwned>(key: &str) -> Option<T> {
     let now = now_epoch();
     let value = {
@@ -1056,6 +1070,11 @@ pub async fn discovery_import_character(app: AppHandle, path: String) -> Result<
 
     // Build character JSON
     let now = chrono::Utc::now().timestamp_millis();
+    let memory_type = if is_dynamic_memory_enabled(&app) {
+        "dynamic"
+    } else {
+        "manual"
+    };
 
     // Create scenes: first_message + alternate_greetings
     let mut scenes = vec![];
@@ -1137,7 +1156,7 @@ pub async fn discovery_import_character(app: AppHandle, path: String) -> Result<
         "rules": [],
         "defaultSceneId": if !scenes.is_empty() { scenes[0]["id"].as_str() } else { None },
         "defaultModelId": null,
-        "memoryType": "manual",
+        "memoryType": memory_type,
         "promptTemplateId": null,
         "voiceConfig": null,
         "voiceAutoplay": false,
