@@ -1,6 +1,6 @@
 [package]
 name = "lettuceai"
-version = "1.0.2"
+version = "1.0.0"
 description = "LettuceAI mobile AI roleplaying app."
 authors = ["MegalithOfficial"]
 edition = "2021"
