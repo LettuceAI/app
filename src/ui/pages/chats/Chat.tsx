@@ -15,6 +15,7 @@ import type {
   AccessibilitySettings,
   Character,
   Model,
+  Scene,
   StoredMessage,
 } from "../../../core/storage/schemas";
 import { createDefaultAccessibilitySettings } from "../../../core/storage/schemas";
@@ -37,12 +38,14 @@ import {
 import { useChatLayoutContext } from "./ChatLayout";
 import {
   generateUserReply,
+  getSession,
   getSessionMeta,
   listCharacters,
   readSettings,
   SETTINGS_UPDATED_EVENT,
   SESSION_UPDATED_EVENT,
 } from "../../../core/storage";
+import { storageBridge } from "../../../core/storage/files";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { playAccessibilitySound } from "../../../core/utils/accessibilityAudio";
 
@@ -60,7 +63,7 @@ import {
 import { BottomMenu, MenuButton } from "../../components";
 import { AvatarImage } from "../../components/AvatarImage";
 import { useAvatar } from "../../hooks/useAvatar";
-import { Image, RefreshCw, Sparkles, Check, PenLine } from "lucide-react";
+import { Image, RefreshCw, Sparkles, Check, PenLine, Lock } from "lucide-react";
 import { radius, cn } from "../../design-tokens";
 
 const LONG_PRESS_DELAY = 450;
@@ -88,8 +91,12 @@ export function ChatConversationPage() {
   const [isAtBottom, setIsAtBottom] = useState(true);
 
   const [showCharacterSelector, setShowCharacterSelector] = useState(false);
+  const [showGroupCharacterSelector, setShowGroupCharacterSelector] = useState(false);
   const [availableCharacters, setAvailableCharacters] = useState<Character[]>([]);
   const [messageToBranch, setMessageToBranch] = useState<StoredMessage | null>(null);
+  const [groupBranchSelectedIds, setGroupBranchSelectedIds] = useState<Set<string>>(new Set());
+  const [groupBranchError, setGroupBranchError] = useState<string | null>(null);
+  const [groupBranchCreating, setGroupBranchCreating] = useState(false);
   const [selectedImage, setSelectedImage] = useState<{ src: string; alt: string } | null>(null);
   const [supportsImageInput, setSupportsImageInput] = useState(false);
   const audioCacheRef = useRef<{
@@ -143,10 +150,16 @@ export function ChatConversationPage() {
   }, []);
 
   useEffect(() => {
-    if (showCharacterSelector) {
+    if (showCharacterSelector || showGroupCharacterSelector) {
       listCharacters().then(setAvailableCharacters).catch(console.error);
     }
-  }, [showCharacterSelector]);
+  }, [showCharacterSelector, showGroupCharacterSelector]);
+
+  useEffect(() => {
+    if (!showGroupCharacterSelector || !characterId) return;
+    setGroupBranchSelectedIds(new Set([characterId]));
+    setGroupBranchError(null);
+  }, [showGroupCharacterSelector, characterId]);
 
   // Reload session data when memories change
   const handleSessionUpdate = useCallback(async () => {
@@ -232,6 +245,116 @@ export function ChatConversationPage() {
     isStartingSceneMessage,
     streamingReasoning,
   } = chatController;
+
+  const handleToggleGroupBranchCharacter = useCallback(
+    (id: string) => {
+      if (!character || id === character.id) return;
+      setGroupBranchSelectedIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+      setGroupBranchError(null);
+    },
+    [character],
+  );
+
+  const handleCreateGroupBranch = useCallback(async () => {
+    if (!session || !character || !messageToBranch) return;
+
+    const selectedCharacterIds = Array.from(groupBranchSelectedIds);
+    if (!selectedCharacterIds.includes(character.id)) {
+      selectedCharacterIds.unshift(character.id);
+    }
+    if (selectedCharacterIds.length < 2) {
+      setGroupBranchError("Select at least 2 characters for a group chat.");
+      return;
+    }
+
+    setGroupBranchCreating(true);
+    setGroupBranchError(null);
+    setActionBusy(true);
+    setActionError(null);
+    setActionStatus(null);
+
+    try {
+      const sourceSession = await getSession(session.id);
+      if (!sourceSession) {
+        throw new Error("Failed to load source session.");
+      }
+
+      const messageIndex = sourceSession.messages.findIndex((msg) => msg.id === messageToBranch.id);
+      if (messageIndex === -1) {
+        throw new Error("Selected message was not found in the session.");
+      }
+
+      const selectedSceneId =
+        sourceSession.selectedSceneId || character.defaultSceneId || character.scenes[0]?.id;
+      const ownerScene =
+        character.scenes.find((scene) => scene.id === selectedSceneId) || character.scenes[0];
+      const ownerSceneContent = ownerScene ? resolveSceneContent(ownerScene).trim() : "";
+      const startingScene = ownerSceneContent
+        ? {
+            id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`,
+            content: ownerSceneContent,
+            direction: ownerScene?.direction ?? "",
+            createdAt: Date.now(),
+          }
+        : null;
+
+      const groupSession = await storageBridge.groupSessionCreate(
+        `${character.name} Branch`,
+        selectedCharacterIds,
+        sourceSession.personaDisabled ? null : (sourceSession.personaId ?? null),
+        "roleplay",
+        startingScene,
+        character.backgroundImagePath ?? null,
+      );
+
+      const messagesToCopy = sourceSession.messages.slice(0, messageIndex + 1);
+      for (const message of messagesToCopy) {
+        if (message.role !== "user" && message.role !== "assistant") continue;
+
+        await storageBridge.groupMessageUpsert(groupSession.id, {
+          id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`,
+          sessionId: groupSession.id,
+          role: message.role,
+          content: message.content,
+          speakerCharacterId: message.role === "assistant" ? character.id : null,
+          turnNumber: 0,
+          createdAt: Date.now(),
+          usage: message.usage ?? null,
+          selectedVariantId: null,
+          isPinned: Boolean(message.isPinned),
+          attachments: message.attachments ?? [],
+          reasoning: message.reasoning ?? null,
+          selectionReasoning: null,
+        });
+      }
+
+      setShowGroupCharacterSelector(false);
+      setMessageToBranch(null);
+      setActionStatus("Group branch created! Redirecting...");
+      navigate(`/group-chats/${groupSession.id}`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setGroupBranchError(message);
+      setActionError(message);
+    } finally {
+      setGroupBranchCreating(false);
+      setActionBusy(false);
+    }
+  }, [
+    session,
+    character,
+    messageToBranch,
+    groupBranchSelectedIds,
+    setActionBusy,
+    setActionError,
+    setActionStatus,
+    navigate,
+  ]);
 
   const isGenerating = sending || regeneratingMessageId !== null;
   const lastMessageContentLength = messages[messages.length - 1]?.content.length ?? 0;
@@ -1566,6 +1689,11 @@ export function ChatConversationPage() {
           closeMessageActions(true);
           setShowCharacterSelector(true);
         }}
+        onBranchToGroupChat={(message) => {
+          setMessageToBranch(message);
+          closeMessageActions(true);
+          setShowGroupCharacterSelector(true);
+        }}
         handleTogglePin={chatController.handleTogglePin}
         setMessageAction={setMessageAction}
         characterMemoryType={character?.memoryType}
@@ -1610,6 +1738,62 @@ export function ChatConversationPage() {
               No other characters available. Create more characters first.
             </p>
           )}
+        </div>
+      </BottomMenu>
+
+      {/* Character Selection for Group Branch */}
+      <BottomMenu
+        isOpen={showGroupCharacterSelector}
+        onClose={() => {
+          if (groupBranchCreating) return;
+          setShowGroupCharacterSelector(false);
+          setMessageToBranch(null);
+          setGroupBranchError(null);
+        }}
+        title="Branch To Group Chat"
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-white/50">
+            Branch owner is locked. Choose additional characters, then create.
+          </p>
+
+          {groupBranchError && (
+            <div
+              className={cn(
+                "border border-red-400/25 bg-red-500/10 px-3 py-2 text-sm text-red-200",
+                radius.md,
+              )}
+            >
+              {groupBranchError}
+            </div>
+          )}
+
+          <div className="space-y-2 max-h-[48vh] overflow-y-auto">
+            {availableCharacters.map((char) => {
+              const isOwner = char.id === character?.id;
+              return (
+                <CharacterOption
+                  key={char.id}
+                  character={char}
+                  selected={groupBranchSelectedIds.has(char.id)}
+                  locked={isOwner}
+                  onClick={() => handleToggleGroupBranchCharacter(char.id)}
+                />
+              );
+            })}
+          </div>
+
+          <button
+            onClick={() => void handleCreateGroupBranch()}
+            disabled={groupBranchCreating}
+            className={cn(
+              "w-full rounded-xl border px-4 py-3 text-sm font-semibold transition",
+              "border-emerald-400/35 bg-emerald-500/20 text-emerald-100 hover:bg-emerald-500/30",
+              "disabled:cursor-not-allowed disabled:opacity-55",
+            )}
+          >
+            {groupBranchCreating ? "Creating..." : "Create Group Branch"}
+          </button>
         </div>
       </BottomMenu>
 
@@ -1768,18 +1952,41 @@ export function ChatConversationPage() {
   );
 }
 
-function CharacterOption({ character, onClick }: { character: Character; onClick: () => void }) {
+function resolveSceneContent(scene: Scene): string {
+  if (scene.selectedVariantId) {
+    const selectedVariant = scene.variants?.find(
+      (variant) => variant.id === scene.selectedVariantId,
+    );
+    if (selectedVariant?.content?.trim()) {
+      return selectedVariant.content;
+    }
+  }
+  return scene.content ?? "";
+}
+
+function CharacterOption({
+  character,
+  onClick,
+  selected = false,
+  locked = false,
+}: {
+  character: Character;
+  onClick: () => void;
+  selected?: boolean;
+  locked?: boolean;
+}) {
   const avatarUrl = useAvatar("character", character.id, character.avatarPath, "round");
 
   return (
     <button
       onClick={onClick}
+      disabled={locked}
       className={cn(
         "flex w-full items-center gap-3 p-3 text-left transition",
         radius.lg,
-        "border border-white/10 bg-white/5",
-        "hover:border-white/20 hover:bg-white/10",
-        "active:scale-[0.99]",
+        selected ? "border-emerald-400/35 bg-emerald-500/10" : "border border-white/10 bg-white/5",
+        !locked && "hover:border-white/20 hover:bg-white/10 active:scale-[0.99]",
+        locked && "cursor-not-allowed opacity-90",
       )}
     >
       <div className={cn("h-10 w-10 overflow-hidden shrink-0", radius.full, "bg-white/10")}>
@@ -1797,6 +2004,17 @@ function CharacterOption({ character, onClick }: { character: Character; onClick
           {character.description || character.definition || "No description"}
         </p>
       </div>
+      {selected && (
+        <div
+          className={cn(
+            "flex h-7 w-7 items-center justify-center",
+            radius.full,
+            "bg-emerald-500/20 text-emerald-200",
+          )}
+        >
+          {locked ? <Lock size={13} /> : <Check size={14} />}
+        </div>
+      )}
     </button>
   );
 }

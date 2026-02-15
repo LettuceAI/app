@@ -39,6 +39,7 @@ interface MessageActionsBottomSheetProps {
   handleRewindToMessage: (message: StoredMessage) => Promise<void>;
   handleBranchFromMessage: (message: StoredMessage) => Promise<string | null>;
   onBranchToCharacter: (message: StoredMessage) => void;
+  onBranchToGroupChat: (message: StoredMessage) => void;
   handleTogglePin: (message: StoredMessage) => Promise<void>;
   setMessageAction: (value: MessageActionState | null) => void;
   characterMemoryType?: string | null;
@@ -108,6 +109,7 @@ export function MessageActionsBottomSheet({
   handleRewindToMessage,
   handleBranchFromMessage,
   onBranchToCharacter,
+  onBranchToGroupChat,
   handleTogglePin,
   setMessageAction,
   characterMemoryType,
@@ -314,6 +316,14 @@ export function MessageActionsBottomSheet({
                 label="Branch from here"
                 iconBg="bg-emerald-500/20"
                 onClick={() => void handleBranchFromMessage(messageAction.message)}
+                disabled={actionBusy}
+              />
+
+              <ActionRow
+                icon={Users}
+                label="Branch to group chat"
+                iconBg="bg-rose-500/20"
+                onClick={() => onBranchToGroupChat(messageAction.message)}
                 disabled={actionBusy}
               />
 
