@@ -10,10 +10,12 @@ import { getProviderIcon } from "../../../core/utils/providerIcons";
 
 import { BottomMenu, MenuButton } from "../../components/BottomMenu";
 import { cn, colors, interactive, radius } from "../../design-tokens";
+import { getPlatform } from "../../../core/utils/platform";
 
 type ProviderTab = "llm" | "audio";
 
 export function ProvidersPage() {
+  const isMobile = getPlatform().type === "mobile";
   const [searchParams, setSearchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState<ProviderTab>(() => {
     const tab = searchParams.get("tab");
@@ -73,6 +75,9 @@ export function ProvidersPage() {
     | "query"
     | "none";
   const showApiKeyInput = !(isCustomProvider && customAuthMode === "none");
+  const visibleCapabilities = isMobile
+    ? capabilities.filter((provider) => provider.id !== "llamacpp")
+    : capabilities;
 
   useEffect(() => {
     const handleAddProvider = () => {
@@ -270,7 +275,7 @@ export function ProvidersPage() {
                     }}
                     className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white focus:border-white/30 focus:outline-none"
                   >
-                    {capabilities.map((p) => (
+                    {visibleCapabilities.map((p) => (
                       <option key={p.id} value={p.id} className="bg-black">
                         {p.name}
                       </option>
@@ -283,7 +288,7 @@ export function ProvidersPage() {
                     type="text"
                     value={editorProvider.label}
                     onChange={(e) => updateEditorProvider({ label: e.target.value })}
-                    placeholder={`My ${capabilities.find((p) => p.id === editorProvider.providerId)?.name || "Provider"}`}
+                    placeholder={`My ${visibleCapabilities.find((p) => p.id === editorProvider.providerId)?.name || "Provider"}`}
                     className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder-white/40 focus:border-white/30 focus:outline-none"
                   />
                 </div>

@@ -18,6 +18,7 @@ import {
   providersPageReducer,
   type ProvidersPageState,
 } from "./providersPageReducer";
+import { getPlatform } from "../../../../core/utils/platform";
 
 type VerifyProviderApiKeyResult = {
   providerId: string;
@@ -42,6 +43,7 @@ type ControllerReturn = {
 
 export function useProvidersPageController(): ControllerReturn {
   const [state, dispatch] = useReducer(providersPageReducer, initialProvidersPageState);
+  const isMobile = getPlatform().type === "mobile";
 
   const reload = useCallback(async () => {
     const settings = await readSettings();
@@ -90,33 +92,40 @@ export function useProvidersPageController(): ControllerReturn {
     return () => window.removeEventListener(SETTINGS_UPDATED_EVENT, handler);
   }, [reload]);
 
-  const openEditor = useCallback((provider?: ProviderCredential) => {
-    const newId = provider?.id ?? crypto.randomUUID();
-    const firstCap: ProviderCapabilitiesCamel | undefined = state.capabilities[0];
-    const baseProvider: ProviderCredential = provider
-      ? { ...provider }
-      : ({
-          id: newId,
-          providerId: firstCap?.id || "openai",
-          label: "",
-          apiKey: "",
-        } as ProviderCredential);
+  const openEditor = useCallback(
+    (provider?: ProviderCredential) => {
+      const newId = provider?.id ?? crypto.randomUUID();
+      const firstCap: ProviderCapabilitiesCamel | undefined = (
+        isMobile
+          ? state.capabilities.filter((capability) => capability.id !== "llamacpp")
+          : state.capabilities
+      )[0];
+      const baseProvider: ProviderCredential = provider
+        ? { ...provider }
+        : ({
+            id: newId,
+            providerId: firstCap?.id || "openai",
+            label: "",
+            apiKey: "",
+          } as ProviderCredential);
 
-    console.log("[ProvidersPage] Opening editor with provider:", {
-      id: baseProvider.id,
-      label: baseProvider.label,
-      baseUrl: baseProvider.baseUrl,
-      providerId: baseProvider.providerId,
-    });
+      console.log("[ProvidersPage] Opening editor with provider:", {
+        id: baseProvider.id,
+        label: baseProvider.label,
+        baseUrl: baseProvider.baseUrl,
+        providerId: baseProvider.providerId,
+      });
 
-    dispatch({ type: "set_selected_provider", payload: null });
-    dispatch({
-      type: "open_editor",
-      payload: { provider: baseProvider, apiKey: "" },
-    });
+      dispatch({ type: "set_selected_provider", payload: null });
+      dispatch({
+        type: "open_editor",
+        payload: { provider: baseProvider, apiKey: "" },
+      });
 
-    dispatch({ type: "set_api_key", payload: provider?.apiKey || "" });
-  }, []);
+      dispatch({ type: "set_api_key", payload: provider?.apiKey || "" });
+    },
+    [isMobile, state.capabilities],
+  );
 
   const closeEditor = useCallback(() => {
     dispatch({ type: "close_editor" });

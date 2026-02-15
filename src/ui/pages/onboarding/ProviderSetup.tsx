@@ -140,10 +140,15 @@ export function ProviderSetupPage() {
     };
   }, []);
 
-  const selectedProvider = capabilities.find((p) => p.id === selectedProviderId);
+  const visibleCapabilities = React.useMemo(
+    () =>
+      isDesktop ? capabilities : capabilities.filter((provider) => provider.id !== "llamacpp"),
+    [capabilities, isDesktop],
+  );
+  const selectedProvider = visibleCapabilities.find((p) => p.id === selectedProviderId);
   const isCustomProvider = ["custom", "custom-anthropic"].includes(selectedProviderId);
   const isLocalProvider = ["ollama", "lmstudio"].includes(selectedProviderId);
-  const showBaseUrl = isCustomProvider || isLocalProvider;
+  const showBaseUrl = Boolean(selectedProvider) && (isCustomProvider || isLocalProvider);
 
   const configFormContent = (
     <div className="space-y-4">
@@ -290,7 +295,7 @@ export function ProviderSetupPage() {
             </div>
             <div className="flex-1 overflow-y-auto px-6">
               <div className="grid grid-cols-2 xl:grid-cols-3 gap-2">
-                {capabilities.map((provider) => (
+                {visibleCapabilities.map((provider) => (
                   <ProviderCardCompact
                     key={provider.id}
                     provider={provider}
@@ -367,7 +372,7 @@ export function ProviderSetupPage() {
         {/* Provider Selection */}
         <div className="w-full max-w-2xl mb-8">
           <div className="grid grid-cols-2 gap-3">
-            {capabilities.map((provider) => (
+            {visibleCapabilities.map((provider) => (
               <ProviderCard
                 key={provider.id}
                 provider={provider}
@@ -386,7 +391,7 @@ export function ProviderSetupPage() {
 
         {/* Configuration Form */}
         <div
-          className={`config-form-section w-full max-w-sm transition-all duration-300 ${showForm ? "opacity-100 max-h-500" : "opacity-0 max-h-0 overflow-hidden pointer-events-none"}`}
+          className={`config-form-section w-full max-w-sm transition-all duration-300 ${showForm && selectedProvider ? "opacity-100 max-h-500" : "opacity-0 max-h-0 overflow-hidden pointer-events-none"}`}
         >
           <div className="text-center space-y-2 mb-6">
             <h2 className="text-lg font-semibold text-white">Connect {selectedProvider?.name}</h2>
@@ -396,7 +401,7 @@ export function ProviderSetupPage() {
             </p>
           </div>
 
-          {configFormContent}
+          {selectedProvider ? configFormContent : null}
         </div>
       </div>
       <div id="provider-config-form"></div>
