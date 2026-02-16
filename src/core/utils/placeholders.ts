@@ -5,7 +5,11 @@ export function replacePlaceholders(
 ): string {
   if (!text) return text;
   return text
-    .split("{{char}}").join(charName ?? "")
-    .split("{{persona}}").join(personaName ?? "");
+    .split("{{char}}")
+    .join(charName ?? "")
+    .split("{{persona}}")
+    .join(personaName ?? "")
+    .split("{{user}}")
+    .join(personaName ?? "");
 }
 
