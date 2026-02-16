@@ -55,6 +55,8 @@ export function GroupChatCreatePage() {
               key="group-setup"
               chatType={state.chatType}
               onChatTypeChange={actions.setChatType}
+              speakerSelectionMethod={state.speakerSelectionMethod}
+              onSpeakerSelectionMethodChange={actions.setSpeakerSelectionMethod}
               groupName={state.groupName}
               onGroupNameChange={actions.setGroupName}
               backgroundImagePath={state.backgroundImagePath}

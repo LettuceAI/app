@@ -7,7 +7,7 @@ use crate::storage_manager::{settings::storage_read_settings, settings::storage_
 use crate::utils::log_info;
 
 /// Current migration version
-pub const CURRENT_MIGRATION_VERSION: u32 = 34;
+pub const CURRENT_MIGRATION_VERSION: u32 = 35;
 
 pub fn run_migrations(app: &AppHandle) -> Result<(), String> {
     log_info(app, "migrations", "Starting migration check");
@@ -382,6 +382,16 @@ pub fn run_migrations(app: &AppHandle) -> Result<(), String> {
         );
         migrate_v33_to_v34(app)?;
         version = 34;
+    }
+
+    if version < 35 {
+        log_info(
+            app,
+            "migrations",
+            "Running migration v34 -> v35: Add speaker_selection_method to group_sessions",
+        );
+        migrate_v34_to_v35(app)?;
+        version = 35;
     }
 
     // Update the stored version
@@ -2344,6 +2354,19 @@ fn migrate_v25_to_v26(app: &AppHandle) -> Result<(), String> {
             [],
         );
     }
+
+    Ok(())
+}
+
+fn migrate_v34_to_v35(app: &AppHandle) -> Result<(), String> {
+    use crate::storage_manager::db::open_db;
+
+    let conn = open_db(app)?;
+
+    let _ = conn.execute(
+        "ALTER TABLE group_sessions ADD COLUMN speaker_selection_method TEXT NOT NULL DEFAULT 'llm'",
+        [],
+    );
 
     Ok(())
 }

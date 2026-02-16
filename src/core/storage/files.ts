@@ -432,6 +432,7 @@ export const storageBridge = {
     chatType?: "conversation" | "roleplay",
     startingScene?: any | null,
     backgroundImagePath?: string | null,
+    speakerSelectionMethod?: "llm" | "heuristic" | "round_robin" | null,
   ) =>
     invoke<string>("group_session_create", {
       name,
@@ -440,6 +441,7 @@ export const storageBridge = {
       chatType: chatType ?? "conversation",
       startingSceneJson: startingScene ? JSON.stringify(startingScene) : null,
       backgroundImagePath: backgroundImagePath ?? null,
+      speakerSelectionMethod: speakerSelectionMethod ?? "llm",
     }).then((s) => JSON.parse(s)),
   groupSessionGet: (id: string) =>
     invoke<string | null>("group_session_get", { id }).then((s) =>
@@ -505,6 +507,14 @@ export const storageBridge = {
     invoke<string>("group_session_update_chat_type", {
       sessionId,
       chatType,
+    }).then((s) => JSON.parse(s)),
+  groupSessionUpdateSpeakerSelectionMethod: (
+    sessionId: string,
+    speakerSelectionMethod: "llm" | "heuristic" | "round_robin",
+  ) =>
+    invoke<string>("group_session_update_speaker_selection_method", {
+      sessionId,
+      speakerSelectionMethod,
     }).then((s) => JSON.parse(s)),
 
   // Group Participation

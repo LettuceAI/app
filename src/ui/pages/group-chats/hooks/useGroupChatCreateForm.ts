@@ -28,6 +28,7 @@ interface GroupChatCreateFormState {
   // Step 2: Group Setup
   groupName: string;
   chatType: "conversation" | "roleplay";
+  speakerSelectionMethod: "llm" | "heuristic" | "round_robin";
   backgroundImagePath: string;
 
   // Step 3: Starting Scene
@@ -47,6 +48,7 @@ type GroupChatCreateFormAction =
   | { type: "SET_LOADING_CHARACTERS"; payload: boolean }
   | { type: "SET_GROUP_NAME"; payload: string }
   | { type: "SET_CHAT_TYPE"; payload: "conversation" | "roleplay" }
+  | { type: "SET_SPEAKER_SELECTION_METHOD"; payload: "llm" | "heuristic" | "round_robin" }
   | { type: "SET_BACKGROUND_IMAGE_PATH"; payload: string }
   | { type: "SET_SCENE_SOURCE"; payload: "none" | "custom" | "character" }
   | { type: "SET_CUSTOM_SCENE"; payload: string }
@@ -62,6 +64,7 @@ const initialState: GroupChatCreateFormState = {
   loadingCharacters: true,
   groupName: "",
   chatType: "conversation",
+  speakerSelectionMethod: "llm" as const,
   backgroundImagePath: "",
   sceneSource: "none",
   customScene: "",
@@ -94,6 +97,8 @@ function groupChatCreateFormReducer(
       return { ...state, groupName: action.payload, error: null };
     case "SET_CHAT_TYPE":
       return { ...state, chatType: action.payload, error: null };
+    case "SET_SPEAKER_SELECTION_METHOD":
+      return { ...state, speakerSelectionMethod: action.payload, error: null };
     case "SET_BACKGROUND_IMAGE_PATH":
       return { ...state, backgroundImagePath: action.payload, error: null };
     case "SET_SCENE_SOURCE":
@@ -195,6 +200,13 @@ export function useGroupChatCreateForm(options: UseGroupChatCreateFormOptions = 
     dispatch({ type: "SET_CHAT_TYPE", payload: value });
   }, []);
 
+  const setSpeakerSelectionMethod = useCallback(
+    (value: "llm" | "heuristic" | "round_robin") => {
+      dispatch({ type: "SET_SPEAKER_SELECTION_METHOD", payload: value });
+    },
+    [],
+  );
+
   const setBackgroundImagePath = useCallback((value: string) => {
     dispatch({ type: "SET_BACKGROUND_IMAGE_PATH", payload: value });
   }, []);
@@ -264,6 +276,7 @@ export function useGroupChatCreateForm(options: UseGroupChatCreateFormOptions = 
         state.chatType,
         startingScene,
         state.backgroundImagePath || null,
+        state.speakerSelectionMethod,
       );
       onCreated?.(session.id);
     } catch (err) {
@@ -276,6 +289,7 @@ export function useGroupChatCreateForm(options: UseGroupChatCreateFormOptions = 
     state.selectedIds,
     state.groupName,
     state.chatType,
+    state.speakerSelectionMethod,
     state.backgroundImagePath,
     state.sceneSource,
     state.customScene,
@@ -301,6 +315,7 @@ export function useGroupChatCreateForm(options: UseGroupChatCreateFormOptions = 
       toggleCharacter,
       setGroupName,
       setChatType,
+      setSpeakerSelectionMethod,
       setBackgroundImagePath,
       setSceneSource,
       setCustomScene,

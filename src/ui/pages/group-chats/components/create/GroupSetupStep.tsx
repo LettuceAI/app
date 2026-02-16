@@ -1,11 +1,22 @@
 import { motion } from "framer-motion";
-import { MessageSquare, Sparkles, Theater, Image as ImageIcon, X } from "lucide-react";
+import {
+  MessageSquare,
+  Sparkles,
+  Theater,
+  Image as ImageIcon,
+  X,
+  Brain,
+  BarChart3,
+  RefreshCw,
+} from "lucide-react";
 import { typography, radius, spacing, interactive, shadows, cn } from "../../../../design-tokens";
 import { processBackgroundImage } from "../../../../../core/utils/image";
 
 interface GroupSetupStepProps {
   chatType: "conversation" | "roleplay";
   onChatTypeChange: (value: "conversation" | "roleplay") => void;
+  speakerSelectionMethod: "llm" | "heuristic" | "round_robin";
+  onSpeakerSelectionMethodChange: (value: "llm" | "heuristic" | "round_robin") => void;
   groupName: string;
   onGroupNameChange: (value: string) => void;
   backgroundImagePath: string;
@@ -18,6 +29,8 @@ interface GroupSetupStepProps {
 export function GroupSetupStep({
   chatType,
   onChatTypeChange,
+  speakerSelectionMethod,
+  onSpeakerSelectionMethodChange,
   groupName,
   onGroupNameChange,
   backgroundImagePath,
@@ -185,6 +198,91 @@ export function GroupSetupStep({
           {chatType === "conversation"
             ? "Casual group conversation without starting scenes"
             : "Roleplay scenario with starting scene and immersive prompts"}
+        </p>
+      </div>
+
+      {/* Speaker Selection Method */}
+      <div className={spacing.field}>
+        <label
+          className={cn(
+            typography.label.size,
+            typography.label.weight,
+            typography.label.tracking,
+            "uppercase text-white/70",
+          )}
+        >
+          Speaker Selection
+        </label>
+
+        <div className="grid grid-cols-3 gap-2">
+          {(
+            [
+              {
+                value: "llm" as const,
+                label: "LLM",
+                desc: "AI picks",
+                icon: Brain,
+              },
+              {
+                value: "heuristic" as const,
+                label: "Heuristic",
+                desc: "Score-based",
+                icon: BarChart3,
+              },
+              {
+                value: "round_robin" as const,
+                label: "Round Robin",
+                desc: "Take turns",
+                icon: RefreshCw,
+              },
+            ] as const
+          ).map((option) => (
+            <button
+              key={option.value}
+              onClick={() => onSpeakerSelectionMethodChange(option.value)}
+              className={cn(
+                "relative flex flex-col items-center gap-1.5 p-3",
+                radius.lg,
+                "border text-center",
+                interactive.transition.fast,
+                speakerSelectionMethod === option.value
+                  ? "border-emerald-400/40 bg-emerald-400/10"
+                  : "border-white/10 bg-white/5 hover:border-white/20",
+              )}
+            >
+              <option.icon
+                className={cn(
+                  "h-5 w-5",
+                  speakerSelectionMethod === option.value ? "text-emerald-300" : "text-white/50",
+                )}
+              />
+              <div
+                className={cn(
+                  "text-xs font-semibold",
+                  speakerSelectionMethod === option.value ? "text-emerald-100" : "text-white/80",
+                )}
+              >
+                {option.label}
+              </div>
+              <div className="text-[10px] text-white/40">{option.desc}</div>
+              {speakerSelectionMethod === option.value && (
+                <motion.div
+                  layoutId="selectionMethodIndicator"
+                  className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-emerald-400"
+                >
+                  <Sparkles className="h-2.5 w-2.5 text-black" />
+                </motion.div>
+              )}
+            </button>
+          ))}
+        </div>
+
+        <p className={cn(typography.bodySmall.size, "mt-2 text-white/40")}>
+          {speakerSelectionMethod === "llm"
+            ? "Uses your default model to choose who speaks (costs tokens)"
+            : speakerSelectionMethod === "heuristic"
+              ? "Uses participation balance and context clues (free)"
+              : "Characters take turns in order (free)"}
         </p>
       </div>
 

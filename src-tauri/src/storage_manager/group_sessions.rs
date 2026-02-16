@@ -86,10 +86,17 @@ pub struct GroupSession {
     /// Memory tool events tracking (for dynamic memory cycle gating)
     #[serde(default)]
     pub memory_tool_events: Vec<serde_json::Value>,
+    /// Speaker selection method: "llm", "heuristic", or "round_robin"
+    #[serde(default = "default_speaker_selection_method")]
+    pub speaker_selection_method: String,
 }
 
 fn default_chat_type() -> String {
     "conversation".to_string()
+}
+
+fn default_speaker_selection_method() -> String {
+    "llm".to_string()
 }
 
 /// Memory embedding for semantic search in group sessions
@@ -195,7 +202,7 @@ fn read_group_session(conn: &Connection, id: &str) -> Result<Option<GroupSession
         .prepare(
             "SELECT id, name, character_ids, persona_id, created_at, updated_at,
                     memories, memory_embeddings, memory_summary, memory_summary_token_count, archived, memory_tool_events,
-                    chat_type, starting_scene, background_image_path
+                    chat_type, starting_scene, background_image_path, speaker_selection_method
              FROM group_sessions WHERE id = ?1",
         )
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
@@ -264,6 +271,11 @@ fn read_group_session(conn: &Connection, id: &str) -> Result<Option<GroupSession
             .get(14)
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 
+        let speaker_selection_method: String = row
+            .get::<_, Option<String>>(15)
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
+            .unwrap_or_else(|| "llm".to_string());
+
         Ok(Some(GroupSession {
             id: row
                 .get(0)
@@ -290,6 +302,7 @@ fn read_group_session(conn: &Connection, id: &str) -> Result<Option<GroupSession
             memory_summary,
             memory_summary_token_count,
             memory_tool_events,
+            speaker_selection_method,
         }))
     } else {
         Ok(None)
@@ -1235,6 +1248,7 @@ pub fn group_session_create(
     chat_type: Option<String>,
     starting_scene_json: Option<String>,
     background_image_path: Option<String>,
+    speaker_selection_method: Option<String>,
     app: tauri::AppHandle,
     pool: State<'_, SwappablePool>,
 ) -> Result<String, String> {
@@ -1264,13 +1278,14 @@ pub fn group_session_create(
     };
 
     let chat_type_value = chat_type.unwrap_or_else(|| "conversation".to_string());
+    let selection_method = speaker_selection_method.unwrap_or_else(|| "llm".to_string());
     let starting_scene_parsed: Option<serde_json::Value> = starting_scene_json
         .as_ref()
         .and_then(|s| serde_json::from_str(s).ok());
 
     conn.execute(
-        "INSERT INTO group_sessions (id, name, character_ids, persona_id, created_at, updated_at, archived, chat_type, starting_scene, background_image_path)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?5, 0, ?6, ?7, ?8)",
+        "INSERT INTO group_sessions (id, name, character_ids, persona_id, created_at, updated_at, archived, chat_type, starting_scene, background_image_path, speaker_selection_method)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?5, 0, ?6, ?7, ?8, ?9)",
         params![
             id,
             name,
@@ -1279,7 +1294,8 @@ pub fn group_session_create(
             now,
             chat_type_value,
             starting_scene_json.as_deref(),
-            background_image_path
+            background_image_path,
+            selection_method
         ],
     )
     .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
@@ -1320,6 +1336,7 @@ pub fn group_session_create(
         memory_summary: String::new(),
         memory_summary_token_count: 0,
         memory_tool_events: Vec::new(),
+        speaker_selection_method: selection_method,
     };
 
     serde_json::to_string(&session)
@@ -1542,6 +1559,43 @@ pub fn group_session_update_chat_type(
     conn.execute(
         "UPDATE group_sessions SET chat_type = ?1, updated_at = ?2 WHERE id = ?3",
         params![chat_type, now, session_id],
+    )
+    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+
+    match read_group_session(&conn, &session_id)? {
+        Some(session) => serde_json::to_string(&session)
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e)),
+        None => Err(crate::utils::err_msg(
+            module_path!(),
+            line!(),
+            "Session not found",
+        )),
+    }
+}
+
+#[tauri::command]
+pub fn group_session_update_speaker_selection_method(
+    session_id: String,
+    speaker_selection_method: String,
+    pool: State<'_, SwappablePool>,
+) -> Result<String, String> {
+    let conn = pool.get_connection()?;
+    let now = now_ms() as i64;
+
+    if speaker_selection_method != "llm"
+        && speaker_selection_method != "heuristic"
+        && speaker_selection_method != "round_robin"
+    {
+        return Err(crate::utils::err_msg(
+            module_path!(),
+            line!(),
+            "Invalid speaker_selection_method. Must be 'llm', 'heuristic', or 'round_robin'",
+        ));
+    }
+
+    conn.execute(
+        "UPDATE group_sessions SET speaker_selection_method = ?1, updated_at = ?2 WHERE id = ?3",
+        params![speaker_selection_method, now, session_id],
     )
     .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 

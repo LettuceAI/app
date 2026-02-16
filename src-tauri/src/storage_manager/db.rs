@@ -563,6 +563,7 @@ pub fn init_db(_app: &tauri::AppHandle, conn: &Connection) -> Result<(), String>
           memory_summary TEXT NOT NULL DEFAULT '',
           memory_summary_token_count INTEGER NOT NULL DEFAULT 0,
           memory_tool_events TEXT NOT NULL DEFAULT '[]',
+          speaker_selection_method TEXT NOT NULL DEFAULT 'llm',
           FOREIGN KEY(persona_id) REFERENCES personas(id) ON DELETE SET NULL
         );
 

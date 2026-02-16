@@ -3457,37 +3457,51 @@ pub async fn group_chat_send(
             true,
         )
     } else {
-        let selection_result = tokio::select! {
-            _ = &mut abort_rx => {
-                log_warn(
-                    &app,
-                    "group_chat_send",
-                    format!("Request aborted by user for session {}", session_id),
-                );
-                return Err(crate::utils::err_msg(module_path!(), line!(), "Request aborted by user"));
+        let method = context.session.speaker_selection_method.as_str();
+        match method {
+            "heuristic" => {
+                let result = selection::heuristic_select_speaker(&context)?;
+                (result.character_id, result.reasoning, false)
             }
-            selection = select_speaker_via_llm(&app, &context, &settings) => selection,
-        };
-        match selection_result {
-            Ok(selection) => {
-                log_info(
-                    &app,
-                    "group_chat_send",
-                    format!(
-                        "LLM selected character {}: {:?}",
-                        selection.character_id, selection.reasoning
-                    ),
-                );
-                (selection.character_id, selection.reasoning, false)
+            "round_robin" => {
+                let result = selection::round_robin_select_speaker(&context)?;
+                (result.character_id, result.reasoning, false)
             }
-            Err(err) => {
-                log_error(
-                    &app,
-                    "group_chat_send",
-                    format!("LLM selection failed: {}, using heuristic", err),
-                );
-                let fallback = selection::heuristic_select_speaker(&context)?;
-                (fallback.character_id, fallback.reasoning, false)
+            _ => {
+                // "llm" (default) - LLM with heuristic fallback
+                let selection_result = tokio::select! {
+                    _ = &mut abort_rx => {
+                        log_warn(
+                            &app,
+                            "group_chat_send",
+                            format!("Request aborted by user for session {}", session_id),
+                        );
+                        return Err(crate::utils::err_msg(module_path!(), line!(), "Request aborted by user"));
+                    }
+                    selection = select_speaker_via_llm(&app, &context, &settings) => selection,
+                };
+                match selection_result {
+                    Ok(selection) => {
+                        log_info(
+                            &app,
+                            "group_chat_send",
+                            format!(
+                                "LLM selected character {}: {:?}",
+                                selection.character_id, selection.reasoning
+                            ),
+                        );
+                        (selection.character_id, selection.reasoning, false)
+                    }
+                    Err(err) => {
+                        log_error(
+                            &app,
+                            "group_chat_send",
+                            format!("LLM selection failed: {}, using heuristic", err),
+                        );
+                        let fallback = selection::heuristic_select_speaker(&context)?;
+                        (fallback.character_id, fallback.reasoning, false)
+                    }
+                }
             }
         }
     };
@@ -3893,27 +3907,40 @@ pub async fn group_chat_continue(
             Some("User requested specific character".to_string()),
         )
     } else {
-        let selection_result = tokio::select! {
-            _ = &mut abort_rx => {
-                log_warn(
-                    &app,
-                    "group_chat_continue",
-                    format!("Request aborted by user for session {}", session_id),
-                );
-                return Err(crate::utils::err_msg(module_path!(), line!(), "Request aborted by user"));
+        let method = context.session.speaker_selection_method.as_str();
+        match method {
+            "heuristic" => {
+                let result = selection::heuristic_select_speaker(&context)?;
+                (result.character_id, result.reasoning)
             }
-            selection = select_speaker_via_llm(&app, &context, &settings) => selection,
-        };
-        match selection_result {
-            Ok(selection) => (selection.character_id, selection.reasoning),
-            Err(err) => {
-                log_error(
-                    &app,
-                    "group_chat_continue",
-                    format!("LLM selection failed: {}", err),
-                );
-                let fallback = selection::heuristic_select_speaker(&context)?;
-                (fallback.character_id, fallback.reasoning)
+            "round_robin" => {
+                let result = selection::round_robin_select_speaker(&context)?;
+                (result.character_id, result.reasoning)
+            }
+            _ => {
+                let selection_result = tokio::select! {
+                    _ = &mut abort_rx => {
+                        log_warn(
+                            &app,
+                            "group_chat_continue",
+                            format!("Request aborted by user for session {}", session_id),
+                        );
+                        return Err(crate::utils::err_msg(module_path!(), line!(), "Request aborted by user"));
+                    }
+                    selection = select_speaker_via_llm(&app, &context, &settings) => selection,
+                };
+                match selection_result {
+                    Ok(selection) => (selection.character_id, selection.reasoning),
+                    Err(err) => {
+                        log_error(
+                            &app,
+                            "group_chat_continue",
+                            format!("LLM selection failed: {}", err),
+                        );
+                        let fallback = selection::heuristic_select_speaker(&context)?;
+                        (fallback.character_id, fallback.reasoning)
+                    }
+                }
             }
         }
     };

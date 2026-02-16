@@ -1347,6 +1347,10 @@ export const GroupSessionSchema = z.object({
   memorySummary: z.string().default(""),
   /** Token count of the memory summary */
   memorySummaryTokenCount: z.number().int().default(0),
+  /** Speaker selection method for group chat */
+  speakerSelectionMethod: z
+    .enum(["llm", "heuristic", "round_robin"])
+    .default("llm"),
   /** Memory tool events tracking (for dynamic memory cycle gating) */
   memoryToolEvents: z
     .array(

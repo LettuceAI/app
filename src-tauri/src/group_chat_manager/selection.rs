@@ -363,6 +363,53 @@ pub fn heuristic_select_speaker(context: &GroupChatContext) -> Result<SelectionR
 }
 
 // ============================================================================
+// Round-Robin Selection
+// ============================================================================
+
+/// Select the next speaker using simple round-robin ordering.
+///
+/// Picks the next character in the character_ids list after the last speaker.
+/// If no one has spoken yet, picks the first character.
+pub fn round_robin_select_speaker(context: &GroupChatContext) -> Result<SelectionResult, String> {
+    let character_ids: &[String] = &context.session.character_ids;
+    if character_ids.is_empty() {
+        return Err("No characters in group".to_string());
+    }
+
+    // Find the last assistant message's speaker
+    let last_speaker = context
+        .recent_messages
+        .iter()
+        .rev()
+        .find(|m| m.role == "assistant")
+        .and_then(|m| m.speaker_character_id.as_ref());
+
+    let next_id = if let Some(last_id) = last_speaker {
+        // Find the index of the last speaker in character_ids
+        if let Some(idx) = character_ids.iter().position(|id| id == last_id) {
+            let next_idx = (idx + 1) % character_ids.len();
+            character_ids[next_idx].clone()
+        } else {
+            character_ids[0].clone()
+        }
+    } else {
+        character_ids[0].clone()
+    };
+
+    let name = context
+        .characters
+        .iter()
+        .find(|c| c.id == next_id)
+        .map(|c| c.name.clone())
+        .unwrap_or_else(|| "Unknown".to_string());
+
+    Ok(SelectionResult {
+        character_id: next_id,
+        reasoning: Some(format!("{} selected (round-robin)", name)),
+    })
+}
+
+// ============================================================================
 // Tool Call Parsing
 // ============================================================================
 
