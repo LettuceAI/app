@@ -3709,6 +3709,11 @@ pub async fn group_chat_regenerate(
             forced_id,
             Some("User forced character selection".to_string()),
         )
+    } else if let Some(speaker_id) = original_speaker.clone() {
+        (
+            speaker_id,
+            Some("Reroll: kept original speaker".to_string()),
+        )
     } else {
         let selection_result = tokio::select! {
             _ = &mut abort_rx => {
