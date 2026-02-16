@@ -63,6 +63,7 @@ export function GroupChatSettingsPage() {
     handleChangePersona,
     handleAddCharacter,
     handleRemoveCharacter,
+    handleChangeSpeakerSelectionMethod,
     getParticipationPercent,
     participationStats,
   } = useGroupChatSettingsController(groupSessionId, {
@@ -74,10 +75,6 @@ export function GroupChatSettingsPage() {
     session?.backgroundImagePath || "",
   );
   const [savingBackground, setSavingBackground] = useState(false);
-  const [speakerSelectionMethod, setSpeakerSelectionMethod] = useState<
-    "llm" | "heuristic" | "round_robin"
-  >(session?.speakerSelectionMethod ?? "llm");
-  const [savingSelectionMethod, setSavingSelectionMethod] = useState(false);
   const [showCloneOptions, setShowCloneOptions] = useState(false);
   const [showBranchOptions, setShowBranchOptions] = useState(false);
   const [cloning, setCloning] = useState(false);
@@ -96,12 +93,6 @@ export function GroupChatSettingsPage() {
     }
   }, [session?.backgroundImagePath]);
 
-  // Sync speakerSelectionMethod with session when it changes
-  React.useEffect(() => {
-    if (session?.speakerSelectionMethod) {
-      setSpeakerSelectionMethod(session.speakerSelectionMethod);
-    }
-  }, [session?.speakerSelectionMethod]);
 
   const handleBackgroundImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -122,23 +113,6 @@ export function GroupChatSettingsPage() {
         input.value = "";
         setSavingBackground(false);
       });
-  };
-
-  const handleSpeakerSelectionMethodChange = async (
-    method: "llm" | "heuristic" | "round_robin",
-  ) => {
-    if (!groupSessionId || method === speakerSelectionMethod) return;
-    setSavingSelectionMethod(true);
-    try {
-      setSpeakerSelectionMethod(method);
-      await storageBridge.groupSessionUpdateSpeakerSelectionMethod(groupSessionId, method);
-      reloadSession();
-    } catch (error) {
-      console.error("Failed to update speaker selection method:", error);
-      setSpeakerSelectionMethod(speakerSelectionMethod);
-    } finally {
-      setSavingSelectionMethod(false);
-    }
   };
 
   const handleRemoveBackground = async () => {
@@ -539,23 +513,23 @@ export function GroupChatSettingsPage() {
               ).map((option) => (
                 <button
                   key={option.value}
-                  onClick={() => handleSpeakerSelectionMethodChange(option.value)}
-                  disabled={savingSelectionMethod}
+                  onClick={() => handleChangeSpeakerSelectionMethod(option.value)}
+                  disabled={saving}
                   className={cn(
                     "relative flex flex-col items-center gap-1.5 p-3",
                     radius.lg,
                     "border text-center",
                     interactive.transition.fast,
-                    speakerSelectionMethod === option.value
+                    session.speakerSelectionMethod === option.value
                       ? "border-emerald-400/40 bg-emerald-400/10"
                       : "border-white/10 bg-[#0c0d13]/85 hover:border-white/20",
-                    savingSelectionMethod && "opacity-50",
+                    saving && "opacity-50",
                   )}
                 >
                   <option.icon
                     className={cn(
                       "h-5 w-5",
-                      speakerSelectionMethod === option.value
+                      session.speakerSelectionMethod === option.value
                         ? "text-emerald-300"
                         : "text-white/50",
                     )}
@@ -563,7 +537,7 @@ export function GroupChatSettingsPage() {
                   <div
                     className={cn(
                       "text-xs font-semibold",
-                      speakerSelectionMethod === option.value
+                      session.speakerSelectionMethod === option.value
                         ? "text-emerald-100"
                         : "text-white/80",
                     )}
@@ -575,9 +549,9 @@ export function GroupChatSettingsPage() {
               ))}
             </div>
             <p className={cn(typography.caption.size, "mt-2 text-white/40")}>
-              {speakerSelectionMethod === "llm"
+              {session.speakerSelectionMethod === "llm"
                 ? "Uses your default model to choose who speaks (costs tokens)"
-                : speakerSelectionMethod === "heuristic"
+                : session.speakerSelectionMethod === "heuristic"
                   ? "Uses participation balance and context clues (free)"
                   : "Characters take turns in order (free)"}
             </p>

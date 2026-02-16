@@ -177,6 +177,25 @@ export function useGroupChatSettingsController(
     [session, setUi],
   );
 
+  const handleChangeSpeakerSelectionMethod = useCallback(
+    async (method: "llm" | "heuristic" | "round_robin") => {
+      if (!session) return;
+      try {
+        setUi({ saving: true });
+        const updated = await storageBridge.groupSessionUpdateSpeakerSelectionMethod(
+          session.id,
+          method,
+        );
+        setSession(updated);
+      } catch (err) {
+        console.error("Failed to update speaker selection method:", err);
+      } finally {
+        setUi({ saving: false });
+      }
+    },
+    [session, setUi],
+  );
+
   const getParticipationPercent = useCallback(
     (characterId: string) => {
       if (!participationStats.length) return 0;
@@ -223,6 +242,7 @@ export function useGroupChatSettingsController(
     handleChangePersona,
     handleAddCharacter,
     handleRemoveCharacter,
+    handleChangeSpeakerSelectionMethod,
     getParticipationPercent,
   } as const;
 }
