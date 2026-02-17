@@ -5,6 +5,7 @@ mod content_filter;
 mod creation_helper;
 mod discovery;
 mod embedding_model;
+mod engine;
 mod error;
 mod group_chat_manager;
 mod image_generator;
@@ -480,6 +481,33 @@ pub fn run() {
             group_chat_manager::group_chat_get_selection_prompt,
             group_chat_manager::group_chat_generate_user_reply,
             group_chat_manager::group_chat_retry_dynamic_memory,
+            // Engine commands
+            engine::commands::engine_health,
+            engine::commands::engine_setup_status,
+            engine::commands::engine_setup_complete,
+            engine::commands::engine_config_llm,
+            engine::commands::engine_config_llm_default,
+            engine::commands::engine_config_engine,
+            engine::commands::engine_config_background,
+            engine::commands::engine_config_memory,
+            engine::commands::engine_config_safety,
+            engine::commands::engine_config_research,
+            engine::commands::engine_config_llm_delete,
+            engine::commands::engine_status,
+            engine::commands::engine_usage,
+            engine::commands::engine_get_config,
+            engine::commands::engine_characters_list,
+            engine::commands::engine_character_load,
+            engine::commands::engine_character_unload,
+            engine::commands::engine_character_activity,
+            engine::commands::engine_character_template,
+            engine::commands::engine_character_boost,
+            engine::commands::engine_character_create,
+            engine::commands::engine_character_full,
+            engine::commands::engine_character_update,
+            engine::commands::engine_character_delete_cmd,
+            engine::commands::engine_chat,
+            engine::commands::engine_chat_history,
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")

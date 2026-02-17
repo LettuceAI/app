@@ -70,6 +70,7 @@ fn get_all_provider_configs_internal() -> Vec<ProviderConfig> {
         ("groq", "Groq", "https://api.groq.com"),
         ("ollama", "Ollama (Local)", ""),
         ("lmstudio", "LM Studio (Local)", ""),
+        ("lettuce-engine", "Lettuce Engine", ""),
         ("custom", "Custom (OpenAI-format)", ""),
         ("custom-anthropic", "Custom (Anthropic-format)", ""),
     ];

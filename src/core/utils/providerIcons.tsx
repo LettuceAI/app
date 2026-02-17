@@ -1,4 +1,4 @@
-import { Settings, Wrench } from "lucide-react";
+import { Leaf, Settings, Wrench } from "lucide-react";
 
 import OpenAIIcon from "../../assets/openai_light.svg";
 import AnthropicIcon from "../../assets/anthropic_light.svg";
@@ -35,6 +35,7 @@ const ICON_MAP: Record<string, JSX.Element> = {
   ollama: <img src={OllamaIcon} alt="Ollama" className="h-6 w-6" />,
   lmstudio: <img src={LMStudioIcon} alt="LM Studio" className="h-6 w-6" />,
   llamacpp: <Wrench className="h-6 w-6 text-gray-500" />,
+  "lettuce-engine": <Leaf className="h-6 w-6 text-emerald-400" />,
   custom: <Settings className="h-6 w-6 text-gray-400" />,
   "custom-anthropic": <Settings className="h-6 w-6 text-gray-400" />,
 };

@@ -168,6 +168,7 @@ mod zai;
 
 mod custom;
 mod custom_anthropic;
+mod lettuce_engine;
 
 pub fn adapter_for(credential: &ProviderCredential) -> Box<dyn ProviderAdapter + Send + Sync> {
     match credential.provider_id.as_str() {
@@ -191,6 +192,7 @@ pub fn adapter_for(credential: &ProviderCredential) -> Box<dyn ProviderAdapter +
         "nvidia" | "nvidia-nim" => Box::new(nvidia::NvidiaAdapter),
         "qwen" => Box::new(qwen::QwenAdapter),
         "openrouter" => Box::new(openai::OpenRouterAdapter),
+        "lettuce-engine" => Box::new(lettuce_engine::LettuceEngineAdapter),
         _ => Box::new(openai::OpenAIAdapter),
     }
 }

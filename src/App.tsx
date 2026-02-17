@@ -66,6 +66,14 @@ import {
   GroupChatHistoryPage,
   GroupChatMemoriesPage,
 } from "./ui/pages/group-chats";
+import {
+  EngineHomePage,
+  EngineSetupWizard,
+  EngineCharacterCreate,
+  EngineChatPage,
+  EngineProvidersConfigPage,
+  EngineSettingsConfigPage,
+} from "./ui/pages/engine";
 
 import { CreateMenu, Tooltip, useFirstTimeTooltip } from "./ui/components";
 import { V1UpgradeToast } from "./ui/components/V1UpgradeToast";
@@ -236,7 +244,8 @@ function AppContent() {
   const isChatRoute = location.pathname === "/chat" || location.pathname === "/";
   // Group chat detail: /group-chats/:id, /group-chats/:id/settings, /group-chats/new (NOT /group-chats list)
   const isGroupChatDetailRoute = location.pathname.startsWith("/group-chats/");
-  const isChatDetailRoute = location.pathname.startsWith("/chat/") || isGroupChatDetailRoute;
+  const isEngineChatRoute = location.pathname.startsWith("/engine-chat/");
+  const isChatDetailRoute = location.pathname.startsWith("/chat/") || isGroupChatDetailRoute || isEngineChatRoute;
   const isSearchRoute = location.pathname === "/search";
   const isOnboardingRoute = useMemo(
     () =>
@@ -629,6 +638,12 @@ function AppContent() {
               <Route path="/settings/backup" element={<BackupRestorePage />} />
               <Route path="/settings/convert" element={<ConvertPage />} />
               <Route path="/settings/sync" element={<SyncPage />} />
+              <Route path="/settings/engine/:credentialId" element={<EngineHomePage />} />
+              <Route path="/settings/engine/:credentialId/setup" element={<EngineSetupWizard />} />
+              <Route path="/settings/engine/:credentialId/providers" element={<EngineProvidersConfigPage />} />
+              <Route path="/settings/engine/:credentialId/settings" element={<EngineSettingsConfigPage />} />
+              <Route path="/settings/engine/:credentialId/character/new" element={<EngineCharacterCreate />} />
+              <Route path="/engine-chat/:credentialId/:slug" element={<EngineChatPage />} />
               <Route path="/chat" element={<ChatPage />} />
               <Route path="/chat/:characterId" element={<ChatLayout />}>
                 <Route index element={<ChatConversationPage />} />

@@ -67,6 +67,23 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
         title: "Edit Character",
       },
       { match: (p) => p === "/settings/sync", title: "Sync" },
+      {
+        match: (p) => p.startsWith("/settings/engine/") && p.includes("/character/new"),
+        title: "New Character",
+      },
+      {
+        match: (p) => p.startsWith("/settings/engine/") && p.endsWith("/setup"),
+        title: "Engine Setup",
+      },
+      {
+        match: (p) => p.startsWith("/settings/engine/") && p.endsWith("/providers"),
+        title: "LLM Providers",
+      },
+      {
+        match: (p) => p.startsWith("/settings/engine/") && p.endsWith("/settings"),
+        title: "Engine Settings",
+      },
+      { match: (p) => p.startsWith("/settings/engine/"), title: "Lettuce Engine" },
       { match: (p) => p.startsWith("/settings"), title: "Settings" },
       { match: (p) => p.startsWith("/create"), title: "Create" },
       { match: (p) => p.startsWith("/onboarding"), title: "Setup" },

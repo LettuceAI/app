@@ -68,6 +68,17 @@ export const Routes = {
   groupChatSettings: (groupSessionId: string) => `/group-chats/${groupSessionId}/settings`,
   groupChatMemories: (groupSessionId: string) => `/group-chats/${groupSessionId}/memories`,
   groupChatHistory: "/group-chats/history",
+  // Engine routes
+  engineHome: (credentialId: string) => `/settings/engine/${credentialId}`,
+  engineSetup: (credentialId: string) => `/settings/engine/${credentialId}/setup`,
+  engineCharacterCreate: (credentialId: string) =>
+    `/settings/engine/${credentialId}/character/new`,
+  engineProvidersConfig: (credentialId: string) =>
+    `/settings/engine/${credentialId}/providers`,
+  engineSettingsConfig: (credentialId: string) =>
+    `/settings/engine/${credentialId}/settings`,
+  engineChat: (credentialId: string, slug: string) =>
+    `/engine-chat/${credentialId}/${slug}`,
   // Discovery routes
   discover: "/discover",
   discoverSearch: "/discover/search",
@@ -104,6 +115,31 @@ export const BACK_MAPPINGS: BackMapping[] = [
   { match: (p) => p === "/group-chats/history", target: Routes.groupChats },
   { match: (p) => p.startsWith("/group-chats/new"), target: Routes.groupChats },
   { match: (p) => p.match(/^\/group-chats\/[^/]+$/) !== null, target: Routes.groupChats },
+  // Engine back navigation
+  {
+    match: (p) => p.startsWith("/engine-chat/"),
+    target: "/settings/providers",
+  },
+  {
+    match: (p) => p.startsWith("/settings/engine/") && p.includes("/character/"),
+    target: "/settings/providers",
+  },
+  {
+    match: (p) => p.startsWith("/settings/engine/") && p.endsWith("/setup"),
+    target: "/settings/providers",
+  },
+  {
+    match: (p) => p.startsWith("/settings/engine/") && p.endsWith("/providers"),
+    target: "/settings/providers",
+  },
+  {
+    match: (p) => p.startsWith("/settings/engine/") && p.endsWith("/settings"),
+    target: "/settings/providers",
+  },
+  {
+    match: (p) => p.startsWith("/settings/engine/"),
+    target: "/settings/providers",
+  },
   // Discovery back navigation
   { match: (p) => p.startsWith("/discover/card/"), target: Routes.discover },
   { match: (p) => p.startsWith("/discover/browse"), target: Routes.discover },

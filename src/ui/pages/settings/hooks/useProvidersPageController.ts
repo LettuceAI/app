@@ -39,6 +39,7 @@ type ControllerReturn = {
   updateEditorProvider: (updates: Partial<ProviderCredential>) => void;
   handleSaveProvider: () => Promise<void>;
   handleDeleteProvider: (id: string) => Promise<void>;
+  dismissEngineSetup: () => void;
 };
 
 export function useProvidersPageController(): ControllerReturn {
@@ -155,15 +156,75 @@ export function useProvidersPageController(): ControllerReturn {
     dispatch({ type: "set_is_saving", payload: true });
 
     try {
+      const isEngineProvider = editorProvider.providerId === "lettuce-engine";
       const isLocalProvider = ["custom", "custom-anthropic", "ollama", "lmstudio"].includes(
         editorProvider.providerId,
       );
       const requiresVerification =
         !isLocalProvider &&
+        !isEngineProvider &&
         ["openai", "anthropic", "openrouter", "groq", "mistral"].includes(
           editorProvider.providerId,
         );
       const trimmedKey = apiKey.trim();
+
+      // Engine requires a base URL
+      if (isEngineProvider) {
+        const engineUrl = editorProvider.baseUrl?.trim().replace(/\/+$/, "");
+        if (!engineUrl) {
+          dispatch({
+            type: "set_validation_error",
+            payload: "Engine URL is required (e.g., http://localhost:8000)",
+          });
+          return;
+        }
+
+        // Health check
+        try {
+          await invoke("engine_health", {
+            baseUrl: engineUrl,
+            apiKey: trimmedKey || null,
+          });
+        } catch (error) {
+          dispatch({
+            type: "set_validation_error",
+            payload: `Cannot reach Engine: ${error instanceof Error ? error.message : String(error)}`,
+          });
+          return;
+        }
+
+        // Save the provider with normalized URL
+        const providerToSave: ProviderCredential = {
+          ...editorProvider,
+          baseUrl: engineUrl,
+          apiKey: trimmedKey || undefined,
+        } as ProviderCredential;
+        await addOrUpdateProviderCredential(providerToSave);
+        await reload();
+        dispatch({ type: "close_editor" });
+
+        // Check setup status
+        try {
+          const setupStatus = await invoke<{ needs_setup: boolean }>("engine_setup_status", {
+            baseUrl: engineUrl,
+            apiKey: trimmedKey || null,
+          });
+          dispatch({
+            type: "set_engine_setup_result",
+            payload: {
+              credentialId: editorProvider.id,
+              needsSetup: setupStatus.needs_setup,
+            },
+          });
+        } catch {
+          // If setup status fails, still navigate to home (user can retry)
+          dispatch({
+            type: "set_engine_setup_result",
+            payload: { credentialId: editorProvider.id, needsSetup: false },
+          });
+        }
+        return;
+      }
 
       const requiresBaseUrl = ["ollama", "lmstudio"].includes(editorProvider.providerId);
       if (requiresBaseUrl && !editorProvider.baseUrl?.trim()) {
@@ -252,6 +313,10 @@ export function useProvidersPageController(): ControllerReturn {
     [reload],
   );
 
+  const dismissEngineSetup = useCallback(() => {
+    dispatch({ type: "set_engine_setup_result", payload: null });
+  }, []);
+
   return {
     state,
     reload,
@@ -263,5 +328,6 @@ export function useProvidersPageController(): ControllerReturn {
     updateEditorProvider,
     handleSaveProvider,
     handleDeleteProvider,
+    dismissEngineSetup,
   };
 }

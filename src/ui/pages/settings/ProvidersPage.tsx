@@ -1,12 +1,13 @@
-import { Trash2, ChevronRight, Edit3, EthernetPort, Cpu, Volume2 } from "lucide-react";
+import { Trash2, ChevronRight, Edit3, EthernetPort, Cpu, Volume2, Leaf, Sparkles, LayoutDashboard } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 
 import { useProvidersPageController } from "./hooks/useProvidersPageController";
 import { VoicesPage } from "./VoicesPage";
 
 import type { ProviderCapabilitiesCamel } from "../../../core/providers/capabilities";
 import { getProviderIcon } from "../../../core/utils/providerIcons";
+import { Routes } from "../../navigation";
 
 import { BottomMenu, MenuButton } from "../../components/BottomMenu";
 import { cn, colors, interactive, radius } from "../../design-tokens";
@@ -26,6 +27,7 @@ export function ProvidersPage() {
   const audioTabId = `${tabsId}-audio-tab`;
   const llmPanelId = `${tabsId}-llm-panel`;
   const audioPanelId = `${tabsId}-audio-panel`;
+  const navigate = useNavigate();
   const {
     state: {
       providers,
@@ -37,6 +39,7 @@ export function ProvidersPage() {
       isDeleting,
       validationError,
       capabilities,
+      engineSetupResult,
     },
     openEditor,
     closeEditor,
@@ -46,6 +49,7 @@ export function ProvidersPage() {
     updateEditorProvider,
     handleSaveProvider,
     handleDeleteProvider,
+    dismissEngineSetup,
   } = useProvidersPageController();
 
   useLayoutEffect(() => {
@@ -61,12 +65,13 @@ export function ProvidersPage() {
     setSearchParams(nextParams, { replace: true });
   };
 
+  const isEngineProvider = !!editorProvider && editorProvider.providerId === "lettuce-engine";
   const isLocalProvider =
     !!editorProvider && ["ollama", "lmstudio"].includes(editorProvider.providerId);
   const isCustomProvider =
     !!editorProvider &&
     (editorProvider.providerId === "custom" || editorProvider.providerId === "custom-anthropic");
-  const showBaseUrl = !!editorProvider && (isLocalProvider || isCustomProvider);
+  const showBaseUrl = !!editorProvider && (isLocalProvider || isCustomProvider || isEngineProvider);
   const customConfig = (editorProvider?.config ?? {}) as Record<string, any>;
   const customFetchModelsEnabled = customConfig.fetchModelsEnabled === true;
   const customAuthMode = (customConfig.authMode ?? "header") as
@@ -74,7 +79,7 @@ export function ProvidersPage() {
     | "header"
     | "query"
     | "none";
-  const showApiKeyInput = !(isCustomProvider && customAuthMode === "none");
+  const showApiKeyInput = !(isCustomProvider && customAuthMode === "none") && !isEngineProvider;
   const visibleCapabilities = isMobile
     ? capabilities.filter((provider) => provider.id !== "llamacpp")
     : capabilities;
@@ -192,13 +197,26 @@ export function ProvidersPage() {
                     {capabilities.find((p) => p.id === selectedProvider.providerId)?.name}
                   </p>
                 </div>
-                <MenuButton
-                  icon={Edit3}
-                  title="Edit"
-                  description="Change provider settings"
-                  onClick={() => openEditor(selectedProvider)}
-                  color="from-indigo-500 to-blue-600"
-                />
+                {selectedProvider.providerId === "lettuce-engine" ? (
+                  <MenuButton
+                    icon={LayoutDashboard}
+                    title="Open Dashboard"
+                    description="View characters, usage, and settings"
+                    onClick={() => {
+                      setSelectedProvider(null);
+                      navigate(Routes.engineHome(selectedProvider.id));
+                    }}
+                    color="from-emerald-500 to-teal-600"
+                  />
+                ) : (
+                  <MenuButton
+                    icon={Edit3}
+                    title="Edit"
+                    description="Change provider settings"
+                    onClick={() => openEditor(selectedProvider)}
+                    color="from-indigo-500 to-blue-600"
+                  />
+                )}
                 <MenuButton
                   icon={Trash2}
                   title={isDeleting ? "Deleting..." : "Delete"}
@@ -322,8 +340,29 @@ export function ProvidersPage() {
                         if (validationError) setValidationError(null);
                       }}
                       placeholder={
-                        isLocalProvider ? "http://localhost:11434" : "https://api.provider.com"
+                        isEngineProvider
+                          ? "http://localhost:8000"
+                          : isLocalProvider
+                            ? "http://localhost:11434"
+                            : "https://api.provider.com"
                       }
+                      className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder-white/40 focus:border-white/30 focus:outline-none"
+                    />
+                  </div>
+                )}
+                {isEngineProvider && (
+                  <div>
+                    <label className="mb-1 block text-[11px] font-medium text-white/70">
+                      API Key (optional)
+                    </label>
+                    <input
+                      type="password"
+                      value={apiKey}
+                      onChange={(e) => {
+                        setApiKey(e.target.value);
+                        if (validationError) setValidationError(null);
+                      }}
+                      placeholder="Bearer token for auth"
                       className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder-white/40 focus:border-white/30 focus:outline-none"
                     />
                   </div>
@@ -759,6 +798,71 @@ export function ProvidersPage() {
           </BottomMenu>
         </>
       )}
+
+      {/* Engine Setup Bottom Sheet */}
+      <BottomMenu
+        isOpen={!!engineSetupResult}
+        onClose={dismissEngineSetup}
+        title="Lettuce Engine"
+      >
+        {engineSetupResult && (
+          <div className="space-y-4 pb-2">
+            {engineSetupResult.needsSetup ? (
+              <>
+                <div className="flex flex-col items-center gap-3 py-4">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-emerald-400/30 bg-emerald-500/15">
+                    <Sparkles className="h-7 w-7 text-emerald-300" />
+                  </div>
+                  <div className="text-center">
+                    <h3 className="text-base font-semibold text-white">New Engine Detected</h3>
+                    <p className="mt-1 text-sm text-white/60">
+                      Let's configure your AI character engine. This will take about 2 minutes.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    dismissEngineSetup();
+                    navigate(Routes.engineSetup(engineSetupResult.credentialId));
+                  }}
+                  className="w-full rounded-lg border border-emerald-400/40 bg-emerald-500/20 px-4 py-3 text-sm font-semibold text-emerald-100 transition hover:border-emerald-400/60 hover:bg-emerald-500/30"
+                >
+                  Start Setup
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="flex flex-col items-center gap-3 py-4">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-emerald-400/30 bg-emerald-500/15">
+                    <Leaf className="h-7 w-7 text-emerald-300" />
+                  </div>
+                  <div className="text-center">
+                    <h3 className="text-base font-semibold text-white">Engine Connected</h3>
+                    <p className="mt-1 text-sm text-white/60">
+                      Your Engine is ready. View your characters and usage dashboard.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    dismissEngineSetup();
+                    navigate(Routes.engineHome(engineSetupResult.credentialId));
+                  }}
+                  className="w-full rounded-lg border border-emerald-400/40 bg-emerald-500/20 px-4 py-3 text-sm font-semibold text-emerald-100 transition hover:border-emerald-400/60 hover:bg-emerald-500/30"
+                >
+                  Open Dashboard
+                </button>
+              </>
+            )}
+            <button
+              onClick={dismissEngineSetup}
+              className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-medium text-white/70 transition hover:border-white/20 hover:bg-white/10 hover:text-white"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+      </BottomMenu>
 
       <div
         className={cn(
