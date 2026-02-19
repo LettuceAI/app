@@ -589,38 +589,38 @@ const typeConfig = {
     feature: {
         label: "New",
         icon: Sparkles,
-        color: "text-emerald-300",
-        iconColor: "text-emerald-400",
-        bg: "bg-emerald-500/10",
+        color: "text-accent/80",
+        iconColor: "text-accent",
+        bg: "bg-accent/10",
         glow: "shadow-[0_0_20px_-5px_rgba(52,211,153,0.3)]",
-        gradient: "from-emerald-500/20 to-emerald-500/5"
+        gradient: "from-accent/20 to-accent/5"
     },
     improvement: {
         label: "Improved",
         icon: Zap,
-        color: "text-blue-300",
-        iconColor: "text-blue-400",
-        bg: "bg-blue-500/10",
+        color: "text-info/80",
+        iconColor: "text-info",
+        bg: "bg-info/10",
         glow: "shadow-[0_0_20px_-5px_rgba(59,130,246,0.3)]",
-        gradient: "from-blue-500/20 to-blue-500/5"
+        gradient: "from-info/20 to-info/5"
     },
     bugfix: {
         label: "Fixed",
         icon: Bug,
-        color: "text-amber-300",
-        iconColor: "text-amber-400",
-        bg: "bg-amber-500/10",
+        color: "text-warning/80",
+        iconColor: "text-warning",
+        bg: "bg-warning/10",
         glow: "shadow-[0_0_20px_-5px_rgba(245,158,11,0.3)]",
-        gradient: "from-amber-500/20 to-amber-500/5"
+        gradient: "from-warning/20 to-warning/5"
     },
     breaking: {
         label: "Breaking",
         icon: AlertTriangle,
-        color: "text-red-300",
-        iconColor: "text-red-400",
-        bg: "bg-red-500/10",
+        color: "text-danger/80",
+        iconColor: "text-danger",
+        bg: "bg-danger/10",
         glow: "shadow-[0_0_20px_-5px_rgba(239,68,68,0.3)]",
-        gradient: "from-red-500/20 to-red-500/5"
+        gradient: "from-danger/20 to-danger/5"
     }
 };
 
@@ -648,8 +648,8 @@ function ChangeGroup({ type, changes, defaultExpanded = true }: ChangeGroupProps
                 onClick={() => setExpanded(!expanded)}
                 className={cn(
                     "w-full flex items-center gap-3 px-4 py-3 rounded-xl",
-                    "bg-white/3 border border-white/6",
-                    "hover:bg-white/5 transition-all duration-200",
+                    "bg-fg/3 border border-fg/6",
+                    "hover:bg-fg/5 transition-all duration-200",
                     "group"
                 )}
             >
@@ -660,7 +660,7 @@ function ChangeGroup({ type, changes, defaultExpanded = true }: ChangeGroupProps
                     <Icon className={cn("w-4 h-4", config.iconColor)} />
                 </div>
                 <div className="flex-1 flex items-center gap-2">
-                    <span className={cn(typography.h3.size, typography.h3.weight, "text-white")}>
+                    <span className={cn(typography.h3.size, typography.h3.weight, "text-fg")}>
                         {config.label}
                     </span>
                     <span className={cn(
@@ -674,7 +674,7 @@ function ChangeGroup({ type, changes, defaultExpanded = true }: ChangeGroupProps
                     animate={{ rotate: expanded ? 90 : 0 }}
                     transition={{ duration: 0.2 }}
                 >
-                    <ChevronRight className="w-4 h-4 text-white/40 group-hover:text-white/60 transition-colors" />
+                    <ChevronRight className="w-4 h-4 text-fg/40 group-hover:text-fg/60 transition-colors" />
                 </motion.div>
             </button>
 
@@ -709,7 +709,7 @@ function ChangeGroup({ type, changes, defaultExpanded = true }: ChangeGroupProps
                                     )} />
                                     <p className={cn(
                                         typography.body.size,
-                                        "text-white/80 leading-relaxed"
+                                        "text-fg/80 leading-relaxed"
                                     )}>
                                         {change.description}
                                     </p>
@@ -761,7 +761,7 @@ export function ChangelogPage() {
     };
 
     return (
-        <div className="flex h-full flex-col pb-16 text-gray-200">
+        <div className="flex h-full flex-col pb-16 text-fg/90">
             <main className="flex-1 overflow-y-auto">
                 {/* Hero Header */}
                 <div className="relative px-4 pt-4 pb-6">
@@ -779,8 +779,8 @@ export function ChangelogPage() {
 
                         {/* Version Number */}
                         <div className="flex items-baseline gap-1 mb-3">
-                            <span className="text-white/30 text-2xl font-bold">v</span>
-                            <h1 className="text-4xl font-black text-white tracking-tight">
+                            <span className="text-fg/30 text-2xl font-bold">v</span>
+                            <h1 className="text-4xl font-black text-fg tracking-tight">
                                 {selectedEntry.version}
                                 {isLatest && (
                                     <motion.span
@@ -788,7 +788,7 @@ export function ChangelogPage() {
                                         animate={{ scale: 1, opacity: 1 }}
                                         className={cn(
                                             "inline-flex items-center ml-2 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider",
-                                            "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                                            "bg-accent/20 text-accent/80 border border-accent/30"
                                         )}
                                     >
                                         Latest
@@ -798,7 +798,7 @@ export function ChangelogPage() {
                         </div>
 
                         {/* Meta info */}
-                        <div className="flex flex-wrap items-center gap-4 text-white/40">
+                        <div className="flex flex-wrap items-center gap-4 text-fg/40">
                             <div className="flex items-center gap-1.5">
                                 <Calendar className="w-3.5 h-3.5" />
                                 <span className="text-xs font-medium">
@@ -818,10 +818,10 @@ export function ChangelogPage() {
                             {groupedChanges.feature.length > 0 && (
                                 <div className={cn(
                                     "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg",
-                                    "bg-emerald-500/10 border border-emerald-500/20"
+                                    "bg-accent/10 border border-accent/20"
                                 )}>
-                                    <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-                                    <span className="text-xs font-semibold text-emerald-300">
+                                    <Sparkles className="w-3.5 h-3.5 text-accent" />
+                                    <span className="text-xs font-semibold text-accent/80">
                                         {groupedChanges.feature.length} new
                                     </span>
                                 </div>
@@ -829,10 +829,10 @@ export function ChangelogPage() {
                             {groupedChanges.improvement.length > 0 && (
                                 <div className={cn(
                                     "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg",
-                                    "bg-blue-500/10 border border-blue-500/20"
+                                    "bg-info/10 border border-info/20"
                                 )}>
-                                    <Zap className="w-3.5 h-3.5 text-blue-400" />
-                                    <span className="text-xs font-semibold text-blue-300">
+                                    <Zap className="w-3.5 h-3.5 text-info" />
+                                    <span className="text-xs font-semibold text-info/80">
                                         {groupedChanges.improvement.length} improved
                                     </span>
                                 </div>
@@ -840,10 +840,10 @@ export function ChangelogPage() {
                             {groupedChanges.bugfix.length > 0 && (
                                 <div className={cn(
                                     "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg",
-                                    "bg-amber-500/10 border border-amber-500/20"
+                                    "bg-warning/10 border border-warning/20"
                                 )}>
-                                    <Bug className="w-3.5 h-3.5 text-amber-400" />
-                                    <span className="text-xs font-semibold text-amber-300">
+                                    <Bug className="w-3.5 h-3.5 text-warning" />
+                                    <span className="text-xs font-semibold text-warning/80">
                                         {groupedChanges.bugfix.length} fixed
                                     </span>
                                 </div>
@@ -851,10 +851,10 @@ export function ChangelogPage() {
                             {groupedChanges.breaking.length > 0 && (
                                 <div className={cn(
                                     "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg",
-                                    "bg-red-500/10 border border-red-500/20"
+                                    "bg-danger/10 border border-danger/20"
                                 )}>
-                                    <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
-                                    <span className="text-xs font-semibold text-red-300">
+                                    <AlertTriangle className="w-3.5 h-3.5 text-danger" />
+                                    <span className="text-xs font-semibold text-danger/80">
                                         {groupedChanges.breaking.length} breaking
                                     </span>
                                 </div>
@@ -884,15 +884,15 @@ export function ChangelogPage() {
                         rel="noopener noreferrer"
                         className={cn(
                             "flex items-center justify-center gap-2 w-full py-3 rounded-xl",
-                            "bg-white/3 border border-white/6",
-                            "hover:bg-white/6 hover:border-white/10",
+                            "bg-fg/3 border border-fg/6",
+                            "hover:bg-fg/6 hover:border-fg/10",
                             "transition-all duration-200 group"
                         )}
                     >
-                        <span className="text-sm text-white/50 group-hover:text-white/70 transition-colors">
+                        <span className="text-sm text-fg/50 group-hover:text-fg/70 transition-colors">
                             Follow development on GitHub
                         </span>
-                        <ArrowRight className="w-4 h-4 text-white/30 group-hover:text-white/50 group-hover:translate-x-0.5 transition-all" />
+                        <ArrowRight className="w-4 h-4 text-fg/30 group-hover:text-fg/50 group-hover:translate-x-0.5 transition-all" />
                     </a>
                 </motion.div>
             </main>
@@ -921,21 +921,21 @@ export function ChangelogPage() {
                                 className={cn(
                                     "group relative flex w-full items-start gap-3 rounded-xl px-4 py-3.5 text-left transition-all duration-200",
                                     isSelected
-                                        ? "bg-emerald-500/10 border border-emerald-500/30"
-                                        : "bg-white/2 border border-white/4 hover:bg-white/5 hover:border-white/8"
+                                        ? "bg-accent/10 border border-accent/30"
+                                        : "bg-fg/2 border border-fg/4 hover:bg-fg/5 hover:border-fg/8"
                                 )}
                             >
                                 {/* Timeline dot */}
                                 <div className="flex flex-col items-center pt-1.5">
                                     <div className={cn(
                                         "w-2.5 h-2.5 rounded-full",
-                                        isSelected ? "bg-emerald-400" : "bg-white/20"
+                                        isSelected ? "bg-accent" : "bg-fg/20"
                                     )} />
                                     {idx < changelog.length - 1 && (
                                         <div className={cn(
                                             "w-px flex-1 mt-2 min-h-5",
                                             "bg-linear-to-b",
-                                            isSelected ? "from-emerald-400/40 to-transparent" : "from-white/10 to-transparent"
+                                            isSelected ? "from-accent/40 to-transparent" : "from-fg/10 to-transparent"
                                         )} />
                                     )}
                                 </div>
@@ -944,14 +944,14 @@ export function ChangelogPage() {
                                     <div className="flex items-center gap-2 mb-1">
                                         <span className={cn(
                                             "text-base font-bold",
-                                            isSelected ? "text-emerald-200" : "text-white"
+                                            isSelected ? "text-accent/80" : "text-fg"
                                         )}>
                                             v{entry.version}
                                         </span>
                                         {idx === 0 && (
                                             <span className={cn(
                                                 "px-1.5 rounded text-[9px] font-bold uppercase",
-                                                "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                                                "bg-accent/20 text-accent/80 border border-accent/30"
                                             )}>
                                                 Latest
                                             </span>
@@ -960,7 +960,7 @@ export function ChangelogPage() {
 
                                     <div className={cn(
                                         "text-[11px] mb-2",
-                                        isSelected ? "text-emerald-300/60" : "text-white/40"
+                                        isSelected ? "text-accent/80/60" : "text-fg/40"
                                     )}>
                                         {formatDate(entry.date)}
                                     </div>
@@ -968,22 +968,22 @@ export function ChangelogPage() {
                                     {/* Mini stats */}
                                     <div className="flex flex-wrap gap-1.5">
                                         {featureCount > 0 && (
-                                            <span className="flex items-center gap-1 text-[10px] text-emerald-300/70">
+                                            <span className="flex items-center gap-1 text-[10px] text-accent/80/70">
                                                 <Sparkles className="w-3 h-3" />{featureCount}
                                             </span>
                                         )}
                                         {improvementCount > 0 && (
-                                            <span className="flex items-center gap-1 text-[10px] text-blue-300/70">
+                                            <span className="flex items-center gap-1 text-[10px] text-info/70">
                                                 <Zap className="w-3 h-3" />{improvementCount}
                                             </span>
                                         )}
                                         {bugfixCount > 0 && (
-                                            <span className="flex items-center gap-1 text-[10px] text-amber-300/70">
+                                            <span className="flex items-center gap-1 text-[10px] text-warning/80/70">
                                                 <Bug className="w-3 h-3" />{bugfixCount}
                                             </span>
                                         )}
                                         {breakingCount > 0 && (
-                                            <span className="flex items-center gap-1 text-[10px] text-red-300/70">
+                                            <span className="flex items-center gap-1 text-[10px] text-danger/80/70">
                                                 <AlertTriangle className="w-3 h-3" />{breakingCount}
                                             </span>
                                         )}
@@ -992,8 +992,8 @@ export function ChangelogPage() {
 
                                 {isSelected && (
                                     <div className="pt-1">
-                                        <div className="w-5 h-5 rounded-full bg-emerald-500/20 flex items-center justify-center">
-                                            <div className="w-2 h-2 rounded-full bg-emerald-400" />
+                                        <div className="w-5 h-5 rounded-full bg-accent/20 flex items-center justify-center">
+                                            <div className="w-2 h-2 rounded-full bg-accent" />
                                         </div>
                                     </div>
                                 )}

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Volume2, Play, Smartphone } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Volume2, Play, Smartphone, Palette, ChevronRight } from "lucide-react";
 import { type as getPlatform } from "@tauri-apps/plugin-os";
 import { impactFeedback } from "@tauri-apps/plugin-haptics";
 import { readSettings, saveAdvancedSettings } from "../../../core/storage/repo";
@@ -46,6 +47,7 @@ function percentToVolume(value: number): number {
 }
 
 export function AccessibilityPage() {
+  const navigate = useNavigate();
   const [accessibility, setAccessibility] = useState<AccessibilitySettings>(
     createDefaultAccessibilitySettings(),
   );
@@ -143,7 +145,7 @@ export function AccessibilityPage() {
     <div className="flex h-full flex-col pb-16">
       <section className="flex-1 overflow-y-auto px-3 pt-3 space-y-6">
         <div>
-          <h2 className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-white/35">
+          <h2 className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-fg/35">
             Sound Feedback
           </h2>
           <div className="space-y-3">
@@ -155,8 +157,8 @@ export function AccessibilityPage() {
                   className={cn(
                     "rounded-xl border px-4 py-3",
                     sound.enabled
-                      ? "border-emerald-400/25 bg-white/6"
-                      : "border-white/10 bg-white/5",
+                      ? "border-accent/25 bg-fg/6"
+                      : "border-fg/10 bg-fg/5",
                   )}
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -165,17 +167,17 @@ export function AccessibilityPage() {
                         className={cn(
                           "flex h-8 w-8 shrink-0 items-center justify-center rounded-full border",
                           sound.enabled
-                            ? "border-emerald-400/40 bg-emerald-500/15"
-                            : "border-white/10 bg-white/10",
+                            ? "border-accent/40 bg-accent/15"
+                            : "border-fg/10 bg-fg/10",
                         )}
                       >
-                        <Volume2 className="h-4 w-4 text-white/70" />
+                        <Volume2 className="h-4 w-4 text-fg/70" />
                       </div>
                       <div>
-                        <div className="text-sm font-medium text-white">
+                        <div className="text-sm font-medium text-fg">
                           {SOUND_LABELS[key].title}
                         </div>
-                        <div className="mt-0.5 text-[11px] text-white/45">
+                        <div className="mt-0.5 text-[11px] text-fg/45">
                           {SOUND_LABELS[key].description}
                         </div>
                       </div>
@@ -194,12 +196,12 @@ export function AccessibilityPage() {
                         htmlFor={`accessibility-${key}-enabled`}
                         className={cn(
                           "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-all duration-200 ease-in-out",
-                          sound.enabled ? "bg-emerald-500" : "bg-white/20",
+                          sound.enabled ? "bg-accent" : "bg-fg/20",
                         )}
                       >
                         <span
                           className={cn(
-                            "inline-block h-5 w-5 transform rounded-full bg-white transition duration-200 ease-in-out",
+                            "inline-block h-5 w-5 transform rounded-full bg-fg transition duration-200 ease-in-out",
                             sound.enabled ? "translate-x-5" : "translate-x-0",
                           )}
                         />
@@ -217,20 +219,20 @@ export function AccessibilityPage() {
                         const nextVolume = percentToVolume(Number(event.target.value));
                         updateSound(key, (current) => ({ ...current, volume: nextVolume }));
                       }}
-                      className="flex-1 accent-emerald-400"
+                      className="flex-1 accent-accent"
                     />
-                    <span className="w-10 text-right text-[11px] text-white/50">
+                    <span className="w-10 text-right text-[11px] text-fg/50">
                       {volumeToPercent(sound.volume)}%
                     </span>
                     <button
                       type="button"
                       onClick={() => handleTest(key)}
                       className={cn(
-                        "flex h-8 items-center gap-1.5 px-3 text-xs font-medium text-white/80",
+                        "flex h-8 items-center gap-1.5 px-3 text-xs font-medium text-fg/80",
                         radius.full,
-                        "border border-white/15 bg-white/5",
+                        "border border-fg/15 bg-fg/5",
                         interactive.transition.fast,
-                        "hover:border-white/25 hover:bg-white/10",
+                        "hover:border-fg/25 hover:bg-fg/10",
                       )}
                     >
                       <Play className="h-3.5 w-3.5" />
@@ -245,7 +247,7 @@ export function AccessibilityPage() {
 
         {isMobile && (
           <div>
-            <h2 className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-white/35">
+            <h2 className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-fg/35">
               Haptic Feedback
             </h2>
             <div className="space-y-4">
@@ -253,8 +255,8 @@ export function AccessibilityPage() {
                 className={cn(
                   "rounded-xl border px-4 py-4",
                   accessibility.haptics
-                    ? "border-emerald-400/25 bg-white/6"
-                    : "border-white/10 bg-white/5",
+                    ? "border-accent/25 bg-fg/6"
+                    : "border-fg/10 bg-fg/5",
                 )}
               >
                 <div className="flex items-start justify-between gap-3">
@@ -263,15 +265,15 @@ export function AccessibilityPage() {
                       className={cn(
                         "flex h-8 w-8 shrink-0 items-center justify-center rounded-full border",
                         accessibility.haptics
-                          ? "border-emerald-400/40 bg-emerald-500/15"
-                          : "border-white/10 bg-white/10",
+                          ? "border-accent/40 bg-accent/15"
+                          : "border-fg/10 bg-fg/10",
                       )}
                     >
-                      <Smartphone className="h-4 w-4 text-white/70" />
+                      <Smartphone className="h-4 w-4 text-fg/70" />
                     </div>
                     <div>
-                      <div className="text-sm font-medium text-white">Vibrate on Chat</div>
-                      <div className="mt-0.5 text-[11px] text-white/45">
+                      <div className="text-sm font-medium text-fg">Vibrate on Chat</div>
+                      <div className="mt-0.5 text-[11px] text-fg/45">
                         Short vibration pulses while the assistant is typing
                       </div>
                     </div>
@@ -288,12 +290,12 @@ export function AccessibilityPage() {
                       htmlFor="accessibility-haptics-enabled"
                       className={cn(
                         "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-all duration-200 ease-in-out",
-                        accessibility.haptics ? "bg-emerald-500" : "bg-white/20",
+                        accessibility.haptics ? "bg-accent" : "bg-fg/20",
                       )}
                     >
                       <span
                         className={cn(
-                          "inline-block h-5 w-5 transform rounded-full bg-white transition duration-200 ease-in-out",
+                          "inline-block h-5 w-5 transform rounded-full bg-fg transition duration-200 ease-in-out",
                           accessibility.haptics ? "translate-x-5" : "translate-x-0",
                         )}
                       />
@@ -303,7 +305,7 @@ export function AccessibilityPage() {
 
                 {accessibility.haptics && (
                   <div className="mt-3">
-                    <div className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-white/30">
+                    <div className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-fg/30">
                       Intensity
                     </div>
                     <div className="grid grid-cols-5 gap-1.5">
@@ -315,8 +317,8 @@ export function AccessibilityPage() {
                           className={cn(
                             "flex flex-col items-center justify-center rounded-lg border py-2.5 transition-all",
                             accessibility.hapticIntensity === opt.value
-                              ? "border-emerald-400/50 bg-emerald-400/10 text-emerald-400"
-                              : "border-white/5 bg-white/5 text-white/40 hover:bg-white/10",
+                              ? "border-accent/50 bg-accent/10 text-accent"
+                              : "border-fg/5 bg-fg/5 text-fg/40 hover:bg-fg/10",
                           )}
                         >
                           <span className="text-[10px] font-medium">{opt.label}</span>
@@ -330,9 +332,36 @@ export function AccessibilityPage() {
           </div>
         )}
 
+        <div>
+          <h2 className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-fg/35">
+            Appearance
+          </h2>
+          <button
+            type="button"
+            onClick={() => navigate("/settings/accessibility/colors")}
+            className={cn(
+              "group flex w-full items-center gap-3 rounded-xl border px-4 py-3.5",
+              "border-fg/10 bg-fg/5",
+              interactive.transition.fast,
+              "hover:border-fg/20 hover:bg-fg/10",
+            )}
+          >
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-fg/10 bg-fg/10">
+              <Palette className="h-4 w-4 text-fg/70" />
+            </div>
+            <div className="flex-1 text-left">
+              <div className="text-sm font-medium text-fg">Custom Colors</div>
+              <div className="mt-0.5 text-[11px] text-fg/45">
+                Personalize the app's color scheme
+              </div>
+            </div>
+            <ChevronRight className="h-4 w-4 shrink-0 text-fg/25 transition-colors group-hover:text-fg/50" />
+          </button>
+        </div>
+
         <div
           className={cn(
-            "rounded-xl border px-4 py-3 text-[11px] text-white/45",
+            "rounded-xl border px-4 py-3 text-[11px] text-fg/45",
             colors.glass.subtle,
           )}
         >

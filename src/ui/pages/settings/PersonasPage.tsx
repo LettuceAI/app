@@ -20,13 +20,13 @@ const PersonaAvatar = ({ persona }: { persona: Persona }) => {
   return (
     <div
       className={`relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border ${
-        persona.isDefault ? "border-emerald-400/40 bg-emerald-400/20" : "border-white/15 bg-white/8"
+        persona.isDefault ? "border-accent/40 bg-accent/20" : "border-fg/15 bg-fg/8"
       }`}
     >
       {avatarDataUrl ? (
         <AvatarImage src={avatarDataUrl} alt={persona.title} crop={persona.avatarCrop} applyCrop />
       ) : (
-        <User className={`h-5 w-5 ${persona.isDefault ? "text-emerald-200" : "text-white/70"}`} />
+        <User className={`h-5 w-5 ${persona.isDefault ? "text-accent/80" : "text-fg/70"}`} />
       )}
     </div>
   );
@@ -34,12 +34,12 @@ const PersonaAvatar = ({ persona }: { persona: Persona }) => {
 const PersonaSkeleton = () => (
   <div className="space-y-3">
     {[1, 2, 3].map((i) => (
-      <div key={i} className="rounded-xl border border-white/10 bg-[#0b0c12]/90 px-4 py-3">
+      <div key={i} className="rounded-xl border border-fg/10 bg-surface/90 px-4 py-3">
         <div className="flex items-center gap-3">
-          <div className="h-10 w-10 animate-pulse rounded-lg bg-white/10" />
+          <div className="h-10 w-10 animate-pulse rounded-lg bg-fg/10" />
           <div className="flex-1 space-y-2">
-            <div className="h-4 w-24 animate-pulse rounded bg-white/10" />
-            <div className="h-3 w-40 animate-pulse rounded bg-white/10" />
+            <div className="h-4 w-24 animate-pulse rounded bg-fg/10" />
+            <div className="h-3 w-40 animate-pulse rounded bg-fg/10" />
           </div>
         </div>
       </div>
@@ -49,14 +49,14 @@ const PersonaSkeleton = () => (
 
 const EmptyState = ({ onCreate }: { onCreate: () => void }) => (
   <div className="flex h-64 flex-col items-center justify-center">
-    <User className="mb-3 h-12 w-12 text-white/20" />
-    <h3 className="mb-1 text-lg font-medium text-white">No personas yet</h3>
-    <p className="mb-4 text-center text-sm text-white/50">
+    <User className="mb-3 h-12 w-12 text-fg/20" />
+    <h3 className="mb-1 text-lg font-medium text-fg">No personas yet</h3>
+    <p className="mb-4 text-center text-sm text-fg/50">
       Create a persona to define how the AI should address you
     </p>
     <button
       onClick={onCreate}
-      className="rounded-full border border-emerald-400/40 bg-emerald-400/20 px-6 py-2 text-sm font-medium text-emerald-100 transition hover:bg-emerald-400/30"
+      className="rounded-full border border-accent/40 bg-accent/20 px-6 py-2 text-sm font-medium text-accent/90 transition hover:bg-accent/30"
     >
       Create Persona
     </button>
@@ -98,7 +98,7 @@ export function PersonasPage() {
   const defaultPersona = personas.find((p) => p.isDefault);
 
   return (
-    <div className="flex h-full flex-col pb-16 text-gray-200">
+    <div className="flex h-full flex-col pb-16 text-fg/90">
       <main className="flex-1 overflow-y-auto px-4 pt-4">
         {loading ? (
           <PersonaSkeleton />
@@ -108,12 +108,12 @@ export function PersonasPage() {
           <div className="space-y-3">
             {/* Default Persona Indicator */}
             {defaultPersona && (
-              <div className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 p-3">
+              <div className="rounded-xl border border-accent/30 bg-accent/10 p-3">
                 <div className="flex items-center gap-2">
-                  <Star className="h-4 w-4 fill-emerald-400 text-emerald-400" />
+                  <Star className="h-4 w-4 fill-accent text-accent" />
                   <div className="flex-1">
-                    <div className="text-sm font-medium text-emerald-200">Default Persona</div>
-                    <div className="text-xs text-emerald-300/70">{defaultPersona.title}</div>
+                    <div className="text-sm font-medium text-accent/80">Default Persona</div>
+                    <div className="text-xs text-accent/70">{defaultPersona.title}</div>
                   </div>
                 </div>
               </div>
@@ -127,14 +127,14 @@ export function PersonasPage() {
                   onClick={() => setSelectedPersona(persona)}
                   className={`group relative flex w-full items-center gap-3 overflow-hidden rounded-xl border px-4 py-3 text-left transition-all duration-200 active:scale-[0.995] ${
                     persona.isDefault
-                      ? "border-emerald-400/40 bg-emerald-400/10 hover:border-emerald-400/60 hover:bg-emerald-400/15"
-                      : "border-white/10 bg-[#0b0c12]/90 hover:border-white/25 hover:bg-[#0c0d13]/95"
+                      ? "border-accent/40 bg-accent/10 hover:border-accent/60 hover:bg-accent/15"
+                      : "border-fg/10 bg-surface/90 hover:border-fg/25 hover:bg-surface/95"
                   }`}
                 >
                   <div
                     className={cn(
                       "absolute inset-y-0 right-0 w-1/4 transition",
-                      "bg-linear-to-l from-purple-500/10 via-transparent to-transparent opacity-0 group-hover:opacity-100",
+                      "bg-linear-to-l from-secondary/10 via-transparent to-transparent opacity-0 group-hover:opacity-100",
                     )}
                   />
 
@@ -142,19 +142,19 @@ export function PersonasPage() {
 
                   <div className="relative min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <h3 className="truncate text-sm font-semibold text-white">{persona.title}</h3>
+                      <h3 className="truncate text-sm font-semibold text-fg">{persona.title}</h3>
                       {persona.isDefault && (
-                        <Star className="h-3 w-3 shrink-0 fill-emerald-400 text-emerald-400" />
+                        <Star className="h-3 w-3 shrink-0 fill-accent text-accent" />
                       )}
                     </div>
-                    <p className="line-clamp-1 text-xs text-gray-400">{persona.description}</p>
+                    <p className="line-clamp-1 text-xs text-fg/60">{persona.description}</p>
                   </div>
 
                   <span
                     className={`relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition ${
                       persona.isDefault
-                        ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300 group-hover:border-emerald-400/50"
-                        : "border-white/10 bg-white/5 text-white/70 group-hover:border-white/25 group-hover:text-white"
+                        ? "border-accent/30 bg-accent/10 text-accent/80 group-hover:border-accent/50"
+                        : "border-fg/10 bg-fg/5 text-fg/70 group-hover:border-fg/25 group-hover:text-fg"
                     }`}
                   >
                     <ChevronRight size={16} />
@@ -176,32 +176,32 @@ export function PersonasPage() {
           <div className="space-y-2">
             <button
               onClick={() => handleEditPersona(selectedPersona)}
-              className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-left transition hover:border-white/20 hover:bg-white/10"
+              className="flex w-full items-center gap-3 rounded-xl border border-fg/10 bg-fg/5 px-4 py-3 text-left transition hover:border-fg/20 hover:bg-fg/10"
             >
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/10">
-                <Edit2 className="h-4 w-4 text-white/70" />
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-fg/10 bg-fg/10">
+                <Edit2 className="h-4 w-4 text-fg/70" />
               </div>
-              <span className="text-sm font-medium text-white">Edit Persona</span>
+              <span className="text-sm font-medium text-fg">Edit Persona</span>
             </button>
 
             <button
               onClick={() => void handleSetDefault(selectedPersona)}
-              className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-left transition hover:border-white/20 hover:bg-white/10"
+              className="flex w-full items-center gap-3 rounded-xl border border-fg/10 bg-fg/5 px-4 py-3 text-left transition hover:border-fg/20 hover:bg-fg/10"
             >
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/10">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-fg/10 bg-fg/10">
                 <Star
                   className={`h-4 w-4 ${
                     selectedPersona.isDefault
-                      ? "fill-emerald-400 text-emerald-400"
-                      : "text-white/70"
+                      ? "fill-accent text-accent"
+                      : "text-fg/70"
                   }`}
                 />
               </div>
               <div className="flex-1">
-                <span className="text-sm font-medium text-white">
+                <span className="text-sm font-medium text-fg">
                   {selectedPersona.isDefault ? "Unset as Default" : "Set as Default"}
                 </span>
-                <p className="text-xs text-white/50">
+                <p className="text-xs text-fg/50">
                   {selectedPersona.isDefault
                     ? "Remove default status"
                     : "Use this for all new chats"}
@@ -212,16 +212,16 @@ export function PersonasPage() {
             <button
               onClick={handleExport}
               disabled={exporting}
-              className="flex w-full items-center gap-3 rounded-xl border border-blue-400/30 bg-blue-400/10 px-4 py-3 text-left transition hover:border-blue-400/50 hover:bg-blue-400/20 disabled:opacity-50"
+              className="flex w-full items-center gap-3 rounded-xl border border-info/30 bg-info/10 px-4 py-3 text-left transition hover:border-info/50 hover:bg-info/20 disabled:opacity-50"
             >
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-blue-400/30 bg-blue-400/20">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-info/30 bg-info/20">
                 {exporting ? (
-                  <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
+                  <Loader2 className="h-4 w-4 animate-spin text-info" />
                 ) : (
-                  <Download className="h-4 w-4 text-blue-400" />
+                  <Download className="h-4 w-4 text-info" />
                 )}
               </div>
-              <span className="text-sm font-medium text-blue-300">
+              <span className="text-sm font-medium text-info/80">
                 {exporting ? "Exporting..." : "Export Persona"}
               </span>
             </button>
@@ -230,12 +230,12 @@ export function PersonasPage() {
               onClick={() => {
                 setShowDeleteConfirm(true);
               }}
-              className="flex w-full items-center gap-3 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-left transition hover:border-red-500/50 hover:bg-red-500/20"
+              className="flex w-full items-center gap-3 rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-left transition hover:border-danger/50 hover:bg-danger/20"
             >
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-red-500/30 bg-red-500/20">
-                <Trash2 className="h-4 w-4 text-red-400" />
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-danger/30 bg-danger/20">
+                <Trash2 className="h-4 w-4 text-danger" />
               </div>
-              <span className="text-sm font-medium text-red-300">Delete Persona</span>
+              <span className="text-sm font-medium text-danger/80">Delete Persona</span>
             </button>
           </div>
         )}
@@ -248,7 +248,7 @@ export function PersonasPage() {
         title="Delete Persona?"
       >
         <div className="space-y-4">
-          <p className="text-sm text-white/70">
+          <p className="text-sm text-fg/70">
             Are you sure you want to delete "{selectedPersona?.title}"? This action cannot be
             undone.
           </p>
@@ -256,14 +256,14 @@ export function PersonasPage() {
             <button
               onClick={() => setShowDeleteConfirm(false)}
               disabled={deleting}
-              className="flex-1 rounded-xl border border-white/10 bg-white/5 py-3 text-sm font-medium text-white transition hover:border-white/20 hover:bg-white/10 disabled:opacity-50"
+              className="flex-1 rounded-xl border border-fg/10 bg-fg/5 py-3 text-sm font-medium text-fg transition hover:border-fg/20 hover:bg-fg/10 disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               onClick={() => void handleDelete()}
               disabled={deleting}
-              className="flex-1 rounded-xl border border-red-500/30 bg-red-500/20 py-3 text-sm font-medium text-red-300 transition hover:bg-red-500/30 disabled:opacity-50"
+              className="flex-1 rounded-xl border border-danger/30 bg-danger/20 py-3 text-sm font-medium text-danger/80 transition hover:bg-danger/30 disabled:opacity-50"
             >
               {deleting ? "Deleting..." : "Delete"}
             </button>

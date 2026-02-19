@@ -284,7 +284,7 @@ export function EmbeddingDownloadPage() {
         >
           {/* Header */}
           <div className="text-center">
-            <h1 className="text-2xl font-bold text-white">
+            <h1 className="text-2xl font-bold text-fg">
               {showCapacitySelection &&
                 (isUpgrade
                   ? `Upgrade to ${downloadVersionLabel} Embedding Model`
@@ -298,12 +298,12 @@ export function EmbeddingDownloadPage() {
               {!showCapacitySelection && testStatus === "passed" && "Test Passed!"}
               {!showCapacitySelection && testStatus === "failed" && "Test Failed"}
             </h1>
-            <p className="mt-2 text-sm text-white/60">{headerDescription}</p>
+            <p className="mt-2 text-sm text-fg/60">{headerDescription}</p>
             {!showCapacitySelection &&
               testStatus === "testing" &&
               testProgress &&
               testProgress.total > 0 && (
-                <p className="mt-2 text-xs text-white/50">
+                <p className="mt-2 text-xs text-fg/50">
                   Testing {testProgress.current}/{testProgress.total}
                 </p>
               )}
@@ -311,13 +311,13 @@ export function EmbeddingDownloadPage() {
 
           {/* Capacity Selection */}
           {showCapacitySelection && (
-            <div className="rounded-xl border border-white/10 bg-white/5 p-6">
+            <div className="rounded-xl border border-fg/10 bg-fg/5 p-6">
               <div className="space-y-4">
                 <div className="text-center mb-6">
-                  <div className="flex h-16 w-16 mx-auto items-center justify-center rounded-full border border-blue-400/20 bg-blue-500/10">
-                    <Zap className="h-8 w-8 text-blue-400" />
+                  <div className="flex h-16 w-16 mx-auto items-center justify-center rounded-full border border-info/20 bg-info/10">
+                    <Zap className="h-8 w-8 text-info" />
                   </div>
-                  <p className="mt-4 text-sm text-white/70">
+                  <p className="mt-4 text-sm text-fg/70">
                     Higher capacity = better memory for longer conversations, but uses more
                     processing power per embedding.
                   </p>
@@ -332,8 +332,8 @@ export function EmbeddingDownloadPage() {
                                                 flex items-center justify-between p-4 rounded-xl border transition-all
                                                 ${
                                                   selectedCapacity === option.value
-                                                    ? "border-blue-500 bg-blue-500/20"
-                                                    : "border-white/10 bg-white/5 hover:border-white/20"
+                                                    ? "border-info bg-info/20"
+                                                    : "border-fg/10 bg-fg/5 hover:border-fg/20"
                                                 }
                                             `}
                     >
@@ -343,22 +343,22 @@ export function EmbeddingDownloadPage() {
                                                     w-5 h-5 rounded-full border-2 flex items-center justify-center
                                                     ${
                                                       selectedCapacity === option.value
-                                                        ? "border-blue-500 bg-blue-500"
-                                                        : "border-white/30"
+                                                        ? "border-info bg-info"
+                                                        : "border-fg/30"
                                                     }
                                                 `}
                         >
                           {selectedCapacity === option.value && (
-                            <div className="w-2 h-2 rounded-full bg-white" />
+                            <div className="w-2 h-2 rounded-full bg-fg" />
                           )}
                         </div>
                         <div className="text-left">
-                          <div className="font-medium text-white">{option.label}</div>
-                          <div className="text-xs text-white/50">{option.description}</div>
+                          <div className="font-medium text-fg">{option.label}</div>
+                          <div className="text-xs text-fg/50">{option.description}</div>
                         </div>
                       </div>
                       {option.value === 2048 && (
-                        <span className="text-[10px] font-medium uppercase tracking-wider text-green-400 bg-green-500/20 px-2 py-0.5 rounded">
+                        <span className="text-[10px] font-medium uppercase tracking-wider text-accent bg-accent/20 px-2 py-0.5 rounded">
                           Recommended
                         </span>
                       )}
@@ -368,7 +368,7 @@ export function EmbeddingDownloadPage() {
 
                 <button
                   onClick={startDownload}
-                  className="w-full mt-4 py-3 px-4 rounded-xl bg-blue-500 hover:bg-blue-600 text-white font-medium transition-colors flex items-center justify-center gap-2"
+                  className="w-full mt-4 py-3 px-4 rounded-xl bg-info hover:bg-info/80 text-fg font-medium transition-colors flex items-center justify-center gap-2"
                 >
                   <Download className="h-5 w-5" />
                   Download {downloadVersionLabel} Model ({downloadApproxSize})
@@ -382,7 +382,7 @@ export function EmbeddingDownloadPage() {
                       navigate("/settings/advanced");
                     }
                   }}
-                  className="w-full py-2 text-sm text-white/50 hover:text-white/70 transition-colors"
+                  className="w-full py-2 text-sm text-fg/50 hover:text-fg/70 transition-colors"
                 >
                   Cancel
                 </button>
@@ -392,27 +392,27 @@ export function EmbeddingDownloadPage() {
 
           {/* Download/Test Progress Card */}
           {!showCapacitySelection && (
-            <div className="rounded-xl border border-white/10 bg-white/5 p-6">
+            <div className="rounded-xl border border-fg/10 bg-fg/5 p-6">
               {/* Icon */}
               <div className="mb-4 flex justify-center">
                 {testStatus === "idle" && (
-                  <div className="flex h-16 w-16 items-center justify-center rounded-full border border-blue-400/20 bg-blue-500/10">
-                    <Download className="h-8 w-8 text-blue-400" />
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full border border-info/20 bg-info/10">
+                    <Download className="h-8 w-8 text-info" />
                   </div>
                 )}
                 {testStatus === "testing" && (
-                  <div className="flex h-16 w-16 items-center justify-center rounded-full border border-yellow-400/20 bg-yellow-500/10">
-                    <Loader2 className="h-8 w-8 text-yellow-400 animate-spin" />
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full border border-warning/20 bg-warning/10">
+                    <Loader2 className="h-8 w-8 text-warning animate-spin" />
                   </div>
                 )}
                 {testStatus === "passed" && (
-                  <div className="flex h-16 w-16 items-center justify-center rounded-full border border-green-400/20 bg-green-500/10">
-                    <CheckCircle className="h-8 w-8 text-green-400" />
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full border border-accent/20 bg-accent/10">
+                    <CheckCircle className="h-8 w-8 text-accent" />
                   </div>
                 )}
                 {testStatus === "failed" && (
-                  <div className="flex h-16 w-16 items-center justify-center rounded-full border border-red-400/20 bg-red-500/10">
-                    <XCircle className="h-8 w-8 text-red-400" />
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full border border-danger/20 bg-danger/10">
+                    <XCircle className="h-8 w-8 text-danger/80" />
                   </div>
                 )}
               </div>
@@ -422,11 +422,11 @@ export function EmbeddingDownloadPage() {
                 {progress.status.toLowerCase().includes("downloading") && (
                   <div className="space-y-2">
                     <div className="text-center">
-                      <div className="text-sm font-medium text-white/80">
+                      <div className="text-sm font-medium text-fg/80">
                         File {progress.currentFileIndex} of {progress.totalFiles}
                       </div>
                       {progress.currentFileName && (
-                        <div className="mt-1 text-xs text-white/50 font-mono">
+                        <div className="mt-1 text-xs text-fg/50 font-mono">
                           {progress.currentFileName}
                         </div>
                       )}
@@ -437,12 +437,12 @@ export function EmbeddingDownloadPage() {
                 {/* Progress Bar */}
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
-                    <span className="text-white/70">Progress</span>
-                    <span className="font-medium text-white">{Math.round(progressPercent)}%</span>
+                    <span className="text-fg/70">Progress</span>
+                    <span className="font-medium text-fg">{Math.round(progressPercent)}%</span>
                   </div>
-                  <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-fg/10">
                     <motion.div
-                      className="h-full bg-green-500"
+                      className="h-full bg-accent"
                       initial={{ width: 0 }}
                       animate={{
                         width:
@@ -453,14 +453,14 @@ export function EmbeddingDownloadPage() {
                       transition={{ duration: 0.3 }}
                     />
                   </div>
-                  <div className="flex justify-between text-xs text-white/50">
+                  <div className="flex justify-between text-xs text-fg/50">
                     <span>{formatBytes(progress.downloaded)}</span>
                     <span>{formatBytes(progress.total)}</span>
                   </div>
                 </div>
 
                 {/* Status */}
-                <div className="text-center text-sm text-white/60">
+                <div className="text-center text-sm text-fg/60">
                   {testStatus === "idle" &&
                     preStepStatus === "preparing" &&
                     "Preparing download..."}
@@ -484,7 +484,7 @@ export function EmbeddingDownloadPage() {
                     <div className="text-center">
                       <div
                         className={`text-sm font-medium ${
-                          testResults.success ? "text-green-400" : "text-red-400"
+                          testResults.success ? "text-accent" : "text-danger/80"
                         }`}
                       >
                         {testResults.message}
@@ -494,20 +494,20 @@ export function EmbeddingDownloadPage() {
                     {/* Similarity Scores */}
                     <div className="space-y-3">
                       {testResults.scores.map((score, idx) => (
-                        <div key={idx} className="rounded-lg border border-white/10 bg-white/5 p-3">
+                        <div key={idx} className="rounded-lg border border-fg/10 bg-fg/5 p-3">
                           <div className="flex items-center justify-between">
-                            <span className="text-xs font-medium text-white/70">
+                            <span className="text-xs font-medium text-fg/70">
                               {score.pairName}
                             </span>
                             <span
                               className={`text-sm font-bold ${
-                                score.similarityScore > 0.6 ? "text-green-400" : "text-yellow-400"
+                                score.similarityScore > 0.6 ? "text-accent" : "text-warning"
                               }`}
                             >
                               {score.similarityScore.toFixed(4)}
                             </span>
                           </div>
-                          <div className="mt-1 text-xs text-white/50">
+                          <div className="mt-1 text-xs text-fg/50">
                             Expected: {score.expected}
                           </div>
                         </div>
@@ -519,8 +519,8 @@ export function EmbeddingDownloadPage() {
 
               {/* Error Message */}
               {error && (
-                <div className="mt-4 rounded-lg border border-red-500/20 bg-red-500/10 p-3">
-                  <p className="text-sm text-red-200">{error}</p>
+                <div className="mt-4 rounded-lg border border-danger/20 bg-danger/10 p-3">
+                  <p className="text-sm text-danger/80">{error}</p>
                 </div>
               )}
             </div>
@@ -530,7 +530,7 @@ export function EmbeddingDownloadPage() {
           {isDownloading && (
             <button
               onClick={handleCancel}
-              className="flex w-full items-center justify-center gap-2 rounded-xl border border-red-500/20 bg-red-500/10 px-6 py-3 text-sm font-medium text-red-200 transition hover:border-red-500/30 hover:bg-red-500/15"
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-danger/20 bg-danger/10 px-6 py-3 text-sm font-medium text-danger/80 transition hover:border-danger/30 hover:bg-danger/15"
             >
               <X className="h-4 w-4" />
               Cancel Download
@@ -545,7 +545,7 @@ export function EmbeddingDownloadPage() {
                   setError(null);
                   startDownload();
                 }}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-500 px-6 py-3 text-sm font-medium text-white transition hover:bg-blue-600"
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-info px-6 py-3 text-sm font-medium text-fg transition hover:bg-info/80"
               >
                 <Download className="h-4 w-4" />
                 Retry Download
@@ -558,7 +558,7 @@ export function EmbeddingDownloadPage() {
                     navigate("/settings/advanced");
                   }
                 }}
-                className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-6 py-3 text-sm font-medium text-white/60 transition hover:bg-white/10"
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-fg/10 bg-fg/5 px-6 py-3 text-sm font-medium text-fg/60 transition hover:bg-fg/10"
               >
                 Go Back
               </button>

@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { readSettings, setAppState } from "./repo";
-import { createDefaultAppState, type AppState, type PureModeLevel } from "./schemas";
+import { createDefaultAppState, type AppState, type CustomColors, type PureModeLevel } from "./schemas";
 
 type Theme = AppState["theme"];
 
@@ -18,6 +18,7 @@ function cloneAppState(state?: AppState): AppState {
     appActiveUsageByDayMs: { ...(source.appActiveUsageByDayMs ?? {}) },
     appActiveUsageStartedAtMs: source.appActiveUsageStartedAtMs,
     appActiveUsageLastUpdatedAtMs: source.appActiveUsageLastUpdatedAtMs,
+    customColors: source.customColors ? { ...source.customColors } : undefined,
   };
 }
 
@@ -171,4 +172,15 @@ export async function getAppStateSummary(): Promise<{
     theme: state.theme,
     tooltipCount: Object.keys(state.tooltips).length,
   };
+}
+
+export async function getCustomColors(): Promise<CustomColors | undefined> {
+  const state = await getAppState();
+  return state.customColors;
+}
+
+export async function setCustomColors(colors: CustomColors): Promise<void> {
+  await withAppState((state) => {
+    state.customColors = colors;
+  });
 }

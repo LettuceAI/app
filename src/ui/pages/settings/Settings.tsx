@@ -47,17 +47,14 @@ interface RowProps {
 
 function Row({ icon, title, subtitle, onClick, count, tone = "default" }: RowProps) {
   const toneStyles = {
-    intelligence: "border-rose-400/30 bg-rose-400/15 text-rose-300 group-hover:border-rose-400/50",
-    experience:
-      "border-amber-400/30 bg-amber-400/15 text-amber-300 group-hover:border-amber-400/50",
-    connectivity: "border-cyan-400/30 bg-cyan-400/15 text-cyan-300 group-hover:border-cyan-400/50",
-    security:
-      "border-emerald-400/30 bg-emerald-400/15 text-emerald-300 group-hover:border-emerald-400/50",
-    support: "border-sky-400/30 bg-sky-400/15 text-sky-300 group-hover:border-sky-400/50",
-    danger: "border-red-400/30 bg-red-400/15 text-red-300 group-hover:border-red-400/50",
-    developer:
-      "border-orange-400/30 bg-orange-400/15 text-orange-300 group-hover:border-orange-400/50",
-    default: "border-white/10 bg-white/10 text-white/70 group-hover:border-white/20",
+    intelligence: "border-accent/30 bg-accent/15 text-accent group-hover:border-accent/50",
+    experience: "border-warning/30 bg-warning/15 text-warning group-hover:border-warning/50",
+    connectivity: "border-info/30 bg-info/15 text-info group-hover:border-info/50",
+    security: "border-accent/30 bg-accent/15 text-accent group-hover:border-accent/50",
+    support: "border-info/30 bg-info/15 text-info group-hover:border-info/50",
+    danger: "border-danger/30 bg-danger/15 text-danger group-hover:border-danger/50",
+    developer: "border-warning/30 bg-warning/15 text-warning group-hover:border-warning/50",
+    default: "border-fg/10 bg-fg/10 text-fg/70 group-hover:border-fg/20",
   };
 
   return (
@@ -66,9 +63,9 @@ function Row({ icon, title, subtitle, onClick, count, tone = "default" }: RowPro
       className={cn(
         "group w-full px-4 py-3 text-left",
         radius.md,
-        "border border-white/10 bg-white/5",
+        "border border-fg/10 bg-fg/5",
         interactive.transition.default,
-        "hover:border-white/20 hover:bg-white/8",
+        "hover:border-fg/20 hover:bg-fg/8",
         interactive.active.scale,
         interactive.focus.ring,
       )}
@@ -78,7 +75,7 @@ function Row({ icon, title, subtitle, onClick, count, tone = "default" }: RowPro
           className={cn(
             "flex h-8 w-8 shrink-0 items-center justify-center",
             radius.full,
-            "border text-white/70",
+            "border text-fg/70",
             interactive.transition.default,
             toneStyles[tone],
           )}
@@ -88,7 +85,7 @@ function Row({ icon, title, subtitle, onClick, count, tone = "default" }: RowPro
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span
-              className={cn("truncate", typography.body.size, typography.body.weight, "text-white")}
+              className={cn("truncate", typography.body.size, typography.body.weight, "text-fg")}
             >
               {title}
             </span>
@@ -97,10 +94,10 @@ function Row({ icon, title, subtitle, onClick, count, tone = "default" }: RowPro
                 className={cn(
                   "px-1.5 py-0.5",
                   radius.sm,
-                  "border border-white/10 bg-white/10",
+                  "border border-fg/10 bg-fg/10",
                   typography.caption.size,
                   typography.caption.weight,
-                  "leading-none text-white/70",
+                  "leading-none text-fg/70",
                 )}
               >
                 {count}
@@ -108,15 +105,15 @@ function Row({ icon, title, subtitle, onClick, count, tone = "default" }: RowPro
             )}
           </div>
           {subtitle && (
-            <div className={cn("mt-0.5 line-clamp-1", typography.caption.size, "text-white/45")}>
+            <div className={cn("mt-0.5 line-clamp-1", typography.caption.size, "text-fg/45")}>
               {subtitle}
             </div>
           )}
         </div>
         <ChevronRight
           className={cn(
-            "h-4 w-4 shrink-0 text-white/30",
-            "transition-colors group-hover:text-white/60",
+            "h-4 w-4 shrink-0 text-fg/30",
+            "transition-colors group-hover:text-fg/60",
           )}
         />
       </div>
@@ -359,7 +356,7 @@ export function SettingsPage() {
   );
 
   return (
-    <div className="flex h-full flex-col pb-16 text-gray-200">
+    <div className="flex h-full flex-col pb-16 text-fg/90">
       <section className={cn("flex-1 overflow-y-auto px-1 pt-4", spacing.section)}>
         {/* Section: Intelligence */}
         <div>
@@ -370,7 +367,7 @@ export function SettingsPage() {
               typography.overline.weight,
               typography.overline.tracking,
               typography.overline.transform,
-              "text-white/35",
+              "text-fg/35",
             )}
           >
             Intelligence
@@ -401,7 +398,7 @@ export function SettingsPage() {
               typography.overline.weight,
               typography.overline.tracking,
               typography.overline.transform,
-              "text-white/35",
+              "text-fg/35",
             )}
           >
             Experience
@@ -432,7 +429,7 @@ export function SettingsPage() {
               typography.overline.weight,
               typography.overline.tracking,
               typography.overline.transform,
-              "text-white/35",
+              "text-fg/35",
             )}
           >
             Connectivity
@@ -463,7 +460,7 @@ export function SettingsPage() {
               typography.overline.weight,
               typography.overline.tracking,
               typography.overline.transform,
-              "text-white/35",
+              "text-fg/35",
             )}
           >
             Security & Privacy
@@ -494,7 +491,7 @@ export function SettingsPage() {
               typography.overline.weight,
               typography.overline.tracking,
               typography.overline.transform,
-              "text-white/35",
+              "text-fg/35",
             )}
           >
             Support & Info
@@ -526,7 +523,7 @@ export function SettingsPage() {
               typography.overline.weight,
               typography.overline.tracking,
               typography.overline.transform,
-              "text-white/35",
+              "text-fg/35",
             )}
           >
             Danger Zone
@@ -557,7 +554,7 @@ export function SettingsPage() {
                 typography.overline.weight,
                 typography.overline.tracking,
                 typography.overline.transform,
-                "text-white/35",
+                "text-fg/35",
               )}
             >
               Developer
@@ -584,7 +581,7 @@ export function SettingsPage() {
           <div className="pointer-events-none absolute inset-x-0 top-0 px-4 pt-4">
             <div className={spacing.field}>
               {Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className={cn("h-13 w-full animate-pulse", radius.md, "bg-white/5")} />
+                <div key={i} className={cn("h-13 w-full animate-pulse", radius.md, "bg-fg/5")} />
               ))}
             </div>
           </div>

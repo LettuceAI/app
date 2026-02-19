@@ -276,12 +276,12 @@ function PromptCardSkeleton() {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
       {[1, 2, 3, 4].map((i) => (
-        <div key={i} className="rounded-xl border border-white/10 bg-white/5 p-4">
+        <div key={i} className="rounded-xl border border-fg/10 bg-fg/5 p-4">
           <div className="flex items-start gap-3">
-            <div className="h-9 w-9 animate-pulse rounded-lg bg-white/10" />
+            <div className="h-9 w-9 animate-pulse rounded-lg bg-fg/10" />
             <div className="flex-1 space-y-2">
-              <div className="h-4 w-32 animate-pulse rounded bg-white/10" />
-              <div className="h-3 w-full animate-pulse rounded bg-white/5" />
+              <div className="h-4 w-32 animate-pulse rounded bg-fg/10" />
+              <div className="h-3 w-full animate-pulse rounded bg-fg/5" />
             </div>
           </div>
         </div>
@@ -293,13 +293,13 @@ function PromptCardSkeleton() {
 function EmptyState({ onCreate }: { onCreate: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center py-16 px-6">
-      <div className="flex h-14 w-14 items-center justify-center rounded-xl border border-white/10 bg-white/5 mb-4">
-        <FileText className="h-7 w-7 text-white/30" />
+      <div className="flex h-14 w-14 items-center justify-center rounded-xl border border-fg/10 bg-fg/5 mb-4">
+        <FileText className="h-7 w-7 text-fg/30" />
       </div>
-      <h3 className={cn(typography.h2.size, typography.h2.weight, "text-white mb-2")}>
+      <h3 className={cn(typography.h2.size, typography.h2.weight, "text-fg mb-2")}>
         No custom prompts yet
       </h3>
-      <p className={cn(typography.body.size, "text-white/50 text-center max-w-xs mb-6")}>
+      <p className={cn(typography.body.size, "text-fg/50 text-center max-w-xs mb-6")}>
         Create custom system prompts to personalize your AI conversations
       </p>
       <button
@@ -307,10 +307,10 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
         className={cn(
           "flex items-center gap-2 px-5 py-2.5",
           radius.lg,
-          "border border-emerald-400/40 bg-emerald-500/20",
-          "text-sm font-medium text-emerald-100",
+          "border border-accent/40 bg-accent/20",
+          "text-sm font-medium text-accent/90",
           interactive.transition.default,
-          "hover:bg-emerald-500/30",
+          "hover:bg-accent/30",
           "active:scale-[0.98]",
         )}
       >
@@ -350,8 +350,8 @@ function PromptCard({
       className={cn(
         "group relative",
         radius.lg,
-        "border border-white/10 bg-white/5",
-        "hover:border-white/20 hover:bg-white/[0.07]",
+        "border border-fg/10 bg-fg/5",
+        "hover:border-fg/20 hover:bg-fg/[0.07]",
         interactive.transition.fast,
       )}
     >
@@ -363,7 +363,7 @@ function PromptCard({
             className={cn(
               "flex h-9 w-9 shrink-0 items-center justify-center",
               radius.lg,
-              isActiveDefault ? "bg-emerald-500/20 text-emerald-400" : "bg-white/10 text-white/50",
+              isActiveDefault ? "bg-accent/20 text-accent" : "bg-fg/10 text-fg/50",
             )}
           >
             <Icon className="h-4 w-4" />
@@ -372,13 +372,13 @@ function PromptCard({
           {/* Title + Type */}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
-              <h3 className="text-sm font-medium text-white truncate">{template.name}</h3>
+              <h3 className="text-sm font-medium text-fg truncate">{template.name}</h3>
               {isActiveDefault && (
-                <Star className="h-3.5 w-3.5 text-emerald-400 fill-emerald-400 shrink-0" />
+                <Star className="h-3.5 w-3.5 text-accent fill-accent shrink-0" />
               )}
-              {isProtected && <Lock className="h-3.5 w-3.5 text-amber-400 shrink-0" />}
+              {isProtected && <Lock className="h-3.5 w-3.5 text-warning shrink-0" />}
             </div>
-            <p className="text-xs text-white/40 mt-0.5">{typeLabel}</p>
+            <p className="text-xs text-fg/40 mt-0.5">{typeLabel}</p>
           </div>
 
           {/* Actions */}
@@ -388,7 +388,7 @@ function PromptCard({
               className={cn(
                 "p-1.5",
                 radius.md,
-                "text-white/40 hover:text-white hover:bg-white/10",
+                "text-fg/40 hover:text-fg hover:bg-fg/10",
                 interactive.transition.fast,
               )}
               title="Edit"
@@ -400,7 +400,7 @@ function PromptCard({
               className={cn(
                 "p-1.5",
                 radius.md,
-                "text-white/40 hover:text-white hover:bg-white/10",
+                "text-fg/40 hover:text-fg hover:bg-fg/10",
                 interactive.transition.fast,
               )}
               title="Duplicate"
@@ -412,7 +412,7 @@ function PromptCard({
               className={cn(
                 "p-1.5",
                 radius.md,
-                "text-white/40 hover:text-emerald-300 hover:bg-emerald-500/10",
+                "text-fg/40 hover:text-accent/80 hover:bg-accent/10",
                 interactive.transition.fast,
               )}
               title="Export"
@@ -425,7 +425,7 @@ function PromptCard({
                 className={cn(
                   "p-1.5",
                   radius.md,
-                  "text-white/40 hover:text-red-400 hover:bg-red-500/10",
+                  "text-fg/40 hover:text-danger hover:bg-danger/10",
                   interactive.transition.fast,
                 )}
                 title="Delete"
@@ -437,13 +437,13 @@ function PromptCard({
         </div>
 
         {/* Content Preview */}
-        <p className="text-xs text-white/40 line-clamp-2 mt-3 leading-relaxed">
+        <p className="text-xs text-fg/40 line-clamp-2 mt-3 leading-relaxed">
           {getTemplatePreviewText(template)}
         </p>
 
         {/* Footer */}
-        <div className="flex items-center justify-between mt-3 pt-3 border-t border-white/5">
-          <div className="text-[11px] text-white/30">
+        <div className="flex items-center justify-between mt-3 pt-3 border-t border-fg/5">
+          <div className="text-[11px] text-fg/30">
             {isSystem ? (
               <>
                 {usage.characters} char{usage.characters !== 1 && "s"}
@@ -459,8 +459,8 @@ function PromptCard({
               className={cn(
                 "flex items-center gap-1 px-2 py-1",
                 radius.md,
-                "text-[11px] font-medium text-emerald-400",
-                "hover:bg-emerald-500/10",
+                "text-[11px] font-medium text-accent",
+                "hover:bg-accent/10",
                 interactive.transition.fast,
               )}
             >
@@ -754,7 +754,7 @@ export function SystemPromptsPage() {
           <div className="flex flex-col gap-3">
             {/* Search */}
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/30 pointer-events-none" />
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg/30 pointer-events-none" />
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -762,16 +762,16 @@ export function SystemPromptsPage() {
                 className={cn(
                   "w-full pl-10 pr-10 py-2.5",
                   radius.lg,
-                  "border border-white/10 bg-white/5",
-                  "text-sm text-white placeholder-white/30",
+                  "border border-fg/10 bg-fg/5",
+                  "text-sm text-fg placeholder-fg/30",
                   interactive.transition.fast,
-                  "focus:border-white/20 focus:bg-white/10 focus:outline-none",
+                  "focus:border-fg/20 focus:bg-fg/10 focus:outline-none",
                 )}
               />
               {search && (
                 <button
                   onClick={() => setSearch("")}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/70"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-fg/40 hover:text-fg/70"
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -798,10 +798,10 @@ export function SystemPromptsPage() {
                 className={cn(
                   "flex items-center gap-2 px-3 py-2",
                   radius.md,
-                  "border border-white/10 bg-white/5",
-                  "text-xs font-medium text-white/70",
+                  "border border-fg/10 bg-fg/5",
+                  "text-xs font-medium text-fg/70",
                   interactive.transition.fast,
-                  "hover:bg-white/10 hover:text-white",
+                  "hover:bg-fg/10 hover:text-fg",
                   "disabled:opacity-50",
                 )}
               >
@@ -820,8 +820,8 @@ export function SystemPromptsPage() {
                       "text-xs font-medium",
                       interactive.transition.fast,
                       isActive
-                        ? "border border-emerald-400/40 bg-emerald-500/15 text-emerald-300"
-                        : "border border-white/10 bg-white/5 text-white/50 hover:bg-white/10 hover:text-white/70",
+                        ? "border border-accent/40 bg-accent/15 text-accent/80"
+                        : "border border-fg/10 bg-fg/5 text-fg/50 hover:bg-fg/10 hover:text-fg/70",
                     )}
                   >
                     {tag.label}
@@ -837,8 +837,8 @@ export function SystemPromptsPage() {
           ) : filtered.length === 0 ? (
             search || activeTag !== "all" ? (
               <div className="flex flex-col items-center justify-center py-12 px-6">
-                <p className="text-sm text-white/50 mb-1">No matching prompts</p>
-                <p className="text-xs text-white/30">Try adjusting your search or filters</p>
+                <p className="text-sm text-fg/50 mb-1">No matching prompts</p>
+                <p className="text-xs text-fg/30">Try adjusting your search or filters</p>
               </div>
             ) : (
               <EmptyState onCreate={() => navigate("/settings/prompts/new")} />
@@ -876,12 +876,12 @@ export function SystemPromptsPage() {
         title="Delete Prompt?"
       >
         <div className="space-y-4">
-          <div className={cn(radius.lg, "border border-white/10 bg-white/5 p-3")}>
-            <p className="text-sm font-medium text-white">{templateToDelete?.name}</p>
-            <p className="text-xs text-white/50 mt-1 line-clamp-2">{templateToDelete?.content}</p>
+          <div className={cn(radius.lg, "border border-fg/10 bg-fg/5 p-3")}>
+            <p className="text-sm font-medium text-fg">{templateToDelete?.name}</p>
+            <p className="text-xs text-fg/50 mt-1 line-clamp-2">{templateToDelete?.content}</p>
           </div>
 
-          <p className="text-sm text-white/60">
+          <p className="text-sm text-fg/60">
             This action cannot be undone. Any characters using this prompt will fall back to the
             default.
           </p>
@@ -896,10 +896,10 @@ export function SystemPromptsPage() {
               className={cn(
                 "flex-1 py-3",
                 radius.lg,
-                "border border-white/10 bg-white/5",
-                "text-sm font-medium text-white",
+                "border border-fg/10 bg-fg/5",
+                "text-sm font-medium text-fg",
                 interactive.transition.fast,
-                "hover:bg-white/10",
+                "hover:bg-fg/10",
                 "disabled:opacity-50",
               )}
             >
@@ -911,10 +911,10 @@ export function SystemPromptsPage() {
               className={cn(
                 "flex-1 py-3",
                 radius.lg,
-                "border border-red-500/30 bg-red-500/15",
-                "text-sm font-medium text-red-300",
+                "border border-danger/30 bg-danger/15",
+                "text-sm font-medium text-danger/80",
                 interactive.transition.fast,
-                "hover:bg-red-500/25",
+                "hover:bg-danger/25",
                 "disabled:opacity-50",
               )}
             >

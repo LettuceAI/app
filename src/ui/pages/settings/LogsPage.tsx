@@ -300,7 +300,7 @@ export function LogsPage() {
                 typography.overline.weight,
                 typography.overline.tracking,
                 typography.overline.transform,
-                "text-white/35",
+                "text-fg/35",
               )}
             >
               Diagnostics
@@ -312,7 +312,7 @@ export function LogsPage() {
                 className={cn(
                   typography.caption.size,
                   typography.caption.weight,
-                  "text-purple-300 hover:text-purple-200",
+                  "text-secondary hover:text-secondary/80",
                   interactive.transition.default,
                   "disabled:opacity-50 flex items-center gap-1",
                 )}
@@ -326,7 +326,7 @@ export function LogsPage() {
                 className={cn(
                   typography.caption.size,
                   typography.caption.weight,
-                  "text-blue-400 hover:text-blue-300",
+                  "text-info hover:text-info/80",
                   interactive.transition.default,
                   "disabled:opacity-50 flex items-center gap-1",
                 )}
@@ -337,10 +337,10 @@ export function LogsPage() {
             </div>
           </div>
 
-          <div className="rounded-xl border border-white/10 bg-white/5 overflow-hidden">
+          <div className="rounded-xl border border-fg/10 bg-fg/5 overflow-hidden">
             {generatingDiagnostics ? (
               <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-6 w-6 animate-spin text-white/30" />
+                <Loader2 className="h-6 w-6 animate-spin text-fg/30" />
               </div>
             ) : (
               <div className="relative">
@@ -353,7 +353,7 @@ export function LogsPage() {
                   <pre
                     className={cn(
                       typography.caption.size,
-                      "font-mono p-4 text-white/70 whitespace-pre-wrap wrap-break-word",
+                      "font-mono p-4 text-fg/70 whitespace-pre-wrap wrap-break-word",
                     )}
                   >
                     {diagnosticsText ||
@@ -361,7 +361,7 @@ export function LogsPage() {
                   </pre>
                 </div>
                 {!diagnosticsExpanded && diagnosticsText && (
-                  <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-[#0f1014] to-transparent" />
+                  <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-surface-el to-transparent" />
                 )}
               </div>
             )}
@@ -372,7 +372,7 @@ export function LogsPage() {
               className={cn(
                 typography.caption.size,
                 typography.caption.weight,
-                "mt-2 text-white/50 hover:text-white/80",
+                "mt-2 text-fg/50 hover:text-fg/80",
                 interactive.transition.default,
               )}
             >
@@ -383,10 +383,10 @@ export function LogsPage() {
 
         {/* Log Directory Info */}
         {logDir && (
-          <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+          <div className="rounded-xl border border-fg/10 bg-fg/5 p-3">
             <div className="flex items-center gap-2">
-              <FolderOpen className="h-4 w-4 text-white/40" />
-              <p className={cn(typography.caption.size, "text-white/50 font-mono break-all")}>
+              <FolderOpen className="h-4 w-4 text-fg/40" />
+              <p className={cn(typography.caption.size, "text-fg/50 font-mono break-all")}>
                 {logDir}
               </p>
             </div>
@@ -402,7 +402,7 @@ export function LogsPage() {
                 typography.overline.weight,
                 typography.overline.tracking,
                 typography.overline.transform,
-                "text-white/35",
+                "text-fg/35",
               )}
             >
               Log Files {logFiles.length > 0 && `(${logFiles.length})`}
@@ -413,7 +413,7 @@ export function LogsPage() {
               className={cn(
                 typography.caption.size,
                 typography.caption.weight,
-                "text-blue-400 hover:text-blue-300",
+                "text-info hover:text-info/80",
                 interactive.transition.default,
                 "disabled:opacity-50",
               )}
@@ -423,12 +423,12 @@ export function LogsPage() {
           </div>
 
           {logFiles.length === 0 ? (
-            <div className="rounded-xl border border-white/10 bg-white/5 p-8 text-center">
-              <FileCode className="mx-auto h-10 w-10 text-white/20" />
-              <p className={cn("mt-3", typography.body.size, "text-white/40")}>
+            <div className="rounded-xl border border-fg/10 bg-fg/5 p-8 text-center">
+              <FileCode className="mx-auto h-10 w-10 text-fg/20" />
+              <p className={cn("mt-3", typography.body.size, "text-fg/40")}>
                 No log files found
               </p>
-              <p className={cn("mt-1", typography.caption.size, "text-white/30")}>
+              <p className={cn("mt-1", typography.caption.size, "text-fg/30")}>
                 Logs will appear here as you use the app
               </p>
             </div>
@@ -442,8 +442,8 @@ export function LogsPage() {
                     "w-full rounded-xl border p-3 text-left",
                     interactive.transition.default,
                     selectedFile === file
-                      ? "border-blue-400/30 bg-blue-400/10"
-                      : "border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/8",
+                      ? "border-info/30 bg-info/10"
+                      : "border-fg/10 bg-fg/5 hover:border-fg/20 hover:bg-fg/8",
                     interactive.active.scale,
                   )}
                 >
@@ -453,18 +453,18 @@ export function LogsPage() {
                         className={cn(
                           "flex h-8 w-8 items-center justify-center rounded-lg border",
                           selectedFile === file
-                            ? "border-blue-400/30 bg-blue-400/15"
-                            : "border-white/10 bg-white/10",
+                            ? "border-info/30 bg-info/15"
+                            : "border-fg/10 bg-fg/10",
                         )}
                       >
-                        <FileText className="h-4 w-4 text-white/60" />
+                        <FileText className="h-4 w-4 text-fg/60" />
                       </div>
                       <div className="min-w-0 flex-1">
                         <p
                           className={cn(
                             typography.body.size,
                             typography.body.weight,
-                            "text-white truncate",
+                            "text-fg truncate",
                           )}
                         >
                           {file}
@@ -478,7 +478,7 @@ export function LogsPage() {
                       }}
                       className={cn(
                         "p-1.5 rounded-lg",
-                        "text-red-400/60 hover:text-red-400 hover:bg-red-400/10",
+                        "text-danger/60 hover:text-danger hover:bg-danger/10",
                         interactive.transition.default,
                       )}
                     >
@@ -501,7 +501,7 @@ export function LogsPage() {
                   typography.overline.weight,
                   typography.overline.tracking,
                   typography.overline.transform,
-                  "text-white/35",
+                  "text-fg/35",
                 )}
               >
                 {selectedFile}
@@ -512,7 +512,7 @@ export function LogsPage() {
                 className={cn(
                   typography.caption.size,
                   typography.caption.weight,
-                  "text-blue-400 hover:text-blue-300",
+                  "text-info hover:text-info/80",
                   interactive.transition.default,
                   "disabled:opacity-50 flex items-center gap-1",
                 )}
@@ -522,17 +522,17 @@ export function LogsPage() {
               </button>
             </div>
 
-            <div className="rounded-xl border border-white/10 bg-white/5 overflow-hidden">
+            <div className="rounded-xl border border-fg/10 bg-fg/5 overflow-hidden">
               {loading ? (
                 <div className="flex items-center justify-center py-12">
-                  <Loader2 className="h-6 w-6 animate-spin text-white/30" />
+                  <Loader2 className="h-6 w-6 animate-spin text-fg/30" />
                 </div>
               ) : (
                 <div className="max-h-100 overflow-y-auto">
                   <pre
                     className={cn(
                       typography.caption.size,
-                      "font-mono p-4 text-white/70 whitespace-pre-wrap wrap-break-word",
+                      "font-mono p-4 text-fg/70 whitespace-pre-wrap wrap-break-word",
                     )}
                   >
                     {logContent || "Log file is empty"}
@@ -553,7 +553,7 @@ export function LogsPage() {
                 typography.overline.weight,
                 typography.overline.tracking,
                 typography.overline.transform,
-                "text-white/35",
+                "text-fg/35",
               )}
             >
               Danger Zone
@@ -561,21 +561,21 @@ export function LogsPage() {
             <button
               onClick={clearAllLogs}
               className={cn(
-                "w-full rounded-xl border border-red-400/30 bg-red-400/10 p-4 text-left",
+                "w-full rounded-xl border border-danger/30 bg-danger/10 p-4 text-left",
                 interactive.transition.default,
-                "hover:border-red-400/50 hover:bg-red-400/15",
+                "hover:border-danger/50 hover:bg-danger/15",
                 interactive.active.scale,
               )}
             >
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full border border-red-400/30 bg-red-400/15">
-                  <Trash2 className="h-5 w-5 text-red-300" />
+                <div className="flex h-10 w-10 items-center justify-center rounded-full border border-danger/30 bg-danger/15">
+                  <Trash2 className="h-5 w-5 text-danger/80" />
                 </div>
                 <div className="flex-1">
-                  <p className={cn(typography.body.size, typography.body.weight, "text-white")}>
+                  <p className={cn(typography.body.size, typography.body.weight, "text-fg")}>
                     Clear All Logs
                   </p>
-                  <p className={cn(typography.caption.size, "text-white/50")}>
+                  <p className={cn(typography.caption.size, "text-fg/50")}>
                     Delete all log files permanently
                   </p>
                 </div>
@@ -585,11 +585,11 @@ export function LogsPage() {
         )}
 
         {/* Info */}
-        <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-          <h3 className={cn(typography.body.size, typography.body.weight, "text-white mb-2")}>
+        <div className="rounded-xl border border-fg/10 bg-fg/5 p-4">
+          <h3 className={cn(typography.body.size, typography.body.weight, "text-fg mb-2")}>
             About Application Logs
           </h3>
-          <div className={cn(typography.caption.size, "text-white/50 space-y-1.5")}>
+          <div className={cn(typography.caption.size, "text-fg/50 space-y-1.5")}>
             <p>• Log files are organized by date (app-YYYY-MM-DD.log)</p>
             <p>• Each entry includes timestamp, component, log level, and message</p>
             <p>• Useful for debugging issues and understanding app behavior</p>

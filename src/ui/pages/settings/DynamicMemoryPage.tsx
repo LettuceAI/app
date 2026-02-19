@@ -411,10 +411,10 @@ export function DynamicMemoryPage() {
       <main className="flex-1 px-4 pb-24 pt-4">
         <div className="mx-auto w-full max-w-5xl space-y-4">
           {/* Info Card */}
-          <div className={cn("rounded-xl border border-blue-400/20 bg-blue-400/5 p-3")}>
+          <div className={cn("rounded-xl border border-info/20 bg-info/5 p-3")}>
             <div className="flex items-start gap-2">
-              <Info className="h-4 w-4 text-blue-400 shrink-0 mt-0.5" />
-              <p className="text-xs text-blue-200/80 leading-relaxed">
+              <Info className="h-4 w-4 text-info shrink-0 mt-0.5" />
+              <p className="text-xs text-info/80 leading-relaxed">
                 Dynamic Memory automatically summarizes conversations to maintain context
                 efficiently. Choose a preset or fine-tune settings for your needs.
               </p>
@@ -433,14 +433,14 @@ export function DynamicMemoryPage() {
 
           {/* Status Banner */}
           {!enabled && !groupEnabled && (
-            <div className={cn("rounded-xl border border-orange-400/20 bg-orange-400/5 p-3")}>
+            <div className={cn("rounded-xl border border-warning/20 bg-warning/5 p-3")}>
               <div className="flex items-start gap-2">
-                <Info className="h-4 w-4 text-orange-400 shrink-0 mt-0.5" />
+                <Info className="h-4 w-4 text-warning shrink-0 mt-0.5" />
                 <div className="flex-1">
-                  <p className="text-xs font-medium text-orange-200">
+                  <p className="text-xs font-medium text-warning">
                     Dynamic memory is currently disabled
                   </p>
-                  <p className="text-xs text-orange-200/60 mt-0.5">
+                  <p className="text-xs text-warning/60 mt-0.5">
                     Enable it from the Advanced settings page to configure these options.
                   </p>
                 </div>
@@ -449,32 +449,32 @@ export function DynamicMemoryPage() {
           )}
 
           {/* Tab Switcher */}
-          <div className="flex gap-2 p-1 bg-white/5 rounded-xl border border-white/10">
+          <div className="flex gap-2 p-1 bg-fg/5 rounded-xl border border-fg/10">
             <button
               onClick={() => setActiveTab("direct")}
               className={cn(
                 "flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm font-medium transition-all",
                 activeTab === "direct"
-                  ? "bg-white/10 text-white shadow-sm"
-                  : "text-white/50 hover:text-white/70",
+                  ? "bg-fg/10 text-fg shadow-sm"
+                  : "text-fg/50 hover:text-fg/70",
               )}
             >
               <Sparkles className="h-4 w-4" />
               Direct Chats
-              {enabled && <span className="ml-1 w-1.5 h-1.5 rounded-full bg-emerald-400" />}
+              {enabled && <span className="ml-1 w-1.5 h-1.5 rounded-full bg-accent" />}
             </button>
             <button
               onClick={() => setActiveTab("group")}
               className={cn(
                 "flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm font-medium transition-all",
                 activeTab === "group"
-                  ? "bg-white/10 text-white shadow-sm"
-                  : "text-white/50 hover:text-white/70",
+                  ? "bg-fg/10 text-fg shadow-sm"
+                  : "text-fg/50 hover:text-fg/70",
               )}
             >
               <Users className="h-4 w-4" />
               Group Chats
-              {groupEnabled && <span className="ml-1 w-1.5 h-1.5 rounded-full bg-emerald-400" />}
+              {groupEnabled && <span className="ml-1 w-1.5 h-1.5 rounded-full bg-accent" />}
             </button>
           </div>
 
@@ -490,7 +490,7 @@ export function DynamicMemoryPage() {
             >
               {/* Presets */}
               <div className="space-y-3">
-                <h3 className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/35 px-1">
+                <h3 className="text-[10px] font-semibold uppercase tracking-[0.25em] text-fg/35 px-1">
                   Memory Profile
                 </h3>
                 <div className="grid grid-cols-3 gap-2">
@@ -500,14 +500,14 @@ export function DynamicMemoryPage() {
                     const isSelected = currentPreset === key;
                     const colorClasses = {
                       emerald: isSelected
-                        ? "border-emerald-400/50 bg-emerald-500/15 text-emerald-100"
-                        : "border-white/10 bg-white/5 text-white/60 hover:border-white/20",
+                        ? "border-accent/50 bg-accent/15 text-accent/90"
+                        : "border-fg/10 bg-fg/5 text-fg/60 hover:border-fg/20",
                       blue: isSelected
-                        ? "border-blue-400/50 bg-blue-500/15 text-blue-100"
-                        : "border-white/10 bg-white/5 text-white/60 hover:border-white/20",
+                        ? "border-info/50 bg-info/15 text-info"
+                        : "border-fg/10 bg-fg/5 text-fg/60 hover:border-fg/20",
                       amber: isSelected
-                        ? "border-amber-400/50 bg-amber-500/15 text-amber-100"
-                        : "border-white/10 bg-white/5 text-white/60 hover:border-white/20",
+                        ? "border-warning/50 bg-warning/15 text-warning/90"
+                        : "border-fg/10 bg-fg/5 text-fg/60 hover:border-fg/20",
                     };
 
                     return (
@@ -532,7 +532,7 @@ export function DynamicMemoryPage() {
                             "flex h-10 w-10 items-center justify-center rounded-full border",
                             isSelected
                               ? `border-${info.color}-400/40 bg-${info.color}-500/20`
-                              : "border-white/10 bg-white/10",
+                              : "border-fg/10 bg-fg/10",
                           )}
                         >
                           <Icon className="h-5 w-5" />
@@ -546,14 +546,14 @@ export function DynamicMemoryPage() {
                 {/* Preset Description */}
                 {currentPreset !== "custom" && (
                   <div className="px-1">
-                    <p className="text-[11px] text-white/45">
+                    <p className="text-[11px] text-fg/45">
                       {PRESET_INFO[currentPreset].description}
                     </p>
                   </div>
                 )}
                 {currentPreset === "custom" && (
                   <div className="px-1">
-                    <p className="text-[11px] text-amber-200/70">
+                    <p className="text-[11px] text-warning/70">
                       Custom settings — adjust values in Advanced Options below.
                     </p>
                   </div>
@@ -562,16 +562,16 @@ export function DynamicMemoryPage() {
 
               {/* Context Enrichment (v2/v3) */}
               {supportsExtendedTokenCapacity && currentEnabled && (
-                <div className={cn("rounded-xl border border-white/10 bg-white/5 px-4 py-3")}>
+                <div className={cn("rounded-xl border border-fg/10 bg-fg/5 px-4 py-3")}>
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="text-sm font-medium text-white">Context Enrichment</span>
-                        <span className="rounded-md border border-blue-500/30 bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-300">
+                        <span className="text-sm font-medium text-fg">Context Enrichment</span>
+                        <span className="rounded-md border border-info/30 bg-info/10 px-1.5 py-0.5 text-[10px] font-medium text-info/80">
                           Experimental
                         </span>
                       </div>
-                      <div className="text-[11px] text-white/45 leading-relaxed">
+                      <div className="text-[11px] text-fg/45 leading-relaxed">
                         Uses recent messages for smarter memory retrieval
                       </div>
                     </div>
@@ -588,25 +588,25 @@ export function DynamicMemoryPage() {
                         }}
                         className="sr-only peer"
                       />
-                      <div className="w-11 h-6 bg-white/10 rounded-full peer peer-checked:bg-blue-500 transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5"></div>
+                      <div className="w-11 h-6 bg-fg/10 rounded-full peer peer-checked:bg-info transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-fg after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5"></div>
                     </label>
                   </div>
                 </div>
               )}
 
               {/* Advanced Options Collapsible */}
-              <div className="rounded-xl border border-white/10 bg-white/5 overflow-hidden">
+              <div className="rounded-xl border border-fg/10 bg-fg/5 overflow-hidden">
                 <button
                   onClick={() => setAdvancedOpen(!advancedOpen)}
-                  className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-white/5 transition-colors"
+                  className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-fg/5 transition-colors"
                 >
                   <div>
-                    <span className="text-sm font-medium text-white">Advanced Options</span>
-                    <p className="text-[11px] text-white/45 mt-0.5">Fine-tune memory behavior</p>
+                    <span className="text-sm font-medium text-fg">Advanced Options</span>
+                    <p className="text-[11px] text-fg/45 mt-0.5">Fine-tune memory behavior</p>
                   </div>
                   <ChevronDown
                     className={cn(
-                      "h-5 w-5 text-white/40 transition-transform",
+                      "h-5 w-5 text-fg/40 transition-transform",
                       advancedOpen && "rotate-180",
                     )}
                   />
@@ -621,7 +621,7 @@ export function DynamicMemoryPage() {
                       transition={{ duration: 0.2 }}
                       className="overflow-hidden"
                     >
-                      <div className="px-4 pb-4 space-y-4 border-t border-white/10 pt-4">
+                      <div className="px-4 pb-4 space-y-4 border-t border-fg/10 pt-4">
                         {/* Summary Interval */}
                         <SettingRow
                           label="Summary Interval"
@@ -696,7 +696,7 @@ export function DynamicMemoryPage() {
 
                         {/* Retrieval Limit */}
                         <div className="space-y-2">
-                          <div className="text-[11px] font-medium text-white/90">
+                          <div className="text-[11px] font-medium text-fg/90">
                             Retrieval Mode
                           </div>
                           <div className="grid grid-cols-2 gap-2">
@@ -711,8 +711,8 @@ export function DynamicMemoryPage() {
                               className={cn(
                                 "rounded-lg border px-3 py-2 text-xs font-medium transition-colors",
                                 currentSettings.retrievalStrategy === "smart"
-                                  ? "border-blue-400/50 bg-blue-500/20 text-blue-100"
-                                  : "border-white/10 bg-white/5 text-white/60 hover:border-white/20",
+                                  ? "border-info/50 bg-info/20 text-info"
+                                  : "border-fg/10 bg-fg/5 text-fg/60 hover:border-fg/20",
                               )}
                             >
                               Smart
@@ -728,14 +728,14 @@ export function DynamicMemoryPage() {
                               className={cn(
                                 "rounded-lg border px-3 py-2 text-xs font-medium transition-colors",
                                 currentSettings.retrievalStrategy === "cosine"
-                                  ? "border-blue-400/50 bg-blue-500/20 text-blue-100"
-                                  : "border-white/10 bg-white/5 text-white/60 hover:border-white/20",
+                                  ? "border-info/50 bg-info/20 text-info"
+                                  : "border-fg/10 bg-fg/5 text-fg/60 hover:border-fg/20",
                               )}
                             >
                               Cosine
                             </button>
                           </div>
-                          <p className="text-[11px] text-white/45">
+                          <p className="text-[11px] text-fg/45">
                             Smart blends relevance with recency/frequency. Cosine uses pure top
                             similarity.
                           </p>
@@ -806,7 +806,7 @@ export function DynamicMemoryPage() {
           {/* Shared Settings (always visible) - Desktop: Two Column Grid */}
           {isAnyEnabled && (
             <div className="space-y-4 pt-2">
-              <h3 className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/35 px-1">
+              <h3 className="text-[10px] font-semibold uppercase tracking-[0.25em] text-fg/35 px-1">
                 Shared Settings
               </h3>
 
@@ -814,44 +814,44 @@ export function DynamicMemoryPage() {
                 {/* Left: Summarisation Model */}
                 <div className="space-y-3">
                   <div className="flex items-center gap-2">
-                    <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-1.5">
-                      <Cpu className="h-4 w-4 text-amber-400" />
+                    <div className="rounded-lg border border-warning/30 bg-warning/10 p-1.5">
+                      <Cpu className="h-4 w-4 text-warning" />
                     </div>
-                    <h3 className="text-sm font-semibold text-white">Summarisation Model</h3>
+                    <h3 className="text-sm font-semibold text-fg">Summarisation Model</h3>
                   </div>
 
                   {models.length > 0 ? (
                     <button
                       type="button"
                       onClick={() => setShowModelMenu(true)}
-                      className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-black/20 px-3.5 py-3 text-left transition hover:bg-black/30 focus:border-white/25 focus:outline-none"
+                      className="flex w-full items-center justify-between rounded-xl border border-fg/10 bg-surface-el/20 px-3.5 py-3 text-left transition hover:bg-surface-el/30 focus:border-fg/25 focus:outline-none"
                     >
                       <div className="flex items-center gap-2">
                         {summarisationModelId ? (
                           getProviderIcon(selectedSummarisationModel?.providerId || "")
                         ) : (
-                          <Cpu className="h-5 w-5 text-white/40" />
+                          <Cpu className="h-5 w-5 text-fg/40" />
                         )}
                         <span
-                          className={`text-sm ${summarisationModelId ? "text-white" : "text-white/50"}`}
+                          className={`text-sm ${summarisationModelId ? "text-fg" : "text-fg/50"}`}
                         >
                           {summarisationModelId
                             ? selectedSummarisationModel?.displayName || "Selected Model"
                             : "Use global default model"}
                         </span>
                       </div>
-                      <ChevronDown className="h-4 w-4 text-white/40" />
+                      <ChevronDown className="h-4 w-4 text-fg/40" />
                     </button>
                   ) : (
-                    <div className="rounded-xl border border-white/10 bg-black/20 px-4 py-3">
-                      <p className="text-sm text-white/50">No models available</p>
+                    <div className="rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3">
+                      <p className="text-sm text-fg/50">No models available</p>
                     </div>
                   )}
-                  <p className="text-xs text-white/50">Used for conversation summarization</p>
+                  <p className="text-xs text-fg/50">Used for conversation summarization</p>
 
                   {/* Desktop: Model Management under Summarisation to avoid large left-column gap */}
                   <div className="hidden lg:block space-y-3 pt-4">
-                    <h3 className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/35 px-1">
+                    <h3 className="text-[10px] font-semibold uppercase tracking-[0.25em] text-fg/35 px-1">
                       Model Management
                     </h3>
                     <div className="grid grid-cols-2 gap-3">
@@ -859,10 +859,10 @@ export function DynamicMemoryPage() {
                         onClick={() => navigate("/settings/embedding-test")}
                         className={cn(
                           "flex items-center justify-center gap-2 rounded-xl",
-                          "border border-white/10 bg-white/5 px-4 py-3",
-                          "text-sm font-medium text-white",
+                          "border border-fg/10 bg-fg/5 px-4 py-3",
+                          "text-sm font-medium text-fg",
                           interactive.transition.fast,
-                          "hover:bg-white/10",
+                          "hover:bg-fg/10",
                         )}
                       >
                         <RefreshCw className="h-4 w-4" />
@@ -873,9 +873,9 @@ export function DynamicMemoryPage() {
                           onClick={() => setShowDownloadModelMenu(true)}
                           className={cn(
                             "flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-medium",
-                            "border-blue-400/25 bg-blue-500/10 text-blue-100",
+                            "border-info/25 bg-info/10 text-info",
                             interactive.transition.fast,
-                            "hover:bg-blue-500/20",
+                            "hover:bg-info/20",
                           )}
                         >
                           <Sparkles className="h-4 w-4" />
@@ -886,10 +886,10 @@ export function DynamicMemoryPage() {
                         onClick={handleDeleteSelectedEmbeddingModel}
                         className={cn(
                           "flex items-center justify-center gap-2 rounded-xl",
-                          "border border-red-500/20 bg-red-500/10 px-4 py-3",
-                          "text-sm font-medium text-red-200",
+                          "border border-danger/20 bg-danger/10 px-4 py-3",
+                          "text-sm font-medium text-danger/80",
                           interactive.transition.fast,
-                          "hover:bg-red-500/20",
+                          "hover:bg-danger/20",
                         )}
                       >
                         <Trash2 className="h-4 w-4" />
@@ -903,8 +903,8 @@ export function DynamicMemoryPage() {
                 <div className="space-y-3">
                   {availableEmbeddingVersions.filter((v) => v === "v2" || v === "v3").length >
                     1 && (
-                    <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
-                      <div className="mb-2 text-sm font-medium text-white">Embedding Model</div>
+                    <div className="rounded-xl border border-fg/10 bg-fg/5 px-4 py-3">
+                      <div className="mb-2 text-sm font-medium text-fg">Embedding Model</div>
                       <div className="grid grid-cols-2 gap-2">
                         {(["v2", "v3"] as const)
                           .filter((version) => availableEmbeddingVersions.includes(version))
@@ -915,8 +915,8 @@ export function DynamicMemoryPage() {
                               className={cn(
                                 "px-3 py-2.5 rounded-lg text-sm font-medium transition-all uppercase",
                                 selectedEmbeddingVersion === version
-                                  ? "bg-blue-500 text-white"
-                                  : "border border-white/10 bg-white/5 text-white/70 hover:border-white/20",
+                                  ? "bg-info text-fg"
+                                  : "border border-fg/10 bg-fg/5 text-fg/70 hover:border-fg/20",
                               )}
                             >
                               {version}
@@ -927,20 +927,20 @@ export function DynamicMemoryPage() {
                   )}
 
                   {supportsExtendedTokenCapacity && (
-                    <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+                    <div className="rounded-xl border border-fg/10 bg-fg/5 px-4 py-3">
                       <div className="flex items-center justify-between gap-2 mb-2">
-                        <span className="text-sm font-medium text-white">Token Capacity</span>
+                        <span className="text-sm font-medium text-fg">Token Capacity</span>
                         <span
                           className={cn(
-                            "rounded-md border border-white/10 bg-white/10 px-2 py-1",
+                            "rounded-md border border-fg/10 bg-fg/10 px-2 py-1",
                             typography.caption.size,
-                            "text-white/70",
+                            "text-fg/70",
                           )}
                         >
                           {embeddingMaxTokens} tokens
                         </span>
                       </div>
-                      <p className="text-[11px] text-white/45 mb-3">
+                      <p className="text-[11px] text-fg/45 mb-3">
                         Higher values = better memory for longer conversations
                       </p>
                       <div className="grid grid-cols-3 gap-2">
@@ -951,8 +951,8 @@ export function DynamicMemoryPage() {
                             className={cn(
                               "px-3 py-2.5 rounded-lg text-sm font-medium transition-all",
                               embeddingMaxTokens === val
-                                ? "bg-blue-500 text-white"
-                                : "border border-white/10 bg-white/5 text-white/70 hover:border-white/20",
+                                ? "bg-info text-fg"
+                                : "border border-fg/10 bg-fg/5 text-fg/70 hover:border-fg/20",
                             )}
                           >
                             {val / 1024}K
@@ -963,18 +963,18 @@ export function DynamicMemoryPage() {
                   )}
 
                   {supportsExtendedTokenCapacity && (
-                    <div className={cn("rounded-xl border border-white/10 bg-white/5 px-4 py-3")}>
+                    <div className={cn("rounded-xl border border-fg/10 bg-fg/5 px-4 py-3")}>
                       <div className="flex items-center justify-between gap-3">
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2 mb-1">
-                            <span className="text-sm font-medium text-white">
+                            <span className="text-sm font-medium text-fg">
                               Keep Model Loaded
                             </span>
-                            <span className="rounded-md border border-blue-500/30 bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-300">
+                            <span className="rounded-md border border-info/30 bg-info/10 px-1.5 py-0.5 text-[10px] font-medium text-info/80">
                               Experimental
                             </span>
                           </div>
-                          <div className="text-[11px] text-white/45 leading-relaxed">
+                          <div className="text-[11px] text-fg/45 leading-relaxed">
                             Keeps embedding model + tokenizer in memory to avoid reload overhead
                           </div>
                         </div>
@@ -985,7 +985,7 @@ export function DynamicMemoryPage() {
                             onChange={(e) => handleEmbeddingKeepModelLoadedChange(e.target.checked)}
                             className="sr-only peer"
                           />
-                          <div className="w-11 h-6 bg-white/10 rounded-full peer peer-checked:bg-blue-500 transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5"></div>
+                          <div className="w-11 h-6 bg-fg/10 rounded-full peer peer-checked:bg-info transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-fg after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5"></div>
                         </label>
                       </div>
                     </div>
@@ -993,7 +993,7 @@ export function DynamicMemoryPage() {
 
                   {/* Model info */}
                   {modelVersion && (
-                    <div className="text-xs text-white/40 px-1">
+                    <div className="text-xs text-fg/40 px-1">
                       Installed model: {modelSourceVersion ?? modelVersion} ({embeddingMaxTokens}{" "}
                       max tokens)
                     </div>
@@ -1006,7 +1006,7 @@ export function DynamicMemoryPage() {
           {/* Model Management */}
           {isAnyEnabled && (
             <div className="space-y-3 pt-2 lg:hidden">
-              <h3 className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/35 px-1">
+              <h3 className="text-[10px] font-semibold uppercase tracking-[0.25em] text-fg/35 px-1">
                 Model Management
               </h3>
 
@@ -1015,10 +1015,10 @@ export function DynamicMemoryPage() {
                   onClick={() => navigate("/settings/embedding-test")}
                   className={cn(
                     "flex items-center justify-center gap-2 rounded-xl",
-                    "border border-white/10 bg-white/5 px-4 py-3",
-                    "text-sm font-medium text-white",
+                    "border border-fg/10 bg-fg/5 px-4 py-3",
+                    "text-sm font-medium text-fg",
                     interactive.transition.fast,
-                    "hover:bg-white/10",
+                    "hover:bg-fg/10",
                   )}
                 >
                   <RefreshCw className="h-4 w-4" />
@@ -1029,9 +1029,9 @@ export function DynamicMemoryPage() {
                     onClick={() => setShowDownloadModelMenu(true)}
                     className={cn(
                       "flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-medium",
-                      "border-blue-400/25 bg-blue-500/10 text-blue-100",
+                      "border-info/25 bg-info/10 text-info",
                       interactive.transition.fast,
-                      "hover:bg-blue-500/20",
+                      "hover:bg-info/20",
                     )}
                   >
                     <Sparkles className="h-4 w-4" />
@@ -1043,10 +1043,10 @@ export function DynamicMemoryPage() {
                   onClick={handleDeleteSelectedEmbeddingModel}
                   className={cn(
                     "flex items-center justify-center gap-2 rounded-xl",
-                    "border border-red-500/20 bg-red-500/10 px-4 py-3",
-                    "text-sm font-medium text-red-200",
+                    "border border-danger/20 bg-danger/10 px-4 py-3",
+                    "text-sm font-medium text-danger/80",
                     interactive.transition.fast,
-                    "hover:bg-red-500/20",
+                    "hover:bg-danger/20",
                   )}
                 >
                   <Trash2 className="h-4 w-4" />
@@ -1065,7 +1065,7 @@ export function DynamicMemoryPage() {
         title="Download Embedding Model"
       >
         <div className="space-y-3">
-          <p className="text-xs text-white/55">
+          <p className="text-xs text-fg/55">
             Choose which version to download. Installed versions are disabled.
           </p>
           <button
@@ -1077,23 +1077,23 @@ export function DynamicMemoryPage() {
             className={cn(
               "flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left transition",
               hasV2Installed
-                ? "cursor-not-allowed border-white/10 bg-white/5 text-white/35"
-                : "border-white/10 bg-white/5 text-white hover:bg-white/10",
+                ? "cursor-not-allowed border-fg/10 bg-fg/5 text-fg/35"
+                : "border-fg/10 bg-fg/5 text-fg hover:bg-fg/10",
             )}
           >
             <div className="flex items-center gap-2">
-              <div className="rounded-md border border-white/10 bg-white/5 p-1.5">
+              <div className="rounded-md border border-fg/10 bg-fg/5 p-1.5">
                 <Boxes className="h-4 w-4" />
               </div>
               <div>
                 <div className="text-sm font-medium">Download v2</div>
-                <div className="text-[11px] text-white/45">
+                <div className="text-[11px] text-fg/45">
                   Optimized for accuracy and long-context recall
                 </div>
               </div>
             </div>
             {hasV2Installed && (
-              <span className="flex items-center gap-1 text-xs text-white/45">
+              <span className="flex items-center gap-1 text-xs text-fg/45">
                 <Check className="h-3.5 w-3.5" />
                 Installed
               </span>
@@ -1108,21 +1108,21 @@ export function DynamicMemoryPage() {
             className={cn(
               "flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left transition",
               hasV3Installed
-                ? "cursor-not-allowed border-white/10 bg-white/5 text-white/35"
-                : "border-white/10 bg-white/5 text-white hover:bg-white/10",
+                ? "cursor-not-allowed border-fg/10 bg-fg/5 text-fg/35"
+                : "border-fg/10 bg-fg/5 text-fg hover:bg-fg/10",
             )}
           >
             <div className="flex items-center gap-2">
-              <div className="rounded-md border border-white/10 bg-white/5 p-1.5">
+              <div className="rounded-md border border-fg/10 bg-fg/5 p-1.5">
                 <Rocket className="h-4 w-4" />
               </div>
               <div>
                 <div className="text-sm font-medium">Download v3</div>
-                <div className="text-[11px] text-white/45">Latest embedding quality</div>
+                <div className="text-[11px] text-fg/45">Latest embedding quality</div>
               </div>
             </div>
             {hasV3Installed && (
-              <span className="flex items-center gap-1 text-xs text-white/45">
+              <span className="flex items-center gap-1 text-xs text-fg/45">
                 <Check className="h-3.5 w-3.5" />
                 Installed
               </span>
@@ -1147,10 +1147,10 @@ export function DynamicMemoryPage() {
               value={modelSearchQuery}
               onChange={(e) => setModelSearchQuery(e.target.value)}
               placeholder="Search models..."
-              className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-2.5 pl-10 text-sm text-white placeholder-white/40 focus:border-white/20 focus:outline-none"
+              className="w-full rounded-xl border border-fg/10 bg-surface-el/30 px-4 py-2.5 pl-10 text-sm text-fg placeholder-fg/40 focus:border-fg/20 focus:outline-none"
             />
             <svg
-              className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40"
+              className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg/40"
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
@@ -1173,13 +1173,13 @@ export function DynamicMemoryPage() {
               className={cn(
                 "flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition",
                 !summarisationModelId
-                  ? "border-emerald-400/40 bg-emerald-400/10"
-                  : "border-white/10 bg-white/5 hover:bg-white/10",
+                  ? "border-accent/40 bg-accent/10"
+                  : "border-fg/10 bg-fg/5 hover:bg-fg/10",
               )}
             >
-              <Cpu className="h-5 w-5 text-white/40" />
-              <span className="text-sm text-white">Use global default model</span>
-              {!summarisationModelId && <Check className="h-4 w-4 ml-auto text-emerald-400" />}
+              <Cpu className="h-5 w-5 text-fg/40" />
+              <span className="text-sm text-fg">Use global default model</span>
+              {!summarisationModelId && <Check className="h-4 w-4 ml-auto text-accent" />}
             </button>
             {models
               .filter((model) => {
@@ -1201,19 +1201,19 @@ export function DynamicMemoryPage() {
                   className={cn(
                     "flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition",
                     summarisationModelId === model.id
-                      ? "border-emerald-400/40 bg-emerald-400/10"
-                      : "border-white/10 bg-white/5 hover:bg-white/10",
+                      ? "border-accent/40 bg-accent/10"
+                      : "border-fg/10 bg-fg/5 hover:bg-fg/10",
                   )}
                 >
                   {getProviderIcon(model.providerId)}
                   <div className="flex-1 min-w-0">
-                    <span className="block truncate text-sm text-white">
+                    <span className="block truncate text-sm text-fg">
                       {model.displayName || model.name}
                     </span>
-                    <span className="block truncate text-xs text-white/40">{model.name}</span>
+                    <span className="block truncate text-xs text-fg/40">{model.name}</span>
                   </div>
                   {summarisationModelId === model.id && (
-                    <Check className="h-4 w-4 shrink-0 text-emerald-400" />
+                    <Check className="h-4 w-4 shrink-0 text-accent" />
                   )}
                 </button>
               ))}
@@ -1253,8 +1253,8 @@ function SettingRow({
   return (
     <div className="flex items-center justify-between gap-4">
       <div className="min-w-0 flex-1">
-        <div className="text-sm text-white">{label}</div>
-        <div className="text-[10px] text-white/40">{description}</div>
+        <div className="text-sm text-fg">{label}</div>
+        <div className="text-[10px] text-fg/40">{description}</div>
       </div>
       <div className="grid grid-cols-[96px_56px] items-center gap-2 shrink-0">
         <input
@@ -1272,12 +1272,12 @@ function SettingRow({
             }
           }}
           className={cn(
-            "w-full rounded-lg border border-white/10 bg-black/30",
-            "px-2.5 py-1.5 text-sm text-white text-right",
-            "focus:border-white/20 focus:outline-none",
+            "w-full rounded-lg border border-fg/10 bg-surface-el/30",
+            "px-2.5 py-1.5 text-sm text-fg text-right",
+            "focus:border-fg/20 focus:outline-none",
           )}
         />
-        <span className="text-[11px] text-white/40 text-right">{unit || ""}</span>
+        <span className="text-[11px] text-fg/40 text-right">{unit || ""}</span>
       </div>
     </div>
   );

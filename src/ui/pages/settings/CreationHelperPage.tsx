@@ -428,10 +428,10 @@ export function CreationHelperPage() {
       <main className="flex-1 px-4 pb-24 pt-4">
         <div className="mx-auto w-full max-w-5xl space-y-6">
           {/* Info Card */}
-          <div className={cn("rounded-xl border border-rose-400/20 bg-rose-400/5 p-3")}>
+          <div className={cn("rounded-xl border border-danger/20 bg-danger/5 p-3")}>
             <div className="flex items-start gap-2">
-              <Sparkles className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
-              <p className="text-xs text-rose-200/80 leading-relaxed">
+              <Sparkles className="h-4 w-4 text-danger shrink-0 mt-0.5" />
+              <p className="text-xs text-danger/80 leading-relaxed">
                 Creation Helper guides you through building characters with AI assistance. Configure
                 the model and tools used during character creation.
               </p>
@@ -442,61 +442,61 @@ export function CreationHelperPage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Left Column - Model Configuration */}
             <div className="space-y-4">
-              <h3 className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/35 px-1">
+              <h3 className="text-[10px] font-semibold uppercase tracking-[0.25em] text-fg/35 px-1">
                 Model Configuration
               </h3>
 
               {/* Chat Model Selector */}
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
-                  <div className="rounded-lg border border-rose-400/30 bg-rose-400/10 p-1.5">
-                    <MessageSquare className="h-4 w-4 text-rose-400" />
+                  <div className="rounded-lg border border-danger/30 bg-danger/10 p-1.5">
+                    <MessageSquare className="h-4 w-4 text-danger" />
                   </div>
-                  <h3 className="text-sm font-semibold text-white">Chat Model</h3>
+                  <h3 className="text-sm font-semibold text-fg">Chat Model</h3>
                 </div>
 
                 {textModels.length > 0 ? (
                   <button
                     type="button"
                     onClick={() => setShowModelMenu(true)}
-                    className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-black/20 px-3.5 py-3 text-left transition hover:bg-black/30 focus:border-white/25 focus:outline-none"
+                    className="flex w-full items-center justify-between rounded-xl border border-fg/10 bg-surface-el/20 px-3.5 py-3 text-left transition hover:bg-surface-el/30 focus:border-fg/25 focus:outline-none"
                   >
                     <div className="flex items-center gap-2">
                       {selectedModelId ? (
                         getProviderIcon(selectedModel?.providerId || "")
                       ) : (
-                        <Cpu className="h-5 w-5 text-white/40" />
+                        <Cpu className="h-5 w-5 text-fg/40" />
                       )}
                       <span
-                        className={`text-sm ${selectedModelId ? "text-white" : "text-white/50"}`}
+                        className={`text-sm ${selectedModelId ? "text-fg" : "text-fg/50"}`}
                       >
                         {selectedModelId
                           ? selectedModel?.displayName || "Selected Model"
                           : `Use app default${defaultModel ? ` (${defaultModel.displayName})` : ""}`}
                       </span>
                     </div>
-                    <ChevronDown className="h-4 w-4 text-white/40" />
+                    <ChevronDown className="h-4 w-4 text-fg/40" />
                   </button>
                 ) : (
-                  <div className="rounded-xl border border-white/10 bg-black/20 px-4 py-3">
-                    <p className="text-sm text-white/50">No models available</p>
+                  <div className="rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3">
+                    <p className="text-sm text-fg/50">No models available</p>
                   </div>
                 )}
-                <p className="text-xs text-white/50 px-1">
+                <p className="text-xs text-fg/50 px-1">
                   AI model for character creation conversations
                 </p>
               </div>
 
               {/* Streaming Toggle */}
-              <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+              <div className="rounded-xl border border-fg/10 bg-fg/5 px-4 py-3">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <div className="rounded-lg border border-emerald-400/30 bg-emerald-400/10 p-1.5">
-                      <Zap className="h-4 w-4 text-emerald-400" />
+                    <div className="rounded-lg border border-accent/30 bg-accent/10 p-1.5">
+                      <Zap className="h-4 w-4 text-accent/80" />
                     </div>
                     <div>
-                      <span className="text-sm font-medium text-white">Streaming Output</span>
-                      <p className="text-[11px] text-white/45">
+                      <span className="text-sm font-medium text-fg">Streaming Output</span>
+                      <p className="text-[11px] text-fg/45">
                         Show responses as they're generated
                       </p>
                     </div>
@@ -511,12 +511,12 @@ export function CreationHelperPage() {
                     <div
                       className={cn(
                         "w-9 h-5 rounded-full transition-colors",
-                        streamingEnabled ? "bg-emerald-500" : "bg-white/20",
+                        streamingEnabled ? "bg-accent" : "bg-fg/20",
                       )}
                     >
                       <div
                         className={cn(
-                          "absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform shadow-sm",
+                          "absolute top-0.5 left-0.5 w-4 h-4 bg-fg rounded-full transition-transform shadow-sm",
                           streamingEnabled && "translate-x-4",
                         )}
                       />
@@ -528,57 +528,57 @@ export function CreationHelperPage() {
               {/* Image Model Selector */}
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
-                  <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-1.5">
-                    <Image className="h-4 w-4 text-amber-400" />
+                  <div className="rounded-lg border border-warning/30 bg-warning/10 p-1.5">
+                    <Image className="h-4 w-4 text-warning/80" />
                   </div>
-                  <h3 className="text-sm font-semibold text-white">Image Generation Model</h3>
+                  <h3 className="text-sm font-semibold text-fg">Image Generation Model</h3>
                 </div>
 
                 {imageModels.length > 0 ? (
                   <button
                     type="button"
                     onClick={() => setShowImageModelMenu(true)}
-                    className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-black/20 px-3.5 py-3 text-left transition hover:bg-black/30 focus:border-white/25 focus:outline-none"
+                    className="flex w-full items-center justify-between rounded-xl border border-fg/10 bg-surface-el/20 px-3.5 py-3 text-left transition hover:bg-surface-el/30 focus:border-fg/25 focus:outline-none"
                   >
                     <div className="flex items-center gap-2">
                       {imageModelId ? (
                         getProviderIcon(selectedImageModel?.providerId || "")
                       ) : (
-                        <Image className="h-5 w-5 text-white/40" />
+                        <Image className="h-5 w-5 text-fg/40" />
                       )}
-                      <span className={`text-sm ${imageModelId ? "text-white" : "text-white/50"}`}>
+                      <span className={`text-sm ${imageModelId ? "text-fg" : "text-fg/50"}`}>
                         {imageModelId
                           ? selectedImageModel?.displayName || "Selected Model"
                           : "No model selected"}
                       </span>
                     </div>
-                    <ChevronDown className="h-4 w-4 text-white/40" />
+                    <ChevronDown className="h-4 w-4 text-fg/40" />
                   </button>
                 ) : (
-                  <div className="rounded-xl border border-white/10 bg-black/20 px-4 py-3">
-                    <p className="text-sm text-white/50">No image models available</p>
+                  <div className="rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3">
+                    <p className="text-sm text-fg/50">No image models available</p>
                   </div>
                 )}
-                <p className="text-xs text-white/50 px-1">For generating character avatars</p>
+                <p className="text-xs text-fg/50 px-1">For generating character avatars</p>
               </div>
             </div>
 
             {/* Right Column - Tool Selection */}
             <div className="space-y-4">
-              <h3 className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/35 px-1">
+              <h3 className="text-[10px] font-semibold uppercase tracking-[0.25em] text-fg/35 px-1">
                 Tool Selection
               </h3>
 
               {/* Smart Tool Selection Toggle */}
-              <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+              <div className="rounded-xl border border-fg/10 bg-fg/5 px-4 py-3">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <div className="rounded-lg border border-blue-400/30 bg-blue-400/10 p-1.5">
-                      <Wand2 className="h-4 w-4 text-blue-400" />
+                    <div className="rounded-lg border border-info/30 bg-info/10 p-1.5">
+                      <Wand2 className="h-4 w-4 text-info" />
                     </div>
                     <div>
-                      <span className="text-sm font-medium text-white">Smart Tool Selection</span>
-                      <p className="text-[11px] text-white/45">
+                      <span className="text-sm font-medium text-fg">Smart Tool Selection</span>
+                      <p className="text-[11px] text-fg/45">
                         AI automatically chooses which tools to use
                       </p>
                     </div>
@@ -593,19 +593,19 @@ export function CreationHelperPage() {
                     <div
                       className={cn(
                         "w-9 h-5 rounded-full transition-colors",
-                        smartToolSelection ? "bg-blue-500" : "bg-white/20",
+                        smartToolSelection ? "bg-info" : "bg-fg/20",
                       )}
                     >
                       <div
                         className={cn(
-                          "absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform shadow-sm",
+                          "absolute top-0.5 left-0.5 w-4 h-4 bg-fg rounded-full transition-transform shadow-sm",
                           smartToolSelection && "translate-x-4",
                         )}
                       />
                     </div>
                   </label>
                 </div>
-                <div className="mt-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-white/60">
+                <div className="mt-3 rounded-lg border border-fg/10 bg-fg/5 px-3 py-2 text-[11px] text-fg/60">
                   {smartToolSelection
                     ? "When enabled, the AI Creator Helper asks what you want to create and loads only the relevant tool set."
                     : "When disabled, the AI Creator Helper opens directly and uses all enabled tools; the assistant decides what to build."}
@@ -616,7 +616,7 @@ export function CreationHelperPage() {
               {!smartToolSelection && (
                 <>
                   <div className="space-y-3">
-                    <p className="text-xs text-white/50 px-1">Quick Presets</p>
+                    <p className="text-xs text-fg/50 px-1">Quick Presets</p>
                     <div className="grid grid-cols-3 gap-2">
                       {TOOL_PRESETS.map((preset) => (
                         <button
@@ -625,8 +625,8 @@ export function CreationHelperPage() {
                           className={cn(
                             "rounded-xl border px-3 py-2.5 text-center transition-all",
                             currentPreset === preset.id
-                              ? "border-rose-400/40 bg-rose-500/15 text-rose-200"
-                              : "border-white/10 bg-white/5 text-white/60 hover:border-white/20",
+                              ? "border-danger/40 bg-danger/15 text-danger"
+                              : "border-fg/10 bg-fg/5 text-fg/60 hover:border-fg/20",
                           )}
                         >
                           <span className="text-xs font-medium">{preset.name}</span>
@@ -634,7 +634,7 @@ export function CreationHelperPage() {
                       ))}
                     </div>
                     {currentPreset === "custom" && (
-                      <p className="text-[11px] text-amber-200/70 px-1">
+                      <p className="text-[11px] text-warning/70 px-1">
                         Custom selection — {enabledTools.length} tools enabled
                       </p>
                     )}
@@ -647,22 +647,22 @@ export function CreationHelperPage() {
                         TOOL_CATEGORIES[category as keyof typeof TOOL_CATEGORIES];
                       const colorMap = {
                         blue: {
-                          badge: "border-blue-400/30 bg-blue-500/10 text-blue-300",
+                          badge: "border-info/30 bg-info/10 text-info/80",
                         },
                         emerald: {
-                          badge: "border-emerald-400/30 bg-emerald-500/10 text-emerald-300",
+                          badge: "border-accent/30 bg-accent/10 text-accent/80",
                         },
                         amber: {
-                          badge: "border-amber-400/30 bg-amber-500/10 text-amber-300",
+                          badge: "border-warning/30 bg-warning/10 text-warning/80",
                         },
                         rose: {
-                          badge: "border-rose-400/30 bg-rose-500/10 text-rose-300",
+                          badge: "border-danger/30 bg-danger/10 text-danger/80",
                         },
                         cyan: {
-                          badge: "border-cyan-400/30 bg-cyan-500/10 text-cyan-300",
+                          badge: "border-info/30 bg-info/10 text-info/80",
                         },
                         purple: {
-                          badge: "border-purple-400/30 bg-purple-500/10 text-purple-300",
+                          badge: "border-secondary/30 bg-secondary/10 text-secondary/80",
                         },
                       };
 
@@ -682,7 +682,7 @@ export function CreationHelperPage() {
                             </span>
                           </div>
 
-                          <div className="rounded-xl border border-white/10 bg-white/5 overflow-hidden divide-y divide-white/5">
+                          <div className="rounded-xl border border-fg/10 bg-fg/5 overflow-hidden divide-y divide-fg/5">
                             {tools.map((tool) => {
                               const Icon = tool.icon;
                               const isEnabled = enabledTools.includes(tool.id);
@@ -693,21 +693,21 @@ export function CreationHelperPage() {
                                   onClick={() => handleToolToggle(tool.id)}
                                   className={cn(
                                     "w-full flex items-center gap-3 px-4 py-3 text-left",
-                                    "transition-colors hover:bg-white/5",
+                                    "transition-colors hover:bg-fg/5",
                                   )}
                                 >
                                   <div
                                     className={cn(
                                       "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border",
                                       isEnabled
-                                        ? "border-white/20 bg-white/10"
-                                        : "border-white/10 bg-white/5",
+                                        ? "border-fg/20 bg-fg/10"
+                                        : "border-fg/10 bg-fg/5",
                                     )}
                                   >
                                     <Icon
                                       className={cn(
                                         "h-4 w-4 transition-colors",
-                                        isEnabled ? "text-white/70" : "text-white/30",
+                                        isEnabled ? "text-fg/70" : "text-fg/30",
                                       )}
                                     />
                                   </div>
@@ -715,12 +715,12 @@ export function CreationHelperPage() {
                                     <span
                                       className={cn(
                                         "text-sm font-medium",
-                                        isEnabled ? "text-white" : "text-white/50",
+                                        isEnabled ? "text-fg" : "text-fg/50",
                                       )}
                                     >
                                       {tool.name}
                                     </span>
-                                    <p className="text-[11px] text-white/40 truncate">
+                                    <p className="text-[11px] text-fg/40 truncate">
                                       {tool.description}
                                     </p>
                                   </div>
@@ -728,11 +728,11 @@ export function CreationHelperPage() {
                                     className={cn(
                                       "flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition-all",
                                       isEnabled
-                                        ? "border-emerald-400/50 bg-emerald-500/20"
-                                        : "border-white/15 bg-white/5",
+                                        ? "border-accent/50 bg-accent/20"
+                                        : "border-fg/15 bg-fg/5",
                                     )}
                                   >
-                                    {isEnabled && <Check className="h-3 w-3 text-emerald-300" />}
+                                    {isEnabled && <Check className="h-3 w-3 text-accent/80" />}
                                   </div>
                                 </button>
                               );
@@ -755,10 +755,10 @@ export function CreationHelperPage() {
               "flex items-start gap-3",
             )}
           >
-            <Info className="mt-0.5 h-4 w-4 shrink-0 text-white/30" />
-            <div className="text-[11px] leading-relaxed text-white/45">
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-fg/30" />
+            <div className="text-[11px] leading-relaxed text-fg/45">
               <p>
-                When <strong className="text-white/60">Smart Tool Selection</strong> is enabled, the
+                When <strong className="text-fg/60">Smart Tool Selection</strong> is enabled, the
                 AI decides which tools to use based on context. Disable it to manually control which
                 tools are available.
               </p>
@@ -783,10 +783,10 @@ export function CreationHelperPage() {
               value={modelSearchQuery}
               onChange={(e) => setModelSearchQuery(e.target.value)}
               placeholder="Search models..."
-              className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-2.5 pl-10 text-sm text-white placeholder-white/40 focus:border-white/20 focus:outline-none"
+              className="w-full rounded-xl border border-fg/10 bg-surface-el/30 px-4 py-2.5 pl-10 text-sm text-fg placeholder-fg/40 focus:border-fg/20 focus:outline-none"
             />
             <svg
-              className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40"
+              className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg/40"
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
@@ -809,20 +809,20 @@ export function CreationHelperPage() {
               className={cn(
                 "flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition",
                 !selectedModelId
-                  ? "border-emerald-400/40 bg-emerald-400/10"
-                  : "border-white/10 bg-white/5 hover:bg-white/10",
+                  ? "border-accent/40 bg-accent/10"
+                  : "border-fg/10 bg-fg/5 hover:bg-fg/10",
               )}
             >
-              <Cpu className="h-5 w-5 text-white/40" />
+              <Cpu className="h-5 w-5 text-fg/40" />
               <div className="flex-1 min-w-0">
-                <span className="text-sm text-white">Use app default</span>
+                <span className="text-sm text-fg">Use app default</span>
                 {defaultModel && (
-                  <span className="block truncate text-xs text-white/40">
+                  <span className="block truncate text-xs text-fg/40">
                     {defaultModel.displayName}
                   </span>
                 )}
               </div>
-              {!selectedModelId && <Check className="h-4 w-4 ml-auto text-emerald-400" />}
+              {!selectedModelId && <Check className="h-4 w-4 ml-auto text-accent/80" />}
             </button>
             {textModels
               .filter((model) => {
@@ -844,19 +844,19 @@ export function CreationHelperPage() {
                   className={cn(
                     "flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition",
                     selectedModelId === model.id
-                      ? "border-emerald-400/40 bg-emerald-400/10"
-                      : "border-white/10 bg-white/5 hover:bg-white/10",
+                      ? "border-accent/40 bg-accent/10"
+                      : "border-fg/10 bg-fg/5 hover:bg-fg/10",
                   )}
                 >
                   {getProviderIcon(model.providerId)}
                   <div className="flex-1 min-w-0">
-                    <span className="block truncate text-sm text-white">
+                    <span className="block truncate text-sm text-fg">
                       {model.displayName || model.name}
                     </span>
-                    <span className="block truncate text-xs text-white/40">{model.name}</span>
+                    <span className="block truncate text-xs text-fg/40">{model.name}</span>
                   </div>
                   {selectedModelId === model.id && (
-                    <Check className="h-4 w-4 shrink-0 text-emerald-400" />
+                    <Check className="h-4 w-4 shrink-0 text-accent/80" />
                   )}
                 </button>
               ))}
@@ -880,10 +880,10 @@ export function CreationHelperPage() {
               value={imageModelSearchQuery}
               onChange={(e) => setImageModelSearchQuery(e.target.value)}
               placeholder="Search models..."
-              className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-2.5 pl-10 text-sm text-white placeholder-white/40 focus:border-white/20 focus:outline-none"
+              className="w-full rounded-xl border border-fg/10 bg-surface-el/30 px-4 py-2.5 pl-10 text-sm text-fg placeholder-fg/40 focus:border-fg/20 focus:outline-none"
             />
             <svg
-              className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40"
+              className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg/40"
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
@@ -906,13 +906,13 @@ export function CreationHelperPage() {
               className={cn(
                 "flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition",
                 !imageModelId
-                  ? "border-emerald-400/40 bg-emerald-400/10"
-                  : "border-white/10 bg-white/5 hover:bg-white/10",
+                  ? "border-accent/40 bg-accent/10"
+                  : "border-fg/10 bg-fg/5 hover:bg-fg/10",
               )}
             >
-              <Image className="h-5 w-5 text-white/40" />
-              <span className="text-sm text-white">No model selected</span>
-              {!imageModelId && <Check className="h-4 w-4 ml-auto text-emerald-400" />}
+              <Image className="h-5 w-5 text-fg/40" />
+              <span className="text-sm text-fg">No model selected</span>
+              {!imageModelId && <Check className="h-4 w-4 ml-auto text-accent/80" />}
             </button>
             {imageModels
               .filter((model) => {
@@ -934,19 +934,19 @@ export function CreationHelperPage() {
                   className={cn(
                     "flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition",
                     imageModelId === model.id
-                      ? "border-emerald-400/40 bg-emerald-400/10"
-                      : "border-white/10 bg-white/5 hover:bg-white/10",
+                      ? "border-accent/40 bg-accent/10"
+                      : "border-fg/10 bg-fg/5 hover:bg-fg/10",
                   )}
                 >
                   {getProviderIcon(model.providerId)}
                   <div className="flex-1 min-w-0">
-                    <span className="block truncate text-sm text-white">
+                    <span className="block truncate text-sm text-fg">
                       {model.displayName || model.name}
                     </span>
-                    <span className="block truncate text-xs text-white/40">{model.name}</span>
+                    <span className="block truncate text-xs text-fg/40">{model.name}</span>
                   </div>
                   {imageModelId === model.id && (
-                    <Check className="h-4 w-4 shrink-0 text-emerald-400" />
+                    <Check className="h-4 w-4 shrink-0 text-accent/80" />
                   )}
                 </button>
               ))}

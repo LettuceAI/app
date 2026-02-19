@@ -91,13 +91,13 @@ function getCategoryStyles(category: string, type: "badge" | "border") {
   if (type === "badge") {
     switch (info.color) {
       case "blue":
-        return "border-blue-400/30 bg-blue-500/10 text-blue-300";
+        return "border-info/30 bg-info/10 text-info/80";
       case "orange":
-        return "border-orange-400/30 bg-orange-500/10 text-orange-300";
+        return "border-warning/30 bg-warning/10 text-warning/80";
       case "purple":
-        return "border-purple-400/30 bg-purple-500/10 text-purple-300";
+        return "border-secondary/30 bg-secondary/10 text-secondary/80";
       default:
-        return "border-white/20 bg-white/10 text-white/70";
+        return "border-fg/20 bg-fg/10 text-fg/70";
     }
   }
   return "";
@@ -107,18 +107,18 @@ function SimilarityBar({ score, passed }: { score: number; passed: boolean }) {
   const percentage = Math.round(score * 100);
   return (
     <div className="flex items-center gap-3">
-      <div className="flex-1 h-2 bg-white/10 rounded-full overflow-hidden">
+      <div className="flex-1 h-2 bg-fg/10 rounded-full overflow-hidden">
         <motion.div
           initial={{ width: 0 }}
           animate={{ width: `${percentage}%` }}
           transition={{ duration: 0.5, ease: "easeOut" }}
-          className={cn("h-full rounded-full", passed ? "bg-emerald-500" : "bg-red-500")}
+          className={cn("h-full rounded-full", passed ? "bg-accent" : "bg-danger")}
         />
       </div>
       <span
         className={cn(
           "text-sm font-bold tabular-nums w-14 text-right",
-          passed ? "text-emerald-400" : "text-red-400",
+          passed ? "text-accent/80" : "text-danger/80",
         )}
       >
         {percentage}%
@@ -142,29 +142,29 @@ function TestResultCard({
     <div
       className={cn(
         "rounded-xl border overflow-hidden transition-all",
-        result.passed ? "border-white/10 bg-white/5" : "border-red-500/30 bg-red-500/5",
+        result.passed ? "border-fg/10 bg-fg/5" : "border-danger/30 bg-danger/5",
       )}
     >
       <button
         onClick={onToggle}
-        className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-white/5 transition-colors"
+        className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-fg/5 transition-colors"
       >
         <div
           className={cn(
             "flex h-6 w-6 shrink-0 items-center justify-center rounded-full",
-            result.passed ? "bg-emerald-500/20" : "bg-red-500/20",
+            result.passed ? "bg-accent/20" : "bg-danger/20",
           )}
         >
           {result.passed ? (
-            <CheckCircle className="h-4 w-4 text-emerald-400" />
+            <CheckCircle className="h-4 w-4 text-accent/80" />
           ) : (
-            <XCircle className="h-4 w-4 text-red-400" />
+            <XCircle className="h-4 w-4 text-danger/80" />
           )}
         </div>
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-medium text-white truncate">{result.pairName}</span>
+            <span className="text-sm font-medium text-fg truncate">{result.pairName}</span>
             <span
               className={cn(
                 "inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-medium",
@@ -181,13 +181,13 @@ function TestResultCard({
           <span
             className={cn(
               "text-lg font-bold tabular-nums",
-              result.passed ? "text-emerald-400" : "text-red-400",
+              result.passed ? "text-accent/80" : "text-danger/80",
             )}
           >
             {Math.round(result.similarityScore * 100)}%
           </span>
           <ChevronDown
-            className={cn("h-4 w-4 text-white/40 transition-transform", isExpanded && "rotate-180")}
+            className={cn("h-4 w-4 text-fg/40 transition-transform", isExpanded && "rotate-180")}
           />
         </div>
       </button>
@@ -201,26 +201,26 @@ function TestResultCard({
             transition={{ duration: 0.2 }}
             className="overflow-hidden"
           >
-            <div className="px-4 pb-4 space-y-3 border-t border-white/5 pt-3">
+            <div className="px-4 pb-4 space-y-3 border-t border-fg/5 pt-3">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div className="bg-black/30 rounded-lg p-3">
-                  <span className="text-[10px] uppercase tracking-wider text-white/40 block mb-1.5">
+                <div className="bg-surface-el/30 rounded-lg p-3">
+                  <span className="text-[10px] uppercase tracking-wider text-fg/40 block mb-1.5">
                     Text A
                   </span>
-                  <p className="text-xs text-white/70 leading-relaxed">"{result.textA}"</p>
+                  <p className="text-xs text-fg/70 leading-relaxed">"{result.textA}"</p>
                 </div>
-                <div className="bg-black/30 rounded-lg p-3">
-                  <span className="text-[10px] uppercase tracking-wider text-white/40 block mb-1.5">
+                <div className="bg-surface-el/30 rounded-lg p-3">
+                  <span className="text-[10px] uppercase tracking-wider text-fg/40 block mb-1.5">
                     Text B
                   </span>
-                  <p className="text-xs text-white/70 leading-relaxed">"{result.textB}"</p>
+                  <p className="text-xs text-fg/70 leading-relaxed">"{result.textB}"</p>
                 </div>
               </div>
 
               <SimilarityBar score={result.similarityScore} passed={result.passed} />
 
-              <div className="text-xs text-white/50">
-                <span className="text-white/30">Expected:</span> {result.expected}
+              <div className="text-xs text-fg/50">
+                <span className="text-fg/30">Expected:</span> {result.expected}
               </div>
             </div>
           </motion.div>
@@ -368,28 +368,28 @@ export function EmbeddingTestPage() {
           <motion.div
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
-            className="rounded-xl border border-white/10 bg-white/5 p-6"
+            className="rounded-xl border border-fg/10 bg-fg/5 p-6"
           >
             <div className="flex flex-col items-center text-center">
               <div className="mb-4">
                 {testStatus === "testing" && (
-                  <div className="flex h-16 w-16 items-center justify-center rounded-full border border-blue-400/30 bg-blue-500/10">
-                    <Loader2 className="h-8 w-8 text-blue-400 animate-spin" />
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full border border-info/30 bg-info/10">
+                    <Loader2 className="h-8 w-8 text-info animate-spin" />
                   </div>
                 )}
                 {testStatus === "passed" && (
-                  <div className="flex h-16 w-16 items-center justify-center rounded-full border border-emerald-400/30 bg-emerald-500/10">
-                    <CheckCircle className="h-8 w-8 text-emerald-400" />
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full border border-accent/30 bg-accent/10">
+                    <CheckCircle className="h-8 w-8 text-accent/80" />
                   </div>
                 )}
                 {testStatus === "failed" && (
-                  <div className="flex h-16 w-16 items-center justify-center rounded-full border border-red-400/30 bg-red-500/10">
-                    <XCircle className="h-8 w-8 text-red-400" />
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full border border-danger/30 bg-danger/10">
+                    <XCircle className="h-8 w-8 text-danger/80" />
                   </div>
                 )}
               </div>
 
-              <h2 className="text-lg font-semibold text-white mb-1">
+              <h2 className="text-lg font-semibold text-fg mb-1">
                 {testStatus === "testing" && "Running Tests..."}
                 {testStatus === "passed" && "All Tests Passed"}
                 {testStatus === "failed" && (error ? "Test Error" : "Some Tests Failed")}
@@ -398,21 +398,21 @@ export function EmbeddingTestPage() {
               {testResults && (
                 <div className="flex items-center gap-4 mt-2 mb-3">
                   <div className="flex items-center gap-1.5">
-                    <CheckCircle className="h-4 w-4 text-emerald-400" />
-                    <span className="text-sm text-emerald-400 font-medium">
+                    <CheckCircle className="h-4 w-4 text-accent/80" />
+                    <span className="text-sm text-accent/80 font-medium">
                       {passedCount} passed
                     </span>
                   </div>
                   {failedCount > 0 && (
                     <div className="flex items-center gap-1.5">
-                      <XCircle className="h-4 w-4 text-red-400" />
-                      <span className="text-sm text-red-400 font-medium">{failedCount} failed</span>
+                      <XCircle className="h-4 w-4 text-danger/80" />
+                      <span className="text-sm text-danger/80 font-medium">{failedCount} failed</span>
                     </div>
                   )}
                 </div>
               )}
 
-              <p className="text-sm text-white/60 max-w-md">
+              <p className="text-sm text-fg/60 max-w-md">
                 {testStatus === "testing" &&
                   "Computing embeddings and comparing similarity scores..."}
                 {testStatus === "passed" &&
@@ -422,18 +422,18 @@ export function EmbeddingTestPage() {
                     "Some tests produced unexpected results. Consider reinstalling the model.")}
               </p>
               {testStatus === "testing" && testProgress && testProgress.total > 0 && (
-                <div className="mt-3 text-xs text-white/50">
+                <div className="mt-3 text-xs text-fg/50">
                   Testing {testProgress.current}/{testProgress.total}
                 </div>
               )}
 
               {testStatus === "failed" && failedCount >= 4 && !error && (
-                <div className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 p-3">
+                <div className="mt-4 rounded-lg border border-danger/30 bg-danger/10 p-3">
                   <div className="flex items-start gap-2">
-                    <AlertTriangle className="h-5 w-5 text-red-400 shrink-0 mt-0.5" />
+                    <AlertTriangle className="h-5 w-5 text-danger/80 shrink-0 mt-0.5" />
                     <div className="min-w-0">
-                      <p className="text-sm font-medium text-red-200">Model May Be Corrupted</p>
-                      <p className="text-xs text-red-200/70 mt-1">
+                      <p className="text-sm font-medium text-danger/80">Model May Be Corrupted</p>
+                      <p className="text-xs text-danger/80/70 mt-1">
                         {failedCount} or more tests failed. The embedding model may be corrupted or
                         incompatible. We recommend reinstalling it.
                       </p>
@@ -447,9 +447,9 @@ export function EmbeddingTestPage() {
                   onClick={runTest}
                   className={cn(
                     "mt-4 inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium",
-                    "border border-white/10 bg-white/5 text-white",
+                    "border border-fg/10 bg-fg/5 text-fg",
                     interactive.transition.fast,
-                    "hover:bg-white/10",
+                    "hover:bg-fg/10",
                   )}
                 >
                   <RefreshCw className="h-4 w-4" />
@@ -465,36 +465,36 @@ export function EmbeddingTestPage() {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1 }}
-              className="rounded-xl border border-white/10 bg-white/5 p-4"
+              className="rounded-xl border border-fg/10 bg-fg/5 p-4"
             >
               <div className="flex items-center gap-3 mb-3">
-                <div className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/10">
-                  <Cpu className="h-4 w-4 text-white/70" />
+                <div className="flex h-8 w-8 items-center justify-center rounded-full border border-fg/10 bg-fg/10">
+                  <Cpu className="h-4 w-4 text-fg/70" />
                 </div>
-                <span className="text-sm font-medium text-white">Model Information</span>
+                <span className="text-sm font-medium text-fg">Model Information</span>
               </div>
               <div className="grid grid-cols-3 gap-3">
-                <div className="bg-black/30 rounded-lg p-3 text-center">
-                  <span className="text-[10px] uppercase tracking-wider text-white/40 block mb-1">
+                <div className="bg-surface-el/30 rounded-lg p-3 text-center">
+                  <span className="text-[10px] uppercase tracking-wider text-fg/40 block mb-1">
                     Version
                   </span>
-                  <span className="text-sm font-semibold text-white">
+                  <span className="text-sm font-semibold text-fg">
                     {testResults.modelInfo.version}
                   </span>
                 </div>
-                <div className="bg-black/30 rounded-lg p-3 text-center">
-                  <span className="text-[10px] uppercase tracking-wider text-white/40 block mb-1">
+                <div className="bg-surface-el/30 rounded-lg p-3 text-center">
+                  <span className="text-[10px] uppercase tracking-wider text-fg/40 block mb-1">
                     Max Tokens
                   </span>
-                  <span className="text-sm font-semibold text-white">
+                  <span className="text-sm font-semibold text-fg">
                     {testResults.modelInfo.maxTokens.toLocaleString()}
                   </span>
                 </div>
-                <div className="bg-black/30 rounded-lg p-3 text-center">
-                  <span className="text-[10px] uppercase tracking-wider text-white/40 block mb-1">
+                <div className="bg-surface-el/30 rounded-lg p-3 text-center">
+                  <span className="text-[10px] uppercase tracking-wider text-fg/40 block mb-1">
                     Dimensions
                   </span>
-                  <span className="text-sm font-semibold text-white">
+                  <span className="text-sm font-semibold text-fg">
                     {testResults.modelInfo.embeddingDimensions}
                   </span>
                 </div>
@@ -511,12 +511,12 @@ export function EmbeddingTestPage() {
               className="space-y-4"
             >
               <div className="flex items-center justify-between">
-                <h3 className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/35 px-1">
+                <h3 className="text-[10px] font-semibold uppercase tracking-[0.25em] text-fg/35 px-1">
                   Test Results
                 </h3>
                 <button
                   onClick={() => setShowAllResults(!showAllResults)}
-                  className="text-xs text-white/50 hover:text-white/70 transition-colors"
+                  className="text-xs text-fg/50 hover:text-fg/70 transition-colors"
                 >
                   {showAllResults ? "Collapse All" : "Expand All"}
                 </button>
@@ -538,11 +538,11 @@ export function EmbeddingTestPage() {
                         {categoryInfo.icon}
                         {categoryInfo.label}
                       </span>
-                      <span className="text-[10px] text-white/40">
+                      <span className="text-[10px] text-fg/40">
                         {results.filter((r) => r.passed).length}/{results.length} passed
                       </span>
                       {categoryPassed && (
-                        <CheckCircle className="h-3.5 w-3.5 text-emerald-400 ml-auto" />
+                        <CheckCircle className="h-3.5 w-3.5 text-accent/80 ml-auto" />
                       )}
                     </div>
 
@@ -568,12 +568,12 @@ export function EmbeddingTestPage() {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.24 }}
-              className="rounded-xl border border-blue-400/25 bg-blue-500/5 p-4"
+              className="rounded-xl border border-info/25 bg-info/5 p-4"
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <h3 className="text-sm font-semibold text-blue-100">Developer Benchmark</h3>
-                  <p className="mt-1 text-xs text-blue-200/70">
+                  <h3 className="text-sm font-semibold text-info">Developer Benchmark</h3>
+                  <p className="mt-1 text-xs text-info/70">
                     Compare local v2 and v3 models for speed and similarity outputs.
                   </p>
                 </div>
@@ -583,8 +583,8 @@ export function EmbeddingTestPage() {
                   className={cn(
                     "inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors",
                     benchmarkStatus === "running"
-                      ? "cursor-not-allowed border-blue-300/20 bg-blue-500/10 text-blue-100/60"
-                      : "border-blue-300/40 bg-blue-500/20 text-blue-100 hover:bg-blue-500/30",
+                      ? "cursor-not-allowed border-info/20 bg-info/10 text-info/60"
+                      : "border-info/40 bg-info/20 text-info hover:bg-info/30",
                   )}
                 >
                   {benchmarkStatus === "running" ? (
@@ -602,7 +602,7 @@ export function EmbeddingTestPage() {
               </div>
 
               {benchmarkError && (
-                <div className="mt-3 rounded-lg border border-red-500/35 bg-red-500/10 p-3 text-xs text-red-200/80">
+                <div className="mt-3 rounded-lg border border-danger/35 bg-danger/10 p-3 text-xs text-danger/80/80">
                   {benchmarkError}
                 </div>
               )}
@@ -610,29 +610,29 @@ export function EmbeddingTestPage() {
               {benchmarkResults && (
                 <div className="mt-4 space-y-3">
                   <div className="grid grid-cols-2 gap-3">
-                    <div className="rounded-lg border border-white/10 bg-black/30 p-3">
-                      <div className="text-[10px] uppercase tracking-wider text-white/40">v2</div>
-                      <div className="mt-1 text-xs text-white/80">
+                    <div className="rounded-lg border border-fg/10 bg-surface-el/30 p-3">
+                      <div className="text-[10px] uppercase tracking-wider text-fg/40">v2</div>
+                      <div className="mt-1 text-xs text-fg/80">
                         avg {benchmarkResults.v2.averageMs.toFixed(2)} ms
                       </div>
-                      <div className="text-xs text-white/60">
+                      <div className="text-xs text-fg/60">
                         p95 {benchmarkResults.v2.p95Ms.toFixed(2)} ms
                       </div>
                     </div>
-                    <div className="rounded-lg border border-white/10 bg-black/30 p-3">
-                      <div className="text-[10px] uppercase tracking-wider text-white/40">v3</div>
-                      <div className="mt-1 text-xs text-white/80">
+                    <div className="rounded-lg border border-fg/10 bg-surface-el/30 p-3">
+                      <div className="text-[10px] uppercase tracking-wider text-fg/40">v3</div>
+                      <div className="mt-1 text-xs text-fg/80">
                         avg {benchmarkResults.v3.averageMs.toFixed(2)} ms
                       </div>
-                      <div className="text-xs text-white/60">
+                      <div className="text-xs text-fg/60">
                         p95 {benchmarkResults.v3.p95Ms.toFixed(2)} ms
                       </div>
                     </div>
                   </div>
 
-                  <div className="rounded-lg border border-white/10 bg-black/20 p-3 text-xs text-white/70">
+                  <div className="rounded-lg border border-fg/10 bg-surface-el/20 p-3 text-xs text-fg/70">
                     Speedup (v3 vs v2):{" "}
-                    <span className="font-semibold text-white">
+                    <span className="font-semibold text-fg">
                       {benchmarkResults.averageSpeedupV3VsV2.toFixed(2)}x
                     </span>{" "}
                     at {benchmarkResults.maxTokensUsed} tokens max
@@ -642,10 +642,10 @@ export function EmbeddingTestPage() {
                     {benchmarkResults.pairDeltas.map((pair) => (
                       <div
                         key={pair.pairName}
-                        className="rounded-lg border border-white/10 bg-black/25 p-3"
+                        className="rounded-lg border border-fg/10 bg-surface-el/25 p-3"
                       >
-                        <div className="text-xs font-medium text-white/85">{pair.pairName}</div>
-                        <div className="mt-1 text-[11px] text-white/60">
+                        <div className="text-xs font-medium text-fg/85">{pair.pairName}</div>
+                        <div className="mt-1 text-[11px] text-fg/60">
                           v2 {pair.v2Similarity.toFixed(4)} | v3 {pair.v3Similarity.toFixed(4)} |
                           delta {pair.delta >= 0 ? "+" : ""}
                           {pair.delta.toFixed(4)}
@@ -663,15 +663,15 @@ export function EmbeddingTestPage() {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.15 }}
-            className="rounded-xl border border-white/10 bg-white/5 p-4"
+            className="rounded-xl border border-fg/10 bg-fg/5 p-4"
           >
             <div className="flex items-center gap-3 mb-4">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full border border-blue-400/30 bg-blue-500/10">
-                <Search className="h-4 w-4 text-blue-400" />
+              <div className="flex h-8 w-8 items-center justify-center rounded-full border border-info/30 bg-info/10">
+                <Search className="h-4 w-4 text-info" />
               </div>
               <div>
-                <span className="text-sm font-medium text-white block">Custom Comparison</span>
-                <span className="text-[11px] text-white/45">
+                <span className="text-sm font-medium text-fg block">Custom Comparison</span>
+                <span className="text-[11px] text-fg/45">
                   Test similarity between any two texts
                 </span>
               </div>
@@ -679,7 +679,7 @@ export function EmbeddingTestPage() {
 
             <div className="space-y-3">
               <div>
-                <label className="text-[10px] uppercase tracking-wider text-white/40 block mb-1.5">
+                <label className="text-[10px] uppercase tracking-wider text-fg/40 block mb-1.5">
                   First Text
                 </label>
                 <textarea
@@ -688,14 +688,14 @@ export function EmbeddingTestPage() {
                   placeholder="Enter the first text to compare..."
                   rows={2}
                   className={cn(
-                    "w-full rounded-lg border border-white/10 bg-black/30",
-                    "px-3 py-2 text-sm text-white placeholder-white/30",
-                    "focus:border-white/20 focus:outline-none resize-none",
+                    "w-full rounded-lg border border-fg/10 bg-surface-el/30",
+                    "px-3 py-2 text-sm text-fg placeholder-fg/30",
+                    "focus:border-fg/20 focus:outline-none resize-none",
                   )}
                 />
               </div>
               <div>
-                <label className="text-[10px] uppercase tracking-wider text-white/40 block mb-1.5">
+                <label className="text-[10px] uppercase tracking-wider text-fg/40 block mb-1.5">
                   Second Text
                 </label>
                 <textarea
@@ -704,9 +704,9 @@ export function EmbeddingTestPage() {
                   placeholder="Enter the second text to compare..."
                   rows={2}
                   className={cn(
-                    "w-full rounded-lg border border-white/10 bg-black/30",
-                    "px-3 py-2 text-sm text-white placeholder-white/30",
-                    "focus:border-white/20 focus:outline-none resize-none",
+                    "w-full rounded-lg border border-fg/10 bg-surface-el/30",
+                    "px-3 py-2 text-sm text-fg placeholder-fg/30",
+                    "focus:border-fg/20 focus:outline-none resize-none",
                   )}
                 />
               </div>
@@ -716,9 +716,9 @@ export function EmbeddingTestPage() {
                 disabled={comparingCustom || !customTextA.trim() || !customTextB.trim()}
                 className={cn(
                   "w-full flex items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-medium",
-                  "border border-blue-500/30 bg-blue-500/10 text-blue-200",
+                  "border border-info/30 bg-info/10 text-info",
                   interactive.transition.fast,
-                  "hover:bg-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed",
+                  "hover:bg-info/20 disabled:opacity-50 disabled:cursor-not-allowed",
                 )}
               >
                 {comparingCustom ? (
@@ -735,7 +735,7 @@ export function EmbeddingTestPage() {
               </button>
 
               {customError && (
-                <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+                <div className="rounded-lg border border-danger/20 bg-danger/10 px-3 py-2 text-sm text-danger/80">
                   {customError}
                 </div>
               )}
@@ -744,16 +744,16 @@ export function EmbeddingTestPage() {
                 <motion.div
                   initial={{ opacity: 0, scale: 0.95 }}
                   animate={{ opacity: 1, scale: 1 }}
-                  className="rounded-lg border border-white/10 bg-black/30 p-4"
+                  className="rounded-lg border border-fg/10 bg-surface-el/30 p-4"
                 >
                   <div className="text-center mb-3">
-                    <span className="text-3xl font-bold text-white">
+                    <span className="text-3xl font-bold text-fg">
                       {Math.round(customScore * 100)}%
                     </span>
-                    <span className="text-sm text-white/50 ml-1">similarity</span>
+                    <span className="text-sm text-fg/50 ml-1">similarity</span>
                   </div>
                   <SimilarityBar score={customScore} passed={customScore > 0.5} />
-                  <p className="text-xs text-white/40 text-center mt-3">
+                  <p className="text-xs text-fg/40 text-center mt-3">
                     {customScore > 0.7
                       ? "Very high similarity - texts are semantically very similar"
                       : customScore > 0.5

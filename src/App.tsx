@@ -18,6 +18,7 @@ import { BackupRestorePage } from "./ui/pages/settings/BackupRestorePage";
 import { ConvertPage } from "./ui/pages/settings/ConvertPage";
 import { UsagePage } from "./ui/pages/settings/UsagePage";
 import { AccessibilityPage } from "./ui/pages/settings/AccessibilityPage";
+import { ColorCustomizationPage } from "./ui/pages/settings/ColorCustomizationPage";
 import { LogsPage } from "./ui/pages/settings/LogsPage";
 import { CharactersPage } from "./ui/pages/settings/CharactersPage";
 import { DeveloperPage } from "./ui/pages/settings/DeveloperPage";
@@ -219,14 +220,14 @@ function App() {
           v7_relativeSplatPath: true,
         }}
       >
-        <div id="app-root" className="min-h-screen bg-[#050505] text-gray-100 antialiased">
+        <div id="app-root" className="min-h-screen bg-surface text-fg antialiased">
           <Toaster
             position={isMobile ? "bottom-center" : "top-center"}
             offset={isMobile ? { bottom: 24 } : { top: 16 }}
             toastOptions={{
               unstyled: true,
               className: "pointer-events-auto w-full max-w-md",
-              descriptionClassName: "text-xs text-white/70",
+              descriptionClassName: "text-xs text-fg/70",
             }}
           />
           <ConfirmBottomMenuHost />
@@ -559,9 +560,9 @@ function AppContent() {
           {voidActive && (
             <div className="void-overlay pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
               <div className="pointer-events-auto max-w-xs px-6 py-5 text-center">
-                <p className="text-sm text-white/70">
+                <p className="text-sm text-fg/70">
                   {voidMessage.slice(0, voidTextIndex)}
-                  <span className="ml-0.5 inline-block h-4 w-2 animate-pulse bg-white/40 align-middle" />
+                  <span className="ml-0.5 inline-block h-4 w-2 animate-pulse bg-fg/40 align-middle" />
                 </p>
                 {showRestore && (
                   <button
@@ -575,7 +576,7 @@ function AppContent() {
                         glitchTimeoutRef.current = null;
                       }
                     }}
-                    className="mt-4 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-semibold text-white hover:border-white/40 hover:bg-white/15"
+                    className="mt-4 rounded-full border border-fg/20 bg-fg/10 px-4 py-2 text-xs font-semibold text-fg hover:border-fg/40 hover:bg-fg/15"
                   >
                     Restore
                   </button>
@@ -625,6 +626,7 @@ function AppContent() {
               <Route path="/settings/security" element={<SecurityPage />} />
               <Route path="/settings/usage" element={<UsagePage />} />
               <Route path="/settings/accessibility" element={<AccessibilityPage />} />
+              <Route path="/settings/accessibility/colors" element={<ColorCustomizationPage />} />
               <Route path="/settings/logs" element={<LogsPage />} />
               <Route path="/settings/advanced" element={<AdvancedPage />} />
               <Route path="/settings/advanced/memory" element={<DynamicMemoryPage />} />
@@ -732,8 +734,8 @@ function OnboardingCheck() {
 
   if (isChecking) {
     return (
-      <div className="flex h-full items-center justify-center rounded-3xl border border-white/5 bg-white/5 backdrop-blur-sm">
-        <div className="h-10 w-10 animate-spin rounded-full border-4 border-white/10 border-t-white/60" />
+      <div className="flex h-full items-center justify-center rounded-3xl border border-fg/5 bg-fg/5 backdrop-blur-sm">
+        <div className="h-10 w-10 animate-spin rounded-full border-4 border-fg/10 border-t-fg/60" />
       </div>
     );
   }

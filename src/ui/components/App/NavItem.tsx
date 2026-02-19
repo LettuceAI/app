@@ -23,13 +23,13 @@ export function TabItem({
     >
       <motion.div
         className={`relative flex h-full w-full items-center justify-center rounded-2xl font-medium transition ${
-          active ? "text-white" : "text-gray-500 hover:text-white"
+          active ? "text-fg" : "text-fg/40 hover:text-fg"
         }`}
         whileTap={{ scale: 0.95 }}
       >
         {active && (
           <motion.div
-            className="absolute inset-0 rounded-2xl border border-white/15 bg-white/10"
+            className="absolute inset-0 rounded-2xl border border-fg/15 bg-fg/10"
             layoutId="activeTab"
             transition={{ type: "spring", stiffness: 320, damping: 28 }}
           />

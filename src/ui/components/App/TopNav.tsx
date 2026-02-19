@@ -338,7 +338,7 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
   return (
     <header
       /* Changed: added bg-opacity (bg-[#0F0F0F]/80) and increased blur to md for a premium feel */
-      className="fixed top-0 left-0 right-0 z-30 border-b border-white/10 backdrop-blur-md bg-[#0F0F0F]/80"
+      className="fixed top-0 left-0 right-0 z-30 border-b border-fg/10 backdrop-blur-md bg-nav/80"
       style={{
         paddingTop: "calc(env(safe-area-inset-top) + 12px)",
         paddingBottom: "12px",
@@ -364,7 +364,7 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
                   onClick={handleBack}
                   className={cn(
                     "flex items-center px-[0.6em] py-[0.3em] justify-center rounded-full p-2",
-                    "text-white/70 hover:text-white hover:bg-white/10",
+                    "text-fg/70 hover:text-fg hover:bg-fg/10",
                     interactive.transition.fast,
                     interactive.active.scale,
                   )}
@@ -383,7 +383,7 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
             transition={{ duration: 0.3, ease: "easeOut" }}
             className={cn(
               typography.h1.size,
-              "font-bold text-white tracking-tight truncate leading-none",
+              "font-bold text-fg tracking-tight truncate leading-none",
               isCenteredTitle && "absolute left-1/2 -translate-x-1/2 w-auto",
             )}
           >
@@ -397,13 +397,13 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
               onClick={() => navigate("/search")}
               className={cn(
                 "flex items-center px-[0.6em] py-[0.3em] justify-center rounded-full",
-                "text-white/70 hover:text-white hover:bg-white/10",
+                "text-fg/70 hover:text-fg hover:bg-fg/10",
                 interactive.transition.fast,
                 interactive.active.scale,
               )}
               aria-label="Search"
             >
-              <Search size={20} strokeWidth={2.5} className="text-white" />
+              <Search size={20} strokeWidth={2.5} className="text-fg" />
             </button>
           )}
           {showSettingsButton && (
@@ -411,13 +411,13 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
               onClick={() => navigate("/settings")}
               className={cn(
                 "flex items-center px-[0.6em] py-[0.3em] justify-center rounded-full",
-                "text-white/70 hover:text-white hover:bg-white/10",
+                "text-fg/70 hover:text-fg hover:bg-fg/10",
                 interactive.transition.fast,
                 interactive.active.scale,
               )}
               aria-label="Settings"
             >
-              <Settings size={20} strokeWidth={2.5} className="text-white" />
+              <Settings size={20} strokeWidth={2.5} className="text-fg" />
             </button>
           )}
           {showHelpButton && (
@@ -425,13 +425,13 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
               onClick={() => docsKeyForPath && openDocs(docsKeyForPath as any)}
               className={cn(
                 "flex items-center px-[0.6em] py-[0.3em] justify-center rounded-full",
-                "text-white/80 hover:text-white hover:bg-white/10",
+                "text-fg/80 hover:text-fg hover:bg-fg/10",
                 interactive.transition.fast,
                 interactive.active.scale,
               )}
               aria-label="Help"
             >
-              <HelpCircle size={20} strokeWidth={2.5} className="text-white/50" />
+              <HelpCircle size={20} strokeWidth={2.5} className="text-fg/50" />
             </button>
           )}
           {showAddButton && (
@@ -439,13 +439,13 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
               onClick={handleAddClick}
               className={cn(
                 "flex items-center px-[0.6em] py-[0.3em] justify-center rounded-full",
-                "text-white/70 hover:text-white hover:bg-white/10",
+                "text-fg/70 hover:text-fg hover:bg-fg/10",
                 interactive.transition.fast,
                 interactive.active.scale,
               )}
               aria-label="Add"
             >
-              <Plus size={20} strokeWidth={2.5} className="text-white" />
+              <Plus size={20} strokeWidth={2.5} className="text-fg" />
             </button>
           )}
           {showFilterButton && (
@@ -453,13 +453,13 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
               onClick={handleFilterClick}
               className={cn(
                 "flex items-center px-[0.6em] py-[0.3em] justify-center rounded-full",
-                "text-white/70 hover:text-white hover:bg-white/10",
+                "text-fg/70 hover:text-fg hover:bg-fg/10",
                 interactive.transition.fast,
                 interactive.active.scale,
               )}
               aria-label="Open filters"
             >
-              <Filter size={20} strokeWidth={2.5} className="text-white" />
+              <Filter size={20} strokeWidth={2.5} className="text-fg" />
             </button>
           )}
           {showSaveButton && (
@@ -484,8 +484,8 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
                 "flex items-center justify-center gap-1.5 rounded-lg px-2.5 py-1.5",
                 interactive.transition.fast,
                 canSave && !isSaving
-                  ? "bg-emerald-500/20 border border-emerald-400/40 text-emerald-100 hover:bg-emerald-500/30"
-                  : "bg-white/5 border border-white/10 text-white/40 cursor-not-allowed",
+                  ? "bg-accent/20 border border-accent/40 text-accent hover:bg-accent/30"
+                  : "bg-fg/5 border border-fg/10 text-fg/40 cursor-not-allowed",
               )}
               aria-label="Save"
             >

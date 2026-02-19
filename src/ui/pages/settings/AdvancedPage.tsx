@@ -55,86 +55,86 @@ function FeatureCard({
 }: FeatureCardProps) {
   const colorStyles = {
     rose: {
-      border: enabled ? "border-rose-400/25" : "border-white/10",
-      bg: enabled ? "bg-rose-400/8" : "bg-white/5",
-      hoverBorder: enabled ? "hover:border-rose-400/40" : "hover:border-white/20",
-      iconBorder: enabled ? "border-rose-400/40" : "border-white/15",
-      iconBg: enabled ? "bg-rose-500/15" : "bg-white/8",
-      iconShadow: enabled ? "shadow-rose-500/20" : "",
-      iconColor: enabled ? "text-rose-300" : "text-white/60",
-      toggleBg: enabled ? "bg-rose-500" : "bg-white/20",
-      toggleShadow: enabled ? "shadow-rose-500/30" : "",
-      badgeBorder: enabled ? "border-rose-400/50" : "border-white/20",
-      badgeBg: enabled ? "bg-rose-500/20" : "bg-white/10",
-      badgeText: enabled ? "text-rose-200" : "text-white/60",
+      border: enabled ? "border-danger/25" : "border-fg/10",
+      bg: enabled ? "bg-danger/8" : "bg-fg/5",
+      hoverBorder: enabled ? "hover:border-danger/40" : "hover:border-fg/20",
+      iconBorder: enabled ? "border-danger/40" : "border-fg/15",
+      iconBg: enabled ? "bg-danger/15" : "bg-fg/8",
+      iconShadow: enabled ? "shadow-danger/20" : "",
+      iconColor: enabled ? "text-danger/80" : "text-fg/60",
+      toggleBg: enabled ? "bg-danger" : "bg-fg/20",
+      toggleShadow: enabled ? "shadow-danger/30" : "",
+      badgeBorder: enabled ? "border-danger/50" : "border-fg/20",
+      badgeBg: enabled ? "bg-danger/20" : "bg-fg/10",
+      badgeText: enabled ? "text-danger" : "text-fg/60",
       gradient: enabled
         ? "radial-gradient(circle at 15% 15%, rgba(244,63,94,0.08) 0%, transparent 50%)"
         : "none",
     },
     blue: {
-      border: enabled ? "border-blue-400/25" : "border-white/10",
-      bg: enabled ? "bg-blue-400/8" : "bg-white/5",
-      hoverBorder: enabled ? "hover:border-blue-400/40" : "hover:border-white/20",
-      iconBorder: enabled ? "border-blue-400/40" : "border-white/15",
-      iconBg: enabled ? "bg-blue-500/15" : "bg-white/8",
-      iconShadow: enabled ? "shadow-blue-500/20" : "",
-      iconColor: enabled ? "text-blue-300" : "text-white/60",
-      toggleBg: enabled ? "bg-blue-500" : "bg-white/20",
-      toggleShadow: enabled ? "shadow-blue-500/30" : "",
-      badgeBorder: enabled ? "border-blue-400/50" : "border-orange-400/40",
-      badgeBg: enabled ? "bg-blue-500/20" : "bg-orange-500/15",
-      badgeText: enabled ? "text-blue-200" : "text-orange-200",
+      border: enabled ? "border-info/25" : "border-fg/10",
+      bg: enabled ? "bg-info/8" : "bg-fg/5",
+      hoverBorder: enabled ? "hover:border-info/40" : "hover:border-fg/20",
+      iconBorder: enabled ? "border-info/40" : "border-fg/15",
+      iconBg: enabled ? "bg-info/15" : "bg-fg/8",
+      iconShadow: enabled ? "shadow-info/20" : "",
+      iconColor: enabled ? "text-info/80" : "text-fg/60",
+      toggleBg: enabled ? "bg-info" : "bg-fg/20",
+      toggleShadow: enabled ? "shadow-info/30" : "",
+      badgeBorder: enabled ? "border-info/50" : "border-warning/40",
+      badgeBg: enabled ? "bg-info/20" : "bg-warning/15",
+      badgeText: enabled ? "text-info" : "text-warning",
       gradient: enabled
         ? "radial-gradient(circle at 15% 15%, rgba(59,130,246,0.06) 0%, transparent 50%)"
         : "none",
     },
     emerald: {
-      border: enabled ? "border-emerald-400/25" : "border-white/10",
-      bg: enabled ? "bg-emerald-400/8" : "bg-white/5",
-      hoverBorder: enabled ? "hover:border-emerald-400/40" : "hover:border-white/20",
-      iconBorder: enabled ? "border-emerald-400/40" : "border-white/15",
-      iconBg: enabled ? "bg-emerald-500/15" : "bg-white/8",
-      iconShadow: enabled ? "shadow-emerald-500/20" : "",
-      iconColor: enabled ? "text-emerald-300" : "text-white/60",
-      toggleBg: enabled ? "bg-emerald-500" : "bg-white/20",
-      toggleShadow: enabled ? "shadow-emerald-500/30" : "",
-      badgeBorder: enabled ? "border-emerald-400/50" : "border-orange-400/40",
-      badgeBg: enabled ? "bg-emerald-500/20" : "bg-orange-500/15",
-      badgeText: enabled ? "text-emerald-200" : "text-orange-200",
+      border: enabled ? "border-accent/25" : "border-fg/10",
+      bg: enabled ? "bg-accent/8" : "bg-fg/5",
+      hoverBorder: enabled ? "hover:border-accent/40" : "hover:border-fg/20",
+      iconBorder: enabled ? "border-accent/40" : "border-fg/15",
+      iconBg: enabled ? "bg-accent/15" : "bg-fg/8",
+      iconShadow: enabled ? "shadow-accent/20" : "",
+      iconColor: enabled ? "text-accent/80" : "text-fg/60",
+      toggleBg: enabled ? "bg-accent" : "bg-fg/20",
+      toggleShadow: enabled ? "shadow-accent/30" : "",
+      badgeBorder: enabled ? "border-accent/50" : "border-warning/40",
+      badgeBg: enabled ? "bg-accent/20" : "bg-warning/15",
+      badgeText: enabled ? "text-accent/80" : "text-warning",
       gradient: enabled
         ? "radial-gradient(circle at 15% 15%, rgba(16,185,129,0.08) 0%, transparent 50%)"
         : "none",
     },
     amber: {
-      border: enabled ? "border-amber-400/25" : "border-white/10",
-      bg: enabled ? "bg-amber-400/8" : "bg-white/5",
-      hoverBorder: enabled ? "hover:border-amber-400/40" : "hover:border-white/20",
-      iconBorder: enabled ? "border-amber-400/40" : "border-white/15",
-      iconBg: enabled ? "bg-amber-500/15" : "bg-white/8",
-      iconShadow: enabled ? "shadow-amber-500/20" : "",
-      iconColor: enabled ? "text-amber-300" : "text-white/60",
-      toggleBg: enabled ? "bg-amber-500" : "bg-white/20",
-      toggleShadow: enabled ? "shadow-amber-500/30" : "",
-      badgeBorder: enabled ? "border-amber-400/50" : "border-white/20",
-      badgeBg: enabled ? "bg-amber-500/20" : "bg-white/10",
-      badgeText: enabled ? "text-amber-200" : "text-white/60",
+      border: enabled ? "border-warning/25" : "border-fg/10",
+      bg: enabled ? "bg-warning/8" : "bg-fg/5",
+      hoverBorder: enabled ? "hover:border-warning/40" : "hover:border-fg/20",
+      iconBorder: enabled ? "border-warning/40" : "border-fg/15",
+      iconBg: enabled ? "bg-warning/15" : "bg-fg/8",
+      iconShadow: enabled ? "shadow-warning/20" : "",
+      iconColor: enabled ? "text-warning/80" : "text-fg/60",
+      toggleBg: enabled ? "bg-warning" : "bg-fg/20",
+      toggleShadow: enabled ? "shadow-warning/30" : "",
+      badgeBorder: enabled ? "border-warning/50" : "border-fg/20",
+      badgeBg: enabled ? "bg-warning/20" : "bg-fg/10",
+      badgeText: enabled ? "text-warning/80" : "text-fg/60",
       gradient: enabled
         ? "radial-gradient(circle at 15% 15%, rgba(251,191,36,0.08) 0%, transparent 50%)"
         : "none",
     },
     violet: {
-      border: enabled ? "border-violet-400/25" : "border-white/10",
-      bg: enabled ? "bg-violet-400/8" : "bg-white/5",
-      hoverBorder: enabled ? "hover:border-violet-400/40" : "hover:border-white/20",
-      iconBorder: enabled ? "border-violet-400/40" : "border-white/15",
-      iconBg: enabled ? "bg-violet-500/15" : "bg-white/8",
-      iconShadow: enabled ? "shadow-violet-500/20" : "",
-      iconColor: enabled ? "text-violet-300" : "text-white/60",
-      toggleBg: enabled ? "bg-violet-500" : "bg-white/20",
-      toggleShadow: enabled ? "shadow-violet-500/30" : "",
-      badgeBorder: enabled ? "border-violet-400/50" : "border-white/20",
-      badgeBg: enabled ? "bg-violet-500/20" : "bg-white/10",
-      badgeText: enabled ? "text-violet-200" : "text-white/60",
+      border: enabled ? "border-secondary/25" : "border-fg/10",
+      bg: enabled ? "bg-secondary/8" : "bg-fg/5",
+      hoverBorder: enabled ? "hover:border-secondary/40" : "hover:border-fg/20",
+      iconBorder: enabled ? "border-secondary/40" : "border-fg/15",
+      iconBg: enabled ? "bg-secondary/15" : "bg-fg/8",
+      iconShadow: enabled ? "shadow-secondary/20" : "",
+      iconColor: enabled ? "text-secondary/80" : "text-fg/60",
+      toggleBg: enabled ? "bg-secondary" : "bg-fg/20",
+      toggleShadow: enabled ? "shadow-secondary/30" : "",
+      badgeBorder: enabled ? "border-secondary/50" : "border-fg/20",
+      badgeBg: enabled ? "bg-secondary/20" : "bg-fg/10",
+      badgeText: enabled ? "text-secondary" : "text-fg/60",
       gradient: enabled
         ? "radial-gradient(circle at 15% 15%, rgba(139,92,246,0.08) 0%, transparent 50%)"
         : "none",
@@ -183,7 +183,7 @@ function FeatureCard({
           <div className="flex items-center justify-between gap-2">
             <div className="flex-1">
               <div className="flex items-center gap-2">
-                <span className={cn(typography.body.size, "font-medium text-white")}>{title}</span>
+                <span className={cn(typography.body.size, "font-medium text-fg")}>{title}</span>
                 <span
                   className={cn(
                     "rounded-md border px-1.5 py-0.5",
@@ -201,7 +201,7 @@ function FeatureCard({
                     className={cn(
                       "rounded-md border px-1.5 py-0.5",
                       "text-[9px] font-medium leading-none uppercase tracking-wider",
-                      "border-white/10 bg-white/5 text-white/40",
+                      "border-fg/10 bg-fg/5 text-fg/40",
                     )}
                   >
                     {badge}
@@ -222,14 +222,14 @@ function FeatureCard({
                         openDocs(helpKey);
                       }
                     }}
-                    className="p-0.5 text-white/30 transition-colors hover:text-white/60"
+                    className="p-0.5 text-fg/30 transition-colors hover:text-fg/60"
                     aria-label={`Help with ${title}`}
                   >
                     <HelpCircle size={14} />
                   </span>
                 )}
               </div>
-              <p className="mt-0.5 text-[11px] leading-relaxed text-white/50">{description}</p>
+              <p className="mt-0.5 text-[11px] leading-relaxed text-fg/50">{description}</p>
             </div>
 
             <div className="flex shrink-0 items-center gap-2">
@@ -250,7 +250,7 @@ function FeatureCard({
                 className={cn(
                   "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full",
                   "border-2 border-transparent transition-all duration-200 ease-in-out",
-                  "focus:outline-none focus:ring-2 focus:ring-white/20",
+                  "focus:outline-none focus:ring-2 focus:ring-fg/20",
                   style.toggleBg,
                   enabled && "shadow-md",
                   style.toggleShadow,
@@ -258,7 +258,7 @@ function FeatureCard({
               >
                 <span
                   className={cn(
-                    "inline-block h-4 w-4 transform rounded-full bg-white shadow-sm",
+                    "inline-block h-4 w-4 transform rounded-full bg-fg shadow-sm",
                     "ring-0 transition duration-200 ease-in-out",
                     enabled ? "translate-x-4" : "translate-x-0",
                   )}
@@ -266,15 +266,15 @@ function FeatureCard({
               </label>
               <ChevronRight
                 className={cn(
-                  "h-4 w-4 shrink-0 text-white/25 transition-colors",
-                  "group-hover:text-white/50",
+                  "h-4 w-4 shrink-0 text-fg/25 transition-colors",
+                  "group-hover:text-fg/50",
                 )}
               />
             </div>
           </div>
 
           {detailText && (
-            <p className="mt-1.5 text-[10px] leading-relaxed text-white/40">{detailText}</p>
+            <p className="mt-1.5 text-[10px] leading-relaxed text-fg/40">{detailText}</p>
           )}
         </div>
       </div>
@@ -292,14 +292,14 @@ function SettingsSection({ title, children, icon }: SettingsSectionProps) {
   return (
     <div>
       <div className="mb-2.5 flex items-center gap-2 px-1">
-        {icon && <span className="text-white/30">{icon}</span>}
+        {icon && <span className="text-fg/30">{icon}</span>}
         <h2
           className={cn(
             typography.overline.size,
             typography.overline.weight,
             typography.overline.tracking,
             typography.overline.transform,
-            "text-white/40",
+            "text-fg/40",
           )}
         >
           {title}
@@ -490,7 +490,7 @@ export function AdvancedPage() {
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/20 border-t-white/60" />
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-fg/20 border-t-fg/60" />
       </div>
     );
   }
@@ -542,24 +542,24 @@ export function AdvancedPage() {
           />
 
           {/* Context Window Settings Card */}
-          <div className={cn("rounded-xl border px-4 py-4", "border-white/10 bg-white/5")}>
+          <div className={cn("rounded-xl border px-4 py-4", "border-fg/10 bg-fg/5")}>
             <div className="flex items-start gap-3">
               <div
                 className={cn(
                   "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border",
-                  "border-white/10 bg-white/5",
+                  "border-fg/10 bg-fg/5",
                 )}
               >
-                <MessageSquare className="h-4 w-4 text-white/50" />
+                <MessageSquare className="h-4 w-4 text-fg/50" />
               </div>
 
               <div className="min-w-0 flex-1">
                 <div className="flex items-center justify-between">
                   <div>
-                    <span className={cn(typography.body.size, "font-medium text-white")}>
+                    <span className={cn(typography.body.size, "font-medium text-fg")}>
                       Context Window
                     </span>
-                    <p className="mt-0.5 text-[11px] text-white/45">
+                    <p className="mt-0.5 text-[11px] text-fg/45">
                       Number of recent messages to include (1-1000)
                     </p>
                   </div>
@@ -573,9 +573,9 @@ export function AdvancedPage() {
                       handleManualWindowChange(isNaN(val) ? null : val);
                     }}
                     className={cn(
-                      "w-20 rounded-lg border border-white/15 bg-black/30 px-3 py-1.5",
-                      "text-center font-mono text-sm text-white",
-                      "focus:border-white/30 focus:outline-none",
+                      "w-20 rounded-lg border border-fg/15 bg-surface-el/30 px-3 py-1.5",
+                      "text-center font-mono text-sm text-fg",
+                      "focus:border-fg/30 focus:outline-none",
                       interactive.transition.fast,
                     )}
                   />
@@ -587,24 +587,24 @@ export function AdvancedPage() {
 
         {/* Usage Analytics Section */}
         <SettingsSection title="Usage Analytics" icon={<DollarSign size={12} />}>
-          <div className={cn("rounded-xl border px-4 py-4", "border-white/10 bg-white/5")}>
+          <div className={cn("rounded-xl border px-4 py-4", "border-fg/10 bg-fg/5")}>
             <div className="flex items-start gap-3">
               <div
                 className={cn(
                   "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border",
-                  "border-amber-500/20 bg-amber-500/10",
+                  "border-warning/20 bg-warning/10",
                 )}
               >
-                <DollarSign className="h-4 w-4 text-amber-400" />
+                <DollarSign className="h-4 w-4 text-warning" />
               </div>
 
               <div className="min-w-0 flex-1">
                 <div className="flex items-center justify-between mb-3">
                   <div>
-                    <span className={cn(typography.body.size, "font-medium text-white")}>
+                    <span className={cn(typography.body.size, "font-medium text-fg")}>
                       Recalculate Usage Costs
                     </span>
-                    <p className="mt-0.5 text-[11px] text-white/45">
+                    <p className="mt-0.5 text-[11px] text-fg/45">
                       Update all historical usage records with correct pricing
                     </p>
                   </div>
@@ -617,8 +617,8 @@ export function AdvancedPage() {
                     "w-full rounded-lg border px-4 py-2.5 text-sm font-medium",
                     "transition-all",
                     recalculating || !openRouterApiKey
-                      ? "border-white/10 bg-white/5 text-white/30 cursor-not-allowed"
-                      : "border-amber-500/30 bg-amber-500/10 text-amber-100 hover:bg-amber-500/20 hover:border-amber-500/40",
+                      ? "border-fg/10 bg-fg/5 text-fg/30 cursor-not-allowed"
+                      : "border-warning/30 bg-warning/10 text-warning/90 hover:bg-warning/20 hover:border-warning/40",
                   )}
                 >
                   {recalculating ? (
@@ -632,7 +632,7 @@ export function AdvancedPage() {
                 </button>
 
                 {!openRouterApiKey && (
-                  <p className="mt-2 text-[11px] text-red-400/70">
+                  <p className="mt-2 text-[11px] text-danger/70">
                     OpenRouter API key required. Configure it in Settings → Providers.
                   </p>
                 )}
@@ -642,8 +642,8 @@ export function AdvancedPage() {
                     className={cn(
                       "mt-3 rounded-lg border px-3 py-2 text-[11px]",
                       recalculateResult.startsWith("Error")
-                        ? "border-red-500/30 bg-red-500/10 text-red-200"
-                        : "border-emerald-500/30 bg-emerald-500/10 text-emerald-200",
+                        ? "border-danger/30 bg-danger/10 text-danger/80"
+                        : "border-accent/30 bg-accent/10 text-accent/80",
                     )}
                   >
                     {recalculateResult}
@@ -662,10 +662,10 @@ export function AdvancedPage() {
             "flex items-start gap-3",
           )}
         >
-          <Info className="mt-0.5 h-4 w-4 shrink-0 text-white/30" />
-          <div className="text-[11px] leading-relaxed text-white/45">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-fg/30" />
+          <div className="text-[11px] leading-relaxed text-fg/45">
             <p>
-              <strong className="text-white/60">Dynamic Memory</strong> uses AI to automatically
+              <strong className="text-fg/60">Dynamic Memory</strong> uses AI to automatically
               summarize and manage conversation context, enabling longer, more coherent
               conversations.
             </p>
@@ -691,34 +691,34 @@ export function AdvancedPage() {
       >
         <div className="space-y-4 pb-4">
           <div className="flex items-start gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-amber-500/30 bg-amber-500/20">
-              <AlertTriangle className="h-5 w-5 text-amber-400" />
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-warning/30 bg-warning/20">
+              <AlertTriangle className="h-5 w-5 text-warning" />
             </div>
             <div className="flex-1">
-              <p className="text-sm text-white/80 leading-relaxed">
+              <p className="text-sm text-fg/80 leading-relaxed">
                 This will update all historical OpenRouter usage records with current pricing from
                 the OpenRouter API.
               </p>
             </div>
           </div>
 
-          <div className={cn("rounded-xl border border-white/10 bg-white/5 p-3")}>
-            <p className="text-xs font-medium text-white/70 mb-2">Important:</p>
-            <ul className="space-y-1.5 text-xs text-white/60">
+          <div className={cn("rounded-xl border border-fg/10 bg-fg/5 p-3")}>
+            <p className="text-xs font-medium text-fg/70 mb-2">Important:</p>
+            <ul className="space-y-1.5 text-xs text-fg/60">
               <li className="flex items-start gap-2">
-                <span className="text-amber-400 mt-0.5">•</span>
+                <span className="text-warning mt-0.5">•</span>
                 <span>This operation cannot be undone</span>
               </li>
               <li className="flex items-start gap-2">
-                <span className="text-amber-400 mt-0.5">•</span>
+                <span className="text-warning mt-0.5">•</span>
                 <span>It may take time if you have many records</span>
               </li>
               <li className="flex items-start gap-2">
-                <span className="text-amber-400 mt-0.5">•</span>
+                <span className="text-warning mt-0.5">•</span>
                 <span>Only OpenRouter records with tokens will be updated</span>
               </li>
               <li className="flex items-start gap-2">
-                <span className="text-amber-400 mt-0.5">•</span>
+                <span className="text-warning mt-0.5">•</span>
                 <span>Existing cost values will be overwritten</span>
               </li>
             </ul>
@@ -731,9 +731,9 @@ export function AdvancedPage() {
                 setRecalculateResult(null);
               }}
               className={cn(
-                "flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5",
-                "text-sm font-medium text-white/60",
-                "hover:bg-white/10 hover:text-white transition-all",
+                "flex-1 rounded-xl border border-fg/10 bg-fg/5 px-4 py-2.5",
+                "text-sm font-medium text-fg/60",
+                "hover:bg-fg/10 hover:text-fg transition-all",
               )}
             >
               Cancel
@@ -744,9 +744,9 @@ export function AdvancedPage() {
                 handleRecalculateCosts();
               }}
               className={cn(
-                "flex-1 rounded-xl border border-amber-500/30 bg-amber-500/20 px-4 py-2.5",
-                "text-sm font-medium text-amber-100",
-                "hover:bg-amber-500/30 hover:border-amber-500/40 transition-all",
+                "flex-1 rounded-xl border border-warning/30 bg-warning/20 px-4 py-2.5",
+                "text-sm font-medium text-warning/90",
+                "hover:bg-warning/30 hover:border-warning/40 transition-all",
               )}
             >
               Proceed

@@ -124,10 +124,10 @@ export function HelpMeReplyPage() {
       <main className="flex-1 px-4 pb-24 pt-4">
         <div className="mx-auto w-full max-w-5xl space-y-6">
           {/* Info Card */}
-          <div className={cn("rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-3")}>
+          <div className={cn("rounded-xl border border-accent/20 bg-accent/5 p-3")}>
             <div className="flex items-start gap-2">
-              <MessageSquare className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
-              <p className="text-xs text-emerald-200/80 leading-relaxed">
+              <MessageSquare className="h-4 w-4 text-accent shrink-0 mt-0.5" />
+              <p className="text-xs text-accent/80 leading-relaxed">
                 Help Me Reply generates contextual suggestions for your next message based on
                 conversation history. Configure the model and response style below.
               </p>
@@ -138,61 +138,61 @@ export function HelpMeReplyPage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Left Column - Model Configuration */}
             <div className="space-y-4">
-              <h3 className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/35 px-1">
+              <h3 className="text-[10px] font-semibold uppercase tracking-[0.25em] text-fg/35 px-1">
                 Model Configuration
               </h3>
 
               {/* Model Selector */}
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
-                  <div className="rounded-lg border border-emerald-400/30 bg-emerald-400/10 p-1.5">
-                    <Cpu className="h-4 w-4 text-emerald-400" />
+                  <div className="rounded-lg border border-accent/30 bg-accent/10 p-1.5">
+                    <Cpu className="h-4 w-4 text-accent" />
                   </div>
-                  <h3 className="text-sm font-semibold text-white">Reply Model</h3>
+                  <h3 className="text-sm font-semibold text-fg">Reply Model</h3>
                 </div>
 
                 {models.length > 0 ? (
                   <button
                     type="button"
                     onClick={() => setShowModelMenu(true)}
-                    className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-black/20 px-3.5 py-3 text-left transition hover:bg-black/30 focus:border-white/25 focus:outline-none"
+                    className="flex w-full items-center justify-between rounded-xl border border-fg/10 bg-surface-el/20 px-3.5 py-3 text-left transition hover:bg-surface-el/30 focus:border-fg/25 focus:outline-none"
                   >
                     <div className="flex items-center gap-2">
                       {selectedModelId ? (
                         getProviderIcon(selectedModel?.providerId || "")
                       ) : (
-                        <Cpu className="h-5 w-5 text-white/40" />
+                        <Cpu className="h-5 w-5 text-fg/40" />
                       )}
                       <span
-                        className={`text-sm ${selectedModelId ? "text-white" : "text-white/50"}`}
+                        className={`text-sm ${selectedModelId ? "text-fg" : "text-fg/50"}`}
                       >
                         {selectedModelId
                           ? selectedModel?.displayName || "Selected Model"
                           : `Use app default${defaultModel ? ` (${defaultModel.displayName})` : ""}`}
                       </span>
                     </div>
-                    <ChevronDown className="h-4 w-4 text-white/40" />
+                    <ChevronDown className="h-4 w-4 text-fg/40" />
                   </button>
                 ) : (
-                  <div className="rounded-xl border border-white/10 bg-black/20 px-4 py-3">
-                    <p className="text-sm text-white/50">No models available</p>
+                  <div className="rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3">
+                    <p className="text-sm text-fg/50">No models available</p>
                   </div>
                 )}
-                <p className="text-xs text-white/50 px-1">
+                <p className="text-xs text-fg/50 px-1">
                   AI model for generating reply suggestions
                 </p>
               </div>
 
               {/* Streaming Toggle */}
-              <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+              <div className="rounded-xl border border-fg/10 bg-fg/5 px-4 py-3">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <div className="rounded-lg border border-blue-400/30 bg-blue-400/10 p-1.5">
-                      <Zap className="h-4 w-4 text-blue-400" />
+                    <div className="rounded-lg border border-info/30 bg-info/10 p-1.5">
+                      <Zap className="h-4 w-4 text-info" />
                     </div>
                     <div>
-                      <span className="text-sm font-medium text-white">Streaming Output</span>
-                      <p className="text-[11px] text-white/45">
+                      <span className="text-sm font-medium text-fg">Streaming Output</span>
+                      <p className="text-[11px] text-fg/45">
                         Show suggestions as they're generated
                       </p>
                     </div>
@@ -207,12 +207,12 @@ export function HelpMeReplyPage() {
                     <div
                       className={cn(
                         "w-9 h-5 rounded-full transition-colors",
-                        streamingEnabled ? "bg-blue-500" : "bg-white/20",
+                        streamingEnabled ? "bg-info" : "bg-fg/20",
                       )}
                     >
                       <div
                         className={cn(
-                          "absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform shadow-sm",
+                          "absolute top-0.5 left-0.5 w-4 h-4 bg-fg rounded-full transition-transform shadow-sm",
                           streamingEnabled && "translate-x-4",
                         )}
                       />
@@ -222,15 +222,15 @@ export function HelpMeReplyPage() {
               </div>
 
               {/* Max Tokens */}
-              <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+              <div className="rounded-xl border border-fg/10 bg-fg/5 px-4 py-3">
                 <div className="flex items-center justify-between gap-2 mb-3">
                   <div className="flex items-center gap-3">
-                    <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-1.5">
-                      <Hash className="h-4 w-4 text-amber-400" />
+                    <div className="rounded-lg border border-warning/30 bg-warning/10 p-1.5">
+                      <Hash className="h-4 w-4 text-warning" />
                     </div>
                     <div>
-                      <span className="text-sm font-medium text-white">Max Tokens</span>
-                      <p className="text-[11px] text-white/45">Maximum length of suggestions</p>
+                      <span className="text-sm font-medium text-fg">Max Tokens</span>
+                      <p className="text-[11px] text-fg/45">Maximum length of suggestions</p>
                     </div>
                   </div>
                   <input
@@ -245,9 +245,9 @@ export function HelpMeReplyPage() {
                     }}
                     min={1}
                     className={cn(
-                      "w-20 rounded-lg border border-white/15 bg-black/30 px-3 py-1.5",
-                      "text-center font-mono text-sm text-white",
-                      "focus:border-white/30 focus:outline-none",
+                      "w-20 rounded-lg border border-fg/15 bg-surface-el/30 px-3 py-1.5",
+                      "text-center font-mono text-sm text-fg",
+                      "focus:border-fg/30 focus:outline-none",
                     )}
                   />
                 </div>
@@ -259,8 +259,8 @@ export function HelpMeReplyPage() {
                       className={cn(
                         "px-3 py-2 rounded-lg text-xs font-medium transition-all",
                         maxTokens === val
-                          ? "bg-amber-500/20 border border-amber-400/40 text-amber-200"
-                          : "border border-white/10 bg-white/5 text-white/60 hover:border-white/20",
+                          ? "bg-warning/20 border border-warning/40 text-warning/80"
+                          : "border border-fg/10 bg-fg/5 text-fg/60 hover:border-fg/20",
                       )}
                     >
                       {val}
@@ -272,7 +272,7 @@ export function HelpMeReplyPage() {
 
             {/* Right Column - Response Style */}
             <div className="space-y-4">
-              <h3 className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/35 px-1">
+              <h3 className="text-[10px] font-semibold uppercase tracking-[0.25em] text-fg/35 px-1">
                 Response Style
               </h3>
 
@@ -283,22 +283,22 @@ export function HelpMeReplyPage() {
                   className={cn(
                     "flex flex-col items-center gap-3 rounded-xl border p-4 transition-all",
                     replyStyle === "conversational"
-                      ? "border-emerald-400/40 bg-emerald-500/10"
-                      : "border-white/10 bg-white/5 hover:border-white/20",
+                      ? "border-accent/40 bg-accent/10"
+                      : "border-fg/10 bg-fg/5 hover:border-fg/20",
                   )}
                 >
                   <div
                     className={cn(
                       "flex h-12 w-12 items-center justify-center rounded-full border transition-all",
                       replyStyle === "conversational"
-                        ? "border-emerald-400/50 bg-emerald-500/20"
-                        : "border-white/15 bg-white/5",
+                        ? "border-accent/50 bg-accent/20"
+                        : "border-fg/15 bg-fg/5",
                     )}
                   >
                     <MessageCircle
                       className={cn(
                         "h-6 w-6 transition-colors",
-                        replyStyle === "conversational" ? "text-emerald-300" : "text-white/50",
+                        replyStyle === "conversational" ? "text-accent/80" : "text-fg/50",
                       )}
                     />
                   </div>
@@ -306,18 +306,18 @@ export function HelpMeReplyPage() {
                     <span
                       className={cn(
                         "text-sm font-semibold block",
-                        replyStyle === "conversational" ? "text-emerald-100" : "text-white/70",
+                        replyStyle === "conversational" ? "text-accent/90" : "text-fg/70",
                       )}
                     >
                       Conversational
                     </span>
-                    <span className="text-[10px] text-white/40 mt-1 block">
+                    <span className="text-[10px] text-fg/40 mt-1 block">
                       Natural, casual tone
                     </span>
                   </div>
                   {replyStyle === "conversational" && (
-                    <div className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500">
-                      <Check className="h-3 w-3 text-white" />
+                    <div className="flex h-5 w-5 items-center justify-center rounded-full bg-accent">
+                      <Check className="h-3 w-3 text-fg" />
                     </div>
                   )}
                 </button>
@@ -328,22 +328,22 @@ export function HelpMeReplyPage() {
                   className={cn(
                     "flex flex-col items-center gap-3 rounded-xl border p-4 transition-all",
                     replyStyle === "roleplay"
-                      ? "border-rose-400/40 bg-rose-500/10"
-                      : "border-white/10 bg-white/5 hover:border-white/20",
+                      ? "border-danger/40 bg-danger/10"
+                      : "border-fg/10 bg-fg/5 hover:border-fg/20",
                   )}
                 >
                   <div
                     className={cn(
                       "flex h-12 w-12 items-center justify-center rounded-full border transition-all",
                       replyStyle === "roleplay"
-                        ? "border-rose-400/50 bg-rose-500/20"
-                        : "border-white/15 bg-white/5",
+                        ? "border-danger/50 bg-danger/20"
+                        : "border-fg/15 bg-fg/5",
                     )}
                   >
                     <BookOpen
                       className={cn(
                         "h-6 w-6 transition-colors",
-                        replyStyle === "roleplay" ? "text-rose-300" : "text-white/50",
+                        replyStyle === "roleplay" ? "text-danger/80" : "text-fg/50",
                       )}
                     />
                   </div>
@@ -351,24 +351,24 @@ export function HelpMeReplyPage() {
                     <span
                       className={cn(
                         "text-sm font-semibold block",
-                        replyStyle === "roleplay" ? "text-rose-100" : "text-white/70",
+                        replyStyle === "roleplay" ? "text-danger" : "text-fg/70",
                       )}
                     >
                       Roleplay
                     </span>
-                    <span className="text-[10px] text-white/40 mt-1 block">
+                    <span className="text-[10px] text-fg/40 mt-1 block">
                       In-character actions
                     </span>
                   </div>
                   {replyStyle === "roleplay" && (
-                    <div className="flex h-5 w-5 items-center justify-center rounded-full bg-rose-500">
-                      <Check className="h-3 w-3 text-white" />
+                    <div className="flex h-5 w-5 items-center justify-center rounded-full bg-danger">
+                      <Check className="h-3 w-3 text-fg" />
                     </div>
                   )}
                 </button>
               </div>
 
-              <p className="text-xs text-white/50 px-1">
+              <p className="text-xs text-fg/50 px-1">
                 {replyStyle === "conversational"
                   ? "Suggestions will be written as natural dialogue, suitable for casual chats."
                   : "Suggestions will include roleplay elements like *actions* and narrative descriptions."}
@@ -384,8 +384,8 @@ export function HelpMeReplyPage() {
               "flex items-start gap-3",
             )}
           >
-            <Info className="mt-0.5 h-4 w-4 shrink-0 text-white/30" />
-            <div className="text-[11px] leading-relaxed text-white/45">
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-fg/30" />
+            <div className="text-[11px] leading-relaxed text-fg/45">
               <p>
                 This setting applies globally across all conversations. Lower token counts generate
                 shorter, quicker suggestions while higher counts allow for more detailed responses.
@@ -411,10 +411,10 @@ export function HelpMeReplyPage() {
               value={modelSearchQuery}
               onChange={(e) => setModelSearchQuery(e.target.value)}
               placeholder="Search models..."
-              className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-2.5 pl-10 text-sm text-white placeholder-white/40 focus:border-white/20 focus:outline-none"
+              className="w-full rounded-xl border border-fg/10 bg-surface-el/30 px-4 py-2.5 pl-10 text-sm text-fg placeholder-fg/40 focus:border-fg/20 focus:outline-none"
             />
             <svg
-              className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40"
+              className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg/40"
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
@@ -437,20 +437,20 @@ export function HelpMeReplyPage() {
               className={cn(
                 "flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition",
                 !selectedModelId
-                  ? "border-emerald-400/40 bg-emerald-400/10"
-                  : "border-white/10 bg-white/5 hover:bg-white/10",
+                  ? "border-accent/40 bg-accent/10"
+                  : "border-fg/10 bg-fg/5 hover:bg-fg/10",
               )}
             >
-              <Cpu className="h-5 w-5 text-white/40" />
+              <Cpu className="h-5 w-5 text-fg/40" />
               <div className="flex-1 min-w-0">
-                <span className="text-sm text-white">Use app default</span>
+                <span className="text-sm text-fg">Use app default</span>
                 {defaultModel && (
-                  <span className="block truncate text-xs text-white/40">
+                  <span className="block truncate text-xs text-fg/40">
                     {defaultModel.displayName}
                   </span>
                 )}
               </div>
-              {!selectedModelId && <Check className="h-4 w-4 ml-auto text-emerald-400" />}
+              {!selectedModelId && <Check className="h-4 w-4 ml-auto text-accent" />}
             </button>
             {models
               .filter((model) => {
@@ -472,19 +472,19 @@ export function HelpMeReplyPage() {
                   className={cn(
                     "flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition",
                     selectedModelId === model.id
-                      ? "border-emerald-400/40 bg-emerald-400/10"
-                      : "border-white/10 bg-white/5 hover:bg-white/10",
+                      ? "border-accent/40 bg-accent/10"
+                      : "border-fg/10 bg-fg/5 hover:bg-fg/10",
                   )}
                 >
                   {getProviderIcon(model.providerId)}
                   <div className="flex-1 min-w-0">
-                    <span className="block truncate text-sm text-white">
+                    <span className="block truncate text-sm text-fg">
                       {model.displayName || model.name}
                     </span>
-                    <span className="block truncate text-xs text-white/40">{model.name}</span>
+                    <span className="block truncate text-xs text-fg/40">{model.name}</span>
                   </div>
                   {selectedModelId === model.id && (
-                    <Check className="h-4 w-4 shrink-0 text-emerald-400" />
+                    <Check className="h-4 w-4 shrink-0 text-accent" />
                   )}
                 </button>
               ))}

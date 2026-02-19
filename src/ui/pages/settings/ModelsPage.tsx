@@ -27,14 +27,14 @@ export function ModelsPage() {
 
   const EmptyState = ({ onCreate }: { onCreate: () => void }) => (
     <div className="flex h-64 flex-col items-center justify-center">
-      <EthernetPort className="mb-3 h-12 w-12 text-white/20" />
-      <h3 className="mb-1 text-lg font-medium text-white">No Models yet</h3>
-      <p className="mb-4 text-center text-sm text-white/50">
+      <EthernetPort className="mb-3 h-12 w-12 text-fg/20" />
+      <h3 className="mb-1 text-lg font-medium text-fg">No Models yet</h3>
+      <p className="mb-4 text-center text-sm text-fg/50">
         Add and manage AI models from different providers
       </p>
       <button
         onClick={onCreate}
-        className="rounded-full border border-emerald-400/40 bg-emerald-400/20 px-6 py-2 text-sm font-medium text-emerald-100 transition hover:bg-emerald-400/30 active:scale-[0.99]"
+        className="rounded-full border border-accent/40 bg-accent/20 px-6 py-2 text-sm font-medium text-accent/90 transition hover:bg-accent/30 active:scale-[0.99]"
       >
         Add Model
       </button>
@@ -135,10 +135,10 @@ export function ModelsPage() {
           if (item.type === "divider") {
             return (
               <div key={item.key} className={cn("flex items-center gap-3 px-1", idx > 0 && "pt-2")}>
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-white/40">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-fg/40">
                   {item.label}
                 </span>
-                <div className="h-px flex-1 bg-white/5" />
+                <div className="h-px flex-1 bg-fg/5" />
               </div>
             );
           }
@@ -149,23 +149,23 @@ export function ModelsPage() {
             <button
               key={model.id}
               onClick={() => setSelectedModel(model)}
-              className="group w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-left transition hover:border-white/20 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/20 active:scale-[0.99]"
+              className="group w-full rounded-xl border border-fg/10 bg-fg/5 px-4 py-3 text-left transition hover:border-fg/20 hover:bg-fg/10 focus:outline-none focus:ring-2 focus:ring-fg/20 active:scale-[0.99]"
             >
               <div className="flex items-center gap-3">
                 {getProviderIcon(model.providerId)}
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="truncate text-sm font-medium text-white">
+                    <span className="truncate text-sm font-medium text-fg">
                       {model.displayName || model.name}
                     </span>
                     {isDefault && (
-                      <span className="inline-flex items-center gap-1 rounded-md bg-emerald-400/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-300">
+                      <span className="inline-flex items-center gap-1 rounded-md bg-accent/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent/80">
                         <Check className="h-2.5 w-2.5" />
                         Default
                       </span>
                     )}
                   </div>
-                  <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[11px] text-white/50">
+                  <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[11px] text-fg/50">
                     <span className="truncate">{providerLabel}</span>
                     <span className="opacity-40">•</span>
                     <span className="truncate max-w-37.5 font-mono text-[10px]">{model.name}</span>
@@ -174,7 +174,7 @@ export function ModelsPage() {
                       model.outputScopes?.includes("image")) && (
                       <>
                         <span className="opacity-40">•</span>
-                        <span className="text-blue-300">Vision</span>
+                        <span className="text-info/80">Vision</span>
                       </>
                     )}
 
@@ -182,12 +182,12 @@ export function ModelsPage() {
                       model.outputScopes?.includes("audio")) && (
                       <>
                         <span className="opacity-40">•</span>
-                        <span className="text-purple-300">Audio</span>
+                        <span className="text-secondary/80">Audio</span>
                       </>
                     )}
                   </div>
                 </div>
-                <ChevronRight className="h-4 w-4 text-white/30 group-hover:text-white/60 transition" />
+                <ChevronRight className="h-4 w-4 text-fg/30 group-hover:text-fg/60 transition" />
               </div>
             </button>
           );
@@ -201,18 +201,18 @@ export function ModelsPage() {
       >
         {selectedModel && (
           <div className="space-y-4">
-            <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2">
+            <div className="rounded-lg border border-fg/10 bg-fg/5 px-3 py-2">
               <div className="flex items-center gap-2">
-                <span className="truncate text-sm font-medium text-white">
+                <span className="truncate text-sm font-medium text-fg">
                   {selectedModel.displayName || selectedModel.name}
                 </span>
                 {selectedModel.id === defaultModelId && (
-                  <span className="inline-flex items-center gap-1 rounded-md bg-emerald-400/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-300">
+                  <span className="inline-flex items-center gap-1 rounded-md bg-accent/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent/80">
                     Default
                   </span>
                 )}
               </div>
-              <p className="mt-0.5 truncate text-[11px] text-white/50">{selectedModel.name}</p>
+              <p className="mt-0.5 truncate text-[11px] text-fg/50">{selectedModel.name}</p>
             </div>
 
             <MenuButton
@@ -223,7 +223,7 @@ export function ModelsPage() {
                 toEditModel(selectedModel.id);
                 setSelectedModel(null);
               }}
-              color="from-indigo-500 to-blue-600"
+              color="from-info to-info/80"
             />
 
             <MenuButton
@@ -235,7 +235,7 @@ export function ModelsPage() {
                 void handleSetDefault(selectedModel.id);
                 setSelectedModel(null);
               }}
-              color="from-emerald-500 to-emerald-600"
+              color="from-accent to-accent/80"
             />
 
             <MenuButton
@@ -253,7 +253,7 @@ export function ModelsPage() {
                 void handleDelete(selectedModel.id);
                 setSelectedModel(null);
               }}
-              color="from-rose-500 to-red-600"
+              color="from-danger to-danger/80"
             />
           </div>
         )}
@@ -269,7 +269,7 @@ export function ModelsPage() {
               setSortMode("alphabetical");
               setShowSortMenu(false);
             }}
-            color="from-emerald-500 to-emerald-600"
+            color="from-accent to-accent/80"
           />
           <MenuButton
             icon={sortMode === "provider" ? Check : StarOff}
@@ -279,7 +279,7 @@ export function ModelsPage() {
               setSortMode("provider");
               setShowSortMenu(false);
             }}
-            color="from-sky-500 to-blue-600"
+            color="from-info to-info/80"
           />
         </div>
       </BottomMenu>

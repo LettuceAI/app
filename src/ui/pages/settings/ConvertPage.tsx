@@ -154,7 +154,7 @@ export function ConvertPage() {
   };
 
   return (
-    <div className="flex h-full flex-col pb-16 text-gray-200">
+    <div className="flex h-full flex-col pb-16 text-fg/90">
       <main className="flex-1 overflow-y-auto px-4 pt-4">
         <motion.div
           initial={{ opacity: 0, y: 12 }}
@@ -162,16 +162,16 @@ export function ConvertPage() {
           transition={{ duration: 0.2, ease: "easeOut" }}
           className="space-y-4"
         >
-          <div className="rounded-2xl border border-amber-400/30 bg-amber-400/10 p-4">
+          <div className="rounded-2xl border border-warning/30 bg-warning/10 p-4">
             <div className="flex items-start gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full border border-amber-400/40 bg-amber-400/15">
-                <FileCode className="h-4 w-4 text-amber-200" />
+              <div className="flex h-9 w-9 items-center justify-center rounded-full border border-warning/40 bg-warning/15">
+                <FileCode className="h-4 w-4 text-warning/80" />
               </div>
               <div>
-                <h2 className={cn(typography.body.size, "font-semibold text-amber-100")}>
+                <h2 className={cn(typography.body.size, "font-semibold text-warning/90")}>
                   Convert legacy exports
                 </h2>
-                <p className={cn(typography.caption.size, "mt-1 text-amber-100/70")}>
+                <p className={cn(typography.caption.size, "mt-1 text-warning/70")}>
                   JSON exports are deprecated. Convert them to Unified Entity Card (UEC) files for
                   future compatibility.
                 </p>
@@ -179,13 +179,13 @@ export function ConvertPage() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+          <div className="rounded-2xl border border-fg/10 bg-fg/5 p-4">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <h3 className={cn(typography.body.size, "text-white font-medium")}>
+                <h3 className={cn(typography.body.size, "text-fg font-medium")}>
                   Choose a file
                 </h3>
-                <p className={cn(typography.caption.size, "text-white/50")}>
+                <p className={cn(typography.caption.size, "text-fg/50")}>
                   Supports legacy .json exports and existing Unified Entity Card (UEC) files.
                 </p>
               </div>
@@ -193,9 +193,9 @@ export function ConvertPage() {
                 className={cn(
                   "inline-flex items-center gap-2 px-3 py-2",
                   radius.md,
-                  "border border-blue-400/40 bg-blue-400/15 text-blue-100",
+                  "border border-info/40 bg-info/15 text-info",
                   interactive.transition.default,
-                  "hover:border-blue-400/60 hover:bg-blue-400/25",
+                  "hover:border-info/60 hover:bg-info/25",
                 )}
               >
                 <Upload className="h-4 w-4" />
@@ -210,28 +210,28 @@ export function ConvertPage() {
             </div>
 
             {selectedFile ? (
-              <div className="mt-4 flex flex-col gap-3 rounded-xl border border-white/10 bg-black/30 px-3 py-2">
+              <div className="mt-4 flex flex-col gap-3 rounded-xl border border-fg/10 bg-surface-el/30 px-3 py-2">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className={cn(typography.caption.size, "truncate text-white/70")}>
+                    <p className={cn(typography.caption.size, "truncate text-fg/70")}>
                       {selectedFile.name}
                     </p>
-                    <p className={cn(typography.caption.size, "text-white/35")}>
+                    <p className={cn(typography.caption.size, "text-fg/35")}>
                       {formatBytes(selectedFile.size)}
                     </p>
                   </div>
                 </div>
 
-                <div className="flex flex-col gap-1 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-white/60">
+                <div className="flex flex-col gap-1 rounded-lg border border-fg/10 bg-fg/5 px-3 py-2 text-[11px] text-fg/60">
                   <div className="flex items-center justify-between">
                     <span>Detected type</span>
-                    <span className="text-white/80">
+                    <span className="text-fg/80">
                       {detectedKind === "unknown" ? "Unknown" : detectedKind}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span>Detected format</span>
-                    <span className="text-white/80">
+                    <span className="text-fg/80">
                       {detectedFormat === "unknown"
                         ? "Unknown"
                         : (TARGET_LABELS[detectedFormat as keyof typeof TARGET_LABELS] ??
@@ -241,20 +241,20 @@ export function ConvertPage() {
                 </div>
               </div>
             ) : (
-              <div className="mt-4 rounded-xl border border-dashed border-white/15 bg-white/5 px-4 py-6 text-center">
-                <p className={cn(typography.caption.size, "text-white/40")}>
+              <div className="mt-4 rounded-xl border border-dashed border-fg/15 bg-fg/5 px-4 py-6 text-center">
+                <p className={cn(typography.caption.size, "text-fg/40")}>
                   No file selected yet
                 </p>
               </div>
             )}
           </div>
 
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+          <div className="rounded-2xl border border-fg/10 bg-fg/5 p-4">
             <div>
-              <h3 className={cn(typography.body.size, "text-white font-medium")}>
+              <h3 className={cn(typography.body.size, "text-fg font-medium")}>
                 Output format
               </h3>
-              <p className={cn(typography.caption.size, "text-white/50")}>
+              <p className={cn(typography.caption.size, "text-fg/50")}>
                 Choose how the converted file should be saved.
               </p>
             </div>
@@ -268,8 +268,8 @@ export function ConvertPage() {
                     className={cn(
                       "rounded-full border px-3 py-1 text-xs font-medium transition",
                       targetFormat === format
-                        ? "border-emerald-400/60 bg-emerald-400/20 text-emerald-100"
-                        : "border-white/10 bg-white/5 text-white/60 hover:border-white/20 hover:text-white",
+                        ? "border-accent/60 bg-accent/20 text-accent/90"
+                        : "border-fg/10 bg-fg/5 text-fg/60 hover:border-fg/20 hover:text-fg",
                     )}
                   >
                     {TARGET_LABELS[format]}
@@ -277,7 +277,7 @@ export function ConvertPage() {
                 ))}
               </div>
             ) : (
-              <div className="mt-3 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-white/60">
+              <div className="mt-3 rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-xs text-fg/60">
                 {isPersonaUec
                   ? "Persona UEC files are already in the only supported persona format."
                   : isAlreadyUec
@@ -295,8 +295,8 @@ export function ConvertPage() {
                 "mt-4 flex w-full items-center justify-center gap-2 py-3 text-sm font-semibold",
                 radius.md,
                 interactive.transition.default,
-                "border border-emerald-400/40 bg-emerald-400/20 text-emerald-100",
-                "hover:border-emerald-400/60 hover:bg-emerald-400/30",
+                "border border-accent/40 bg-accent/20 text-accent/90",
+                "hover:border-accent/60 hover:bg-accent/30",
                 "disabled:cursor-not-allowed disabled:opacity-50",
               )}
             >
@@ -316,9 +316,9 @@ export function ConvertPage() {
             </button>
 
             {convertedFilename && (
-              <div className="mt-3 flex items-center gap-2 rounded-xl border border-emerald-400/20 bg-emerald-400/10 px-3 py-2">
-                <CheckCircle2 className="h-4 w-4 text-emerald-200" />
-                <p className={cn(typography.caption.size, "text-emerald-100/80")}>
+              <div className="mt-3 flex items-center gap-2 rounded-xl border border-accent/20 bg-accent/10 px-3 py-2">
+                <CheckCircle2 className="h-4 w-4 text-accent/80" />
+                <p className={cn(typography.caption.size, "text-accent/80")}>
                   Saved {convertedKind} as {convertedFilename}
                 </p>
               </div>

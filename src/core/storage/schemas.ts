@@ -1517,6 +1517,19 @@ export type TooltipsState = z.infer<typeof TooltipsStateSchema>;
 export const PureModeLevelSchema = z.enum(["off", "low", "standard", "strict"]);
 export type PureModeLevel = z.infer<typeof PureModeLevelSchema>;
 
+export const CustomColorsSchema = z.object({
+  surface: z.string().optional(),
+  surfaceEl: z.string().optional(),
+  fg: z.string().optional(),
+  accent: z.string().optional(),
+  danger: z.string().optional(),
+  warning: z.string().optional(),
+  info: z.string().optional(),
+  secondary: z.string().optional(),
+  nav: z.string().optional(),
+});
+export type CustomColors = z.infer<typeof CustomColorsSchema>;
+
 export const AppStateSchema = z.object({
   onboarding: OnboardingStateSchema,
   theme: z.enum(["light", "dark"]),
@@ -1529,6 +1542,7 @@ export const AppStateSchema = z.object({
   appActiveUsageByDayMs: z.record(z.number().int().nonnegative()).default({}),
   appActiveUsageStartedAtMs: z.number().int().nonnegative().optional(),
   appActiveUsageLastUpdatedAtMs: z.number().int().nonnegative().optional(),
+  customColors: CustomColorsSchema.optional(),
 });
 export type AppState = z.infer<typeof AppStateSchema>;
 

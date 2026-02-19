@@ -12,12 +12,12 @@ import { useMultipleAvatarGradients } from "../../hooks/useAvatarGradient";
 const CharacterSkeleton = () => (
   <div className="space-y-3">
     {[1, 2, 3].map((i) => (
-      <div key={i} className="rounded-xl border border-white/10 bg-[#0b0c12]/90 px-4 py-3">
+      <div key={i} className="rounded-xl border border-fg/10 bg-surface/90 px-4 py-3">
         <div className="flex items-center gap-3">
-          <div className="h-12 w-12 animate-pulse rounded-full bg-white/10" />
+          <div className="h-12 w-12 animate-pulse rounded-full bg-fg/10" />
           <div className="flex-1 space-y-2">
-            <div className="h-4 w-32 animate-pulse rounded bg-white/10" />
-            <div className="h-3 w-48 animate-pulse rounded bg-white/10" />
+            <div className="h-4 w-32 animate-pulse rounded bg-fg/10" />
+            <div className="h-3 w-48 animate-pulse rounded bg-fg/10" />
           </div>
         </div>
       </div>
@@ -27,14 +27,14 @@ const CharacterSkeleton = () => (
 
 const EmptyState = ({ onCreate }: { onCreate: () => void }) => (
   <div className="flex h-64 flex-col items-center justify-center">
-    <Sparkles className="mb-3 h-12 w-12 text-white/20" />
-    <h3 className="mb-1 text-lg font-medium text-white">No characters yet</h3>
-    <p className="mb-4 text-center text-sm text-white/50">
+    <Sparkles className="mb-3 h-12 w-12 text-fg/20" />
+    <h3 className="mb-1 text-lg font-medium text-fg">No characters yet</h3>
+    <p className="mb-4 text-center text-sm text-fg/50">
       Create custom AI characters with unique personalities
     </p>
     <button
       onClick={onCreate}
-      className="rounded-full border border-emerald-400/40 bg-emerald-400/20 px-6 py-2 text-sm font-medium text-emerald-100 transition hover:bg-emerald-400/30 active:scale-[0.99]"
+      className="rounded-full border border-accent/40 bg-accent/20 px-6 py-2 text-sm font-medium text-accent/90 transition hover:bg-accent/30 active:scale-[0.99]"
     >
       Create Character
     </button>
@@ -92,7 +92,7 @@ export function CharactersPage() {
   };
 
   return (
-    <div className="flex h-full flex-col pb-16 text-gray-200">
+    <div className="flex h-full flex-col pb-16 text-fg/90">
       <main className="flex-1 overflow-y-auto px-4 pt-4">
         {loading ? (
           <CharacterSkeleton />
@@ -117,9 +117,9 @@ export function CharactersPage() {
                     className={cn(
                       "group relative flex w-full items-center gap-3 overflow-hidden px-4 py-3 text-left",
                       radius.md,
-                      hasGrad ? "" : "border border-white/10 bg-[#0b0c12]/90",
+                      hasGrad ? "" : "border border-fg/10 bg-surface/90",
                       interactive.transition.default,
-                      "hover:border-white/25 hover:bg-[#0c0d13]/95",
+                      "hover:border-fg/25 hover:bg-surface/95",
                       interactive.active.scale,
                     )}
                     style={
@@ -135,8 +135,8 @@ export function CharactersPage() {
                       className={cn(
                         "absolute inset-y-0 right-0 w-1/4 transition",
                         hasGrad
-                          ? "bg-linear-to-l from-white/10 via-transparent to-transparent opacity-0 group-hover:opacity-100"
-                          : "bg-linear-to-l from-purple-500/10 via-transparent to-transparent opacity-0 group-hover:opacity-100",
+                          ? "bg-linear-to-l from-fg/10 via-transparent to-transparent opacity-0 group-hover:opacity-100"
+                          : "bg-linear-to-l from-secondary/10 via-transparent to-transparent opacity-0 group-hover:opacity-100",
                       )}
                     />
 
@@ -145,10 +145,10 @@ export function CharactersPage() {
                       className={cn(
                         "relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden",
                         radius.lg,
-                        "border border-white/15 bg-white/8",
+                        "border border-fg/15 bg-fg/8",
                         typography.body.size,
                         typography.body.weight,
-                        "text-white",
+                        "text-fg",
                       )}
                     >
                       <CharacterAvatar character={character} />
@@ -177,8 +177,8 @@ export function CharactersPage() {
                         className={cn(
                           "relative flex items-center justify-center",
                           radius.full,
-                          "border border-white/10 bg-white/25 text-white/70",
-                          "transition-all hover:border-white/50 hover:text-white",
+                          "border border-fg/10 bg-fg/25 text-fg/70",
+                          "transition-all hover:border-fg/50 hover:text-fg",
                         )}
                         aria-label="Edit Character"
                       >
@@ -192,8 +192,8 @@ export function CharactersPage() {
                         className={cn(
                           "relative flex items-center justify-center",
                           radius.full,
-                          "border border-red-500/30 bg-red-500/70 text-red-300",
-                          "transition-all hover:border-red-500/90 hover:bg-red-500/20",
+                          "border border-danger/30 bg-danger/70 text-danger/80",
+                          "transition-all hover:border-danger/90 hover:bg-danger/20",
                         )}
                         aria-label="Delete Character"
                       >
@@ -215,7 +215,7 @@ export function CharactersPage() {
         title="Delete Character?"
       >
         <div className="space-y-4">
-          <p className="text-sm text-white/70">
+          <p className="text-sm text-fg/70">
             Are you sure you want to delete "{selectedCharacter?.name}"? This will also delete all
             chat sessions with this character.
           </p>
@@ -223,14 +223,14 @@ export function CharactersPage() {
             <button
               onClick={() => setShowDeleteConfirm(false)}
               disabled={deleting}
-              className="flex-1 rounded-xl border border-white/10 bg-white/5 py-3 text-sm font-medium text-white transition hover:border-white/20 hover:bg-white/10 disabled:opacity-50"
+              className="flex-1 rounded-xl border border-fg/10 bg-fg/5 py-3 text-sm font-medium text-fg transition hover:border-fg/20 hover:bg-fg/10 disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               onClick={() => void handleDelete()}
               disabled={deleting}
-              className="flex-1 rounded-xl border border-red-500/30 bg-red-500/20 py-3 text-sm font-medium text-red-300 transition hover:bg-red-500/30 disabled:opacity-50"
+              className="flex-1 rounded-xl border border-danger/30 bg-danger/20 py-3 text-sm font-medium text-danger/80 transition hover:bg-danger/30 disabled:opacity-50"
             >
               {deleting ? "Deleting..." : "Delete"}
             </button>

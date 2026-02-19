@@ -75,11 +75,11 @@ function getRelativeTime(timestamp: number): string {
 
 function getOperationColor(type: string): string {
   const colors: Record<string, string> = {
-    chat: "#60a5fa",
-    regenerate: "#a78bfa",
+    chat: "var(--color-info)",
+    regenerate: "var(--color-secondary)",
     continue: "#22d3ee",
-    summary: "#fbbf24",
-    memory_manager: "#34d399",
+    summary: "var(--color-warning)",
+    memory_manager: "var(--color-accent)",
   };
   return colors[type.toLowerCase()] || "#94a3b8";
 }
@@ -159,13 +159,13 @@ const ChartTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null;
 
   return (
-    <div className="max-w-[70vw] rounded-lg border border-white/15 bg-[#0a0b0f]/70 backdrop-blur-md px-2.5 py-2 shadow-xl">
-      <p className="text-[10px] font-medium text-white/60 mb-1">{label}</p>
+    <div className="max-w-[70vw] rounded-lg border border-fg/15 bg-surface/70 backdrop-blur-md px-2.5 py-2 shadow-xl">
+      <p className="text-[10px] font-medium text-fg/60 mb-1">{label}</p>
       {payload.map((p: any, i: number) => (
         <div key={i} className="flex items-center gap-1.5 text-[11px]">
           <span className="h-2 w-2 rounded-full" style={{ backgroundColor: p.color }} />
-          <span className="text-white/60">{p.name}:</span>
-          <span className="text-white font-medium">{formatNumber(p.value)}</span>
+          <span className="text-fg/60">{p.name}:</span>
+          <span className="text-fg font-medium">{formatNumber(p.value)}</span>
         </div>
       ))}
     </div>
@@ -176,13 +176,13 @@ const AppTimeTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null;
 
   return (
-    <div className="max-w-[70vw] rounded-lg border border-white/15 bg-[#0a0b0f]/70 backdrop-blur-md px-2.5 py-2 shadow-xl">
-      <p className="text-[10px] font-medium text-white/60 mb-1">{label}</p>
+    <div className="max-w-[70vw] rounded-lg border border-fg/15 bg-surface/70 backdrop-blur-md px-2.5 py-2 shadow-xl">
+      <p className="text-[10px] font-medium text-fg/60 mb-1">{label}</p>
       {payload.map((p: any, i: number) => (
         <div key={i} className="flex items-center gap-1.5 text-[11px]">
           <span className="h-2 w-2 rounded-full" style={{ backgroundColor: p.color }} />
-          <span className="text-white/60">{p.name}:</span>
-          <span className="text-white font-medium">{formatDurationMs(p.value)}</span>
+          <span className="text-fg/60">{p.name}:</span>
+          <span className="text-fg font-medium">{formatDurationMs(p.value)}</span>
         </div>
       ))}
     </div>
@@ -212,29 +212,29 @@ function StatCard({
     <div
       className={`rounded-2xl border p-4 ${
         highlight
-          ? "border-emerald-500/30 bg-linear-to-br from-emerald-500/20 via-emerald-500/10 to-transparent"
-          : "border-white/10 bg-white/5"
+          ? "border-accent/30 bg-linear-to-br from-accent/20 via-accent/10 to-transparent"
+          : "border-fg/10 bg-fg/5"
       }`}
     >
       <div className="flex items-center gap-2 mb-2">
-        <div className={`p-1.5 rounded-lg ${highlight ? "bg-emerald-500/20" : "bg-white/5"}`}>
-          <Icon className={`h-3.5 w-3.5 ${highlight ? "text-emerald-400" : "text-white/50"}`} />
+        <div className={`p-1.5 rounded-lg ${highlight ? "bg-accent/20" : "bg-fg/5"}`}>
+          <Icon className={`h-3.5 w-3.5 ${highlight ? "text-accent" : "text-fg/50"}`} />
         </div>
-        <span className="text-[11px] font-medium text-white/50 uppercase tracking-wide">
+        <span className="text-[11px] font-medium text-fg/50 uppercase tracking-wide">
           {label}
         </span>
       </div>
       <div className="flex items-end justify-between">
         <div>
-          <p className={`text-2xl font-bold ${highlight ? "text-emerald-100" : "text-white"}`}>
+          <p className={`text-2xl font-bold ${highlight ? "text-accent/90" : "text-fg"}`}>
             {value}
           </p>
-          {subValue && <p className="text-[11px] text-white/40 mt-0.5">{subValue}</p>}
+          {subValue && <p className="text-[11px] text-fg/40 mt-0.5">{subValue}</p>}
         </div>
         {trend && trend.value > 0 && (
           <div
             className={`flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
-              trend.isUp ? "bg-emerald-500/15 text-emerald-400" : "bg-red-500/15 text-red-400"
+              trend.isUp ? "bg-accent/15 text-accent" : "bg-danger/15 text-danger"
             }`}
           >
             {trend.isUp ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
@@ -252,7 +252,7 @@ function StatCard({
 
 function ActivityItem({ request }: { request: RequestUsage }) {
   return (
-    <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/5 transition-colors">
+    <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-fg/5 transition-colors">
       <div
         className="h-8 w-8 rounded-full flex items-center justify-center shrink-0"
         style={{ backgroundColor: `${getOperationColor(request.operationType)}20` }}
@@ -261,7 +261,7 @@ function ActivityItem({ request }: { request: RequestUsage }) {
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-white truncate">
+          <span className="text-sm font-medium text-fg truncate">
             {request.characterName || "Unknown"}
           </span>
           <span
@@ -274,17 +274,17 @@ function ActivityItem({ request }: { request: RequestUsage }) {
             {getOperationLabel(request.operationType)}
           </span>
         </div>
-        <div className="flex items-center gap-2 text-[11px] text-white/40">
+        <div className="flex items-center gap-2 text-[11px] text-fg/40">
           <span>{formatCompactNumber(request.totalTokens || 0)} tokens</span>
           <span>·</span>
           <span>{getRelativeTime(request.timestamp)}</span>
         </div>
       </div>
       <div className="text-right shrink-0">
-        <p className="text-sm font-medium text-emerald-400">
+        <p className="text-sm font-medium text-accent">
           {formatCurrency(request.cost?.totalCost || 0)}
         </p>
-        <p className="text-[10px] text-white/30">{request.modelName}</p>
+        <p className="text-[10px] text-fg/30">{request.modelName}</p>
       </div>
     </div>
   );
@@ -607,11 +607,11 @@ export function UsagePage() {
     }
   };
 
-  const COLORS = ["#34d399", "#60a5fa", "#a78bfa", "#f472b6", "#fbbf24"];
+  const COLORS = ["var(--color-accent)", "var(--color-info)", "var(--color-secondary)", "#f472b6", "var(--color-warning)"];
   const activeFilterCount = [selectedModel, selectedCharacter].filter(Boolean).length;
 
   return (
-    <div className="min-h-screen bg-[#050505] pb-24">
+    <div className="min-h-screen bg-surface pb-24">
       {/* Filters Bottom Sheet */}
       <BottomMenu
         isOpen={showFilters}
@@ -621,7 +621,7 @@ export function UsagePage() {
       >
         <div className="space-y-4 pb-4">
           <div>
-            <label className="text-xs font-medium text-white/60 uppercase tracking-wide mb-2 block">
+            <label className="text-xs font-medium text-fg/60 uppercase tracking-wide mb-2 block">
               Model
             </label>
             <div className="space-y-1 max-h-48 overflow-y-auto">
@@ -631,19 +631,19 @@ export function UsagePage() {
                   onClick={() => setSelectedModel(selectedModel === m.id ? null : m.id)}
                   className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg transition ${
                     selectedModel === m.id
-                      ? "bg-emerald-500/20 text-emerald-100"
-                      : "bg-white/5 text-white/70 hover:bg-white/10"
+                      ? "bg-accent/20 text-accent/90"
+                      : "bg-fg/5 text-fg/70 hover:bg-fg/10"
                   }`}
                 >
                   <span className="truncate">{m.name}</span>
-                  <span className="text-xs text-white/40">{formatCompactNumber(m.tokens)}</span>
+                  <span className="text-xs text-fg/40">{formatCompactNumber(m.tokens)}</span>
                 </button>
               ))}
             </div>
           </div>
 
           <div>
-            <label className="text-xs font-medium text-white/60 uppercase tracking-wide mb-2 block">
+            <label className="text-xs font-medium text-fg/60 uppercase tracking-wide mb-2 block">
               Character
             </label>
             <div className="space-y-1 max-h-48 overflow-y-auto">
@@ -653,12 +653,12 @@ export function UsagePage() {
                   onClick={() => setSelectedCharacter(selectedCharacter === c.id ? null : c.id)}
                   className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg transition ${
                     selectedCharacter === c.id
-                      ? "bg-emerald-500/20 text-emerald-100"
-                      : "bg-white/5 text-white/70 hover:bg-white/10"
+                      ? "bg-accent/20 text-accent/90"
+                      : "bg-fg/5 text-fg/70 hover:bg-fg/10"
                   }`}
                 >
                   <span className="truncate">{c.name}</span>
-                  <span className="text-xs text-white/40">{formatCompactNumber(c.tokens)}</span>
+                  <span className="text-xs text-fg/40">{formatCompactNumber(c.tokens)}</span>
                 </button>
               ))}
             </div>
@@ -670,13 +670,13 @@ export function UsagePage() {
                 setSelectedModel(null);
                 setSelectedCharacter(null);
               }}
-              className="flex-1 py-2.5 rounded-xl border border-white/10 text-white/60 text-sm font-medium hover:bg-white/5 transition"
+              className="flex-1 py-2.5 rounded-xl border border-fg/10 text-fg/60 text-sm font-medium hover:bg-fg/5 transition"
             >
               Clear All
             </button>
             <button
               onClick={() => setShowFilters(false)}
-              className="flex-1 py-2.5 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-100 text-sm font-medium hover:bg-emerald-500/30 transition"
+              className="flex-1 py-2.5 rounded-xl bg-accent/20 border border-accent/30 text-accent/90 text-sm font-medium hover:bg-accent/30 transition"
             >
               Apply
             </button>
@@ -696,7 +696,7 @@ export function UsagePage() {
             <ActivityItem key={r.id} request={r} />
           ))}
           {filteredRecords.length === 0 && (
-            <p className="text-center text-white/40 py-8 text-sm">No activity in this period</p>
+            <p className="text-center text-fg/40 py-8 text-sm">No activity in this period</p>
           )}
         </div>
       </BottomMenu>
@@ -710,7 +710,7 @@ export function UsagePage() {
       >
         <div className="space-y-4 pb-4">
           <div>
-            <label className="block text-xs font-medium text-white/60 mb-2">Start Date</label>
+            <label className="block text-xs font-medium text-fg/60 mb-2">Start Date</label>
             <input
               type="date"
               value={customStartDate.toISOString().split("T")[0]}
@@ -720,12 +720,12 @@ export function UsagePage() {
                 setCustomStartDate(newDate);
               }}
               max={customEndDate.toISOString().split("T")[0]}
-              className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-emerald-500/50 focus:bg-white/10 transition"
+              className="w-full px-3 py-2.5 rounded-xl bg-fg/5 border border-fg/10 text-fg text-sm focus:outline-none focus:border-accent/50 focus:bg-fg/10 transition"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-white/60 mb-2">End Date</label>
+            <label className="block text-xs font-medium text-fg/60 mb-2">End Date</label>
             <input
               type="date"
               value={customEndDate.toISOString().split("T")[0]}
@@ -736,14 +736,14 @@ export function UsagePage() {
               }}
               min={customStartDate.toISOString().split("T")[0]}
               max={new Date().toISOString().split("T")[0]}
-              className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-emerald-500/50 focus:bg-white/10 transition"
+              className="w-full px-3 py-2.5 rounded-xl bg-fg/5 border border-fg/10 text-fg text-sm focus:outline-none focus:border-accent/50 focus:bg-fg/10 transition"
             />
           </div>
 
           <div className="flex gap-2 pt-2">
             <button
               onClick={() => setShowCustomDatePicker(false)}
-              className="flex-1 py-2.5 rounded-xl border border-white/10 text-white/60 text-sm font-medium hover:bg-white/5 transition"
+              className="flex-1 py-2.5 rounded-xl border border-fg/10 text-fg/60 text-sm font-medium hover:bg-fg/5 transition"
             >
               Cancel
             </button>
@@ -756,7 +756,7 @@ export function UsagePage() {
                 }
                 setShowCustomDatePicker(false);
               }}
-              className="flex-1 py-2.5 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-100 text-sm font-medium hover:bg-emerald-500/30 transition"
+              className="flex-1 py-2.5 rounded-xl bg-accent/20 border border-accent/30 text-accent/90 text-sm font-medium hover:bg-accent/30 transition"
             >
               Apply
             </button>
@@ -767,13 +767,13 @@ export function UsagePage() {
       <div className="max-w-5xl mx-auto px-4 py-4">
         {/* View Mode Toggle */}
         <div className="flex items-center gap-2 mb-4">
-          <div className="flex-1 flex items-center gap-1 p-1 rounded-xl bg-white/5 border border-white/10">
+          <div className="flex-1 flex items-center gap-1 p-1 rounded-xl bg-fg/5 border border-fg/10">
             <button
               onClick={() => setViewMode("dashboard")}
               className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
                 viewMode === "dashboard"
-                  ? "bg-white/10 text-white"
-                  : "text-white/50 hover:text-white/70"
+                  ? "bg-fg/10 text-fg"
+                  : "text-fg/50 hover:text-fg/70"
               }`}
             >
               <Activity className="h-3.5 w-3.5" />
@@ -783,8 +783,8 @@ export function UsagePage() {
               onClick={() => setViewMode("appTime")}
               className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
                 viewMode === "appTime"
-                  ? "bg-white/10 text-white"
-                  : "text-white/50 hover:text-white/70"
+                  ? "bg-fg/10 text-fg"
+                  : "text-fg/50 hover:text-fg/70"
               }`}
             >
               <Clock className="h-3.5 w-3.5" />
@@ -800,7 +800,7 @@ export function UsagePage() {
           <>
             {/* Header Row */}
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-4">
-              <div className="flex flex-wrap items-center gap-1 p-1 rounded-xl bg-white/5 border border-white/10">
+              <div className="flex flex-wrap items-center gap-1 p-1 rounded-xl bg-fg/5 border border-fg/10">
                 {[
                   { key: "today", label: "Today" },
                   { key: "week", label: "7 Days" },
@@ -812,8 +812,8 @@ export function UsagePage() {
                     onClick={() => setDatePreset(key as DatePreset)}
                     className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
                       datePreset === key
-                        ? "bg-white/10 text-white"
-                        : "text-white/50 hover:text-white/70"
+                        ? "bg-fg/10 text-fg"
+                        : "text-fg/50 hover:text-fg/70"
                     }`}
                   >
                     {label}
@@ -823,8 +823,8 @@ export function UsagePage() {
                   onClick={() => setShowCustomDatePicker(true)}
                   className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
                     datePreset === "custom"
-                      ? "bg-white/10 text-white"
-                      : "text-white/50 hover:text-white/70"
+                      ? "bg-fg/10 text-fg"
+                      : "text-fg/50 hover:text-fg/70"
                   }`}
                 >
                   Custom
@@ -836,8 +836,8 @@ export function UsagePage() {
                   onClick={() => setShowFilters(true)}
                   className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
                     activeFilterCount > 0
-                      ? "bg-emerald-500/20 text-emerald-100 border border-emerald-500/30"
-                      : "bg-white/5 text-white/60 border border-white/10 hover:bg-white/10"
+                      ? "bg-accent/20 text-accent/90 border border-accent/30"
+                      : "bg-fg/5 text-fg/60 border border-fg/10 hover:bg-fg/10"
                   }`}
                 >
                   <Filter className="h-3.5 w-3.5" />
@@ -846,7 +846,7 @@ export function UsagePage() {
                 <button
                   onClick={handleExport}
                   disabled={exporting || records.length === 0}
-                  className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white/60 text-xs font-medium hover:bg-white/10 transition disabled:opacity-50"
+                  className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-fg/5 border border-fg/10 text-fg/60 text-xs font-medium hover:bg-fg/10 transition disabled:opacity-50"
                 >
                   <Download className="h-3.5 w-3.5" />
                 </button>
@@ -865,7 +865,7 @@ export function UsagePage() {
                   {selectedModel && (
                     <button
                       onClick={() => setSelectedModel(null)}
-                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-100 text-xs"
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-accent/15 border border-accent/30 text-accent/90 text-xs"
                     >
                       {modelOptions.find((m) => m.id === selectedModel)?.name}
                       <X className="h-3 w-3" />
@@ -874,7 +874,7 @@ export function UsagePage() {
                   {selectedCharacter && (
                     <button
                       onClick={() => setSelectedCharacter(null)}
-                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-100 text-xs"
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-accent/15 border border-accent/30 text-accent/90 text-xs"
                     >
                       {characterOptions.find((c) => c.id === selectedCharacter)?.name}
                       <X className="h-3 w-3" />
@@ -886,7 +886,7 @@ export function UsagePage() {
 
             {loading ? (
               <div className="flex items-center justify-center py-20">
-                <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/20 border-t-emerald-400" />
+                <div className="h-8 w-8 animate-spin rounded-full border-2 border-fg/20 border-t-accent" />
               </div>
             ) : (
               <div className="space-y-4">
@@ -932,18 +932,18 @@ export function UsagePage() {
                   <motion.div
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="rounded-2xl border border-white/10 bg-white/5 p-4"
+                    className="rounded-2xl border border-fg/10 bg-fg/5 p-4"
                   >
                     <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-sm font-semibold text-white">Usage Trend</h3>
+                      <h3 className="text-sm font-semibold text-fg">Usage Trend</h3>
                       <div className="flex items-center gap-3 text-[11px]">
                         <div className="flex items-center gap-1.5">
-                          <span className="h-2 w-2 rounded-full bg-blue-400" />
-                          <span className="text-white/50">Input</span>
+                          <span className="h-2 w-2 rounded-full bg-info" />
+                          <span className="text-fg/50">Input</span>
                         </div>
                         <div className="flex items-center gap-1.5">
-                          <span className="h-2 w-2 rounded-full bg-emerald-400" />
-                          <span className="text-white/50">Output</span>
+                          <span className="h-2 w-2 rounded-full bg-accent" />
+                          <span className="text-fg/50">Output</span>
                         </div>
                       </div>
                     </div>
@@ -955,12 +955,12 @@ export function UsagePage() {
                         >
                           <defs>
                             <linearGradient id="inputGrad" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor="#60a5fa" stopOpacity={0.3} />
-                              <stop offset="95%" stopColor="#60a5fa" stopOpacity={0} />
+                              <stop offset="5%" stopColor="var(--color-info)" stopOpacity={0.3} />
+                              <stop offset="95%" stopColor="var(--color-info)" stopOpacity={0} />
                             </linearGradient>
                             <linearGradient id="outputGrad" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor="#34d399" stopOpacity={0.3} />
-                              <stop offset="95%" stopColor="#34d399" stopOpacity={0} />
+                              <stop offset="5%" stopColor="var(--color-accent)" stopOpacity={0.3} />
+                              <stop offset="95%" stopColor="var(--color-accent)" stopOpacity={0} />
                             </linearGradient>
                           </defs>
                           <XAxis
@@ -980,7 +980,7 @@ export function UsagePage() {
                             type="monotone"
                             dataKey="input"
                             name="Input"
-                            stroke="#60a5fa"
+                            stroke="var(--color-info)"
                             fill="url(#inputGrad)"
                             strokeWidth={2}
                           />
@@ -988,7 +988,7 @@ export function UsagePage() {
                             type="monotone"
                             dataKey="output"
                             name="Output"
-                            stroke="#34d399"
+                            stroke="var(--color-accent)"
                             fill="url(#outputGrad)"
                             strokeWidth={2}
                           />
@@ -1005,9 +1005,9 @@ export function UsagePage() {
                       initial={{ opacity: 0, y: 8 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: 0.05 }}
-                      className="rounded-2xl border border-white/10 bg-white/5 p-4"
+                      className="rounded-2xl border border-fg/10 bg-fg/5 p-4"
                     >
-                      <h3 className="text-sm font-semibold text-white mb-4">By Model</h3>
+                      <h3 className="text-sm font-semibold text-fg mb-4">By Model</h3>
                       <div className="flex gap-4">
                         <div className="w-28 h-28 shrink-0">
                           <ResponsiveContainer width="100%" height="100%">
@@ -1036,10 +1036,10 @@ export function UsagePage() {
                                 className="h-2 w-2 rounded-full shrink-0"
                                 style={{ backgroundColor: COLORS[i % COLORS.length] }}
                               />
-                              <span className="text-xs text-white/70 truncate flex-1">
+                              <span className="text-xs text-fg/70 truncate flex-1">
                                 {m.name}
                               </span>
-                              <span className="text-xs text-white/40">
+                              <span className="text-xs text-fg/40">
                                 {formatCompactNumber(m.tokens)}
                               </span>
                             </div>
@@ -1054,9 +1054,9 @@ export function UsagePage() {
                       initial={{ opacity: 0, y: 8 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: 0.1 }}
-                      className="rounded-2xl border border-white/10 bg-white/5 p-4"
+                      className="rounded-2xl border border-fg/10 bg-fg/5 p-4"
                     >
-                      <h3 className="text-sm font-semibold text-white mb-4">By Character</h3>
+                      <h3 className="text-sm font-semibold text-fg mb-4">By Character</h3>
                       <div className="flex gap-4">
                         <div className="w-28 h-28 shrink-0">
                           <ResponsiveContainer width="100%" height="100%">
@@ -1085,10 +1085,10 @@ export function UsagePage() {
                                 className="h-2 w-2 rounded-full shrink-0"
                                 style={{ backgroundColor: COLORS[i % COLORS.length] }}
                               />
-                              <span className="text-xs text-white/70 truncate flex-1">
+                              <span className="text-xs text-fg/70 truncate flex-1">
                                 {c.name}
                               </span>
-                              <span className="text-xs text-white/40">
+                              <span className="text-xs text-fg/40">
                                 {formatCompactNumber(c.tokens)}
                               </span>
                             </div>
@@ -1104,29 +1104,29 @@ export function UsagePage() {
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.2 }}
-                  className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden"
+                  className="rounded-2xl border border-fg/10 bg-fg/5 overflow-hidden"
                 >
-                  <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
-                    <h3 className="text-sm font-semibold text-white">Recent Activity</h3>
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-fg/10">
+                    <h3 className="text-sm font-semibold text-fg">Recent Activity</h3>
                     {filteredRecords.length > 5 && (
                       <button
                         onClick={() => setShowAllActivity(true)}
-                        className="flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300 transition"
+                        className="flex items-center gap-1 text-xs text-accent hover:text-accent/80 transition"
                       >
                         View all
                         <ChevronRight className="h-3.5 w-3.5" />
                       </button>
                     )}
                   </div>
-                  <div className="divide-y divide-white/5">
+                  <div className="divide-y divide-fg/5">
                     {filteredRecords.slice(0, 5).map((r) => (
                       <ActivityItem key={r.id} request={r} />
                     ))}
                     {filteredRecords.length === 0 && (
                       <div className="py-12 text-center">
-                        <Calendar className="h-8 w-8 text-white/20 mx-auto mb-2" />
-                        <p className="text-sm text-white/50">No activity yet</p>
-                        <p className="text-xs text-white/30 mt-1">
+                        <Calendar className="h-8 w-8 text-fg/20 mx-auto mb-2" />
+                        <p className="text-sm text-fg/50">No activity yet</p>
+                        <p className="text-xs text-fg/30 mt-1">
                           Start chatting to see usage data
                         </p>
                       </div>
@@ -1143,7 +1143,7 @@ export function UsagePage() {
         {/* ================================================================== */}
         {viewMode === "appTime" && (
           <div className="space-y-4">
-            <div className="inline-flex flex-wrap items-center gap-1 p-1 rounded-xl bg-white/5 border border-white/10">
+            <div className="inline-flex flex-wrap items-center gap-1 p-1 rounded-xl bg-fg/5 border border-fg/10">
               {[
                 { key: "today", label: "Today" },
                 { key: "week", label: "7 Days" },
@@ -1162,8 +1162,8 @@ export function UsagePage() {
                   }}
                   className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
                     appTimePreset === key
-                      ? "bg-white/10 text-white"
-                      : "text-white/50 hover:text-white/70"
+                      ? "bg-fg/10 text-fg"
+                      : "text-fg/50 hover:text-fg/70"
                   }`}
                 >
                   {label}
@@ -1214,15 +1214,15 @@ export function UsagePage() {
             <motion.div
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
-              className="rounded-2xl border border-white/10 bg-white/5 p-4"
+              className="rounded-2xl border border-fg/10 bg-fg/5 p-4"
             >
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-semibold text-white">App Time Trend</h3>
-                <div className="text-[11px] text-white/45">
+                <h3 className="text-sm font-semibold text-fg">App Time Trend</h3>
+                <div className="text-[11px] text-fg/45">
                   Total {formatDurationMs(appTimeStats.rangeTotalMs)}
                   {appTimePreset !== "all" && (
                     <span
-                      className={`ml-2 ${appTimeStats.rangeDeltaMs >= 0 ? "text-emerald-400" : "text-red-400"}`}
+                      className={`ml-2 ${appTimeStats.rangeDeltaMs >= 0 ? "text-accent" : "text-danger"}`}
                     >
                       {appTimeStats.rangeDeltaMs >= 0 ? "+" : "-"}
                       {formatDurationMs(Math.abs(appTimeStats.rangeDeltaMs))} (
@@ -1240,8 +1240,8 @@ export function UsagePage() {
                   >
                     <defs>
                       <linearGradient id="appTimeGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#34d399" stopOpacity={0.35} />
-                        <stop offset="95%" stopColor="#34d399" stopOpacity={0} />
+                        <stop offset="5%" stopColor="var(--color-accent)" stopOpacity={0.35} />
+                        <stop offset="95%" stopColor="var(--color-accent)" stopOpacity={0} />
                       </linearGradient>
                     </defs>
                     <XAxis
@@ -1261,7 +1261,7 @@ export function UsagePage() {
                       type="monotone"
                       dataKey="ms"
                       name="Active Time"
-                      stroke="#34d399"
+                      stroke="var(--color-accent)"
                       fill="url(#appTimeGrad)"
                       strokeWidth={2}
                     />

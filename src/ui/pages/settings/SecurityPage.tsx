@@ -32,33 +32,33 @@ const PURE_MODE_OPTIONS: {
     value: "off",
     label: "Off",
     description: "All content allowed",
-    color: "text-white/60",
-    activeColor: "text-orange-200",
-    activeBg: "border-orange-400/40 bg-orange-500/20",
+    color: "text-fg/60",
+    activeColor: "text-warning",
+    activeBg: "border-warning/40 bg-warning/20",
   },
   {
     value: "low",
     label: "Low",
     description: "Blocks explicit sexual content + slurs",
-    color: "text-white/60",
-    activeColor: "text-yellow-200",
-    activeBg: "border-yellow-400/40 bg-yellow-500/20",
+    color: "text-fg/60",
+    activeColor: "text-warning",
+    activeBg: "border-warning/40 bg-warning/20",
   },
   {
     value: "standard",
     label: "Standard",
     description: "Blocks NSFW + graphic violence",
-    color: "text-white/60",
-    activeColor: "text-emerald-200",
-    activeBg: "border-emerald-400/40 bg-emerald-500/20",
+    color: "text-fg/60",
+    activeColor: "text-accent",
+    activeBg: "border-accent/40 bg-accent/20",
   },
   {
     value: "strict",
     label: "Strict",
     description: "Maximum filtering + no suggestive tone",
-    color: "text-white/60",
-    activeColor: "text-blue-200",
-    activeBg: "border-blue-400/40 bg-blue-500/20",
+    color: "text-fg/60",
+    activeColor: "text-info",
+    activeBg: "border-info/40 bg-info/20",
   },
 ];
 const FILTER_DEBUG_ENABLED = import.meta.env.DEV;
@@ -218,14 +218,14 @@ export function SecurityPage() {
       <section className="flex-1 overflow-y-auto px-3 pt-3 space-y-6">
         {/* Section: Content Filtering */}
         <div>
-          <h2 className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-white/35">
+          <h2 className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-fg/35">
             Content Filtering
           </h2>
           <div
             className={`relative overflow-hidden rounded-xl border px-4 py-3 transition-all duration-300 ${
               isEnabled
-                ? "border-emerald-400/20 bg-linear-to-br from-emerald-500/10 via-white/5 to-white/5 shadow-[0_0_20px_rgba(16,185,129,0.15)]"
-                : "border-white/10 bg-white/5"
+                ? "border-accent/20 bg-linear-to-br from-accent/10 via-fg/5 to-fg/5 shadow-[0_0_20px_rgba(16,185,129,0.15)]"
+                : "border-fg/10 bg-fg/5"
             }`}
           >
             {isEnabled && (
@@ -242,26 +242,26 @@ export function SecurityPage() {
               <div
                 className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border transition-all duration-300 ${
                   isEnabled
-                    ? "border-emerald-400/40 bg-emerald-500/15 shadow-lg shadow-emerald-500/25"
-                    : "border-white/10 bg-white/10"
+                    ? "border-accent/40 bg-accent/15 shadow-lg shadow-accent/25"
+                    : "border-fg/10 bg-fg/10"
                 }`}
               >
                 <Shield
                   className={`h-4 w-4 transition-colors duration-300 ${
-                    isEnabled ? "text-emerald-200" : "text-white/70"
+                    isEnabled ? "text-accent" : "text-fg/70"
                   }`}
                 />
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-white">Pure Mode</span>
+                  <span className="text-sm font-medium text-fg">Pure Mode</span>
                   <span
                     className={`rounded-md border px-1.5 py-0.5 text-[10px] font-medium leading-none uppercase tracking-[0.25em] transition-all duration-300 ${activeOption.activeBg} ${activeOption.activeColor}`}
                   >
                     {activeOption.label}
                   </span>
                 </div>
-                <div className="mt-0.5 text-[11px] text-white/50">{activeOption.description}</div>
+                <div className="mt-0.5 text-[11px] text-fg/50">{activeOption.description}</div>
 
                 {/* Level selector */}
                 <div className="mt-3 flex gap-1.5">
@@ -274,7 +274,7 @@ export function SecurityPage() {
                         className={`flex-1 rounded-lg border px-2 py-1.5 text-center text-[11px] font-medium transition-all duration-200 ${
                           isActive
                             ? `${option.activeBg} ${option.activeColor} shadow-sm`
-                            : "border-white/10 bg-white/5 text-white/50 hover:bg-white/10"
+                            : "border-fg/10 bg-fg/5 text-fg/50 hover:bg-fg/10"
                         }`}
                       >
                         {option.label}
@@ -283,7 +283,7 @@ export function SecurityPage() {
                   })}
                 </div>
 
-                <div className="mt-2 text-[11px] text-white/45 leading-relaxed">
+                <div className="mt-2 text-[11px] text-fg/45 leading-relaxed">
                   Restrict adult content in AI responses
                 </div>
               </div>
@@ -293,30 +293,30 @@ export function SecurityPage() {
 
         {/* Section: App Integrity */}
         <div>
-          <h2 className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-white/35">
+          <h2 className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-fg/35">
             App Integrity
           </h2>
-          <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+          <div className="rounded-xl border border-fg/10 bg-fg/5 px-4 py-3">
             <div className="flex items-start gap-3">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/10">
-                <Shield className="h-4 w-4 text-white/70" />
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-fg/10 bg-fg/10">
+                <Shield className="h-4 w-4 text-fg/70" />
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-white">Glitch Effects</span>
+                      <span className="text-sm font-medium text-fg">Glitch Effects</span>
                       <span
                         className={`rounded-md border px-1.5 py-0.5 text-[10px] font-medium leading-none uppercase tracking-[0.25em] ${
                           isGlitchEnabled
-                            ? "border-cyan-400/40 bg-cyan-500/15 text-cyan-100"
-                            : "border-white/10 bg-white/10 text-white/60"
+                            ? "border-info/40 bg-info/15 text-info"
+                            : "border-fg/10 bg-fg/10 text-fg/60"
                         }`}
                       >
                         {isGlitchEnabled ? "On" : "Off"}
                       </span>
                     </div>
-                    <div className="mt-0.5 text-[11px] text-white/50">
+                    <div className="mt-0.5 text-[11px] text-fg/50">
                       Disable the shake-triggered visuals
                     </div>
                   </div>
@@ -330,19 +330,19 @@ export function SecurityPage() {
                     />
                     <label
                       htmlFor="glitch-effects"
-                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-all duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-cyan-400/40 ${
-                        isGlitchEnabled ? "bg-cyan-500 shadow-lg shadow-cyan-500/30" : "bg-white/20"
+                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-all duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-info/40 ${
+                        isGlitchEnabled ? "bg-info shadow-lg shadow-info/30" : "bg-fg/20"
                       }`}
                     >
                       <span
-                        className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                        className={`inline-block h-5 w-5 transform rounded-full bg-fg shadow ring-0 transition duration-200 ease-in-out ${
                           isGlitchEnabled ? "translate-x-5" : "translate-x-0"
                         }`}
                       />
                     </label>
                   </div>
                 </div>
-                <div className="mt-2 text-[11px] text-white/45 leading-relaxed">
+                <div className="mt-2 text-[11px] text-fg/45 leading-relaxed">
                   Keeps the app stable on shake
                 </div>
               </div>
@@ -352,33 +352,33 @@ export function SecurityPage() {
 
         {/* Section: Data Protection */}
         <div>
-          <h2 className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-white/35">
+          <h2 className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-fg/35">
             Data Protection
           </h2>
           <div className="space-y-2">
-            <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+            <div className="rounded-xl border border-fg/10 bg-fg/5 px-4 py-3">
               <div className="flex items-start gap-3">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/10">
-                  <Shield className="h-4 w-4 text-white/70" />
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-fg/10 bg-fg/10">
+                  <Shield className="h-4 w-4 text-fg/70" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-white">
+                        <span className="text-sm font-medium text-fg">
                           Remote Avatar Download
                         </span>
                         <span
                           className={`rounded-md border px-1.5 py-0.5 text-[10px] font-medium leading-none uppercase tracking-[0.25em] ${
                             autoDownloadCharacterCardAvatars
-                              ? "border-emerald-400/50 bg-emerald-500/25 text-emerald-100"
-                              : "border-white/10 bg-white/10 text-white/60"
+                              ? "border-accent/50 bg-accent/25 text-accent"
+                              : "border-fg/10 bg-fg/10 text-fg/60"
                           }`}
                         >
                           {autoDownloadCharacterCardAvatars ? "On" : "Off"}
                         </span>
                       </div>
-                      <div className="mt-0.5 text-[11px] text-white/50">
+                      <div className="mt-0.5 text-[11px] text-fg/50">
                         Auto-download avatar images from HTTPS URLs during character card import
                       </div>
                     </div>
@@ -392,42 +392,42 @@ export function SecurityPage() {
                       />
                       <label
                         htmlFor="remote-avatar-download"
-                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-all duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-emerald-400/40 ${
+                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-all duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent/40 ${
                           autoDownloadCharacterCardAvatars
-                            ? "bg-emerald-500 shadow-lg shadow-emerald-500/30"
-                            : "bg-white/20"
+                            ? "bg-accent shadow-lg shadow-accent/30"
+                            : "bg-fg/20"
                         }`}
                       >
                         <span
-                          className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                          className={`inline-block h-5 w-5 transform rounded-full bg-fg shadow ring-0 transition duration-200 ease-in-out ${
                             autoDownloadCharacterCardAvatars ? "translate-x-5" : "translate-x-0"
                           }`}
                         />
                       </label>
                     </div>
                   </div>
-                  <div className="mt-2 text-[11px] text-white/45 leading-relaxed">
+                  <div className="mt-2 text-[11px] text-fg/45 leading-relaxed">
                     Disable this to prevent network avatar fetches when importing character cards
                   </div>
                 </div>
               </div>
             </div>
 
-            <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+            <div className="rounded-xl border border-fg/10 bg-fg/5 px-4 py-3">
               <div className="flex items-start gap-3">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/10">
-                  <Database className="h-4 w-4 text-white/70" />
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-fg/10 bg-fg/10">
+                  <Database className="h-4 w-4 text-fg/70" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-white">Analytics</span>
+                        <span className="text-sm font-medium text-fg">Analytics</span>
                         <span
                           className={`rounded-md border px-1.5 py-0.5 text-[10px] font-medium leading-none uppercase tracking-[0.25em] ${
                             isAnalyticsEnabled
-                              ? "border-emerald-400/50 bg-emerald-500/25 text-emerald-100"
-                              : "border-white/10 bg-white/10 text-white/60"
+                              ? "border-accent/50 bg-accent/25 text-accent"
+                              : "border-fg/10 bg-fg/10 text-fg/60"
                           }`}
                         >
                           {!isAnalyticsAvailableState
@@ -437,7 +437,7 @@ export function SecurityPage() {
                               : "Off"}
                         </span>
                       </div>
-                      <div className="mt-0.5 text-[11px] text-white/50">
+                      <div className="mt-0.5 text-[11px] text-fg/50">
                         {isAnalyticsAvailableState
                           ? "Help improve the app with anonymous usage events"
                           : "Requires an analytics API key"}
@@ -454,25 +454,25 @@ export function SecurityPage() {
                       />
                       <label
                         htmlFor="analytics-tracking"
-                        className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-all duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-emerald-400/40 ${
+                        className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-all duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent/40 ${
                           isAnalyticsAvailableState
                             ? "cursor-pointer"
                             : "cursor-not-allowed opacity-60"
                         } ${
                           isAnalyticsEnabled
-                            ? "bg-emerald-500 shadow-lg shadow-emerald-500/30"
-                            : "bg-white/20"
+                            ? "bg-accent shadow-lg shadow-accent/30"
+                            : "bg-fg/20"
                         }`}
                       >
                         <span
-                          className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                          className={`inline-block h-5 w-5 transform rounded-full bg-fg shadow ring-0 transition duration-200 ease-in-out ${
                             isAnalyticsEnabled ? "translate-x-5" : "translate-x-0"
                           }`}
                         />
                       </label>
                     </div>
                   </div>
-                  <div className="mt-2 text-[11px] text-white/45 leading-relaxed">
+                  <div className="mt-2 text-[11px] text-fg/45 leading-relaxed">
                     {isAnalyticsAvailableState
                       ? "Restart required to apply changes"
                       : "Set APTABASE_KEY to enable analytics"}
@@ -481,19 +481,19 @@ export function SecurityPage() {
               </div>
             </div>
 
-            <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+            <div className="rounded-xl border border-fg/10 bg-fg/5 px-4 py-3">
               <div className="flex items-start gap-3">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/10">
-                  <Database className="h-4 w-4 text-white/70" />
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-fg/10 bg-fg/10">
+                  <Database className="h-4 w-4 text-fg/70" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-white">Aptabase Analytics</span>
-                    <span className="rounded-md border border-white/10 bg-white/10 px-1.5 py-0.5 text-[10px] font-medium leading-none text-white/70">
+                    <span className="text-sm font-medium text-fg">Aptabase Analytics</span>
+                    <span className="rounded-md border border-fg/10 bg-fg/10 px-1.5 py-0.5 text-[10px] font-medium leading-none text-fg/70">
                       Anonymous
                     </span>
                   </div>
-                  <div className="mt-0.5 text-[11px] text-white/45 leading-relaxed">
+                  <div className="mt-0.5 text-[11px] text-fg/45 leading-relaxed">
                     Events are anonymous and contain only the event name and not-identifying
                     properties we define. We do not send message content or personal identifiers.
                   </div>
@@ -505,26 +505,26 @@ export function SecurityPage() {
         {FILTER_DEBUG_ENABLED && (
           <div>
             <div className="mb-2 flex items-center justify-between px-1">
-              <h2 className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/35">
+              <h2 className="text-[10px] font-semibold uppercase tracking-[0.25em] text-fg/35">
                 Filter Log
               </h2>
               {filterLog.length > 0 && (
                 <button
                   onClick={() => void clearFilterLog()}
-                  className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] text-white/40 transition-colors hover:bg-white/10 hover:text-white/60"
+                  className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] text-fg/40 transition-colors hover:bg-fg/10 hover:text-fg/60"
                 >
                   <Trash2 className="h-3 w-3" />
                   Clear
                 </button>
               )}
             </div>
-            <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+            <div className="rounded-xl border border-fg/10 bg-fg/5 px-4 py-3">
               {filterLog.length === 0 ? (
                 <div className="flex items-center gap-3">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/10">
-                    <ScrollText className="h-4 w-4 text-white/70" />
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-fg/10 bg-fg/10">
+                    <ScrollText className="h-4 w-4 text-fg/70" />
                   </div>
-                  <div className="text-[11px] text-white/40">
+                  <div className="text-[11px] text-fg/40">
                     No filter hits recorded yet. Matches will appear here as you chat.
                   </div>
                 </div>
@@ -542,8 +542,8 @@ export function SecurityPage() {
                         key={`${entry.timestamp_ms}-${i}`}
                         className={`rounded-lg border px-3 py-2 ${
                           entry.blocked
-                            ? "border-red-400/30 bg-red-500/10"
-                            : "border-amber-400/20 bg-amber-500/5"
+                            ? "border-danger/30 bg-danger/10"
+                            : "border-warning/20 bg-warning/5"
                         }`}
                       >
                         <div className="flex items-center justify-between gap-2 mb-1">
@@ -551,23 +551,23 @@ export function SecurityPage() {
                             <span
                               className={`rounded px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${
                                 entry.blocked
-                                  ? "bg-red-500/20 text-red-300"
-                                  : "bg-amber-500/20 text-amber-300"
+                                  ? "bg-danger/20 text-danger/80"
+                                  : "bg-warning/20 text-warning/80"
                               }`}
                             >
                               {entry.blocked ? "Blocked" : "Hit"}
                             </span>
-                            <span className="text-[10px] text-white/30">{entry.level}</span>
-                            <span className="text-[10px] text-white/30">
+                            <span className="text-[10px] text-fg/30">{entry.level}</span>
+                            <span className="text-[10px] text-fg/30">
                               score:{" "}
-                              <span className={entry.blocked ? "text-red-300" : "text-amber-200"}>
+                              <span className={entry.blocked ? "text-danger/80" : "text-warning"}>
                                 {entry.score.toFixed(2)}
                               </span>
                             </span>
                           </div>
-                          <span className="text-[10px] text-white/25">{timeStr}</span>
+                          <span className="text-[10px] text-fg/25">{timeStr}</span>
                         </div>
-                        <div className="text-[11px] text-white/60 line-clamp-2 break-all font-mono">
+                        <div className="text-[11px] text-fg/60 line-clamp-2 break-all font-mono">
                           {entry.text_snippet}
                         </div>
                         <div className="mt-1 flex flex-wrap gap-1">
@@ -576,8 +576,8 @@ export function SecurityPage() {
                               key={j}
                               className={`rounded-md border px-1.5 py-0.5 text-[10px] ${
                                 entry.blocked
-                                  ? "border-red-400/30 bg-red-500/15 text-red-200"
-                                  : "border-amber-400/20 bg-amber-500/10 text-amber-200"
+                                  ? "border-danger/30 bg-danger/15 text-danger"
+                                  : "border-warning/20 bg-warning/10 text-warning"
                               }`}
                             >
                               {term}
@@ -596,13 +596,13 @@ export function SecurityPage() {
         {/* Section: Filter Debug (TEMP) */}
         {FILTER_DEBUG_ENABLED && (
           <div>
-            <h2 className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-white/35">
+            <h2 className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-fg/35">
               Filter Pipeline Debug
             </h2>
-            <div className="rounded-xl border border-amber-400/20 bg-amber-500/5 px-4 py-3 space-y-3">
+            <div className="rounded-xl border border-warning/20 bg-warning/5 px-4 py-3 space-y-3">
               <div className="flex items-center gap-2">
-                <Search className="h-4 w-4 text-amber-300/70" />
-                <span className="text-[10px] font-medium uppercase tracking-widest text-amber-300/60">
+                <Search className="h-4 w-4 text-warning/70" />
+                <span className="text-[10px] font-medium uppercase tracking-widest text-warning/60">
                   Temp — tokenization inspector
                 </span>
               </div>
@@ -614,7 +614,7 @@ export function SecurityPage() {
                   void handleDebugFilter(e.target.value);
                 }}
                 placeholder="Type a sentence to see how it gets processed..."
-                className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white placeholder-white/30 outline-none focus:border-amber-400/40"
+                className="w-full rounded-lg border border-fg/10 bg-surface-el/30 px-3 py-2 text-sm text-fg placeholder-fg/30 outline-none focus:border-warning/40"
               />
               {debugResult && (
                 <div className="space-y-2 text-[11px] font-mono">
@@ -636,34 +636,34 @@ export function SecurityPage() {
                       <>
                         {visible.map(([label, value]) => (
                           <div key={label} className="flex gap-2">
-                            <span className="shrink-0 w-28 text-right text-white/30">{label}</span>
-                            <span className="text-white/80 break-all">{value}</span>
+                            <span className="shrink-0 w-28 text-right text-fg/30">{label}</span>
+                            <span className="text-fg/80 break-all">{value}</span>
                           </div>
                         ))}
-                        <div className="mt-1 border-t border-white/10 pt-2 flex flex-wrap gap-x-4 gap-y-1">
-                          <span className="text-white/40">
+                        <div className="mt-1 border-t border-fg/10 pt-2 flex flex-wrap gap-x-4 gap-y-1">
+                          <span className="text-fg/40">
                             level:{" "}
-                            <span className="text-white/70">{String(debugResult.level)}</span>
+                            <span className="text-fg/70">{String(debugResult.level)}</span>
                           </span>
-                          <span className="text-white/40">
+                          <span className="text-fg/40">
                             context:{" "}
-                            <span className="text-white/70">
+                            <span className="text-fg/70">
                               {debugResult.context_allowlist_hit ? "yes" : "no"}
                             </span>
                           </span>
-                          <span className="text-white/40">
+                          <span className="text-fg/40">
                             score:{" "}
                             <span
                               className={
-                                (result.score as number) > 0 ? "text-red-300" : "text-emerald-300"
+                                (result.score as number) > 0 ? "text-danger/80" : "text-accent/80"
                               }
                             >
                               {(result.score as number).toFixed(2)}
                             </span>
                           </span>
-                          <span className="text-white/40">
+                          <span className="text-fg/40">
                             blocked:{" "}
-                            <span className={result.blocked ? "text-red-300" : "text-emerald-300"}>
+                            <span className={result.blocked ? "text-danger/80" : "text-accent/80"}>
                               {result.blocked ? "yes" : "no"}
                             </span>
                           </span>
@@ -673,7 +673,7 @@ export function SecurityPage() {
                             {(result.matched_terms as string[]).map((term, i) => (
                               <span
                                 key={i}
-                                className="rounded-md border border-red-400/30 bg-red-500/15 px-1.5 py-0.5 text-[10px] text-red-200"
+                                className="rounded-md border border-danger/30 bg-danger/15 px-1.5 py-0.5 text-[10px] text-danger"
                               >
                                 {term}
                               </span>
@@ -694,13 +694,13 @@ export function SecurityPage() {
         onClose={() => setShowRestartMenu(false)}
         title="Restart required"
       >
-        <div className="text-sm text-white/70">Analytics changes apply after a restart.</div>
+        <div className="text-sm text-fg/70">Analytics changes apply after a restart.</div>
         <MenuButtonGroup>
           <MenuButton
             icon={Power}
             title="Restart now"
             description="Apply analytics changes"
-            color="from-emerald-500 to-emerald-600"
+            color="from-accent to-accent/80"
             onClick={async () => {
               setShowRestartMenu(false);
               await relaunch();
@@ -710,7 +710,7 @@ export function SecurityPage() {
             icon={Lock}
             title="Later"
             description="Keep current session"
-            color="from-blue-500 to-blue-600"
+            color="from-info to-info/80"
             onClick={() => setShowRestartMenu(false)}
           />
         </MenuButtonGroup>

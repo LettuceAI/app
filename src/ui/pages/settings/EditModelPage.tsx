@@ -381,7 +381,7 @@ export function EditModelPage() {
   const isAutoReasoning = reasoningSupport === "auto";
   const showEffortOptions = reasoningSupport === "effort" || reasoningSupport === "dynamic";
   const numberInputClassName =
-    "w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-white placeholder-white/40 transition focus:border-white/30 focus:outline-none";
+    "w-full rounded-xl border border-fg/10 bg-surface-el/20 px-3 py-2.5 text-sm text-fg placeholder-fg/40 transition focus:border-fg/30 focus:outline-none";
   const contextLimit = llamaContextInfo?.maxContextLength ?? ADVANCED_CONTEXT_LENGTH_RANGE.max;
   const recommendedContextLength = llamaContextInfo?.recommendedContextLength ?? null;
   const selectedContextLength = modelAdvancedDraft.contextLength ?? null;
@@ -499,16 +499,16 @@ export function EditModelPage() {
 
   if (loading || !editorModel) {
     return (
-      <div className="flex h-full flex-col text-gray-200">
+      <div className="flex h-full flex-col text-fg/90">
         <div className="flex flex-1 items-center justify-center">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/10 border-t-white/60" />
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-fg/10 border-t-fg/60" />
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-dvh flex-col text-gray-200">
+    <div className="flex min-h-dvh flex-col text-fg/90">
       <main className="flex-1 overflow-y-auto px-4 pt-4 pb-32">
         <motion.div
           initial={{ opacity: 0, y: 10 }}
@@ -516,17 +516,17 @@ export function EditModelPage() {
           className="space-y-6"
         >
           {error && (
-            <div className="rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3">
-              <p className="text-sm text-red-200">{error}</p>
+            <div className="rounded-xl border border-danger/30 bg-danger/10 px-4 py-3">
+              <p className="text-sm text-danger/80">{error}</p>
             </div>
           )}
 
           <div className="space-y-2">
-            <label className="text-[11px] font-bold tracking-wider text-white/50 uppercase">
+            <label className="text-[11px] font-bold tracking-wider text-fg/50 uppercase">
               Model Platform
             </label>
             {providers.length === 0 ? (
-              <div className="rounded-xl border border-orange-400/40 bg-orange-500/10 px-3 py-2 text-sm text-orange-200">
+              <div className="rounded-xl border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
                 No providers configured. Add a provider first.
               </div>
             ) : (
@@ -534,10 +534,10 @@ export function EditModelPage() {
                 <button
                   type="button"
                   onClick={() => setShowPlatformSelector(true)}
-                  className="w-full flex items-center justify-between rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-white transition hover:bg-black/30 active:scale-[0.99]"
+                  className="w-full flex items-center justify-between rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3 text-fg transition hover:bg-surface-el/30 active:scale-[0.99]"
                 >
                   <div className="flex items-center gap-3 truncate">
-                    <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-white/5 text-white/60">
+                    <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-fg/5 text-fg/60">
                       {getProviderIcon(editorModel.providerId)}
                     </div>
                     <span className="truncate">
@@ -551,7 +551,7 @@ export function EditModelPage() {
                         "Select Platform..."}
                     </span>
                   </div>
-                  <ChevronDown className="h-4 w-4 text-white/40" />
+                  <ChevronDown className="h-4 w-4 text-fg/40" />
                 </button>
 
                 <BottomMenu
@@ -572,14 +572,14 @@ export function EditModelPage() {
                           description={prov.providerId}
                           color={
                             isSelected
-                              ? "from-emerald-500 to-emerald-600"
+                              ? "from-accent to-accent/80"
                               : "from-white/10 to-white/5"
                           }
                           rightElement={
                             isSelected ? (
-                              <Check className="h-4 w-4 text-emerald-400" />
+                              <Check className="h-4 w-4 text-accent" />
                             ) : (
-                              <ChevronRight className="h-4 w-4 text-white/20" />
+                              <ChevronRight className="h-4 w-4 text-fg/20" />
                             )
                           }
                           onClick={() => {
@@ -595,12 +595,12 @@ export function EditModelPage() {
             )}
           </div>
 
-          <div className="h-px bg-white/5" />
+          <div className="h-px bg-fg/5" />
 
           {/* 2. MODEL NAME & ID */}
           <div className="space-y-6">
             <div className="space-y-2">
-              <label className="text-[11px] font-bold tracking-wider text-white/50 uppercase">
+              <label className="text-[11px] font-bold tracking-wider text-fg/50 uppercase">
                 Display Name
               </label>
               <input
@@ -608,13 +608,13 @@ export function EditModelPage() {
                 value={editorModel.displayName}
                 onChange={(e) => handleDisplayNameChange(e.target.value)}
                 placeholder="e.g. My Favorite ChatGPT"
-                className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-white placeholder-white/40 transition focus:border-white/30 focus:outline-none"
+                className="w-full rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3 text-fg placeholder-fg/40 transition focus:border-fg/30 focus:outline-none"
               />
             </div>
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <label className="text-[11px] font-bold tracking-wider text-white/50 uppercase">
+                <label className="text-[11px] font-bold tracking-wider text-fg/50 uppercase">
                   {modelIdLabel}
                 </label>
                 <div className="flex items-center gap-3">
@@ -624,7 +624,7 @@ export function EditModelPage() {
                       <button
                         type="button"
                         onClick={() => setIsManualInput(!isManualInput)}
-                        className="text-[10px] uppercase font-bold tracking-wider text-white/40 hover:text-white/80 transition"
+                        className="text-[10px] uppercase font-bold tracking-wider text-fg/40 hover:text-fg/80 transition"
                       >
                         {isManualInput ? "Show List" : "Manual Input"}
                       </button>
@@ -634,7 +634,7 @@ export function EditModelPage() {
                       type="button"
                       onClick={fetchModels}
                       disabled={fetchingModels || !editorModel?.providerId}
-                      className="text-white/40 hover:text-white/80 transition disabled:opacity-30"
+                      className="text-fg/40 hover:text-fg/80 transition disabled:opacity-30"
                       title="Refresh model list"
                     >
                       <RefreshCw className={cn("h-3.5 w-3.5", fetchingModels && "animate-spin")} />
@@ -651,14 +651,14 @@ export function EditModelPage() {
                   <button
                     type="button"
                     onClick={() => setShowModelSelector(true)}
-                    className="w-full flex items-center justify-between rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-white transition hover:bg-black/30 active:scale-[0.99]"
+                    className="w-full flex items-center justify-between rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3 text-fg transition hover:bg-surface-el/30 active:scale-[0.99]"
                   >
-                    <span className={cn("block truncate", !editorModel.name && "text-white/40")}>
+                    <span className={cn("block truncate", !editorModel.name && "text-fg/40")}>
                       {fetchedModels.find((m) => m.id === editorModel.name)?.displayName ||
                         editorModel.name ||
                         "Select a model..."}
                     </span>
-                    <ChevronDown className="h-4 w-4 text-white/40" />
+                    <ChevronDown className="h-4 w-4 text-fg/40" />
                   </button>
 
                   <BottomMenu
@@ -668,7 +668,7 @@ export function EditModelPage() {
                     rightAction={
                       isOpenRouterProvider ? (
                         <label className="flex items-center gap-2">
-                          <span className="text-xs text-white/70 whitespace-nowrap">
+                          <span className="text-xs text-fg/70 whitespace-nowrap">
                             only free models
                           </span>
                           <span className="relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200">
@@ -681,12 +681,12 @@ export function EditModelPage() {
                             <span
                               className={cn(
                                 "inline-block h-full w-full rounded-full transition-colors duration-200",
-                                showOnlyFreeModels ? "bg-emerald-500" : "bg-white/10",
+                                showOnlyFreeModels ? "bg-accent" : "bg-fg/10",
                               )}
                             />
                             <span
                               className={cn(
-                                "absolute h-3.5 w-3.5 transform rounded-full bg-white transition-transform duration-200",
+                                "absolute h-3.5 w-3.5 transform rounded-full bg-fg transition-transform duration-200",
                                 showOnlyFreeModels ? "translate-x-4.5" : "translate-x-1",
                               )}
                             />
@@ -697,12 +697,12 @@ export function EditModelPage() {
                   >
                     <div className="px-4 pb-2 sticky top-0 z-10 bg-[#0f1014]">
                       <div className="relative">
-                        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
+                        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg/40" />
                         <input
                           value={searchQuery}
                           onChange={(e) => setSearchQuery(e.target.value)}
                           placeholder="Search models..."
-                          className="w-full rounded-xl border border-white/10 bg-white/5 py-2.5 pl-9 pr-4 text-sm text-white placeholder-white/40 focus:border-white/20 focus:outline-none"
+                          className="w-full rounded-xl border border-fg/10 bg-fg/5 py-2.5 pl-9 pr-4 text-sm text-fg placeholder-fg/40 focus:border-fg/20 focus:outline-none"
                           autoFocus
                         />
                       </div>
@@ -717,10 +717,10 @@ export function EditModelPage() {
                               icon={getProviderIcon(editorModel.providerId)}
                               title={m.displayName || m.id}
                               description={m.description || m.id}
-                              color="from-emerald-500 to-emerald-600"
+                              color="from-accent to-accent/80"
                               rightElement={
                                 isSelected ? (
-                                  <Check className="h-4 w-4 text-emerald-400" />
+                                  <Check className="h-4 w-4 text-accent" />
                                 ) : undefined
                               }
                               onClick={() => handleSelectModel(m.id, m.displayName)}
@@ -728,18 +728,18 @@ export function EditModelPage() {
                           );
                         })
                       ) : (
-                        <div className="py-10 text-center text-sm text-white/40">
+                        <div className="py-10 text-center text-sm text-fg/40">
                           <p>No models found matching "{searchQuery}"</p>
                           {didYouMeanSuggestions.length > 0 && (
                             <div className="mt-4">
-                              <p className="mb-2 text-xs text-white/50">Did you mean:</p>
+                              <p className="mb-2 text-xs text-fg/50">Did you mean:</p>
                               <div className="flex flex-wrap justify-center gap-2">
                                 {didYouMeanSuggestions.map((model) => (
                                   <button
                                     key={model.id}
                                     type="button"
                                     onClick={() => setSearchQuery(model.id)}
-                                    className="rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs text-white/80 transition hover:border-white/30 hover:bg-white/10"
+                                    className="rounded-full border border-fg/15 bg-fg/5 px-3 py-1.5 text-xs text-fg/80 transition hover:border-fg/30 hover:bg-fg/10"
                                   >
                                     {model.displayName || model.id}
                                   </button>
@@ -759,10 +759,10 @@ export function EditModelPage() {
                     value={editorModel.name}
                     onChange={(e) => handleModelNameChange(e.target.value)}
                     placeholder={modelIdPlaceholder}
-                    className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 font-mono text-sm text-white placeholder-white/40 transition focus:border-white/30 focus:outline-none"
+                    className="w-full rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3 font-mono text-sm text-fg placeholder-fg/40 transition focus:border-fg/30 focus:outline-none"
                   />
                   {isLocalModel && (
-                    <p className="text-[11px] text-white/40">
+                    <p className="text-[11px] text-fg/40">
                       Use the full file path to a local GGUF model.
                     </p>
                   )}
@@ -770,7 +770,7 @@ export function EditModelPage() {
                     !modelFetchEnabledForSelectedProvider &&
                     (selectedProviderCredential?.providerId === "custom" ||
                       selectedProviderCredential?.providerId === "custom-anthropic") && (
-                      <p className="text-[11px] text-white/40">
+                      <p className="text-[11px] text-fg/40">
                         Model fetching is disabled for this custom endpoint. Enable it in Provider
                         settings and set a Models Endpoint if you want model list discovery.
                       </p>
@@ -780,29 +780,29 @@ export function EditModelPage() {
             </div>
           </div>
 
-          <div className="h-px bg-white/5" />
+          <div className="h-px bg-fg/5" />
 
           {/* 3. COLLAPSIBLE ADVANCED SETTINGS */}
           <div className="space-y-4">
             <button
               type="button"
               onClick={() => setIsAdvancedOpen(!isAdvancedOpen)}
-              className="flex w-full items-center justify-between rounded-2xl border border-white/5 bg-white/5 px-4 py-4 transition hover:bg-white/10"
+              className="flex w-full items-center justify-between rounded-2xl border border-fg/5 bg-fg/5 px-4 py-4 transition hover:bg-fg/10"
             >
               <div className="flex items-center gap-3">
-                <div className="rounded-xl bg-white/5 p-2">
-                  <Settings className="h-4 w-4 text-white/60" />
+                <div className="rounded-xl bg-fg/5 p-2">
+                  <Settings className="h-4 w-4 text-fg/60" />
                 </div>
                 <div className="text-left">
-                  <span className="block text-sm font-semibold text-white">Advanced Settings</span>
-                  <span className="block text-[11px] text-white/40 uppercase tracking-wider">
+                  <span className="block text-sm font-semibold text-fg">Advanced Settings</span>
+                  <span className="block text-[11px] text-fg/40 uppercase tracking-wider">
                     Parameters, Prompt, & Capabilities
                   </span>
                 </div>
               </div>
               <ChevronRight
                 className={cn(
-                  "h-5 w-5 text-white/20 transition-transform duration-300",
+                  "h-5 w-5 text-fg/20 transition-transform duration-300",
                   isAdvancedOpen && "rotate-90",
                 )}
               />
@@ -815,20 +815,20 @@ export function EditModelPage() {
                 className="overflow-hidden space-y-8 pt-2 px-1"
               >
                 {/* Capabilities */}
-                <div className="space-y-4 rounded-2xl border border-white/5 bg-white/5 p-5">
+                <div className="space-y-4 rounded-2xl border border-fg/5 bg-fg/5 p-5">
                   <div className="flex items-start justify-between">
                     <div>
-                      <p className="text-[11px] font-bold tracking-wider text-white/50 uppercase">
+                      <p className="text-[11px] font-bold tracking-wider text-fg/50 uppercase">
                         Capabilities
                       </p>
-                      <p className="mt-1 text-xs text-white/40">
+                      <p className="mt-1 text-xs text-fg/40">
                         Supported input/output modalities
                       </p>
                     </div>
                     <button
                       type="button"
                       onClick={() => openDocs("imagegen", "model-capabilities")}
-                      className="text-white/40 hover:text-white/60 transition"
+                      className="text-fg/40 hover:text-fg/60 transition"
                       aria-label="Help with capabilities"
                     >
                       <HelpCircle size={16} />
@@ -837,7 +837,7 @@ export function EditModelPage() {
 
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-3">
-                      <p className="text-[10px] font-bold tracking-wider text-white/20 uppercase">
+                      <p className="text-[10px] font-bold tracking-wider text-fg/20 uppercase">
                         Input
                       </p>
                       {["image", "audio"].map((scope) => (
@@ -854,8 +854,8 @@ export function EditModelPage() {
                           className={cn(
                             "flex w-full items-center justify-between rounded-xl px-3 py-2 text-xs font-medium transition",
                             editorModel.inputScopes?.includes(scope as any)
-                              ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                              : "bg-black/20 text-white/40 border border-transparent",
+                              ? "bg-accent/10 text-accent border border-accent/20"
+                              : "bg-surface-el/20 text-fg/40 border border-transparent",
                           )}
                         >
                           <span className="capitalize">{scope}</span>
@@ -865,7 +865,7 @@ export function EditModelPage() {
                     </div>
 
                     <div className="space-y-3">
-                      <p className="text-[10px] font-bold tracking-wider text-white/20 uppercase">
+                      <p className="text-[10px] font-bold tracking-wider text-fg/20 uppercase">
                         Output
                       </p>
                       {["image", "audio"].map((scope) => (
@@ -882,8 +882,8 @@ export function EditModelPage() {
                           className={cn(
                             "flex w-full items-center justify-between rounded-xl px-3 py-2 text-xs font-medium transition",
                             editorModel.outputScopes?.includes(scope as any)
-                              ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                              : "bg-black/20 text-white/40 border border-transparent",
+                              ? "bg-accent/10 text-accent border border-accent/20"
+                              : "bg-surface-el/20 text-fg/40 border border-transparent",
                           )}
                         >
                           <span className="capitalize">{scope}</span>
@@ -897,41 +897,41 @@ export function EditModelPage() {
                 {/* Parameters */}
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <label className="text-[11px] font-bold tracking-wider text-white/50 uppercase">
+                    <label className="text-[11px] font-bold tracking-wider text-fg/50 uppercase">
                       Model Parameters
                     </label>
                     <button
                       type="button"
                       onClick={() => setShowParameterSupport(true)}
-                      className="text-white/40 hover:text-white/60 transition"
+                      className="text-fg/40 hover:text-fg/60 transition"
                     >
                       <Info size={14} />
                     </button>
                   </div>
 
-                  <div className="space-y-8 rounded-2xl border border-white/5 bg-white/5 p-5">
+                  <div className="space-y-8 rounded-2xl border border-fg/5 bg-fg/5 p-5">
                     {/* Temperature */}
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <div className="space-y-0.5">
-                            <span className="block text-xs font-medium text-white/70">
+                            <span className="block text-xs font-medium text-fg/70">
                               Temperature
                             </span>
-                            <span className="block text-[10px] text-white/40">
+                            <span className="block text-[10px] text-fg/40">
                               Higher = more creative
                             </span>
                           </div>
                           <button
                             type="button"
                             onClick={() => openDocs("models", "temperature")}
-                            className="text-white/30 hover:text-white/60 transition"
+                            className="text-fg/30 hover:text-fg/60 transition"
                             aria-label="Help with temperature"
                           >
                             <HelpCircle size={12} />
                           </button>
                         </div>
-                        <span className="rounded-lg bg-black/30 px-2 py-1 font-mono text-xs text-emerald-400">
+                        <span className="rounded-lg bg-surface-el/30 px-2 py-1 font-mono text-xs text-accent">
                           {modelAdvancedDraft.temperature?.toFixed(2) ?? "0.70"}
                         </span>
                       </div>
@@ -949,7 +949,7 @@ export function EditModelPage() {
                         placeholder="0.70"
                         className={numberInputClassName}
                       />
-                      <div className="flex justify-between text-[10px] text-white/30 px-0.5 mt-1">
+                      <div className="flex justify-between text-[10px] text-fg/30 px-0.5 mt-1">
                         <span>{ADVANCED_TEMPERATURE_RANGE.min}</span>
                         <span>{ADVANCED_TEMPERATURE_RANGE.max}</span>
                       </div>
@@ -960,21 +960,21 @@ export function EditModelPage() {
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <div className="space-y-0.5">
-                            <span className="block text-xs font-medium text-white/70">Top P</span>
-                            <span className="block text-[10px] text-white/40">
+                            <span className="block text-xs font-medium text-fg/70">Top P</span>
+                            <span className="block text-[10px] text-fg/40">
                               Lower = more focused
                             </span>
                           </div>
                           <button
                             type="button"
                             onClick={() => openDocs("models", "top-p")}
-                            className="text-white/30 hover:text-white/60 transition"
+                            className="text-fg/30 hover:text-fg/60 transition"
                             aria-label="Help with top p"
                           >
                             <HelpCircle size={12} />
                           </button>
                         </div>
-                        <span className="rounded-lg bg-black/30 px-2 py-1 font-mono text-xs text-emerald-400">
+                        <span className="rounded-lg bg-surface-el/30 px-2 py-1 font-mono text-xs text-accent">
                           {modelAdvancedDraft.topP?.toFixed(2) ?? "1.00"}
                         </span>
                       </div>
@@ -992,7 +992,7 @@ export function EditModelPage() {
                         placeholder="1.00"
                         className={numberInputClassName}
                       />
-                      <div className="flex justify-between text-[10px] text-white/30 px-0.5 mt-1">
+                      <div className="flex justify-between text-[10px] text-fg/30 px-0.5 mt-1">
                         <span>{ADVANCED_TOP_P_RANGE.min}</span>
                         <span>{ADVANCED_TOP_P_RANGE.max}</span>
                       </div>
@@ -1003,23 +1003,23 @@ export function EditModelPage() {
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <div className="space-y-0.5">
-                            <span className="block text-xs font-medium text-white/70">
+                            <span className="block text-xs font-medium text-fg/70">
                               Max Output Tokens
                             </span>
-                            <span className="block text-[10px] text-white/40">
+                            <span className="block text-[10px] text-fg/40">
                               Limit response length
                             </span>
                           </div>
                           <button
                             type="button"
                             onClick={() => openDocs("models", "max-output-tokens")}
-                            className="text-white/30 hover:text-white/60 transition"
+                            className="text-fg/30 hover:text-fg/60 transition"
                             aria-label="Help with max output tokens"
                           >
                             <HelpCircle size={12} />
                           </button>
                         </div>
-                        <span className="rounded-lg bg-black/30 px-2 py-1 font-mono text-xs text-emerald-400">
+                        <span className="rounded-lg bg-surface-el/30 px-2 py-1 font-mono text-xs text-accent">
                           {modelAdvancedDraft.maxOutputTokens
                             ? modelAdvancedDraft.maxOutputTokens.toLocaleString()
                             : "Auto"}
@@ -1044,7 +1044,7 @@ export function EditModelPage() {
                         placeholder="Auto"
                         className={numberInputClassName}
                       />
-                      <div className="flex justify-between text-[10px] text-white/30 px-0.5 mt-1">
+                      <div className="flex justify-between text-[10px] text-fg/30 px-0.5 mt-1">
                         <span>Auto</span>
                         <span>{ADVANCED_MAX_TOKENS_RANGE.max.toLocaleString()}</span>
                       </div>
@@ -1055,23 +1055,23 @@ export function EditModelPage() {
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
                             <div className="space-y-0.5">
-                              <span className="block text-xs font-medium text-white/70">
+                              <span className="block text-xs font-medium text-fg/70">
                                 Context Length
                               </span>
-                              <span className="block text-[10px] text-white/40">
+                              <span className="block text-[10px] text-fg/40">
                                 Override llama.cpp context window
                               </span>
                             </div>
                             <button
                               type="button"
                               onClick={() => openDocs("models", "context-length")}
-                              className="text-white/30 hover:text-white/60 transition"
+                              className="text-fg/30 hover:text-fg/60 transition"
                               aria-label="Help with context length"
                             >
                               <HelpCircle size={12} />
                             </button>
                           </div>
-                          <span className="rounded-lg bg-black/30 px-2 py-1 font-mono text-xs text-emerald-400">
+                          <span className="rounded-lg bg-surface-el/30 px-2 py-1 font-mono text-xs text-accent">
                             {modelAdvancedDraft.contextLength
                               ? modelAdvancedDraft.contextLength.toLocaleString()
                               : "Auto"}
@@ -1096,21 +1096,21 @@ export function EditModelPage() {
                           placeholder="Auto"
                           className={numberInputClassName}
                         />
-                        <div className="flex justify-between text-[10px] text-white/30 px-0.5 mt-1">
+                        <div className="flex justify-between text-[10px] text-fg/30 px-0.5 mt-1">
                           <span>Auto</span>
                           <span>{contextLimit.toLocaleString()}</span>
                         </div>
 
                         {llamaContextLoading && (
-                          <p className="text-[10px] text-white/40">
+                          <p className="text-[10px] text-fg/40">
                             Calculating memory limits for this model...
                           </p>
                         )}
                         {llamaContextError && (
-                          <p className="text-[10px] text-amber-200">{llamaContextError}</p>
+                          <p className="text-[10px] text-warning/80">{llamaContextError}</p>
                         )}
                         {llamaContextInfo && (
-                          <div className="text-[10px] text-white/40 space-y-1">
+                          <div className="text-[10px] text-fg/40 space-y-1">
                             <p>
                               Max supported: {llamaContextInfo.maxContextLength.toLocaleString()}{" "}
                               tokens
@@ -1134,7 +1134,7 @@ export function EditModelPage() {
                         )}
 
                         {showContextWarning && (
-                          <div className="flex items-start gap-2 rounded-xl border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200">
+                          <div className="flex items-start gap-2 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2 text-[11px] text-warning/80">
                             <AlertTriangle size={14} className="mt-0.5 shrink-0" />
                             <span>
                               Are you sure? This may not run on your device. We recommend{" "}
@@ -1143,7 +1143,7 @@ export function EditModelPage() {
                           </div>
                         )}
                         {showContextCritical && (
-                          <div className="flex items-start gap-2 rounded-xl border border-red-400/30 bg-red-500/10 px-3 py-2 text-[11px] text-red-200">
+                          <div className="flex items-start gap-2 rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-[11px] text-danger/80">
                             <AlertTriangle size={14} className="mt-0.5 shrink-0" />
                             <span>
                               This model likely won't fit in memory on your device. Try a smaller
@@ -1160,23 +1160,23 @@ export function EditModelPage() {
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
                             <div className="space-y-0.5">
-                              <span className="block text-xs font-medium text-white/70">
+                              <span className="block text-xs font-medium text-fg/70">
                                 Frequency Penalty
                               </span>
-                              <span className="block text-[10px] text-white/40">
+                              <span className="block text-[10px] text-fg/40">
                                 Reduce word repetition
                               </span>
                             </div>
                             <button
                               type="button"
                               onClick={() => openDocs("models", "frequency-penalty")}
-                              className="text-white/30 hover:text-white/60 transition"
+                              className="text-fg/30 hover:text-fg/60 transition"
                               aria-label="Help with frequency penalty"
                             >
                               <HelpCircle size={12} />
                             </button>
                           </div>
-                          <span className="rounded-lg bg-black/30 px-2 py-1 font-mono text-xs text-emerald-400">
+                          <span className="rounded-lg bg-surface-el/30 px-2 py-1 font-mono text-xs text-accent">
                             {modelAdvancedDraft.frequencyPenalty?.toFixed(2) ?? "0.00"}
                           </span>
                         </div>
@@ -1194,7 +1194,7 @@ export function EditModelPage() {
                           placeholder="0.00"
                           className={numberInputClassName}
                         />
-                        <div className="flex justify-between text-[10px] text-white/30 px-0.5 mt-1">
+                        <div className="flex justify-between text-[10px] text-fg/30 px-0.5 mt-1">
                           <span>{ADVANCED_FREQUENCY_PENALTY_RANGE.min}</span>
                           <span>{ADVANCED_FREQUENCY_PENALTY_RANGE.max}</span>
                         </div>
@@ -1204,23 +1204,23 @@ export function EditModelPage() {
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
                             <div className="space-y-0.5">
-                              <span className="block text-xs font-medium text-white/70">
+                              <span className="block text-xs font-medium text-fg/70">
                                 Presence Penalty
                               </span>
-                              <span className="block text-[10px] text-white/40">
+                              <span className="block text-[10px] text-fg/40">
                                 Encourage new topics
                               </span>
                             </div>
                             <button
                               type="button"
                               onClick={() => openDocs("models", "presence-penalty")}
-                              className="text-white/30 hover:text-white/60 transition"
+                              className="text-fg/30 hover:text-fg/60 transition"
                               aria-label="Help with presence penalty"
                             >
                               <HelpCircle size={12} />
                             </button>
                           </div>
-                          <span className="rounded-lg bg-black/30 px-2 py-1 font-mono text-xs text-emerald-400">
+                          <span className="rounded-lg bg-surface-el/30 px-2 py-1 font-mono text-xs text-accent">
                             {modelAdvancedDraft.presencePenalty?.toFixed(2) ?? "0.00"}
                           </span>
                         </div>
@@ -1238,7 +1238,7 @@ export function EditModelPage() {
                           placeholder="0.00"
                           className={numberInputClassName}
                         />
-                        <div className="flex justify-between text-[10px] text-white/30 px-0.5 mt-1">
+                        <div className="flex justify-between text-[10px] text-fg/30 px-0.5 mt-1">
                           <span>{ADVANCED_PRESENCE_PENALTY_RANGE.min}</span>
                           <span>{ADVANCED_PRESENCE_PENALTY_RANGE.max}</span>
                         </div>
@@ -1250,21 +1250,21 @@ export function EditModelPage() {
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <div className="space-y-0.5">
-                            <span className="block text-xs font-medium text-white/70">Top K</span>
-                            <span className="block text-[10px] text-white/40">
+                            <span className="block text-xs font-medium text-fg/70">Top K</span>
+                            <span className="block text-[10px] text-fg/40">
                               Sample from top K tokens
                             </span>
                           </div>
                           <button
                             type="button"
                             onClick={() => openDocs("models", "top-k-if-supported")}
-                            className="text-white/30 hover:text-white/60 transition"
+                            className="text-fg/30 hover:text-fg/60 transition"
                             aria-label="Help with top k"
                           >
                             <HelpCircle size={12} />
                           </button>
                         </div>
-                        <span className="rounded-lg bg-black/30 px-2 py-1 font-mono text-xs text-emerald-400">
+                        <span className="rounded-lg bg-surface-el/30 px-2 py-1 font-mono text-xs text-accent">
                           {modelAdvancedDraft.topK ? modelAdvancedDraft.topK : "Auto"}
                         </span>
                       </div>
@@ -1287,19 +1287,19 @@ export function EditModelPage() {
                         placeholder="Auto"
                         className={numberInputClassName}
                       />
-                      <div className="flex justify-between text-[10px] text-white/30 px-0.5 mt-1">
+                      <div className="flex justify-between text-[10px] text-fg/30 px-0.5 mt-1">
                         <span>Auto</span>
                         <span>{ADVANCED_TOP_K_RANGE.max}</span>
                       </div>
                     </div>
 
                     {isLocalModel && (
-                      <div className="space-y-6 border-t border-white/5 pt-6">
+                      <div className="space-y-6 border-t border-fg/5 pt-6">
                         <div className="space-y-1">
-                          <span className="block text-xs font-semibold text-white/70">
+                          <span className="block text-xs font-semibold text-fg/70">
                             llama.cpp Settings
                           </span>
-                          <span className="block text-[10px] text-white/40">
+                          <span className="block text-[10px] text-fg/40">
                             Performance and runtime controls for local inference
                           </span>
                         </div>
@@ -1307,14 +1307,14 @@ export function EditModelPage() {
                         <div className="space-y-4">
                           <div className="flex items-center justify-between">
                             <div className="space-y-0.5">
-                              <span className="block text-xs font-medium text-white/70">
+                              <span className="block text-xs font-medium text-fg/70">
                                 GPU Layers
                               </span>
-                              <span className="block text-[10px] text-white/40">
+                              <span className="block text-[10px] text-fg/40">
                                 Offload layers to GPU (0 = CPU only)
                               </span>
                             </div>
-                            <span className="rounded-lg bg-black/30 px-2 py-1 font-mono text-xs text-emerald-400">
+                            <span className="rounded-lg bg-surface-el/30 px-2 py-1 font-mono text-xs text-accent">
                               {modelAdvancedDraft.llamaGpuLayers !== null &&
                               modelAdvancedDraft.llamaGpuLayers !== undefined
                                 ? modelAdvancedDraft.llamaGpuLayers
@@ -1340,7 +1340,7 @@ export function EditModelPage() {
                             placeholder="Auto"
                             className={numberInputClassName}
                           />
-                          <div className="flex justify-between text-[10px] text-white/30 px-0.5 mt-1">
+                          <div className="flex justify-between text-[10px] text-fg/30 px-0.5 mt-1">
                             <span>Auto</span>
                             <span>{ADVANCED_LLAMA_GPU_LAYERS_RANGE.max}</span>
                           </div>
@@ -1349,10 +1349,10 @@ export function EditModelPage() {
                         <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                           <div className="space-y-4">
                             <div className="space-y-0.5">
-                              <span className="block text-xs font-medium text-white/70">
+                              <span className="block text-xs font-medium text-fg/70">
                                 Threads
                               </span>
-                              <span className="block text-[10px] text-white/40">
+                              <span className="block text-[10px] text-fg/40">
                                 CPU threads for generation
                               </span>
                             </div>
@@ -1375,7 +1375,7 @@ export function EditModelPage() {
                               placeholder="Auto"
                               className={numberInputClassName}
                             />
-                            <div className="flex justify-between text-[10px] text-white/30 px-0.5 mt-1">
+                            <div className="flex justify-between text-[10px] text-fg/30 px-0.5 mt-1">
                               <span>Auto</span>
                               <span>{ADVANCED_LLAMA_THREADS_RANGE.max}</span>
                             </div>
@@ -1383,10 +1383,10 @@ export function EditModelPage() {
 
                           <div className="space-y-4">
                             <div className="space-y-0.5">
-                              <span className="block text-xs font-medium text-white/70">
+                              <span className="block text-xs font-medium text-fg/70">
                                 Batch Threads
                               </span>
-                              <span className="block text-[10px] text-white/40">
+                              <span className="block text-[10px] text-fg/40">
                                 CPU threads for batch processing
                               </span>
                             </div>
@@ -1409,7 +1409,7 @@ export function EditModelPage() {
                               placeholder="Auto"
                               className={numberInputClassName}
                             />
-                            <div className="flex justify-between text-[10px] text-white/30 px-0.5 mt-1">
+                            <div className="flex justify-between text-[10px] text-fg/30 px-0.5 mt-1">
                               <span>Auto</span>
                               <span>{ADVANCED_LLAMA_THREADS_BATCH_RANGE.max}</span>
                             </div>
@@ -1419,8 +1419,8 @@ export function EditModelPage() {
                         <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                           <div className="space-y-4">
                             <div className="space-y-0.5">
-                              <span className="block text-xs font-medium text-white/70">Seed</span>
-                              <span className="block text-[10px] text-white/40">
+                              <span className="block text-xs font-medium text-fg/70">Seed</span>
+                              <span className="block text-[10px] text-fg/40">
                                 Leave blank for random
                               </span>
                             </div>
@@ -1443,7 +1443,7 @@ export function EditModelPage() {
                               placeholder="Random"
                               className={numberInputClassName}
                             />
-                            <div className="flex justify-between text-[10px] text-white/30 px-0.5 mt-1">
+                            <div className="flex justify-between text-[10px] text-fg/30 px-0.5 mt-1">
                               <span>Random</span>
                               <span>{ADVANCED_LLAMA_SEED_RANGE.max.toLocaleString()}</span>
                             </div>
@@ -1451,10 +1451,10 @@ export function EditModelPage() {
 
                           <div className="space-y-4">
                             <div className="space-y-0.5">
-                              <span className="block text-xs font-medium text-white/70">
+                              <span className="block text-xs font-medium text-fg/70">
                                 Offload KQV
                               </span>
-                              <span className="block text-[10px] text-white/40">
+                              <span className="block text-[10px] text-fg/40">
                                 KV cache &amp; KQV ops on GPU
                               </span>
                             </div>
@@ -1471,7 +1471,7 @@ export function EditModelPage() {
                                 const val = e.target.value;
                                 handleLlamaOffloadKqvChange(val === "auto" ? null : val === "on");
                               }}
-                              className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-white transition focus:border-white/30 focus:outline-none"
+                              className="w-full rounded-xl border border-fg/10 bg-surface-el/20 px-3 py-2.5 text-sm text-fg transition focus:border-fg/30 focus:outline-none"
                             >
                               <option value="auto" className="bg-[#16171d]">
                                 Auto
@@ -1489,10 +1489,10 @@ export function EditModelPage() {
                         <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                           <div className="space-y-4">
                             <div className="space-y-0.5">
-                              <span className="block text-xs font-medium text-white/70">
+                              <span className="block text-xs font-medium text-fg/70">
                                 RoPE Base
                               </span>
-                              <span className="block text-[10px] text-white/40">
+                              <span className="block text-[10px] text-fg/40">
                                 Frequency base override
                               </span>
                             </div>
@@ -1510,7 +1510,7 @@ export function EditModelPage() {
                               placeholder="Auto"
                               className={numberInputClassName}
                             />
-                            <div className="flex justify-between text-[10px] text-white/30 px-0.5 mt-1">
+                            <div className="flex justify-between text-[10px] text-fg/30 px-0.5 mt-1">
                               <span>Auto</span>
                               <span>
                                 {ADVANCED_LLAMA_ROPE_FREQ_BASE_RANGE.max.toLocaleString()}
@@ -1520,10 +1520,10 @@ export function EditModelPage() {
 
                           <div className="space-y-4">
                             <div className="space-y-0.5">
-                              <span className="block text-xs font-medium text-white/70">
+                              <span className="block text-xs font-medium text-fg/70">
                                 RoPE Scale
                               </span>
-                              <span className="block text-[10px] text-white/40">
+                              <span className="block text-[10px] text-fg/40">
                                 Frequency scale override
                               </span>
                             </div>
@@ -1541,7 +1541,7 @@ export function EditModelPage() {
                               placeholder="Auto"
                               className={numberInputClassName}
                             />
-                            <div className="flex justify-between text-[10px] text-white/30 px-0.5 mt-1">
+                            <div className="flex justify-between text-[10px] text-fg/30 px-0.5 mt-1">
                               <span>Auto</span>
                               <span>{ADVANCED_LLAMA_ROPE_FREQ_SCALE_RANGE.max}</span>
                             </div>
@@ -1551,12 +1551,12 @@ export function EditModelPage() {
                     )}
 
                     {isOllamaModel && (
-                      <div className="space-y-6 border-t border-white/5 pt-6">
+                      <div className="space-y-6 border-t border-fg/5 pt-6">
                         <div className="space-y-1">
-                          <span className="block text-xs font-semibold text-white/70">
+                          <span className="block text-xs font-semibold text-fg/70">
                             Ollama Settings
                           </span>
-                          <span className="block text-[10px] text-white/40">
+                          <span className="block text-[10px] text-fg/40">
                             Advanced generation and performance options
                           </span>
                         </div>
@@ -1564,10 +1564,10 @@ export function EditModelPage() {
                         <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                           <div className="space-y-4">
                             <div className="space-y-0.5">
-                              <span className="block text-xs font-medium text-white/70">
+                              <span className="block text-xs font-medium text-fg/70">
                                 Num Ctx
                               </span>
-                              <span className="block text-[10px] text-white/40">
+                              <span className="block text-[10px] text-fg/40">
                                 Context window size
                               </span>
                             </div>
@@ -1594,10 +1594,10 @@ export function EditModelPage() {
 
                           <div className="space-y-4">
                             <div className="space-y-0.5">
-                              <span className="block text-xs font-medium text-white/70">
+                              <span className="block text-xs font-medium text-fg/70">
                                 Num Predict
                               </span>
-                              <span className="block text-[10px] text-white/40">
+                              <span className="block text-[10px] text-fg/40">
                                 Max tokens to generate
                               </span>
                             </div>
@@ -1626,10 +1626,10 @@ export function EditModelPage() {
                         <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                           <div className="space-y-4">
                             <div className="space-y-0.5">
-                              <span className="block text-xs font-medium text-white/70">
+                              <span className="block text-xs font-medium text-fg/70">
                                 Num Keep
                               </span>
-                              <span className="block text-[10px] text-white/40">
+                              <span className="block text-[10px] text-fg/40">
                                 Tokens to keep from prompt
                               </span>
                             </div>
@@ -1656,10 +1656,10 @@ export function EditModelPage() {
 
                           <div className="space-y-4">
                             <div className="space-y-0.5">
-                              <span className="block text-xs font-medium text-white/70">
+                              <span className="block text-xs font-medium text-fg/70">
                                 Num Batch
                               </span>
-                              <span className="block text-[10px] text-white/40">
+                              <span className="block text-[10px] text-fg/40">
                                 Batch size for prompt processing
                               </span>
                             </div>
@@ -1688,10 +1688,10 @@ export function EditModelPage() {
                         <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                           <div className="space-y-4">
                             <div className="space-y-0.5">
-                              <span className="block text-xs font-medium text-white/70">
+                              <span className="block text-xs font-medium text-fg/70">
                                 Num GPU
                               </span>
-                              <span className="block text-[10px] text-white/40">
+                              <span className="block text-[10px] text-fg/40">
                                 GPU layers offload
                               </span>
                             </div>
@@ -1718,10 +1718,10 @@ export function EditModelPage() {
 
                           <div className="space-y-4">
                             <div className="space-y-0.5">
-                              <span className="block text-xs font-medium text-white/70">
+                              <span className="block text-xs font-medium text-fg/70">
                                 Num Thread
                               </span>
-                              <span className="block text-[10px] text-white/40">
+                              <span className="block text-[10px] text-fg/40">
                                 CPU threads for inference
                               </span>
                             </div>
@@ -1750,8 +1750,8 @@ export function EditModelPage() {
                         <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                           <div className="space-y-4">
                             <div className="space-y-0.5">
-                              <span className="block text-xs font-medium text-white/70">TFS Z</span>
-                              <span className="block text-[10px] text-white/40">
+                              <span className="block text-xs font-medium text-fg/70">TFS Z</span>
+                              <span className="block text-[10px] text-fg/40">
                                 Tail-free sampling (0-1)
                               </span>
                             </div>
@@ -1773,10 +1773,10 @@ export function EditModelPage() {
 
                           <div className="space-y-4">
                             <div className="space-y-0.5">
-                              <span className="block text-xs font-medium text-white/70">
+                              <span className="block text-xs font-medium text-fg/70">
                                 Typical P
                               </span>
-                              <span className="block text-[10px] text-white/40">
+                              <span className="block text-[10px] text-fg/40">
                                 Typical sampling (0-1)
                               </span>
                             </div>
@@ -1800,8 +1800,8 @@ export function EditModelPage() {
                         <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                           <div className="space-y-4">
                             <div className="space-y-0.5">
-                              <span className="block text-xs font-medium text-white/70">Min P</span>
-                              <span className="block text-[10px] text-white/40">
+                              <span className="block text-xs font-medium text-fg/70">Min P</span>
+                              <span className="block text-[10px] text-fg/40">
                                 Min-p sampling (0-1)
                               </span>
                             </div>
@@ -1823,10 +1823,10 @@ export function EditModelPage() {
 
                           <div className="space-y-4">
                             <div className="space-y-0.5">
-                              <span className="block text-xs font-medium text-white/70">
+                              <span className="block text-xs font-medium text-fg/70">
                                 Repeat Penalty
                               </span>
-                              <span className="block text-[10px] text-white/40">
+                              <span className="block text-[10px] text-fg/40">
                                 Penalize repetition (0-2)
                               </span>
                             </div>
@@ -1850,10 +1850,10 @@ export function EditModelPage() {
                         <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                           <div className="space-y-4">
                             <div className="space-y-0.5">
-                              <span className="block text-xs font-medium text-white/70">
+                              <span className="block text-xs font-medium text-fg/70">
                                 Mirostat
                               </span>
-                              <span className="block text-[10px] text-white/40">
+                              <span className="block text-[10px] text-fg/40">
                                 0 = off, 1 or 2 = enabled
                               </span>
                             </div>
@@ -1868,7 +1868,7 @@ export function EditModelPage() {
                                 const val = e.target.value;
                                 handleOllamaMirostatChange(val === "auto" ? null : Number(val));
                               }}
-                              className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-white transition focus:border-white/30 focus:outline-none"
+                              className="w-full rounded-xl border border-fg/10 bg-surface-el/20 px-3 py-2.5 text-sm text-fg transition focus:border-fg/30 focus:outline-none"
                             >
                               <option value="auto" className="bg-[#16171d]">
                                 Auto
@@ -1887,8 +1887,8 @@ export function EditModelPage() {
 
                           <div className="space-y-4">
                             <div className="space-y-0.5">
-                              <span className="block text-xs font-medium text-white/70">Seed</span>
-                              <span className="block text-[10px] text-white/40">
+                              <span className="block text-xs font-medium text-fg/70">Seed</span>
+                              <span className="block text-[10px] text-fg/40">
                                 Leave blank for random
                               </span>
                             </div>
@@ -1917,10 +1917,10 @@ export function EditModelPage() {
                         <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                           <div className="space-y-4">
                             <div className="space-y-0.5">
-                              <span className="block text-xs font-medium text-white/70">
+                              <span className="block text-xs font-medium text-fg/70">
                                 Mirostat Tau
                               </span>
-                              <span className="block text-[10px] text-white/40">
+                              <span className="block text-[10px] text-fg/40">
                                 Target entropy
                               </span>
                             </div>
@@ -1942,10 +1942,10 @@ export function EditModelPage() {
 
                           <div className="space-y-4">
                             <div className="space-y-0.5">
-                              <span className="block text-xs font-medium text-white/70">
+                              <span className="block text-xs font-medium text-fg/70">
                                 Mirostat Eta
                               </span>
-                              <span className="block text-[10px] text-white/40">Learning rate</span>
+                              <span className="block text-[10px] text-fg/40">Learning rate</span>
                             </div>
                             <input
                               type="number"
@@ -1966,10 +1966,10 @@ export function EditModelPage() {
 
                         <div className="space-y-4">
                           <div className="space-y-0.5">
-                            <span className="block text-xs font-medium text-white/70">
+                            <span className="block text-xs font-medium text-fg/70">
                               Stop Sequences
                             </span>
-                            <span className="block text-[10px] text-white/40">
+                            <span className="block text-[10px] text-fg/40">
                               One per line or comma-separated
                             </span>
                           </div>
@@ -1985,7 +1985,7 @@ export function EditModelPage() {
                             }}
                             placeholder="e.g. \n\n###\nUser:\n"
                             rows={4}
-                            className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-white placeholder-white/40 transition focus:border-white/30 focus:outline-none"
+                            className="w-full rounded-xl border border-fg/10 bg-surface-el/20 px-3 py-2.5 text-sm text-fg placeholder-fg/40 transition focus:border-fg/30 focus:outline-none"
                           />
                         </div>
                       </div>
@@ -1993,17 +1993,17 @@ export function EditModelPage() {
 
                     {/* Reasoning Section (Thinking) */}
                     {showReasoningSection && (
-                      <div className="space-y-4 border-t border-white/5 pt-6">
+                      <div className="space-y-4 border-t border-fg/5 pt-6">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
-                            <Brain size={14} className="text-amber-400" />
-                            <label className="text-xs font-medium text-white/70">
+                            <Brain size={14} className="text-warning" />
+                            <label className="text-xs font-medium text-fg/70">
                               Reasoning (Thinking)
                             </label>
                             <button
                               type="button"
                               onClick={() => openDocs("models", "reasoning-mode")}
-                              className="text-white/30 hover:text-white/60 transition"
+                              className="text-fg/30 hover:text-fg/60 transition"
                               aria-label="Help with reasoning mode"
                             >
                               <HelpCircle size={12} />
@@ -2021,13 +2021,13 @@ export function EditModelPage() {
                                 className={cn(
                                   "inline-block h-full w-full rounded-full transition-colors duration-200",
                                   modelAdvancedDraft.reasoningEnabled
-                                    ? "bg-amber-500"
-                                    : "bg-white/10",
+                                    ? "bg-warning"
+                                    : "bg-fg/10",
                                 )}
                               />
                               <span
                                 className={cn(
-                                  "absolute h-3.5 w-3.5 transform rounded-full bg-white transition-transform duration-200",
+                                  "absolute h-3.5 w-3.5 transform rounded-full bg-fg transition-transform duration-200",
                                   modelAdvancedDraft.reasoningEnabled
                                     ? "translate-x-4.5"
                                     : "translate-x-1",
@@ -2038,10 +2038,10 @@ export function EditModelPage() {
                         </div>
 
                         {(modelAdvancedDraft.reasoningEnabled || isAutoReasoning) && (
-                          <div className="space-y-6 pl-2 border-l border-white/10">
+                          <div className="space-y-6 pl-2 border-l border-fg/10">
                             {showEffortOptions && (
                               <div className="space-y-3">
-                                <span className="text-[10px] font-bold text-white/30 uppercase">
+                                <span className="text-[10px] font-bold text-fg/30 uppercase">
                                   Reasoning Effort
                                 </span>
                                 <div className="grid grid-cols-4 gap-2">
@@ -2053,8 +2053,8 @@ export function EditModelPage() {
                                       className={cn(
                                         "rounded-lg py-1.5 text-[10px] font-bold uppercase transition",
                                         modelAdvancedDraft.reasoningEffort === level
-                                          ? "bg-amber-500/20 text-amber-400 border border-amber-500/30"
-                                          : "bg-white/5 text-white/30 border border-transparent hover:text-white/50",
+                                          ? "bg-warning/20 text-warning border border-warning/30"
+                                          : "bg-fg/5 text-fg/30 border border-transparent hover:text-fg/50",
                                       )}
                                     >
                                       {level || "auto"}
@@ -2068,10 +2068,10 @@ export function EditModelPage() {
                               reasoningSupport === "dynamic") && (
                               <div className="space-y-4">
                                 <div className="flex items-center justify-between">
-                                  <span className="text-[10px] font-bold text-white/30 uppercase">
+                                  <span className="text-[10px] font-bold text-fg/30 uppercase">
                                     Budget Tokens
                                   </span>
-                                  <span className="font-mono text-xs text-amber-400">
+                                  <span className="font-mono text-xs text-warning">
                                     {modelAdvancedDraft.reasoningBudgetTokens
                                       ? modelAdvancedDraft.reasoningBudgetTokens.toLocaleString()
                                       : "Auto"}
@@ -2096,7 +2096,7 @@ export function EditModelPage() {
                                   placeholder="Auto"
                                   className={numberInputClassName}
                                 />
-                                <div className="flex justify-between text-[10px] text-white/30 px-0.5 mt-1">
+                                <div className="flex justify-between text-[10px] text-fg/30 px-0.5 mt-1">
                                   <span>
                                     {ADVANCED_REASONING_BUDGET_RANGE.min.toLocaleString()}
                                   </span>
@@ -2116,7 +2116,7 @@ export function EditModelPage() {
             )}
           </div>
 
-          <div className="h-px bg-white/5" />
+          <div className="h-px bg-fg/5" />
         </motion.div>
       </main>
 

@@ -230,10 +230,10 @@ function PromptEntryCard({
       transition={{ layout: { duration: 0.2, ease: "easeOut" } }}
       style={{ position: "relative", zIndex: 0 }}
       className={cn(
-        "rounded-xl border bg-white/5 p-4 space-y-3 cursor-default",
+        "rounded-xl border bg-fg/5 p-4 space-y-3 cursor-default",
         highlighted
-          ? "border-emerald-400/50 ring-2 ring-emerald-400/30 ring-offset-1 ring-offset-black"
-          : "border-white/10",
+          ? "border-accent/50 ring-2 ring-accent/30 ring-offset-1 ring-offset-black"
+          : "border-fg/10",
       )}
     >
       <div className="flex flex-wrap items-center gap-2">
@@ -241,7 +241,7 @@ function PromptEntryCard({
           onPointerDown={(event) => controls.start(event)}
           className={cn(
             "flex h-8 w-8 items-center justify-center rounded-lg cursor-grab active:cursor-grabbing",
-            "border border-white/10 bg-white/5 text-white/40",
+            "border border-fg/10 bg-fg/5 text-fg/40",
           )}
           style={{ touchAction: "none" }}
           title="Drag to reorder"
@@ -253,7 +253,7 @@ function PromptEntryCard({
           onClick={() => onToggleCollapse(entry.id)}
           className={cn(
             "flex h-8 w-8 items-center justify-center rounded-lg",
-            "border border-white/10 bg-white/5 text-white/40",
+            "border border-fg/10 bg-fg/5 text-fg/40",
           )}
           title={collapsed ? "Expand entry" : "Collapse entry"}
         >
@@ -263,7 +263,7 @@ function PromptEntryCard({
         <input
           value={entry.name}
           onChange={(event) => onUpdate(entry.id, { name: event.target.value })}
-          className="flex-1 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white"
+          className="flex-1 rounded-lg border border-fg/10 bg-surface-el/30 px-3 py-2 text-sm text-fg"
           placeholder="Entry name"
         />
 
@@ -284,21 +284,21 @@ function PromptEntryCard({
               className={cn(
                 "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full",
                 "border-2 border-transparent transition-all duration-200 ease-in-out",
-                "focus:outline-none focus:ring-2 focus:ring-white/20",
-                entry.enabled || entry.systemPrompt ? "bg-emerald-500" : "bg-white/20",
+                "focus:outline-none focus:ring-2 focus:ring-fg/20",
+                entry.enabled || entry.systemPrompt ? "bg-accent" : "bg-fg/20",
                 entry.systemPrompt && "cursor-not-allowed opacity-60",
               )}
               title={entry.systemPrompt ? "System prompt entries are always enabled" : "Toggle"}
             >
               <span
                 className={cn(
-                  "inline-block h-4 w-4 transform rounded-full bg-white shadow-sm",
+                  "inline-block h-4 w-4 transform rounded-full bg-fg shadow-sm",
                   "ring-0 transition duration-200 ease-in-out",
                   entry.enabled || entry.systemPrompt ? "translate-x-4" : "translate-x-0",
                 )}
               />
             </label>
-            <span className="text-xs text-white/50">
+            <span className="text-xs text-fg/50">
               {entry.systemPrompt ? "Required" : entry.enabled ? "Enabled" : "Disabled"}
             </span>
           </div>
@@ -307,8 +307,8 @@ function PromptEntryCard({
             <button
               onClick={() => onDelete(entry.id)}
               className={cn(
-                "rounded-lg border border-white/10 p-2 text-white/40",
-                "hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-300",
+                "rounded-lg border border-fg/10 p-2 text-fg/40",
+                "hover:border-danger/40 hover:bg-danger/10 hover:text-danger/80",
               )}
               title="Delete entry"
             >
@@ -324,7 +324,7 @@ function PromptEntryCard({
             <select
               value={entry.role}
               onChange={(event) => onUpdate(entry.id, { role: event.target.value as any })}
-              className="h-9 w-full rounded-lg border border-white/10 bg-black/30 px-2.5 text-xs text-white"
+              className="h-9 w-full rounded-lg border border-fg/10 bg-surface-el/30 px-2.5 text-xs text-fg"
             >
               {ENTRY_ROLE_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -349,7 +349,7 @@ function PromptEntryCard({
                       : (entry.intervalTurns ?? null),
                 });
               }}
-              className="h-9 w-full rounded-lg border border-white/10 bg-black/30 px-2.5 text-xs text-white"
+              className="h-9 w-full rounded-lg border border-fg/10 bg-surface-el/30 px-2.5 text-xs text-fg"
             >
               {ENTRY_POSITION_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -360,7 +360,7 @@ function PromptEntryCard({
 
             {entry.injectionPosition !== "relative" && (
               <div className="flex items-center gap-2">
-                <span className="shrink-0 text-[11px] text-white/50">Depth</span>
+                <span className="shrink-0 text-[11px] text-fg/50">Depth</span>
                 <input
                   type="number"
                   min={0}
@@ -368,7 +368,7 @@ function PromptEntryCard({
                   onChange={(event) =>
                     onUpdate(entry.id, { injectionDepth: Number(event.target.value) })
                   }
-                  className="h-9 w-full rounded-lg border border-white/10 bg-black/30 px-2.5 text-xs text-white"
+                  className="h-9 w-full rounded-lg border border-fg/10 bg-surface-el/30 px-2.5 text-xs text-fg"
                   placeholder="0"
                   title="Insertion Depth"
                   aria-label="Insertion Depth"
@@ -376,13 +376,13 @@ function PromptEntryCard({
               </div>
             )}
           </div>
-          <p className="text-[11px] text-white/50">
+          <p className="text-[11px] text-fg/50">
             {getInjectionModeHint(entry.injectionPosition)}
           </p>
 
           {entry.injectionPosition === "conditional" && (
             <div className="space-y-1">
-              <p className="text-[11px] text-white/50">Min Messages</p>
+              <p className="text-[11px] text-fg/50">Min Messages</p>
               <input
                 type="number"
                 min={1}
@@ -392,7 +392,7 @@ function PromptEntryCard({
                     conditionalMinMessages: Math.max(1, Number(event.target.value) || 1),
                   })
                 }
-                className="h-9 w-full rounded-lg border border-white/10 bg-black/30 px-2.5 text-xs text-white"
+                className="h-9 w-full rounded-lg border border-fg/10 bg-surface-el/30 px-2.5 text-xs text-fg"
                 placeholder="Inject after at least N messages"
               />
             </div>
@@ -400,7 +400,7 @@ function PromptEntryCard({
 
           {entry.injectionPosition === "interval" && (
             <div className="space-y-1">
-              <p className="text-[11px] text-white/50">Every N Messages</p>
+              <p className="text-[11px] text-fg/50">Every N Messages</p>
               <input
                 type="number"
                 min={1}
@@ -410,7 +410,7 @@ function PromptEntryCard({
                     intervalTurns: Math.max(1, Number(event.target.value) || 1),
                   })
                 }
-                className="h-9 w-full rounded-lg border border-white/10 bg-black/30 px-2.5 text-xs text-white"
+                className="h-9 w-full rounded-lg border border-fg/10 bg-surface-el/30 px-2.5 text-xs text-fg"
                 placeholder="Inject every N messages"
               />
             </div>
@@ -424,7 +424,7 @@ function PromptEntryCard({
             onChange={(event) => onUpdate(entry.id, { content: event.target.value })}
             onFocus={() => onTextareaFocus(entry.id)}
             rows={6}
-            className="w-full resize-none rounded-xl border border-white/10 bg-black/30 px-3.5 py-2.5 font-mono text-sm leading-relaxed text-white placeholder-white/30"
+            className="w-full resize-none rounded-xl border border-fg/10 bg-surface-el/30 px-3.5 py-2.5 font-mono text-sm leading-relaxed text-fg placeholder-fg/30"
             placeholder="Write the prompt entry..."
           />
         </div>
@@ -565,7 +565,7 @@ function PromptEntryListItem({
         pendingEventRef.current = null;
         unlockScrollContainer();
       }}
-      className={cn("rounded-xl border border-white/10 bg-white/5 p-3 select-none", "space-y-2")}
+      className={cn("rounded-xl border border-fg/10 bg-fg/5 p-3 select-none", "space-y-2")}
     >
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 min-w-0">
@@ -577,7 +577,7 @@ function PromptEntryListItem({
             onContextMenu={(event) => event.preventDefault()}
             className={cn(
               "flex h-8 w-8 items-center justify-center rounded-lg",
-              "border border-white/10 bg-white/5 text-white/40",
+              "border border-fg/10 bg-fg/5 text-fg/40",
             )}
             style={{ touchAction: "none" }}
             title="Drag to reorder"
@@ -585,8 +585,8 @@ function PromptEntryListItem({
             <GripVertical className="h-4 w-4" />
           </button>
           <div className="min-w-0">
-            <p className="text-sm font-medium text-white truncate">{entry.name}</p>
-            <p className="text-[11px] text-white/40 uppercase tracking-wide">
+            <p className="text-sm font-medium text-fg truncate">{entry.name}</p>
+            <p className="text-[11px] text-fg/40 uppercase tracking-wide">
               {entry.role} · {entry.injectionPosition}
             </p>
           </div>
@@ -609,14 +609,14 @@ function PromptEntryListItem({
               className={cn(
                 "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full",
                 "border-2 border-transparent transition-all duration-200 ease-in-out",
-                entry.enabled || entry.systemPrompt ? "bg-emerald-500" : "bg-white/20",
+                entry.enabled || entry.systemPrompt ? "bg-accent" : "bg-fg/20",
                 entry.systemPrompt && "cursor-not-allowed opacity-60",
               )}
               title={entry.systemPrompt ? "System prompt entries are always enabled" : "Toggle"}
             >
               <span
                 className={cn(
-                  "inline-block h-4 w-4 transform rounded-full bg-white shadow-sm",
+                  "inline-block h-4 w-4 transform rounded-full bg-fg shadow-sm",
                   "ring-0 transition duration-200 ease-in-out",
                   entry.enabled || entry.systemPrompt ? "translate-x-4" : "translate-x-0",
                 )}
@@ -627,8 +627,8 @@ function PromptEntryListItem({
           <button
             onClick={() => onEdit(entry.id)}
             className={cn(
-              "rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-white/70",
-              "hover:bg-white/10 hover:text-white",
+              "rounded-lg border border-fg/10 px-3 py-1.5 text-xs font-medium text-fg/70",
+              "hover:bg-fg/10 hover:text-fg",
             )}
           >
             Edit
@@ -638,8 +638,8 @@ function PromptEntryListItem({
             <button
               onClick={() => onDelete(entry.id)}
               className={cn(
-                "rounded-lg border border-white/10 p-2 text-white/40",
-                "hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-300",
+                "rounded-lg border border-fg/10 p-2 text-fg/40",
+                "hover:border-danger/40 hover:bg-danger/10 hover:text-danger/80",
               )}
               title="Delete entry"
             >
@@ -649,7 +649,7 @@ function PromptEntryListItem({
         </div>
       </div>
 
-      <p className="text-xs text-white/50 line-clamp-2">
+      <p className="text-xs text-fg/50 line-clamp-2">
         {entry.content?.trim() || "No content yet"}
       </p>
     </Reorder.Item>
@@ -680,8 +680,8 @@ function LoadingSkeleton() {
     <div className="flex h-full flex-col pb-16">
       <main className="flex-1 overflow-y-auto px-4 pt-4">
         <div className="mx-auto w-full max-w-5xl space-y-4">
-          <div className="h-12 w-full animate-pulse rounded-xl bg-white/10" />
-          <div className="h-80 w-full animate-pulse rounded-xl bg-white/10" />
+          <div className="h-12 w-full animate-pulse rounded-xl bg-fg/10" />
+          <div className="h-80 w-full animate-pulse rounded-xl bg-fg/10" />
         </div>
       </main>
     </div>
@@ -799,7 +799,7 @@ export function EditPromptTemplate() {
   const contentValue = usesEntryEditor ? entriesToContent(entries) : content;
   const charCount = contentValue.length;
   const charCountColor =
-    charCount > 8000 ? "text-red-400" : charCount > 5000 ? "text-amber-400" : "text-white/40";
+    charCount > 8000 ? "text-danger/80" : charCount > 5000 ? "text-warning/80" : "text-fg/40";
 
   const hasEntryContent = entries.some((entry) => entry.content.trim().length > 0);
   const hasContent = content.trim().length > 0;
@@ -1258,7 +1258,7 @@ export function EditPromptTemplate() {
   const PreviewPanel = ({ isMobile = false }: { isMobile?: boolean }) => (
     <div className={cn("space-y-3", isMobile ? "" : "")}>
       {/* Mode Toggle */}
-      <div className="flex items-center gap-1 p-1 rounded-lg border border-white/10 bg-white/5">
+      <div className="flex items-center gap-1 p-1 rounded-lg border border-fg/10 bg-fg/5">
         <button
           onClick={() => setPreviewMode("rendered")}
           className={cn(
@@ -1266,8 +1266,8 @@ export function EditPromptTemplate() {
             radius.md,
             "text-xs font-medium transition",
             previewMode === "rendered"
-              ? "bg-emerald-500/20 text-emerald-300"
-              : "text-white/50 hover:text-white/70",
+              ? "bg-accent/20 text-accent/80"
+              : "text-fg/50 hover:text-fg/70",
           )}
         >
           <Sparkles className="h-3.5 w-3.5" />
@@ -1280,8 +1280,8 @@ export function EditPromptTemplate() {
             radius.md,
             "text-xs font-medium transition",
             previewMode === "raw"
-              ? "bg-emerald-500/20 text-emerald-300"
-              : "text-white/50 hover:text-white/70",
+              ? "bg-accent/20 text-accent/80"
+              : "text-fg/50 hover:text-fg/70",
           )}
         >
           <Code2 className="h-3.5 w-3.5" />
@@ -1299,9 +1299,9 @@ export function EditPromptTemplate() {
               className={cn(
                 "w-full px-3 py-2",
                 radius.md,
-                "border border-white/10 bg-white/5",
-                "text-sm text-white",
-                "focus:border-white/20 focus:outline-none",
+                "border border-fg/10 bg-fg/5",
+                "text-sm text-fg",
+                "focus:border-fg/20 focus:outline-none",
               )}
             >
               <option value="">Select character…</option>
@@ -1318,9 +1318,9 @@ export function EditPromptTemplate() {
               className={cn(
                 "w-full px-3 py-2",
                 radius.md,
-                "border border-white/10 bg-white/5",
-                "text-sm text-white",
-                "focus:border-white/20 focus:outline-none",
+                "border border-fg/10 bg-fg/5",
+                "text-sm text-fg",
+                "focus:border-fg/20 focus:outline-none",
               )}
             >
               <option value="">Select persona…</option>
@@ -1340,8 +1340,8 @@ export function EditPromptTemplate() {
               radius.md,
               "border text-sm font-medium transition",
               !previewCharacterId || previewing
-                ? "border-white/10 bg-white/5 text-white/30 cursor-not-allowed"
-                : "border-emerald-400/40 bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25",
+                ? "border-fg/10 bg-fg/5 text-fg/30 cursor-not-allowed"
+                : "border-accent/40 bg-accent/15 text-accent/80 hover:bg-accent/25",
             )}
           >
             {previewing ? "Rendering…" : "Generate Preview"}
@@ -1354,7 +1354,7 @@ export function EditPromptTemplate() {
         className={cn(
           "overflow-auto",
           radius.lg,
-          "border border-white/10 bg-black/30 p-4",
+          "border border-fg/10 bg-surface-el/30 p-4",
           isMobile ? "max-h-80" : "max-h-64",
         )}
       >
@@ -1364,23 +1364,23 @@ export function EditPromptTemplate() {
             if (previewMode === "rendered" && entriesToShow.length === 0) {
               return (
                 <div className="flex flex-col items-center justify-center h-full py-8 text-center">
-                  <Eye className="h-8 w-8 text-white/20 mb-2" />
-                  <p className="text-sm text-white/50">No preview yet</p>
-                  <p className="text-xs text-white/30">Select a character and generate</p>
+                  <Eye className="h-8 w-8 text-fg/20 mb-2" />
+                  <p className="text-sm text-fg/50">No preview yet</p>
+                  <p className="text-xs text-fg/30">Select a character and generate</p>
                 </div>
               );
             }
             if (entriesToShow.length === 0) {
-              return <p className="text-xs text-white/40">No entries to preview</p>;
+              return <p className="text-xs text-fg/40">No entries to preview</p>;
             }
             return (
               <div className="space-y-4">
                 {entriesToShow.map((entry) => (
                   <div key={entry.id} className="space-y-1">
-                    <div className="text-[11px] uppercase tracking-wide text-white/40">
+                    <div className="text-[11px] uppercase tracking-wide text-fg/40">
                       {entry.role} · {entry.name}
                     </div>
-                    <pre className="whitespace-pre-wrap text-xs leading-relaxed text-white/80 font-mono">
+                    <pre className="whitespace-pre-wrap text-xs leading-relaxed text-fg/80 font-mono">
                       {entry.content || "No content"}
                     </pre>
                   </div>
@@ -1390,18 +1390,18 @@ export function EditPromptTemplate() {
           })()
         ) : previewMode === "rendered" ? (
           preview ? (
-            <pre className="whitespace-pre-wrap text-xs leading-relaxed text-white/80 font-mono">
+            <pre className="whitespace-pre-wrap text-xs leading-relaxed text-fg/80 font-mono">
               {preview}
             </pre>
           ) : (
             <div className="flex flex-col items-center justify-center h-full py-8 text-center">
-              <Eye className="h-8 w-8 text-white/20 mb-2" />
-              <p className="text-sm text-white/50">No preview yet</p>
-              <p className="text-xs text-white/30">Select a character and generate</p>
+              <Eye className="h-8 w-8 text-fg/20 mb-2" />
+              <p className="text-sm text-fg/50">No preview yet</p>
+              <p className="text-xs text-fg/30">Select a character and generate</p>
             </div>
           )
         ) : (
-          <pre className="whitespace-pre-wrap text-xs leading-relaxed text-white/80 font-mono">
+          <pre className="whitespace-pre-wrap text-xs leading-relaxed text-fg/80 font-mono">
             {content || "No content to preview"}
           </pre>
         )}
@@ -1419,14 +1419,14 @@ export function EditPromptTemplate() {
             <div className="flex-1 space-y-4 min-w-0">
               {/* Protected Template Notice */}
               {isAppDefault && (
-                <div className={cn(radius.lg, "border border-amber-500/30 bg-amber-500/10 p-3")}>
+                <div className={cn(radius.lg, "border border-warning/30 bg-warning/10 p-3")}>
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2 min-w-0">
-                      <Lock className="h-4 w-4 text-amber-400 shrink-0" />
+                      <Lock className="h-4 w-4 text-warning/80 shrink-0" />
                       <div className="min-w-0">
-                        <span className="text-sm font-medium text-amber-200">Protected</span>
+                        <span className="text-sm font-medium text-warning/80">Protected</span>
                         {promptType && (
-                          <span className="text-xs text-amber-300/70 ml-2">
+                          <span className="text-xs text-warning/70 ml-2">
                             {getPromptTypeName(promptType)}
                           </span>
                         )}
@@ -1439,8 +1439,8 @@ export function EditPromptTemplate() {
                         className={cn(
                           "flex items-center gap-1.5 px-3 py-1.5 shrink-0",
                           radius.md,
-                          "text-xs font-medium text-amber-300",
-                          "hover:bg-amber-500/20",
+                          "text-xs font-medium text-warning/80",
+                          "hover:bg-warning/20",
                           interactive.transition.fast,
                           "disabled:opacity-50",
                         )}
@@ -1460,15 +1460,15 @@ export function EditPromptTemplate() {
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: "auto" }}
                     exit={{ opacity: 0, height: 0 }}
-                    className={cn(radius.lg, "border border-red-500/30 bg-red-500/10 p-3")}
+                    className={cn(radius.lg, "border border-danger/30 bg-danger/10 p-3")}
                   >
                     <div className="flex items-start gap-2">
-                      <AlertTriangle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
+                      <AlertTriangle className="h-4 w-4 text-danger/80 shrink-0 mt-0.5" />
                       <div>
-                        <p className="text-sm font-medium text-red-200">
+                        <p className="text-sm font-medium text-danger/80">
                           Missing Required Variables
                         </p>
-                        <p className="text-xs text-red-300/70 mt-0.5">
+                        <p className="text-xs text-danger/70 mt-0.5">
                           Include: <span className="font-mono">{missingVariables.join(", ")}</span>
                         </p>
                       </div>
@@ -1479,7 +1479,7 @@ export function EditPromptTemplate() {
 
               {/* Name Input */}
               <div className="space-y-2">
-                <label className="text-xs font-medium uppercase tracking-wider text-white/50">
+                <label className="text-xs font-medium uppercase tracking-wider text-fg/50">
                   Template Name
                 </label>
                 <input
@@ -1490,10 +1490,10 @@ export function EditPromptTemplate() {
                   className={cn(
                     "w-full px-4 py-3",
                     radius.lg,
-                    "border border-white/10 bg-white/5",
-                    "text-sm text-white placeholder-white/30",
+                    "border border-fg/10 bg-fg/5",
+                    "text-sm text-fg placeholder-fg/30",
                     interactive.transition.fast,
-                    "focus:border-white/20 focus:bg-white/10 focus:outline-none",
+                    "focus:border-fg/20 focus:bg-fg/10 focus:outline-none",
                   )}
                 />
               </div>
@@ -1502,7 +1502,7 @@ export function EditPromptTemplate() {
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   {usesEntryEditor ? (
-                    <div className="flex items-center gap-1 p-0.5 rounded-md border border-white/10 bg-black/20">
+                    <div className="flex items-center gap-1 p-0.5 rounded-md border border-fg/10 bg-surface-el/20">
                       <button
                         onClick={() => setEditorView("entries")}
                         className={cn(
@@ -1510,8 +1510,8 @@ export function EditPromptTemplate() {
                           radius.sm,
                           "transition",
                           editorView === "entries"
-                            ? "bg-white/10 text-white"
-                            : "text-white/40 hover:text-white/60",
+                            ? "bg-fg/10 text-fg"
+                            : "text-fg/40 hover:text-fg/60",
                         )}
                       >
                         Entries
@@ -1523,8 +1523,8 @@ export function EditPromptTemplate() {
                           radius.sm,
                           "transition",
                           editorView === "structure"
-                            ? "bg-white/10 text-white"
-                            : "text-white/40 hover:text-white/60",
+                            ? "bg-fg/10 text-fg"
+                            : "text-fg/40 hover:text-fg/60",
                         )}
                       >
                         <Layers className="h-3 w-3" />
@@ -1532,12 +1532,12 @@ export function EditPromptTemplate() {
                       </button>
                     </div>
                   ) : (
-                    <label className="text-xs font-medium uppercase tracking-wider text-white/50">
+                    <label className="text-xs font-medium uppercase tracking-wider text-fg/50">
                       Prompt Content
                     </label>
                   )}
                   {usesEntryEditor && (
-                    <div className="flex items-center gap-3 rounded-lg border border-white/10 bg-black/20 px-2.5 py-1.5">
+                    <div className="flex items-center gap-3 rounded-lg border border-fg/10 bg-surface-el/20 px-2.5 py-1.5">
                       <input
                         id="condense-prompt-entries"
                         type="checkbox"
@@ -1550,18 +1550,18 @@ export function EditPromptTemplate() {
                         className={cn(
                           "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full",
                           "border-2 border-transparent transition-all duration-200 ease-in-out",
-                          condensePromptEntries ? "bg-emerald-500" : "bg-white/20",
+                          condensePromptEntries ? "bg-accent" : "bg-fg/20",
                         )}
                       >
                         <span
                           className={cn(
-                            "inline-block h-4 w-4 transform rounded-full bg-white shadow-sm",
+                            "inline-block h-4 w-4 transform rounded-full bg-fg shadow-sm",
                             "ring-0 transition duration-200 ease-in-out",
                             condensePromptEntries ? "translate-x-4" : "translate-x-0",
                           )}
                         />
                       </label>
-                      <span className="text-xs text-white/70">
+                      <span className="text-xs text-fg/70">
                         Send entries as one system message
                       </span>
                     </div>
@@ -1573,10 +1573,10 @@ export function EditPromptTemplate() {
                         className={cn(
                           "flex items-center gap-1.5 px-2.5 py-1.5",
                           radius.md,
-                          "border border-emerald-400/30 bg-emerald-500/10",
-                          "text-xs font-medium text-emerald-200",
+                          "border border-accent/30 bg-accent/10",
+                          "text-xs font-medium text-accent/80",
                           interactive.transition.fast,
-                          "hover:bg-emerald-500/20",
+                          "hover:bg-accent/20",
                         )}
                       >
                         <Plus className="h-3.5 w-3.5" />
@@ -1588,10 +1588,10 @@ export function EditPromptTemplate() {
                       className={cn(
                         "flex items-center gap-1.5 px-2.5 py-1.5",
                         radius.md,
-                        "border border-blue-400/30 bg-blue-500/10",
-                        "text-xs font-medium text-blue-300",
+                        "border border-info/30 bg-info/10",
+                        "text-xs font-medium text-info/80",
                         interactive.transition.fast,
-                        "hover:bg-blue-500/20",
+                        "hover:bg-info/20",
                       )}
                     >
                       <Sparkles className="h-3.5 w-3.5" />
@@ -1602,10 +1602,10 @@ export function EditPromptTemplate() {
                       className={cn(
                         "flex items-center gap-1.5 px-2.5 py-1.5 lg:hidden",
                         radius.md,
-                        "border border-white/10 bg-white/5",
-                        "text-xs font-medium text-white/70",
+                        "border border-fg/10 bg-fg/5",
+                        "text-xs font-medium text-fg/70",
                         interactive.transition.fast,
-                        "hover:bg-white/10",
+                        "hover:bg-fg/10",
                       )}
                     >
                       <Eye className="h-3.5 w-3.5" />
@@ -1687,7 +1687,7 @@ export function EditPromptTemplate() {
                         <div className="flex items-center justify-end">
                           <span
                             className={cn(
-                              "px-2 py-1 rounded-md bg-black/60",
+                              "px-2 py-1 rounded-md bg-surface-el/60",
                               "text-xs font-medium",
                               charCountColor,
                             )}
@@ -1709,16 +1709,16 @@ export function EditPromptTemplate() {
                       className={cn(
                         "w-full px-4 py-3 resize-none",
                         radius.lg,
-                        "border border-white/10 bg-white/5",
-                        "font-mono text-sm leading-relaxed text-white placeholder-white/30",
+                        "border border-fg/10 bg-fg/5",
+                        "font-mono text-sm leading-relaxed text-fg placeholder-fg/30",
                         interactive.transition.fast,
-                        "focus:border-white/20 focus:bg-white/10 focus:outline-none",
+                        "focus:border-fg/20 focus:bg-fg/10 focus:outline-none",
                       )}
                     />
                     <div className="absolute bottom-3 right-3 pointer-events-none">
                       <span
                         className={cn(
-                          "px-2 py-1 rounded-md bg-black/60",
+                          "px-2 py-1 rounded-md bg-surface-el/60",
                           "text-xs font-medium",
                           charCountColor,
                         )}
@@ -1731,7 +1731,7 @@ export function EditPromptTemplate() {
               </div>
 
               {/* Collapsible Preview Panel (Desktop - below content) */}
-              <div className={cn(radius.lg, "border border-white/10 bg-white/5 hidden lg:block")}>
+              <div className={cn(radius.lg, "border border-fg/10 bg-fg/5 hidden lg:block")}>
                 {/* Collapsed Header / Toggle */}
                 <button
                   onClick={() => setPreviewExpanded(!previewExpanded)}
@@ -1739,22 +1739,22 @@ export function EditPromptTemplate() {
                     "w-full flex items-center justify-between px-4 py-3",
                     "text-left",
                     interactive.transition.fast,
-                    "hover:bg-white/5",
-                    previewExpanded ? "border-b border-white/10" : "",
+                    "hover:bg-fg/5",
+                    previewExpanded ? "border-b border-fg/10" : "",
                   )}
                 >
                   <div className="flex items-center gap-2">
-                    <Eye className="h-4 w-4 text-white/50" />
-                    <span className="text-sm font-medium text-white">Preview</span>
+                    <Eye className="h-4 w-4 text-fg/50" />
+                    <span className="text-sm font-medium text-fg">Preview</span>
                     {!previewExpanded && preview && (
-                      <span className="text-xs text-white/40 ml-2">(has generated preview)</span>
+                      <span className="text-xs text-fg/40 ml-2">(has generated preview)</span>
                     )}
                   </div>
                   <div className="flex items-center gap-2">
                     {previewExpanded ? (
-                      <ChevronUp className="h-4 w-4 text-white/50" />
+                      <ChevronUp className="h-4 w-4 text-fg/50" />
                     ) : (
-                      <ChevronDown className="h-4 w-4 text-white/50" />
+                      <ChevronDown className="h-4 w-4 text-fg/50" />
                     )}
                   </div>
                 </button>
@@ -1785,9 +1785,9 @@ export function EditPromptTemplate() {
               style={{ y: quickInsertY }}
               className="hidden lg:block w-80 shrink-0 space-y-4 self-start relative z-20"
             >
-              <div className={cn(radius.lg, "border border-white/10 bg-white/5 p-4")}>
-                <h3 className="text-sm font-medium text-white mb-1">Quick Insert</h3>
-                <p className="text-xs text-white/40 mb-3">Click to insert at cursor</p>
+              <div className={cn(radius.lg, "border border-fg/10 bg-fg/5 p-4")}>
+                <h3 className="text-sm font-medium text-fg mb-1">Quick Insert</h3>
+                <p className="text-xs text-fg/40 mb-3">Click to insert at cursor</p>
 
                 <div className="space-y-1.5 max-h-[60vh] overflow-y-auto">
                   {variables.map((v) => {
@@ -1802,12 +1802,12 @@ export function EditPromptTemplate() {
                           radius.md,
                           "border",
                           isMissing
-                            ? "border-red-500/30 bg-red-500/10"
+                            ? "border-danger/30 bg-danger/10"
                             : isRequired
-                              ? "border-amber-500/30 bg-amber-500/10"
-                              : "border-white/10 bg-white/5",
+                              ? "border-warning/30 bg-warning/10"
+                              : "border-fg/10 bg-fg/5",
                           interactive.transition.fast,
-                          "hover:bg-white/10",
+                          "hover:bg-fg/10",
                         )}
                       >
                         <div className="flex items-center gap-2">
@@ -1815,7 +1815,7 @@ export function EditPromptTemplate() {
                             <span
                               className={cn(
                                 "text-xs",
-                                isMissing ? "text-red-400" : "text-amber-400",
+                                isMissing ? "text-danger/80" : "text-warning/80",
                               )}
                             >
                               ★
@@ -1824,21 +1824,21 @@ export function EditPromptTemplate() {
                           <code
                             className={cn(
                               "text-xs font-medium",
-                              isMissing ? "text-red-300" : "text-emerald-300",
+                              isMissing ? "text-danger/80" : "text-accent/80",
                             )}
                           >
                             {v.var}
                           </code>
                         </div>
-                        <p className="text-[10px] text-white/40 mt-0.5">{v.desc}</p>
+                        <p className="text-[10px] text-fg/40 mt-0.5">{v.desc}</p>
                       </button>
                     );
                   })}
                 </div>
 
-                <div className="flex items-start gap-2 mt-3 pt-3 border-t border-white/10">
-                  <span className="text-white/30 text-xs mt-0.5">ⓘ</span>
-                  <p className="text-xs text-white/40 leading-relaxed">
+                <div className="flex items-start gap-2 mt-3 pt-3 border-t border-fg/10">
+                  <span className="text-fg/30 text-xs mt-0.5">ⓘ</span>
+                  <p className="text-xs text-fg/40 leading-relaxed">
                     Variables are replaced with actual values when the prompt is used.
                   </p>
                 </div>
@@ -1855,11 +1855,11 @@ export function EditPromptTemplate() {
         title="Template Variables"
       >
         <div className="space-y-4">
-          <p className="text-xs text-white/50">Tap to insert a variable into your prompt</p>
+          <p className="text-xs text-fg/50">Tap to insert a variable into your prompt</p>
 
           {isAppDefault && requiredVariables.length > 0 && (
-            <div className={cn(radius.lg, "border border-amber-400/30 bg-amber-500/10 p-3")}>
-              <p className="text-xs text-amber-200">
+            <div className={cn(radius.lg, "border border-warning/30 bg-warning/10 p-3")}>
+              <p className="text-xs text-warning/80">
                 <span className="font-semibold">Required:</span> Variables marked with ★ must be
                 included
               </p>
@@ -1877,35 +1877,35 @@ export function EditPromptTemplate() {
                     radius.lg,
                     "border p-3",
                     isMissing
-                      ? "border-red-400/40 bg-red-500/10"
+                      ? "border-danger/40 bg-danger/10"
                       : isRequired
-                        ? "border-amber-400/30 bg-amber-500/10"
-                        : "border-white/10 bg-white/5",
+                        ? "border-warning/30 bg-warning/10"
+                        : "border-fg/10 bg-fg/5",
                   )}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         {isRequired && (
-                          <span className={isMissing ? "text-red-400" : "text-amber-400"}>★</span>
+                          <span className={isMissing ? "text-danger/80" : "text-warning/80"}>★</span>
                         )}
                         <code
                           className={cn(
                             "text-sm font-semibold",
-                            isMissing ? "text-red-300" : "text-emerald-300",
+                            isMissing ? "text-danger/80" : "text-accent/80",
                           )}
                         >
                           {item.var}
                         </code>
                         {copiedVar === item.var && (
-                          <span className="flex items-center gap-1 text-xs text-emerald-400">
+                          <span className="flex items-center gap-1 text-xs text-accent/80">
                             <Check className="h-3 w-3" />
                             Copied
                           </span>
                         )}
                       </div>
-                      <p className="text-sm text-white/80">{item.label}</p>
-                      <p className="text-xs text-white/50">{item.desc}</p>
+                      <p className="text-sm text-fg/80">{item.label}</p>
+                      <p className="text-xs text-fg/50">{item.desc}</p>
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0">
@@ -1914,10 +1914,10 @@ export function EditPromptTemplate() {
                         className={cn(
                           "flex items-center justify-center h-8 w-8",
                           radius.md,
-                          "border border-white/10 bg-white/5",
-                          "text-white/50",
+                          "border border-fg/10 bg-fg/5",
+                          "text-fg/50",
                           interactive.transition.fast,
-                          "hover:bg-white/10 hover:text-white",
+                          "hover:bg-fg/10 hover:text-fg",
                         )}
                         title="Copy"
                       >
@@ -1931,10 +1931,10 @@ export function EditPromptTemplate() {
                         className={cn(
                           "flex items-center gap-1.5 px-3 py-1.5",
                           radius.md,
-                          "border border-emerald-400/30 bg-emerald-500/15",
-                          "text-xs font-medium text-emerald-300",
+                          "border border-accent/30 bg-accent/15",
+                          "text-xs font-medium text-accent/80",
                           interactive.transition.fast,
-                          "hover:bg-emerald-500/25",
+                          "hover:bg-accent/25",
                         )}
                       >
                         Insert
@@ -1955,7 +1955,7 @@ export function EditPromptTemplate() {
         title="Preview"
       >
         {usesEntryEditor && (
-          <div className="flex items-center gap-1 p-1 rounded-lg border border-white/10 bg-white/5 mb-3">
+          <div className="flex items-center gap-1 p-1 rounded-lg border border-fg/10 bg-fg/5 mb-3">
             <button
               onClick={() => setMobilePreviewTab("content")}
               className={cn(
@@ -1963,8 +1963,8 @@ export function EditPromptTemplate() {
                 radius.md,
                 "text-xs font-medium transition",
                 mobilePreviewTab === "content"
-                  ? "bg-emerald-500/20 text-emerald-300"
-                  : "text-white/50 hover:text-white/70",
+                  ? "bg-accent/20 text-accent/80"
+                  : "text-fg/50 hover:text-fg/70",
               )}
             >
               Content
@@ -1976,8 +1976,8 @@ export function EditPromptTemplate() {
                 radius.md,
                 "text-xs font-medium transition",
                 mobilePreviewTab === "structure"
-                  ? "bg-emerald-500/20 text-emerald-300"
-                  : "text-white/50 hover:text-white/70",
+                  ? "bg-accent/20 text-accent/80"
+                  : "text-fg/50 hover:text-fg/70",
               )}
             >
               Structure
@@ -2012,10 +2012,10 @@ export function EditPromptTemplate() {
                   onChange={(event) =>
                     handleEntryUpdate(selectedMobileEntry.id, { name: event.target.value })
                   }
-                  className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white"
+                  className="w-full rounded-lg border border-fg/10 bg-fg/5 px-3 py-2 text-sm text-fg"
                   placeholder="Entry name"
                 />
-                <p className="text-[11px] text-white/50">Name used for organization and preview.</p>
+                <p className="text-[11px] text-fg/50">Name used for organization and preview.</p>
               </div>
 
               <div className="space-y-1">
@@ -2026,7 +2026,7 @@ export function EditPromptTemplate() {
                       role: event.target.value as any,
                     })
                   }
-                  className="h-9 w-full rounded-lg border border-white/10 bg-white/5 px-2.5 text-xs text-white"
+                  className="h-9 w-full rounded-lg border border-fg/10 bg-fg/5 px-2.5 text-xs text-fg"
                 >
                   {ENTRY_ROLE_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>
@@ -2034,7 +2034,7 @@ export function EditPromptTemplate() {
                     </option>
                   ))}
                 </select>
-                <p className="text-[11px] text-white/50">
+                <p className="text-[11px] text-fg/50">
                   Select which role the model receives for this entry.
                 </p>
               </div>
@@ -2058,7 +2058,7 @@ export function EditPromptTemplate() {
                           : (selectedMobileEntry.intervalTurns ?? null),
                     });
                   }}
-                  className="h-9 w-full rounded-lg border border-white/10 bg-white/5 px-2.5 text-xs text-white"
+                  className="h-9 w-full rounded-lg border border-fg/10 bg-fg/5 px-2.5 text-xs text-fg"
                 >
                   {ENTRY_POSITION_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>
@@ -2066,14 +2066,14 @@ export function EditPromptTemplate() {
                     </option>
                   ))}
                 </select>
-                <p className="text-[11px] text-white/50">
+                <p className="text-[11px] text-fg/50">
                   {getInjectionModeHint(selectedMobileEntry.injectionPosition)}
                 </p>
               </div>
 
               {selectedMobileEntry.injectionPosition !== "relative" && (
                 <div className="space-y-1">
-                  <p className="text-[11px] text-white/50">Insertion Depth</p>
+                  <p className="text-[11px] text-fg/50">Insertion Depth</p>
                   <input
                     type="number"
                     min={0}
@@ -2083,10 +2083,10 @@ export function EditPromptTemplate() {
                         injectionDepth: Number(event.target.value),
                       })
                     }
-                    className="h-9 w-full rounded-lg border border-white/10 bg-white/5 px-2.5 text-xs text-white"
+                    className="h-9 w-full rounded-lg border border-fg/10 bg-fg/5 px-2.5 text-xs text-fg"
                     placeholder="0 = newest context"
                   />
-                  <p className="text-[11px] text-white/50">
+                  <p className="text-[11px] text-fg/50">
                     Depth 0 is newest; higher numbers insert earlier.
                   </p>
                 </div>
@@ -2094,7 +2094,7 @@ export function EditPromptTemplate() {
 
               {selectedMobileEntry.injectionPosition === "conditional" && (
                 <div className="space-y-1">
-                  <p className="text-[11px] text-white/50">Min Messages</p>
+                  <p className="text-[11px] text-fg/50">Min Messages</p>
                   <input
                     type="number"
                     min={1}
@@ -2106,10 +2106,10 @@ export function EditPromptTemplate() {
                         conditionalMinMessages: Math.max(1, Number(event.target.value) || 1),
                       })
                     }
-                    className="h-9 w-full rounded-lg border border-white/10 bg-white/5 px-2.5 text-xs text-white"
+                    className="h-9 w-full rounded-lg border border-fg/10 bg-fg/5 px-2.5 text-xs text-fg"
                     placeholder="Inject after at least N messages"
                   />
-                  <p className="text-[11px] text-white/50">
+                  <p className="text-[11px] text-fg/50">
                     Inject only when at least this many chat messages are in context.
                   </p>
                 </div>
@@ -2117,7 +2117,7 @@ export function EditPromptTemplate() {
 
               {selectedMobileEntry.injectionPosition === "interval" && (
                 <div className="space-y-1">
-                  <p className="text-[11px] text-white/50">Every N Messages</p>
+                  <p className="text-[11px] text-fg/50">Every N Messages</p>
                   <input
                     type="number"
                     min={1}
@@ -2127,10 +2127,10 @@ export function EditPromptTemplate() {
                         intervalTurns: Math.max(1, Number(event.target.value) || 1),
                       })
                     }
-                    className="h-9 w-full rounded-lg border border-white/10 bg-white/5 px-2.5 text-xs text-white"
+                    className="h-9 w-full rounded-lg border border-fg/10 bg-fg/5 px-2.5 text-xs text-fg"
                     placeholder="Inject every N messages"
                   />
-                  <p className="text-[11px] text-white/50">Inject every N context turns.</p>
+                  <p className="text-[11px] text-fg/50">Inject every N context turns.</p>
                 </div>
               )}
             </div>
@@ -2147,12 +2147,12 @@ export function EditPromptTemplate() {
                 activeEntryIdRef.current = selectedMobileEntry.id;
               }}
               rows={10}
-              className="w-full resize-none rounded-xl border border-white/10 bg-black/30 px-3.5 py-2.5 font-mono text-sm leading-relaxed text-white placeholder-white/30"
+              className="w-full resize-none rounded-xl border border-fg/10 bg-surface-el/30 px-3.5 py-2.5 font-mono text-sm leading-relaxed text-fg placeholder-fg/30"
               placeholder="Write the prompt entry..."
             />
           </div>
         ) : (
-          <p className="text-sm text-white/60">Select an entry to edit.</p>
+          <p className="text-sm text-fg/60">Select an entry to edit.</p>
         )}
       </BottomMenu>
     </div>

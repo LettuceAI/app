@@ -59,48 +59,57 @@ export const typography = {
 
 export const colors = {
     surface: {
-        base: 'bg-[#000000]',
-        elevated: 'bg-[#0A0A0A]',
+        base: 'bg-surface',
+        elevated: 'bg-surface-el',
+        nav: 'bg-nav',
         overlay: 'bg-black/60',
     },
     border: {
-        subtle: 'border-white/15',
-        default: 'border-white/20',
-        strong: 'border-white/30',
-        interactive: 'border-white/40',
+        subtle: 'border-fg/15',
+        default: 'border-fg/20',
+        strong: 'border-fg/30',
+        interactive: 'border-fg/40',
     },
     text: {
-        primary: 'text-white',
-        secondary: 'text-white/80',
-        tertiary: 'text-white/50',
-        disabled: 'text-white/30',
+        primary: 'text-fg',
+        secondary: 'text-fg/80',
+        tertiary: 'text-fg/50',
+        disabled: 'text-fg/30',
     },
     accent: {
         emerald: {
-            subtle: 'bg-emerald-400/10 border-emerald-400/30 text-emerald-200',
-            default: 'bg-emerald-400/20 border-emerald-400/40 text-emerald-100',
-            strong: 'bg-emerald-400/30 border-emerald-400/60 text-emerald-50',
+            subtle: 'bg-accent/10 border-accent/30 text-accent/80',
+            default: 'bg-accent/20 border-accent/40 text-accent/90',
+            strong: 'bg-accent/30 border-accent/60 text-accent',
         },
         amber: {
-            subtle: 'bg-amber-400/10 border-amber-400/30 text-amber-200',
-            default: 'bg-amber-400/15 border-amber-400/40 text-amber-100',
+            subtle: 'bg-warning/10 border-warning/30 text-warning/80',
+            default: 'bg-warning/15 border-warning/40 text-warning/90',
         },
         red: {
-            subtle: 'bg-red-400/10 border-red-400/30 text-red-200',
-            default: 'bg-red-400/15 border-red-400/40 text-red-100',
+            subtle: 'bg-danger/10 border-danger/30 text-danger/80',
+            default: 'bg-danger/15 border-danger/40 text-danger/90',
+        },
+        blue: {
+            subtle: 'bg-info/10 border-info/30 text-info/80',
+            default: 'bg-info/15 border-info/40 text-info/90',
+        },
+        purple: {
+            subtle: 'bg-secondary/10 border-secondary/30 text-secondary/80',
+            default: 'bg-secondary/15 border-secondary/40 text-secondary/90',
         },
     },
     glass: {
-        subtle: 'bg-white/5 backdrop-blur-lg border border-white/10',
-        default: 'bg-white/10 backdrop-blur-xl border border-white/15',
-        strong: 'bg-[#0A0A0A]/80 backdrop-blur-xl border-b border-white/10',
+        subtle: 'bg-fg/5 backdrop-blur-lg border border-fg/10',
+        default: 'bg-fg/10 backdrop-blur-xl border border-fg/15',
+        strong: 'bg-surface-el/80 backdrop-blur-xl border-b border-fg/10',
     },
     effects: {
         glow: 'shadow-[0_0_20px_-5px_rgba(52,211,153,0.3)]',
         gradient: {
-            brand: 'bg-gradient-to-r from-emerald-500/20 via-blue-500/20 to-emerald-500/20',
-            surface: 'bg-gradient-to-b from-[#050505] to-[#000000]',
-            text: 'bg-gradient-to-r from-white via-white to-white/70 bg-clip-text text-transparent',
+            brand: 'bg-gradient-to-r from-accent/20 via-blue-500/20 to-accent/20',
+            surface: 'bg-gradient-to-b from-surface to-black',
+            text: 'bg-gradient-to-r from-fg via-fg to-fg/70 bg-clip-text text-transparent',
         }
     }
 } as const;
@@ -145,7 +154,7 @@ export const interactive = {
         slow: 'transition-all duration-300',
     },
     focus: {
-        ring: 'focus:outline-none focus:ring-2 focus:ring-white/20',
+        ring: 'focus:outline-none focus:ring-2 focus:ring-fg/20',
     },
 } as const;
 
@@ -159,7 +168,7 @@ export const components = {
         },
     },
     input: {
-        base: `${radius.md} border ${colors.border.subtle} bg-black/20 backdrop-blur-xl ${interactive.transition.default} focus:${colors.border.interactive} focus:bg-black/30 focus:outline-none`,
+        base: `${radius.md} border ${colors.border.subtle} bg-surface/20 backdrop-blur-xl ${interactive.transition.default} focus:${colors.border.interactive} focus:bg-surface/30 focus:outline-none`,
         sizes: {
             sm: 'px-3 py-2 text-xs',
             md: 'px-4 py-3 text-sm',
@@ -167,12 +176,12 @@ export const components = {
         },
     },
     card: {
-        base: `${radius.lg} border ${colors.border.subtle} bg-white/5 ${interactive.transition.default}`,
-        interactive: `hover:${colors.border.strong} hover:bg-white/10 ${interactive.active.scale}`,
+        base: `${radius.lg} border ${colors.border.subtle} bg-fg/5 ${interactive.transition.default}`,
+        interactive: `hover:${colors.border.strong} hover:bg-fg/10 ${interactive.active.scale}`,
     },
     listItem: {
-        base: `${radius.md} border ${colors.border.subtle} bg-white/5 ${interactive.transition.default}`,
-        interactive: `hover:${colors.border.strong} hover:bg-white/10 ${interactive.active.scale}`,
+        base: `${radius.md} border ${colors.border.subtle} bg-fg/5 ${interactive.transition.default}`,
+        interactive: `hover:${colors.border.strong} hover:bg-fg/10 ${interactive.active.scale}`,
     },
 } as const;
 

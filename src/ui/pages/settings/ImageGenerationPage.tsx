@@ -151,7 +151,7 @@ export function ImageGenerationPage() {
   if (state.loading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/10 border-t-white/60" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-fg/10 border-t-fg/60" />
       </div>
     );
   }
@@ -159,14 +159,14 @@ export function ImageGenerationPage() {
   if (state.models.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center px-6">
-        <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-white/10 bg-white/5 mb-4">
-          <Image className="h-8 w-8 text-white/40" />
+        <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-fg/10 bg-fg/5 mb-4">
+          <Image className="h-8 w-8 text-fg/40" />
         </div>
-        <h2 className="text-lg font-semibold text-white mb-2">No Image Models</h2>
-        <p className="text-center text-sm text-white/50 mb-4">
+        <h2 className="text-lg font-semibold text-fg mb-2">No Image Models</h2>
+        <p className="text-center text-sm text-fg/50 mb-4">
           Add an image generation model from the Models page to start generating images.
         </p>
-        <p className="text-center text-xs text-white/40">
+        <p className="text-center text-xs text-fg/40">
           Supported providers: OpenAI (DALL-E), Google (Imagen), OpenRouter
         </p>
       </div>
@@ -184,16 +184,16 @@ export function ImageGenerationPage() {
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
               exit={{ opacity: 0, height: 0 }}
-              className="rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 flex items-start gap-3"
+              className="rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 flex items-start gap-3"
             >
-              <AlertCircle className="h-5 w-5 text-red-400 shrink-0 mt-0.5" />
+              <AlertCircle className="h-5 w-5 text-danger/80 shrink-0 mt-0.5" />
               <div className="flex-1">
-                <p className="text-sm font-medium text-red-200">Generation Failed</p>
-                <p className="text-xs text-red-300/70 mt-0.5">{state.error}</p>
+                <p className="text-sm font-medium text-danger/80">Generation Failed</p>
+                <p className="text-xs text-danger/70 mt-0.5">{state.error}</p>
               </div>
               <button
                 onClick={() => setState((prev) => ({ ...prev, error: null }))}
-                className="text-red-400/60 hover:text-red-400 text-xs"
+                className="text-danger/80/60 hover:text-danger/80 text-xs"
               >
                 Dismiss
               </button>
@@ -203,14 +203,14 @@ export function ImageGenerationPage() {
 
         {/* Model Selection */}
         <div className="space-y-2">
-          <label className="text-[11px] font-medium text-white/70">MODEL</label>
+          <label className="text-[11px] font-medium text-fg/70">MODEL</label>
           <select
             value={state.selectedModel?.id ?? ""}
             onChange={(e) => handleModelChange(e.target.value)}
-            className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-white transition focus:border-white/30 focus:outline-none"
+            className="w-full rounded-xl border border-fg/10 bg-surface-el/20 px-3 py-2.5 text-fg transition focus:border-fg/30 focus:outline-none"
           >
             {state.models.map((model) => (
-              <option key={model.id} value={model.id} className="bg-black">
+              <option key={model.id} value={model.id} className="bg-surface-el">
                 {model.displayName}
               </option>
             ))}
@@ -219,24 +219,24 @@ export function ImageGenerationPage() {
 
         {/* Prompt Input */}
         <div className="space-y-2">
-          <label className="text-[11px] font-medium text-white/70">PROMPT</label>
+          <label className="text-[11px] font-medium text-fg/70">PROMPT</label>
           <textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             placeholder="Describe the image you want to generate..."
             rows={4}
-            className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-white placeholder-white/40 transition focus:border-white/30 focus:outline-none resize-none"
+            className="w-full rounded-xl border border-fg/10 bg-surface-el/20 px-3 py-2.5 text-fg placeholder-fg/40 transition focus:border-fg/30 focus:outline-none resize-none"
           />
         </div>
 
         {/* Advanced Settings Toggle */}
         <button
           onClick={() => setShowAdvanced(!showAdvanced)}
-          className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-left transition active:bg-white/10"
+          className="flex w-full items-center justify-between rounded-xl border border-fg/10 bg-fg/5 px-4 py-3 text-left transition active:bg-fg/10"
         >
-          <span className="text-sm font-medium text-white">Advanced Settings</span>
+          <span className="text-sm font-medium text-fg">Advanced Settings</span>
           <ChevronDown
-            className={`h-4 w-4 text-white/50 transition-transform ${
+            className={`h-4 w-4 text-fg/50 transition-transform ${
               showAdvanced ? "rotate-180" : ""
             }`}
           />
@@ -253,7 +253,7 @@ export function ImageGenerationPage() {
             >
               {/* Size */}
               <div className="space-y-2">
-                <label className="text-[11px] font-medium text-white/70">SIZE</label>
+                <label className="text-[11px] font-medium text-fg/70">SIZE</label>
                 <div className="flex flex-wrap gap-2">
                   {availableSizes.map((s) => (
                     <button
@@ -261,8 +261,8 @@ export function ImageGenerationPage() {
                       onClick={() => setSize(s)}
                       className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
                         size === s
-                          ? "border border-emerald-400/40 bg-emerald-400/20 text-emerald-200"
-                          : "border border-white/10 bg-white/5 text-white/60 active:bg-white/10"
+                          ? "border border-accent/40 bg-accent/20 text-accent/80"
+                          : "border border-fg/10 bg-fg/5 text-fg/60 active:bg-fg/10"
                       }`}
                     >
                       {s}
@@ -276,7 +276,7 @@ export function ImageGenerationPage() {
                 <>
                   {/* Quality */}
                   <div className="space-y-2">
-                    <label className="text-[11px] font-medium text-white/70">QUALITY</label>
+                    <label className="text-[11px] font-medium text-fg/70">QUALITY</label>
                     <div className="flex gap-2">
                       {["standard", "hd"].map((q) => (
                         <button
@@ -284,8 +284,8 @@ export function ImageGenerationPage() {
                           onClick={() => setQuality(q)}
                           className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium transition ${
                             quality === q
-                              ? "border border-blue-400/40 bg-blue-400/20 text-blue-200"
-                              : "border border-white/10 bg-white/5 text-white/60 active:bg-white/10"
+                              ? "border border-info/40 bg-info/20 text-info"
+                              : "border border-fg/10 bg-fg/5 text-fg/60 active:bg-fg/10"
                           }`}
                         >
                           {q.toUpperCase()}
@@ -296,7 +296,7 @@ export function ImageGenerationPage() {
 
                   {/* Style */}
                   <div className="space-y-2">
-                    <label className="text-[11px] font-medium text-white/70">STYLE</label>
+                    <label className="text-[11px] font-medium text-fg/70">STYLE</label>
                     <div className="flex gap-2">
                       {["vivid", "natural"].map((s) => (
                         <button
@@ -304,8 +304,8 @@ export function ImageGenerationPage() {
                           onClick={() => setStyle(s)}
                           className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium transition ${
                             style === s
-                              ? "border border-purple-400/40 bg-purple-400/20 text-purple-200"
-                              : "border border-white/10 bg-white/5 text-white/60 active:bg-white/10"
+                              ? "border border-secondary/40 bg-secondary/20 text-secondary"
+                              : "border border-fg/10 bg-fg/5 text-fg/60 active:bg-fg/10"
                           }`}
                         >
                           {s.charAt(0).toUpperCase() + s.slice(1)}
@@ -323,7 +323,7 @@ export function ImageGenerationPage() {
         <button
           onClick={handleGenerate}
           disabled={state.generating || !prompt.trim() || !state.selectedModel}
-          className="w-full rounded-xl border border-emerald-400/40 bg-emerald-400/20 px-4 py-3 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-400/30 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          className="w-full rounded-xl border border-accent/40 bg-accent/20 px-4 py-3 text-sm font-semibold text-accent/90 transition hover:bg-accent/30 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
         >
           {state.generating ? (
             <>
@@ -341,12 +341,12 @@ export function ImageGenerationPage() {
         {/* Generated Images */}
         {state.generatedImages.length > 0 && (
           <div className="space-y-3">
-            <h3 className="text-sm font-medium text-white/70">Generated Images</h3>
+            <h3 className="text-sm font-medium text-fg/70">Generated Images</h3>
             <div className="grid grid-cols-2 gap-3">
               {state.generatedImages.map((img, idx) => (
                 <div
                   key={`${img.filePath}-${idx}`}
-                  className="relative group rounded-xl overflow-hidden border border-white/10 bg-white/5"
+                  className="relative group rounded-xl overflow-hidden border border-fg/10 bg-fg/5"
                 >
                   <img
                     src={convertFileSrc(img.filePath)}
@@ -355,19 +355,19 @@ export function ImageGenerationPage() {
                     loading="lazy"
                   />
                   {img.text && (
-                    <div className="absolute bottom-0 left-0 right-0 bg-black/70 px-2 py-1 text-xs text-white/70 truncate">
+                    <div className="absolute bottom-0 left-0 right-0 bg-surface-el/70 px-2 py-1 text-xs text-fg/70 truncate">
                       {img.text}
                     </div>
                   )}
-                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                  <div className="absolute inset-0 bg-surface-el/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                     <button
                       onClick={() => {
                         // Open image in default viewer
                         window.open(convertFileSrc(img.filePath), "_blank");
                       }}
-                      className="rounded-full bg-white/20 p-2 hover:bg-white/30 transition"
+                      className="rounded-full bg-fg/20 p-2 hover:bg-fg/30 transition"
                     >
-                      <Download className="h-4 w-4 text-white" />
+                      <Download className="h-4 w-4 text-fg" />
                     </button>
                   </div>
                 </div>

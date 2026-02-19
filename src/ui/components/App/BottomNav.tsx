@@ -40,7 +40,7 @@ export function BottomNav({ onCreateClick }: { onCreateClick: () => void }) {
     onCreateClick();
   };
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-30 border-t border-white/8 bg-[#0b0b0d]/95 px-2 pb-[calc(env(safe-area-inset-bottom)+8px)] pt-2 text-white shadow-[0_-12px_32px_rgba(0,0,0,0.35)]">
+    <div className="fixed bottom-0 left-0 right-0 z-30 border-t border-fg/8 bg-nav/95 px-2 pb-[calc(env(safe-area-inset-bottom)+8px)] pt-2 text-fg shadow-[0_-12px_32px_rgba(0,0,0,0.35)]">
       <div className="mx-auto flex w-full max-w-md lg:max-w-none items-stretch gap-1 lg:gap-2 lg:px-6">
         <TabItem
           to="/chat"
@@ -60,7 +60,7 @@ export function BottomNav({ onCreateClick }: { onCreateClick: () => void }) {
 
         <button
           onClick={handleCreateClick}
-          className="flex flex-1 h-12 items-center justify-center rounded-xl border border-white/15 bg-white/10 text-white shadow-[0_8px_20px_rgba(0,0,0,0.25)] transition hover:border-white/25 hover:bg-white/20"
+          className="flex flex-1 h-12 items-center justify-center rounded-xl border border-fg/15 bg-fg/10 text-fg shadow-[0_8px_20px_rgba(0,0,0,0.25)] transition hover:border-fg/25 hover:bg-fg/20"
           aria-label="Create"
         >
           <Plus size={20} />

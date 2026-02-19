@@ -206,9 +206,9 @@ function assembleStructure(
 // ---------- Role config ----------
 
 const ROLE_CONFIG = {
-  system: { accent: "bg-blue-400", text: "text-blue-300", badge: "bg-blue-500/15 text-blue-300" },
-  user: { accent: "bg-emerald-400", text: "text-emerald-300", badge: "bg-emerald-500/15 text-emerald-300" },
-  assistant: { accent: "bg-purple-400", text: "text-purple-300", badge: "bg-purple-500/15 text-purple-300" },
+  system: { accent: "bg-info", text: "text-info/80", badge: "bg-info/15 text-info/80" },
+  user: { accent: "bg-accent", text: "text-accent/80", badge: "bg-accent/15 text-accent/80" },
+  assistant: { accent: "bg-secondary", text: "text-secondary/80", badge: "bg-secondary/15 text-secondary/80" },
 } as const;
 
 // ---------- Sub-components ----------
@@ -227,14 +227,14 @@ function PromptEntryMessage({
   const isLong = message.content.length > 160;
 
   return (
-    <div className="flex gap-0 overflow-hidden rounded-lg border border-white/10 bg-white/[0.03]">
+    <div className="flex gap-0 overflow-hidden rounded-lg border border-fg/10 bg-fg/[0.03]">
       {/* Accent bar */}
       <div className={cn("w-1 shrink-0", role.accent)} />
 
       <div className="flex-1 min-w-0 px-3.5 py-2.5">
         {/* Header */}
         <div className="flex items-center gap-2">
-          <span className="text-[10px] font-mono text-white/20 w-4 shrink-0">{index + 1}</span>
+          <span className="text-[10px] font-mono text-fg/20 w-4 shrink-0">{index + 1}</span>
           <span
             className={cn(
               "px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider rounded",
@@ -243,9 +243,9 @@ function PromptEntryMessage({
           >
             {message.role}
           </span>
-          <span className="text-[13px] font-medium text-white/80 truncate">{message.label}</span>
+          <span className="text-[13px] font-medium text-fg/80 truncate">{message.label}</span>
           {message.injectionInfo && (
-            <span className="ml-auto text-[10px] text-white/25 font-mono shrink-0">
+            <span className="ml-auto text-[10px] text-fg/25 font-mono shrink-0">
               {message.injectionInfo}
             </span>
           )}
@@ -256,7 +256,7 @@ function PromptEntryMessage({
           <div className="flex-1 min-w-0">
             <pre
               className={cn(
-                "whitespace-pre-wrap text-xs leading-relaxed font-mono text-white/55",
+                "whitespace-pre-wrap text-xs leading-relaxed font-mono text-fg/55",
                 !expanded && isLong && "line-clamp-2",
               )}
             >
@@ -292,9 +292,9 @@ function PromptEntryMessage({
               onClick={() => onMenuOpen(message.entryId!)}
               className={cn(
                 "self-end p-1 rounded",
-                "text-white/20",
+                "text-fg/20",
                 interactive.transition.fast,
-                "hover:text-white/50 hover:bg-white/5",
+                "hover:text-fg/50 hover:bg-fg/5",
               )}
             >
               <MoreHorizontal className="h-4 w-4" />
@@ -311,9 +311,9 @@ function MockMessage({ message, index }: { message: PreviewMessage; index: numbe
 
   return (
     <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-md">
-      <span className="text-[10px] font-mono text-white/20 w-4 shrink-0">{index + 1}</span>
+      <span className="text-[10px] font-mono text-fg/20 w-4 shrink-0">{index + 1}</span>
       <div className={cn("w-1.5 h-1.5 rounded-full opacity-50", role.accent)} />
-      <span className="text-xs text-white/30 italic">{message.label}</span>
+      <span className="text-xs text-fg/30 italic">{message.label}</span>
     </div>
   );
 }
@@ -365,12 +365,12 @@ export function MessageStructurePreview({
     <div className="space-y-3">
       {/* Header */}
       <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-white/40">
+        <div className="flex items-center gap-2 text-fg/40">
           <MessageSquare className="h-3.5 w-3.5" />
           <span className="text-xs">What the LLM sees</span>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <label htmlFor="mock-pair-count" className="text-[11px] text-white/30">
+          <label htmlFor="mock-pair-count" className="text-[11px] text-fg/30">
             Turns
           </label>
           <input
@@ -386,8 +386,8 @@ export function MessageStructurePreview({
             className={cn(
               "w-12 h-6 text-center text-[11px] font-mono",
               radius.md,
-              "border border-white/10 bg-black/30 text-white",
-              "focus:border-white/20 focus:outline-none",
+              "border border-fg/10 bg-surface-el/30 text-fg",
+              "focus:border-fg/20 focus:outline-none",
             )}
           />
         </div>
@@ -397,9 +397,9 @@ export function MessageStructurePreview({
       <div className="space-y-1">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-10 text-center">
-            <MessageSquare className="h-6 w-6 text-white/15 mb-2" />
-            <p className="text-xs text-white/30">No messages</p>
-            <p className="text-[11px] text-white/20 mt-0.5">Add entries or increase turns</p>
+            <MessageSquare className="h-6 w-6 text-fg/15 mb-2" />
+            <p className="text-xs text-fg/30">No messages</p>
+            <p className="text-[11px] text-fg/20 mt-0.5">Add entries or increase turns</p>
           </div>
         ) : (
           messages.map((msg, i) =>
@@ -418,15 +418,15 @@ export function MessageStructurePreview({
       </div>
 
       {/* Summary */}
-      <div className="flex items-center gap-4 pt-2 border-t border-white/5 text-[11px] text-white/25">
+      <div className="flex items-center gap-4 pt-2 border-t border-fg/5 text-[11px] text-fg/25">
         <span>
-          <span className="font-mono text-white/40">{messages.length}</span> messages
+          <span className="font-mono text-fg/40">{messages.length}</span> messages
         </span>
         <span>
-          <span className="font-mono text-blue-300/40">{promptCount}</span> injected
+          <span className="font-mono text-info/40">{promptCount}</span> injected
         </span>
         <span>
-          <span className="font-mono text-white/30">{mockCount}</span> mock
+          <span className="font-mono text-fg/30">{mockCount}</span> mock
         </span>
       </div>
 
@@ -447,11 +447,11 @@ export function MessageStructurePreview({
               "w-full flex items-center gap-3 px-4 py-3 text-left",
               radius.md,
               interactive.transition.fast,
-              "hover:bg-white/5",
+              "hover:bg-fg/5",
             )}
           >
-            <Pencil className="h-4 w-4 text-white/50" />
-            <span className="text-sm text-white">Edit entry</span>
+            <Pencil className="h-4 w-4 text-fg/50" />
+            <span className="text-sm text-fg">Edit entry</span>
           </button>
 
           <button
@@ -464,11 +464,11 @@ export function MessageStructurePreview({
               "w-full flex items-center gap-3 px-4 py-3 text-left",
               radius.md,
               interactive.transition.fast,
-              "hover:bg-white/5",
+              "hover:bg-fg/5",
             )}
           >
-            <GripVertical className="h-4 w-4 text-white/50" />
-            <span className="text-sm text-white">Reorder</span>
+            <GripVertical className="h-4 w-4 text-fg/50" />
+            <span className="text-sm text-fg">Reorder</span>
           </button>
 
           <button
@@ -477,11 +477,11 @@ export function MessageStructurePreview({
               "w-full flex items-center gap-3 px-4 py-3 text-left",
               radius.md,
               interactive.transition.fast,
-              "hover:bg-red-500/10",
+              "hover:bg-danger/10",
             )}
           >
-            <Trash2 className="h-4 w-4 text-red-400" />
-            <span className="text-sm text-red-400">Delete</span>
+            <Trash2 className="h-4 w-4 text-danger" />
+            <span className="text-sm text-danger">Delete</span>
           </button>
         </div>
       </BottomMenu>

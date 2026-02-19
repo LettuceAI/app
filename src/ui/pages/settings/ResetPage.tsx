@@ -35,7 +35,7 @@ export function ResetPage() {
   };
 
   return (
-    <div className="px-0 pt-4 pb-4 text-gray-100" data-settings-scroll>
+    <div className="px-0 pt-4 pb-4 text-fg" data-settings-scroll>
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
@@ -48,7 +48,7 @@ export function ResetPage() {
           animate={{ scale: 1, opacity: 1 }}
           transition={{ delay: 0.1, duration: 0.3 }}
           className={cn(
-            "mx-auto mb-8 flex h-24 w-24 items-center justify-center border border-red-400/30 bg-red-400/10 text-red-300",
+            "mx-auto mb-8 flex h-24 w-24 items-center justify-center border border-danger/30 bg-danger/10 text-danger/80",
             radius.full,
             shadows.lg,
           )}
@@ -63,10 +63,10 @@ export function ResetPage() {
           transition={{ delay: 0.2 }}
           className="mb-10 space-y-3"
         >
-          <h2 className={cn(typography.display.size, typography.display.weight, "text-white")}>
+          <h2 className={cn(typography.display.size, typography.display.weight, "text-fg")}>
             Reset Everything
           </h2>
-          <p className={cn(typography.body.size, typography.body.lineHeight, "text-white/50")}>
+          <p className={cn(typography.body.size, typography.body.lineHeight, "text-fg/50")}>
             This will permanently delete all providers, models, characters, chat sessions, and
             preferences from this device.
           </p>
@@ -77,11 +77,11 @@ export function ResetPage() {
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
-          className={cn("mb-8 border border-red-400/30 bg-red-400/5 p-4", radius.lg)}
+          className={cn("mb-8 border border-danger/30 bg-danger/5 p-4", radius.lg)}
         >
           <div className="flex items-center justify-center gap-2">
-            <AlertTriangle size={16} className="text-red-300" strokeWidth={2.5} />
-            <p className={cn(typography.bodySmall.size, typography.h3.weight, "text-red-200")}>
+            <AlertTriangle size={16} className="text-danger/80" strokeWidth={2.5} />
+            <p className={cn(typography.bodySmall.size, typography.h3.weight, "text-danger/80")}>
               This action cannot be undone
             </p>
           </div>
@@ -102,10 +102,10 @@ export function ResetPage() {
               radius.md,
               typography.body.size,
               typography.h3.weight,
-              "border border-red-400/40 bg-red-400/20 text-red-100",
+              "border border-danger/40 bg-danger/20 text-danger/90",
               shadows.glow,
               interactive.transition.default,
-              "active:scale-[0.97] active:border-red-400/60 active:bg-red-400/30",
+              "active:scale-[0.97] active:border-danger/60 active:bg-danger/30",
               "disabled:cursor-not-allowed disabled:opacity-50",
             )}
           >
@@ -122,9 +122,9 @@ export function ResetPage() {
               "w-full px-6 py-3",
               radius.md,
               typography.body.size,
-              "border border-white/10 bg-white/5 text-white/60",
+              "border border-fg/10 bg-fg/5 text-fg/60",
               interactive.transition.default,
-              "active:scale-[0.97] active:bg-white/10",
+              "active:scale-[0.97] active:bg-fg/10",
               "disabled:cursor-not-allowed disabled:opacity-50",
             )}
           >
@@ -145,7 +145,7 @@ export function ResetPage() {
           >
             <motion.div
               className={cn(
-                "w-full max-w-md border border-white/10 bg-[#0b0b0d] p-6",
+                "w-full max-w-md border border-fg/10 bg-surface-el p-6",
                 "rounded-t-3xl sm:rounded-3xl",
                 shadows.xl,
               )}
@@ -159,16 +159,16 @@ export function ResetPage() {
               <div className="mb-6 text-center">
                 <div
                   className={cn(
-                    "mx-auto mb-4 flex h-16 w-16 items-center justify-center border border-red-400/40 bg-red-400/15 text-red-300",
+                    "mx-auto mb-4 flex h-16 w-16 items-center justify-center border border-danger/40 bg-danger/15 text-danger/80",
                     radius.full,
                   )}
                 >
                   <AlertTriangle size={28} strokeWidth={2.5} />
                 </div>
-                <h3 className={cn(typography.h2.size, typography.h2.weight, "mb-2 text-white")}>
+                <h3 className={cn(typography.h2.size, typography.h2.weight, "mb-2 text-fg")}>
                   Are You Sure?
                 </h3>
-                <p className={cn(typography.body.size, "text-white/50")}>
+                <p className={cn(typography.body.size, "text-fg/50")}>
                   All your data will be permanently deleted. The app will return to first-time
                   setup.
                 </p>
@@ -184,15 +184,15 @@ export function ResetPage() {
                     radius.md,
                     typography.body.size,
                     typography.h3.weight,
-                    "border border-red-400/40 bg-red-400/20 text-red-100",
+                    "border border-danger/40 bg-danger/20 text-danger/90",
                     interactive.transition.fast,
-                    "active:scale-[0.97] active:bg-red-400/30",
+                    "active:scale-[0.97] active:bg-danger/30",
                     "disabled:cursor-not-allowed disabled:opacity-50",
                   )}
                 >
                   {isResetting ? (
                     <div className="flex items-center justify-center gap-2">
-                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-red-100/30 border-t-red-100" />
+                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-danger/30 border-t-danger/90" />
                       <span>Resetting...</span>
                     </div>
                   ) : (
@@ -206,9 +206,9 @@ export function ResetPage() {
                     "w-full px-6 py-3",
                     radius.md,
                     typography.body.size,
-                    "text-white/60",
+                    "text-fg/60",
                     interactive.transition.fast,
-                    "active:scale-[0.97] active:text-white",
+                    "active:scale-[0.97] active:text-fg",
                     "disabled:cursor-not-allowed disabled:opacity-50",
                   )}
                 >

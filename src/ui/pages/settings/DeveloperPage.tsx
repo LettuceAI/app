@@ -177,7 +177,7 @@ export function DeveloperPage() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#050505]">
+    <div className="flex min-h-screen flex-col bg-surface">
       {/* Content */}
       <main className={cn("flex-1 overflow-auto px-4 py-6")}>
         {/* Status Messages */}
@@ -186,9 +186,9 @@ export function DeveloperPage() {
             className={cn(
               "mb-4 px-4 py-3",
               radius.md,
-              "border border-emerald-400/30 bg-emerald-400/10",
+              "border border-accent/30 bg-accent/10",
               typography.body.size,
-              "text-emerald-200",
+              "text-accent/80",
             )}
           >
             {status}
@@ -200,9 +200,9 @@ export function DeveloperPage() {
             className={cn(
               "mb-4 px-4 py-3",
               radius.md,
-              "border border-red-400/30 bg-red-400/10",
+              "border border-danger/30 bg-danger/10",
               typography.body.size,
-              "text-red-200",
+              "text-danger/80",
             )}
           >
             {error}
@@ -211,7 +211,7 @@ export function DeveloperPage() {
 
         {/* Test Data Generators */}
         <section className="space-y-3">
-          <h2 className={cn(typography.h2.size, typography.h2.weight, "text-white mb-3")}>
+          <h2 className={cn(typography.h2.size, typography.h2.weight, "text-fg mb-3")}>
             Test Data Generators
           </h2>
 
@@ -247,7 +247,7 @@ export function DeveloperPage() {
 
         {/* Debug Info */}
         <section className={cn("mt-8 space-y-3")}>
-          <h2 className={cn(typography.h2.size, typography.h2.weight, "text-white mb-3")}>
+          <h2 className={cn(typography.h2.size, typography.h2.weight, "text-fg mb-3")}>
             Storage Maintenance
           </h2>
           <ActionButton
@@ -265,7 +265,7 @@ export function DeveloperPage() {
             variant="danger"
           />
 
-          <h2 className={cn(typography.h2.size, typography.h2.weight, "text-white mb-3 mt-6")}>
+          <h2 className={cn(typography.h2.size, typography.h2.weight, "text-fg mb-3 mt-6")}>
             Usage Tracking
           </h2>
           <ActionButton
@@ -276,7 +276,7 @@ export function DeveloperPage() {
             variant="primary"
           />
 
-          <h2 className={cn(typography.h2.size, typography.h2.weight, "text-white mb-3 mt-6")}>
+          <h2 className={cn(typography.h2.size, typography.h2.weight, "text-fg mb-3 mt-6")}>
             Environment Info
           </h2>
 
@@ -307,15 +307,15 @@ function ActionButton({
   variant = "default",
 }: ActionButtonProps) {
   const variants = {
-    default: "border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/[0.08]",
-    primary: "border-blue-400/30 bg-blue-400/10 hover:border-blue-400/50 hover:bg-blue-400/20",
-    danger: "border-red-400/30 bg-red-400/10 hover:border-red-400/50 hover:bg-red-400/20",
+    default: "border-fg/10 bg-fg/5 hover:border-fg/20 hover:bg-fg/[0.08]",
+    primary: "border-info/30 bg-info/10 hover:border-info/50 hover:bg-info/20",
+    danger: "border-danger/30 bg-danger/10 hover:border-danger/50 hover:bg-danger/20",
   };
 
   const iconVariants = {
-    default: "border-white/10 bg-white/10 text-white/70",
-    primary: "border-blue-400/30 bg-blue-400/20 text-blue-200",
-    danger: "border-red-400/30 bg-red-400/20 text-red-200",
+    default: "border-fg/10 bg-fg/10 text-fg/70",
+    primary: "border-info/30 bg-info/20 text-info",
+    danger: "border-danger/30 bg-danger/20 text-danger/80",
   };
 
   return (
@@ -345,11 +345,11 @@ function ActionButton({
         </div>
         <div className="min-w-0 flex-1">
           <div
-            className={cn("truncate", typography.body.size, typography.body.weight, "text-white")}
+            className={cn("truncate", typography.body.size, typography.body.weight, "text-fg")}
           >
             {title}
           </div>
-          <div className={cn("mt-0.5 line-clamp-1", typography.caption.size, "text-white/45")}>
+          <div className={cn("mt-0.5 line-clamp-1", typography.caption.size, "text-fg/45")}>
             {description}
           </div>
         </div>
@@ -365,9 +365,9 @@ interface InfoCardProps {
 
 function InfoCard({ title, value }: InfoCardProps) {
   return (
-    <div className={cn("px-4 py-3", radius.md, "border border-white/10 bg-white/5")}>
-      <div className={cn(typography.caption.size, "text-white/50 mb-1")}>{title}</div>
-      <div className={cn(typography.body.size, "text-white font-mono")}>{value}</div>
+    <div className={cn("px-4 py-3", radius.md, "border border-fg/10 bg-fg/5")}>
+      <div className={cn(typography.caption.size, "text-fg/50 mb-1")}>{title}</div>
+      <div className={cn(typography.body.size, "text-fg font-mono")}>{value}</div>
     </div>
   );
 }

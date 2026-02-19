@@ -104,14 +104,14 @@ export function ProvidersPage() {
 
   const EmptyState = ({ onCreate }: { onCreate: () => void }) => (
     <div className="flex h-64 flex-col items-center justify-center">
-      <EthernetPort className="mb-3 h-12 w-12 text-white/20" />
-      <h3 className="mb-1 text-lg font-medium text-white">No Providers yet</h3>
-      <p className="mb-4 text-center text-sm text-white/50">
+      <EthernetPort className="mb-3 h-12 w-12 text-fg/20" />
+      <h3 className="mb-1 text-lg font-medium text-fg">No Providers yet</h3>
+      <p className="mb-4 text-center text-sm text-fg/50">
         Add and manage API providers for AI models
       </p>
       <button
         onClick={onCreate}
-        className="rounded-full border border-emerald-400/40 bg-emerald-400/20 px-6 py-2 text-sm font-medium text-emerald-100 transition hover:bg-emerald-400/30 active:scale-[0.99]"
+        className="rounded-full border border-accent/40 bg-accent/20 px-6 py-2 text-sm font-medium text-accent/90 transition hover:bg-accent/30 active:scale-[0.99]"
       >
         Add Provider
       </button>
@@ -138,17 +138,17 @@ export function ProvidersPage() {
                 <button
                   key={provider.id}
                   onClick={() => setSelectedProvider(provider)}
-                  className="group w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-left transition hover:border-white/20 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/20 active:scale-[0.99]"
+                  className="group w-full rounded-xl border border-fg/10 bg-fg/5 px-4 py-3 text-left transition hover:border-fg/20 hover:bg-fg/10 focus:outline-none focus:ring-2 focus:ring-fg/20 active:scale-[0.99]"
                 >
                   <div className="flex items-center gap-3">
                     {getProviderIcon(cap?.id ?? "custom")}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="truncate text-sm font-medium text-white">
+                        <span className="truncate text-sm font-medium text-fg">
                           {provider.label || cap?.name}
                         </span>
                       </div>
-                      <div className="mt-0.5 flex items-center gap-1 text-[11px] text-white/50">
+                      <div className="mt-0.5 flex items-center gap-1 text-[11px] text-fg/50">
                         <span className="truncate">{cap?.name}</span>
                         {provider.baseUrl && (
                           <>
@@ -160,7 +160,7 @@ export function ProvidersPage() {
                         )}
                       </div>
                     </div>
-                    <ChevronRight className="h-4 w-4 text-white/30 group-hover:text-white/60 transition" />
+                    <ChevronRight className="h-4 w-4 text-fg/30 group-hover:text-fg/60 transition" />
                   </div>
                 </button>
               );
@@ -188,12 +188,12 @@ export function ProvidersPage() {
           >
             {selectedProvider && (
               <div className="space-y-4">
-                <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2">
-                  <p className="truncate text-sm font-medium text-white">
+                <div className="rounded-lg border border-fg/10 bg-fg/5 px-3 py-2">
+                  <p className="truncate text-sm font-medium text-fg">
                     {selectedProvider.label ||
                       capabilities.find((p) => p.id === selectedProvider.providerId)?.name}
                   </p>
-                  <p className="mt-0.5 truncate text-[11px] text-white/50">
+                  <p className="mt-0.5 truncate text-[11px] text-fg/50">
                     {capabilities.find((p) => p.id === selectedProvider.providerId)?.name}
                   </p>
                 </div>
@@ -206,7 +206,7 @@ export function ProvidersPage() {
                       setSelectedProvider(null);
                       navigate(Routes.engineHome(selectedProvider.id));
                     }}
-                    color="from-emerald-500 to-teal-600"
+                    color="from-accent to-accent/80"
                   />
                 ) : (
                   <MenuButton
@@ -214,7 +214,7 @@ export function ProvidersPage() {
                     title="Edit"
                     description="Change provider settings"
                     onClick={() => openEditor(selectedProvider)}
-                    color="from-indigo-500 to-blue-600"
+                    color="from-info to-info/80"
                   />
                 )}
                 <MenuButton
@@ -223,7 +223,7 @@ export function ProvidersPage() {
                   description="Remove this provider"
                   onClick={() => void handleDeleteProvider(selectedProvider.id)}
                   disabled={isDeleting}
-                  color="from-rose-500 to-red-600"
+                  color="from-danger to-danger/80"
                 />
               </div>
             )}
@@ -237,7 +237,7 @@ export function ProvidersPage() {
             {editorProvider && (
               <div className="space-y-4 pb-2">
                 <div>
-                  <label className="mb-1 block text-[11px] font-medium text-white/70">
+                  <label className="mb-1 block text-[11px] font-medium text-fg/70">
                     Provider Type
                   </label>
                   <select
@@ -291,28 +291,28 @@ export function ProvidersPage() {
                       });
                       setValidationError(null);
                     }}
-                    className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white focus:border-white/30 focus:outline-none"
+                    className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fgfocus:border-fg/30 focus:outline-none"
                   >
                     {visibleCapabilities.map((p) => (
-                      <option key={p.id} value={p.id} className="bg-black">
+                      <option key={p.id} value={p.id} className="bg-surface-el">
                         {p.name}
                       </option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label className="mb-1 block text-[11px] font-medium text-white/70">Label</label>
+                  <label className="mb-1 block text-[11px] font-medium text-fg/70">Label</label>
                   <input
                     type="text"
                     value={editorProvider.label}
                     onChange={(e) => updateEditorProvider({ label: e.target.value })}
                     placeholder={`My ${visibleCapabilities.find((p) => p.id === editorProvider.providerId)?.name || "Provider"}`}
-                    className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder-white/40 focus:border-white/30 focus:outline-none"
+                    className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fgplaceholder-fg/40 focus:border-fg/30 focus:outline-none"
                   />
                 </div>
                 {showApiKeyInput && (
                   <div>
-                    <label className="mb-1 block text-[11px] font-medium text-white/70">
+                    <label className="mb-1 block text-[11px] font-medium text-fg/70">
                       API Key
                     </label>
                     <input
@@ -323,13 +323,13 @@ export function ProvidersPage() {
                         if (validationError) setValidationError(null);
                       }}
                       placeholder="Enter your API key"
-                      className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder-white/40 focus:border-white/30 focus:outline-none"
+                      className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fgplaceholder-fg/40 focus:border-fg/30 focus:outline-none"
                     />
                   </div>
                 )}
                 {showBaseUrl && (
                   <div>
-                    <label className="mb-1 block text-[11px] font-medium text-white/70">
+                    <label className="mb-1 block text-[11px] font-medium text-fg/70">
                       Base URL
                     </label>
                     <input
@@ -346,13 +346,13 @@ export function ProvidersPage() {
                             ? "http://localhost:11434"
                             : "https://api.provider.com"
                       }
-                      className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder-white/40 focus:border-white/30 focus:outline-none"
+                      className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fgplaceholder-fg/40 focus:border-fg/30 focus:outline-none"
                     />
                   </div>
                 )}
                 {isEngineProvider && (
                   <div>
-                    <label className="mb-1 block text-[11px] font-medium text-white/70">
+                    <label className="mb-1 block text-[11px] font-medium text-fg/70">
                       API Key (optional)
                     </label>
                     <input
@@ -363,14 +363,14 @@ export function ProvidersPage() {
                         if (validationError) setValidationError(null);
                       }}
                       placeholder="Bearer token for auth"
-                      className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder-white/40 focus:border-white/30 focus:outline-none"
+                      className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fgplaceholder-fg/40 focus:border-fg/30 focus:outline-none"
                     />
                   </div>
                 )}
                 {isCustomProvider && (
                   <>
                     <div>
-                      <label className="mb-1 block text-[11px] font-medium text-white/70">
+                      <label className="mb-1 block text-[11px] font-medium text-fg/70">
                         Chat Endpoint
                       </label>
                       <input
@@ -382,14 +382,14 @@ export function ProvidersPage() {
                           })
                         }
                         placeholder="/v1/chat/completions"
-                        className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder-white/40 focus:border-white/30 focus:outline-none"
+                        className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fgplaceholder-fg/40 focus:border-fg/30 focus:outline-none"
                       />
                     </div>
-                    <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
+                    <div className="rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2">
                       <div className="flex items-center justify-between gap-3">
                         <div className="min-w-0">
-                          <p className="text-sm font-medium text-white/80">Fetch Models</p>
-                          <p className="text-[11px] text-white/45">
+                          <p className="text-sm font-medium text-fg/80">Fetch Models</p>
+                          <p className="text-[11px] text-fg/45">
                             Enable model discovery for this custom endpoint
                           </p>
                         </div>
@@ -411,11 +411,11 @@ export function ProvidersPage() {
                           <label
                             htmlFor="fetchModelsEnabled"
                             className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-all duration-200 ease-in-out ${
-                              customFetchModelsEnabled ? "bg-emerald-500" : "bg-white/20"
+                              customFetchModelsEnabled ? "bg-accent" : "bg-fg/20"
                             }`}
                           >
                             <span
-                              className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                              className={`inline-block h-5 w-5 transform rounded-full bg-fg shadow ring-0 transition duration-200 ease-in-out ${
                                 customFetchModelsEnabled ? "translate-x-5" : "translate-x-0"
                               }`}
                             />
@@ -424,7 +424,7 @@ export function ProvidersPage() {
                       </div>
                     </div>
                     <div>
-                      <label className="mb-1 block text-[11px] font-medium text-white/70">
+                      <label className="mb-1 block text-[11px] font-medium text-fg/70">
                         Auth Mode
                       </label>
                       <select
@@ -437,25 +437,25 @@ export function ProvidersPage() {
                             },
                           })
                         }
-                        className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white focus:border-white/30 focus:outline-none"
+                        className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fgfocus:border-fg/30 focus:outline-none"
                       >
-                        <option value="bearer" className="bg-black">
+                        <option value="bearer" className="bg-surface-el">
                           Bearer Token
                         </option>
-                        <option value="header" className="bg-black">
+                        <option value="header" className="bg-surface-el">
                           API Key Header
                         </option>
-                        <option value="query" className="bg-black">
+                        <option value="query" className="bg-surface-el">
                           Query Param
                         </option>
-                        <option value="none" className="bg-black">
+                        <option value="none" className="bg-surface-el">
                           None
                         </option>
                       </select>
                     </div>
                     {editorProvider.providerId === "custom" && (
                       <div>
-                        <label className="mb-1 block text-[11px] font-medium text-white/70">
+                        <label className="mb-1 block text-[11px] font-medium text-fg/70">
                           Tool Choice Mode
                         </label>
                         <select
@@ -468,21 +468,21 @@ export function ProvidersPage() {
                               },
                             })
                           }
-                          className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white focus:border-white/30 focus:outline-none"
+                          className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fgfocus:border-fg/30 focus:outline-none"
                         >
-                          <option value="auto" className="bg-black">
+                          <option value="auto" className="bg-surface-el">
                             Auto
                           </option>
-                          <option value="required" className="bg-black">
+                          <option value="required" className="bg-surface-el">
                             Required
                           </option>
-                          <option value="none" className="bg-black">
+                          <option value="none" className="bg-surface-el">
                             None
                           </option>
-                          <option value="omit" className="bg-black">
+                          <option value="omit" className="bg-surface-el">
                             Omit Field
                           </option>
-                          <option value="passthrough" className="bg-black">
+                          <option value="passthrough" className="bg-surface-el">
                             Passthrough (Tool Config)
                           </option>
                         </select>
@@ -490,7 +490,7 @@ export function ProvidersPage() {
                     )}
                     {customAuthMode === "header" && (
                       <div>
-                        <label className="mb-1 block text-[11px] font-medium text-white/70">
+                        <label className="mb-1 block text-[11px] font-medium text-fg/70">
                           Auth Header Name
                         </label>
                         <input
@@ -502,13 +502,13 @@ export function ProvidersPage() {
                             })
                           }
                           placeholder="x-api-key"
-                          className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder-white/40 focus:border-white/30 focus:outline-none"
+                          className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fgplaceholder-fg/40 focus:border-fg/30 focus:outline-none"
                         />
                       </div>
                     )}
                     {customAuthMode === "query" && (
                       <div>
-                        <label className="mb-1 block text-[11px] font-medium text-white/70">
+                        <label className="mb-1 block text-[11px] font-medium text-fg/70">
                           Auth Query Param Name
                         </label>
                         <input
@@ -523,14 +523,14 @@ export function ProvidersPage() {
                             })
                           }
                           placeholder="api_key"
-                          className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder-white/40 focus:border-white/30 focus:outline-none"
+                          className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fgplaceholder-fg/40 focus:border-fg/30 focus:outline-none"
                         />
                       </div>
                     )}
                     {customFetchModelsEnabled && (
                       <>
                         <div>
-                          <label className="mb-1 block text-[11px] font-medium text-white/70">
+                          <label className="mb-1 block text-[11px] font-medium text-fg/70">
                             Models Endpoint
                           </label>
                           <input
@@ -545,12 +545,12 @@ export function ProvidersPage() {
                               })
                             }
                             placeholder="/v1/models"
-                            className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder-white/40 focus:border-white/30 focus:outline-none"
+                            className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fgplaceholder-fg/40 focus:border-fg/30 focus:outline-none"
                           />
                         </div>
                         <div className="grid grid-cols-2 gap-3">
                           <div>
-                            <label className="mb-1 block text-[11px] font-medium text-white/70">
+                            <label className="mb-1 block text-[11px] font-medium text-fg/70">
                               List Path
                             </label>
                             <input
@@ -565,11 +565,11 @@ export function ProvidersPage() {
                                 })
                               }
                               placeholder="data"
-                              className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder-white/40 focus:border-white/30 focus:outline-none"
+                              className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fgplaceholder-fg/40 focus:border-fg/30 focus:outline-none"
                             />
                           </div>
                           <div>
-                            <label className="mb-1 block text-[11px] font-medium text-white/70">
+                            <label className="mb-1 block text-[11px] font-medium text-fg/70">
                               Model ID Path
                             </label>
                             <input
@@ -584,13 +584,13 @@ export function ProvidersPage() {
                                 })
                               }
                               placeholder="id"
-                              className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder-white/40 focus:border-white/30 focus:outline-none"
+                              className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fgplaceholder-fg/40 focus:border-fg/30 focus:outline-none"
                             />
                           </div>
                         </div>
                         <div className="grid grid-cols-2 gap-3">
                           <div>
-                            <label className="mb-1 block text-[11px] font-medium text-white/70">
+                            <label className="mb-1 block text-[11px] font-medium text-fg/70">
                               Display Name Path
                             </label>
                             <input
@@ -605,11 +605,11 @@ export function ProvidersPage() {
                                 })
                               }
                               placeholder="name"
-                              className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder-white/40 focus:border-white/30 focus:outline-none"
+                              className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fgplaceholder-fg/40 focus:border-fg/30 focus:outline-none"
                             />
                           </div>
                           <div>
-                            <label className="mb-1 block text-[11px] font-medium text-white/70">
+                            <label className="mb-1 block text-[11px] font-medium text-fg/70">
                               Description Path
                             </label>
                             <input
@@ -624,12 +624,12 @@ export function ProvidersPage() {
                                 })
                               }
                               placeholder="description"
-                              className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder-white/40 focus:border-white/30 focus:outline-none"
+                              className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fgplaceholder-fg/40 focus:border-fg/30 focus:outline-none"
                             />
                           </div>
                         </div>
                         <div>
-                          <label className="mb-1 block text-[11px] font-medium text-white/70">
+                          <label className="mb-1 block text-[11px] font-medium text-fg/70">
                             Context Length Path (Optional)
                           </label>
                           <input
@@ -644,13 +644,13 @@ export function ProvidersPage() {
                               })
                             }
                             placeholder="context_length"
-                            className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder-white/40 focus:border-white/30 focus:outline-none"
+                            className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fgplaceholder-fg/40 focus:border-fg/30 focus:outline-none"
                           />
                         </div>
                       </>
                     )}
                     <div>
-                      <label className="mb-1 block text-[11px] font-medium text-white/70">
+                      <label className="mb-1 block text-[11px] font-medium text-fg/70">
                         System Role
                       </label>
                       <input
@@ -662,12 +662,12 @@ export function ProvidersPage() {
                           })
                         }
                         placeholder="system"
-                        className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder-white/40 focus:border-white/30 focus:outline-none"
+                        className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fgplaceholder-fg/40 focus:border-fg/30 focus:outline-none"
                       />
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="mb-1 block text-[11px] font-medium text-white/70">
+                        <label className="mb-1 block text-[11px] font-medium text-fg/70">
                           User Role
                         </label>
                         <input
@@ -679,11 +679,11 @@ export function ProvidersPage() {
                             })
                           }
                           placeholder="user"
-                          className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder-white/40 focus:border-white/30 focus:outline-none"
+                          className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fgplaceholder-fg/40 focus:border-fg/30 focus:outline-none"
                         />
                       </div>
                       <div>
-                        <label className="mb-1 block text-[11px] font-medium text-white/70">
+                        <label className="mb-1 block text-[11px] font-medium text-fg/70">
                           Assistant Role
                         </label>
                         <input
@@ -695,12 +695,12 @@ export function ProvidersPage() {
                             })
                           }
                           placeholder="assistant"
-                          className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder-white/40 focus:border-white/30 focus:outline-none"
+                          className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fgplaceholder-fg/40 focus:border-fg/30 focus:outline-none"
                         />
                       </div>
                     </div>
                     <div className="flex items-center justify-between pt-1">
-                      <span className="text-sm font-medium text-white/70">
+                      <span className="text-sm font-medium text-fg/70">
                         Supports Streaming (SSE/Delta)
                       </span>
                       <div className="flex items-center">
@@ -722,12 +722,12 @@ export function ProvidersPage() {
                           htmlFor="supportsStream"
                           className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-all duration-200 ease-in-out ${
                             (editorProvider.config?.supportsStream ?? true)
-                              ? "bg-emerald-500"
-                              : "bg-white/20"
+                              ? "bg-accent"
+                              : "bg-fg/20"
                           }`}
                         >
                           <span
-                            className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                            className={`inline-block h-5 w-5 transform rounded-full bg-fg shadow ring-0 transition duration-200 ease-in-out ${
                               (editorProvider.config?.supportsStream ?? true)
                                 ? "translate-x-5"
                                 : "translate-x-0"
@@ -737,7 +737,7 @@ export function ProvidersPage() {
                       </div>
                     </div>
                     <div className="flex items-center justify-between pt-1">
-                      <span className="text-sm font-medium text-white/70">
+                      <span className="text-sm font-medium text-fg/70">
                         Merge Same-role Messages
                       </span>
                       <div className="flex items-center">
@@ -759,12 +759,12 @@ export function ProvidersPage() {
                           htmlFor="mergeSameRoleMessages"
                           className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-all duration-200 ease-in-out ${
                             (editorProvider.config?.mergeSameRoleMessages ?? true)
-                              ? "bg-emerald-500"
-                              : "bg-white/20"
+                              ? "bg-accent"
+                              : "bg-fg/20"
                           }`}
                         >
                           <span
-                            className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                            className={`inline-block h-5 w-5 transform rounded-full bg-fg shadow ring-0 transition duration-200 ease-in-out ${
                               (editorProvider.config?.mergeSameRoleMessages ?? true)
                                 ? "translate-x-5"
                                 : "translate-x-0"
@@ -776,19 +776,19 @@ export function ProvidersPage() {
                   </>
                 )}
                 {validationError && (
-                  <p className="text-xs font-medium text-rose-300">{validationError}</p>
+                  <p className="text-xs font-medium text-danger/80">{validationError}</p>
                 )}
                 <div className="flex gap-3 pt-1">
                   <button
                     onClick={closeEditor}
-                    className="flex-1 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-white/70 transition hover:border-white/20 hover:bg-white/10 hover:text-white"
+                    className="flex-1 rounded-lg border border-fg/10 bg-fg/5 px-4 py-2 text-sm font-medium text-fg/70 transition hover:border-fg/20 hover:bg-fg/10 hover:text-fg"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={() => void handleSaveProvider()}
                     disabled={isSaving || !editorProvider.label}
-                    className="flex-1 rounded-lg border border-emerald-400/40 bg-emerald-500/20 px-4 py-2 text-sm font-semibold text-emerald-100 transition hover:border-emerald-400/60 hover:bg-emerald-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="flex-1 rounded-lg border border-accent/40 bg-accent/20 px-4 py-2 text-sm font-semibold text-accent/90 transition hover:border-accent/60 hover:bg-accent/30 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {isSaving ? "Saving..." : "Save"}
                   </button>
@@ -810,12 +810,12 @@ export function ProvidersPage() {
             {engineSetupResult.needsSetup ? (
               <>
                 <div className="flex flex-col items-center gap-3 py-4">
-                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-emerald-400/30 bg-emerald-500/15">
-                    <Sparkles className="h-7 w-7 text-emerald-300" />
+                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-accent/30 bg-accent/15">
+                    <Sparkles className="h-7 w-7 text-accent/80" />
                   </div>
                   <div className="text-center">
-                    <h3 className="text-base font-semibold text-white">New Engine Detected</h3>
-                    <p className="mt-1 text-sm text-white/60">
+                    <h3 className="text-base font-semibold text-fg">New Engine Detected</h3>
+                    <p className="mt-1 text-sm text-fg/60">
                       Let's configure your AI character engine. This will take about 2 minutes.
                     </p>
                   </div>
@@ -825,7 +825,7 @@ export function ProvidersPage() {
                     dismissEngineSetup();
                     navigate(Routes.engineSetup(engineSetupResult.credentialId));
                   }}
-                  className="w-full rounded-lg border border-emerald-400/40 bg-emerald-500/20 px-4 py-3 text-sm font-semibold text-emerald-100 transition hover:border-emerald-400/60 hover:bg-emerald-500/30"
+                  className="w-full rounded-lg border border-accent/40 bg-accent/20 px-4 py-3 text-sm font-semibold text-accent/90 transition hover:border-accent/60 hover:bg-accent/30"
                 >
                   Start Setup
                 </button>
@@ -833,12 +833,12 @@ export function ProvidersPage() {
             ) : (
               <>
                 <div className="flex flex-col items-center gap-3 py-4">
-                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-emerald-400/30 bg-emerald-500/15">
-                    <Leaf className="h-7 w-7 text-emerald-300" />
+                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-accent/30 bg-accent/15">
+                    <Leaf className="h-7 w-7 text-accent/80" />
                   </div>
                   <div className="text-center">
-                    <h3 className="text-base font-semibold text-white">Engine Connected</h3>
-                    <p className="mt-1 text-sm text-white/60">
+                    <h3 className="text-base font-semibold text-fg">Engine Connected</h3>
+                    <p className="mt-1 text-sm text-fg/60">
                       Your Engine is ready. View your characters and usage dashboard.
                     </p>
                   </div>
@@ -848,7 +848,7 @@ export function ProvidersPage() {
                     dismissEngineSetup();
                     navigate(Routes.engineHome(engineSetupResult.credentialId));
                   }}
-                  className="w-full rounded-lg border border-emerald-400/40 bg-emerald-500/20 px-4 py-3 text-sm font-semibold text-emerald-100 transition hover:border-emerald-400/60 hover:bg-emerald-500/30"
+                  className="w-full rounded-lg border border-accent/40 bg-accent/20 px-4 py-3 text-sm font-semibold text-accent/90 transition hover:border-accent/60 hover:bg-accent/30"
                 >
                   Open Dashboard
                 </button>
@@ -856,7 +856,7 @@ export function ProvidersPage() {
             )}
             <button
               onClick={dismissEngineSetup}
-              className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-medium text-white/70 transition hover:border-white/20 hover:bg-white/10 hover:text-white"
+              className="w-full rounded-lg border border-fg/10 bg-fg/5 px-4 py-2.5 text-sm font-medium text-fg/70 transition hover:border-fg/20 hover:bg-fg/10 hover:text-fg"
             >
               Dismiss
             </button>
@@ -892,8 +892,8 @@ export function ProvidersPage() {
                 "px-3 py-2.5 text-sm font-semibold transition flex items-center justify-center gap-2",
                 interactive.active.scale,
                 activeTab === id
-                  ? "bg-white/10 text-white"
-                  : cn(colors.text.tertiary, "hover:text-white"),
+                  ? "bg-fg/10 text-fg"
+                  : cn(colors.text.tertiary, "hover:text-fg"),
               )}
             >
               <Icon size={16} />

@@ -213,7 +213,7 @@ export function VoicesPage() {
   if (isLoading) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-white/40" />
+        <Loader2 className="h-8 w-8 animate-spin text-fg/40" />
       </div>
     );
   }
@@ -223,12 +223,12 @@ export function VoicesPage() {
       {/* Audio Providers Section */}
       <section>
         <div className="mb-2 flex items-center justify-between px-1">
-          <h2 className="text-xs font-medium uppercase tracking-wider text-white/40">
+          <h2 className="text-xs font-medium uppercase tracking-wider text-fg/40">
             Audio Providers
           </h2>
           <button
             onClick={handleCreateProvider}
-            className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs text-white/70 transition hover:border-white/20 hover:bg-white/10"
+            className="flex items-center gap-1 rounded-lg border border-fg/10 bg-fg/5 px-2 py-1 text-xs text-fg/70 transition hover:border-fg/20 hover:bg-fg/10"
           >
             <Plus className="h-3 w-3" />
             Add
@@ -236,10 +236,10 @@ export function VoicesPage() {
         </div>
 
         {providers.length === 0 ? (
-          <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-white/10 py-8">
-            <Mic className="mb-2 h-8 w-8 text-white/20" />
-            <p className="text-sm text-white/50">No audio providers configured</p>
-            <p className="text-xs text-white/30">Add Gemini TTS or ElevenLabs to get started</p>
+          <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-fg/10 py-8">
+            <Mic className="mb-2 h-8 w-8 text-fg/20" />
+            <p className="text-sm text-fg/50">No audio providers configured</p>
+            <p className="text-xs text-fg/30">Add Gemini TTS or ElevenLabs to get started</p>
           </div>
         ) : (
           <div className="space-y-2">
@@ -247,10 +247,10 @@ export function VoicesPage() {
               <button
                 key={provider.id}
                 onClick={() => setSelectedProvider(provider)}
-                className="group w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-left transition hover:border-white/20 hover:bg-white/10"
+                className="group w-full rounded-xl border border-fg/10 bg-fg/5 px-4 py-3 text-left transition hover:border-fg/20 hover:bg-fg/10"
               >
                 <div className="flex items-center gap-3">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/10">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full border border-fg/10 bg-fg/10">
                     {provider.providerType === "gemini_tts" ? (
                       <span className="text-xs">G</span>
                     ) : provider.providerType === "device_tts" ? (
@@ -260,8 +260,8 @@ export function VoicesPage() {
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="truncate text-sm font-medium text-white">{provider.label}</p>
-                    <p className="text-xs text-white/50">
+                    <p className="truncate text-sm font-medium text-fg">{provider.label}</p>
+                    <p className="text-xs text-fg/50">
                       {provider.providerType === "gemini_tts"
                         ? "Gemini TTS"
                         : provider.providerType === "device_tts"
@@ -269,7 +269,7 @@ export function VoicesPage() {
                           : "ElevenLabs"}
                     </p>
                   </div>
-                  <ChevronRight className="h-4 w-4 text-white/30 group-hover:text-white/60" />
+                  <ChevronRight className="h-4 w-4 text-fg/30 group-hover:text-fg/60" />
                 </div>
               </button>
             ))}
@@ -280,11 +280,11 @@ export function VoicesPage() {
       {/* My Voices Section (Voice Designer + Custom Provider Voices) */}
       <section>
         <div className="mb-2 flex items-center justify-between px-1">
-          <h2 className="text-xs font-medium uppercase tracking-wider text-white/40">My Voices</h2>
+          <h2 className="text-xs font-medium uppercase tracking-wider text-fg/40">My Voices</h2>
           {editableProviders.length > 0 && (
             <button
               onClick={handleCreateVoice}
-              className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs text-white/70 transition hover:border-white/20 hover:bg-white/10"
+              className="flex items-center gap-1 rounded-lg border border-fg/10 bg-fg/5 px-2 py-1 text-xs text-fg/70 transition hover:border-fg/20 hover:bg-fg/10"
             >
               <Plus className="h-3 w-3" />
               Create
@@ -293,10 +293,10 @@ export function VoicesPage() {
         </div>
 
         {userVoices.length === 0 && customProviderVoices.length === 0 ? (
-          <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-white/10 py-8">
-            <Volume2 className="mb-2 h-8 w-8 text-white/20" />
-            <p className="text-sm text-white/50">No voices created yet</p>
-            <p className="text-xs text-white/30">
+          <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-fg/10 py-8">
+            <Volume2 className="mb-2 h-8 w-8 text-fg/20" />
+            <p className="text-sm text-fg/50">No voices created yet</p>
+            <p className="text-xs text-fg/30">
               {editableProviders.length > 0
                 ? "Create voices with custom prompts for your characters"
                 : "Add an audio provider first"}
@@ -311,20 +311,20 @@ export function VoicesPage() {
                 <button
                   key={voice.id}
                   onClick={() => setSelectedVoice(voice)}
-                  className="group w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-left transition hover:border-white/20 hover:bg-white/10"
+                  className="group w-full rounded-xl border border-fg/10 bg-fg/5 px-4 py-3 text-left transition hover:border-fg/20 hover:bg-fg/10"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-full border border-emerald-400/30 bg-emerald-400/10">
-                      <Volume2 className="h-4 w-4 text-emerald-400" />
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full border border-accent/30 bg-accent/10">
+                      <Volume2 className="h-4 w-4 text-accent" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="truncate text-sm font-medium text-white">{voice.name}</p>
-                      <p className="truncate text-xs text-white/50">
+                      <p className="truncate text-sm font-medium text-fg">{voice.name}</p>
+                      <p className="truncate text-xs text-fg/50">
                         {provider?.label} •{" "}
                         {voice.prompt ? `"${voice.prompt.slice(0, 30)}..."` : "No prompt"}
                       </p>
                     </div>
-                    <ChevronRight className="h-4 w-4 text-white/30 group-hover:text-white/60" />
+                    <ChevronRight className="h-4 w-4 text-fg/30 group-hover:text-fg/60" />
                   </div>
                 </button>
               );
@@ -335,20 +335,20 @@ export function VoicesPage() {
               <button
                 key={`${voice.providerId}-${voice.voiceId}`}
                 onClick={() => setSelectedCustomVoice(voice)}
-                className="group w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-left transition hover:border-white/20 hover:bg-white/10"
+                className="group w-full rounded-xl border border-fg/10 bg-fg/5 px-4 py-3 text-left transition hover:border-fg/20 hover:bg-fg/10"
               >
                 <div className="flex items-center gap-3">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full border border-amber-400/30 bg-amber-400/10">
-                    <Volume2 className="h-4 w-4 text-amber-400" />
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full border border-warning/30 bg-warning/10">
+                    <Volume2 className="h-4 w-4 text-warning" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="truncate text-sm font-medium text-white">{voice.name}</p>
-                    <p className="truncate text-xs text-white/50">
+                    <p className="truncate text-sm font-medium text-fg">{voice.name}</p>
+                    <p className="truncate text-xs text-fg/50">
                       {voice.provider.label} •{" "}
                       <span className="capitalize">{voice.labels?.category || "custom"}</span>
                     </p>
                   </div>
-                  <ChevronRight className="h-4 w-4 text-white/30 group-hover:text-white/60" />
+                  <ChevronRight className="h-4 w-4 text-fg/30 group-hover:text-fg/60" />
                 </div>
               </button>
             ))}
@@ -360,7 +360,7 @@ export function VoicesPage() {
       {editableProviders.length > 0 && (
         <section>
           <div className="mb-2 px-1">
-            <h2 className="text-xs font-medium uppercase tracking-wider text-white/40">
+            <h2 className="text-xs font-medium uppercase tracking-wider text-fg/40">
               Provider Voices
             </h2>
           </div>
@@ -373,23 +373,23 @@ export function VoicesPage() {
               const displayedVoices = isExpanded ? voices : voices.slice(0, 10);
 
               return (
-                <div key={provider.id} className="rounded-xl border border-white/10 bg-white/5 p-3">
+                <div key={provider.id} className="rounded-xl border border-fg/10 bg-fg/5 p-3">
                   <div className="mb-2 flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <div className="flex h-6 w-6 items-center justify-center rounded-full border border-white/10 bg-white/10">
+                      <div className="flex h-6 w-6 items-center justify-center rounded-full border border-fg/10 bg-fg/10">
                         {provider.providerType === "gemini_tts" ? (
                           <span className="text-[10px]">G</span>
                         ) : (
                           <span className="text-[10px]">11</span>
                         )}
                       </div>
-                      <span className="text-sm font-medium text-white">{provider.label}</span>
-                      <span className="text-xs text-white/40">({voices.length} voices)</span>
+                      <span className="text-sm font-medium text-fg">{provider.label}</span>
+                      <span className="text-xs text-fg/40">({voices.length} voices)</span>
                     </div>
                     <button
                       onClick={() => void handleRefreshProviderVoices(provider.id)}
                       disabled={isLoadingThis}
-                      className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-white/60 transition hover:border-white/20 hover:bg-white/10 disabled:opacity-50"
+                      className="flex items-center gap-1 rounded-lg border border-fg/10 bg-fg/5 px-2 py-1 text-[10px] text-fg/60 transition hover:border-fg/20 hover:bg-fg/10 disabled:opacity-50"
                     >
                       <RefreshCw className={`h-3 w-3 ${isLoadingThis ? "animate-spin" : ""}`} />
                       Refresh
@@ -398,10 +398,10 @@ export function VoicesPage() {
 
                   {isLoadingThis ? (
                     <div className="flex items-center justify-center py-4">
-                      <Loader2 className="h-5 w-5 animate-spin text-white/40" />
+                      <Loader2 className="h-5 w-5 animate-spin text-fg/40" />
                     </div>
                   ) : voices.length === 0 ? (
-                    <p className="py-2 text-center text-xs text-white/40">
+                    <p className="py-2 text-center text-xs text-fg/40">
                       No voices found. Click Refresh to fetch voices.
                     </p>
                   ) : (
@@ -409,20 +409,20 @@ export function VoicesPage() {
                       {displayedVoices.map((voice) => (
                         <div
                           key={voice.voiceId}
-                          className="flex items-center gap-2 rounded-lg border border-white/5 bg-black/20 px-2 py-1.5"
+                          className="flex items-center gap-2 rounded-lg border border-fg/5 bg-surface-el/20 px-2 py-1.5"
                         >
-                          <Volume2 className="h-3 w-3 shrink-0 text-white/40" />
+                          <Volume2 className="h-3 w-3 shrink-0 text-fg/40" />
                           <div className="min-w-0 flex-1">
-                            <p className="truncate text-xs font-medium text-white/80">
+                            <p className="truncate text-xs font-medium text-fg/80">
                               {voice.name}
                             </p>
                             {voice.labels?.category && (
-                              <p className="truncate text-[10px] text-white/40">
+                              <p className="truncate text-[10px] text-fg/40">
                                 {voice.labels.category}
                               </p>
                             )}
                             {voice.labels?.gender && !voice.labels?.category && (
-                              <p className="truncate text-[10px] text-white/40">
+                              <p className="truncate text-[10px] text-fg/40">
                                 {voice.labels.gender}
                               </p>
                             )}
@@ -440,7 +440,7 @@ export function VoicesPage() {
                           [provider.id]: !isExpanded,
                         }))
                       }
-                      className="mt-2 w-full rounded-lg border border-white/10 bg-white/5 py-1.5 text-[11px] text-white/60 transition hover:border-white/20 hover:bg-white/10"
+                      className="mt-2 w-full rounded-lg border border-fg/10 bg-fg/5 py-1.5 text-[11px] text-fg/60 transition hover:border-fg/20 hover:bg-fg/10"
                     >
                       {isExpanded ? "Show Less" : `Show All ${voices.length} Voices`}
                     </button>
@@ -455,22 +455,22 @@ export function VoicesPage() {
       {/* TTS Audio Cache Section */}
       <section>
         <div className="mb-2 px-1">
-          <h2 className="text-xs font-medium uppercase tracking-wider text-white/40">
+          <h2 className="text-xs font-medium uppercase tracking-wider text-fg/40">
             Audio Cache
           </h2>
         </div>
-        <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+        <div className="rounded-xl border border-fg/10 bg-fg/5 p-4">
           <div className="flex items-start gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/10">
-              <HardDrive className="h-4 w-4 text-white/70" />
+            <div className="flex h-8 w-8 items-center justify-center rounded-full border border-fg/10 bg-fg/10">
+              <HardDrive className="h-4 w-4 text-fg/70" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-white">TTS Audio Cache</p>
-              <p className="text-xs text-white/50 mt-0.5">
+              <p className="text-sm font-medium text-fg">TTS Audio Cache</p>
+              <p className="text-xs text-fg/50 mt-0.5">
                 Generated voice audio is cached to reduce regenerations
               </p>
               {cacheStats && (
-                <div className="mt-2 flex items-center gap-3 text-xs text-white/60">
+                <div className="mt-2 flex items-center gap-3 text-xs text-fg/60">
                   <span>
                     {cacheStats.count} file{cacheStats.count !== 1 ? "s" : ""}
                   </span>
@@ -495,7 +495,7 @@ export function VoicesPage() {
               }
             }}
             disabled={isClearingCache || !cacheStats || cacheStats.count === 0}
-            className="mt-3 w-full flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 py-2 text-xs text-white/70 transition hover:border-white/20 hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="mt-3 w-full flex items-center justify-center gap-2 rounded-lg border border-fg/10 bg-fg/5 py-2 text-xs text-fg/70 transition hover:border-fg/20 hover:bg-fg/10 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isClearingCache ? (
               <>
@@ -525,14 +525,14 @@ export function VoicesPage() {
               title="Edit"
               description="Modify this voice"
               onClick={() => handleEditVoice(selectedVoice)}
-              color="from-indigo-500 to-blue-600"
+              color="from-info to-info/80"
             />
             <MenuButton
               icon={Trash2}
               title="Delete"
               description="Remove this voice"
               onClick={() => void handleDeleteVoice(selectedVoice.id)}
-              color="from-rose-500 to-red-600"
+              color="from-danger to-danger/80"
             />
           </div>
         )}
@@ -546,17 +546,17 @@ export function VoicesPage() {
       >
         {selectedCustomVoice && (
           <div className="space-y-4">
-            <div className="rounded-lg border border-white/10 bg-white/5 p-3">
-              <p className="text-xs text-white/50">Provider</p>
-              <p className="text-sm text-white">{selectedCustomVoice.provider.label}</p>
-              <p className="mt-2 text-xs text-white/50">Category</p>
-              <p className="text-sm capitalize text-white">
+            <div className="rounded-lg border border-fg/10 bg-fg/5 p-3">
+              <p className="text-xs text-fg/50">Provider</p>
+              <p className="text-sm text-fg">{selectedCustomVoice.provider.label}</p>
+              <p className="mt-2 text-xs text-fg/50">Category</p>
+              <p className="text-sm capitalize text-fg">
                 {selectedCustomVoice.labels?.category || "custom"}
               </p>
               {selectedCustomVoice.labels?.description && (
                 <>
-                  <p className="mt-2 text-xs text-white/50">Description</p>
-                  <p className="text-sm text-white">{selectedCustomVoice.labels.description}</p>
+                  <p className="mt-2 text-xs text-fg/50">Description</p>
+                  <p className="text-sm text-fg">{selectedCustomVoice.labels.description}</p>
                 </>
               )}
             </div>
@@ -576,7 +576,7 @@ export function VoicesPage() {
                 setIsVoiceEditorOpen(true);
                 setSelectedCustomVoice(null);
               }}
-              color="from-emerald-500 to-teal-600"
+              color="from-accent to-accent/80"
             />
           </div>
         )}
@@ -590,7 +590,7 @@ export function VoicesPage() {
       >
         {selectedProvider &&
           (isDeviceProvider(selectedProvider) ? (
-            <p className="text-sm text-white/60">This is a built-in system provider.</p>
+            <p className="text-sm text-fg/60">This is a built-in system provider.</p>
           ) : (
             <div className="space-y-4">
               <MenuButton
@@ -598,14 +598,14 @@ export function VoicesPage() {
                 title="Edit"
                 description="Modify provider settings"
                 onClick={() => handleEditProvider(selectedProvider)}
-                color="from-indigo-500 to-blue-600"
+                color="from-info to-info/80"
               />
               <MenuButton
                 icon={Trash2}
                 title="Delete"
                 description="Remove this provider"
                 onClick={() => void handleDeleteProvider(selectedProvider.id)}
-                color="from-rose-500 to-red-600"
+                color="from-danger to-danger/80"
               />
             </div>
           ))}
@@ -905,26 +905,26 @@ function VoiceEditor({ isOpen, voice, providers, onClose, onSave }: VoiceEditorP
       <div className="space-y-4 pb-2">
         {/* Voice Name */}
         <div>
-          <label className="mb-1 block text-[11px] font-medium text-white/70">Voice Name</label>
+          <label className="mb-1 block text-[11px] font-medium text-fg/70">Voice Name</label>
           <input
             type="text"
             value={formData.name}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
             placeholder="My Character Voice"
-            className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder-white/40 focus:border-white/30 focus:outline-none"
+            className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fg placeholder-fg/40 focus:border-fg/30 focus:outline-none"
           />
         </div>
 
         {/* Provider Selection */}
         <div>
-          <label className="mb-1 block text-[11px] font-medium text-white/70">Provider</label>
+          <label className="mb-1 block text-[11px] font-medium text-fg/70">Provider</label>
           <select
             value={formData.providerId}
             onChange={(e) => setFormData({ ...formData, providerId: e.target.value, modelId: "" })}
-            className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white focus:border-white/30 focus:outline-none"
+            className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fg focus:border-fg/30 focus:outline-none"
           >
             {providers.map((p) => (
-              <option key={p.id} value={p.id} className="bg-black">
+              <option key={p.id} value={p.id} className="bg-surface-el">
                 {p.label}
               </option>
             ))}
@@ -933,20 +933,20 @@ function VoiceEditor({ isOpen, voice, providers, onClose, onSave }: VoiceEditorP
 
         {/* Model Selection - shown for all providers */}
         <div>
-          <label className="mb-1 block text-[11px] font-medium text-white/70">Model</label>
+          <label className="mb-1 block text-[11px] font-medium text-fg/70">Model</label>
           <select
             value={formData.modelId}
             onChange={(e) => setFormData({ ...formData, modelId: e.target.value })}
-            className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white focus:border-white/30 focus:outline-none"
+            className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fg focus:border-fg/30 focus:outline-none"
             disabled={models.length === 0}
           >
             {models.length === 0 ? (
-              <option value="" className="bg-black">
+              <option value="" className="bg-surface-el">
                 Loading models...
               </option>
             ) : (
               models.map((m) => (
-                <option key={m.id} value={m.id} className="bg-black">
+                <option key={m.id} value={m.id} className="bg-surface-el">
                   {m.name}
                 </option>
               ))
@@ -957,7 +957,7 @@ function VoiceEditor({ isOpen, voice, providers, onClose, onSave }: VoiceEditorP
         {activeProvider?.providerType === "elevenlabs" && !isElevenLabsVoiceDesign && (
           <div>
             <div className="mb-1 flex items-center justify-between">
-              <label className="text-[11px] font-medium text-white/70">ElevenLabs Voice</label>
+              <label className="text-[11px] font-medium text-fg/70">ElevenLabs Voice</label>
               <button
                 type="button"
                 onClick={async () => {
@@ -972,7 +972,7 @@ function VoiceEditor({ isOpen, voice, providers, onClose, onSave }: VoiceEditorP
                   }
                 }}
                 disabled={isLoadingVoices}
-                className="flex items-center gap-1 text-[10px] text-white/50 hover:text-white/70 disabled:opacity-50"
+                className="flex items-center gap-1 text-[10px] text-fg/50 hover:text-fg/70 disabled:opacity-50"
               >
                 <RefreshCw className={`h-3 w-3 ${isLoadingVoices ? "animate-spin" : ""}`} />
                 Refresh
@@ -988,24 +988,24 @@ function VoiceEditor({ isOpen, voice, providers, onClose, onSave }: VoiceEditorP
                   name: formData.name || selectedVoice?.name || "",
                 });
               }}
-              className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white focus:border-white/30 focus:outline-none"
+              className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fg focus:border-fg/30 focus:outline-none"
               disabled={isLoadingVoices}
             >
               {isLoadingVoices ? (
-                <option value="" className="bg-black">
+                <option value="" className="bg-surface-el">
                   Loading voices...
                 </option>
               ) : providerVoices.length === 0 ? (
-                <option value="" className="bg-black">
+                <option value="" className="bg-surface-el">
                   No voices available
                 </option>
               ) : (
                 <>
-                  <option value="" className="bg-black">
+                  <option value="" className="bg-surface-el">
                     Select a voice...
                   </option>
                   {providerVoices.map((v) => (
-                    <option key={v.voiceId} value={v.voiceId} className="bg-black">
+                    <option key={v.voiceId} value={v.voiceId} className="bg-surface-el">
                       {v.name}
                       {v.labels?.category ? ` (${v.labels.category})` : ""}
                     </option>
@@ -1013,70 +1013,70 @@ function VoiceEditor({ isOpen, voice, providers, onClose, onSave }: VoiceEditorP
                 </>
               )}
             </select>
-            <p className="mt-1 text-[10px] text-white/40">Select from your ElevenLabs voices</p>
+            <p className="mt-1 text-[10px] text-fg/40">Select from your ElevenLabs voices</p>
           </div>
         )}
 
         {/* Gemini Voice Selection */}
         {activeProvider?.providerType === "gemini_tts" && (
           <div>
-            <label className="mb-1 block text-[11px] font-medium text-white/70">Gemini Voice</label>
+            <label className="mb-1 block text-[11px] font-medium text-fg/70">Gemini Voice</label>
             <select
               value={formData.voiceId}
               onChange={(e) => setFormData({ ...formData, voiceId: e.target.value })}
-              className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white focus:border-white/30 focus:outline-none"
+              className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fg focus:border-fg/30 focus:outline-none"
             >
-              <option value="kore" className="bg-black">
+              <option value="kore" className="bg-surface-el">
                 Kore (Warm and friendly)
               </option>
-              <option value="aoede" className="bg-black">
+              <option value="aoede" className="bg-surface-el">
                 Aoede (Bright and articulate)
               </option>
-              <option value="charon" className="bg-black">
+              <option value="charon" className="bg-surface-el">
                 Charon (Deep and authoritative)
               </option>
-              <option value="fenrir" className="bg-black">
+              <option value="fenrir" className="bg-surface-el">
                 Fenrir (Strong and bold)
               </option>
-              <option value="puck" className="bg-black">
+              <option value="puck" className="bg-surface-el">
                 Puck (Energetic and youthful)
               </option>
-              <option value="leda" className="bg-black">
+              <option value="leda" className="bg-surface-el">
                 Leda (Calm and soothing)
               </option>
-              <option value="orus" className="bg-black">
+              <option value="orus" className="bg-surface-el">
                 Orus (Warm and resonant)
               </option>
-              <option value="zephyr" className="bg-black">
+              <option value="zephyr" className="bg-surface-el">
                 Zephyr (Light and airy)
               </option>
-              <option value="algieba" className="bg-black">
+              <option value="algieba" className="bg-surface-el">
                 Algieba (Professional and clear)
               </option>
-              <option value="callirrhoe" className="bg-black">
+              <option value="callirrhoe" className="bg-surface-el">
                 Callirrhoe (Expressive and dynamic)
               </option>
             </select>
-            <p className="mt-1 text-[10px] text-white/40">Select a Gemini TTS voice</p>
+            <p className="mt-1 text-[10px] text-fg/40">Select a Gemini TTS voice</p>
           </div>
         )}
 
         {/* Prompt */}
         <div>
-          <label className="mb-1 block text-[11px] font-medium text-white/70">Voice Prompt</label>
+          <label className="mb-1 block text-[11px] font-medium text-fg/70">Voice Prompt</label>
           <textarea
             value={formData.prompt ?? ""}
             onChange={(e) => setFormData({ ...formData, prompt: e.target.value })}
             placeholder="A warm, friendly voice with a cheerful tone..."
             rows={3}
-            className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder-white/40 focus:border-white/30 focus:outline-none resize-none"
+            className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fg placeholder-fg/40 focus:border-fg/30 focus:outline-none resize-none"
           />
-          <p className="mt-1 text-[10px] text-white/40">Describe how the voice should sound</p>
+          <p className="mt-1 text-[10px] text-fg/40">Describe how the voice should sound</p>
         </div>
 
         {/* Example Text */}
         <div>
-          <label className="mb-1 block text-[11px] font-medium text-white/70">Example Text</label>
+          <label className="mb-1 block text-[11px] font-medium text-fg/70">Example Text</label>
           <textarea
             value={textSample}
             onChange={(e) => {
@@ -1085,24 +1085,24 @@ function VoiceEditor({ isOpen, voice, providers, onClose, onSave }: VoiceEditorP
             }}
             placeholder="Hello! This is how I sound when speaking..."
             rows={2}
-            className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder-white/40 focus:border-white/30 focus:outline-none resize-none"
+            className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fg placeholder-fg/40 focus:border-fg/30 focus:outline-none resize-none"
           />
-          <p className="mt-1 text-[10px] text-white/40">Sample text for testing the voice</p>
+          <p className="mt-1 text-[10px] text-fg/40">Sample text for testing the voice</p>
           {isElevenLabsVoiceDesign && (
             <p
-              className={`mt-1 text-[10px] ${sampleLength < minVoiceDesignChars ? "text-rose-300" : "text-white/40"}`}
+              className={`mt-1 text-[10px] ${sampleLength < minVoiceDesignChars ? "text-danger/80" : "text-fg/40"}`}
             >
               {sampleLength}/{minVoiceDesignChars} characters required for voice design preview
             </p>
           )}
-          {previewError && <p className="mt-1 text-xs font-medium text-rose-300">{previewError}</p>}
+          {previewError && <p className="mt-1 text-xs font-medium text-danger/80">{previewError}</p>}
         </div>
 
         {/* Preview Button */}
         <button
           onClick={() => void handlePreview()}
           disabled={previewDisabled}
-          className="flex w-full items-center justify-center gap-2 rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-4 py-2 text-sm font-medium text-emerald-300 transition hover:border-emerald-400/50 hover:bg-emerald-400/20 disabled:opacity-50"
+          className="flex w-full items-center justify-center gap-2 rounded-lg border border-accent/30 bg-accent/10 px-4 py-2 text-sm font-medium text-accent/80 transition hover:border-accent/50 hover:bg-accent/20 disabled:opacity-50"
         >
           {isPlaying ? (
             <>
@@ -1121,14 +1121,14 @@ function VoiceEditor({ isOpen, voice, providers, onClose, onSave }: VoiceEditorP
         <div className="flex gap-3 pt-1">
           <button
             onClick={onClose}
-            className="flex-1 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-white/70 transition hover:border-white/20 hover:bg-white/10 hover:text-white"
+            className="flex-1 rounded-lg border border-fg/10 bg-fg/5 px-4 py-2 text-sm font-medium text-fg/70 transition hover:border-fg/20 hover:bg-fg/10 hover:text-fg"
           >
             Cancel
           </button>
           <button
             onClick={() => void handleSave()}
             disabled={isSaving || !formData.name.trim()}
-            className="flex-1 rounded-lg border border-emerald-400/40 bg-emerald-500/20 px-4 py-2 text-sm font-semibold text-emerald-100 transition hover:border-emerald-400/60 hover:bg-emerald-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex-1 rounded-lg border border-accent/40 bg-accent/20 px-4 py-2 text-sm font-semibold text-accent/90 transition hover:border-accent/60 hover:bg-accent/30 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isSaving ? "Saving..." : "Save"}
           </button>
@@ -1204,7 +1204,7 @@ function ProviderEditor({ isOpen, provider, onClose, onSave }: ProviderEditorPro
       <div className="space-y-4 pb-2">
         {/* Provider Type */}
         <div>
-          <label className="mb-1 block text-[11px] font-medium text-white/70">Provider Type</label>
+          <label className="mb-1 block text-[11px] font-medium text-fg/70">Provider Type</label>
           <select
             value={formData.providerType}
             onChange={(e) =>
@@ -1215,12 +1215,12 @@ function ProviderEditor({ isOpen, provider, onClose, onSave }: ProviderEditorPro
                 location: undefined,
               })
             }
-            className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white focus:border-white/30 focus:outline-none"
+            className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fg focus:border-fg/30 focus:outline-none"
           >
-            <option value="elevenlabs" className="bg-black">
+            <option value="elevenlabs" className="bg-surface-el">
               ElevenLabs
             </option>
-            <option value="gemini_tts" className="bg-black">
+            <option value="gemini_tts" className="bg-surface-el">
               Gemini TTS (Google)
             </option>
           </select>
@@ -1228,19 +1228,19 @@ function ProviderEditor({ isOpen, provider, onClose, onSave }: ProviderEditorPro
 
         {/* Label */}
         <div>
-          <label className="mb-1 block text-[11px] font-medium text-white/70">Label</label>
+          <label className="mb-1 block text-[11px] font-medium text-fg/70">Label</label>
           <input
             type="text"
             value={formData.label}
             onChange={(e) => setFormData({ ...formData, label: e.target.value })}
             placeholder={formData.providerType === "gemini_tts" ? "My Gemini TTS" : "My ElevenLabs"}
-            className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder-white/40 focus:border-white/30 focus:outline-none"
+            className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fg placeholder-fg/40 focus:border-fg/30 focus:outline-none"
           />
         </div>
 
         {/* API Key */}
         <div>
-          <label className="mb-1 block text-[11px] font-medium text-white/70">API Key</label>
+          <label className="mb-1 block text-[11px] font-medium text-fg/70">API Key</label>
           <input
             type="password"
             value={formData.apiKey ?? ""}
@@ -1249,7 +1249,7 @@ function ProviderEditor({ isOpen, provider, onClose, onSave }: ProviderEditorPro
               if (validationError) setValidationError(null);
             }}
             placeholder="Enter your API key"
-            className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder-white/40 focus:border-white/30 focus:outline-none"
+            className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fg placeholder-fg/40 focus:border-fg/30 focus:outline-none"
           />
         </div>
 
@@ -1257,7 +1257,7 @@ function ProviderEditor({ isOpen, provider, onClose, onSave }: ProviderEditorPro
         {formData.providerType === "gemini_tts" && (
           <>
             <div>
-              <label className="mb-1 block text-[11px] font-medium text-white/70">
+              <label className="mb-1 block text-[11px] font-medium text-fg/70">
                 Google Cloud Project ID
               </label>
               <input
@@ -1268,11 +1268,11 @@ function ProviderEditor({ isOpen, provider, onClose, onSave }: ProviderEditorPro
                   if (validationError) setValidationError(null);
                 }}
                 placeholder="your-project-id"
-                className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder-white/40 focus:border-white/30 focus:outline-none"
+                className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fg placeholder-fg/40 focus:border-fg/30 focus:outline-none"
               />
             </div>
             <div>
-              <label className="mb-1 block text-[11px] font-medium text-white/70">
+              <label className="mb-1 block text-[11px] font-medium text-fg/70">
                 Region (optional)
               </label>
               <input
@@ -1280,26 +1280,26 @@ function ProviderEditor({ isOpen, provider, onClose, onSave }: ProviderEditorPro
                 value={formData.location ?? ""}
                 onChange={(e) => setFormData({ ...formData, location: e.target.value })}
                 placeholder="us-central1"
-                className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder-white/40 focus:border-white/30 focus:outline-none"
+                className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fg placeholder-fg/40 focus:border-fg/30 focus:outline-none"
               />
             </div>
           </>
         )}
 
-        {validationError && <p className="text-xs font-medium text-rose-300">{validationError}</p>}
+        {validationError && <p className="text-xs font-medium text-danger/80">{validationError}</p>}
 
         {/* Actions */}
         <div className="flex gap-3 pt-1">
           <button
             onClick={onClose}
-            className="flex-1 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-white/70 transition hover:border-white/20 hover:bg-white/10 hover:text-white"
+            className="flex-1 rounded-lg border border-fg/10 bg-fg/5 px-4 py-2 text-sm font-medium text-fg/70 transition hover:border-fg/20 hover:bg-fg/10 hover:text-fg"
           >
             Cancel
           </button>
           <button
             onClick={() => void handleSave()}
             disabled={isSaving || !formData.label.trim()}
-            className="flex-1 rounded-lg border border-emerald-400/40 bg-emerald-500/20 px-4 py-2 text-sm font-semibold text-emerald-100 transition hover:border-emerald-400/60 hover:bg-emerald-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex-1 rounded-lg border border-accent/40 bg-accent/20 px-4 py-2 text-sm font-semibold text-accent/90 transition hover:border-accent/60 hover:bg-accent/30 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isSaving ? "Verifying..." : "Save"}
           </button>

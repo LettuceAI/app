@@ -7,25 +7,25 @@ type ToastVariant = "info" | "warning" | "success" | "error";
 
 // Base styling that matches your UI design language
 const baseClassName =
-  "pointer-events-auto flex w-full max-w-md items-start gap-3 rounded-xl border border-white/20 bg-black/80 px-4 py-3 shadow-lg backdrop-blur-md";
+  "pointer-events-auto flex w-full max-w-md items-start gap-3 rounded-xl border border-fg/20 bg-surface/80 px-4 py-3 shadow-lg backdrop-blur-md";
 
-const titleClassName = "text-sm font-semibold text-white leading-tight";
-const descriptionClassName = "text-xs text-white/80 leading-relaxed";
+const titleClassName = "text-sm font-semibold text-fg leading-tight";
+const descriptionClassName = "text-xs text-fg/80 leading-relaxed";
 
 // More subtle, professional variant styling that fits your dark UI
 const variantClasses: Record<ToastVariant, string> = {
-  info: "border-blue-400/30 bg-blue-500/20",
-  warning: "border-amber-400/30 bg-amber-500/20",
-  success: "border-emerald-400/30 bg-emerald-500/20",
-  error: "border-red-400/30 bg-red-500/20",
+  info: "border-info/30 bg-info/20",
+  warning: "border-warning/30 bg-warning/20",
+  success: "border-accent/30 bg-accent/20",
+  error: "border-danger/30 bg-danger/20",
 };
 
 // Icon styling to match your UI's color scheme
 const variantIcons: Record<ToastVariant, ReactNode> = {
-  info: <Info className="h-4 w-4 text-blue-400 shrink-0 mt-0.5" />,
-  warning: <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />,
-  success: <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />,
-  error: <XCircle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />,
+  info: <Info className="h-4 w-4 text-info shrink-0 mt-0.5" />,
+  warning: <AlertTriangle className="h-4 w-4 text-warning shrink-0 mt-0.5" />,
+  success: <CheckCircle2 className="h-4 w-4 text-accent shrink-0 mt-0.5" />,
+  error: <XCircle className="h-4 w-4 text-danger shrink-0 mt-0.5" />,
 };
 
 type ToastActionOptions = {
@@ -55,9 +55,9 @@ function showToast(
             if (options.id) sonnerToast.dismiss(options.id);
           }}
           className={cn(
-            "shrink-0 rounded-lg border border-white/30 bg-white/5 px-3 py-1.5",
-            "text-xs font-medium text-white/70",
-            "hover:bg-white/10 hover:text-white transition-colors",
+            "shrink-0 rounded-lg border border-fg/30 bg-fg/5 px-3 py-1.5",
+            "text-xs font-medium text-fg/70",
+            "hover:bg-fg/10 hover:text-fg transition-colors",
           )}
         >
           {options.actionLabel}
