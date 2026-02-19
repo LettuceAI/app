@@ -986,7 +986,7 @@ export function GroupChatPage() {
   if (sessionLoading || loading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-white/50" />
+        <Loader2 className="h-8 w-8 animate-spin text-fg/50" />
       </div>
     );
   }
@@ -994,13 +994,13 @@ export function GroupChatPage() {
   if (!session) {
     return (
       <div className="flex h-full flex-col items-center justify-center p-4">
-        <p className="text-white/50 mb-4">{error || "Group session not found"}</p>
+        <p className="text-fg/50 mb-4">{error || "Group session not found"}</p>
         <button
           onClick={() => navigate(Routes.groupChats)}
           className={cn(
             "px-4 py-2",
             radius.md,
-            "border border-white/15 bg-white/10 text-white",
+            "border border-fg/15 bg-fg/10 text-fg",
             interactive.transition.fast,
           )}
         >
@@ -1054,7 +1054,7 @@ export function GroupChatPage() {
           <div className="space-y-4 pb-6 pt-4">
             {messages.length === 0 ? (
               <div className="flex min-h-[50vh] items-center justify-center">
-                <p className="text-white/30 text-center">
+                <p className="text-fg/30 text-center">
                   Start a conversation with {groupCharacters.map((c) => c.name).join(", ")}
                 </p>
               </div>
@@ -1097,7 +1097,7 @@ export function GroupChatPage() {
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="flex items-center gap-2 mt-4 text-white/50"
+                className="flex items-center gap-2 mt-4 text-fg/50"
               >
                 <Loader2 className="h-4 w-4 animate-spin" />
                 <span className="text-sm">Selecting character...</span>
@@ -1120,8 +1120,8 @@ export function GroupChatPage() {
               className={cn(
                 "fixed right-3 z-30 flex h-11 w-11 items-center justify-center",
                 "bottom-[calc(env(safe-area-inset-bottom)+88px)]",
-                "border border-white/15 bg-black/40 text-white/80 shadow-lg backdrop-blur-sm",
-                "hover:bg-black/55 active:scale-95",
+                "border border-fg/15 bg-surface-el/40 text-fg/80 shadow-lg backdrop-blur-sm",
+                "hover:bg-surface-el/55 active:scale-95",
                 radius.full,
               )}
             >
@@ -1181,7 +1181,7 @@ export function GroupChatPage() {
         title="Help Me Reply"
       >
         <div className="space-y-2">
-          <p className="text-sm text-white/60 mb-4">
+          <p className="text-sm text-fg/60 mb-4">
             You have a draft message. How would you like to proceed?
           </p>
           <MenuButton
@@ -1207,22 +1207,22 @@ export function GroupChatPage() {
       >
         <div className="space-y-4">
           {helpMeReplyError ? (
-            <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
-              <p className="text-red-400 text-sm">{helpMeReplyError}</p>
+            <div className="bg-danger/10 border border-danger/30 rounded-lg p-4">
+              <p className="text-danger text-sm">{helpMeReplyError}</p>
             </div>
           ) : generatingReply && !generatedReply ? (
             <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-8 w-8 animate-spin text-white/50" />
+              <Loader2 className="h-8 w-8 animate-spin text-fg/50" />
             </div>
           ) : generatedReply ? (
             <div
               className={cn(
-                "bg-white/5 border border-white/10 p-4",
+                "bg-fg/5 border border-fg/10 p-4",
                 radius.lg,
                 "max-h-[40vh] overflow-y-auto",
               )}
             >
-              <p className="text-white/90 text-sm whitespace-pre-wrap">{generatedReply}</p>
+              <p className="text-fg/90 text-sm whitespace-pre-wrap">{generatedReply}</p>
             </div>
           ) : null}
 
@@ -1233,7 +1233,7 @@ export function GroupChatPage() {
               className={cn(
                 "flex-1 flex items-center justify-center gap-2 py-3 px-4",
                 radius.lg,
-                "bg-white/10 text-white/80 hover:bg-white/15",
+                "bg-fg/10 text-fg/80 hover:bg-fg/15",
                 "disabled:opacity-50 transition-all",
               )}
             >
@@ -1246,7 +1246,7 @@ export function GroupChatPage() {
               className={cn(
                 "flex-1 flex items-center justify-center gap-2 py-3 px-4",
                 radius.lg,
-                "bg-emerald-500 text-white hover:bg-emerald-600",
+                "bg-accent text-fg hover:bg-accent/80",
                 "disabled:opacity-50 transition-all",
               )}
             >

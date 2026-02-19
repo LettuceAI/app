@@ -31,23 +31,23 @@ function ActionRow({
       disabled={disabled}
       className={cn(
         "flex w-full items-center gap-3 px-1 py-2.5 transition-all rounded-lg",
-        "hover:bg-white/5 active:bg-white/10",
+        "hover:bg-fg/5 active:bg-fg/10",
         "disabled:opacity-40 disabled:pointer-events-none",
-        variant === "danger" && "hover:bg-red-500/10",
+        variant === "danger" && "hover:bg-danger/10",
       )}
     >
       <div
         className={cn(
           "flex items-center justify-center w-8 h-8 rounded-lg",
-          iconBg || "bg-white/10",
+          iconBg || "bg-fg/10",
         )}
       >
-        <Icon size={16} className={cn(variant === "danger" ? "text-red-400" : "text-white")} />
+        <Icon size={16} className={cn(variant === "danger" ? "text-danger" : "text-fg")} />
       </div>
       <span
         className={cn(
           "text-[15px] text-left",
-          variant === "danger" ? "text-red-400" : "text-white/90",
+          variant === "danger" ? "text-danger" : "text-fg/90",
         )}
       >
         {label}
@@ -127,24 +127,24 @@ export function GroupChatMessageActionsBottomSheet({
         title={isAssistant ? "Character Message" : "Your Message"}
       >
         {messageAction && (
-          <div className="text-white">
+          <div className="text-fg">
             {isAssistant && messageAction.message.selectionReasoning && (
-              <div className="mb-4 px-3 py-2 rounded-lg border border-white/10 bg-white/5">
-                <p className="text-[10px] text-white/40 uppercase tracking-wide mb-1">
+              <div className="mb-4 px-3 py-2 rounded-lg border border-fg/10 bg-fg/5">
+                <p className="text-[10px] text-fg/40 uppercase tracking-wide mb-1">
                   Why this character responded
                 </p>
-                <div className="text-xs text-white/70 italic">
+                <div className="text-xs text-fg/70 italic">
                   <MarkdownRenderer
                     content={messageAction.message.selectionReasoning}
-                    className="text-xs text-white/70 italic"
+                    className="text-xs text-fg/70 italic"
                   />
                 </div>
               </div>
             )}
 
             {messageAction.message.usage && (
-              <div className="flex items-center gap-x-3 text-xs text-white/40 mb-4">
-                <div className="flex items-center gap-2 border-r border-white/10 pr-3">
+              <div className="flex items-center gap-x-3 text-xs text-fg/40 mb-4">
+                <div className="flex items-center gap-2 border-r border-fg/10 pr-3">
                   <span title="Prompt Tokens">
                     ↓{messageAction.message.usage.promptTokens ?? 0}
                   </span>
@@ -153,7 +153,7 @@ export function GroupChatMessageActionsBottomSheet({
                   </span>
                 </div>
                 <div className="flex-1">
-                  <span className="text-white/60">
+                  <span className="text-fg/60">
                     {modelName || messageAction.message.modelId}
                   </span>
                 </div>
@@ -165,13 +165,13 @@ export function GroupChatMessageActionsBottomSheet({
             )}
 
             {actionStatus && (
-              <div className="mb-3 px-3 py-2 rounded-lg border border-emerald-400/20 bg-emerald-400/10">
-                <p className="text-sm text-emerald-200">{actionStatus}</p>
+              <div className="mb-3 px-3 py-2 rounded-lg border border-accent/20 bg-accent/10">
+                <p className="text-sm text-accent/80">{actionStatus}</p>
               </div>
             )}
             {actionError && (
-              <div className="mb-3 px-3 py-2 rounded-lg border border-red-400/20 bg-red-400/10">
-                <p className="text-sm text-red-200">{actionError}</p>
+              <div className="mb-3 px-3 py-2 rounded-lg border border-danger/20 bg-danger/10">
+                <p className="text-sm text-danger">{actionError}</p>
               </div>
             )}
 
@@ -180,7 +180,7 @@ export function GroupChatMessageActionsBottomSheet({
                 <ActionRow
                   icon={Edit3}
                   label="Edit"
-                  iconBg="bg-blue-500/20"
+                  iconBg="bg-info/20"
                   onClick={() => {
                     setActionError(null);
                     setActionStatus(null);
@@ -192,7 +192,7 @@ export function GroupChatMessageActionsBottomSheet({
                 <ActionRow
                   icon={Copy}
                   label="Copy"
-                  iconBg="bg-violet-500/20"
+                  iconBg="bg-secondary/20"
                   onClick={() => void handleCopyMessage()}
                 />
 
@@ -200,22 +200,22 @@ export function GroupChatMessageActionsBottomSheet({
                   <ActionRow
                     icon={Users}
                     label="Regenerate with different character"
-                    iconBg="bg-emerald-500/20"
+                    iconBg="bg-accent/20"
                     onClick={() => setShowCharacterPicker(true)}
                   />
                 )}
 
-                <div className="h-px bg-white/5 my-2" />
+                <div className="h-px bg-fg/5 my-2" />
 
                 <ActionRow
                   icon={RotateCcw}
                   label="Rewind to here"
-                  iconBg="bg-cyan-500/20"
+                  iconBg="bg-info/20"
                   onClick={() => void handleRewindToMessage()}
                   disabled={actionBusy}
                 />
 
-                <div className="h-px bg-white/5 my-2" />
+                <div className="h-px bg-fg/5 my-2" />
 
                 <ActionRow
                   icon={Trash2}
@@ -232,9 +232,9 @@ export function GroupChatMessageActionsBottomSheet({
                   onChange={(event) => setEditDraft(event.target.value)}
                   rows={5}
                   className={cn(
-                    "w-full p-3 text-sm text-white placeholder-white/40",
-                    "border border-white/10 bg-black/30",
-                    "focus:border-white/20 focus:outline-none resize-none",
+                    "w-full p-3 text-sm text-fg placeholder-fg/40",
+                    "border border-fg/10 bg-surface-el/30",
+                    "focus:border-fg/20 focus:outline-none resize-none",
                     radius.lg,
                   )}
                   placeholder="Edit your message..."
@@ -250,9 +250,9 @@ export function GroupChatMessageActionsBottomSheet({
                       setEditDraft(messageAction.message.content);
                     }}
                     className={cn(
-                      "flex-1 px-4 py-3 text-sm font-medium text-white/70 transition",
-                      "border border-white/10 bg-white/5",
-                      "hover:bg-white/10 hover:text-white",
+                      "flex-1 px-4 py-3 text-sm font-medium text-fg/70 transition",
+                      "border border-fg/10 bg-fg/5",
+                      "hover:bg-fg/10 hover:text-fg",
                       "active:scale-[0.98]",
                       radius.lg,
                     )}
@@ -263,9 +263,9 @@ export function GroupChatMessageActionsBottomSheet({
                     onClick={() => void handleSaveEdit()}
                     disabled={actionBusy}
                     className={cn(
-                      "flex-1 px-4 py-3 text-sm font-semibold text-white transition",
-                      "bg-emerald-500",
-                      "hover:bg-emerald-400",
+                      "flex-1 px-4 py-3 text-sm font-semibold text-fg transition",
+                      "bg-accent",
+                      "hover:bg-accent",
                       "active:scale-[0.98]",
                       "disabled:cursor-not-allowed disabled:opacity-50",
                       radius.lg,
@@ -287,7 +287,7 @@ export function GroupChatMessageActionsBottomSheet({
         title="Choose Character"
       >
         <div className="space-y-2">
-          <p className="text-sm text-white/50 mb-3">
+          <p className="text-sm text-fg/50 mb-3">
             Select which character should respond instead:
           </p>
           {characters.map((char) => (
@@ -322,8 +322,8 @@ function CharacterPickerItem({
       className={cn(
         "flex w-full items-center gap-3 p-3 text-left",
         radius.lg,
-        "border border-white/10 bg-white/5",
-        "hover:border-white/20 hover:bg-white/10",
+        "border border-fg/10 bg-fg/5",
+        "hover:border-fg/20 hover:bg-fg/10",
         interactive.transition.fast,
       )}
     >
@@ -337,14 +337,14 @@ function CharacterPickerItem({
         {avatarUrl ? (
           <AvatarImage src={avatarUrl} alt={character.name} crop={character.avatarCrop} applyCrop />
         ) : (
-          <div className="flex h-full w-full items-center justify-center text-sm font-bold text-white/60">
+          <div className="flex h-full w-full items-center justify-center text-sm font-bold text-fg/60">
             {character.name.slice(0, 1).toUpperCase()}
           </div>
         )}
       </div>
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium text-white truncate">{character.name}</p>
-        {description && <p className="text-xs text-white/50 truncate">{description}</p>}
+        <p className="text-sm font-medium text-fg truncate">{character.name}</p>
+        {description && <p className="text-xs text-fg/50 truncate">{description}</p>}
       </div>
     </button>
   );

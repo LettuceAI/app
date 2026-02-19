@@ -183,21 +183,21 @@ export function GroupChatSettingsPage() {
   // Loading state
   if (sessionLoading || loading) {
     return (
-      <div className="flex h-full flex-col text-white">
-        <header className="shrink-0 border-b border-white/10 px-4 pb-3 pt-10">
+      <div className="flex h-full flex-col text-fg">
+        <header className="shrink-0 border-b border-fg/10 px-4 pb-3 pt-10">
           <div className="flex items-center gap-3">
-            <div className="h-8 w-8 animate-pulse rounded-full bg-white/10" />
+            <div className="h-8 w-8 animate-pulse rounded-full bg-fg/10" />
             <div className="flex-1 space-y-2">
-              <div className="h-5 w-1/3 animate-pulse rounded bg-white/10" />
-              <div className="h-3 w-1/4 animate-pulse rounded bg-white/10" />
+              <div className="h-5 w-1/3 animate-pulse rounded bg-fg/10" />
+              <div className="h-3 w-1/4 animate-pulse rounded bg-fg/10" />
             </div>
           </div>
         </header>
         <main className="flex-1 p-4">
           <div className="space-y-4">
-            <div className="h-20 animate-pulse rounded-xl bg-white/5" />
-            <div className="h-20 animate-pulse rounded-xl bg-white/5" />
-            <div className="h-40 animate-pulse rounded-xl bg-white/5" />
+            <div className="h-20 animate-pulse rounded-xl bg-fg/5" />
+            <div className="h-20 animate-pulse rounded-xl bg-fg/5" />
+            <div className="h-40 animate-pulse rounded-xl bg-fg/5" />
           </div>
         </main>
       </div>
@@ -207,11 +207,11 @@ export function GroupChatSettingsPage() {
   // Error state
   if (error || !session) {
     return (
-      <div className="flex h-full flex-col items-center justify-center text-white p-8">
-        <p className="text-lg font-medium text-red-400">{error || "Not found"}</p>
+      <div className="flex h-full flex-col items-center justify-center text-fg p-8">
+        <p className="text-lg font-medium text-danger">{error || "Not found"}</p>
         <button
           onClick={() => navigate(Routes.groupChats)}
-          className="mt-4 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm"
+          className="mt-4 rounded-xl border border-fg/10 bg-fg/5 px-4 py-2 text-sm"
         >
           Back to Group Chats
         </button>
@@ -221,7 +221,7 @@ export function GroupChatSettingsPage() {
 
   return (
     <div
-      className="relative flex h-full flex-col text-white overflow-hidden"
+      className="relative flex h-full flex-col text-fg overflow-hidden"
       style={{ backgroundColor: backgroundImagePath ? undefined : "#050505" }}
     >
       {/* Background image + scrim overlay */}
@@ -237,28 +237,28 @@ export function GroupChatSettingsPage() {
             }}
             aria-hidden="true"
           />
-          <div className="pointer-events-none fixed inset-0 z-0 bg-black/40" aria-hidden="true" />
+          <div className="pointer-events-none fixed inset-0 z-0 bg-surface-el/40" aria-hidden="true" />
         </>
       )}
 
       {/* Header */}
       <header
         className={cn(
-          "relative z-20 shrink-0 border-b border-white/10 px-4 pb-3 pt-10",
-          !backgroundImagePath ? "bg-[#050505]" : "",
+          "relative z-20 shrink-0 border-b border-fg/10 px-4 pb-3 pt-10",
+          !backgroundImagePath ? "bg-surface" : "",
         )}
       >
         <div className="flex items-center gap-3">
           <button
             onClick={handleBack}
-            className="flex shrink-0 px-[0.6em] py-[0.3em] items-center justify-center -ml-2 text-white transition hover:text-white/80"
+            className="flex shrink-0 px-[0.6em] py-[0.3em] items-center justify-center -ml-2 text-fg transition hover:text-fg/80"
             aria-label="Back"
           >
             <ArrowLeft size={14} strokeWidth={2.5} />
           </button>
           <div className="min-w-0 flex-1 text-left">
-            <p className="truncate text-xl font-bold text-white/90">Group Settings</p>
-            <p className="mt-0.5 truncate text-xs text-white/50">Manage group chat preferences</p>
+            <p className="truncate text-xl font-bold text-fg/90">Group Settings</p>
+            <p className="mt-0.5 truncate text-xs text-fg/50">Manage group chat preferences</p>
           </div>
         </div>
       </header>
@@ -276,7 +276,7 @@ export function GroupChatSettingsPage() {
             <div
               className={cn(
                 radius.lg,
-                "border border-white/10 bg-[#0c0d13]/85 backdrop-blur-sm overflow-hidden",
+                "border border-fg/10 bg-surface-el/85 backdrop-blur-sm overflow-hidden",
               )}
             >
               {/* Background Preview */}
@@ -294,9 +294,9 @@ export function GroupChatSettingsPage() {
                     className={cn(
                       "absolute top-2 right-2 flex h-6 w-6 items-center justify-center",
                       radius.full,
-                      "bg-black/60 text-white/70",
+                      "bg-surface-el/60 text-fg/70",
                       interactive.transition.fast,
-                      "hover:bg-red-500/80 hover:text-white",
+                      "hover:bg-danger/80 hover:text-fg",
                       "disabled:opacity-50",
                     )}
                     aria-label="Remove background"
@@ -318,8 +318,8 @@ export function GroupChatSettingsPage() {
                         "flex-1 bg-transparent py-1",
                         typography.body.size,
                         typography.body.weight,
-                        "text-white placeholder-white/30",
-                        "border-b border-emerald-400/50 focus:border-emerald-400",
+                        "text-fg placeholder-fg/30",
+                        "border-b border-accent/50 focus:border-accent",
                         "focus:outline-none transition-colors",
                       )}
                       placeholder="Enter group name"
@@ -331,9 +331,9 @@ export function GroupChatSettingsPage() {
                       className={cn(
                         "flex items-center justify-center",
                         radius.full,
-                        "bg-emerald-400/20 text-emerald-300",
+                        "bg-accent/20 text-accent/80",
                         interactive.transition.default,
-                        "hover:bg-emerald-400/30 disabled:opacity-50",
+                        "hover:bg-accent/30 disabled:opacity-50",
                       )}
                     >
                       <Check size={14} />
@@ -346,9 +346,9 @@ export function GroupChatSettingsPage() {
                       className={cn(
                         "flex items-center justify-center",
                         radius.full,
-                        "bg-white/10 text-white/60",
+                        "bg-fg/10 text-fg/60",
                         interactive.transition.default,
-                        "hover:bg-white/20",
+                        "hover:bg-fg/20",
                       )}
                     >
                       <X size={14} />
@@ -364,19 +364,19 @@ export function GroupChatSettingsPage() {
                         className={cn(
                           typography.h3.size,
                           typography.h3.weight,
-                          "text-white truncate",
+                          "text-fg truncate",
                         )}
                       >
                         {session.name}
                       </p>
-                      <p className={cn(typography.caption.size, "text-white/45 mt-0.5")}>
+                      <p className={cn(typography.caption.size, "text-fg/45 mt-0.5")}>
                         {groupCharacters.length}{" "}
                         {groupCharacters.length === 1 ? "participant" : "participants"}
                         <span className="opacity-50 mx-1.5">•</span>
                         {messageCount} {messageCount === 1 ? "message" : "messages"}
                       </p>
                     </div>
-                    <Edit2 className="h-4 w-4 shrink-0 text-white/30 transition-colors group-hover:text-white/60" />
+                    <Edit2 className="h-4 w-4 shrink-0 text-fg/30 transition-colors group-hover:text-fg/60" />
                   </button>
                 )}
 
@@ -385,9 +385,9 @@ export function GroupChatSettingsPage() {
                   className={cn(
                     "flex cursor-pointer items-center gap-2 mt-3 py-2 px-3",
                     radius.md,
-                    "border border-dashed border-white/15 text-white/50",
+                    "border border-dashed border-fg/15 text-fg/50",
                     interactive.transition.default,
-                    "hover:border-white/25 hover:bg-white/5 hover:text-white/70",
+                    "hover:border-fg/25 hover:bg-fg/5 hover:text-fg/70",
                     savingBackground && "opacity-50 cursor-not-allowed",
                   )}
                 >
@@ -423,7 +423,7 @@ export function GroupChatSettingsPage() {
                   "border p-4 text-left",
                   interactive.transition.default,
                   interactive.active.scale,
-                  "border-white/10 bg-[#0c0d13]/85 backdrop-blur-sm hover:border-white/20 hover:bg-white/10",
+                  "border-fg/10 bg-surface-el/85 backdrop-blur-sm hover:border-fg/20 hover:bg-fg/10",
                 )}
               >
                 <div className="flex items-center gap-3 min-w-0">
@@ -431,7 +431,7 @@ export function GroupChatSettingsPage() {
                     className={cn(
                       "flex h-10 w-10 items-center justify-center",
                       radius.full,
-                      "border border-white/15 bg-white/10 text-white/80",
+                      "border border-fg/15 bg-fg/10 text-fg/80",
                     )}
                   >
                     <History className="h-4 w-4" />
@@ -443,17 +443,17 @@ export function GroupChatSettingsPage() {
                         typography.overline.weight,
                         typography.overline.tracking,
                         typography.overline.transform,
-                        "text-white/50",
+                        "text-fg/50",
                       )}
                     >
                       Chat History
                     </div>
-                    <div className={cn(typography.bodySmall.size, "text-white truncate")}>
+                    <div className={cn(typography.bodySmall.size, "text-fg truncate")}>
                       View and manage conversations
                     </div>
                   </div>
                 </div>
-                <ChevronRight className="h-4 w-4 shrink-0 text-white/30 transition-colors group-hover:text-white/60" />
+                <ChevronRight className="h-4 w-4 shrink-0 text-fg/30 transition-colors group-hover:text-fg/60" />
               </button>
             </div>
           </section>*/}
@@ -521,8 +521,8 @@ export function GroupChatSettingsPage() {
                     "border text-center",
                     interactive.transition.fast,
                     session.speakerSelectionMethod === option.value
-                      ? "border-emerald-400/40 bg-emerald-400/10"
-                      : "border-white/10 bg-[#0c0d13]/85 hover:border-white/20",
+                      ? "border-accent/40 bg-accent/10"
+                      : "border-fg/10 bg-surface-el/85 hover:border-fg/20",
                     saving && "opacity-50",
                   )}
                 >
@@ -530,25 +530,25 @@ export function GroupChatSettingsPage() {
                     className={cn(
                       "h-5 w-5",
                       session.speakerSelectionMethod === option.value
-                        ? "text-emerald-300"
-                        : "text-white/50",
+                        ? "text-accent/80"
+                        : "text-fg/50",
                     )}
                   />
                   <div
                     className={cn(
                       "text-xs font-semibold",
                       session.speakerSelectionMethod === option.value
-                        ? "text-emerald-100"
-                        : "text-white/80",
+                        ? "text-accent"
+                        : "text-fg/80",
                     )}
                   >
                     {option.label}
                   </div>
-                  <div className="text-[10px] text-white/40">{option.desc}</div>
+                  <div className="text-[10px] text-fg/40">{option.desc}</div>
                 </button>
               ))}
             </div>
-            <p className={cn(typography.caption.size, "mt-2 text-white/40")}>
+            <p className={cn(typography.caption.size, "mt-2 text-fg/40")}>
               {session.speakerSelectionMethod === "llm"
                 ? "Uses your default model to choose who speaks (costs tokens)"
                 : session.speakerSelectionMethod === "heuristic"
@@ -572,8 +572,8 @@ export function GroupChatSettingsPage() {
                   "rounded-full text-xs font-medium",
                   "border transition",
                   availableCharacters.length === 0
-                    ? "border-white/5 bg-white/5 text-white/30 cursor-not-allowed"
-                    : "border-emerald-400/30 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400/20",
+                    ? "border-fg/5 bg-fg/5 text-fg/30 cursor-not-allowed"
+                    : "border-accent/30 bg-accent/10 text-accent/80 hover:bg-accent/20",
                 )}
               >
                 <Plus size={14} />
@@ -596,20 +596,20 @@ export function GroupChatSettingsPage() {
                       className={cn(
                         "flex items-center gap-3 p-3",
                         radius.lg,
-                        "border border-white/10 bg-[#0c0d13]/85",
+                        "border border-fg/10 bg-surface-el/85",
                       )}
                     >
                       <CharacterAvatar character={character} size="md" />
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-white truncate">{character.name}</p>
+                        <p className="text-sm font-medium text-fg truncate">{character.name}</p>
                         <div className="flex items-center gap-2 mt-1">
-                          <div className="flex-1 h-1.5 rounded-full bg-white/10 overflow-hidden">
+                          <div className="flex-1 h-1.5 rounded-full bg-fg/10 overflow-hidden">
                             <div
-                              className="h-full bg-emerald-400/60 rounded-full transition-all duration-300"
+                              className="h-full bg-accent/60 rounded-full transition-all duration-300"
                               style={{ width: `${percent}%` }}
                             />
                           </div>
-                          <span className="text-[10px] text-white/50 tabular-nums">{percent}%</span>
+                          <span className="text-[10px] text-fg/50 tabular-nums">{percent}%</span>
                         </div>
                       </div>
                       <button
@@ -618,8 +618,8 @@ export function GroupChatSettingsPage() {
                         className={cn(
                           "flex items-center justify-center rounded-lg transition",
                           groupCharacters.length <= 2
-                            ? "text-white/20 cursor-not-allowed"
-                            : "text-white/40 hover:text-red-400 hover:bg-red-400/10",
+                            ? "text-fg/20 cursor-not-allowed"
+                            : "text-fg/40 hover:text-danger hover:bg-danger/10",
                         )}
                         title={
                           groupCharacters.length <= 2
@@ -636,7 +636,7 @@ export function GroupChatSettingsPage() {
             </div>
 
             {groupCharacters.length <= 2 && (
-              <p className="mt-2 text-xs text-white/40 text-center">
+              <p className="mt-2 text-xs text-fg/40 text-center">
                 A group chat requires at least 2 characters
               </p>
             )}
@@ -657,7 +657,7 @@ export function GroupChatSettingsPage() {
                   "border p-4 text-left",
                   interactive.transition.default,
                   interactive.active.scale,
-                  "border-white/10 bg-[#0c0d13]/85 backdrop-blur-sm hover:border-white/20 hover:bg-white/10",
+                  "border-fg/10 bg-surface-el/85 backdrop-blur-sm hover:border-fg/20 hover:bg-fg/10",
                 )}
               >
                 <div className="flex items-center gap-3 min-w-0">
@@ -665,7 +665,7 @@ export function GroupChatSettingsPage() {
                     className={cn(
                       "flex h-10 w-10 items-center justify-center",
                       radius.full,
-                      "border border-white/15 bg-white/10 text-white/80",
+                      "border border-fg/15 bg-fg/10 text-fg/80",
                     )}
                   >
                     <Copy className="h-4 w-4" />
@@ -677,17 +677,17 @@ export function GroupChatSettingsPage() {
                         typography.overline.weight,
                         typography.overline.tracking,
                         typography.overline.transform,
-                        "text-white/50",
+                        "text-fg/50",
                       )}
                     >
                       Clone Group
                     </div>
-                    <div className={cn(typography.bodySmall.size, "text-white truncate")}>
+                    <div className={cn(typography.bodySmall.size, "text-fg truncate")}>
                       Duplicate this group with or without messages
                     </div>
                   </div>
                 </div>
-                <ChevronRight className="h-4 w-4 shrink-0 text-white/30 transition-colors group-hover:text-white/60" />
+                <ChevronRight className="h-4 w-4 shrink-0 text-fg/30 transition-colors group-hover:text-fg/60" />
               </button>
 
               <button
@@ -698,7 +698,7 @@ export function GroupChatSettingsPage() {
                   "border p-4 text-left",
                   interactive.transition.default,
                   interactive.active.scale,
-                  "border-white/10 bg-[#0c0d13]/85 backdrop-blur-sm hover:border-white/20 hover:bg-white/10",
+                  "border-fg/10 bg-surface-el/85 backdrop-blur-sm hover:border-fg/20 hover:bg-fg/10",
                 )}
               >
                 <div className="flex items-center gap-3 min-w-0">
@@ -706,7 +706,7 @@ export function GroupChatSettingsPage() {
                     className={cn(
                       "flex h-10 w-10 items-center justify-center",
                       radius.full,
-                      "border border-white/15 bg-white/10 text-white/80",
+                      "border border-fg/15 bg-fg/10 text-fg/80",
                     )}
                   >
                     <GitBranch className="h-4 w-4" />
@@ -718,17 +718,17 @@ export function GroupChatSettingsPage() {
                         typography.overline.weight,
                         typography.overline.tracking,
                         typography.overline.transform,
-                        "text-white/50",
+                        "text-fg/50",
                       )}
                     >
                       Branch with Character
                     </div>
-                    <div className={cn(typography.bodySmall.size, "text-white truncate")}>
+                    <div className={cn(typography.bodySmall.size, "text-fg truncate")}>
                       Continue as 1-on-1 chat with a character
                     </div>
                   </div>
                 </div>
-                <ChevronRight className="h-4 w-4 shrink-0 text-white/30 transition-colors group-hover:text-white/60" />
+                <ChevronRight className="h-4 w-4 shrink-0 text-fg/30 transition-colors group-hover:text-fg/60" />
               </button>
             </div>
           </section>
@@ -740,19 +740,19 @@ export function GroupChatSettingsPage() {
                 title="Participation"
                 subtitle="Speaking distribution across characters"
               />
-              <div className={cn(radius.lg, "border border-white/10 bg-[#0c0d13]/85 p-4")}>
+              <div className={cn(radius.lg, "border border-fg/10 bg-surface-el/85 p-4")}>
                 {/* Visual bar */}
-                <div className="h-3 rounded-full overflow-hidden flex bg-white/5 mb-4">
+                <div className="h-3 rounded-full overflow-hidden flex bg-fg/5 mb-4">
                   {groupCharacters.map((char, index) => {
                     const percent = getParticipationPercent(char.id);
                     const colors = [
-                      "bg-emerald-400",
-                      "bg-blue-400",
-                      "bg-purple-400",
-                      "bg-amber-400",
-                      "bg-pink-400",
-                      "bg-cyan-400",
-                      "bg-orange-400",
+                      "bg-accent",
+                      "bg-info",
+                      "bg-secondary",
+                      "bg-warning",
+                      "bg-danger",
+                      "bg-info",
+                      "bg-warning",
                       "bg-lime-400",
                     ];
                     return (
@@ -771,13 +771,13 @@ export function GroupChatSettingsPage() {
                   {groupCharacters.map((char, index) => {
                     const percent = getParticipationPercent(char.id);
                     const colorDots = [
-                      "bg-emerald-400",
-                      "bg-blue-400",
-                      "bg-purple-400",
-                      "bg-amber-400",
-                      "bg-pink-400",
-                      "bg-cyan-400",
-                      "bg-orange-400",
+                      "bg-accent",
+                      "bg-info",
+                      "bg-secondary",
+                      "bg-warning",
+                      "bg-danger",
+                      "bg-info",
+                      "bg-warning",
                       "bg-lime-400",
                     ];
                     return (
@@ -788,8 +788,8 @@ export function GroupChatSettingsPage() {
                             colorDots[index % colorDots.length],
                           )}
                         />
-                        <span className="text-xs text-white/70">{char.name}</span>
-                        <span className="text-xs text-white/40 tabular-nums">({percent}%)</span>
+                        <span className="text-xs text-fg/70">{char.name}</span>
+                        <span className="text-xs text-fg/40 tabular-nums">({percent}%)</span>
                       </div>
                     );
                   })}
@@ -817,7 +817,7 @@ export function GroupChatSettingsPage() {
       >
         <div className="space-y-2 max-h-[60vh] overflow-y-auto">
           {availableCharacters.length === 0 ? (
-            <div className="text-center py-8 text-white/50 text-sm">
+            <div className="text-center py-8 text-fg/50 text-sm">
               All characters are already in this group.
             </div>
           ) : (
@@ -829,22 +829,22 @@ export function GroupChatSettingsPage() {
                 className={cn(
                   "flex w-full items-center gap-3 p-3 text-left",
                   radius.lg,
-                  "border border-white/10 bg-[#0c0d13]/85",
+                  "border border-fg/10 bg-surface-el/85",
                   interactive.transition.default,
-                  "hover:border-white/20 hover:bg-white/10",
+                  "hover:border-fg/20 hover:bg-fg/10",
                   "disabled:opacity-50",
                 )}
               >
                 <CharacterAvatar character={character} size="md" />
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-white truncate">{character.name}</p>
+                  <p className="text-sm font-medium text-fg truncate">{character.name}</p>
                   {(character.description || character.definition) && (
-                    <p className="text-xs text-white/50 truncate mt-0.5">
+                    <p className="text-xs text-fg/50 truncate mt-0.5">
                       {character.description || character.definition}
                     </p>
                   )}
                 </div>
-                <Plus className="h-4 w-4 text-emerald-400" />
+                <Plus className="h-4 w-4 text-accent" />
               </button>
             ))
           )}
@@ -859,9 +859,9 @@ export function GroupChatSettingsPage() {
       >
         {showRemoveConfirm && (
           <div className="space-y-4">
-            <p className="text-sm text-white/70">
+            <p className="text-sm text-fg/70">
               Are you sure you want to remove{" "}
-              <span className="font-medium text-white">
+              <span className="font-medium text-fg">
                 {groupCharacters.find((c) => c.id === showRemoveConfirm)?.name}
               </span>{" "}
               from this group chat?
@@ -870,14 +870,14 @@ export function GroupChatSettingsPage() {
               <button
                 onClick={() => setShowRemoveConfirm(null)}
                 disabled={saving}
-                className="flex-1 rounded-xl border border-white/10 bg-white/5 py-3 text-sm font-medium text-white transition hover:border-white/20 hover:bg-white/10 disabled:opacity-50"
+                className="flex-1 rounded-xl border border-fg/10 bg-fg/5 py-3 text-sm font-medium text-fg transition hover:border-fg/20 hover:bg-fg/10 disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 onClick={() => handleRemoveCharacter(showRemoveConfirm)}
                 disabled={saving}
-                className="flex-1 rounded-xl border border-red-500/30 bg-red-500/20 py-3 text-sm font-medium text-red-300 transition hover:bg-red-500/30 disabled:opacity-50"
+                className="flex-1 rounded-xl border border-danger/30 bg-danger/20 py-3 text-sm font-medium text-danger transition hover:bg-danger/30 disabled:opacity-50"
               >
                 {saving ? "Removing..." : "Remove"}
               </button>
@@ -903,7 +903,7 @@ export function GroupChatSettingsPage() {
                 "border text-left",
                 interactive.transition.default,
                 interactive.active.scale,
-                "border-white/10 bg-[#0c0d13]/85 hover:border-white/20 hover:bg-white/10",
+                "border-fg/10 bg-surface-el/85 hover:border-fg/20 hover:bg-fg/10",
                 cloning && "opacity-50 cursor-not-allowed",
               )}
             >
@@ -912,16 +912,16 @@ export function GroupChatSettingsPage() {
                   className={cn(
                     "flex h-10 w-10 items-center justify-center",
                     radius.full,
-                    "border border-emerald-400/30 bg-emerald-400/10 text-emerald-300",
+                    "border border-accent/30 bg-accent/10 text-accent/80",
                   )}
                 >
                   <Copy className="h-4 w-4" />
                 </div>
                 <div className="min-w-0">
-                  <p className={cn(typography.body.size, typography.body.weight, "text-white")}>
+                  <p className={cn(typography.body.size, typography.body.weight, "text-fg")}>
                     With messages
                   </p>
-                  <p className={cn(typography.caption.size, "text-white/50 mt-0.5")}>
+                  <p className={cn(typography.caption.size, "text-fg/50 mt-0.5")}>
                     Clone everything including chat history
                   </p>
                 </div>
@@ -937,7 +937,7 @@ export function GroupChatSettingsPage() {
                 "border text-left",
                 interactive.transition.default,
                 interactive.active.scale,
-                "border-white/10 bg-[#0c0d13]/85 hover:border-white/20 hover:bg-white/10",
+                "border-fg/10 bg-surface-el/85 hover:border-fg/20 hover:bg-fg/10",
                 cloning && "opacity-50 cursor-not-allowed",
               )}
             >
@@ -946,16 +946,16 @@ export function GroupChatSettingsPage() {
                   className={cn(
                     "flex h-10 w-10 items-center justify-center",
                     radius.full,
-                    "border border-white/15 bg-white/10 text-white/80",
+                    "border border-fg/15 bg-fg/10 text-fg/80",
                   )}
                 >
                   <Copy className="h-4 w-4" />
                 </div>
                 <div className="min-w-0">
-                  <p className={cn(typography.body.size, typography.body.weight, "text-white")}>
+                  <p className={cn(typography.body.size, typography.body.weight, "text-fg")}>
                     Without messages
                   </p>
-                  <p className={cn(typography.caption.size, "text-white/50 mt-0.5")}>
+                  <p className={cn(typography.caption.size, "text-fg/50 mt-0.5")}>
                     Clone setup only (characters, starting scene)
                   </p>
                 </div>
@@ -972,7 +972,7 @@ export function GroupChatSettingsPage() {
         title="Branch with Character"
       >
         <MenuSection>
-          <p className={cn(typography.bodySmall.size, "text-white/60 mb-3 px-1")}>
+          <p className={cn(typography.bodySmall.size, "text-fg/60 mb-3 px-1")}>
             Select a character to continue as a 1-on-1 conversation. All messages from this group
             will be converted.
           </p>
@@ -988,7 +988,7 @@ export function GroupChatSettingsPage() {
                   "border text-left",
                   interactive.transition.default,
                   interactive.active.scale,
-                  "border-white/10 bg-[#0c0d13]/85 hover:border-white/20 hover:bg-white/10",
+                  "border-fg/10 bg-surface-el/85 hover:border-fg/20 hover:bg-fg/10",
                   branching && "opacity-50 cursor-not-allowed",
                 )}
               >
@@ -999,17 +999,17 @@ export function GroupChatSettingsPage() {
                       className={cn(
                         typography.body.size,
                         typography.body.weight,
-                        "text-white truncate",
+                        "text-fg truncate",
                       )}
                     >
                       {character.name}
                     </p>
-                    <p className={cn(typography.caption.size, "text-white/50 mt-0.5 truncate")}>
+                    <p className={cn(typography.caption.size, "text-fg/50 mt-0.5 truncate")}>
                       Continue conversation with {character.name}
                     </p>
                   </div>
                 </div>
-                <ChevronRight className="h-4 w-4 shrink-0 text-white/30 transition-colors group-hover:text-white/60" />
+                <ChevronRight className="h-4 w-4 shrink-0 text-fg/30 transition-colors group-hover:text-fg/60" />
               </button>
             ))}
           </div>

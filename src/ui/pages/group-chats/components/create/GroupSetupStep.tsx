@@ -67,14 +67,14 @@ export function GroupSetupStep({
       {/* Title */}
       <div className={spacing.tight}>
         <div className="flex items-center gap-2">
-          <div className="rounded-lg border border-purple-400/30 bg-purple-400/10 p-1.5">
-            <MessageSquare className="h-4 w-4 text-purple-400" />
+          <div className="rounded-lg border border-secondary/30 bg-secondary/10 p-1.5">
+            <MessageSquare className="h-4 w-4 text-secondary" />
           </div>
-          <h2 className={cn(typography.h1.size, typography.h1.weight, "text-white")}>
+          <h2 className={cn(typography.h1.size, typography.h1.weight, "text-fg")}>
             Group Setup
           </h2>
         </div>
-        <p className={cn(typography.body.size, "mt-2 text-white/50")}>
+        <p className={cn(typography.body.size, "mt-2 text-fg/50")}>
           Configure your group chat settings
         </p>
       </div>
@@ -86,7 +86,7 @@ export function GroupSetupStep({
             typography.label.size,
             typography.label.weight,
             typography.label.tracking,
-            "uppercase text-white/70",
+            "uppercase text-fg/70",
           )}
         >
           Chat Type
@@ -102,8 +102,8 @@ export function GroupSetupStep({
               "border text-center",
               interactive.transition.fast,
               chatType === "conversation"
-                ? "border-emerald-400/40 bg-emerald-400/10"
-                : "border-white/10 bg-white/5 hover:border-white/20",
+                ? "border-accent/40 bg-accent/10"
+                : "border-fg/10 bg-fg/5 hover:border-fg/20",
             )}
           >
             <div
@@ -111,14 +111,14 @@ export function GroupSetupStep({
                 "flex h-12 w-12 items-center justify-center",
                 radius.lg,
                 chatType === "conversation"
-                  ? "border border-emerald-400/30 bg-emerald-400/20"
-                  : "border border-white/10 bg-white/5",
+                  ? "border border-accent/30 bg-accent/20"
+                  : "border border-fg/10 bg-fg/5",
               )}
             >
               <MessageSquare
                 className={cn(
                   "h-6 w-6",
-                  chatType === "conversation" ? "text-emerald-300" : "text-white/50",
+                  chatType === "conversation" ? "text-accent/80" : "text-fg/50",
                 )}
               />
             </div>
@@ -126,19 +126,19 @@ export function GroupSetupStep({
               <div
                 className={cn(
                   "text-sm font-semibold",
-                  chatType === "conversation" ? "text-emerald-100" : "text-white/80",
+                  chatType === "conversation" ? "text-accent" : "text-fg/80",
                 )}
               >
                 Conversation
               </div>
-              <div className="mt-0.5 text-xs text-white/40">Casual chat</div>
+              <div className="mt-0.5 text-xs text-fg/40">Casual chat</div>
             </div>
             {chatType === "conversation" && (
               <motion.div
                 layoutId="chatTypeIndicator"
-                className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-400"
+                className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-accent"
               >
-                <Sparkles className="h-3 w-3 text-black" />
+                <Sparkles className="h-3 w-3 text-surface" />
               </motion.div>
             )}
           </button>
@@ -152,8 +152,8 @@ export function GroupSetupStep({
               "border text-center",
               interactive.transition.fast,
               chatType === "roleplay"
-                ? "border-emerald-400/40 bg-emerald-400/10"
-                : "border-white/10 bg-white/5 hover:border-white/20",
+                ? "border-accent/40 bg-accent/10"
+                : "border-fg/10 bg-fg/5 hover:border-fg/20",
             )}
           >
             <div
@@ -161,14 +161,14 @@ export function GroupSetupStep({
                 "flex h-12 w-12 items-center justify-center",
                 radius.lg,
                 chatType === "roleplay"
-                  ? "border border-emerald-400/30 bg-emerald-400/20"
-                  : "border border-white/10 bg-white/5",
+                  ? "border border-accent/30 bg-accent/20"
+                  : "border border-fg/10 bg-fg/5",
               )}
             >
               <Theater
                 className={cn(
                   "h-6 w-6",
-                  chatType === "roleplay" ? "text-emerald-300" : "text-white/50",
+                  chatType === "roleplay" ? "text-accent/80" : "text-fg/50",
                 )}
               />
             </div>
@@ -176,25 +176,25 @@ export function GroupSetupStep({
               <div
                 className={cn(
                   "text-sm font-semibold",
-                  chatType === "roleplay" ? "text-emerald-100" : "text-white/80",
+                  chatType === "roleplay" ? "text-accent" : "text-fg/80",
                 )}
               >
                 Roleplay
               </div>
-              <div className="mt-0.5 text-xs text-white/40">With scenes</div>
+              <div className="mt-0.5 text-xs text-fg/40">With scenes</div>
             </div>
             {chatType === "roleplay" && (
               <motion.div
                 layoutId="chatTypeIndicator"
-                className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-400"
+                className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-accent"
               >
-                <Sparkles className="h-3 w-3 text-black" />
+                <Sparkles className="h-3 w-3 text-surface" />
               </motion.div>
             )}
           </button>
         </div>
 
-        <p className={cn(typography.bodySmall.size, "mt-2 text-white/40")}>
+        <p className={cn(typography.bodySmall.size, "mt-2 text-fg/40")}>
           {chatType === "conversation"
             ? "Casual group conversation without starting scenes"
             : "Roleplay scenario with starting scene and immersive prompts"}
@@ -208,7 +208,7 @@ export function GroupSetupStep({
             typography.label.size,
             typography.label.weight,
             typography.label.tracking,
-            "uppercase text-white/70",
+            "uppercase text-fg/70",
           )}
         >
           Speaker Selection
@@ -246,38 +246,38 @@ export function GroupSetupStep({
                 "border text-center",
                 interactive.transition.fast,
                 speakerSelectionMethod === option.value
-                  ? "border-emerald-400/40 bg-emerald-400/10"
-                  : "border-white/10 bg-white/5 hover:border-white/20",
+                  ? "border-accent/40 bg-accent/10"
+                  : "border-fg/10 bg-fg/5 hover:border-fg/20",
               )}
             >
               <option.icon
                 className={cn(
                   "h-5 w-5",
-                  speakerSelectionMethod === option.value ? "text-emerald-300" : "text-white/50",
+                  speakerSelectionMethod === option.value ? "text-accent/80" : "text-fg/50",
                 )}
               />
               <div
                 className={cn(
                   "text-xs font-semibold",
-                  speakerSelectionMethod === option.value ? "text-emerald-100" : "text-white/80",
+                  speakerSelectionMethod === option.value ? "text-accent" : "text-fg/80",
                 )}
               >
                 {option.label}
               </div>
-              <div className="text-[10px] text-white/40">{option.desc}</div>
+              <div className="text-[10px] text-fg/40">{option.desc}</div>
               {speakerSelectionMethod === option.value && (
                 <motion.div
                   layoutId="selectionMethodIndicator"
-                  className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-emerald-400"
+                  className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-accent"
                 >
-                  <Sparkles className="h-2.5 w-2.5 text-black" />
+                  <Sparkles className="h-2.5 w-2.5 text-surface" />
                 </motion.div>
               )}
             </button>
           ))}
         </div>
 
-        <p className={cn(typography.bodySmall.size, "mt-2 text-white/40")}>
+        <p className={cn(typography.bodySmall.size, "mt-2 text-fg/40")}>
           {speakerSelectionMethod === "llm"
             ? "Uses your default model to choose who speaks (costs tokens)"
             : speakerSelectionMethod === "heuristic"
@@ -293,10 +293,10 @@ export function GroupSetupStep({
             typography.label.size,
             typography.label.weight,
             typography.label.tracking,
-            "uppercase text-white/70",
+            "uppercase text-fg/70",
           )}
         >
-          Chat Background <span className="text-white/40">(Optional)</span>
+          Chat Background <span className="text-fg/40">(Optional)</span>
         </label>
 
         <div
@@ -304,8 +304,8 @@ export function GroupSetupStep({
             "overflow-hidden border",
             radius.md,
             backgroundImagePath
-              ? "border-purple-400/30 bg-purple-400/5"
-              : "border-white/10 bg-black/20",
+              ? "border-secondary/30 bg-secondary/5"
+              : "border-fg/10 bg-surface-el/20",
           )}
         >
           {backgroundImagePath ? (
@@ -319,10 +319,10 @@ export function GroupSetupStep({
               <button
                 onClick={() => onBackgroundImageChange("")}
                 className={cn(
-                  "absolute top-2 right-2 flex h-6 w-6 items-center justify-center border border-white/20 bg-black/50 text-white/70",
+                  "absolute top-2 right-2 flex h-6 w-6 items-center justify-center border border-fg/20 bg-surface-el/50 text-fg/70",
                   radius.full,
                   interactive.transition.fast,
-                  "active:scale-95 active:bg-black/70",
+                  "active:scale-95 active:bg-surface-el/70",
                 )}
                 aria-label="Remove background image"
               >
@@ -334,11 +334,11 @@ export function GroupSetupStep({
               className={cn(
                 "flex cursor-pointer items-center justify-center gap-2 py-6",
                 interactive.transition.default,
-                "hover:bg-white/5",
+                "hover:bg-fg/5",
               )}
             >
-              <ImageIcon className="h-5 w-5 text-white/40" />
-              <span className={cn(typography.body.size, "text-white/50")}>
+              <ImageIcon className="h-5 w-5 text-fg/40" />
+              <span className={cn(typography.body.size, "text-fg/50")}>
                 Upload background image
               </span>
               <input
@@ -351,7 +351,7 @@ export function GroupSetupStep({
           )}
         </div>
 
-        <p className={cn(typography.bodySmall.size, "text-white/40")}>
+        <p className={cn(typography.bodySmall.size, "text-fg/40")}>
           Set a background image for this group chat
         </p>
       </div>
@@ -363,10 +363,10 @@ export function GroupSetupStep({
             typography.label.size,
             typography.label.weight,
             typography.label.tracking,
-            "uppercase text-white/70",
+            "uppercase text-fg/70",
           )}
         >
-          Group Name <span className="text-white/40">(Optional)</span>
+          Group Name <span className="text-fg/40">(Optional)</span>
         </label>
         <div className="relative">
           <input
@@ -375,12 +375,12 @@ export function GroupSetupStep({
             placeholder={namePlaceholder}
             inputMode="text"
             className={cn(
-              "w-full border bg-black/20 px-4 py-3.5 text-white placeholder-white/40 backdrop-blur-xl",
+              "w-full border bg-surface-el/20 px-4 py-3.5 text-fg placeholder-fg/40 backdrop-blur-xl",
               radius.md,
               typography.body.size,
               interactive.transition.default,
-              "focus:border-white/30 focus:bg-black/30 focus:outline-none",
-              groupName.trim() ? "border-emerald-400/30 bg-emerald-400/5" : "border-white/10",
+              "focus:border-fg/30 focus:bg-surface-el/30 focus:outline-none",
+              groupName.trim() ? "border-accent/30 bg-accent/5" : "border-fg/10",
             )}
           />
           {groupName.trim() && (
@@ -393,15 +393,15 @@ export function GroupSetupStep({
                 className={cn(
                   "flex h-6 w-6 items-center justify-center",
                   radius.full,
-                  "bg-emerald-400/20",
+                  "bg-accent/20",
                 )}
               >
-                <Sparkles className="h-3 w-3 text-emerald-300" />
+                <Sparkles className="h-3 w-3 text-accent/80" />
               </div>
             </motion.div>
           )}
         </div>
-        <p className={cn(typography.bodySmall.size, "text-white/40")}>
+        <p className={cn(typography.bodySmall.size, "text-fg/40")}>
           Leave empty to auto-generate from character names
         </p>
       </div>
@@ -418,11 +418,11 @@ export function GroupSetupStep({
             interactive.transition.fast,
             canContinue
               ? cn(
-                  "border border-emerald-400/40 bg-emerald-400/20 text-emerald-100",
+                  "border border-accent/40 bg-accent/20 text-accent",
                   shadows.glow,
-                  "active:border-emerald-400/60 active:bg-emerald-400/30",
+                  "active:border-accent/60 active:bg-accent/30",
                 )
-              : "cursor-not-allowed border border-white/5 bg-white/5 text-white/30",
+              : "cursor-not-allowed border border-fg/5 bg-fg/5 text-fg/30",
           )}
         >
           {chatType === "roleplay" ? "Continue to Starting Scene" : "Create Group Chat"}

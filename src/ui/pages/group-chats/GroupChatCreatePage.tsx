@@ -35,7 +35,7 @@ export function GroupChatCreatePage() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#050505] text-gray-100">
+    <div className="flex min-h-screen flex-col bg-surface text-fg">
       <TopNav currentPath={location.pathname + location.search} onBackOverride={handleBack} />
 
       <main className="flex flex-1 flex-col overflow-y-auto px-4 pb-6 pt-[calc(72px+env(safe-area-inset-top))]">

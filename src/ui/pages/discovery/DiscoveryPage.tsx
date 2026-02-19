@@ -117,10 +117,10 @@ export function DiscoveryPage() {
   const featuredCard = sections?.trending[0];
 
   return (
-    <div className="flex h-full flex-col bg-[#050505]">
+    <div className="flex h-full flex-col bg-surface">
       {/* Header - matches TopNav style */}
       <header
-        className="sticky top-0 z-30 border-b border-white/10 bg-[#0F0F0F]/80 backdrop-blur-md"
+        className="sticky top-0 z-30 border-b border-fg/10 bg-surface-el/80 backdrop-blur-md"
         style={{
           paddingTop: "calc(env(safe-area-inset-top) + 12px)",
           paddingBottom: "12px",
@@ -132,7 +132,7 @@ export function DiscoveryPage() {
               onClick={handleBack}
               className={cn(
                 "flex shrink-0 items-center justify-center rounded-full p-2",
-                "text-white/70 hover:bg-white/10 hover:text-white",
+                "text-fg/70 hover:bg-fg/10 hover:text-fg",
                 interactive.transition.fast,
                 interactive.active.scale,
               )}
@@ -140,7 +140,7 @@ export function DiscoveryPage() {
             >
               <ArrowLeft size={20} strokeWidth={2.5} />
             </button>
-            <h1 className={cn(typography.h1.size, "font-bold tracking-tight text-white")}>
+            <h1 className={cn(typography.h1.size, "font-bold tracking-tight text-fg")}>
               Discover
             </h1>
           </div>
@@ -151,7 +151,7 @@ export function DiscoveryPage() {
               disabled={refreshing}
               className={cn(
                 "flex items-center justify-center rounded-full p-2",
-                "text-white/70 hover:bg-white/10 hover:text-white",
+                "text-fg/70 hover:bg-fg/10 hover:text-fg",
                 interactive.transition.fast,
                 interactive.active.scale,
                 refreshing && "animate-spin",
@@ -165,7 +165,7 @@ export function DiscoveryPage() {
               onClick={handleSearchClick}
               className={cn(
                 "flex items-center justify-center rounded-full p-2",
-                "text-white/70 hover:bg-white/10 hover:text-white",
+                "text-fg/70 hover:bg-fg/10 hover:text-fg",
                 interactive.transition.fast,
                 interactive.active.scale,
               )}
@@ -178,7 +178,7 @@ export function DiscoveryPage() {
               onClick={() => navigate("/settings")}
               className={cn(
                 "flex items-center justify-center rounded-full p-2",
-                "text-white/70 hover:bg-white/10 hover:text-white",
+                "text-fg/70 hover:bg-fg/10 hover:text-fg",
                 interactive.transition.fast,
                 interactive.active.scale,
               )}
@@ -201,10 +201,10 @@ export function DiscoveryPage() {
         <div className="px-4 py-3 lg:px-8">
           <button
             onClick={handleSearchClick}
-            className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-left transition-all hover:border-white/15 hover:bg-white/[0.07] active:scale-[0.99]"
+            className="flex w-full items-center gap-3 rounded-xl border border-fg/10 bg-fg/5 px-4 py-3 text-left transition-all hover:border-fg/15 hover:bg-fg/[0.07] active:scale-[0.99]"
           >
-            <Search className="h-4 w-4 text-white/40" />
-            <span className="text-sm text-white/40">Search characters...</span>
+            <Search className="h-4 w-4 text-fg/40" />
+            <span className="text-sm text-fg/40">Search characters...</span>
           </button>
         </div>
 
@@ -221,8 +221,8 @@ export function DiscoveryPage() {
                 className={cn(
                   "flex shrink-0 items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition-all",
                   isActive
-                    ? "bg-white text-black shadow-lg shadow-white/20"
-                    : "border border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white",
+                    ? "bg-fg text-surface shadow-lg shadow-fg/20"
+                    : "border border-fg/10 bg-fg/5 text-fg/70 hover:bg-fg/10 hover:text-fg",
                 )}
               >
                 <Icon className="h-3.5 w-3.5" />
@@ -235,14 +235,14 @@ export function DiscoveryPage() {
         {/* Error state */}
         {error && (
           <div className="flex flex-col items-center justify-center px-6 py-20">
-            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-red-500/30 bg-red-500/10">
-              <AlertCircle className="h-8 w-8 text-red-400" />
+            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-danger/30 bg-danger/10">
+              <AlertCircle className="h-8 w-8 text-danger" />
             </div>
-            <h3 className="mb-2 text-lg font-semibold text-white">Something went wrong</h3>
-            <p className="mb-6 text-center text-sm text-white/50">{error}</p>
+            <h3 className="mb-2 text-lg font-semibold text-fg">Something went wrong</h3>
+            <p className="mb-6 text-center text-sm text-fg/50">{error}</p>
             <button
               onClick={() => loadSections()}
-              className="flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-5 py-2.5 text-sm font-medium text-white transition-all hover:bg-white/15 active:scale-95"
+              className="flex items-center gap-2 rounded-xl border border-fg/20 bg-fg/10 px-5 py-2.5 text-sm font-medium text-fg transition-all hover:bg-fg/15 active:scale-95"
             >
               <RefreshCw className="h-4 w-4" />
               Try Again
@@ -282,8 +282,8 @@ export function DiscoveryPage() {
                   cards={sections.trending.slice(1, 12)}
                   onCardClick={handleCardClick}
                   onViewAll={() => handleViewAll("trending")}
-                  icon={<TrendingUp className="h-4 w-4 text-white" />}
-                  accentColor="from-emerald-500 to-emerald-600"
+                  icon={<TrendingUp className="h-4 w-4 text-fg" />}
+                  accentColor="from-accent to-accent/80"
                 />
 
                 {/* Popular Section */}
@@ -293,8 +293,8 @@ export function DiscoveryPage() {
                   cards={sections.popular.slice(0, 12)}
                   onCardClick={handleCardClick}
                   onViewAll={() => handleViewAll("popular")}
-                  icon={<Flame className="h-4 w-4 text-white" />}
-                  accentColor="from-emerald-400 to-teal-500"
+                  icon={<Flame className="h-4 w-4 text-fg" />}
+                  accentColor="from-accent/80 to-accent/80"
                 />
 
                 {/* Newest Section */}
@@ -304,8 +304,8 @@ export function DiscoveryPage() {
                   cards={sections.newest.slice(0, 12)}
                   onCardClick={handleCardClick}
                   onViewAll={() => handleViewAll("newest")}
-                  icon={<Clock className="h-4 w-4 text-white" />}
-                  accentColor="from-emerald-500 to-cyan-500"
+                  icon={<Clock className="h-4 w-4 text-fg" />}
+                  accentColor="from-accent to-info/80"
                 />
               </div>
             ) : (
@@ -324,7 +324,7 @@ export function DiscoveryPage() {
 
                 {getDisplayCards().length === 0 && (
                   <div className="flex flex-col items-center justify-center py-20">
-                    <p className="text-sm text-white/50">No cards found</p>
+                    <p className="text-sm text-fg/50">No cards found</p>
                   </div>
                 )}
               </div>

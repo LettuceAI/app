@@ -17,7 +17,7 @@ export function ProgressIndicator({ currentStep, stepLabel }: ProgressIndicatorP
   const progressPercentage = ((currentStep - 1) / (steps.length - 1)) * 100;
 
   return (
-    <div className="border-b border-white/5 bg-[#050505] px-4 pb-5 pt-5">
+    <div className="border-b border-fg/5 bg-surface px-4 pb-5 pt-5">
       {/* Header with step info */}
       <div className="mb-4 flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -26,17 +26,17 @@ export function ProgressIndicator({ currentStep, stepLabel }: ProgressIndicatorP
               typography.overline.size,
               typography.overline.weight,
               typography.overline.tracking,
-              "uppercase text-white/40"
+              "uppercase text-fg/40"
             )}
           >
             Step {currentStep} of {steps.length}
           </span>
-          <div className={cn("h-1 w-1", radius.full, "bg-white/20")} />
-          <span className={cn(typography.bodySmall.size, typography.h3.weight, "text-white/70")}>
+          <div className={cn("h-1 w-1", radius.full, "bg-fg/20")} />
+          <span className={cn(typography.bodySmall.size, typography.h3.weight, "text-fg/70")}>
             {stepLabel}
           </span>
         </div>
-        <span className={cn(typography.caption.size, "text-emerald-400/70")}>
+        <span className={cn(typography.caption.size, "text-accent/70")}>
           {Math.round(progressPercentage)}%
         </span>
       </div>
@@ -63,14 +63,14 @@ export function ProgressIndicator({ currentStep, stepLabel }: ProgressIndicatorP
                   radius.full,
                   "h-1.5 border",
                   isCompleted || isCurrent
-                    ? "border-emerald-400/40"
-                    : "border-white/10"
+                    ? "border-accent/40"
+                    : "border-fg/10"
                 )}
               >
                 {/* Animated fill */}
                 {isCurrent && (
                   <motion.div
-                    className="absolute inset-0 bg-gradient-to-r from-emerald-400/60 to-emerald-400/80"
+                    className="absolute inset-0 bg-gradient-to-r from-accent/60 to-accent/80"
                     initial={{ x: "-100%" }}
                     animate={{ x: "0%" }}
                     transition={{
@@ -80,7 +80,7 @@ export function ProgressIndicator({ currentStep, stepLabel }: ProgressIndicatorP
                   />
                 )}
                 {isCompleted && (
-                  <div className="h-full w-full bg-emerald-400/60" />
+                  <div className="h-full w-full bg-accent/60" />
                 )}
               </motion.div>
 
@@ -98,10 +98,10 @@ export function ProgressIndicator({ currentStep, stepLabel }: ProgressIndicatorP
                     radius.md,
                     "h-7 w-7 border",
                     isCompleted
-                      ? "border-emerald-400/40 bg-emerald-400/20"
+                      ? "border-accent/40 bg-accent/20"
                       : isCurrent
-                      ? "border-emerald-400/30 bg-emerald-400/15"
-                      : "border-white/10 bg-white/5"
+                      ? "border-accent/30 bg-accent/15"
+                      : "border-fg/10 bg-fg/5"
                   )}
                 >
                   {isCompleted ? (
@@ -110,13 +110,13 @@ export function ProgressIndicator({ currentStep, stepLabel }: ProgressIndicatorP
                       animate={{ scale: 1, rotate: 0 }}
                       transition={{ duration: 0.3, ease: [0.34, 1.56, 0.64, 1] }}
                     >
-                      <Check className="h-3.5 w-3.5 text-emerald-300" strokeWidth={3} />
+                      <Check className="h-3.5 w-3.5 text-accent/80" strokeWidth={3} />
                     </motion.div>
                   ) : (
                     <Icon
                       className={cn(
                         "h-3.5 w-3.5 transition-colors",
-                        isCurrent ? "text-emerald-200" : "text-white/40"
+                        isCurrent ? "text-accent/80" : "text-fg/40"
                       )}
                     />
                   )}
@@ -132,10 +132,10 @@ export function ProgressIndicator({ currentStep, stepLabel }: ProgressIndicatorP
                     typography.caption.size,
                     typography.caption.weight,
                     isCurrent
-                      ? "text-emerald-200"
+                      ? "text-accent/80"
                       : isCompleted
-                      ? "text-emerald-300/60"
-                      : "text-white/40"
+                      ? "text-accent/60"
+                      : "text-fg/40"
                   )}
                 >
                   {step.label}

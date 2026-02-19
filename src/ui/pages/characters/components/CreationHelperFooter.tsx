@@ -113,9 +113,9 @@ export function CreationHelperFooter({
           className={cn(
             "mb-3 px-4 py-2.5 flex items-center justify-between gap-4",
             radius.md,
-            "border border-red-400/30 bg-red-400/10",
+            "border border-danger/30 bg-danger/10",
             typography.bodySmall.size,
-            "text-red-200",
+            "text-danger",
           )}
         >
           <span className="flex-1">{error}</span>
@@ -123,7 +123,7 @@ export function CreationHelperFooter({
             <button
               onClick={() => (onRetry ? onRetry() : onSendMessage())}
               className={cn(
-                "flex items-center gap-1.5 px-3 py-1 rounded-full bg-red-400/20 hover:bg-red-400/30 text-white/90 transition-colors whitespace-nowrap font-medium",
+                "flex items-center gap-1.5 px-3 py-1 rounded-full bg-danger/20 hover:bg-danger/30 text-fg/90 transition-colors whitespace-nowrap font-medium",
               )}
             >
               <RotateCcw className="h-3.5 w-3.5" />
@@ -139,7 +139,7 @@ export function CreationHelperFooter({
           {pendingAttachments.map((attachment) => (
             <div
               key={attachment.id}
-              className={cn("relative", radius.md, "border border-white/20 bg-white/10")}
+              className={cn("relative", radius.md, "border border-fg/20 bg-fg/10")}
             >
               <img
                 src={attachment.data}
@@ -156,7 +156,7 @@ export function CreationHelperFooter({
                   )}
                   aria-label="Remove attachment"
                 >
-                  <X className="h-5 w-5 text-black drop-shadow-[0_1px_2px_rgba(255,255,255,0.8)]" />
+                  <X className="h-5 w-5 text-surface drop-shadow-[0_1px_2px_rgba(255,255,255,0.8)]" />
                 </button>
               )}
             </div>
@@ -173,7 +173,7 @@ export function CreationHelperFooter({
               className={cn(
                 "flex items-center gap-2 px-2 py-1",
                 radius.full,
-                "border border-white/20 bg-white/10 text-white/80 text-sm",
+                "border border-fg/20 bg-fg/10 text-fg/80 text-sm",
               )}
             >
               <ReferenceAvatar
@@ -188,7 +188,7 @@ export function CreationHelperFooter({
               {onRemoveReference && (
                 <button
                   onClick={() => onRemoveReference(ref.id)}
-                  className="ml-1 hover:text-white"
+                  className="ml-1 hover:text-fg"
                   aria-label="Remove reference"
                 >
                   <X className="h-3.5 w-3.5" />
@@ -213,7 +213,7 @@ export function CreationHelperFooter({
         className={cn(
           "relative flex items-end gap-2.5 p-2",
           "rounded-4xl",
-          "border border-white/15 bg-white/5 backdrop-blur-3xl",
+          "border border-fg/15 bg-fg/5 backdrop-blur-3xl",
           shadows.md,
         )}
       >
@@ -224,10 +224,10 @@ export function CreationHelperFooter({
           className={cn(
             "mb-0.5 flex h-10 w-11 shrink-0 items-center justify-center self-end",
             radius.full,
-            "border border-white/15 bg-white/10 text-white/70",
+            "border border-fg/15 bg-fg/10 text-fg/70",
             interactive.transition.fast,
             interactive.active.scale,
-            "hover:border-white/25 hover:bg-white/15",
+            "hover:border-fg/25 hover:bg-fg/15",
             "disabled:cursor-not-allowed disabled:opacity-40",
           )}
           title="More options"
@@ -246,7 +246,7 @@ export function CreationHelperFooter({
           className={cn(
             "max-h-32 flex-1 resize-none bg-transparent py-2.5",
             typography.body.size,
-            "text-white placeholder:text-transparent",
+            "text-fg placeholder:text-transparent",
             "focus:outline-none",
           )}
           disabled={sending}
@@ -257,7 +257,7 @@ export function CreationHelperFooter({
             className={cn(
               "pointer-events-none absolute left-16",
               "top-1/2 -translate-y-1/2",
-              "text-white/40",
+              "text-fg/40",
               "transition-opacity duration-150",
             )}
           >
@@ -277,21 +277,21 @@ export function CreationHelperFooter({
             "mb-0.5 flex h-10 w-11 shrink-0 items-center justify-center self-end",
             radius.full,
             sending
-              ? "border border-red-400/40 bg-red-400/20 text-red-200"
+              ? "border border-danger/40 bg-danger/20 text-danger"
               : hasDraft || hasAttachments || hasReferences
-                ? "border border-emerald-400/40 bg-emerald-400/20 text-emerald-100"
-                : "border border-white/15 bg-white/10 text-white/70",
+                ? "border border-accent/40 bg-accent/20 text-accent"
+                : "border border-fg/15 bg-fg/10 text-fg/70",
             interactive.transition.fast,
             interactive.active.scale,
-            sending && "hover:border-red-400/60 hover:bg-red-400/30",
+            sending && "hover:border-danger/60 hover:bg-danger/30",
             !sending &&
               (hasDraft || hasAttachments || hasReferences) &&
-              "hover:border-emerald-400/60 hover:bg-emerald-400/30",
+              "hover:border-accent/60 hover:bg-accent/30",
             !sending &&
               !hasDraft &&
               !hasAttachments &&
               !hasReferences &&
-              "hover:border-white/25 hover:bg-white/15",
+              "hover:border-fg/25 hover:bg-fg/15",
             "disabled:cursor-not-allowed disabled:opacity-40",
           )}
           title={sending ? "Stop generation" : "Send message"}
@@ -312,7 +312,7 @@ export function CreationHelperFooter({
             icon={ImageIcon}
             title="Upload Image"
             description="Add an avatar or reference image"
-            color="from-blue-500 to-cyan-600"
+            color="from-info to-info/80"
             onClick={() => {
               fileInputRef.current?.click();
             }}
@@ -323,7 +323,7 @@ export function CreationHelperFooter({
                 icon={User}
                 title="Reference Character"
                 description="Use an existing character as inspiration"
-                color="from-purple-500 to-pink-600"
+                color="from-secondary to-danger/80"
                 onClick={() => {
                   setShowPlusMenu(false);
                   onOpenReferenceSelector("character");
@@ -333,7 +333,7 @@ export function CreationHelperFooter({
                 icon={Users}
                 title="Reference Persona"
                 description="Use your persona as context"
-                color="from-amber-500 to-orange-600"
+                color="from-warning to-warning/80"
                 onClick={() => {
                   setShowPlusMenu(false);
                   onOpenReferenceSelector("persona");

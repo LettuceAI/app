@@ -23,22 +23,22 @@ export function GroupChatHeader({
   return (
     <header
       className={cn(
-        "border-b border-white/10 px-4 pb-3 pt-3",
+        "border-b border-fg/10 px-4 pb-3 pt-3",
         hasBackgroundImage && "backdrop-blur-xl",
       )}
     >
       <div className="flex items-center">
         <button
           onClick={onBack}
-          className="flex shrink-0 px-[0.6em] py-[0.3em] items-center justify-center -ml-2 text-white transition hover:text-white/80"
+          className="flex shrink-0 px-[0.6em] py-[0.3em] items-center justify-center -ml-2 text-fg transition hover:text-fg/80"
           aria-label="Back"
         >
           <ArrowLeft size={14} strokeWidth={2.5} />
         </button>
 
         <div className="min-w-0 flex-1 ml-2">
-          <h1 className="h1-group-chat truncate text-lg font-bold text-white/90">{session.name}</h1>
-          <p className="truncate text-xs text-white/50">{characters.length} characters</p>
+          <h1 className="h1-group-chat truncate text-lg font-bold text-fg/90">{session.name}</h1>
+          <p className="truncate text-xs text-fg/50">{characters.length} characters</p>
         </div>
 
         <div className="relative flex items-center mr-3">
@@ -54,9 +54,9 @@ export function GroupChatHeader({
             <div
               className={cn(
                 "h-8 w-8 rounded-full",
-                "bg-linear-to-br from-purple-500/30 to-blue-500/30",
+                "bg-linear-to-br from-secondary/30 to-info/80/30",
                 "flex items-center justify-center",
-                "text-[10px] font-semibold text-white shadow-lg",
+                "text-[10px] font-semibold text-fg shadow-lg",
                 "ring-1 ring-white/20",
               )}
               style={{ marginLeft: "-8px", zIndex: 0 }}
@@ -68,7 +68,7 @@ export function GroupChatHeader({
 
         <button
           onClick={onMemories}
-          className="flex items-center px-[0.6em] py-[0.3em] justify-center text-white/70 hover:text-white transition"
+          className="flex items-center px-[0.6em] py-[0.3em] justify-center text-fg/70 hover:text-fg transition"
           aria-label="Memories"
         >
           <Brain size={14} />
@@ -76,7 +76,7 @@ export function GroupChatHeader({
 
         <button
           onClick={onSettings}
-          className="flex items-center px-[0.6em] py-[0.3em] justify-center text-white/70 hover:text-white transition"
+          className="flex items-center px-[0.6em] py-[0.3em] justify-center text-fg/70 hover:text-fg transition"
           aria-label="Settings"
         >
           <Settings size={14} />
@@ -113,7 +113,7 @@ function CharacterMiniAvatar({
       {avatarUrl ? (
         <AvatarImage src={avatarUrl} alt={character.name} crop={character.avatarCrop} applyCrop />
       ) : (
-        <div className="flex h-full w-full items-center justify-center bg-linear-to-br from-purple-500/40 to-blue-500/40 text-[11px] font-bold text-white">
+        <div className="flex h-full w-full items-center justify-center bg-linear-to-br from-secondary/40 to-info/80/40 text-[11px] font-bold text-fg">
           {character.name.slice(0, 1).toUpperCase()}
         </div>
       )}

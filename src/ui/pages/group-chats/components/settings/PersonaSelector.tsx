@@ -36,10 +36,10 @@ function PersonaAvatar({ persona, size = "md", isSelected = false }: PersonaAvat
         className={cn(
           sizeClasses[size],
           "relative flex shrink-0 items-center justify-center overflow-hidden rounded-full border",
-          isSelected ? "border-emerald-400/40 bg-emerald-400/15" : "border-white/15 bg-white/5",
+          isSelected ? "border-accent/40 bg-accent/15" : "border-fg/15 bg-fg/5",
         )}
       >
-        <UserX className={cn(iconSizes[size], isSelected ? "text-emerald-300" : "text-white/50")} />
+        <UserX className={cn(iconSizes[size], isSelected ? "text-accent/80" : "text-fg/50")} />
       </div>
     );
   }
@@ -50,10 +50,10 @@ function PersonaAvatar({ persona, size = "md", isSelected = false }: PersonaAvat
         sizeClasses[size],
         "relative flex shrink-0 items-center justify-center overflow-hidden rounded-full border",
         isSelected
-          ? "border-emerald-400/40 bg-emerald-400/15"
+          ? "border-accent/40 bg-accent/15"
           : persona.isDefault
-            ? "border-blue-400/30 bg-blue-400/10"
-            : "border-white/15 bg-white/5",
+            ? "border-info/30 bg-info/10"
+            : "border-fg/15 bg-fg/5",
       )}
     >
       {avatarDataUrl ? (
@@ -62,7 +62,7 @@ function PersonaAvatar({ persona, size = "md", isSelected = false }: PersonaAvat
         <User
           className={cn(
             iconSizes[size],
-            isSelected ? "text-emerald-300" : persona.isDefault ? "text-blue-300" : "text-white/60",
+            isSelected ? "text-accent/80" : persona.isDefault ? "text-info" : "text-fg/60",
           )}
         />
       )}
@@ -171,8 +171,8 @@ function PersonaOptionItem({ persona, isSelected, onClick, onLongPress }: Person
         interactive.transition.default,
         "active:scale-[0.98]",
         isSelected
-          ? "border border-emerald-400/40 bg-emerald-400/10 ring-1 ring-emerald-400/20"
-          : "border border-white/8 bg-white/3 hover:border-white/15 hover:bg-white/6",
+          ? "border border-accent/40 bg-accent/10 ring-1 ring-accent/20"
+          : "border border-fg/8 bg-fg/3 hover:border-fg/15 hover:bg-fg/6",
       )}
       aria-pressed={isSelected}
     >
@@ -186,15 +186,15 @@ function PersonaOptionItem({ persona, isSelected, onClick, onLongPress }: Person
             className={cn(
               typography.body.size,
               "font-medium truncate",
-              isSelected ? "text-emerald-100" : "text-white",
+              isSelected ? "text-accent" : "text-fg",
             )}
           >
             {title}
           </span>
           {isDefault && (
-            <span className="inline-flex items-center gap-1 shrink-0 rounded-full border border-blue-400/30 bg-blue-400/10 px-2 py-0.5">
-              <Star className="h-2.5 w-2.5 fill-blue-400 text-blue-400" />
-              <span className="text-[10px] font-medium text-blue-200">Default</span>
+            <span className="inline-flex items-center gap-1 shrink-0 rounded-full border border-info/30 bg-info/10 px-2 py-0.5">
+              <Star className="h-2.5 w-2.5 fill-info text-info" />
+              <span className="text-[10px] font-medium text-info">Default</span>
             </span>
           )}
         </div>
@@ -202,7 +202,7 @@ function PersonaOptionItem({ persona, isSelected, onClick, onLongPress }: Person
           className={cn(
             typography.caption.size,
             "mt-0.5 truncate",
-            isSelected ? "text-emerald-200/70" : "text-white/50",
+            isSelected ? "text-accent/70" : "text-fg/50",
           )}
         >
           {description}
@@ -214,8 +214,8 @@ function PersonaOptionItem({ persona, isSelected, onClick, onLongPress }: Person
         className={cn(
           "flex h-6 w-6 shrink-0 items-center justify-center rounded-full border transition-all",
           isSelected
-            ? "border-emerald-400/60 bg-emerald-500/30 text-emerald-300"
-            : "border-white/15 bg-white/5 text-transparent group-hover:border-white/25",
+            ? "border-accent/60 bg-accent/30 text-accent/80"
+            : "border-fg/15 bg-fg/5 text-transparent group-hover:border-fg/25",
         )}
       >
         <Check className={cn("h-3.5 w-3.5", isSelected ? "opacity-100" : "opacity-0")} />
@@ -282,16 +282,16 @@ export function PersonaSelector({
       <div className={spacing.group}>
         {/* Empty State */}
         {personas.length === 0 ? (
-          <div className={cn("rounded-xl", "border border-amber-500/20 bg-amber-500/10 px-5 py-4")}>
+          <div className={cn("rounded-xl", "border border-warning/20 bg-warning/10 px-5 py-4")}>
             <div className="flex items-start gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-amber-400/30 bg-amber-400/10">
-                <User className="h-4 w-4 text-amber-300" />
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-warning/30 bg-warning/10">
+                <User className="h-4 w-4 text-warning" />
               </div>
               <div>
-                <p className={cn(typography.body.size, "font-medium text-amber-200")}>
+                <p className={cn(typography.body.size, "font-medium text-warning")}>
                   No personas available
                 </p>
-                <p className={cn(typography.caption.size, "mt-1 text-amber-200/60")}>
+                <p className={cn(typography.caption.size, "mt-1 text-warning/60")}>
                   Create a persona in settings to personalize your conversations.
                 </p>
               </div>
@@ -302,16 +302,16 @@ export function PersonaSelector({
             {/* Search Bar */}
             {showSearchBar && (
               <div className="relative mb-3">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg/40" />
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search personas..."
                   className={cn(
-                    "w-full rounded-xl border border-white/10 bg-black/30",
-                    "px-4 py-2.5 pl-10 text-sm text-white placeholder-white/40",
-                    "focus:border-white/20 focus:outline-none",
+                    "w-full rounded-xl border border-fg/10 bg-surface-el/30",
+                    "px-4 py-2.5 pl-10 text-sm text-fg placeholder-fg/40",
+                    "focus:border-fg/20 focus:outline-none",
                     interactive.transition.default,
                   )}
                 />
@@ -348,11 +348,11 @@ export function PersonaSelector({
               {/* No Results */}
               {searchQuery && filteredPersonas.length === 0 && (
                 <div className="py-8 text-center">
-                  <User className="mx-auto h-8 w-8 text-white/20" />
-                  <p className={cn(typography.body.size, "mt-3 text-white/50")}>
+                  <User className="mx-auto h-8 w-8 text-fg/20" />
+                  <p className={cn(typography.body.size, "mt-3 text-fg/50")}>
                     No personas found
                   </p>
-                  <p className={cn(typography.caption.size, "mt-1 text-white/30")}>
+                  <p className={cn(typography.caption.size, "mt-1 text-fg/30")}>
                     Try a different search term
                   </p>
                 </div>

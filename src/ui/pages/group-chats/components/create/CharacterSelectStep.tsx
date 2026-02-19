@@ -34,14 +34,14 @@ export function CharacterSelectStep({
       {/* Title */}
       <div className={spacing.tight}>
         <div className="flex items-center gap-2">
-          <div className="rounded-lg border border-emerald-400/30 bg-emerald-400/10 p-1.5">
-            <Users className="h-4 w-4 text-emerald-400" />
+          <div className="rounded-lg border border-accent/30 bg-accent/10 p-1.5">
+            <Users className="h-4 w-4 text-accent" />
           </div>
-          <h2 className={cn(typography.h1.size, typography.h1.weight, "text-white")}>
+          <h2 className={cn(typography.h1.size, typography.h1.weight, "text-fg")}>
             Create Group Chat
           </h2>
         </div>
-        <p className={cn(typography.body.size, "mt-2 text-white/50")}>
+        <p className={cn(typography.body.size, "mt-2 text-fg/50")}>
           Select characters for your group conversation
         </p>
       </div>
@@ -49,7 +49,7 @@ export function CharacterSelectStep({
       {/* Selection Count */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <span className={cn(typography.label.size, typography.label.weight, "text-white/70")}>
+          <span className={cn(typography.label.size, typography.label.weight, "text-fg/70")}>
             {selectedCount} selected
           </span>
           {selectedCount > 0 && (
@@ -57,8 +57,8 @@ export function CharacterSelectStep({
               className={cn(
                 "px-2 py-0.5 text-xs font-medium rounded-full",
                 selectedCount >= 2
-                  ? "bg-emerald-400/20 text-emerald-300 border border-emerald-400/30"
-                  : "bg-amber-400/20 text-amber-300 border border-amber-400/30",
+                  ? "bg-accent/20 text-accent/80 border border-accent/30"
+                  : "bg-warning/20 text-warning border border-warning/30",
               )}
             >
               {selectedCount >= 2 ? "Ready" : "Min. 2 required"}
@@ -77,7 +77,7 @@ export function CharacterSelectStep({
                 className={cn(
                   "h-16 animate-pulse",
                   radius.md,
-                  "border border-white/5 bg-white/5",
+                  "border border-fg/5 bg-fg/5",
                 )}
               />
             ))}
@@ -87,12 +87,12 @@ export function CharacterSelectStep({
             className={cn(
               "p-8 text-center",
               radius.lg,
-              "border border-dashed border-white/10 bg-white/2",
+              "border border-dashed border-fg/10 bg-fg/2",
             )}
           >
-            <Users className="mx-auto h-10 w-10 text-white/20 mb-3" />
-            <p className={cn(typography.body.size, "text-white/50 mb-1")}>No characters yet</p>
-            <p className={cn(typography.bodySmall.size, "text-white/40")}>
+            <Users className="mx-auto h-10 w-10 text-fg/20 mb-3" />
+            <p className={cn(typography.body.size, "text-fg/50 mb-1")}>No characters yet</p>
+            <p className={cn(typography.bodySmall.size, "text-fg/40")}>
               Create some characters first to start a group chat
             </p>
           </div>
@@ -122,11 +122,11 @@ export function CharacterSelectStep({
             interactive.transition.fast,
             canContinue
               ? cn(
-                  "border border-emerald-400/40 bg-emerald-400/20 text-emerald-100",
+                  "border border-accent/40 bg-accent/20 text-accent",
                   shadows.glow,
-                  "active:border-emerald-400/60 active:bg-emerald-400/30",
+                  "active:border-accent/60 active:bg-accent/30",
                 )
-              : "cursor-not-allowed border border-white/5 bg-white/5 text-white/30",
+              : "cursor-not-allowed border border-fg/5 bg-fg/5 text-fg/30",
           )}
         >
           Continue to Group Setup

@@ -84,13 +84,13 @@ export function EditPersonaPage() {
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/10 border-t-white/60" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-fg/10 border-t-white/60" />
       </div>
     );
   }
 
   return (
-    <div className="flex h-full flex-col pb-16 text-gray-200">
+    <div className="flex h-full flex-col pb-16 text-fg/80">
       <main className="flex-1 overflow-y-auto px-4 pt-4">
         <motion.div
           initial={{ opacity: 0, y: 16 }}
@@ -100,8 +100,8 @@ export function EditPersonaPage() {
         >
           {/* Error Message */}
           {error && (
-            <div className="rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3">
-              <p className="text-sm text-red-200">{error}</p>
+            <div className="rounded-xl border border-danger/30 bg-danger/10 px-4 py-3">
+              <p className="text-sm text-danger">{error}</p>
             </div>
           )}
 
@@ -127,49 +127,49 @@ export function EditPersonaPage() {
                     setAvatarCrop(null);
                     setAvatarRoundPath(null);
                   }}
-                  className="absolute -top-1 -left-1 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-[#1a1a1c] text-white/60 transition hover:bg-red-500/80 hover:border-red-500/50 hover:text-white active:scale-95"
+                  className="absolute -top-1 -left-1 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-fg/10 bg-surface-el text-fg/60 transition hover:bg-danger/80 hover:border-danger/50 hover:text-fg active:scale-95"
                 >
                   <X size={14} strokeWidth={2.5} />
                 </button>
               )}
             </div>
-            <p className="mt-3 text-xs text-white/40">Tap to add or generate avatar</p>
+            <p className="mt-3 text-xs text-fg/40">Tap to add or generate avatar</p>
           </div>
 
           {/* Title Input */}
           <div className="space-y-2">
-            <label className="text-[11px] font-medium text-white/70">PERSONA NAME</label>
+            <label className="text-[11px] font-medium text-fg/70">PERSONA NAME</label>
             <input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="e.g., Professional, Creative Writer, Student..."
-              className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-white placeholder-white/40 transition focus:border-white/30 focus:outline-none"
+              className="w-full rounded-xl border border-fg/10 bg-surface-el/20 px-3 py-2 text-fg placeholder-fg/40 transition focus:border-fg/30 focus:outline-none"
             />
-            <p className="text-xs text-white/50">Give your persona a descriptive name</p>
+            <p className="text-xs text-fg/50">Give your persona a descriptive name</p>
           </div>
 
           {/* Description Input */}
           <div className="space-y-2">
-            <label className="text-[11px] font-medium text-white/70">DESCRIPTION</label>
+            <label className="text-[11px] font-medium text-fg/70">DESCRIPTION</label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={6}
               placeholder="Describe how the AI should address you, your preferences, background, or communication style..."
-              className="w-full resize-none rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-white placeholder-white/40 transition focus:border-white/30 focus:outline-none"
+              className="w-full resize-none rounded-xl border border-fg/10 bg-surface-el/20 px-3 py-2 text-fg placeholder-fg/40 transition focus:border-fg/30 focus:outline-none"
             />
-            <div className="flex justify-end text-[11px] text-white/40">
+            <div className="flex justify-end text-[11px] text-fg/40">
               {wordCount(description)} words
             </div>
-            <p className="text-xs text-white/50">Be specific about how you want to be addressed</p>
+            <p className="text-xs text-fg/50">Be specific about how you want to be addressed</p>
           </div>
 
           {/* Default Toggle */}
           <div className="space-y-2">
-            <div className="flex items-start justify-between gap-4 rounded-xl border border-white/10 bg-[#0b0c12]/90 p-4">
+            <div className="flex items-start justify-between gap-4 rounded-xl border border-fg/10 bg-surface-el/90 p-4">
               <div className="flex-1">
-                <label className="block text-sm font-semibold text-white">Set as Default</label>
-                <p className="mt-1 text-xs text-gray-400">
+                <label className="block text-sm font-semibold text-fg">Set as Default</label>
+                <p className="mt-1 text-xs text-fg/50">
                   Use this persona for all new conversations
                 </p>
               </div>
@@ -183,12 +183,12 @@ export function EditPersonaPage() {
                 />
                 <label
                   htmlFor="set-as-default"
-                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-all duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-emerald-400/40 ${
-                    isDefault ? "bg-emerald-500 shadow-lg shadow-emerald-500/30" : "bg-white/20"
+                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-all duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent/40 ${
+                    isDefault ? "bg-accent shadow-lg shadow-accent/30" : "bg-fg/20"
                   }`}
                 >
                   <span
-                    className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                    className={`inline-block h-5 w-5 transform rounded-full bg-fg shadow ring-0 transition duration-200 ease-in-out ${
                       isDefault ? "translate-x-5" : "translate-x-0"
                     }`}
                   />
@@ -202,7 +202,7 @@ export function EditPersonaPage() {
             onClick={handleExport}
             disabled={!personaId || exporting}
             whileTap={{ scale: exporting ? 1 : 0.98 }}
-            className="w-full rounded-xl border border-blue-400/40 bg-blue-400/20 px-4 py-3.5 text-sm font-semibold text-blue-100 transition hover:bg-blue-400/30 disabled:opacity-50"
+            className="w-full rounded-xl border border-info/40 bg-info/20 px-4 py-3.5 text-sm font-semibold text-info transition hover:bg-info/30 disabled:opacity-50"
           >
             {exporting ? (
               <span className="flex items-center justify-center gap-2">

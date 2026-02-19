@@ -65,11 +65,11 @@ const MessageAvatar = React.memo(function MessageAvatar({
 
   if (role === "user") {
     return (
-      <div className="relative flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/10 bg-linear-to-br from-white/5 to-white/10">
+      <div className="relative flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full border border-fg/10 bg-linear-to-br from-white/5 to-white/10">
         {personaAvatar ? (
           <AvatarImage src={personaAvatar} alt="User" crop={persona?.avatarCrop} applyCrop />
         ) : (
-          <User size={16} className="text-white/60" />
+          <User size={16} className="text-fg/60" />
         )}
       </div>
     );
@@ -77,7 +77,7 @@ const MessageAvatar = React.memo(function MessageAvatar({
 
   if (role === "assistant" || role === "scene") {
     return (
-      <div className="relative flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/10 bg-linear-to-br from-white/5 to-white/10">
+      <div className="relative flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full border border-fg/10 bg-linear-to-br from-white/5 to-white/10">
         {characterAvatar ? (
           <AvatarImage
             src={characterAvatar}
@@ -86,7 +86,7 @@ const MessageAvatar = React.memo(function MessageAvatar({
             applyCrop
           />
         ) : (
-          <Bot size={16} className="text-white/60" />
+          <Bot size={16} className="text-fg/60" />
         )}
       </div>
     );
@@ -124,9 +124,9 @@ const MessageActions = React.memo(function MessageActions({
         className={cn(
           "flex items-center px-[0.6em] py-[0.3em] justify-center",
           radius.full,
-          "border border-white/15 bg-white/10 text-white",
+          "border border-fg/15 bg-fg/10 text-fg",
           interactive.transition.fast,
-          "hover:border-white/30 hover:bg-white/20 hover:scale-105",
+          "hover:border-fg/30 hover:bg-fg/20 hover:scale-105",
           interactive.active.scale,
           "disabled:cursor-not-allowed disabled:opacity-80 disabled:hover:scale-100",
         )}
@@ -181,7 +181,7 @@ const ThinkingSection = React.memo(function ThinkingSection({
         onClick={() => setIsExpanded(!isExpanded)}
         className={cn(
           "flex items-center gap-2 py-1 text-left text-xs transition-colors",
-          isStreaming ? "text-white/60 hover:text-white/80" : "text-white/40 hover:text-white/60",
+          isStreaming ? "text-fg/60 hover:text-fg/80" : "text-fg/40 hover:text-fg/60",
         )}
       >
         <motion.div
@@ -192,7 +192,7 @@ const ThinkingSection = React.memo(function ThinkingSection({
           <ChevronDown size={12} />
         </motion.div>
         <span className="flex items-center gap-1.5">
-          {isStreaming && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white/60" />}
+          {isStreaming && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-fg/60" />}
           <span className="font-medium">{isStreaming ? thinkingText : "Thought process"}</span>
         </span>
       </button>
@@ -208,14 +208,14 @@ const ThinkingSection = React.memo(function ThinkingSection({
           >
             <div
               className={cn(
-                "mt-1 pl-5 border-l border-white/10",
-                "text-xs text-white/40 italic leading-relaxed",
+                "mt-1 pl-5 border-l border-fg/10",
+                "text-xs text-fg/40 italic leading-relaxed",
                 "max-h-40 overflow-y-auto",
               )}
             >
               <MarkdownRenderer
                 content={reasoning}
-                className="text-xs text-white/40 **:text-white/40"
+                className="text-xs text-fg/40 **:text-fg/40"
               />
             </div>
           </motion.div>
@@ -435,8 +435,8 @@ function GroupChatMessageInner({
               onClick={handlePlayAudio}
               className={cn(
                 "audio-btn flex h-6 w-6 items-center justify-center rounded-full",
-                "border border-white/40 bg-white/10 text-white shadow-sm",
-                "transition hover:bg-white/20 active:scale-95",
+                "border border-fg/40 bg-fg/10 text-fg shadow-sm",
+                "transition hover:bg-fg/20 active:scale-95",
                 "disabled:cursor-not-allowed disabled:opacity-70",
               )}
               aria-label={
@@ -479,11 +479,11 @@ function GroupChatMessageInner({
           message.role === "user"
             ? cn(
                 `ml-auto ${theme.userBg} ${theme.userText} border ${theme.userBorder}`,
-                heldMessageId === message.id && "ring-2 ring-emerald-400/50",
+                heldMessageId === message.id && "ring-2 ring-accent/50",
               )
             : cn(
                 `border ${theme.assistantBg} ${theme.assistantText}`,
-                heldMessageId === message.id ? "border-white/30" : theme.assistantBorder,
+                heldMessageId === message.id ? "border-fg/30" : theme.assistantBorder,
               ),
         )}
         {...eventHandlers}
@@ -492,12 +492,12 @@ function GroupChatMessageInner({
         {/* Pin indicator */}
         {message.isPinned && (
           <motion.div
-            className="absolute -top-2 -right-2 z-10 flex h-5 w-5 items-center justify-center rounded-full border border-blue-500/40 bg-blue-500/20 shadow-lg"
+            className="absolute -top-2 -right-2 z-10 flex h-5 w-5 items-center justify-center rounded-full border border-info/40 bg-info/20 shadow-lg"
             initial={{ scale: 0, rotate: -45 }}
             animate={{ scale: 1, rotate: 0 }}
             transition={{ type: "spring", stiffness: 300, damping: 20 }}
           >
-            <Pin size={12} className="text-blue-300" />
+            <Pin size={12} className="text-info" />
           </motion.div>
         )}
 
@@ -519,10 +519,10 @@ function GroupChatMessageInner({
                     key={attachment.id}
                     className={cn(
                       radius.md,
-                      "overflow-hidden border border-white/15",
+                      "overflow-hidden border border-fg/15",
                       attachment.data &&
                         onImageClick &&
-                        "cursor-pointer hover:border-white/30 transition-colors",
+                        "cursor-pointer hover:border-fg/30 transition-colors",
                     )}
                     onClick={() =>
                       attachment.data &&
@@ -544,13 +544,13 @@ function GroupChatMessageInner({
                     ) : (
                       // Loading placeholder
                       <div
-                        className="flex items-center justify-center bg-white/5"
+                        className="flex items-center justify-center bg-fg/5"
                         style={{
                           width: Math.min(attachment.width || 150, 300),
                           height: Math.min(attachment.height || 100, 192),
                         }}
                       >
-                        <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/20 border-t-white/60" />
+                        <div className="h-5 w-5 animate-spin rounded-full border-2 border-fg/20 border-t-white/60" />
                       </div>
                     )}
                   </div>
@@ -572,24 +572,24 @@ function GroupChatMessageInner({
               "mt-2.5 flex items-center justify-between pr-2",
               typography.caption.size,
               typography.caption.weight,
-              "uppercase tracking-wider text-white/40",
+              "uppercase tracking-wider text-fg/40",
             )}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.2, delay: 0.15 }}
           >
-            <span className="text-white">
+            <span className="text-fg">
               Variant {computed.selectedVariantIndex >= 0 ? computed.selectedVariantIndex + 1 : 1}
               {computed.totalVariants > 0 ? ` / ${computed.totalVariants}` : ""}
             </span>
             {regeneratingMessageId === message.id && (
               <motion.span
-                className="flex items-center gap-1.5 text-emerald-300"
+                className="flex items-center gap-1.5 text-accent/80"
                 initial={{ opacity: 0, x: 10 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ duration: 0.15 }}
               >
-                <span className="h-3 w-3 animate-spin rounded-full border-2 border-emerald-300/30 border-t-emerald-300" />
+                <span className="h-3 w-3 animate-spin rounded-full border-2 border-accent/30 border-t-accent/80" />
                 Regenerating
               </motion.span>
             )}

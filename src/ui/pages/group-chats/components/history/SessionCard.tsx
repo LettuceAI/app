@@ -18,7 +18,7 @@ const CharacterMiniAvatar = memo(({ character }: { character: Character }) => {
 
   const initials = character.name.slice(0, 2).toUpperCase();
   return (
-    <div className="flex h-full w-full items-center justify-center text-[10px] font-bold text-white/60">
+    <div className="flex h-full w-full items-center justify-center text-[10px] font-bold text-fg/60">
       {initials}
     </div>
   );
@@ -81,15 +81,15 @@ export function SessionCard({
   return (
     <div
       className={cn(
-        "border border-white/10 bg-white/5 overflow-hidden",
+        "border border-fg/10 bg-fg/5 overflow-hidden",
         radius.lg,
-        isArchived && "border-amber-400/20 bg-amber-400/5",
+        isArchived && "border-warning/20 bg-warning/5",
       )}
     >
       <button
         onClick={onSelect}
         disabled={isBusy || isRenaming}
-        className="w-full p-4 text-left disabled:opacity-50 active:bg-white/10 transition-colors"
+        className="w-full p-4 text-left disabled:opacity-50 active:bg-fg/10 transition-colors"
       >
         <div className="flex items-start gap-3">
           <div className="relative h-12 w-14 shrink-0">
@@ -114,7 +114,7 @@ export function SessionCard({
                 className={cn(
                   "absolute h-8 w-8 overflow-hidden rounded-full",
                   "border-2 border-[#0c0d13]",
-                  "bg-white/10",
+                  "bg-fg/10",
                   "flex items-center justify-center",
                 )}
                 style={{
@@ -122,7 +122,7 @@ export function SessionCard({
                   zIndex: 0,
                 }}
               >
-                <span className="text-[10px] font-medium text-white/60">
+                <span className="text-[10px] font-medium text-fg/60">
                   +{session.characterIds.length - 3}
                 </span>
               </div>
@@ -131,16 +131,16 @@ export function SessionCard({
 
           <div className="flex-1 min-w-0">
             <h3
-              className={cn(typography.h3.size, typography.h3.weight, "text-white mb-1 truncate")}
+              className={cn(typography.h3.size, typography.h3.weight, "text-fg mb-1 truncate")}
             >
               {session.name}
             </h3>
 
-            <p className={cn(typography.caption.size, "text-white/40 truncate mb-1")}>
+            <p className={cn(typography.caption.size, "text-fg/40 truncate mb-1")}>
               {characterSummary}
             </p>
 
-            <p className={cn(typography.bodySmall.size, "text-white/50 mb-2")}>
+            <p className={cn(typography.bodySmall.size, "text-fg/50 mb-2")}>
               {formatTimeAgo(session.updatedAt)} • {session.messageCount}{" "}
               {session.messageCount === 1 ? "message" : "messages"}
             </p>
@@ -149,7 +149,7 @@ export function SessionCard({
               <p
                 className={cn(
                   typography.bodySmall.size,
-                  "text-white/70 line-clamp-2 leading-relaxed",
+                  "text-fg/70 line-clamp-2 leading-relaxed",
                 )}
               >
                 {session.lastMessage}
@@ -160,7 +160,7 @@ export function SessionCard({
       </button>
 
       {isRenaming && (
-        <div className="px-4 pb-3 border-t border-white/5 pt-3">
+        <div className="px-4 pb-3 border-t border-fg/5 pt-3">
           <input
             type="text"
             value={editTitle}
@@ -171,10 +171,10 @@ export function SessionCard({
             }}
             autoFocus
             className={cn(
-              "w-full px-3 py-2 bg-white/10 border border-white/20 text-white mb-2",
+              "w-full px-3 py-2 bg-fg/10 border border-fg/20 text-fg mb-2",
               radius.md,
               typography.body.size,
-              "focus:outline-none focus:border-blue-400/60",
+              "focus:outline-none focus:border-info/60",
             )}
             placeholder="Chat title..."
           />
@@ -183,7 +183,7 @@ export function SessionCard({
               onClick={handleRenameSubmit}
               disabled={!editTitle.trim()}
               className={cn(
-                "flex-1 px-3 py-2 border border-blue-400/40 bg-blue-400/20 text-blue-100",
+                "flex-1 px-3 py-2 border border-info/40 bg-info/20 text-info",
                 radius.md,
                 typography.bodySmall.size,
                 "active:scale-95 disabled:opacity-50 transition-all",
@@ -194,7 +194,7 @@ export function SessionCard({
             <button
               onClick={handleCancel}
               className={cn(
-                "flex-1 px-3 py-2 border border-white/10 bg-white/5 text-white/60",
+                "flex-1 px-3 py-2 border border-fg/10 bg-fg/5 text-fg/60",
                 radius.md,
                 typography.bodySmall.size,
                 "active:scale-95 transition-all",
@@ -207,15 +207,15 @@ export function SessionCard({
       )}
 
       {!isRenaming && (
-        <div className="px-4 pb-3 border-t border-white/5 pt-3 flex flex-wrap gap-2">
+        <div className="px-4 pb-3 border-t border-fg/5 pt-3 flex flex-wrap gap-2">
           <button
             onClick={onDuplicate}
             disabled={isBusy}
             className={cn(
-              "flex items-center gap-2 px-3 py-2 border border-white/10 bg-white/5 text-white/60",
+              "flex items-center gap-2 px-3 py-2 border border-fg/10 bg-fg/5 text-fg/60",
               radius.md,
               typography.bodySmall.size,
-              "active:scale-95 active:bg-emerald-400/10 active:text-emerald-300 active:border-emerald-400/40 disabled:opacity-50 transition-all",
+              "active:scale-95 active:bg-accent/10 active:text-accent/80 active:border-accent/40 disabled:opacity-50 transition-all",
             )}
           >
             <Plus size={14} />
@@ -225,10 +225,10 @@ export function SessionCard({
             onClick={() => setIsRenaming(true)}
             disabled={isBusy}
             className={cn(
-              "flex items-center gap-2 px-3 py-2 border border-white/10 bg-white/5 text-white/60",
+              "flex items-center gap-2 px-3 py-2 border border-fg/10 bg-fg/5 text-fg/60",
               radius.md,
               typography.bodySmall.size,
-              "active:scale-95 active:bg-blue-400/10 active:text-blue-300 active:border-blue-400/40 disabled:opacity-50 transition-all",
+              "active:scale-95 active:bg-info/10 active:text-info active:border-info/40 disabled:opacity-50 transition-all",
             )}
           >
             <Edit3 size={14} />
@@ -239,10 +239,10 @@ export function SessionCard({
               onClick={onUnarchive}
               disabled={isBusy}
               className={cn(
-                "flex items-center gap-2 px-3 py-2 border border-white/10 bg-white/5 text-white/60",
+                "flex items-center gap-2 px-3 py-2 border border-fg/10 bg-fg/5 text-fg/60",
                 radius.md,
                 typography.bodySmall.size,
-                "active:scale-95 active:bg-amber-400/10 active:text-amber-300 active:border-amber-400/40 disabled:opacity-50 transition-all",
+                "active:scale-95 active:bg-warning/10 active:text-warning active:border-warning/40 disabled:opacity-50 transition-all",
               )}
             >
               <ArchiveRestore size={14} />
@@ -253,10 +253,10 @@ export function SessionCard({
               onClick={onArchive}
               disabled={isBusy}
               className={cn(
-                "flex items-center gap-2 px-3 py-2 border border-white/10 bg-white/5 text-white/60",
+                "flex items-center gap-2 px-3 py-2 border border-fg/10 bg-fg/5 text-fg/60",
                 radius.md,
                 typography.bodySmall.size,
-                "active:scale-95 active:bg-amber-400/10 active:text-amber-300 active:border-amber-400/40 disabled:opacity-50 transition-all",
+                "active:scale-95 active:bg-warning/10 active:text-warning active:border-warning/40 disabled:opacity-50 transition-all",
               )}
             >
               <Archive size={14} />
@@ -267,10 +267,10 @@ export function SessionCard({
             onClick={onDelete}
             disabled={isBusy}
             className={cn(
-              "flex items-center gap-2 px-3 py-2 border border-white/10 bg-white/5 text-white/60",
+              "flex items-center gap-2 px-3 py-2 border border-fg/10 bg-fg/5 text-fg/60",
               radius.md,
               typography.bodySmall.size,
-              "active:scale-95 active:bg-red-400/10 active:text-red-300 active:border-red-400/40 disabled:opacity-50 transition-all",
+              "active:scale-95 active:bg-danger/10 active:text-danger active:border-danger/40 disabled:opacity-50 transition-all",
             )}
           >
             <Trash2 size={14} />

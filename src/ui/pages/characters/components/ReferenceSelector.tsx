@@ -68,13 +68,13 @@ export const ReferenceAvatar = memo(
         className={cn(
           sizeClasses,
           "flex shrink-0 items-center justify-center rounded-full",
-          type === "character" ? "bg-purple-500/20" : "bg-amber-500/20",
+          type === "character" ? "bg-secondary/20" : "bg-warning/20",
         )}
       >
         {type === "character" ? (
-          <User className={cn(iconSize, "text-purple-300")} />
+          <User className={cn(iconSize, "text-secondary")} />
         ) : (
-          <Users className={cn(iconSize, "text-amber-300")} />
+          <Users className={cn(iconSize, "text-warning")} />
         )}
       </div>
     );
@@ -174,7 +174,7 @@ export function ReferenceSelector({
       <div className="space-y-4">
         {/* Search Input */}
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg/40" />
           <input
             type="text"
             value={search}
@@ -183,9 +183,9 @@ export function ReferenceSelector({
             className={cn(
               "w-full py-2.5 pl-10 pr-4",
               radius.lg,
-              "bg-white/5 border border-white/15",
-              "text-white placeholder-white/40 text-sm",
-              "focus:outline-none focus:border-white/30",
+              "bg-fg/5 border border-fg/15",
+              "text-fg placeholder-fg/40 text-sm",
+              "focus:outline-none focus:border-fg/30",
             )}
           />
           {search && (
@@ -193,7 +193,7 @@ export function ReferenceSelector({
               onClick={() => setSearch("")}
               className="absolute right-3 top-1/2 -translate-y-1/2"
             >
-              <X className="h-4 w-4 text-white/40" />
+              <X className="h-4 w-4 text-fg/40" />
             </button>
           )}
         </div>
@@ -202,18 +202,18 @@ export function ReferenceSelector({
         <div className="max-h-[50vh] overflow-y-auto -mx-4 px-4">
           {loading ? (
             <div className="flex items-center justify-center py-8">
-              <span className="text-white/40 text-sm">Loading...</span>
+              <span className="text-fg/40 text-sm">Loading...</span>
             </div>
           ) : filteredItems.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-8 text-center">
-              <div className="mb-2 h-10 w-10 rounded-full bg-white/5 flex items-center justify-center">
+              <div className="mb-2 h-10 w-10 rounded-full bg-fg/5 flex items-center justify-center">
                 {type === "character" ? (
-                  <User className="h-5 w-5 text-white/30" />
+                  <User className="h-5 w-5 text-fg/30" />
                 ) : (
-                  <Users className="h-5 w-5 text-white/30" />
+                  <Users className="h-5 w-5 text-fg/30" />
                 )}
               </div>
-              <span className="text-white/40 text-sm">
+              <span className="text-fg/40 text-sm">
                 {search ? `No ${type}s match your search` : `No ${type}s available`}
               </span>
             </div>
@@ -246,9 +246,9 @@ export function ReferenceSelector({
                       className={cn(
                         "w-full text-left p-3",
                         radius.lg,
-                        "bg-white/5 border border-white/10",
+                        "bg-fg/5 border border-fg/10",
                         interactive.transition.fast,
-                        "hover:bg-white/10 hover:border-white/20",
+                        "hover:bg-fg/10 hover:border-fg/20",
                       )}
                     >
                       <div className="flex items-start gap-3">
@@ -262,12 +262,12 @@ export function ReferenceSelector({
                         />
                         <div className="flex-1 min-w-0">
                           <div
-                            className={cn(typography.body.size, "font-medium text-white truncate")}
+                            className={cn(typography.body.size, "font-medium text-fg truncate")}
                           >
                             {name}
                           </div>
                           {desc && (
-                            <div className="text-sm text-white/50 line-clamp-2 mt-0.5">{desc}</div>
+                            <div className="text-sm text-fg/50 line-clamp-2 mt-0.5">{desc}</div>
                           )}
                         </div>
                       </div>

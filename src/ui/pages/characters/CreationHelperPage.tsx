@@ -173,24 +173,24 @@ function ImageThumbnail({
     };
   }, [sessionId, imageId, localCache?.[imageId]]);
 
-  if (loading) return <div className="h-20 w-20 animate-pulse bg-white/10 rounded-md" />;
+  if (loading) return <div className="h-20 w-20 animate-pulse bg-fg/10 rounded-md" />;
   if (!imageUrl)
     return (
-      <div className="flex items-center gap-1.5 px-2 py-1 rounded-full text-xs bg-red-500/20 text-red-200">
+      <div className="flex items-center gap-1.5 px-2 py-1 rounded-full text-xs bg-danger/20 text-danger">
         <ImageIcon className="h-3 w-3" />
         <span>Failed to load</span>
       </div>
     );
 
   return (
-    <div className="group relative h-24 w-24 overflow-hidden rounded-lg border border-white/10 bg-black/20">
+    <div className="group relative h-24 w-24 overflow-hidden rounded-lg border border-fg/10 bg-surface-el/20">
       <img
         src={imageUrl.startsWith("data:") ? imageUrl : `data:image/png;base64,${imageUrl}`}
         alt={filename}
         className="h-full w-full object-cover transition-transform group-hover:scale-105"
       />
       <div className="absolute inset-0 bg-linear-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2">
-        <span className="text-[10px] text-white truncate w-full">{filename}</span>
+        <span className="text-[10px] text-fg truncate w-full">{filename}</span>
       </div>
     </div>
   );
@@ -241,11 +241,11 @@ function GeneratedImagePreview({
       <div
         className={cn(
           sizeClass,
-          "overflow-hidden rounded-2xl border border-white/10 bg-white/5 flex items-center justify-center",
+          "overflow-hidden rounded-2xl border border-fg/10 bg-fg/5 flex items-center justify-center",
         )}
       >
         {loading ? (
-          <Loader2 className="h-6 w-6 animate-spin text-white/40" />
+          <Loader2 className="h-6 w-6 animate-spin text-fg/40" />
         ) : imageUrl ? (
           <img
             src={imageUrl.startsWith("data:") ? imageUrl : `data:image/png;base64,${imageUrl}`}
@@ -253,7 +253,7 @@ function GeneratedImagePreview({
             className="h-full w-full object-cover"
           />
         ) : (
-          <span className="text-xs text-white/40">Failed to load</span>
+          <span className="text-xs text-fg/40">Failed to load</span>
         )}
       </div>
     </div>
@@ -1282,7 +1282,7 @@ export function CreationHelperPage() {
   ]);
 
   return (
-    <div className="flex h-screen flex-col bg-[#050505]">
+    <div className="flex h-screen flex-col bg-surface">
       <TopNav
         currentPath="/create/character/helper"
         onBackOverride={handleBack}
@@ -1296,7 +1296,7 @@ export function CreationHelperPage() {
               }}
               className={cn(
                 "flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all",
-                "bg-white/5 border border-white/10 text-white/70 hover:text-white hover:bg-white/10",
+                "bg-fg/5 border border-fg/10 text-fg/70 hover:text-fg hover:bg-fg/10",
                 "active:scale-95",
               )}
             >
@@ -1311,7 +1311,7 @@ export function CreationHelperPage() {
       <main className="flex-1 overflow-y-auto px-4 pt-[calc(72px+env(safe-area-inset-top))] pb-32">
         <div className="mx-auto max-w-2xl space-y-4 py-4">
           <div className="flex justify-center">
-            <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] uppercase tracking-wider text-white/50">
+            <div className="rounded-full border border-fg/10 bg-fg/5 px-3 py-1 text-[10px] uppercase tracking-wider text-fg/50">
               {goalLabel} Mode
             </div>
           </div>
@@ -1321,13 +1321,13 @@ export function CreationHelperPage() {
               {...animations.fadeIn}
               className="flex flex-col items-center justify-center py-16 text-center"
             >
-              <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-linear-to-br from-rose-500/20 to-amber-500/20 border border-rose-400/30">
-                <Sparkles className="h-8 w-8 text-rose-300" />
+              <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-linear-to-br from-danger/20 to-warning/80/20 border border-danger/30">
+                <Sparkles className="h-8 w-8 text-danger" />
               </div>
-              <h2 className={cn(typography.h2.size, typography.h2.weight, "text-white mb-2")}>
+              <h2 className={cn(typography.h2.size, typography.h2.weight, "text-fg mb-2")}>
                 AI {goalLabel} Creator
               </h2>
-              <p className="text-white/60 text-sm max-w-xs">
+              <p className="text-fg/60 text-sm max-w-xs">
                 {!smartToolSelection
                   ? "Tell me what you'd like to create and I'll help you build it."
                   : activeGoal === "persona"
@@ -1337,8 +1337,8 @@ export function CreationHelperPage() {
                       : "I'll help you create a character through conversation. Just tell me what you have in mind!"}
               </p>
               <div className="mt-4 flex items-center gap-1">
-                <Loader2 className="h-4 w-4 text-white/40 animate-spin" />
-                <span className="text-xs text-white/40">Starting...</span>
+                <Loader2 className="h-4 w-4 text-fg/40 animate-spin" />
+                <span className="text-xs text-fg/40">Starting...</span>
               </div>
             </motion.div>
           )}
@@ -1368,24 +1368,24 @@ export function CreationHelperPage() {
                     className={cn(
                       "max-w-[85%] rounded-2xl px-4 py-3",
                       imageEntry
-                        ? "bg-white/5 border border-white/10 text-white/90"
+                        ? "bg-fg/5 border border-fg/10 text-fg/90"
                         : isUser
-                          ? "bg-white/10 text-white"
-                          : "bg-white/5 border border-white/10 text-white/90",
+                          ? "bg-fg/10 text-fg"
+                          : "bg-fg/5 border border-fg/10 text-fg/90",
                     )}
                   >
                     {imageEntry ? (
                       <div className="flex flex-col items-center gap-2">
                         {imageEntry.status === "pending" ? (
                           <>
-                            <div className="h-36 w-36 rounded-2xl border border-white/10 bg-white/5 flex items-center justify-center">
-                              <Loader2 className="h-6 w-6 animate-spin text-white/40" />
+                            <div className="h-36 w-36 rounded-2xl border border-fg/10 bg-fg/5 flex items-center justify-center">
+                              <Loader2 className="h-6 w-6 animate-spin text-fg/40" />
                             </div>
                           </>
                         ) : imageEntry.status === "error" ? (
                           <>
-                            <div className="h-36 w-36 rounded-2xl border border-red-500/30 bg-red-500/10 flex items-center justify-center">
-                              <span className="text-xs text-red-200">Generation failed</span>
+                            <div className="h-36 w-36 rounded-2xl border border-danger/30 bg-danger/10 flex items-center justify-center">
+                              <span className="text-xs text-danger">Generation failed</span>
                             </div>
                           </>
                         ) : imageEntry.imageId ? (
@@ -1408,7 +1408,7 @@ export function CreationHelperPage() {
                             />
                           </button>
                         ) : (
-                          <span className="text-xs text-white/40">Image unavailable</span>
+                          <span className="text-xs text-fg/40">Image unavailable</span>
                         )}
                       </div>
                     ) : (
@@ -1436,7 +1436,7 @@ export function CreationHelperPage() {
                               content={displayText}
                               className={cn(
                                 "text-sm leading-relaxed",
-                                message.role === "user" ? "text-white" : "text-white/90",
+                                message.role === "user" ? "text-fg" : "text-fg/90",
                               )}
                             />
                           );
@@ -1480,8 +1480,8 @@ export function CreationHelperPage() {
                                     "flex items-center gap-1.5 px-2 py-1",
                                     "rounded-full text-xs",
                                     ref.type === "character"
-                                      ? "bg-purple-500/20 text-purple-200"
-                                      : "bg-amber-500/20 text-amber-200",
+                                      ? "bg-secondary/20 text-secondary"
+                                      : "bg-warning/20 text-warning",
                                   )}
                                 >
                                   <ReferenceAvatar
@@ -1537,7 +1537,7 @@ export function CreationHelperPage() {
                           if (toolEntries.length === 0) return null;
 
                           return (
-                            <div className="mt-3 space-y-1.5 border-t border-white/10 pt-3">
+                            <div className="mt-3 space-y-1.5 border-t border-fg/10 pt-3">
                               {toolEntries.map(({ call, result }) => {
                                 const displayName = getToolDisplayName(call.name || "Unknown Tool");
                                 if (!result) {
@@ -1546,7 +1546,7 @@ export function CreationHelperPage() {
                                       key={call.id}
                                       className={cn(
                                         "w-full flex items-center gap-2 text-xs rounded-lg px-2 py-1.5 text-left",
-                                        "bg-white/5 text-white/60 border border-white/10",
+                                        "bg-fg/5 text-fg/60 border border-fg/10",
                                       )}
                                     >
                                       <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
@@ -1565,8 +1565,8 @@ export function CreationHelperPage() {
                                     className={cn(
                                       "w-full flex items-center gap-2 text-xs rounded-lg px-2 py-1.5 transition-all text-left group",
                                       result.success
-                                        ? "bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20"
-                                        : "bg-red-500/10 text-red-300 hover:bg-red-500/20",
+                                        ? "bg-accent/10 text-accent/80 hover:bg-accent/20"
+                                        : "bg-danger/10 text-danger hover:bg-danger/20",
                                     )}
                                   >
                                     {result.success ? (
@@ -1606,7 +1606,7 @@ export function CreationHelperPage() {
                   onClick={handleRegenerate}
                   className={cn(
                     "flex items-center gap-2 px-4 py-2",
-                    "bg-white/5 border border-white/10 text-white/60 hover:text-white hover:bg-white/10 transition-colors",
+                    "bg-fg/5 border border-fg/10 text-fg/60 hover:text-fg hover:bg-fg/10 transition-colors",
                     radius.full,
                     typography.bodySmall.size,
                   )}
@@ -1693,14 +1693,14 @@ export function CreationHelperPage() {
                     ? "Apply updates to existing character"
                     : "Save and start chatting"
                 }
-                color="from-emerald-500 to-teal-600"
+                color="from-accent to-accent/80"
                 onClick={handleUseCharacter}
               />
               <MenuButton
                 icon={RefreshCw}
                 title="Keep Editing"
                 description="Continue the conversation"
-                color="from-blue-500 to-cyan-600"
+                color="from-info to-info/80"
                 onClick={() => {
                   setShowPreview(false);
                   setShowConfirmation(false);
@@ -1710,7 +1710,7 @@ export function CreationHelperPage() {
                 icon={PenLine}
                 title="Edit Manually"
                 description="Fine-tune in the editor"
-                color="from-amber-500 to-orange-600"
+                color="from-warning to-warning/80"
                 onClick={handleEditManually}
               />
             </MenuSection>
@@ -1736,7 +1736,7 @@ export function CreationHelperPage() {
                       ? "Review and edit your persona"
                       : "Create a persona first"
                 }
-                color="from-emerald-500 to-teal-600"
+                color="from-accent to-accent/80"
                 onClick={handleOpenPersona}
                 disabled={
                   session?.creationMode === "edit" && session?.targetType === "persona"
@@ -1748,7 +1748,7 @@ export function CreationHelperPage() {
                 icon={RefreshCw}
                 title="Keep Editing"
                 description="Continue the conversation"
-                color="from-blue-500 to-cyan-600"
+                color="from-info to-info/80"
                 onClick={() => {
                   setShowPreview(false);
                   setShowConfirmation(false);
@@ -1777,7 +1777,7 @@ export function CreationHelperPage() {
                       ? "Review entries in the library"
                       : "Create a lorebook first"
                 }
-                color="from-emerald-500 to-teal-600"
+                color="from-accent to-accent/80"
                 onClick={handleOpenLorebook}
                 disabled={
                   session?.creationMode === "edit" && session?.targetType === "lorebook"
@@ -1789,7 +1789,7 @@ export function CreationHelperPage() {
                 icon={RefreshCw}
                 title="Keep Editing"
                 description="Continue the conversation"
-                color="from-blue-500 to-cyan-600"
+                color="from-info to-info/80"
                 onClick={() => {
                   setShowPreview(false);
                   setShowConfirmation(false);
@@ -1813,8 +1813,8 @@ export function CreationHelperPage() {
                 className={cn(
                   "p-2 rounded-lg",
                   selectedTool.result.success
-                    ? "bg-emerald-500/15 text-emerald-400"
-                    : "bg-red-500/15 text-red-400",
+                    ? "bg-accent/15 text-accent"
+                    : "bg-danger/15 text-danger",
                 )}
               >
                 {selectedTool.result.success ? (
@@ -1825,11 +1825,11 @@ export function CreationHelperPage() {
               </div>
               <div>
                 <h3
-                  className={cn(typography.h2.size, typography.h2.weight, "text-white text-base")}
+                  className={cn(typography.h2.size, typography.h2.weight, "text-fg text-base")}
                 >
                   {selectedTool.result.success ? "Execution Successful" : "Execution Failed"}
                 </h3>
-                <p className="text-white/40 text-[10px] uppercase tracking-wider font-bold">
+                <p className="text-fg/40 text-[10px] uppercase tracking-wider font-bold">
                   Tool: {selectedTool.call.name}
                 </p>
               </div>
@@ -1837,25 +1837,25 @@ export function CreationHelperPage() {
 
             <div className="space-y-4">
               <div className="space-y-2">
-                <h4 className="text-[10px] font-bold text-white/30 uppercase tracking-wider px-1">
+                <h4 className="text-[10px] font-bold text-fg/30 uppercase tracking-wider px-1">
                   Model Input (Arguments)
                 </h4>
-                <div className="bg-black/40 rounded-xl p-3 border border-white/5 overflow-x-auto">
-                  <pre className="text-xs text-blue-200 font-mono leading-relaxed">
+                <div className="bg-surface-el/40 rounded-xl p-3 border border-fg/5 overflow-x-auto">
+                  <pre className="text-xs text-info font-mono leading-relaxed">
                     {JSON.stringify(selectedTool.call.arguments, null, 2)}
                   </pre>
                 </div>
               </div>
 
               <div className="space-y-2">
-                <h4 className="text-[10px] font-bold text-white/30 uppercase tracking-wider px-1">
+                <h4 className="text-[10px] font-bold text-fg/30 uppercase tracking-wider px-1">
                   Tool Output (Result)
                 </h4>
-                <div className="bg-black/40 rounded-xl p-3 border border-white/5 overflow-x-auto">
+                <div className="bg-surface-el/40 rounded-xl p-3 border border-fg/5 overflow-x-auto">
                   <pre
                     className={cn(
                       "text-xs font-mono leading-relaxed",
-                      selectedTool.result.success ? "text-emerald-200" : "text-red-200",
+                      selectedTool.result.success ? "text-accent/80" : "text-danger",
                     )}
                   >
                     {JSON.stringify(selectedTool.result.result, null, 2)}

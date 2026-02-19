@@ -238,11 +238,11 @@ export function DiscoverySearchPage() {
   const showNoResults = !loading && results && results.hits.length === 0;
 
   return (
-    <div className="flex h-screen min-h-0 flex-col bg-[#050505]">
+    <div className="flex h-screen min-h-0 flex-col bg-surface">
       {/* Search Section */}
       <div
         ref={headerRef}
-        className="fixed top-0 left-0 right-0 z-50 border-b border-white/10 bg-[#0F0F0F]/95 backdrop-blur-md"
+        className="fixed top-0 left-0 right-0 z-50 border-b border-fg/10 bg-surface-el/95 backdrop-blur-md"
         style={{
           paddingTop: "calc(env(safe-area-inset-top) + 12px)",
           paddingBottom: "12px",
@@ -254,7 +254,7 @@ export function DiscoverySearchPage() {
             onClick={handleBack}
             className={cn(
               "flex shrink-0 items-center justify-center rounded-full p-2",
-              "text-white/70 hover:bg-white/10 hover:text-white",
+              "text-fg/70 hover:bg-fg/10 hover:text-fg",
               interactive.transition.fast,
               interactive.active.scale,
             )}
@@ -265,19 +265,19 @@ export function DiscoverySearchPage() {
 
           {/* Search input */}
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg/40" />
             <input
               ref={inputRef}
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search characters, tags, authors..."
-              className="w-full rounded-xl border border-white/10 bg-white/5 py-2.5 pl-10 pr-10 text-sm text-white placeholder-white/40 transition-all focus:border-white/20 focus:bg-white/[0.07] focus:outline-none"
+              className="w-full rounded-xl border border-fg/10 bg-fg/5 py-2.5 pl-10 pr-10 text-sm text-fg placeholder-fg/40 transition-all focus:border-fg/20 focus:bg-fg/[0.07] focus:outline-none"
             />
             {query && (
               <button
                 onClick={handleClearQuery}
-                className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-white/40 hover:bg-white/10 hover:text-white"
+                className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-fg/40 hover:bg-fg/10 hover:text-fg"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -288,12 +288,12 @@ export function DiscoverySearchPage() {
         {/* Results count */}
         {results && (
           <div className="mx-auto mt-3 max-w-md px-4 lg:max-w-none lg:px-8">
-            <p className="text-xs text-white/50">
+            <p className="text-xs text-fg/50">
               {results.totalHits !== undefined
                 ? `${results.totalHits.toLocaleString()} results`
                 : `${results.hits.length} results`}
               {results.processingTimeMs !== undefined && (
-                <span className="ml-2 text-white/30">({results.processingTimeMs}ms)</span>
+                <span className="ml-2 text-fg/30">({results.processingTimeMs}ms)</span>
               )}
             </p>
           </div>
@@ -323,14 +323,14 @@ export function DiscoverySearchPage() {
               <section>
                 <div className="mb-3 flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <Clock className="h-4 w-4 text-white/50" />
-                    <h3 className={cn(typography.body.size, "font-semibold text-white")}>
+                    <Clock className="h-4 w-4 text-fg/50" />
+                    <h3 className={cn(typography.body.size, "font-semibold text-fg")}>
                       Recent Searches
                     </h3>
                   </div>
                   <button
                     onClick={handleClearRecent}
-                    className="text-xs text-white/50 hover:text-white"
+                    className="text-xs text-fg/50 hover:text-fg"
                   >
                     Clear all
                   </button>
@@ -340,7 +340,7 @@ export function DiscoverySearchPage() {
                     <button
                       key={search.timestamp}
                       onClick={() => handleRecentSearchClick(search.query)}
-                      className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white/70 transition-all hover:border-white/20 hover:bg-white/10 hover:text-white active:scale-95"
+                      className="flex items-center gap-1.5 rounded-full border border-fg/10 bg-fg/5 px-3 py-1.5 text-sm text-fg/70 transition-all hover:border-fg/20 hover:bg-fg/10 hover:text-fg active:scale-95"
                     >
                       <Clock className="h-3 w-3" />
                       {search.query}
@@ -353,8 +353,8 @@ export function DiscoverySearchPage() {
             {/* Trending Searches */}
             <section>
               <div className="mb-3 flex items-center gap-2">
-                <TrendingUp className="h-4 w-4 text-rose-400" />
-                <h3 className={cn(typography.body.size, "font-semibold text-white")}>
+                <TrendingUp className="h-4 w-4 text-danger" />
+                <h3 className={cn(typography.body.size, "font-semibold text-fg")}>
                   Trending Searches
                 </h3>
               </div>
@@ -363,7 +363,7 @@ export function DiscoverySearchPage() {
                   <button
                     key={term}
                     onClick={() => handleTrendingClick(term)}
-                    className="flex items-center gap-1.5 rounded-full border border-rose-500/20 bg-rose-500/10 px-3 py-1.5 text-sm text-rose-200 transition-all hover:border-rose-500/30 hover:bg-rose-500/20 active:scale-95"
+                    className="flex items-center gap-1.5 rounded-full border border-danger/20 bg-danger/10 px-3 py-1.5 text-sm text-danger transition-all hover:border-danger/30 hover:bg-danger/20 active:scale-95"
                   >
                     <Sparkles className="h-3 w-3" />
                     {term}
@@ -373,11 +373,11 @@ export function DiscoverySearchPage() {
             </section>
 
             {/* Tips */}
-            <section className="rounded-xl border border-white/10 bg-white/5 p-4">
-              <h3 className={cn(typography.body.size, "mb-2 font-semibold text-white")}>
+            <section className="rounded-xl border border-fg/10 bg-fg/5 p-4">
+              <h3 className={cn(typography.body.size, "mb-2 font-semibold text-fg")}>
                 Search Tips
               </h3>
-              <ul className="space-y-1.5 text-xs text-white/60">
+              <ul className="space-y-1.5 text-xs text-fg/60">
                 <li>• Search by character name, author, or description</li>
                 <li>• Use tags like "anime", "fantasy", or "romance"</li>
                 <li>• Try specific traits like "tsundere" or "villain"</li>
@@ -413,7 +413,7 @@ export function DiscoverySearchPage() {
                   <button
                     onClick={loadMore}
                     disabled={loadingMore}
-                    className="flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-6 py-2.5 text-sm font-medium text-white transition-all hover:border-white/25 hover:bg-white/10 active:scale-95 disabled:opacity-50"
+                    className="flex items-center gap-2 rounded-xl border border-fg/15 bg-fg/5 px-6 py-2.5 text-sm font-medium text-fg transition-all hover:border-fg/25 hover:bg-fg/10 active:scale-95 disabled:opacity-50"
                   >
                     {loadingMore ? (
                       <>
@@ -438,14 +438,14 @@ export function DiscoverySearchPage() {
               exit={{ opacity: 0 }}
               className="flex flex-col items-center justify-center px-6 py-20"
             >
-              <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-white/10 bg-white/5">
-                <Search className="h-8 w-8 text-white/30" />
+              <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-fg/10 bg-fg/5">
+                <Search className="h-8 w-8 text-fg/30" />
               </div>
-              <h3 className="mb-2 text-lg font-semibold text-white">No results found</h3>
-              <p className="mb-4 text-center text-sm text-white/50">
+              <h3 className="mb-2 text-lg font-semibold text-fg">No results found</h3>
+              <p className="mb-4 text-center text-sm text-fg/50">
                 No characters found for "{query}"
               </p>
-              <p className="text-xs text-white/40">Try different keywords or browse categories</p>
+              <p className="text-xs text-fg/40">Try different keywords or browse categories</p>
             </motion.div>
           )}
 
@@ -458,7 +458,7 @@ export function DiscoverySearchPage() {
               exit={{ opacity: 0 }}
               className="flex flex-col items-center justify-center px-6 py-20"
             >
-              <p className="text-sm text-red-400">{error}</p>
+              <p className="text-sm text-danger">{error}</p>
             </motion.div>
           )}
         </AnimatePresence>

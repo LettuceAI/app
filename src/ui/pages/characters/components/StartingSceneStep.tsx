@@ -106,19 +106,19 @@ export function StartingSceneStep({
       {/* Title */}
       <div className={spacing.tight}>
         <div className="flex items-center gap-2">
-          <div className="rounded-lg border border-blue-400/30 bg-blue-400/10 p-1.5">
-            <BookOpen className="h-4 w-4 text-blue-400" />
+          <div className="rounded-lg border border-info/30 bg-info/10 p-1.5">
+            <BookOpen className="h-4 w-4 text-info" />
           </div>
-          <h2 className={cn(typography.h1.size, typography.h1.weight, "text-white")}>
+          <h2 className={cn(typography.h1.size, typography.h1.weight, "text-fg")}>
             Starting Scenes
           </h2>
           {scenes.length > 0 && (
-            <span className="ml-auto rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-white/70">
+            <span className="ml-auto rounded-full border border-fg/10 bg-fg/5 px-2 py-0.5 text-xs text-fg/70">
               {scenes.length}
             </span>
           )}
         </div>
-        <p className={cn(typography.body.size, "mt-2 text-white/50")}>
+        <p className={cn(typography.body.size, "mt-2 text-fg/50")}>
           Create opening scenarios for your conversations
         </p>
       </div>
@@ -143,8 +143,8 @@ export function StartingSceneStep({
                   className={cn(
                     "overflow-hidden rounded-xl border transition-colors duration-150",
                     isDefault
-                      ? "border-emerald-400/30 bg-emerald-400/5"
-                      : "border-white/10 bg-white/5",
+                      ? "border-accent/30 bg-accent/5"
+                      : "border-fg/10 bg-fg/5",
                   )}
                 >
                   {/* Scene Header - clickable to expand/collapse */}
@@ -153,8 +153,8 @@ export function StartingSceneStep({
                     className={cn(
                       "flex w-full items-center gap-2 border-b px-3.5 py-2.5 text-left transition-colors duration-150",
                       isDefault
-                        ? "border-emerald-400/20 bg-emerald-400/10"
-                        : "border-white/10 bg-white/5",
+                        ? "border-accent/20 bg-accent/10"
+                        : "border-fg/10 bg-fg/5",
                     )}
                   >
                     {/* Scene number badge */}
@@ -162,8 +162,8 @@ export function StartingSceneStep({
                       className={cn(
                         "flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border text-xs font-medium",
                         isDefault
-                          ? "border-emerald-400/40 bg-emerald-400/20 text-emerald-300"
-                          : "border-white/10 bg-white/5 text-white/60",
+                          ? "border-accent/40 bg-accent/20 text-accent/80"
+                          : "border-fg/10 bg-fg/5 text-fg/60",
                       )}
                     >
                       {index + 1}
@@ -171,25 +171,25 @@ export function StartingSceneStep({
 
                     {/* Default badge */}
                     {isDefault && (
-                      <div className="flex items-center gap-1 rounded-full border border-emerald-400/40 bg-emerald-400/20 px-2 py-0.5">
-                        <div className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                        <span className="text-[10px] font-medium text-emerald-200">Default</span>
+                      <div className="flex items-center gap-1 rounded-full border border-accent/40 bg-accent/20 px-2 py-0.5">
+                        <div className="h-1.5 w-1.5 rounded-full bg-accent" />
+                        <span className="text-[10px] font-medium text-accent/80">Default</span>
                       </div>
                     )}
 
                     {/* Direction indicator */}
                     {scene.direction && (
                       <div
-                        className="flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-1.5 py-0.5"
+                        className="flex items-center gap-1 rounded-full border border-fg/10 bg-fg/5 px-1.5 py-0.5"
                         title="Has scene direction"
                       >
-                        <EyeOff className="h-3 w-3 text-white/40" />
+                        <EyeOff className="h-3 w-3 text-fg/40" />
                       </div>
                     )}
 
                     {/* Preview text when collapsed */}
                     {!isExpanded && !isEditing && (
-                      <span className="flex-1 truncate text-sm text-white/50">
+                      <span className="flex-1 truncate text-sm text-fg/50">
                         {scene.content.slice(0, 50)}
                         {scene.content.length > 50 ? "..." : ""}
                       </span>
@@ -199,7 +199,7 @@ export function StartingSceneStep({
                     {!isEditing && (
                       <ChevronDown
                         className={cn(
-                          "h-4 w-4 text-white/40 ml-auto transition-transform duration-150",
+                          "h-4 w-4 text-fg/40 ml-auto transition-transform duration-150",
                           isExpanded && "rotate-180",
                         )}
                       />
@@ -216,29 +216,29 @@ export function StartingSceneStep({
                     <div className="overflow-hidden">
                       <div className="p-3.5">
                         <div className="space-y-3">
-                          <p className="text-sm leading-relaxed text-white/90">{scene.content}</p>
+                          <p className="text-sm leading-relaxed text-fg/90">{scene.content}</p>
 
                           {/* Scene Direction */}
                           {scene.direction && (
-                            <div className="pt-2 border-t border-white/5">
-                              <p className="text-[10px] font-medium text-white/40 mb-1">
+                            <div className="pt-2 border-t border-fg/5">
+                              <p className="text-[10px] font-medium text-fg/40 mb-1">
                                 Scene Direction
                               </p>
-                              <p className="text-xs leading-relaxed text-white/50 italic">
+                              <p className="text-xs leading-relaxed text-fg/50 italic">
                                 {scene.direction}
                               </p>
                             </div>
                           )}
 
                           {/* Actions when expanded */}
-                          <div className="flex items-center gap-2 pt-2 border-t border-white/5">
+                          <div className="flex items-center gap-2 pt-2 border-t border-fg/5">
                             {!isDefault && (
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   onDefaultSceneIdChange(scene.id);
                                 }}
-                                className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-medium text-white/60 transition active:scale-95 active:bg-white/10"
+                                className="rounded-lg border border-fg/10 bg-fg/5 px-2.5 py-1.5 text-xs font-medium text-fg/60 transition active:scale-95 active:bg-fg/10"
                               >
                                 Set as Default
                               </button>
@@ -248,7 +248,7 @@ export function StartingSceneStep({
                                 e.stopPropagation();
                                 startEditingScene(scene);
                               }}
-                              className="rounded-lg border border-white/10 bg-white/5 p-1.5 text-white/60 transition active:scale-95 active:bg-white/10"
+                              className="rounded-lg border border-fg/10 bg-fg/5 p-1.5 text-fg/60 transition active:scale-95 active:bg-fg/10"
                             >
                               <Edit2 className="h-3.5 w-3.5" />
                             </button>
@@ -257,7 +257,7 @@ export function StartingSceneStep({
                                 e.stopPropagation();
                                 deleteScene(scene.id);
                               }}
-                              className="rounded-lg border border-white/10 bg-white/5 p-1.5 text-white/50 transition active:bg-red-400/10 active:text-red-400"
+                              className="rounded-lg border border-fg/10 bg-fg/5 p-1.5 text-fg/50 transition active:bg-danger/10 active:text-danger"
                             >
                               <X className="h-3.5 w-3.5" />
                             </button>
@@ -272,10 +272,10 @@ export function StartingSceneStep({
           </AnimatePresence>
 
           {scenes.length === 0 && (
-            <div className="rounded-xl border border-dashed border-white/10 bg-white/[0.02] px-4 py-8 text-center">
-              <BookOpen className="mx-auto h-8 w-8 text-white/20 mb-2" />
-              <p className="text-sm text-white/40">No scenes yet</p>
-              <p className="text-xs text-white/30 mt-1">Create your first scene to get started</p>
+            <div className="rounded-xl border border-dashed border-fg/10 bg-fg/[0.02] px-4 py-8 text-center">
+              <BookOpen className="mx-auto h-8 w-8 text-fg/20 mb-2" />
+              <p className="text-sm text-fg/40">No scenes yet</p>
+              <p className="text-xs text-fg/30 mt-1">Create your first scene to get started</p>
             </div>
           )}
         </div>
@@ -287,26 +287,26 @@ export function StartingSceneStep({
             onChange={(e) => setNewSceneContent(e.target.value)}
             rows={6}
             placeholder="Create a starting scene or scenario for roleplay (e.g., 'You find yourself in a mystical forest at twilight...')"
-            className="w-full resize-none rounded-xl border border-white/10 bg-black/20 px-3.5 py-3 text-sm leading-relaxed text-white placeholder-white/40 transition focus:border-white/25 focus:outline-none"
+            className="w-full resize-none rounded-xl border border-fg/10 bg-surface-el/20 px-3.5 py-3 text-sm leading-relaxed text-fg placeholder-fg/40 transition focus:border-fg/25 focus:outline-none"
           />
           <div className="flex items-center justify-between mt-1">
             {!showNewDirectionInput && !newSceneDirection ? (
               <button
                 type="button"
                 onClick={() => setShowNewDirectionInput(true)}
-                className="flex items-center gap-1.5 text-[11px] text-white/40 hover:text-white/60 transition"
+                className="flex items-center gap-1.5 text-[11px] text-fg/40 hover:text-fg/60 transition"
               >
                 <EyeOff className="h-3 w-3" />+ Add Direction
               </button>
             ) : (
-              <span className="text-[11px] text-white/40">Direction added</span>
+              <span className="text-[11px] text-fg/40">Direction added</span>
             )}
-            <span className="text-[11px] text-white/40">{wordCount(newSceneContent)} words</span>
+            <span className="text-[11px] text-fg/40">{wordCount(newSceneContent)} words</span>
           </div>
-          <div className="mt-2 text-[11px] text-white/50">
-            Use <code className="text-emerald-300">{"{{char}}"}</code> for the character and{" "}
-            <code className="text-emerald-300">{"{{user}}"}</code> (alias{" "}
-            <code className="text-emerald-300">{"{{persona}}"}</code>) for the persona.
+          <div className="mt-2 text-[11px] text-fg/50">
+            Use <code className="text-accent/80">{"{{char}}"}</code> for the character and{" "}
+            <code className="text-accent/80">{"{{user}}"}</code> (alias{" "}
+            <code className="text-accent/80">{"{{persona}}"}</code>) for the persona.
           </div>
 
           {/* Scene Direction Input - CSS grid for smooth height */}
@@ -319,7 +319,7 @@ export function StartingSceneStep({
             <div className="overflow-hidden">
               <div className="mt-3 space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <span className="flex items-center gap-1.5 text-xs font-medium text-white/50">
+                  <span className="flex items-center gap-1.5 text-xs font-medium text-fg/50">
                     <EyeOff className="h-3 w-3" />
                     Scene Direction
                   </span>
@@ -327,7 +327,7 @@ export function StartingSceneStep({
                     <button
                       type="button"
                       onClick={() => setShowNewDirectionInput(false)}
-                      className="text-[11px] text-white/40 hover:text-white/60"
+                      className="text-[11px] text-fg/40 hover:text-fg/60"
                     >
                       Cancel
                     </button>
@@ -338,9 +338,9 @@ export function StartingSceneStep({
                   onChange={(e) => setNewSceneDirection(e.target.value)}
                   rows={2}
                   placeholder="e.g., 'The hostage will be rescued' or 'Maintain tense atmosphere'"
-                  className="w-full resize-none rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm leading-relaxed text-white placeholder-white/30 transition focus:border-white/20 focus:outline-none"
+                  className="w-full resize-none rounded-lg border border-fg/10 bg-fg/5 px-3 py-2 text-sm leading-relaxed text-fg placeholder-fg/30 transition focus:border-fg/20 focus:outline-none"
                 />
-                <p className="text-[10px] text-white/30">
+                <p className="text-[10px] text-fg/30">
                   Hidden guidance for the AI on how this scene should unfold
                 </p>
               </div>
@@ -353,8 +353,8 @@ export function StartingSceneStep({
             className={cn(
               "mt-3 flex items-center gap-2 rounded-xl px-3.5 py-2.5 text-sm font-medium transition active:scale-[0.98]",
               newSceneContent.trim()
-                ? "border border-blue-400/40 bg-blue-400/20 text-blue-100 active:bg-blue-400/30"
-                : "border border-white/10 bg-white/5 text-white/40",
+                ? "border border-info/40 bg-info/20 text-info active:bg-info/30"
+                : "border border-fg/10 bg-fg/5 text-fg/40",
             )}
           >
             <Plus className="h-4 w-4" />
@@ -365,7 +365,7 @@ export function StartingSceneStep({
 
       {/* Continue Button - moved to bottom */}
       <div className="pt-4 mt-auto space-y-3">
-        <p className="text-xs text-white/50 text-center">
+        <p className="text-xs text-fg/50 text-center">
           Create multiple starting scenarios. One will be selected when starting a new chat.
         </p>
         <button
@@ -377,11 +377,11 @@ export function StartingSceneStep({
             interactive.transition.fast,
             canContinue
               ? cn(
-                  "border border-emerald-400/40 bg-emerald-400/20 text-emerald-100",
+                  "border border-accent/40 bg-accent/20 text-accent",
                   shadows.glow,
-                  "active:border-emerald-400/60 active:bg-emerald-400/30",
+                  "active:border-accent/60 active:bg-accent/30",
                 )
-              : "cursor-not-allowed border border-white/5 bg-white/5 text-white/30",
+              : "cursor-not-allowed border border-fg/5 bg-fg/5 text-fg/30",
           )}
         >
           Continue to Extras
@@ -397,32 +397,32 @@ export function StartingSceneStep({
               value={editingSceneContent}
               onChange={(e) => setEditingSceneContent(e.target.value)}
               rows={10}
-              className="w-full resize-none rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm leading-relaxed text-white placeholder-white/40 transition focus:border-white/20 focus:outline-none"
+              className="w-full resize-none rounded-xl border border-fg/10 bg-surface-el/30 px-4 py-3 text-sm leading-relaxed text-fg placeholder-fg/40 transition focus:border-fg/20 focus:outline-none"
               placeholder="Enter scene content..."
             />
-            <div className="mt-1 flex justify-end text-[11px] text-white/40">
+            <div className="mt-1 flex justify-end text-[11px] text-fg/40">
               {wordCount(editingSceneContent)} words
             </div>
           </div>
 
           {/* Scene Direction - Collapsible */}
-          <div className="border-t border-white/10 pt-3">
+          <div className="border-t border-fg/10 pt-3">
             {!editDirectionExpanded && !editingSceneDirection ? (
               <button
                 type="button"
                 onClick={() => setEditDirectionExpanded(true)}
                 className="flex w-full items-center justify-between py-1"
               >
-                <span className="flex items-center gap-1.5 text-xs font-medium text-white/50">
+                <span className="flex items-center gap-1.5 text-xs font-medium text-fg/50">
                   <EyeOff className="h-3 w-3" />
                   Scene Direction
                 </span>
-                <span className="text-[11px] text-white/40">+ Add</span>
+                <span className="text-[11px] text-fg/40">+ Add</span>
               </button>
             ) : (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="flex items-center gap-1.5 text-xs font-medium text-white/50">
+                  <span className="flex items-center gap-1.5 text-xs font-medium text-fg/50">
                     <EyeOff className="h-3 w-3" />
                     Scene Direction
                   </span>
@@ -430,7 +430,7 @@ export function StartingSceneStep({
                     <button
                       type="button"
                       onClick={() => setEditDirectionExpanded(false)}
-                      className="text-[11px] text-white/40 hover:text-white/60"
+                      className="text-[11px] text-fg/40 hover:text-fg/60"
                     >
                       Cancel
                     </button>
@@ -440,10 +440,10 @@ export function StartingSceneStep({
                   value={editingSceneDirection}
                   onChange={(e) => setEditingSceneDirection(e.target.value)}
                   rows={2}
-                  className="w-full resize-none rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm leading-relaxed text-white placeholder-white/30 transition focus:border-white/20 focus:outline-none"
+                  className="w-full resize-none rounded-lg border border-fg/10 bg-fg/5 px-3 py-2 text-sm leading-relaxed text-fg placeholder-fg/30 transition focus:border-fg/20 focus:outline-none"
                   placeholder="e.g., 'The hostage will be rescued' or 'Build tension gradually'"
                 />
-                <p className="text-[10px] text-white/30">
+                <p className="text-[10px] text-fg/30">
                   Hidden guidance for the AI on how this scene should unfold
                 </p>
               </div>
@@ -454,9 +454,9 @@ export function StartingSceneStep({
             <button
               onClick={cancelEditingScene}
               className={cn(
-                "flex-1 py-3 text-sm font-medium text-white/70 transition",
-                "border border-white/10 bg-white/5",
-                "hover:bg-white/10 hover:text-white",
+                "flex-1 py-3 text-sm font-medium text-fg/70 transition",
+                "border border-fg/10 bg-fg/5",
+                "hover:bg-fg/10 hover:text-fg",
                 "active:scale-[0.98]",
                 radius.lg,
               )}
@@ -467,9 +467,9 @@ export function StartingSceneStep({
               onClick={saveEditedScene}
               disabled={!editingSceneContent.trim()}
               className={cn(
-                "flex-1 py-3 text-sm font-semibold text-white transition",
-                "bg-linear-to-r from-emerald-500 to-green-500",
-                "hover:from-emerald-400 hover:to-green-400",
+                "flex-1 py-3 text-sm font-semibold text-fg transition",
+                "bg-linear-to-r from-accent to-accent/80",
+                "hover:from-accent/80 hover:to-accent/60",
                 "active:scale-[0.98]",
                 "disabled:cursor-not-allowed disabled:opacity-50",
                 radius.lg,

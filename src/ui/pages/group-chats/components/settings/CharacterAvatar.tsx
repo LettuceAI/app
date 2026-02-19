@@ -24,14 +24,14 @@ export function CharacterAvatar({
         sizeClasses[size],
         "rounded-full overflow-hidden",
         "bg-linear-to-br from-white/10 to-white/5",
-        "border border-white/10",
+        "border border-fg/10",
         "flex items-center justify-center",
       )}
     >
       {avatarUrl ? (
         <AvatarImage src={avatarUrl} alt={character.name} crop={character.avatarCrop} applyCrop />
       ) : (
-        <span className="font-bold text-white/60">{character.name.slice(0, 2).toUpperCase()}</span>
+        <span className="font-bold text-fg/60">{character.name.slice(0, 2).toUpperCase()}</span>
       )}
     </div>
   );

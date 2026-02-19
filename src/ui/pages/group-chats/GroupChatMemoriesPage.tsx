@@ -51,23 +51,23 @@ function MemoryActionRow({
       disabled={disabled}
       className={cn(
         "flex w-full items-center gap-3 px-1 py-2.5 transition-all rounded-lg",
-        "hover:bg-white/5 active:bg-white/10",
+        "hover:bg-fg/5 active:bg-fg/10",
         "disabled:opacity-40 disabled:pointer-events-none",
-        variant === "danger" && "hover:bg-red-500/10",
+        variant === "danger" && "hover:bg-danger/10",
       )}
     >
       <div
         className={cn(
           "flex items-center justify-center w-8 h-8 rounded-lg",
-          iconBg || "bg-white/10",
+          iconBg || "bg-fg/10",
         )}
       >
-        <Icon size={16} className={cn(variant === "danger" ? "text-red-400" : "text-white")} />
+        <Icon size={16} className={cn(variant === "danger" ? "text-danger" : "text-fg")} />
       </div>
       <span
         className={cn(
           "text-[15px] text-left",
-          variant === "danger" ? "text-red-400" : "text-white/90",
+          variant === "danger" ? "text-danger" : "text-fg/90",
         )}
       >
         {label}
@@ -111,7 +111,7 @@ export function GroupChatMemoriesPage() {
   if (loading) {
     return (
       <div className={cn("flex h-screen items-center justify-center", colors.surface.base)}>
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/10 border-t-white/60" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-fg/10 border-t-white/60" />
       </div>
     );
   }
@@ -130,7 +130,7 @@ export function GroupChatMemoriesPage() {
           className={cn(
             components.button.primary,
             components.button.sizes.md,
-            "bg-white/5 text-white hover:bg-white/10",
+            "bg-fg/5 text-fg hover:bg-fg/10",
           )}
         >
           Go back
@@ -144,7 +144,7 @@ export function GroupChatMemoriesPage() {
       {/* Header */}
       <header
         className={cn(
-          "sticky top-0 z-20 border-b border-white/10 px-4",
+          "sticky top-0 z-20 border-b border-fg/10 px-4",
           "pt-[calc(env(safe-area-inset-top)+24px)] pb-3",
           colors.glass.strong,
         )}
@@ -157,7 +157,7 @@ export function GroupChatMemoriesPage() {
                 "flex shrink-0 items-center justify-center -ml-2 px-2 py-1",
                 colors.text.primary,
                 interactive.transition.fast,
-                "hover:text-white/80",
+                "hover:text-fg/80",
               )}
               aria-label="Go back"
             >
@@ -182,7 +182,7 @@ export function GroupChatMemoriesPage() {
                   typography.overline.weight,
                   typography.overline.tracking,
                   typography.overline.transform,
-                  "border-blue-500/30 bg-blue-500/15 text-blue-200",
+                  "border-info/30 bg-info/15 text-info",
                 )}
               >
                 Processing
@@ -192,21 +192,21 @@ export function GroupChatMemoriesPage() {
         </div>
 
         {/* Segmented Tab Control */}
-        <div className="mt-3 flex bg-white/5 border border-white/8 rounded-xl p-1">
+        <div className="mt-3 flex bg-fg/5 border border-fg/8 rounded-xl p-1">
           {tabs.map(({ id, icon: Icon, label }) => (
             <button
               key={id}
               onClick={() => dispatch({ type: "SET_TAB", tab: id })}
               className={cn(
                 "relative flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-semibold transition-colors",
-                ui.activeTab === id ? "text-white" : "text-white/40 hover:text-white/60",
+                ui.activeTab === id ? "text-fg" : "text-fg/40 hover:text-fg/60",
               )}
               aria-label={label}
             >
               {ui.activeTab === id && (
                 <motion.div
                   layoutId="groupMemoryTabIndicator"
-                  className="absolute inset-0 rounded-lg bg-white/10 border border-white/10"
+                  className="absolute inset-0 rounded-lg bg-fg/10 border border-fg/10"
                   transition={{ type: "spring", stiffness: 320, damping: 28 }}
                 />
               )}
@@ -225,11 +225,11 @@ export function GroupChatMemoriesPage() {
               <div
                 className={cn(
                   radius.md,
-                  "bg-blue-500/10 border border-blue-500/20 p-3 flex items-center gap-3 animate-pulse",
+                  "bg-info/10 border border-info/20 p-3 flex items-center gap-3 animate-pulse",
                 )}
               >
-                <RefreshCw className="h-5 w-5 text-blue-400 shrink-0 animate-spin" />
-                <div className={cn("flex-1", typography.body.size, "text-blue-200")}>
+                <RefreshCw className="h-5 w-5 text-info shrink-0 animate-spin" />
+                <div className={cn("flex-1", typography.body.size, "text-info")}>
                   <p className="font-semibold">AI is organizing group memories...</p>
                 </div>
               </div>
@@ -237,16 +237,16 @@ export function GroupChatMemoriesPage() {
               <div
                 className={cn(
                   radius.md,
-                  "bg-emerald-500/10 border border-emerald-500/20 p-3 flex items-center gap-3",
+                  "bg-accent/10 border border-accent/20 p-3 flex items-center gap-3",
                 )}
               >
-                <Check className="h-5 w-5 text-emerald-400 shrink-0" />
-                <div className={cn("flex-1", typography.body.size, "text-emerald-200")}>
+                <Check className="h-5 w-5 text-accent shrink-0" />
+                <div className={cn("flex-1", typography.body.size, "text-accent/80")}>
                   <p className="font-semibold">Memory cycle processed successfully!</p>
                 </div>
                 <button
                   onClick={() => dispatch({ type: "SET_RETRY_STATUS", value: "idle" })}
-                  className="text-emerald-400 hover:text-emerald-300"
+                  className="text-accent hover:text-accent/80"
                 >
                   <X size={16} />
                 </button>
@@ -255,17 +255,17 @@ export function GroupChatMemoriesPage() {
               <div
                 className={cn(
                   radius.md,
-                  "bg-red-500/10 border border-red-500/20 p-3 flex items-start gap-3",
+                  "bg-danger/10 border border-danger/20 p-3 flex items-start gap-3",
                 )}
               >
-                <AlertTriangle className="h-5 w-5 text-red-400 shrink-0" />
-                <div className={cn("flex-1", typography.body.size, "text-red-200")}>
+                <AlertTriangle className="h-5 w-5 text-danger shrink-0" />
+                <div className={cn("flex-1", typography.body.size, "text-danger")}>
                   <p className="font-semibold mb-1">Memory action failed</p>
                   <p className="opacity-90">{ui.actionError}</p>
                 </div>
                 <button
                   onClick={() => dispatch({ type: "SET_ACTION_ERROR", value: null })}
-                  className="text-red-400 hover:text-red-300"
+                  className="text-danger hover:text-danger"
                 >
                   <X size={16} />
                 </button>
@@ -279,7 +279,7 @@ export function GroupChatMemoriesPage() {
             <div
               className={cn(
                 radius.md,
-                "bg-white/5 border border-white/10 p-3 flex items-center justify-between gap-3",
+                "bg-fg/5 border border-fg/10 p-3 flex items-center justify-between gap-3",
               )}
             >
               <div className={cn(typography.bodySmall.size, colors.text.secondary)}>
@@ -292,7 +292,7 @@ export function GroupChatMemoriesPage() {
                   typography.caption.size,
                   "font-semibold px-3 py-1",
                   radius.full,
-                  "border border-white/15 bg-white/10 text-white/80",
+                  "border border-fg/15 bg-fg/10 text-fg/80",
                   interactive.transition.fast,
                   interactive.active.scale,
                 )}
@@ -318,17 +318,17 @@ export function GroupChatMemoriesPage() {
               type="button"
               onClick={() => setShowSummaryEditor(true)}
               className={cn(
-                "w-full rounded-xl border border-emerald-400/15 bg-emerald-400/3 px-4 py-3 text-left",
-                "transition-all hover:border-emerald-400/25 hover:bg-emerald-400/5 active:scale-[0.99]",
+                "w-full rounded-xl border border-accent/15 bg-accent/3 px-4 py-3 text-left",
+                "transition-all hover:border-accent/25 hover:bg-accent/5 active:scale-[0.99]",
               )}
             >
               <div className="flex items-center gap-2 mb-1.5">
-                <Sparkles size={13} className="text-emerald-400/70 shrink-0" />
-                <span className="text-[11px] font-semibold text-emerald-300/80 uppercase tracking-wider">
+                <Sparkles size={13} className="text-accent/70 shrink-0" />
+                <span className="text-[11px] font-semibold text-accent/60 uppercase tracking-wider">
                   Context Summary
                 </span>
                 {session?.memorySummaryTokenCount && session.memorySummaryTokenCount > 0 ? (
-                  <span className="text-[10px] text-white/30 ml-auto">
+                  <span className="text-[10px] text-fg/30 ml-auto">
                     {session.memorySummaryTokenCount.toLocaleString()} tokens
                   </span>
                 ) : null}
@@ -338,8 +338,8 @@ export function GroupChatMemoriesPage() {
                   typography.bodySmall.size,
                   "leading-relaxed line-clamp-4 min-h-14",
                   ui.summaryDraft
-                    ? "text-emerald-50/70"
-                    : "text-emerald-200/25 italic",
+                    ? "text-accent/70"
+                    : "text-accent/25 italic",
                 )}
               >
                 {ui.summaryDraft || "Tap to add a context summary..."}
@@ -349,10 +349,10 @@ export function GroupChatMemoriesPage() {
             {/* Memories Section */}
             <div>
               <div className="flex items-center gap-2 mb-2">
-                <span className="text-[12px] font-semibold uppercase tracking-wider text-white/50">
+                <span className="text-[12px] font-semibold uppercase tracking-wider text-fg/50">
                   {ui.searchTerm.trim() ? `Results (${filteredMemories.length})` : "Saved Memories"}
                 </span>
-                <span className="text-[10px] text-white/30 ml-auto">
+                <span className="text-[10px] text-fg/30 ml-auto">
                   {stats.ai} AI · {stats.user} You
                 </span>
               </div>
@@ -375,7 +375,7 @@ export function GroupChatMemoriesPage() {
                       "w-full pl-10 pr-10 py-2.5",
                       components.input.base,
                       radius.lg,
-                      "text-sm text-white placeholder-white/40",
+                      "text-sm text-fg placeholder-fg/40",
                     )}
                   />
                   {ui.searchTerm.trim().length > 0 && (
@@ -385,7 +385,7 @@ export function GroupChatMemoriesPage() {
                       className={cn(
                         "absolute right-3 top-1/2 -translate-y-1/2",
                         colors.text.tertiary,
-                        "hover:text-white",
+                        "hover:text-fg",
                         interactive.transition.fast,
                       )}
                       aria-label="Clear search"
@@ -399,9 +399,9 @@ export function GroupChatMemoriesPage() {
                   className={cn(
                     "flex items-center justify-center shrink-0",
                     "h-10.5 w-10.5 rounded-lg",
-                    "border border-white/10 bg-white/5",
-                    "text-white/50",
-                    "hover:bg-white/8 hover:text-white/70",
+                    "border border-fg/10 bg-fg/5",
+                    "text-fg/50",
+                    "hover:bg-fg/8 hover:text-fg/70",
                     "transition-all active:scale-95",
                   )}
                   aria-label="Add memory"
@@ -418,17 +418,17 @@ export function GroupChatMemoriesPage() {
                   transition={{ duration: 0.3, ease: "easeOut" }}
                   className="flex flex-col items-center justify-center py-16"
                 >
-                  <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-white/10 bg-white/5 mb-4">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-fg/10 bg-fg/5 mb-4">
                     {ui.searchTerm ? (
-                      <Search className="h-7 w-7 text-white/20" />
+                      <Search className="h-7 w-7 text-fg/20" />
                     ) : (
-                      <Bot className="h-7 w-7 text-white/20" />
+                      <Bot className="h-7 w-7 text-fg/20" />
                     )}
                   </div>
-                  <h3 className="mb-1 text-base font-semibold text-white">
+                  <h3 className="mb-1 text-base font-semibold text-fg">
                     {ui.searchTerm ? "No matching memories" : "No memories yet"}
                   </h3>
-                  <p className="text-center text-sm text-white/40 max-w-60">
+                  <p className="text-center text-sm text-fg/40 max-w-60">
                     {ui.searchTerm
                       ? "Try a different search term"
                       : "Tap the Add button above to create one"}
@@ -459,8 +459,8 @@ export function GroupChatMemoriesPage() {
                           "group relative overflow-hidden rounded-xl",
                           "border",
                           expanded
-                            ? "border-white/10 bg-white/2"
-                            : "border-white/6 bg-white/2 hover:border-white/10 hover:bg-white/3",
+                            ? "border-fg/10 bg-fg/2"
+                            : "border-fg/6 bg-fg/2 hover:border-fg/10 hover:bg-fg/3",
                         )}
                       >
                         <div
@@ -479,9 +479,9 @@ export function GroupChatMemoriesPage() {
                           <div className="flex items-start gap-2">
                             <div className="shrink-0 mt-0.5">
                               {item.isAi ? (
-                                <Bot size={14} className="text-blue-400" />
+                                <Bot size={14} className="text-info" />
                               ) : (
-                                <User size={14} className="text-emerald-400" />
+                                <User size={14} className="text-accent" />
                               )}
                             </div>
                             <motion.div className="flex-1 min-w-0" layout>
@@ -505,8 +505,8 @@ export function GroupChatMemoriesPage() {
                               }}
                               className={cn(
                                 "flex items-center justify-center shrink-0 p-2.5 -m-2 -mr-1",
-                                "rounded-lg text-white/30",
-                                "transition-all hover:bg-white/5 hover:text-white/60",
+                                "rounded-lg text-fg/30",
+                                "transition-all hover:bg-fg/5 hover:text-fg/60",
                                 "active:scale-95",
                               )}
                               aria-label="Memory actions"
@@ -518,7 +518,7 @@ export function GroupChatMemoriesPage() {
                           {/* Pin indicator */}
                           {item.isPinned && (
                             <div className="flex items-center justify-end mt-2">
-                              <Pin size={12} className="text-amber-400/60" />
+                              <Pin size={12} className="text-warning/60" />
                             </div>
                           )}
 
@@ -534,8 +534,8 @@ export function GroupChatMemoriesPage() {
                               >
                                 <div
                                   className={cn(
-                                    "flex items-center gap-3 mt-2 pt-2 border-t border-white/5",
-                                    "text-[10px] text-white/30",
+                                    "flex items-center gap-3 mt-2 pt-2 border-t border-fg/5",
+                                    "text-[10px] text-fg/30",
                                   )}
                                 >
                                   {item.tokenCount > 0 && (
@@ -547,7 +547,7 @@ export function GroupChatMemoriesPage() {
                                       Accessed {new Date(item.lastAccessedAt).toLocaleDateString()}
                                     </span>
                                   )}
-                                  <span className={item.isCold ? "text-blue-400/50" : "text-amber-400/50"}>
+                                  <span className={item.isCold ? "text-info/50" : "text-warning/50"}>
                                     {item.isCold ? "Cold" : `Hot ${item.importanceScore.toFixed(1)}`}
                                   </span>
                                 </div>
@@ -573,10 +573,10 @@ export function GroupChatMemoriesPage() {
             className={cn("px-3 py-4", "space-y-5")}
           >
             <div className="flex items-center gap-2 mb-3">
-              <span className="text-[12px] font-semibold uppercase tracking-wider text-white/50">
+              <span className="text-[12px] font-semibold uppercase tracking-wider text-fg/50">
                 Activity Log
               </span>
-              <span className="text-[10px] text-white/20 ml-auto">
+              <span className="text-[10px] text-fg/20 ml-auto">
                 {(session.memoryToolEvents?.length ?? 0).toLocaleString()} events
               </span>
               <button
@@ -584,9 +584,9 @@ export function GroupChatMemoriesPage() {
                 disabled={ui.retryStatus === "retrying" || ui.memoryStatus === "processing"}
                 className={cn(
                   "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg",
-                  "border border-white/10 bg-white/5",
-                  "text-[11px] font-semibold text-white/50",
-                  "hover:bg-white/8 hover:text-white/70",
+                  "border border-fg/10 bg-fg/5",
+                  "text-[11px] font-semibold text-fg/50",
+                  "hover:bg-fg/8 hover:text-fg/70",
                   "disabled:opacity-40 disabled:pointer-events-none",
                   "transition-all active:scale-95",
                 )}
@@ -612,7 +612,7 @@ export function GroupChatMemoriesPage() {
         onClose={() => setShowSummaryEditor(false)}
         title="Context Summary"
       >
-        <div className="space-y-4 text-white">
+        <div className="space-y-4 text-fg">
           <textarea
             value={ui.summaryDraft}
             onChange={(e) => dispatch({ type: "SET_SUMMARY_DRAFT", value: e.target.value })}
@@ -620,16 +620,16 @@ export function GroupChatMemoriesPage() {
             className={cn(
               "w-full p-3",
               radius.lg,
-              "border border-white/10 bg-black/30",
-              "text-sm text-white/90 resize-none leading-relaxed",
-              "focus:border-white/20 focus:outline-none focus:ring-1 focus:ring-white/10",
-              "placeholder:text-white/30",
+              "border border-fg/10 bg-surface-el/30",
+              "text-sm text-fg/90 resize-none leading-relaxed",
+              "focus:border-fg/20 focus:outline-none focus:ring-1 focus:ring-white/10",
+              "placeholder:text-fg/30",
             )}
             placeholder="Short recap used to keep context consistent across messages..."
             autoFocus
           />
           {session?.memorySummaryTokenCount && session.memorySummaryTokenCount > 0 ? (
-            <p className="text-[10px] text-white/30">
+            <p className="text-[10px] text-fg/30">
               {session.memorySummaryTokenCount.toLocaleString()} tokens
             </p>
           ) : null}
@@ -642,9 +642,9 @@ export function GroupChatMemoriesPage() {
               className={cn(
                 "flex-1 px-4 py-2.5",
                 radius.lg,
-                "border border-white/10 bg-white/5",
-                "text-sm font-medium text-white/60",
-                "transition-all hover:border-white/15 hover:bg-white/8 hover:text-white/80",
+                "border border-fg/10 bg-fg/5",
+                "text-sm font-medium text-fg/60",
+                "transition-all hover:border-fg/15 hover:bg-fg/8 hover:text-fg/80",
                 "active:scale-[0.98]",
               )}
             >
@@ -659,9 +659,9 @@ export function GroupChatMemoriesPage() {
               className={cn(
                 "flex-1 px-4 py-2.5 flex items-center justify-center gap-2",
                 radius.lg,
-                "border border-emerald-400/30 bg-emerald-500/15",
-                "text-sm font-semibold text-emerald-200",
-                "transition-all hover:border-emerald-400/50 hover:bg-emerald-500/25",
+                "border border-accent/30 bg-accent/15",
+                "text-sm font-semibold text-accent/80",
+                "transition-all hover:border-accent/50 hover:bg-accent/25",
                 "active:scale-[0.98]",
                 "disabled:opacity-40 disabled:pointer-events-none",
               )}
@@ -678,7 +678,7 @@ export function GroupChatMemoriesPage() {
         onClose={() => setShowAddMemoryMenu(false)}
         title="Add Memory"
       >
-        <div className="space-y-4 text-white">
+        <div className="space-y-4 text-fg">
           <textarea
             value={ui.newMemory}
             onChange={(e) => dispatch({ type: "SET_NEW_MEMORY", value: e.target.value })}
@@ -693,10 +693,10 @@ export function GroupChatMemoriesPage() {
             className={cn(
               "w-full p-3",
               radius.lg,
-              "border border-white/10 bg-black/30",
-              "text-sm text-white/90 resize-none leading-relaxed",
-              "focus:border-white/20 focus:outline-none focus:ring-1 focus:ring-white/10",
-              "placeholder:text-white/30",
+              "border border-fg/10 bg-surface-el/30",
+              "text-sm text-fg/90 resize-none leading-relaxed",
+              "focus:border-fg/20 focus:outline-none focus:ring-1 focus:ring-white/10",
+              "placeholder:text-fg/30",
             )}
             placeholder="What should be remembered?"
             autoFocus
@@ -710,15 +710,15 @@ export function GroupChatMemoriesPage() {
             className={cn(
               "w-full px-4 py-2.5 flex items-center justify-center gap-2",
               radius.lg,
-              "border border-emerald-400/30 bg-emerald-500/15",
-              "text-sm font-semibold text-emerald-200",
-              "transition-all hover:border-emerald-400/50 hover:bg-emerald-500/25",
+              "border border-accent/30 bg-accent/15",
+              "text-sm font-semibold text-accent/80",
+              "transition-all hover:border-accent/50 hover:bg-accent/25",
               "active:scale-[0.98]",
               "disabled:opacity-40 disabled:pointer-events-none",
             )}
           >
             {ui.isAdding ? (
-              <div className="h-4 w-4 animate-spin rounded-full border-2 border-emerald-400/30 border-t-emerald-400" />
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
             ) : (
               <>
                 <Plus size={14} />
@@ -749,7 +749,7 @@ export function GroupChatMemoriesPage() {
 
           if (ui.memoryActionMode === "edit") {
             return (
-              <div className="space-y-4 text-white">
+              <div className="space-y-4 text-fg">
                 <textarea
                   value={ui.editingValue}
                   onChange={(e) => dispatch({ type: "SET_EDIT_VALUE", value: e.target.value })}
@@ -757,10 +757,10 @@ export function GroupChatMemoriesPage() {
                   className={cn(
                     "w-full p-3",
                     radius.lg,
-                    "border border-white/10 bg-black/30",
-                    "text-sm text-white/90 resize-none leading-relaxed",
-                    "focus:border-white/20 focus:outline-none focus:ring-1 focus:ring-white/10",
-                    "placeholder:text-white/30",
+                    "border border-fg/10 bg-surface-el/30",
+                    "text-sm text-fg/90 resize-none leading-relaxed",
+                    "focus:border-fg/20 focus:outline-none focus:ring-1 focus:ring-white/10",
+                    "placeholder:text-fg/30",
                   )}
                   placeholder="Enter memory content..."
                   autoFocus
@@ -771,9 +771,9 @@ export function GroupChatMemoriesPage() {
                     className={cn(
                       "flex-1 px-4 py-2.5",
                       radius.lg,
-                      "border border-white/10 bg-white/5",
-                      "text-sm font-medium text-white/60",
-                      "transition-all hover:border-white/15 hover:bg-white/8 hover:text-white/80",
+                      "border border-fg/10 bg-fg/5",
+                      "text-sm font-medium text-fg/60",
+                      "transition-all hover:border-fg/15 hover:bg-fg/8 hover:text-fg/80",
                       "active:scale-[0.98]",
                     )}
                   >
@@ -787,9 +787,9 @@ export function GroupChatMemoriesPage() {
                     className={cn(
                       "flex-1 px-4 py-2.5 flex items-center justify-center gap-2",
                       radius.lg,
-                      "border border-emerald-400/30 bg-emerald-500/15",
-                      "text-sm font-semibold text-emerald-200",
-                      "transition-all hover:border-emerald-400/50 hover:bg-emerald-500/25",
+                      "border border-accent/30 bg-accent/15",
+                      "text-sm font-semibold text-accent/80",
+                      "transition-all hover:border-accent/50 hover:bg-accent/25",
                       "active:scale-[0.98]",
                     )}
                   >
@@ -802,11 +802,11 @@ export function GroupChatMemoriesPage() {
           }
 
           return (
-            <div className="space-y-1 text-white">
+            <div className="space-y-1 text-fg">
               <MemoryActionRow
                 icon={Edit2}
                 label="Edit"
-                iconBg="bg-blue-500/20"
+                iconBg="bg-info/20"
                 onClick={() => {
                   startEdit(selectedItem.index, selectedItem.text);
                   dispatch({ type: "SET_MEMORY_ACTION_MODE", mode: "edit" });
@@ -815,7 +815,7 @@ export function GroupChatMemoriesPage() {
               <MemoryActionRow
                 icon={selectedItem.isPinned ? PinOff : Pin}
                 label={selectedItem.isPinned ? "Unpin" : "Pin"}
-                iconBg="bg-amber-500/20"
+                iconBg="bg-warning/20"
                 onClick={async () => {
                   try {
                     await handleTogglePin(selectedItem.index);
@@ -829,7 +829,7 @@ export function GroupChatMemoriesPage() {
               <MemoryActionRow
                 icon={selectedItem.isCold ? Flame : Snowflake}
                 label={selectedItem.isCold ? "Set Hot" : "Set Cold"}
-                iconBg={selectedItem.isCold ? "bg-amber-500/20" : "bg-blue-500/20"}
+                iconBg={selectedItem.isCold ? "bg-warning/20" : "bg-info/20"}
                 disabled={ui.memoryTempBusy === selectedItem.index}
                 onClick={async () => {
                   await handleSetColdState(selectedItem.index, !selectedItem.isCold);
@@ -837,7 +837,7 @@ export function GroupChatMemoriesPage() {
                 }}
               />
 
-              <div className="h-px bg-white/5 my-2" />
+              <div className="h-px bg-fg/5 my-2" />
 
               <MemoryActionRow
                 icon={Trash2}

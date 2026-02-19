@@ -234,13 +234,13 @@ export function EditCharacterPage() {
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/10 border-t-white/60" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-fg/10 border-t-white/60" />
       </div>
     );
   }
 
   return (
-    <div className="flex h-full flex-col pb-16 text-gray-200">
+    <div className="flex h-full flex-col pb-16 text-fg/80">
       <main
         id={tabPanelId}
         role="tabpanel"
@@ -265,9 +265,9 @@ export function EditCharacterPage() {
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -10 }}
                     transition={{ duration: 0.15 }}
-                    className="rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3"
+                    className="rounded-xl border border-danger/30 bg-danger/10 px-4 py-3"
                   >
-                    <p className="text-sm text-red-200">{error}</p>
+                    <p className="text-sm text-danger">{error}</p>
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -292,26 +292,26 @@ export function EditCharacterPage() {
                       onClick={() =>
                         setFields({ avatarPath: "", avatarCrop: null, avatarRoundPath: null })
                       }
-                      className="absolute -top-1 -left-1 z-30 flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-[#1a1a1c] text-white/60 transition hover:bg-red-500/80 hover:border-red-500/50 hover:text-white active:scale-95"
+                      className="absolute -top-1 -left-1 z-30 flex h-10 w-10 items-center justify-center rounded-full border border-fg/10 bg-surface-el text-fg/60 transition hover:bg-danger/80 hover:border-danger/50 hover:text-fg active:scale-95"
                       aria-label="Remove avatar"
                     >
                       <X size={14} strokeWidth={2.5} />
                     </button>
                   )}
                 </div>
-                <p className="mt-3 text-xs text-white/40">Tap to add or generate avatar</p>
+                <p className="mt-3 text-xs text-fg/40">Tap to add or generate avatar</p>
               </div>
 
               {/* Name Input */}
               <div className="space-y-2">
-                <label className="text-[10px] font-medium uppercase tracking-wide text-white/50">
+                <label className="text-[10px] font-medium uppercase tracking-wide text-fg/50">
                   Character Name
                 </label>
                 <input
                   value={name}
                   onChange={(e) => setFields({ name: e.target.value })}
                   placeholder="Enter character name..."
-                  className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-base text-white placeholder-white/40 transition focus:border-white/25 focus:outline-none"
+                  className="w-full rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3 text-base text-fg placeholder-fg/40 transition focus:border-fg/25 focus:outline-none"
                 />
               </div>
             </>
@@ -323,13 +323,13 @@ export function EditCharacterPage() {
               {/* Avatar Gradient Toggle */}
               {avatarPath && (
                 <div className="space-y-3">
-                  <label className="flex cursor-pointer items-center justify-between rounded-xl border border-white/10 bg-black/20 px-4 py-3 transition hover:bg-black/30">
+                  <label className="flex cursor-pointer items-center justify-between rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3 transition hover:bg-surface-el/30">
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
-                        <Sparkles className="h-4 w-4 text-emerald-400" />
-                        <p className="text-sm font-medium text-white">Avatar Gradient</p>
+                        <Sparkles className="h-4 w-4 text-accent" />
+                        <p className="text-sm font-medium text-fg">Avatar Gradient</p>
                       </div>
-                      <p className="mt-0.5 text-xs text-white/50">
+                      <p className="mt-0.5 text-xs text-fg/50">
                         Generate colorful gradients from avatar colors
                       </p>
                     </div>
@@ -340,8 +340,8 @@ export function EditCharacterPage() {
                         onChange={(e) => setFields({ disableAvatarGradient: !e.target.checked })}
                         className="peer sr-only"
                       />
-                      <div className="h-6 w-11 rounded-full bg-white/20 transition peer-checked:bg-emerald-500/80"></div>
-                      <div className="absolute left-1 top-1 h-4 w-4 rounded-full bg-white transition peer-checked:translate-x-5"></div>
+                      <div className="h-6 w-11 rounded-full bg-fg/20 transition peer-checked:bg-accent/80"></div>
+                      <div className="absolute left-1 top-1 h-4 w-4 rounded-full bg-fg transition peer-checked:translate-x-5"></div>
                     </div>
                   </label>
                 </div>
@@ -350,14 +350,14 @@ export function EditCharacterPage() {
               {/* Custom Gradient Override */}
               {avatarPath && (
                 <div className="space-y-3">
-                  <div className="rounded-xl border border-white/10 bg-black/20 px-4 py-3">
+                  <div className="rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3">
                     <div className="flex items-center justify-between">
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
-                          <Sparkles className="h-4 w-4 text-purple-400" />
-                          <p className="text-sm font-medium text-white">Custom Gradient</p>
+                          <Sparkles className="h-4 w-4 text-secondary" />
+                          <p className="text-sm font-medium text-fg">Custom Gradient</p>
                         </div>
-                        <p className="mt-0.5 text-xs text-white/50">
+                        <p className="mt-0.5 text-xs text-fg/50">
                           Override auto-detected colors with your own
                         </p>
                       </div>
@@ -383,14 +383,14 @@ export function EditCharacterPage() {
                           }}
                           className="peer sr-only"
                         />
-                        <div className="h-6 w-11 rounded-full bg-white/20 transition peer-checked:bg-purple-500/80"></div>
-                        <div className="absolute left-1 top-1 h-4 w-4 rounded-full bg-white transition peer-checked:translate-x-5"></div>
+                        <div className="h-6 w-11 rounded-full bg-fg/20 transition peer-checked:bg-secondary/80"></div>
+                        <div className="absolute left-1 top-1 h-4 w-4 rounded-full bg-fg transition peer-checked:translate-x-5"></div>
                       </label>
                     </div>
 
                     {/* Color Pickers - shown when custom gradient enabled */}
                     {customGradientEnabled && (
-                      <div className="mt-4 space-y-3 border-t border-white/10 pt-4">
+                      <div className="mt-4 space-y-3 border-t border-fg/10 pt-4">
                         {/* Gradient Preview */}
                         <div
                           className="h-16 w-full rounded-lg"
@@ -406,7 +406,7 @@ export function EditCharacterPage() {
 
                         {/* Color 1 */}
                         <div className="flex items-center gap-3">
-                          <label className="text-xs text-white/50 w-12">Start</label>
+                          <label className="text-xs text-fg/50 w-12">Start</label>
                           <div className="relative shrink-0">
                             <input
                               type="color"
@@ -416,7 +416,7 @@ export function EditCharacterPage() {
                                 newColors[0] = e.target.value;
                                 setFields({ customGradientColors: newColors });
                               }}
-                              className="h-10 w-10 cursor-pointer rounded-lg border-2 border-white/20 p-0.5"
+                              className="h-10 w-10 cursor-pointer rounded-lg border-2 border-fg/20 p-0.5"
                               style={{ backgroundColor: customGradientColors[0] || "#4f46e5" }}
                             />
                           </div>
@@ -429,14 +429,14 @@ export function EditCharacterPage() {
                               setFields({ customGradientColors: newColors });
                             }}
                             placeholder="#4f46e5"
-                            className="flex-1 rounded-lg border border-white/10 bg-black/50 px-3 py-2 text-sm font-mono text-white placeholder:text-white/30 focus:border-purple-500/50 focus:outline-none"
+                            className="flex-1 rounded-lg border border-fg/10 bg-surface-el/50 px-3 py-2 text-sm font-mono text-fg placeholder:text-fg/30 focus:border-secondary/50 focus:outline-none"
                           />
                         </div>
 
                         {/* Middle Color (optional) */}
                         {customGradientColors.length >= 3 ? (
                           <div className="flex items-center gap-3">
-                            <label className="text-xs text-white/50 w-12">Mid</label>
+                            <label className="text-xs text-fg/50 w-12">Mid</label>
                             <div className="relative shrink-0">
                               <input
                                 type="color"
@@ -446,7 +446,7 @@ export function EditCharacterPage() {
                                   newColors[2] = e.target.value;
                                   setFields({ customGradientColors: newColors });
                                 }}
-                                className="h-10 w-10 cursor-pointer rounded-lg border-2 border-white/20 p-0.5"
+                                className="h-10 w-10 cursor-pointer rounded-lg border-2 border-fg/20 p-0.5"
                                 style={{ backgroundColor: customGradientColors[2] || "#a855f7" }}
                               />
                             </div>
@@ -459,7 +459,7 @@ export function EditCharacterPage() {
                                 setFields({ customGradientColors: newColors });
                               }}
                               placeholder="#a855f7"
-                              className="flex-1 rounded-lg border border-white/10 bg-black/50 px-3 py-2 text-sm font-mono text-white placeholder:text-white/30 focus:border-purple-500/50 focus:outline-none"
+                              className="flex-1 rounded-lg border border-fg/10 bg-surface-el/50 px-3 py-2 text-sm font-mono text-fg placeholder:text-fg/30 focus:border-secondary/50 focus:outline-none"
                             />
                             <button
                               type="button"
@@ -471,7 +471,7 @@ export function EditCharacterPage() {
                                 ];
                                 setFields({ customGradientColors: newColors });
                               }}
-                              className="shrink-0 text-xs text-red-400 hover:text-red-300"
+                              className="shrink-0 text-xs text-danger hover:text-danger"
                             >
                               ✕
                             </button>
@@ -488,7 +488,7 @@ export function EditCharacterPage() {
                               ];
                               setFields({ customGradientColors: newColors });
                             }}
-                            className="text-xs text-purple-400 hover:text-purple-300 py-1"
+                            className="text-xs text-secondary hover:text-secondary py-1"
                           >
                             + Add middle color
                           </button>
@@ -496,7 +496,7 @@ export function EditCharacterPage() {
 
                         {/* Color 2 (End) */}
                         <div className="flex items-center gap-3">
-                          <label className="text-xs text-white/50 w-12">End</label>
+                          <label className="text-xs text-fg/50 w-12">End</label>
                           <div className="relative shrink-0">
                             <input
                               type="color"
@@ -519,12 +519,12 @@ export function EditCharacterPage() {
                               setFields({ customGradientColors: newColors });
                             }}
                             placeholder="#7c3aed"
-                            className="flex-1 rounded-lg border border-white/10 bg-black/50 px-3 py-2 text-sm font-mono text-white placeholder:text-white/30 focus:border-purple-500/50 focus:outline-none"
+                            className="flex-1 rounded-lg border border-fg/10 bg-surface-el/50 px-3 py-2 text-sm font-mono text-fg placeholder:text-fg/30 focus:border-secondary/50 focus:outline-none"
                           />
                         </div>
 
                         {/* Optional: Text color override hint */}
-                        <p className="text-[10px] text-white/40 mt-2">
+                        <p className="text-[10px] text-fg/40 mt-2">
                           Text colors are auto-calculated based on gradient brightness
                         </p>
                       </div>
@@ -536,14 +536,14 @@ export function EditCharacterPage() {
               {/* Background Image Section */}
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
-                  <div className="rounded-lg border border-purple-400/30 bg-purple-400/10 p-1.5">
-                    <Image className="h-4 w-4 text-purple-400" />
+                  <div className="rounded-lg border border-secondary/30 bg-secondary/10 p-1.5">
+                    <Image className="h-4 w-4 text-secondary" />
                   </div>
-                  <h3 className="text-sm font-semibold text-white">Chat Background</h3>
-                  <span className="text-xs text-white/40">(Optional)</span>
+                  <h3 className="text-sm font-semibold text-fg">Chat Background</h3>
+                  <span className="text-xs text-fg/40">(Optional)</span>
                 </div>
 
-                <div className="overflow-hidden rounded-xl border border-white/10 bg-black/20">
+                <div className="overflow-hidden rounded-xl border border-fg/10 bg-surface-el/20">
                   {backgroundImagePath ? (
                     <div className="relative">
                       <img
@@ -551,28 +551,28 @@ export function EditCharacterPage() {
                         alt="Background preview"
                         className="h-32 w-full object-cover"
                       />
-                      <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
-                        <span className="text-xs text-white/80 bg-black/50 px-2 py-1 rounded">
+                      <div className="absolute inset-0 bg-surface-el/30 flex items-center justify-center">
+                        <span className="text-xs text-fg/80 bg-surface-el/50 px-2 py-1 rounded">
                           Background Preview
                         </span>
                       </div>
                       <button
                         type="button"
                         onClick={() => setFields({ backgroundImagePath: "" })}
-                        className="absolute top-2 right-2 rounded-full border border-white/20 bg-black/50 p-1 text-white/70 transition hover:bg-black/70 active:scale-95"
+                        className="absolute top-2 right-2 rounded-full border border-fg/20 bg-surface-el/50 p-1 text-fg/70 transition hover:bg-surface-el/70 active:scale-95"
                         aria-label="Remove background image"
                       >
                         <X size={14} />
                       </button>
                     </div>
                   ) : (
-                    <label className="flex h-32 cursor-pointer flex-col items-center justify-center gap-2 transition hover:bg-white/5">
-                      <div className="rounded-lg border border-white/10 bg-white/5 p-2">
-                        <Image size={20} className="text-white/40" />
+                    <label className="flex h-32 cursor-pointer flex-col items-center justify-center gap-2 transition hover:bg-fg/5">
+                      <div className="rounded-lg border border-fg/10 bg-fg/5 p-2">
+                        <Image size={20} className="text-fg/40" />
                       </div>
                       <div className="text-center">
-                        <p className="text-sm text-white/70">Add Background Image</p>
-                        <p className="text-xs text-white/40">Tap to select an image</p>
+                        <p className="text-sm text-fg/70">Add Background Image</p>
+                        <p className="text-xs text-fg/40">Tap to select an image</p>
                       </div>
                       <input
                         type="file"
@@ -594,7 +594,7 @@ export function EditCharacterPage() {
                     </label>
                   )}
                 </div>
-                <p className="text-xs text-white/50">
+                <p className="text-xs text-fg/50">
                   Optional background image for chat conversations with this character
                 </p>
               </div>
@@ -606,62 +606,62 @@ export function EditCharacterPage() {
             <>
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
-                  <div className="rounded-lg border border-white/10 bg-white/5 p-1.5">
-                    <Info className="h-4 w-4 text-white/60" />
+                  <div className="rounded-lg border border-fg/10 bg-fg/5 p-1.5">
+                    <Info className="h-4 w-4 text-fg/60" />
                   </div>
-                  <h3 className="text-sm font-semibold text-white">Description</h3>
+                  <h3 className="text-sm font-semibold text-fg">Description</h3>
                 </div>
                 <textarea
                   value={description}
                   onChange={(e) => setFields({ description: e.target.value })}
                   rows={3}
                   placeholder="Short summary shown in lists and cards..."
-                  className="w-full resize-none rounded-xl border border-white/10 bg-black/20 px-3.5 py-3 text-sm leading-relaxed text-white placeholder-white/40 transition focus:border-white/25 focus:outline-none"
+                  className="w-full resize-none rounded-xl border border-fg/10 bg-surface-el/20 px-3.5 py-3 text-sm leading-relaxed text-fg placeholder-fg/40 transition focus:border-fg/25 focus:outline-none"
                 />
-                <p className="text-xs text-white/50">
+                <p className="text-xs text-fg/50">
                   Optional short description for display purposes.
                 </p>
               </div>
 
               <div className="space-y-2">
-                <label className="text-[10px] font-medium uppercase tracking-wide text-white/50">
+                <label className="text-[10px] font-medium uppercase tracking-wide text-fg/50">
                   Nickname
                 </label>
                 <input
                   value={nickname}
                   onChange={(e) => setFields({ nickname: e.target.value })}
                   placeholder="Optional nickname..."
-                  className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white placeholder-white/40 transition focus:border-white/25 focus:outline-none"
+                  className="w-full rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3 text-sm text-fg placeholder-fg/40 transition focus:border-fg/25 focus:outline-none"
                 />
               </div>
 
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 <div className="space-y-2">
-                  <label className="text-[10px] font-medium uppercase tracking-wide text-white/50">
+                  <label className="text-[10px] font-medium uppercase tracking-wide text-fg/50">
                     Creator
                   </label>
                   <input
                     value={creator}
                     onChange={(e) => setFields({ creator: e.target.value })}
                     placeholder="Optional creator name..."
-                    className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white placeholder-white/40 transition focus:border-white/25 focus:outline-none"
+                    className="w-full rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3 text-sm text-fg placeholder-fg/40 transition focus:border-fg/25 focus:outline-none"
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] font-medium uppercase tracking-wide text-white/50">
+                  <label className="text-[10px] font-medium uppercase tracking-wide text-fg/50">
                     Tags
                   </label>
                   <input
                     value={tagsText}
                     onChange={(e) => setFields({ tagsText: e.target.value })}
                     placeholder="tag1, tag2"
-                    className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white placeholder-white/40 transition focus:border-white/25 focus:outline-none"
+                    className="w-full rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3 text-sm text-fg placeholder-fg/40 transition focus:border-fg/25 focus:outline-none"
                   />
                 </div>
               </div>
 
               <div className="space-y-2">
-                <label className="text-[10px] font-medium uppercase tracking-wide text-white/50">
+                <label className="text-[10px] font-medium uppercase tracking-wide text-fg/50">
                   Creator Notes
                 </label>
                 <textarea
@@ -669,12 +669,12 @@ export function EditCharacterPage() {
                   onChange={(e) => setFields({ creatorNotes: e.target.value })}
                   rows={3}
                   placeholder="Optional creator notes..."
-                  className="w-full resize-none rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white placeholder-white/40 transition focus:border-white/25 focus:outline-none"
+                  className="w-full resize-none rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3 text-sm text-fg placeholder-fg/40 transition focus:border-fg/25 focus:outline-none"
                 />
               </div>
 
               <div className="space-y-2">
-                <label className="text-[10px] font-medium uppercase tracking-wide text-white/50">
+                <label className="text-[10px] font-medium uppercase tracking-wide text-fg/50">
                   Creator Notes Multilingual (JSON)
                 </label>
                 <textarea
@@ -682,43 +682,43 @@ export function EditCharacterPage() {
                   onChange={(e) => setFields({ creatorNotesMultilingualText: e.target.value })}
                   rows={4}
                   placeholder='{"en":"note","ja":"メモ"}'
-                  className="w-full resize-none rounded-xl border border-white/10 bg-black/20 px-4 py-3 font-mono text-xs text-white placeholder-white/40 transition focus:border-white/25 focus:outline-none"
+                  className="w-full resize-none rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3 font-mono text-xs text-fg placeholder-fg/40 transition focus:border-fg/25 focus:outline-none"
                 />
               </div>
 
               {/* Personality Section */}
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
-                  <div className="rounded-lg border border-emerald-400/30 bg-emerald-400/10 p-1.5">
-                    <Sparkles className="h-4 w-4 text-emerald-400" />
+                  <div className="rounded-lg border border-accent/30 bg-accent/10 p-1.5">
+                    <Sparkles className="h-4 w-4 text-accent" />
                   </div>
-                  <h3 className="text-sm font-semibold text-white">Definition</h3>
+                  <h3 className="text-sm font-semibold text-fg">Definition</h3>
                 </div>
                 <textarea
                   value={definition}
                   onChange={(e) => setFields({ definition: e.target.value })}
                   rows={8}
                   placeholder="Describe who this character is, their personality, background, speaking style, and how they should interact..."
-                  className="w-full resize-none rounded-xl border border-white/10 bg-black/20 px-3.5 py-3 text-sm leading-relaxed text-white placeholder-white/40 transition focus:border-white/25 focus:outline-none"
+                  className="w-full resize-none rounded-xl border border-fg/10 bg-surface-el/20 px-3.5 py-3 text-sm leading-relaxed text-fg placeholder-fg/40 transition focus:border-fg/25 focus:outline-none"
                 />
-                <div className="flex justify-between text-[11px] text-white/50">
+                <div className="flex justify-between text-[11px] text-fg/50">
                   <span>Be detailed to create a unique personality</span>
                   <span>{wordCount(definition)} words</span>
                 </div>
-                <div className="rounded-xl border border-blue-400/20 bg-blue-400/10 px-3.5 py-3">
-                  <div className="text-[11px] font-medium text-blue-200">
+                <div className="rounded-xl border border-info/20 bg-info/10 px-3.5 py-3">
+                  <div className="text-[11px] font-medium text-info">
                     Available Placeholders
                   </div>
-                  <div className="mt-2 space-y-1 text-xs text-blue-200/70">
+                  <div className="mt-2 space-y-1 text-xs text-info/70">
                     <div>
-                      <code className="text-emerald-300">{"{{char}}"}</code> - Character name
+                      <code className="text-accent/80">{"{{char}}"}</code> - Character name
                     </div>
                     <div>
-                      <code className="text-emerald-300">{"{{user}}"}</code> - Persona name
+                      <code className="text-accent/80">{"{{user}}"}</code> - Persona name
                       (preferred, empty if none)
                     </div>
                     <div>
-                      <code className="text-emerald-300">{"{{persona}}"}</code> - Persona name
+                      <code className="text-accent/80">{"{{persona}}"}</code> - Persona name
                       (alias)
                     </div>
                   </div>
@@ -728,12 +728,12 @@ export function EditCharacterPage() {
               {/* Starting Scenes Section */}
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
-                  <div className="rounded-lg border border-blue-400/30 bg-blue-400/10 p-1.5">
-                    <BookOpen className="h-4 w-4 text-blue-400" />
+                  <div className="rounded-lg border border-info/30 bg-info/10 p-1.5">
+                    <BookOpen className="h-4 w-4 text-info" />
                   </div>
-                  <h3 className="text-sm font-semibold text-white">Starting Scenes</h3>
+                  <h3 className="text-sm font-semibold text-fg">Starting Scenes</h3>
                   {scenes.length > 0 && (
-                    <span className="ml-auto rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-white/70">
+                    <span className="ml-auto rounded-full border border-fg/10 bg-fg/5 px-2 py-0.5 text-xs text-fg/70">
                       {scenes.length}
                     </span>
                   )}
@@ -757,8 +757,8 @@ export function EditCharacterPage() {
                             transition={{ duration: 0.15 }}
                             className={`overflow-hidden rounded-xl border ${
                               isDefault
-                                ? "border-emerald-400/30 bg-emerald-400/5"
-                                : "border-white/10 bg-white/5"
+                                ? "border-accent/30 bg-accent/5"
+                                : "border-fg/10 bg-fg/5"
                             }`}
                           >
                             {/* Scene Header - clickable to expand/collapse */}
@@ -766,16 +766,16 @@ export function EditCharacterPage() {
                               onClick={() => setExpandedSceneId(isExpanded ? null : scene.id)}
                               className={`flex w-full items-center gap-2 border-b px-3.5 py-2.5 text-left ${
                                 isDefault
-                                  ? "border-emerald-400/20 bg-emerald-400/10"
-                                  : "border-white/10 bg-white/5"
+                                  ? "border-accent/20 bg-accent/10"
+                                  : "border-fg/10 bg-fg/5"
                               }`}
                             >
                               {/* Scene number badge */}
                               <div
                                 className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border text-xs font-medium ${
                                   isDefault
-                                    ? "border-emerald-400/40 bg-emerald-400/20 text-emerald-300"
-                                    : "border-white/10 bg-white/5 text-white/60"
+                                    ? "border-accent/40 bg-accent/20 text-accent/80"
+                                    : "border-fg/10 bg-fg/5 text-fg/60"
                                 }`}
                               >
                                 {index + 1}
@@ -783,9 +783,9 @@ export function EditCharacterPage() {
 
                               {/* Default badge */}
                               {isDefault && (
-                                <div className="flex items-center gap-1 rounded-full border border-emerald-400/40 bg-emerald-400/20 px-2 py-0.5">
-                                  <div className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                                  <span className="text-[10px] font-medium text-emerald-200">
+                                <div className="flex items-center gap-1 rounded-full border border-accent/40 bg-accent/20 px-2 py-0.5">
+                                  <div className="h-1.5 w-1.5 rounded-full bg-accent" />
+                                  <span className="text-[10px] font-medium text-accent/80">
                                     Default
                                   </span>
                                 </div>
@@ -794,16 +794,16 @@ export function EditCharacterPage() {
                               {/* Direction indicator */}
                               {scene.direction && (
                                 <div
-                                  className="flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-1.5 py-0.5"
+                                  className="flex items-center gap-1 rounded-full border border-fg/10 bg-fg/5 px-1.5 py-0.5"
                                   title="Has scene direction"
                                 >
-                                  <EyeOff className="h-3 w-3 text-white/40" />
+                                  <EyeOff className="h-3 w-3 text-fg/40" />
                                 </div>
                               )}
 
                               {/* Preview text when collapsed */}
                               {!isExpanded && (
-                                <span className="flex-1 truncate text-sm text-white/50">
+                                <span className="flex-1 truncate text-sm text-fg/50">
                                   {scene.content.slice(0, 50)}
                                   {scene.content.length > 50 ? "..." : ""}
                                 </span>
@@ -812,7 +812,7 @@ export function EditCharacterPage() {
                               {/* Expand indicator */}
                               <ChevronDown
                                 className={cn(
-                                  "h-4 w-4 text-white/40 transition-transform ml-auto",
+                                  "h-4 w-4 text-fg/40 transition-transform ml-auto",
                                   isExpanded && "rotate-180",
                                 )}
                               />
@@ -830,31 +830,31 @@ export function EditCharacterPage() {
                                 >
                                   <div className="p-3.5">
                                     <div className="space-y-3">
-                                      <p className="text-sm leading-relaxed text-white/90">
+                                      <p className="text-sm leading-relaxed text-fg/90">
                                         {scene.content}
                                       </p>
 
                                       {/* Scene Direction (if set) */}
                                       {scene.direction && (
-                                        <div className="pt-2 border-t border-white/5">
-                                          <p className="text-[10px] font-medium text-white/40 mb-1">
+                                        <div className="pt-2 border-t border-fg/5">
+                                          <p className="text-[10px] font-medium text-fg/40 mb-1">
                                             Scene Direction
                                           </p>
-                                          <p className="text-xs leading-relaxed text-white/50 italic">
+                                          <p className="text-xs leading-relaxed text-fg/50 italic">
                                             {scene.direction}
                                           </p>
                                         </div>
                                       )}
 
                                       {/* Actions when expanded */}
-                                      <div className="flex items-center gap-2 pt-2 border-t border-white/5">
+                                      <div className="flex items-center gap-2 pt-2 border-t border-fg/5">
                                         {!isDefault && (
                                           <button
                                             onClick={(e) => {
                                               e.stopPropagation();
                                               setFields({ defaultSceneId: scene.id });
                                             }}
-                                            className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-medium text-white/60 transition active:scale-95 active:bg-white/10"
+                                            className="rounded-lg border border-fg/10 bg-fg/5 px-2.5 py-1.5 text-xs font-medium text-fg/60 transition active:scale-95 active:bg-fg/10"
                                           >
                                             Set as Default
                                           </button>
@@ -865,7 +865,7 @@ export function EditCharacterPage() {
                                             setNewSceneEditorOpen(false);
                                             startEditingScene(scene);
                                           }}
-                                          className="rounded-lg border border-white/10 bg-white/5 p-1.5 text-white/60 transition active:scale-95 active:bg-white/10"
+                                          className="rounded-lg border border-fg/10 bg-fg/5 p-1.5 text-fg/60 transition active:scale-95 active:bg-fg/10"
                                           aria-label={`Edit scene ${index + 1}`}
                                         >
                                           <Edit2 className="h-3.5 w-3.5" />
@@ -875,7 +875,7 @@ export function EditCharacterPage() {
                                             e.stopPropagation();
                                             deleteScene(scene.id);
                                           }}
-                                          className="rounded-lg border border-white/10 bg-white/5 p-1.5 text-white/50 transition active:bg-red-400/10 active:text-red-400"
+                                          className="rounded-lg border border-fg/10 bg-fg/5 p-1.5 text-fg/50 transition active:bg-danger/10 active:text-danger"
                                           aria-label={`Delete scene ${index + 1}`}
                                         >
                                           <X className="h-3.5 w-3.5" />
@@ -895,16 +895,16 @@ export function EditCharacterPage() {
 
                 {/* Add New Scene */}
                 <motion.div layout className="space-y-2">
-                  <div className="rounded-xl border border-white/10 bg-black/20 px-3.5 py-3">
-                    <div className="text-sm font-medium text-white">New starting scene</div>
-                    <p className="mt-1 text-xs text-white/50">
+                  <div className="rounded-xl border border-fg/10 bg-surface-el/20 px-3.5 py-3">
+                    <div className="text-sm font-medium text-fg">New starting scene</div>
+                    <p className="mt-1 text-xs text-fg/50">
                       Create a scenario and optional direction for the opening moment.
                     </p>
                     <div className="mt-3 flex items-center gap-2">
                       <motion.button
                         onClick={() => setNewSceneEditorOpen(true)}
                         whileTap={{ scale: 0.97 }}
-                        className="flex items-center gap-2 rounded-xl border border-blue-400/40 bg-blue-400/20 px-3.5 py-2 text-sm font-medium text-blue-100 transition active:bg-blue-400/30"
+                        className="flex items-center gap-2 rounded-xl border border-info/40 bg-info/20 px-3.5 py-2 text-sm font-medium text-info transition active:bg-info/30"
                       >
                         <Plus className="h-4 w-4" />
                         Create Scene
@@ -913,7 +913,7 @@ export function EditCharacterPage() {
                         <button
                           type="button"
                           onClick={() => setNewSceneEditorOpen(true)}
-                          className="text-xs text-white/50 transition hover:text-white/70"
+                          className="text-xs text-fg/50 transition hover:text-fg/70"
                         >
                           Continue draft
                         </button>
@@ -922,7 +922,7 @@ export function EditCharacterPage() {
                   </div>
                 </motion.div>
 
-                <p className="text-xs text-white/50">
+                <p className="text-xs text-fg/50">
                   Create multiple starting scenarios. One will be selected when starting a new chat.
                 </p>
               </div>
@@ -935,23 +935,23 @@ export function EditCharacterPage() {
               {/* Model Selection Section */}
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
-                  <div className="rounded-lg border border-purple-400/30 bg-purple-400/10 p-1.5">
-                    <Cpu className="h-4 w-4 text-purple-400" />
+                  <div className="rounded-lg border border-secondary/30 bg-secondary/10 p-1.5">
+                    <Cpu className="h-4 w-4 text-secondary" />
                   </div>
-                  <h3 className="text-sm font-semibold text-white">Default Model</h3>
-                  <span className="ml-auto text-xs text-white/40">(Optional)</span>
+                  <h3 className="text-sm font-semibold text-fg">Default Model</h3>
+                  <span className="ml-auto text-xs text-fg/40">(Optional)</span>
                 </div>
 
                 {loadingModels ? (
-                  <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/20 px-4 py-3">
-                    <Loader2 className="h-4 w-4 animate-spin text-white/50" />
-                    <span className="text-sm text-white/50">Loading models...</span>
+                  <div className="flex items-center gap-2 rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3">
+                    <Loader2 className="h-4 w-4 animate-spin text-fg/50" />
+                    <span className="text-sm text-fg/50">Loading models...</span>
                   </div>
                 ) : models.length > 0 ? (
                   <button
                     type="button"
                     onClick={() => setShowModelMenu(true)}
-                    className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-black/20 px-3.5 py-3 text-left transition hover:bg-black/30 focus:border-white/25 focus:outline-none"
+                    className="flex w-full items-center justify-between rounded-xl border border-fg/10 bg-surface-el/20 px-3.5 py-3 text-left transition hover:bg-surface-el/30 focus:border-fg/25 focus:outline-none"
                   >
                     <div className="flex items-center gap-2">
                       {selectedModelId ? (
@@ -959,10 +959,10 @@ export function EditCharacterPage() {
                           models.find((m) => m.id === selectedModelId)?.providerId || "",
                         )
                       ) : (
-                        <Cpu className="h-5 w-5 text-white/40" />
+                        <Cpu className="h-5 w-5 text-fg/40" />
                       )}
                       <span
-                        className={`text-sm ${selectedModelId ? "text-white" : "text-white/50"}`}
+                        className={`text-sm ${selectedModelId ? "text-fg" : "text-fg/50"}`}
                       >
                         {selectedModelId
                           ? models.find((m) => m.id === selectedModelId)?.displayName ||
@@ -970,14 +970,14 @@ export function EditCharacterPage() {
                           : "Use global default model"}
                       </span>
                     </div>
-                    <ChevronDown className="h-4 w-4 text-white/40" />
+                    <ChevronDown className="h-4 w-4 text-fg/40" />
                   </button>
                 ) : (
-                  <div className="rounded-xl border border-white/10 bg-black/20 px-4 py-3">
-                    <p className="text-sm text-white/50">No models available</p>
+                  <div className="rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3">
+                    <p className="text-sm text-fg/50">No models available</p>
                   </div>
                 )}
-                <p className="text-xs text-white/50">
+                <p className="text-xs text-fg/50">
                   Override the default AI model for this character
                 </p>
               </div>
@@ -985,23 +985,23 @@ export function EditCharacterPage() {
               {/* Fallback Model Section */}
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
-                  <div className="rounded-lg border border-indigo-400/30 bg-indigo-400/10 p-1.5">
-                    <Cpu className="h-4 w-4 text-indigo-300" />
+                  <div className="rounded-lg border border-info/30 bg-info/10 p-1.5">
+                    <Cpu className="h-4 w-4 text-info" />
                   </div>
-                  <h3 className="text-sm font-semibold text-white">Fallback Model</h3>
-                  <span className="ml-auto text-xs text-white/40">(Optional)</span>
+                  <h3 className="text-sm font-semibold text-fg">Fallback Model</h3>
+                  <span className="ml-auto text-xs text-fg/40">(Optional)</span>
                 </div>
 
                 {loadingModels ? (
-                  <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/20 px-4 py-3">
-                    <Loader2 className="h-4 w-4 animate-spin text-white/50" />
-                    <span className="text-sm text-white/50">Loading models...</span>
+                  <div className="flex items-center gap-2 rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3">
+                    <Loader2 className="h-4 w-4 animate-spin text-fg/50" />
+                    <span className="text-sm text-fg/50">Loading models...</span>
                   </div>
                 ) : (
                   <button
                     type="button"
                     onClick={() => setShowFallbackModelMenu(true)}
-                    className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-black/20 px-3.5 py-3 text-left transition hover:bg-black/30 focus:border-white/25 focus:outline-none"
+                    className="flex w-full items-center justify-between rounded-xl border border-fg/10 bg-surface-el/20 px-3.5 py-3 text-left transition hover:bg-surface-el/30 focus:border-fg/25 focus:outline-none"
                   >
                     <div className="flex items-center gap-2">
                       {selectedFallbackModelId ? (
@@ -1009,10 +1009,10 @@ export function EditCharacterPage() {
                           models.find((m) => m.id === selectedFallbackModelId)?.providerId || "",
                         )
                       ) : (
-                        <Cpu className="h-5 w-5 text-white/40" />
+                        <Cpu className="h-5 w-5 text-fg/40" />
                       )}
                       <span
-                        className={`text-sm ${selectedFallbackModelId ? "text-white" : "text-white/50"}`}
+                        className={`text-sm ${selectedFallbackModelId ? "text-fg" : "text-fg/50"}`}
                       >
                         {selectedFallbackModelId
                           ? models.find((m) => m.id === selectedFallbackModelId)?.displayName ||
@@ -1020,10 +1020,10 @@ export function EditCharacterPage() {
                           : "Off (no fallback)"}
                       </span>
                     </div>
-                    <ChevronDown className="h-4 w-4 text-white/40" />
+                    <ChevronDown className="h-4 w-4 text-fg/40" />
                   </button>
                 )}
-                <p className="text-xs text-white/50">
+                <p className="text-xs text-fg/50">
                   Retry with this model only when the primary model fails
                 </p>
               </div>
@@ -1031,23 +1031,23 @@ export function EditCharacterPage() {
               {/* System Prompt Template Section */}
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
-                  <div className="rounded-lg border border-cyan-400/30 bg-cyan-400/10 p-1.5">
-                    <BookOpen className="h-4 w-4 text-cyan-400" />
+                  <div className="rounded-lg border border-info/30 bg-info/10 p-1.5">
+                    <BookOpen className="h-4 w-4 text-info" />
                   </div>
-                  <h3 className="text-sm font-semibold text-white">System Prompt</h3>
-                  <span className="ml-auto text-xs text-white/40">(Optional)</span>
+                  <h3 className="text-sm font-semibold text-fg">System Prompt</h3>
+                  <span className="ml-auto text-xs text-fg/40">(Optional)</span>
                 </div>
 
                 {loadingTemplates ? (
-                  <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/20 px-4 py-3">
-                    <Loader2 className="h-4 w-4 animate-spin text-white/50" />
-                    <span className="text-sm text-white/50">Loading templates...</span>
+                  <div className="flex items-center gap-2 rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3">
+                    <Loader2 className="h-4 w-4 animate-spin text-fg/50" />
+                    <span className="text-sm text-fg/50">Loading templates...</span>
                   </div>
                 ) : promptTemplates.length > 0 ? (
                   <select
                     value={systemPromptTemplateId || ""}
                     onChange={(e) => setFields({ systemPromptTemplateId: e.target.value || null })}
-                    className="w-full appearance-none rounded-xl border border-white/10 bg-black/20 px-3.5 py-3 text-sm text-white transition focus:border-white/25 focus:outline-none"
+                    className="w-full appearance-none rounded-xl border border-fg/10 bg-surface-el/20 px-3.5 py-3 text-sm text-fg transition focus:border-fg/25 focus:outline-none"
                   >
                     <option value="">Use default system prompt</option>
                     {promptTemplates.map((template) => (
@@ -1057,14 +1057,14 @@ export function EditCharacterPage() {
                     ))}
                   </select>
                 ) : (
-                  <div className="rounded-xl border border-white/10 bg-black/20 px-4 py-3">
-                    <p className="text-sm text-white/50">No templates available</p>
-                    <p className="text-xs text-white/40 mt-1">
+                  <div className="rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3">
+                    <p className="text-sm text-fg/50">No templates available</p>
+                    <p className="text-xs text-fg/40 mt-1">
                       Create templates in Settings → Prompts
                     </p>
                   </div>
                 )}
-                <p className="text-xs text-white/50">
+                <p className="text-xs text-fg/50">
                   Override the default system prompt for this character
                 </p>
               </div>
@@ -1072,28 +1072,28 @@ export function EditCharacterPage() {
               {/* Voice Selection */}
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
-                  <div className="rounded-lg border border-emerald-400/30 bg-emerald-400/10 p-1.5">
-                    <Volume2 className="h-4 w-4 text-emerald-300" />
+                  <div className="rounded-lg border border-accent/30 bg-accent/10 p-1.5">
+                    <Volume2 className="h-4 w-4 text-accent/80" />
                   </div>
-                  <h3 className="text-sm font-semibold text-white">Voice</h3>
-                  <span className="ml-auto text-xs text-white/40">(Optional)</span>
+                  <h3 className="text-sm font-semibold text-fg">Voice</h3>
+                  <span className="ml-auto text-xs text-fg/40">(Optional)</span>
                 </div>
 
                 {loadingVoices ? (
-                  <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/20 px-4 py-3">
-                    <Loader2 className="h-4 w-4 animate-spin text-white/50" />
-                    <span className="text-sm text-white/50">Loading voices...</span>
+                  <div className="flex items-center gap-2 rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3">
+                    <Loader2 className="h-4 w-4 animate-spin text-fg/50" />
+                    <span className="text-sm text-fg/50">Loading voices...</span>
                   </div>
                 ) : (
                   <button
                     type="button"
                     onClick={() => setShowVoiceMenu(true)}
-                    className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-black/20 px-3.5 py-3 text-left transition hover:bg-black/30 focus:border-white/25 focus:outline-none"
+                    className="flex w-full items-center justify-between rounded-xl border border-fg/10 bg-surface-el/20 px-3.5 py-3 text-left transition hover:bg-surface-el/30 focus:border-fg/25 focus:outline-none"
                   >
                     <div className="flex items-center gap-2">
-                      <Volume2 className="h-5 w-5 text-white/40" />
+                      <Volume2 className="h-5 w-5 text-fg/40" />
                       <span
-                        className={`text-sm ${voiceSelectionValue ? "text-white" : "text-white/50"}`}
+                        className={`text-sm ${voiceSelectionValue ? "text-fg" : "text-fg/50"}`}
                       >
                         {voiceSelectionValue
                           ? (() => {
@@ -1114,26 +1114,26 @@ export function EditCharacterPage() {
                           : "No voice assigned"}
                       </span>
                     </div>
-                    <ChevronDown className="h-4 w-4 text-white/40" />
+                    <ChevronDown className="h-4 w-4 text-fg/40" />
                   </button>
                 )}
 
-                {voiceError && <p className="text-xs font-medium text-rose-300">{voiceError}</p>}
+                {voiceError && <p className="text-xs font-medium text-danger">{voiceError}</p>}
                 {!loadingVoices && audioProviders.length === 0 && userVoices.length === 0 && (
-                  <p className="text-xs text-white/40">Add voices in Settings → Voices</p>
+                  <p className="text-xs text-fg/40">Add voices in Settings → Voices</p>
                 )}
-                <p className="text-xs text-white/50">
+                <p className="text-xs text-fg/50">
                   Assign a voice for future text-to-speech playback
                 </p>
                 <div
                   className={cn(
-                    "flex items-center justify-between rounded-xl border border-white/10 bg-black/20 px-4 py-3",
+                    "flex items-center justify-between rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3",
                     !voiceConfig && "opacity-50",
                   )}
                 >
                   <div>
-                    <p className="text-sm font-medium text-white">Autoplay voice</p>
-                    <p className="mt-1 text-xs text-white/50">
+                    <p className="text-sm font-medium text-fg">Autoplay voice</p>
+                    <p className="mt-1 text-xs text-fg/50">
                       {voiceConfig
                         ? "Play this character's replies automatically"
                         : "Select a voice first"}
@@ -1151,11 +1151,11 @@ export function EditCharacterPage() {
                     <label
                       htmlFor="character-voice-autoplay"
                       className={`relative inline-flex h-6 w-11 shrink-0 rounded-full transition-all ${
-                        voiceAutoplay ? "bg-emerald-500" : "bg-white/20"
+                        voiceAutoplay ? "bg-accent" : "bg-fg/20"
                       } ${voiceConfig ? "cursor-pointer" : "cursor-not-allowed"}`}
                     >
                       <span
-                        className={`inline-block h-5 w-5 mt-0.5 transform rounded-full bg-white transition ${
+                        className={`inline-block h-5 w-5 mt-0.5 transform rounded-full bg-fg transition ${
                           voiceAutoplay ? "translate-x-5" : "translate-x-0.5"
                         }`}
                       />
@@ -1167,12 +1167,12 @@ export function EditCharacterPage() {
               {/* Memory Mode */}
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
-                  <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-1.5">
-                    <Layers className="h-4 w-4 text-amber-300" />
+                  <div className="rounded-lg border border-warning/30 bg-warning/10 p-1.5">
+                    <Layers className="h-4 w-4 text-warning" />
                   </div>
-                  <h3 className="text-sm font-semibold text-white">Memory Mode</h3>
+                  <h3 className="text-sm font-semibold text-fg">Memory Mode</h3>
                   {!dynamicMemoryEnabled && (
-                    <span className="ml-auto text-xs text-white/40">
+                    <span className="ml-auto text-xs text-fg/40">
                       Enable Dynamic Memory to switch
                     </span>
                   )}
@@ -1183,12 +1183,12 @@ export function EditCharacterPage() {
                     onClick={() => setFields({ memoryType: "manual" })}
                     className={`rounded-xl border px-3.5 py-3 text-left transition ${
                       memoryType === "manual"
-                        ? "border-emerald-400/40 bg-emerald-400/15 text-emerald-50 shadow-[0_0_0_1px_rgba(16,185,129,0.25)]"
-                        : "border-white/10 bg-black/20 text-white/70 hover:border-white/20 hover:bg-black/30"
+                        ? "border-accent/40 bg-accent/15 text-accent shadow-[0_0_0_1px_rgba(16,185,129,0.25)]"
+                        : "border-fg/10 bg-surface-el/20 text-fg/70 hover:border-fg/20 hover:bg-surface-el/30"
                     }`}
                   >
                     <p className="text-sm font-semibold">Manual Memory</p>
-                    <p className="mt-1 text-xs text-white/60">
+                    <p className="mt-1 text-xs text-fg/60">
                       Manage notes yourself (current system).
                     </p>
                   </button>
@@ -1198,17 +1198,17 @@ export function EditCharacterPage() {
                     onClick={() => dynamicMemoryEnabled && setFields({ memoryType: "dynamic" })}
                     className={`rounded-xl border px-3.5 py-3 text-left transition ${
                       memoryType === "dynamic" && dynamicMemoryEnabled
-                        ? "border-blue-400/50 bg-blue-500/20 text-blue-50 shadow-[0_0_0_1px_rgba(96,165,250,0.3)]"
-                        : "border-white/10 bg-black/15 text-white/60"
-                    } ${!dynamicMemoryEnabled ? "cursor-not-allowed opacity-50" : "hover:border-white/20 hover:bg-black/25"}`}
+                        ? "border-info/50 bg-info/20 text-info shadow-[0_0_0_1px_rgba(96,165,250,0.3)]"
+                        : "border-fg/10 bg-surface-el/15 text-fg/60"
+                    } ${!dynamicMemoryEnabled ? "cursor-not-allowed opacity-50" : "hover:border-fg/20 hover:bg-surface-el/25"}`}
                   >
                     <p className="text-sm font-semibold">Dynamic Memory</p>
-                    <p className="mt-1 text-xs text-white/60">
+                    <p className="mt-1 text-xs text-fg/60">
                       Automatic summaries when enabled globally.
                     </p>
                   </button>
                 </div>
-                <p className="text-xs text-white/50">
+                <p className="text-xs text-fg/50">
                   Dynamic Memory must be turned on in Advanced settings; otherwise manual memory is
                   used.
                 </p>
@@ -1222,7 +1222,7 @@ export function EditCharacterPage() {
               onClick={() => setExportMenuOpen(true)}
               disabled={exporting}
               whileTap={{ scale: exporting ? 1 : 0.98 }}
-              className="w-full rounded-xl border border-blue-400/40 bg-blue-400/20 px-4 py-3.5 text-sm font-semibold text-blue-100 transition hover:bg-blue-400/30 disabled:opacity-50"
+              className="w-full rounded-xl border border-info/40 bg-info/20 px-4 py-3.5 text-sm font-semibold text-info transition hover:bg-info/30 disabled:opacity-50"
             >
               {exporting ? (
                 <span className="flex items-center justify-center gap-2">
@@ -1276,8 +1276,8 @@ export function EditCharacterPage() {
                 "px-3 py-2.5 text-sm font-semibold transition flex items-center justify-center gap-2",
                 interactive.active.scale,
                 activeTab === id
-                  ? "bg-white/10 text-white"
-                  : cn(colors.text.tertiary, "hover:text-white"),
+                  ? "bg-fg/10 text-fg"
+                  : cn(colors.text.tertiary, "hover:text-fg"),
               )}
             >
               <Icon size={16} className="block" />
@@ -1291,21 +1291,21 @@ export function EditCharacterPage() {
       <AnimatePresence>
         {(editingSceneId !== null || newSceneEditorOpen) && (
           <motion.div
-            className="fixed inset-0 z-50 flex h-full flex-col bg-black/90 backdrop-blur-sm"
+            className="fixed inset-0 z-50 flex h-full flex-col bg-surface-el/90 backdrop-blur-sm"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 20 }}
             transition={{ duration: 0.2 }}
           >
-            <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-              <div className="text-base font-semibold text-white">
+            <div className="flex items-center justify-between border-b border-fg/10 px-4 py-3">
+              <div className="text-base font-semibold text-fg">
                 {editingSceneId !== null ? "Edit Scene" : "New Scene"}
               </div>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={editingSceneId !== null ? cancelEditingScene : closeNewSceneEditor}
-                  className="rounded-full border border-white/10 px-3 py-1.5 text-xs font-medium text-white/70 transition hover:bg-white/10 hover:text-white"
+                  className="rounded-full border border-fg/10 px-3 py-1.5 text-xs font-medium text-fg/70 transition hover:bg-fg/10 hover:text-fg"
                 >
                   Close
                 </button>
@@ -1316,9 +1316,9 @@ export function EditCharacterPage() {
                     editingSceneId !== null ? !editingSceneContent.trim() : !newSceneContent.trim()
                   }
                   className={cn(
-                    "rounded-full px-3 py-1.5 text-xs font-semibold text-white transition",
-                    "bg-linear-to-r from-emerald-500 to-green-500",
-                    "hover:from-emerald-400 hover:to-green-400",
+                    "rounded-full px-3 py-1.5 text-xs font-semibold text-fg transition",
+                    "bg-linear-to-r from-accent to-accent/80",
+                    "hover:from-accent/80 hover:to-accent/60",
                     "disabled:cursor-not-allowed disabled:opacity-50",
                   )}
                 >
@@ -1330,7 +1330,7 @@ export function EditCharacterPage() {
             <div className="flex-1 overflow-y-auto px-4 pb-6 pt-4">
               <div className="space-y-6">
                 <div className="space-y-2">
-                  <div className="text-sm font-medium text-white/80">Scene</div>
+                  <div className="text-sm font-medium text-fg/80">Scene</div>
                   <textarea
                     value={editingSceneId !== null ? editingSceneContent : newSceneContent}
                     onChange={(e) =>
@@ -1341,24 +1341,24 @@ export function EditCharacterPage() {
                       )
                     }
                     rows={14}
-                    className="min-h-[40vh] w-full resize-none rounded-2xl border border-white/10 bg-black/40 px-4 py-4 text-sm leading-relaxed text-white placeholder-white/40 transition focus:border-white/20 focus:outline-none"
+                    className="min-h-[40vh] w-full resize-none rounded-2xl border border-fg/10 bg-surface-el/40 px-4 py-4 text-sm leading-relaxed text-fg placeholder-fg/40 transition focus:border-fg/20 focus:outline-none"
                     placeholder="Enter scene content..."
                   />
-                  <div className="flex items-center justify-between text-[11px] text-white/40">
+                  <div className="flex items-center justify-between text-[11px] text-fg/40">
                     <span>
                       {wordCount(editingSceneId !== null ? editingSceneContent : newSceneContent)}{" "}
                       words
                     </span>
                     <span>
-                      Use <code className="text-emerald-300">{"{{char}}"}</code>,{" "}
-                      <code className="text-emerald-300">{"{{user}}"}</code>
+                      Use <code className="text-accent/80">{"{{char}}"}</code>,{" "}
+                      <code className="text-accent/80">{"{{user}}"}</code>
                     </span>
                   </div>
                 </div>
 
                 <div className="space-y-2">
-                  <div className="flex items-center gap-1.5 text-sm font-medium text-white/80">
-                    <EyeOff className="h-4 w-4 text-white/50" />
+                  <div className="flex items-center gap-1.5 text-sm font-medium text-fg/80">
+                    <EyeOff className="h-4 w-4 text-fg/50" />
                     Scene Direction
                   </div>
                   <textarea
@@ -1371,10 +1371,10 @@ export function EditCharacterPage() {
                       )
                     }
                     rows={6}
-                    className="min-h-[18vh] w-full resize-none rounded-2xl border border-white/10 bg-black/35 px-4 py-3 text-sm leading-relaxed text-white placeholder-white/30 transition focus:border-white/20 focus:outline-none"
+                    className="min-h-[18vh] w-full resize-none rounded-2xl border border-fg/10 bg-surface-el/35 px-4 py-3 text-sm leading-relaxed text-fg placeholder-fg/30 transition focus:border-fg/20 focus:outline-none"
                     placeholder="e.g., 'The hostage will be rescued' or 'Build tension gradually'"
                   />
-                  <p className="text-[11px] text-white/40">
+                  <p className="text-[11px] text-fg/40">
                     Hidden guidance for the AI on how this scene should unfold.
                   </p>
                 </div>
@@ -1395,8 +1395,8 @@ export function EditCharacterPage() {
       >
         <div className="space-y-4 p-2">
           <div className="text-center">
-            <h3 className="text-lg font-semibold text-white">Background Image</h3>
-            <p className="text-sm text-white/50">Choose how to add your image</p>
+            <h3 className="text-lg font-semibold text-fg">Background Image</h3>
+            <p className="text-sm text-fg/50">Choose how to add your image</p>
           </div>
 
           <div className="space-y-2">
@@ -1409,14 +1409,14 @@ export function EditCharacterPage() {
                 setShowBackgroundChoiceMenu(false);
                 setPendingBackgroundSrc(null);
               }}
-              className="flex w-full items-center gap-4 rounded-xl border border-white/10 bg-white/5 p-2 transition hover:bg-white/10 active:scale-[0.98]"
+              className="flex w-full items-center gap-4 rounded-xl border border-fg/10 bg-fg/5 p-2 transition hover:bg-fg/10 active:scale-[0.98]"
             >
-              <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-emerald-400/30 bg-emerald-500/15 text-emerald-300">
+              <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-accent/30 bg-accent/15 text-accent/80">
                 <Upload size={20} />
               </div>
               <div className="flex-1 text-left">
-                <p className="font-medium text-white">Quick Upload</p>
-                <p className="text-xs text-white/50">Use full image without cropping</p>
+                <p className="font-medium text-fg">Quick Upload</p>
+                <p className="text-xs text-fg/50">Use full image without cropping</p>
               </div>
             </button>
 
@@ -1426,14 +1426,14 @@ export function EditCharacterPage() {
                 setShowBackgroundChoiceMenu(false);
                 setShowBackgroundPositionModal(true);
               }}
-              className="flex w-full items-center gap-4 rounded-xl border border-white/10 bg-white/5 p-4 transition hover:bg-white/10 active:scale-[0.98]"
+              className="flex w-full items-center gap-4 rounded-xl border border-fg/10 bg-fg/5 p-4 transition hover:bg-fg/10 active:scale-[0.98]"
             >
-              <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-cyan-400/30 bg-cyan-500/15 text-cyan-300">
+              <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-info/30 bg-info/15 text-info">
                 <Crop size={20} />
               </div>
               <div className="flex-1 text-left">
-                <p className="font-medium text-white">Position & Crop</p>
-                <p className="text-xs text-white/50">Adjust to fit portrait view</p>
+                <p className="font-medium text-fg">Position & Crop</p>
+                <p className="text-xs text-fg/50">Adjust to fit portrait view</p>
               </div>
             </button>
           </div>
@@ -1472,10 +1472,10 @@ export function EditCharacterPage() {
               value={modelSearchQuery}
               onChange={(e) => setModelSearchQuery(e.target.value)}
               placeholder="Search models..."
-              className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-2.5 pl-10 text-sm text-white placeholder-white/40 focus:border-white/20 focus:outline-none"
+              className="w-full rounded-xl border border-fg/10 bg-surface-el/30 px-4 py-2.5 pl-10 text-sm text-fg placeholder-fg/40 focus:border-fg/20 focus:outline-none"
             />
             <svg
-              className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40"
+              className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg/40"
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
@@ -1498,13 +1498,13 @@ export function EditCharacterPage() {
               className={cn(
                 "flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition",
                 !selectedModelId
-                  ? "border-emerald-400/40 bg-emerald-400/10"
-                  : "border-white/10 bg-white/5 hover:bg-white/10",
+                  ? "border-accent/40 bg-accent/10"
+                  : "border-fg/10 bg-fg/5 hover:bg-fg/10",
               )}
             >
-              <Cpu className="h-5 w-5 text-white/40" />
-              <span className="text-sm text-white">Use global default model</span>
-              {!selectedModelId && <Check className="h-4 w-4 ml-auto text-emerald-400" />}
+              <Cpu className="h-5 w-5 text-fg/40" />
+              <span className="text-sm text-fg">Use global default model</span>
+              {!selectedModelId && <Check className="h-4 w-4 ml-auto text-accent" />}
             </button>
             {models
               .filter((m) => {
@@ -1529,19 +1529,19 @@ export function EditCharacterPage() {
                   className={cn(
                     "flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition",
                     selectedModelId === model.id
-                      ? "border-emerald-400/40 bg-emerald-400/10"
-                      : "border-white/10 bg-white/5 hover:bg-white/10",
+                      ? "border-accent/40 bg-accent/10"
+                      : "border-fg/10 bg-fg/5 hover:bg-fg/10",
                   )}
                 >
                   {getProviderIcon(model.providerId)}
                   <div className="flex-1 min-w-0">
-                    <span className="block truncate text-sm text-white">
+                    <span className="block truncate text-sm text-fg">
                       {model.displayName || model.name}
                     </span>
-                    <span className="block truncate text-xs text-white/40">{model.name}</span>
+                    <span className="block truncate text-xs text-fg/40">{model.name}</span>
                   </div>
                   {selectedModelId === model.id && (
-                    <Check className="h-4 w-4 shrink-0 text-emerald-400" />
+                    <Check className="h-4 w-4 shrink-0 text-accent" />
                   )}
                 </button>
               ))}
@@ -1565,10 +1565,10 @@ export function EditCharacterPage() {
               value={fallbackModelSearchQuery}
               onChange={(e) => setFallbackModelSearchQuery(e.target.value)}
               placeholder="Search models..."
-              className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-2.5 pl-10 text-sm text-white placeholder-white/40 focus:border-white/20 focus:outline-none"
+              className="w-full rounded-xl border border-fg/10 bg-surface-el/30 px-4 py-2.5 pl-10 text-sm text-fg placeholder-fg/40 focus:border-fg/20 focus:outline-none"
             />
             <svg
-              className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40"
+              className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg/40"
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
@@ -1591,13 +1591,13 @@ export function EditCharacterPage() {
               className={cn(
                 "flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition",
                 !selectedFallbackModelId
-                  ? "border-emerald-400/40 bg-emerald-400/10"
-                  : "border-white/10 bg-white/5 hover:bg-white/10",
+                  ? "border-accent/40 bg-accent/10"
+                  : "border-fg/10 bg-fg/5 hover:bg-fg/10",
               )}
             >
-              <Cpu className="h-5 w-5 text-white/40" />
-              <span className="text-sm text-white">Off (no fallback)</span>
-              {!selectedFallbackModelId && <Check className="h-4 w-4 ml-auto text-emerald-400" />}
+              <Cpu className="h-5 w-5 text-fg/40" />
+              <span className="text-sm text-fg">Off (no fallback)</span>
+              {!selectedFallbackModelId && <Check className="h-4 w-4 ml-auto text-accent" />}
             </button>
             {models
               .filter((m) => m.id !== selectedModelId)
@@ -1619,19 +1619,19 @@ export function EditCharacterPage() {
                   className={cn(
                     "flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition",
                     selectedFallbackModelId === model.id
-                      ? "border-emerald-400/40 bg-emerald-400/10"
-                      : "border-white/10 bg-white/5 hover:bg-white/10",
+                      ? "border-accent/40 bg-accent/10"
+                      : "border-fg/10 bg-fg/5 hover:bg-fg/10",
                   )}
                 >
                   {getProviderIcon(model.providerId)}
                   <div className="flex-1 min-w-0">
-                    <span className="block truncate text-sm text-white">
+                    <span className="block truncate text-sm text-fg">
                       {model.displayName || model.name}
                     </span>
-                    <span className="block truncate text-xs text-white/40">{model.name}</span>
+                    <span className="block truncate text-xs text-fg/40">{model.name}</span>
                   </div>
                   {selectedFallbackModelId === model.id && (
-                    <Check className="h-4 w-4 shrink-0 text-emerald-400" />
+                    <Check className="h-4 w-4 shrink-0 text-accent" />
                   )}
                 </button>
               ))}
@@ -1655,10 +1655,10 @@ export function EditCharacterPage() {
               value={voiceSearchQuery}
               onChange={(e) => setVoiceSearchQuery(e.target.value)}
               placeholder="Search voices..."
-              className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-2.5 pl-10 text-sm text-white placeholder-white/40 focus:border-white/20 focus:outline-none"
+              className="w-full rounded-xl border border-fg/10 bg-surface-el/30 px-4 py-2.5 pl-10 text-sm text-fg placeholder-fg/40 focus:border-fg/20 focus:outline-none"
             />
             <svg
-              className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40"
+              className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg/40"
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
@@ -1681,13 +1681,13 @@ export function EditCharacterPage() {
               className={cn(
                 "flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition",
                 !voiceSelectionValue
-                  ? "border-emerald-400/40 bg-emerald-400/10"
-                  : "border-white/10 bg-white/5 hover:bg-white/10",
+                  ? "border-accent/40 bg-accent/10"
+                  : "border-fg/10 bg-fg/5 hover:bg-fg/10",
               )}
             >
-              <Volume2 className="h-5 w-5 text-white/40" />
-              <span className="text-sm text-white">No voice assigned</span>
-              {!voiceSelectionValue && <Check className="h-4 w-4 ml-auto text-emerald-400" />}
+              <Volume2 className="h-5 w-5 text-fg/40" />
+              <span className="text-sm text-fg">No voice assigned</span>
+              {!voiceSelectionValue && <Check className="h-4 w-4 ml-auto text-accent" />}
             </button>
 
             {/* User Voices */}
@@ -1722,18 +1722,18 @@ export function EditCharacterPage() {
                         className={cn(
                           "flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition",
                           isSelected
-                            ? "border-emerald-400/40 bg-emerald-400/10"
-                            : "border-white/10 bg-white/5 hover:bg-white/10",
+                            ? "border-accent/40 bg-accent/10"
+                            : "border-fg/10 bg-fg/5 hover:bg-fg/10",
                         )}
                       >
-                        <User className="h-5 w-5 text-white/40" />
+                        <User className="h-5 w-5 text-fg/40" />
                         <div className="flex-1 min-w-0">
-                          <span className="block truncate text-sm text-white">{voice.name}</span>
-                          <span className="block truncate text-xs text-white/40">
+                          <span className="block truncate text-sm text-fg">{voice.name}</span>
+                          <span className="block truncate text-xs text-fg/40">
                             {providerLabel}
                           </span>
                         </div>
-                        {isSelected && <Check className="h-4 w-4 shrink-0 text-emerald-400" />}
+                        {isSelected && <Check className="h-4 w-4 shrink-0 text-accent" />}
                       </button>
                     );
                   })}
@@ -1770,13 +1770,13 @@ export function EditCharacterPage() {
                         className={cn(
                           "flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition",
                           isSelected
-                            ? "border-emerald-400/40 bg-emerald-400/10"
-                            : "border-white/10 bg-white/5 hover:bg-white/10",
+                            ? "border-accent/40 bg-accent/10"
+                            : "border-fg/10 bg-fg/5 hover:bg-fg/10",
                         )}
                       >
-                        <Volume2 className="h-5 w-5 text-white/40" />
-                        <span className="flex-1 truncate text-sm text-white">{voice.name}</span>
-                        {isSelected && <Check className="h-4 w-4 shrink-0 text-emerald-400" />}
+                        <Volume2 className="h-5 w-5 text-fg/40" />
+                        <span className="flex-1 truncate text-sm text-fg">{voice.name}</span>
+                        {isSelected && <Check className="h-4 w-4 shrink-0 text-accent" />}
                       </button>
                     );
                   })}

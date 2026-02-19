@@ -6,7 +6,7 @@ export function CreatePersonaPage() {
     const { state, dispatch, canSave, handleImport, handleSave, topNavPath } = useCreatePersonaController();
 
     return (
-        <div className="flex min-h-screen flex-col bg-[#050505] text-gray-100">
+        <div className="flex min-h-screen flex-col bg-surface text-fg">
             <TopNav currentPath={topNavPath} />
 
             <main className="flex-1 overflow-y-auto px-4 pb-20 pt-[calc(72px+env(safe-area-inset-top))]">

@@ -65,7 +65,7 @@ export function SearchMessagesPage() {
             <span>
                 {parts.map((part, i) =>
                     part.toLowerCase() === highlight.toLowerCase() ? (
-                        <span key={i} className="bg-yellow-500/30 text-yellow-200 rounded px-0.5 font-medium">{part}</span>
+                        <span key={i} className="bg-warning/30 text-warning rounded px-0.5 font-medium">{part}</span>
                     ) : (
                         part
                     )
@@ -133,7 +133,7 @@ export function SearchMessagesPage() {
                         <Loader2 className="animate-spin text-white/30" size={24} />
                     </div>
                 ) : error ? (
-                    <div className="text-center text-red-400 py-10">{error}</div>
+                    <div className="text-center text-danger py-10">{error}</div>
                 ) : results.length === 0 && query.trim() ? (
                     <div className="text-center text-white/30 py-10">No messages found</div>
                 ) : (

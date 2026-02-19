@@ -49,12 +49,12 @@ function KeywordTagInput({
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <label className="text-[11px] font-medium text-white/70">KEYWORDS</label>
+        <label className="text-[11px] font-medium text-fg/70">KEYWORDS</label>
         <div className="flex items-center gap-2">
-          <span className="text-xs text-white/50">Case sensitive</span>
+          <span className="text-xs text-fg/50">Case sensitive</span>
           <label
             className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-all duration-200 ${
-              caseSensitive ? "bg-emerald-500" : "bg-white/20"
+              caseSensitive ? "bg-accent" : "bg-fg/20"
             }`}
           >
             <input
@@ -64,7 +64,7 @@ function KeywordTagInput({
               className="sr-only"
             />
             <span
-              className={`inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ${
+              className={`inline-block h-4 w-4 transform rounded-full bg-fg shadow ring-0 transition duration-200 ${
                 caseSensitive ? "translate-x-4" : "translate-x-0"
               }`}
             />
@@ -78,13 +78,13 @@ function KeywordTagInput({
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           placeholder="Type a keyword..."
-          className="flex-1 rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-white placeholder-white/40 transition focus:border-white/30 focus:outline-none"
+          className="flex-1 rounded-xl border border-fg/10 bg-surface-el/20 px-3 py-2.5 text-fg placeholder-fg/40 transition focus:border-fg/30 focus:outline-none"
         />
         <button
           type="button"
           onClick={addKeyword}
           disabled={!inputValue.trim()}
-          className="rounded-xl border border-emerald-400/40 bg-emerald-400/20 px-4 py-2.5 text-sm font-medium text-emerald-100 transition hover:bg-emerald-400/30 disabled:opacity-40 disabled:cursor-not-allowed"
+          className="rounded-xl border border-accent/40 bg-accent/20 px-4 py-2.5 text-sm font-medium text-accent/70 transition hover:bg-accent/30 disabled:opacity-40 disabled:cursor-not-allowed"
         >
           Add
         </button>
@@ -98,11 +98,11 @@ function KeywordTagInput({
               key={`${keyword}-${index}`}
               type="button"
               onClick={() => removeKeyword(index)}
-              className="inline-flex items-center gap-1.5 rounded-full bg-white/10 pl-3 pr-2 py-1.5 text-sm text-white active:bg-white/20 transition"
+              className="inline-flex items-center gap-1.5 rounded-full bg-fg/10 pl-3 pr-2 py-1.5 text-sm text-fg active:bg-fg/20 transition"
             >
               {keyword}
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/10">
-                <X size={12} className="text-white/70" />
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-fg/10">
+                <X size={12} className="text-fg/70" />
               </span>
             </button>
           ))}
@@ -245,8 +245,8 @@ function EntryListItem({
       transition={{ type: "spring", stiffness: 400, damping: 30 }}
       className={`group relative flex w-full items-center gap-2 overflow-hidden rounded-xl border px-2 py-3 ${isDragging ? "opacity-0" : "cursor-grab active:cursor-grabbing"} ${
         entry.enabled
-          ? "border-white/10 bg-[#0b0c12]/90 hover:border-white/25 hover:bg-[#0c0d13]/95"
-          : "border-white/10 bg-[#0b0c12]/60 opacity-60 hover:opacity-80"
+          ? "border-fg/10 bg-surface-el/90 hover:border-fg/25 hover:bg-surface-el/95"
+          : "border-fg/10 bg-surface-el/60 opacity-60 hover:opacity-80"
       }`}
     >
       <button
@@ -256,7 +256,7 @@ function EntryListItem({
         onPointerLeave={cancelDragStart}
         onPointerCancel={cancelDragStart}
         onContextMenu={(event) => event.preventDefault()}
-        className="flex h-10 w-8 shrink-0 items-center justify-center text-white/30"
+        className="flex h-10 w-8 shrink-0 items-center justify-center text-fg/30"
         style={{ touchAction: "none" }}
         title="Drag to reorder"
       >
@@ -272,33 +272,33 @@ function EntryListItem({
           className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border ${
             entry.enabled
               ? entry.alwaysActive
-                ? "border-blue-400/40 bg-blue-400/20"
-                : "border-emerald-400/40 bg-emerald-400/20"
-              : "border-white/10 bg-white/5"
+                ? "border-info/40 bg-info/20"
+                : "border-accent/40 bg-accent/20"
+              : "border-fg/10 bg-fg/5"
           }`}
         >
           <BookOpen
             className={`h-5 w-5 ${
               entry.enabled
                 ? entry.alwaysActive
-                  ? "text-blue-200"
-                  : "text-emerald-200"
-                : "text-white/40"
+                  ? "text-info"
+                  : "text-accent/80"
+                : "text-fg/40"
             }`}
           />
         </div>
 
         <div className="relative min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <h3 className="truncate text-sm font-semibold text-white">{displayTitle}</h3>
+            <h3 className="truncate text-sm font-semibold text-fg">{displayTitle}</h3>
             {!entry.enabled && (
-              <span className="text-[10px] uppercase tracking-wide text-white/40">Disabled</span>
+              <span className="text-[10px] uppercase tracking-wide text-fg/40">Disabled</span>
             )}
           </div>
-          <p className="line-clamp-1 text-xs text-gray-400">{displaySubtitle}</p>
+          <p className="line-clamp-1 text-xs text-fg/50">{displaySubtitle}</p>
         </div>
 
-        <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/70 group-hover:border-white/25 group-hover:text-white transition">
+        <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-fg/10 bg-fg/5 text-fg/70 group-hover:border-fg/25 group-hover:text-fg transition">
           <ChevronRight size={16} />
         </span>
       </button>
@@ -351,14 +351,14 @@ function LorebookListView({
   // Empty state
   const EmptyState = () => (
     <div className="flex h-64 flex-col items-center justify-center">
-      <BookOpen className="mb-3 h-12 w-12 text-white/20" />
-      <h3 className="mb-1 text-lg font-medium text-white">No lorebooks yet</h3>
-      <p className="mb-4 text-center text-sm text-white/50">
+      <BookOpen className="mb-3 h-12 w-12 text-fg/20" />
+      <h3 className="mb-1 text-lg font-medium text-fg">No lorebooks yet</h3>
+      <p className="mb-4 text-center text-sm text-fg/50">
         Create a lorebook to add world lore for this character
       </p>
       <button
         onClick={() => setShowCreateMenu(true)}
-        className="rounded-full border border-emerald-400/40 bg-emerald-400/20 px-6 py-2 text-sm font-medium text-emerald-100 transition hover:bg-emerald-400/30"
+        className="rounded-full border border-accent/40 bg-accent/20 px-6 py-2 text-sm font-medium text-accent/70 transition hover:bg-accent/30"
       >
         Create Lorebook
       </button>
@@ -369,12 +369,12 @@ function LorebookListView({
   const Skeleton = () => (
     <div className="space-y-3">
       {[1, 2, 3].map((i) => (
-        <div key={i} className="rounded-xl border border-white/10 bg-[#0b0c12]/90 px-4 py-3">
+        <div key={i} className="rounded-xl border border-fg/10 bg-surface-el/90 px-4 py-3">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 animate-pulse rounded-lg bg-white/10" />
+            <div className="h-10 w-10 animate-pulse rounded-lg bg-fg/10" />
             <div className="flex-1 space-y-2">
-              <div className="h-4 w-24 animate-pulse rounded bg-white/10" />
-              <div className="h-3 w-40 animate-pulse rounded bg-white/10" />
+              <div className="h-4 w-24 animate-pulse rounded bg-fg/10" />
+              <div className="h-3 w-40 animate-pulse rounded bg-fg/10" />
             </div>
           </div>
         </div>
@@ -383,17 +383,17 @@ function LorebookListView({
   );
 
   return (
-    <div className="flex h-full flex-col pb-16 text-gray-200">
+    <div className="flex h-full flex-col pb-16 text-fg/80">
       {/* Search Bar */}
       {lorebooks.length > 0 && (
         <div className="px-4 pb-2 pt-2">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg/40" />
             <input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search lorebooks..."
-              className="w-full rounded-xl border border-white/10 bg-black/20 pl-9 pr-4 py-2 text-sm text-white placeholder-white/40 transition focus:border-white/30 focus:outline-none"
+              className="w-full rounded-xl border border-fg/10 bg-surface-el/20 pl-9 pr-4 py-2 text-sm text-fg placeholder-fg/40 transition focus:border-fg/30 focus:outline-none"
             />
           </div>
         </div>
@@ -412,19 +412,19 @@ function LorebookListView({
           ) : lorebooks.length === 0 ? (
             <EmptyState />
           ) : filteredLorebooks.length === 0 ? (
-            <div className="flex h-32 flex-col items-center justify-center text-white/50">
+            <div className="flex h-32 flex-col items-center justify-center text-fg/50">
               <p>No matching lorebooks found</p>
             </div>
           ) : (
             <div className="space-y-3">
               {/* Assigned Indicator - Only show if not filtering or if filtered list contains assigned ones */}
               {!searchQuery && Array.from(assignedLorebookIds).length > 0 && (
-                <div className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 p-3">
+                <div className="rounded-xl border border-accent/30 bg-accent/10 p-3">
                   <div className="flex items-center gap-2">
-                    <Star className="h-4 w-4 fill-emerald-400 text-emerald-400" />
+                    <Star className="h-4 w-4 fill-accent text-accent" />
                     <div className="flex-1">
-                      <div className="text-sm font-medium text-emerald-200">Active Lorebooks</div>
-                      <div className="text-xs text-emerald-300/70">
+                      <div className="text-sm font-medium text-accent/80">Active Lorebooks</div>
+                      <div className="text-xs text-accent/60">
                         {assignedLorebookIds.size} enabled for this character
                       </div>
                     </div>
@@ -442,34 +442,34 @@ function LorebookListView({
                       onClick={() => setSelectedLorebook(lorebook)}
                       className={`group relative flex w-full items-center gap-3 overflow-hidden rounded-xl border px-4 py-3 text-left transition-all duration-200 active:scale-[0.995] ${
                         isAssigned
-                          ? "border-emerald-400/40 bg-emerald-400/10 hover:border-emerald-400/60 hover:bg-emerald-400/15"
-                          : "border-white/10 bg-[#0b0c12]/90 hover:border-white/25 hover:bg-[#0c0d13]/95"
+                          ? "border-accent/40 bg-accent/10 hover:border-accent/60 hover:bg-accent/15"
+                          : "border-fg/10 bg-surface-el/90 hover:border-fg/25 hover:bg-surface-el/95"
                       }`}
                     >
                       {/* Icon */}
                       <div
                         className={`relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border ${
                           isAssigned
-                            ? "border-emerald-400/40 bg-emerald-400/20"
-                            : "border-white/15 bg-white/8"
+                            ? "border-accent/40 bg-accent/20"
+                            : "border-fg/15 bg-fg/8"
                         }`}
                       >
                         <BookOpen
-                          className={`h-5 w-5 ${isAssigned ? "text-emerald-200" : "text-white/70"}`}
+                          className={`h-5 w-5 ${isAssigned ? "text-accent/80" : "text-fg/70"}`}
                         />
                       </div>
 
                       {/* Content */}
                       <div className="relative min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          <h3 className="truncate text-sm font-semibold text-white">
+                          <h3 className="truncate text-sm font-semibold text-fg">
                             {lorebook.name}
                           </h3>
                           {isAssigned && (
-                            <Star className="h-3 w-3 shrink-0 fill-emerald-400 text-emerald-400" />
+                            <Star className="h-3 w-3 shrink-0 fill-accent text-accent" />
                           )}
                         </div>
-                        <p className="line-clamp-1 text-xs text-gray-400">
+                        <p className="line-clamp-1 text-xs text-fg/50">
                           {isAssigned ? "Enabled for this character" : "Tap to view entries"}
                         </p>
                       </div>
@@ -478,8 +478,8 @@ function LorebookListView({
                       <span
                         className={`relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition ${
                           isAssigned
-                            ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300 group-hover:border-emerald-400/50"
-                            : "border-white/10 bg-white/5 text-white/70 group-hover:border-white/25 group-hover:text-white"
+                            ? "border-accent/30 bg-accent/10 text-accent/80 group-hover:border-accent/50"
+                            : "border-fg/10 bg-fg/5 text-fg/70 group-hover:border-fg/25 group-hover:text-fg"
                         }`}
                       >
                         <ChevronRight size={16} />
@@ -504,16 +504,16 @@ function LorebookListView({
       >
         <div className="space-y-4">
           <div className="space-y-2">
-            <label className="text-[11px] font-medium text-white/70">NAME</label>
+            <label className="text-[11px] font-medium text-fg/70">NAME</label>
             <input
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleCreate()}
               placeholder="Enter lorebook name..."
               autoFocus
-              className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-white placeholder-white/40 transition focus:border-white/30 focus:outline-none"
+              className="w-full rounded-xl border border-fg/10 bg-surface-el/20 px-3 py-2 text-fg placeholder-fg/40 transition focus:border-fg/30 focus:outline-none"
             />
-            <p className="text-xs text-white/50">
+            <p className="text-xs text-fg/50">
               Lorebooks contain lore entries that are injected into prompts when keywords match.
             </p>
           </div>
@@ -521,7 +521,7 @@ function LorebookListView({
           <button
             onClick={handleCreate}
             disabled={!newName.trim()}
-            className="w-full rounded-xl border border-emerald-400/40 bg-emerald-400/20 px-4 py-3.5 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-400/30 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full rounded-xl border border-accent/40 bg-accent/20 px-4 py-3.5 text-sm font-semibold text-accent/70 transition hover:bg-accent/30 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Create Lorebook
           </button>
@@ -540,7 +540,7 @@ function LorebookListView({
               icon={Edit2}
               title="View Entries"
               description="Edit lorebook entries"
-              color="from-blue-500 to-blue-600"
+              color="from-info to-info/80"
               onClick={() => {
                 onSelectLorebook(selectedLorebook.id);
                 setSelectedLorebook(null);
@@ -559,7 +559,7 @@ function LorebookListView({
                   ? "Remove from this character's active lorebooks"
                   : "Add to this character's active lorebooks"
               }
-              color="from-emerald-500 to-emerald-600"
+              color="from-accent to-accent/80"
               onClick={() => {
                 const isAssigned = assignedLorebookIds.has(selectedLorebook.id);
                 onToggleAssignment(selectedLorebook.id, !isAssigned);
@@ -579,12 +579,12 @@ function LorebookListView({
                 onDeleteLorebook(selectedLorebook.id);
                 setSelectedLorebook(null);
               }}
-              className="flex w-full items-center gap-3 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-left transition hover:border-red-500/50 hover:bg-red-500/20"
+              className="flex w-full items-center gap-3 rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-left transition hover:border-danger/50 hover:bg-danger/20"
             >
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-red-500/30 bg-red-500/20">
-                <Trash2 className="h-4 w-4 text-red-400" />
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-danger/30 bg-danger/20">
+                <Trash2 className="h-4 w-4 text-danger" />
               </div>
-              <span className="text-sm font-medium text-red-300">Delete Lorebook</span>
+              <span className="text-sm font-medium text-danger">Delete Lorebook</span>
             </button>
           </div>
         )}
@@ -663,14 +663,14 @@ function EntryListView({
   // Empty state
   const EmptyState = () => (
     <div className="flex h-64 flex-col items-center justify-center">
-      <BookOpen className="mb-3 h-12 w-12 text-white/20" />
-      <h3 className="mb-1 text-lg font-medium text-white">No entries yet</h3>
-      <p className="mb-4 text-center text-sm text-white/50">
+      <BookOpen className="mb-3 h-12 w-12 text-fg/20" />
+      <h3 className="mb-1 text-lg font-medium text-fg">No entries yet</h3>
+      <p className="mb-4 text-center text-sm text-fg/50">
         Add entries to inject lore into your chats
       </p>
       <button
         onClick={onCreateEntry}
-        className="rounded-full border border-emerald-400/40 bg-emerald-400/20 px-6 py-2 text-sm font-medium text-emerald-100 transition hover:bg-emerald-400/30"
+        className="rounded-full border border-accent/40 bg-accent/20 px-6 py-2 text-sm font-medium text-accent/70 transition hover:bg-accent/30"
       >
         Create Entry
       </button>
@@ -681,12 +681,12 @@ function EntryListView({
   const Skeleton = () => (
     <div className="space-y-3">
       {[1, 2, 3].map((i) => (
-        <div key={i} className="rounded-xl border border-white/10 bg-[#0b0c12]/90 px-4 py-3">
+        <div key={i} className="rounded-xl border border-fg/10 bg-surface-el/90 px-4 py-3">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 animate-pulse rounded-lg bg-white/10" />
+            <div className="h-10 w-10 animate-pulse rounded-lg bg-fg/10" />
             <div className="flex-1 space-y-2">
-              <div className="h-4 w-32 animate-pulse rounded bg-white/10" />
-              <div className="h-3 w-48 animate-pulse rounded bg-white/10" />
+              <div className="h-4 w-32 animate-pulse rounded bg-fg/10" />
+              <div className="h-3 w-48 animate-pulse rounded bg-fg/10" />
             </div>
           </div>
         </div>
@@ -695,16 +695,16 @@ function EntryListView({
   );
 
   return (
-    <div className="flex h-full flex-col text-gray-200 overflow-hidden">
+    <div className="flex h-full flex-col text-fg/80 overflow-hidden">
       {entries.length > 0 && (
         <div className="px-4 pb-2 pt-2">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg/40" />
             <input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search entries..."
-              className="w-full rounded-xl border border-white/10 bg-black/20 pl-9 pr-4 py-2 text-sm text-white placeholder-white/40 transition focus:border-white/30 focus:outline-none"
+              className="w-full rounded-xl border border-fg/10 bg-surface-el/20 pl-9 pr-4 py-2 text-sm text-fg placeholder-fg/40 transition focus:border-fg/30 focus:outline-none"
             />
           </div>
         </div>
@@ -723,7 +723,7 @@ function EntryListView({
           ) : entries.length === 0 ? (
             <EmptyState />
           ) : filteredEntries.length === 0 ? (
-            <div className="flex h-32 flex-col items-center justify-center text-white/50">
+            <div className="flex h-32 flex-col items-center justify-center text-fg/50">
               <p>No matching entries found</p>
             </div>
           ) : (
@@ -761,7 +761,7 @@ function EntryListView({
               icon={Edit2}
               title="Edit Entry"
               description="Modify title, keywords, and content"
-              color="from-blue-500 to-blue-600"
+              color="from-info to-info/80"
               onClick={() => {
                 onEditEntry(selectedEntry);
                 setSelectedEntry(null);
@@ -776,7 +776,7 @@ function EntryListView({
                   ? "Entry won't be injected into prompts"
                   : "Entry will be injected when keywords match"
               }
-              color="from-emerald-500 to-emerald-600"
+              color="from-accent to-accent/80"
               onClick={() => {
                 onToggleEntry(selectedEntry, !selectedEntry.enabled);
                 setSelectedEntry(null);
@@ -795,12 +795,12 @@ function EntryListView({
                 onDeleteEntry(selectedEntry.id);
                 setSelectedEntry(null);
               }}
-              className="flex w-full items-center gap-3 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-left transition hover:border-red-500/50 hover:bg-red-500/20"
+              className="flex w-full items-center gap-3 rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-left transition hover:border-danger/50 hover:bg-danger/20"
             >
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-red-500/30 bg-red-500/20">
-                <Trash2 className="h-4 w-4 text-red-400" />
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-danger/30 bg-danger/20">
+                <Trash2 className="h-4 w-4 text-danger" />
               </div>
-              <span className="text-sm font-medium text-red-300">Delete Entry</span>
+              <span className="text-sm font-medium text-danger">Delete Entry</span>
             </button>
           </div>
         )}
@@ -840,25 +840,25 @@ function EntryEditorMenu({
       <div className="space-y-4">
         {/* Title */}
         <div className="space-y-2">
-          <label className="text-[11px] font-medium text-white/70">TITLE</label>
+          <label className="text-[11px] font-medium text-fg/70">TITLE</label>
           <input
             value={draft.title || ""}
             onChange={(e) => setDraft({ ...draft, title: e.target.value })}
             placeholder="Name this entry..."
-            className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-white placeholder-white/40 transition focus:border-white/30 focus:outline-none"
+            className="w-full rounded-xl border border-fg/10 bg-surface-el/20 px-3 py-2 text-fg placeholder-fg/40 transition focus:border-fg/30 focus:outline-none"
           />
         </div>
 
         {/* Toggles */}
         <div className="flex gap-3">
-          <div className="flex items-start justify-between gap-4 rounded-xl border border-white/10 bg-[#0b0c12]/90 p-3 flex-1">
+          <div className="flex items-start justify-between gap-4 rounded-xl border border-fg/10 bg-surface-el/90 p-3 flex-1">
             <div>
-              <label className="block text-sm font-semibold text-white">Enabled</label>
-              <p className="mt-0.5 text-xs text-gray-400">Include in prompts</p>
+              <label className="block text-sm font-semibold text-fg">Enabled</label>
+              <p className="mt-0.5 text-xs text-fg/50">Include in prompts</p>
             </div>
             <label
               className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-all duration-200 ${
-                draft.enabled ? "bg-emerald-500 shadow-lg shadow-emerald-500/30" : "bg-white/20"
+                draft.enabled ? "bg-accent shadow-lg shadow-accent/30" : "bg-fg/20"
               }`}
             >
               <input
@@ -868,21 +868,21 @@ function EntryEditorMenu({
                 className="sr-only"
               />
               <span
-                className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ${
+                className={`inline-block h-5 w-5 transform rounded-full bg-fg shadow ring-0 transition duration-200 ${
                   draft.enabled ? "translate-x-5" : "translate-x-0"
                 }`}
               />
             </label>
           </div>
 
-          <div className="flex items-start justify-between gap-4 rounded-xl border border-white/10 bg-[#0b0c12]/90 p-3 flex-1">
+          <div className="flex items-start justify-between gap-4 rounded-xl border border-fg/10 bg-surface-el/90 p-3 flex-1">
             <div>
-              <label className="block text-sm font-semibold text-white">Always On</label>
-              <p className="mt-0.5 text-xs text-gray-400">No keywords needed</p>
+              <label className="block text-sm font-semibold text-fg">Always On</label>
+              <p className="mt-0.5 text-xs text-fg/50">No keywords needed</p>
             </div>
             <label
               className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-all duration-200 ${
-                draft.alwaysActive ? "bg-blue-500 shadow-lg shadow-blue-500/30" : "bg-white/20"
+                draft.alwaysActive ? "bg-info shadow-lg shadow-blue-500/30" : "bg-fg/20"
               }`}
             >
               <input
@@ -892,7 +892,7 @@ function EntryEditorMenu({
                 className="sr-only"
               />
               <span
-                className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ${
+                className={`inline-block h-5 w-5 transform rounded-full bg-fg shadow ring-0 transition duration-200 ${
                   draft.alwaysActive ? "translate-x-5" : "translate-x-0"
                 }`}
               />
@@ -912,13 +912,13 @@ function EntryEditorMenu({
 
         {/* Content */}
         <div className="space-y-2">
-          <label className="text-[11px] font-medium text-white/70">CONTENT</label>
+          <label className="text-[11px] font-medium text-fg/70">CONTENT</label>
           <textarea
             value={draft.content}
             onChange={(e) => setDraft({ ...draft, content: e.target.value })}
             placeholder="Write the lore context here..."
             rows={8}
-            className="w-full resize-none rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-white placeholder-white/40 transition focus:border-white/30 focus:outline-none"
+            className="w-full resize-none rounded-xl border border-fg/10 bg-surface-el/20 px-3 py-2 text-fg placeholder-fg/40 transition focus:border-fg/30 focus:outline-none"
           />
         </div>
 
@@ -926,7 +926,7 @@ function EntryEditorMenu({
         <button
           onClick={handleSave}
           disabled={!draft.title?.trim() && !draft.content?.trim()}
-          className="w-full rounded-xl border border-emerald-400/40 bg-emerald-400/20 px-4 py-3.5 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-400/30 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full rounded-xl border border-accent/40 bg-accent/20 px-4 py-3.5 text-sm font-semibold text-accent/70 transition hover:bg-accent/30 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Save Entry
         </button>
@@ -1094,14 +1094,14 @@ export function LorebookEditor() {
 
   if (!characterId) {
     return (
-      <div className="flex h-full items-center justify-center text-white/50">
+      <div className="flex h-full items-center justify-center text-fg/50">
         No character ID provided
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-full bg-black">
+    <div className="flex flex-col h-full bg-surface">
       <TopNav currentPath={location.pathname + location.search} titleOverride={pageTitle} />
       <div className="flex-1 min-h-0 overflow-visible">
         {activeLorebookId && activeLorebook ? (

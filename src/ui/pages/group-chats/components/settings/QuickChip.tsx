@@ -27,8 +27,8 @@ export function QuickChip({
         interactive.transition.default,
         interactive.active.scale,
         disabled
-          ? "border-white/5 bg-[#0c0d13]/50 opacity-50 cursor-not-allowed"
-          : "border-white/10 bg-[#0c0d13]/85 hover:border-white/20 hover:bg-white/10",
+          ? "border-fg/5 bg-surface-el/50 opacity-50 cursor-not-allowed"
+          : "border-fg/10 bg-surface-el/85 hover:border-fg/20 hover:bg-fg/10",
       )}
     >
       <div className="flex items-center gap-3 min-w-0">
@@ -36,7 +36,7 @@ export function QuickChip({
           className={cn(
             "flex h-10 w-10 items-center justify-center",
             radius.full,
-            "border border-white/15 bg-white/10 text-white/80",
+            "border border-fg/15 bg-fg/10 text-fg/80",
           )}
         >
           {icon}
@@ -48,15 +48,15 @@ export function QuickChip({
               typography.overline.weight,
               typography.overline.tracking,
               typography.overline.transform,
-              "text-white/50",
+              "text-fg/50",
             )}
           >
             {label}
           </div>
-          <div className={cn(typography.bodySmall.size, "text-white truncate")}>{value}</div>
+          <div className={cn(typography.bodySmall.size, "text-fg truncate")}>{value}</div>
         </div>
       </div>
-      <ChevronRight className="h-4 w-4 text-gray-500 transition-colors group-hover:text-white" />
+      <ChevronRight className="h-4 w-4 text-fg/40 transition-colors group-hover:text-fg" />
     </button>
   );
 }

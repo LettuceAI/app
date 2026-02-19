@@ -52,38 +52,38 @@ const ACTION_STYLES: Record<
 > = {
   create_memory: {
     icon: Plus,
-    color: "text-emerald-300",
+    color: "text-accent/80",
     label: "Created",
-    bg: "bg-emerald-400/10",
-    border: "border-emerald-400/20",
+    bg: "bg-accent/10",
+    border: "border-accent/20",
   },
   delete_memory: {
     icon: Trash2,
-    color: "text-red-300",
+    color: "text-danger",
     label: "Deleted",
-    bg: "bg-red-400/10",
-    border: "border-red-400/20",
+    bg: "bg-danger/10",
+    border: "border-danger/20",
   },
   pin_memory: {
     icon: Pin,
-    color: "text-amber-300",
+    color: "text-warning",
     label: "Pinned",
-    bg: "bg-amber-400/10",
-    border: "border-amber-400/20",
+    bg: "bg-warning/10",
+    border: "border-warning/20",
   },
   unpin_memory: {
     icon: Pin,
-    color: "text-amber-300/60",
+    color: "text-warning/60",
     label: "Unpinned",
-    bg: "bg-amber-400/10",
-    border: "border-amber-400/20",
+    bg: "bg-warning/10",
+    border: "border-warning/20",
   },
   done: {
     icon: Check,
-    color: "text-blue-300",
+    color: "text-info",
     label: "Done",
-    bg: "bg-blue-400/10",
-    border: "border-blue-400/20",
+    bg: "bg-info/10",
+    border: "border-info/20",
   },
 };
 
@@ -96,8 +96,8 @@ function ActionCard({
     icon: Cpu,
     color: "text-zinc-300",
     label: action.name,
-    bg: "bg-white/5",
-    border: "border-white/10",
+    bg: "bg-fg/5",
+    border: "border-fg/10",
   };
   const Icon = style.icon;
   const args = action.arguments as Record<string, unknown> | undefined;
@@ -123,12 +123,12 @@ function ActionCard({
             {style.label}
           </span>
           {category && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-white/5 text-white/40 border border-white/8">
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-fg/5 text-fg/40 border border-fg/8">
               {category.replace(/_/g, " ")}
             </span>
           )}
           {important && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-warning/20 text-warning border border-warning/30">
               pinned
             </span>
           )}
@@ -137,8 +137,8 @@ function ActionCard({
               className={cn(
                 "text-[10px] px-1.5 py-0.5 rounded-full border",
                 confidence < 0.7
-                  ? "bg-amber-500/20 text-amber-300 border-amber-500/30"
-                  : "bg-red-500/20 text-red-300 border-red-500/30",
+                  ? "bg-warning/20 text-warning border-warning/30"
+                  : "bg-danger/20 text-danger border-danger/30",
               )}
             >
               {confidence < 0.7
@@ -207,7 +207,7 @@ function CycleCard({
       className={cn(
         components.card.base,
         "overflow-hidden",
-        hasError && "border-red-400/20",
+        hasError && "border-danger/20",
       )}
     >
       <button
@@ -221,7 +221,7 @@ function CycleCard({
         <div
           className={cn(
             "h-2 w-2 rounded-full shrink-0",
-            hasError ? "bg-red-400" : "bg-emerald-400",
+            hasError ? "bg-danger" : "bg-accent",
           )}
         />
 
@@ -242,7 +242,7 @@ function CycleCard({
               </span>
             )}
             {hasError && (
-              <AlertTriangle size={12} className="text-red-400 shrink-0" />
+              <AlertTriangle size={12} className="text-danger shrink-0" />
             )}
           </div>
 
@@ -269,10 +269,10 @@ function CycleCard({
             <div
               className={cn(
                 radius.md,
-                "border border-blue-400/20 bg-blue-400/10 px-3 py-2.5",
+                "border border-info/20 bg-info/10 px-3 py-2.5",
               )}
             >
-              <p className="text-[12px] leading-relaxed text-blue-200/90">
+              <p className="text-[12px] leading-relaxed text-info/90">
                 {event.summary}
               </p>
             </div>
@@ -282,12 +282,12 @@ function CycleCard({
             <div
               className={cn(
                 radius.md,
-                "border border-red-400/20 bg-red-400/10 px-3 py-2.5",
+                "border border-danger/20 bg-danger/10 px-3 py-2.5",
               )}
             >
-              <p className="text-[12px] text-red-200/90">{event.error}</p>
+              <p className="text-[12px] text-danger/90">{event.error}</p>
               {event.stage && (
-                <p className="text-[11px] mt-1 text-red-200/60">
+                <p className="text-[11px] mt-1 text-danger/60">
                   Failed at: {event.stage}
                 </p>
               )}
@@ -331,10 +331,10 @@ export function ToolLog({ events }: { events: MemoryToolEvent[] }) {
         transition={{ duration: 0.3, ease: "easeOut" }}
         className="flex flex-col items-center justify-center py-16"
       >
-        <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-white/10 bg-white/5 mb-4">
-          <Clock className="h-7 w-7 text-white/20" />
+        <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-fg/10 bg-fg/5 mb-4">
+          <Clock className="h-7 w-7 text-fg/20" />
         </div>
-        <h3 className="mb-1 text-base font-semibold text-white">No activity yet</h3>
+        <h3 className="mb-1 text-base font-semibold text-fg">No activity yet</h3>
         <p className={cn("text-center text-sm max-w-[240px]", colors.text.tertiary)}>
           Tool calls appear when AI manages memories in dynamic mode
         </p>

@@ -26,21 +26,21 @@ const SECTION_CONFIGS: Record<CardType, SectionConfig> = {
     title: "Trending",
     subtitle: "Hot this week",
     icon: TrendingUp,
-    accentColor: "from-emerald-500 to-emerald-600",
+    accentColor: "from-accent to-accent/80",
     defaultSort: "updated",
   },
   popular: {
     title: "Popular",
     subtitle: "Community favorites",
     icon: Flame,
-    accentColor: "from-emerald-400 to-teal-500",
+    accentColor: "from-accent/80 to-accent/80",
     defaultSort: "likes",
   },
   newest: {
     title: "New Arrivals",
     subtitle: "Fresh characters",
     icon: Clock,
-    accentColor: "from-emerald-500 to-cyan-500",
+    accentColor: "from-accent to-info/80",
     defaultSort: "created",
   },
 };
@@ -123,10 +123,10 @@ export function DiscoveryBrowsePage() {
   const currentSortLabel = SORT_OPTIONS.find((opt) => opt.value === sortBy)?.label || "Sort";
 
   return (
-    <div className="flex h-full flex-col bg-[#050505]">
+    <div className="flex h-full flex-col bg-surface">
       {/* Header - matches TopNav style */}
       <header
-        className="sticky top-0 z-30 border-b border-white/10 bg-[#0F0F0F]/80 backdrop-blur-md"
+        className="sticky top-0 z-30 border-b border-fg/10 bg-surface-el/80 backdrop-blur-md"
         style={{
           paddingTop: "calc(env(safe-area-inset-top) + 12px)",
           paddingBottom: "12px",
@@ -139,7 +139,7 @@ export function DiscoveryBrowsePage() {
               onClick={handleBack}
               className={cn(
                 "flex shrink-0 items-center justify-center rounded-full p-2",
-                "text-white/70 hover:bg-white/10 hover:text-white",
+                "text-fg/70 hover:bg-fg/10 hover:text-fg",
                 interactive.transition.fast,
                 interactive.active.scale,
               )}
@@ -152,7 +152,7 @@ export function DiscoveryBrowsePage() {
               initial={{ opacity: 0, y: 5 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3, ease: "easeOut" }}
-              className={cn(typography.h1.size, "font-bold tracking-tight text-white")}
+              className={cn(typography.h1.size, "font-bold tracking-tight text-fg")}
             >
               {config.title}
             </motion.h1>
@@ -162,9 +162,9 @@ export function DiscoveryBrowsePage() {
           <button
             onClick={() => setShowSortMenu(true)}
             className={cn(
-              "flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5",
-              "text-xs font-medium text-white/70",
-              "transition-all hover:border-white/20 hover:bg-white/10 hover:text-white",
+              "flex items-center gap-1.5 rounded-lg border border-fg/10 bg-fg/5 px-3 py-1.5",
+              "text-xs font-medium text-fg/70",
+              "transition-all hover:border-fg/20 hover:bg-fg/10 hover:text-fg",
               interactive.active.scale,
             )}
           >
@@ -176,7 +176,7 @@ export function DiscoveryBrowsePage() {
         {/* Results count */}
         {!loading && cards.length > 0 && (
           <div className="mx-auto mt-3 max-w-md px-4 lg:max-w-none lg:px-8">
-            <p className="text-xs text-white/50">{cards.length} characters</p>
+            <p className="text-xs text-fg/50">{cards.length} characters</p>
           </div>
         )}
       </header>
@@ -195,14 +195,14 @@ export function DiscoveryBrowsePage() {
             animate={{ opacity: 1, y: 0 }}
             className="flex flex-col items-center justify-center px-6 py-20"
           >
-            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-red-500/30 bg-red-500/10">
-              <AlertCircle className="h-8 w-8 text-red-400" />
+            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-danger/30 bg-danger/10">
+              <AlertCircle className="h-8 w-8 text-danger" />
             </div>
-            <h3 className="mb-2 text-lg font-semibold text-white">Something went wrong</h3>
-            <p className="mb-6 text-center text-sm text-white/50">{error}</p>
+            <h3 className="mb-2 text-lg font-semibold text-fg">Something went wrong</h3>
+            <p className="mb-6 text-center text-sm text-fg/50">{error}</p>
             <button
               onClick={loadCards}
-              className="flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-5 py-2.5 text-sm font-medium text-white transition-all hover:bg-white/15 active:scale-95"
+              className="flex items-center gap-2 rounded-xl border border-fg/20 bg-fg/10 px-5 py-2.5 text-sm font-medium text-fg transition-all hover:bg-fg/15 active:scale-95"
             >
               Try Again
             </button>
@@ -235,11 +235,11 @@ export function DiscoveryBrowsePage() {
         {/* Empty state */}
         {!loading && !error && cards.length === 0 && (
           <div className="flex flex-col items-center justify-center py-20">
-            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-white/10 bg-white/5">
-              <config.icon className="h-8 w-8 text-white/30" />
+            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-fg/10 bg-fg/5">
+              <config.icon className="h-8 w-8 text-fg/30" />
             </div>
-            <h3 className="mb-2 text-lg font-semibold text-white">No characters found</h3>
-            <p className="text-sm text-white/50">Check back later for new content</p>
+            <h3 className="mb-2 text-lg font-semibold text-fg">No characters found</h3>
+            <p className="text-sm text-fg/50">Check back later for new content</p>
           </div>
         )}
       </main>
@@ -257,12 +257,12 @@ export function DiscoveryBrowsePage() {
                 className={cn(
                   "flex w-full items-center justify-between rounded-xl px-4 py-3 text-left transition-all",
                   isSelected
-                    ? "bg-white/10 text-white"
-                    : "text-white/60 hover:bg-white/5 hover:text-white",
+                    ? "bg-fg/10 text-fg"
+                    : "text-fg/60 hover:bg-fg/5 hover:text-fg",
                 )}
               >
                 <span className="text-sm font-medium">{option.label}</span>
-                {isSelected && <Check className="h-4 w-4 text-emerald-400" />}
+                {isSelected && <Check className="h-4 w-4 text-accent" />}
               </button>
             );
           })}

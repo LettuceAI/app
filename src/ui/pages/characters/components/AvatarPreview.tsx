@@ -10,8 +10,8 @@ export function AvatarPreview({ avatarPath, name }: AvatarPreviewProps) {
     if (!avatarPath) {
       const initial = name.trim().charAt(0) || "?";
       return (
-        <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-emerald-500/20 to-blue-500/20">
-          <span className="text-3xl font-bold text-white">{initial.toUpperCase()}</span>
+        <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-accent/20 to-info/80/20">
+          <span className="text-3xl font-bold text-fg">{initial.toUpperCase()}</span>
         </div>
       );
     }

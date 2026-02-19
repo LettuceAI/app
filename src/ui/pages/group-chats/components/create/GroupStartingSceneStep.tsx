@@ -150,14 +150,14 @@ export function GroupStartingSceneStep({
       {/* Title */}
       <div className={spacing.tight}>
         <div className="flex items-center gap-2">
-          <div className="rounded-lg border border-purple-400/30 bg-purple-400/10 p-1.5">
-            <BookOpen className="h-4 w-4 text-purple-400" />
+          <div className="rounded-lg border border-secondary/30 bg-secondary/10 p-1.5">
+            <BookOpen className="h-4 w-4 text-secondary" />
           </div>
-          <h2 className={cn(typography.h1.size, typography.h1.weight, "text-white")}>
+          <h2 className={cn(typography.h1.size, typography.h1.weight, "text-fg")}>
             Starting Scene
           </h2>
         </div>
-        <p className={cn(typography.body.size, "mt-2 text-white/50")}>
+        <p className={cn(typography.body.size, "mt-2 text-fg/50")}>
           Set the opening scenario for your roleplay
         </p>
       </div>
@@ -169,7 +169,7 @@ export function GroupStartingSceneStep({
             typography.label.size,
             typography.label.weight,
             typography.label.tracking,
-            "uppercase text-white/70",
+            "uppercase text-fg/70",
           )}
         >
           Scene Source
@@ -183,8 +183,8 @@ export function GroupStartingSceneStep({
               "border text-sm font-medium",
               interactive.transition.fast,
               sceneSource === "none"
-                ? "border-emerald-400/40 bg-emerald-400/20 text-emerald-100"
-                : "border-white/15 bg-white/5 text-white/70 active:bg-white/10",
+                ? "border-accent/40 bg-accent/20 text-accent"
+                : "border-fg/15 bg-fg/5 text-fg/70 active:bg-fg/10",
             )}
           >
             None
@@ -197,8 +197,8 @@ export function GroupStartingSceneStep({
               "border text-sm font-medium",
               interactive.transition.fast,
               sceneSource === "custom"
-                ? "border-emerald-400/40 bg-emerald-400/20 text-emerald-100"
-                : "border-white/15 bg-white/5 text-white/70 active:bg-white/10",
+                ? "border-accent/40 bg-accent/20 text-accent"
+                : "border-fg/15 bg-fg/5 text-fg/70 active:bg-fg/10",
             )}
           >
             Custom
@@ -212,15 +212,15 @@ export function GroupStartingSceneStep({
               "border text-sm font-medium",
               interactive.transition.fast,
               sceneSource === "character"
-                ? "border-emerald-400/40 bg-emerald-400/20 text-emerald-100"
-                : "border-white/15 bg-white/5 text-white/70 active:bg-white/10",
+                ? "border-accent/40 bg-accent/20 text-accent"
+                : "border-fg/15 bg-fg/5 text-fg/70 active:bg-fg/10",
               availableScenes.length === 0 && "opacity-50 cursor-not-allowed",
             )}
           >
             From Character
           </button>
         </div>
-        <p className={cn(typography.bodySmall.size, "mt-2 text-white/40")}>
+        <p className={cn(typography.bodySmall.size, "mt-2 text-fg/40")}>
           {sceneSource === "none"
             ? "Start without a predefined scene"
             : sceneSource === "custom"
@@ -237,7 +237,7 @@ export function GroupStartingSceneStep({
               typography.label.size,
               typography.label.weight,
               typography.label.tracking,
-              "uppercase text-white/70",
+              "uppercase text-fg/70",
             )}
           >
             Scene Content
@@ -249,7 +249,7 @@ export function GroupStartingSceneStep({
               className={cn(
                 "absolute z-50 mb-1 w-full max-h-48 overflow-y-auto",
                 radius.md,
-                "border border-white/20 bg-[#1a1b23] shadow-lg",
+                "border border-fg/20 bg-surface-el shadow-lg",
               )}
               style={{ bottom: "100%" }}
               onClick={(e) => e.stopPropagation()}
@@ -260,18 +260,18 @@ export function GroupStartingSceneStep({
                   onClick={() => insertCharacterName(character.name)}
                   className={cn(
                     "w-full text-left px-3 py-2.5 flex items-center gap-2",
-                    "hover:bg-white/10",
+                    "hover:bg-fg/10",
                     interactive.transition.fast,
-                    index === autocompleteIndex && "bg-white/15",
+                    index === autocompleteIndex && "bg-fg/15",
                   )}
                 >
                   <div className="flex-1">
-                    <div className="text-sm font-medium text-white">{character.name}</div>
-                    <div className="text-xs text-white/50">
+                    <div className="text-sm font-medium text-fg">{character.name}</div>
+                    <div className="text-xs text-fg/50">
                       Insert as {`{{@"${character.name}"}}`}
                     </div>
                   </div>
-                  {index === autocompleteIndex && <Check size={14} className="text-emerald-400" />}
+                  {index === autocompleteIndex && <Check size={14} className="text-accent" />}
                 </button>
               ))}
             </div>
@@ -287,18 +287,18 @@ export function GroupStartingSceneStep({
             className={cn(
               "w-full px-4 py-3",
               radius.md,
-              "border border-white/15 bg-white/5",
-              "text-white placeholder:text-white/30",
-              "focus:outline-none focus:border-white/30",
+              "border border-fg/15 bg-fg/5",
+              "text-fg placeholder:text-fg/30",
+              "focus:outline-none focus:border-fg/30",
               interactive.transition.fast,
               "resize-none",
-              customScene.trim() && "border-purple-400/30 bg-purple-400/5",
+              customScene.trim() && "border-secondary/30 bg-secondary/5",
             )}
           />
 
-          <p className={cn(typography.bodySmall.size, "mt-2 text-white/40")}>
+          <p className={cn(typography.bodySmall.size, "mt-2 text-fg/40")}>
             Tip: Type{" "}
-            <code className="px-1.5 py-0.5 rounded bg-white/10 text-purple-300 font-mono text-[10px]">
+            <code className="px-1.5 py-0.5 rounded bg-fg/10 text-secondary font-mono text-[10px]">
               {`{{@"`}
             </code>{" "}
             to reference characters
@@ -314,7 +314,7 @@ export function GroupStartingSceneStep({
               typography.label.size,
               typography.label.weight,
               typography.label.tracking,
-              "uppercase text-white/70",
+              "uppercase text-fg/70",
             )}
           >
             Select a Scene
@@ -330,19 +330,19 @@ export function GroupStartingSceneStep({
                     "border",
                     interactive.transition.fast,
                     selectedCharacterSceneId === scene.sceneId
-                      ? "border-emerald-400/40 bg-emerald-400/10"
-                      : "border-white/15 bg-white/5 active:bg-white/10",
+                      ? "border-accent/40 bg-accent/10"
+                      : "border-fg/15 bg-fg/5 active:bg-fg/10",
                   )}
                 >
                   <div className="flex items-center gap-2 mb-1.5">
-                    <span className="text-sm font-medium text-white/90">
+                    <span className="text-sm font-medium text-fg/90">
                       {scene.characterName}'s Scene
                     </span>
                     {selectedCharacterSceneId === scene.sceneId && (
-                      <Check size={14} className="text-emerald-400" />
+                      <Check size={14} className="text-accent" />
                     )}
                   </div>
-                  <div className="text-xs text-white/60 line-clamp-3">{scene.content}</div>
+                  <div className="text-xs text-fg/60 line-clamp-3">{scene.content}</div>
                 </button>
                 {selectedCharacterSceneId === scene.sceneId && (
                   <button
@@ -350,9 +350,9 @@ export function GroupStartingSceneStep({
                     className={cn(
                       "w-full py-2 px-3 flex items-center justify-center gap-2",
                       radius.md,
-                      "border border-blue-400/40 bg-blue-400/10",
-                      "text-xs font-medium text-blue-200",
-                      "active:bg-blue-400/20",
+                      "border border-info/40 bg-info/10",
+                      "text-xs font-medium text-info",
+                      "active:bg-info/20",
                       interactive.transition.fast,
                     )}
                   >
@@ -372,8 +372,8 @@ export function GroupStartingSceneStep({
           className={cn(
             "px-4 py-2.5",
             radius.md,
-            "border border-red-400/30 bg-red-400/10",
-            "text-sm text-red-200",
+            "border border-danger/30 bg-danger/10",
+            "text-sm text-danger",
           )}
         >
           {error}
@@ -392,11 +392,11 @@ export function GroupStartingSceneStep({
             interactive.transition.fast,
             canCreate && !creating
               ? cn(
-                  "border border-emerald-400/40 bg-emerald-400/20 text-emerald-100",
+                  "border border-accent/40 bg-accent/20 text-accent",
                   shadows.glow,
-                  "active:border-emerald-400/60 active:bg-emerald-400/30",
+                  "active:border-accent/60 active:bg-accent/30",
                 )
-              : "cursor-not-allowed border border-white/5 bg-white/5 text-white/30",
+              : "cursor-not-allowed border border-fg/5 bg-fg/5 text-fg/30",
           )}
         >
           {creating ? "Creating..." : "Create Group Chat"}

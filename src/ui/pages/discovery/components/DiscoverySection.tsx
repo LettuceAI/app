@@ -23,7 +23,7 @@ export const DiscoverySection = memo(function DiscoverySection({
   onViewAll,
   loading = false,
   icon,
-  accentColor = "from-emerald-500 to-cyan-500",
+  accentColor = "from-accent to-info/80",
 }: DiscoverySectionProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -43,13 +43,13 @@ export const DiscoverySection = memo(function DiscoverySection({
               </div>
             )}
             <div>
-              <h2 className={cn(typography.h2.size, "font-bold text-white")}>{title}</h2>
-              {subtitle && <p className="text-xs text-white/50">{subtitle}</p>}
+              <h2 className={cn(typography.h2.size, "font-bold text-fg")}>{title}</h2>
+              {subtitle && <p className="text-xs text-fg/50">{subtitle}</p>}
             </div>
           </div>
         </div>
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="h-8 w-8 animate-spin text-white/30" />
+          <Loader2 className="h-8 w-8 animate-spin text-fg/30" />
         </div>
       </section>
     );
@@ -75,15 +75,15 @@ export const DiscoverySection = memo(function DiscoverySection({
             </div>
           )}
           <div>
-            <h2 className={cn(typography.h2.size, "font-bold text-white")}>{title}</h2>
-            {subtitle && <p className="text-xs text-white/50">{subtitle}</p>}
+            <h2 className={cn(typography.h2.size, "font-bold text-fg")}>{title}</h2>
+            {subtitle && <p className="text-xs text-fg/50">{subtitle}</p>}
           </div>
         </div>
 
         {onViewAll && (
           <button
             onClick={onViewAll}
-            className="flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-white/70 transition-all hover:border-white/20 hover:bg-white/10 hover:text-white active:scale-95"
+            className="flex items-center gap-1 rounded-full border border-fg/10 bg-fg/5 px-3 py-1.5 text-xs font-medium text-fg/70 transition-all hover:border-fg/20 hover:bg-fg/10 hover:text-fg active:scale-95"
           >
             View All
             <ChevronRight className="h-3.5 w-3.5" />
@@ -115,7 +115,7 @@ export const DiscoverySection = memo(function DiscoverySection({
         {onViewAll && cards.length >= 5 && (
           <button
             onClick={onViewAll}
-            className="flex aspect-3/4 w-36 shrink-0 flex-col items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 transition-all hover:border-white/20 hover:bg-white/10 active:scale-95"
+            className="flex aspect-3/4 w-36 shrink-0 flex-col items-center justify-center gap-2 rounded-xl border border-fg/10 bg-fg/5 transition-all hover:border-fg/20 hover:bg-fg/10 active:scale-95"
           >
             <div
               className={cn(
@@ -123,9 +123,9 @@ export const DiscoverySection = memo(function DiscoverySection({
                 accentColor,
               )}
             >
-              <ChevronRight className="h-6 w-6 text-white" />
+              <ChevronRight className="h-6 w-6 text-fg" />
             </div>
-            <span className="text-xs font-medium text-white/70">View All</span>
+            <span className="text-xs font-medium text-fg/70">View All</span>
           </button>
         )}
       </div>
@@ -144,7 +144,7 @@ export const DiscoverySection = memo(function DiscoverySection({
         {onViewAll && cards.length >= 5 && (
           <button
             onClick={onViewAll}
-            className="flex aspect-3/4 w-full flex-col items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 transition-all hover:border-white/20 hover:bg-white/10 active:scale-95"
+            className="flex aspect-3/4 w-full flex-col items-center justify-center gap-2 rounded-xl border border-fg/10 bg-fg/5 transition-all hover:border-fg/20 hover:bg-fg/10 active:scale-95"
           >
             <div
               className={cn(
@@ -152,9 +152,9 @@ export const DiscoverySection = memo(function DiscoverySection({
                 accentColor,
               )}
             >
-              <ChevronRight className="h-6 w-6 text-white" />
+              <ChevronRight className="h-6 w-6 text-fg" />
             </div>
-            <span className="text-xs font-medium text-white/70">View All</span>
+            <span className="text-xs font-medium text-fg/70">View All</span>
           </button>
         )}
       </div>

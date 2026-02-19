@@ -57,8 +57,8 @@ export function PersonaOption({
         interactive.transition.default,
         interactive.active.scale,
         isSelected
-          ? "border border-emerald-400/40 bg-emerald-400/15 ring-2 ring-emerald-400/30 text-emerald-100"
-          : "border border-white/10 bg-white/5 text-white hover:border-white/20 hover:bg-white/10",
+          ? "border border-accent/40 bg-accent/15 ring-2 ring-accent/30 text-accent"
+          : "border border-fg/10 bg-fg/5 text-fg hover:border-fg/20 hover:bg-fg/10",
       )}
       aria-pressed={isSelected}
     >
@@ -68,22 +68,22 @@ export function PersonaOption({
           {isDefault && (
             <span
               className={cn(
-                "shrink-0 rounded-full border border-blue-400/30 bg-blue-400/10 px-2 text-[10px] font-medium text-blue-200",
+                "shrink-0 rounded-full border border-info/30 bg-info/10 px-2 text-[10px] font-medium text-info",
               )}
             >
               App default
             </span>
           )}
         </div>
-        <div className={cn(typography.caption.size, "mt-1 truncate text-gray-400")}>{description}</div>
+        <div className={cn(typography.caption.size, "mt-1 truncate text-fg/50")}>{description}</div>
       </div>
 
       <div
         className={cn(
           "flex h-8 w-8 items-center justify-center rounded-full border",
           isSelected
-            ? "bg-emerald-500/20 border-emerald-400/50 text-emerald-300"
-            : "bg-white/5 border-white/10 text-white/70 group-hover:border-white/20",
+            ? "bg-accent/20 border-accent/50 text-accent/80"
+            : "bg-fg/5 border-fg/10 text-fg/70 group-hover:border-fg/20",
         )}
         aria-hidden="true"
       >

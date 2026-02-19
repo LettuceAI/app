@@ -99,7 +99,7 @@ export function CreateCharacterPage() {
   //  "Description";
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#050505] text-gray-100">
+    <div className="flex min-h-screen flex-col bg-surface text-fg">
       <TopNav currentPath={location.pathname + location.search} onBackOverride={handleBack} />
 
       {/*<ProgressIndicator

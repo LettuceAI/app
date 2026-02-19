@@ -258,7 +258,7 @@ export function LibraryPage() {
   });
 
   return (
-    <div className="flex h-full flex-col pb-6 text-gray-200">
+    <div className="flex h-full flex-col pb-6 text-fg/80">
       <main className="flex-1 overflow-y-auto px-4 pt-4">
         {filteredItems.length === 0 ? (
           <motion.div
@@ -270,14 +270,14 @@ export function LibraryPage() {
           >
             {rocket.isLaunched && (
               <div className="pointer-events-none absolute bottom-8 left-1/2 -translate-x-1/2 rocket-launch">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/10">
-                  <Rocket className="h-5 w-5 text-white/80" />
+                <div className="flex h-10 w-10 items-center justify-center rounded-full border border-fg/10 bg-fg/10">
+                  <Rocket className="h-5 w-5 text-fg/80" />
                 </div>
               </div>
             )}
             <div className="relative mb-6">
-              <div className="flex h-20 w-20 items-center justify-center rounded-2xl border border-white/10 bg-white/5">
-                <BookOpen className="h-10 w-10 text-white/30" />
+              <div className="flex h-20 w-20 items-center justify-center rounded-2xl border border-fg/10 bg-fg/5">
+                <BookOpen className="h-10 w-10 text-fg/30" />
               </div>
             </div>
             <h3
@@ -285,7 +285,7 @@ export function LibraryPage() {
                 typography.heading.size,
                 typography.heading.weight,
                 typography.heading.lineHeight,
-                "mb-2 text-center text-white/80",
+                "mb-2 text-center text-fg/80",
               )}
             >
               {filter === "All"
@@ -296,7 +296,7 @@ export function LibraryPage() {
                     ? "No personas yet"
                     : "No lorebooks yet"}
             </h3>
-            <p className="mb-6 max-w-70 text-center text-sm text-white/50">
+            <p className="mb-6 max-w-70 text-center text-sm text-fg/50">
               {filter === "All"
                 ? "Create characters, personas, and lorebooks to see them here"
                 : filter === "Characters"
@@ -309,7 +309,7 @@ export function LibraryPage() {
               <button
                 onClick={() => lorebookImportRef.current?.click()}
                 disabled={importingLorebook}
-                className="mb-3 flex items-center gap-2 rounded-xl border border-blue-400/40 bg-blue-400/20 px-5 py-2.5 text-sm font-medium text-blue-100 transition active:scale-95 active:bg-blue-400/30 disabled:opacity-60 disabled:cursor-not-allowed"
+                className="mb-3 flex items-center gap-2 rounded-xl border border-info/40 bg-info/20 px-5 py-2.5 text-sm font-medium text-info transition active:scale-95 active:bg-info/30 disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 <Upload className="h-4 w-4" />
                 {importingLorebook ? "Importing..." : "Import Lorebook"}
@@ -320,7 +320,7 @@ export function LibraryPage() {
                 onClick={() =>
                   navigate(filter === "Personas" ? "/personas/create" : "/characters/create")
                 }
-                className="flex items-center gap-2 rounded-xl border border-emerald-400/40 bg-emerald-400/20 px-5 py-2.5 text-sm font-medium text-emerald-100 transition active:scale-95 active:bg-emerald-400/30"
+                className="flex items-center gap-2 rounded-xl border border-accent/40 bg-accent/20 px-5 py-2.5 text-sm font-medium text-accent/70 transition active:scale-95 active:bg-accent/30"
               >
                 <Users className="h-4 w-4" />
                 {filter === "Personas" ? "Create Persona" : "Create Character"}
@@ -369,12 +369,12 @@ export function LibraryPage() {
               className={cn(
                 "flex w-full items-center justify-between rounded-xl px-4 py-3 text-left transition",
                 filter === option
-                  ? "bg-white/10 text-white"
-                  : "text-white/60 hover:bg-white/5 hover:text-white",
+                  ? "bg-fg/10 text-fg"
+                  : "text-fg/60 hover:bg-fg/5 hover:text-fg",
               )}
             >
               <span className="text-sm font-medium">{option}</span>
-              {filter === option && <Check className="h-4 w-4 text-emerald-400" />}
+              {filter === option && <Check className="h-4 w-4 text-accent" />}
             </button>
           ))}
         </div>
@@ -391,23 +391,23 @@ export function LibraryPage() {
             {selectedItem.itemType === "character" && (
               <button
                 onClick={handleStartChat}
-                className="flex w-full items-center gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-left transition hover:border-emerald-500/50 hover:bg-emerald-500/20"
+                className="flex w-full items-center gap-3 rounded-xl border border-accent/30 bg-accent/10 px-4 py-3 text-left transition hover:border-accent/50 hover:bg-accent/20"
               >
-                <div className="flex h-8 w-8 items-center justify-center rounded-full border border-emerald-500/30 bg-emerald-500/20">
-                  <MessageCircle className="h-4 w-4 text-emerald-400" />
+                <div className="flex h-8 w-8 items-center justify-center rounded-full border border-accent/30 bg-accent/20">
+                  <MessageCircle className="h-4 w-4 text-accent" />
                 </div>
-                <span className="text-sm font-medium text-emerald-100">Start Chat</span>
+                <span className="text-sm font-medium text-accent">Start Chat</span>
               </button>
             )}
 
             <button
               onClick={handleEdit}
-              className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-left transition hover:border-white/20 hover:bg-white/10"
+              className="flex w-full items-center gap-3 rounded-xl border border-fg/10 bg-fg/5 px-4 py-3 text-left transition hover:border-fg/20 hover:bg-fg/10"
             >
-              <div className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/10">
-                <Edit2 className="h-4 w-4 text-white/70" />
+              <div className="flex h-8 w-8 items-center justify-center rounded-full border border-fg/10 bg-fg/10">
+                <Edit2 className="h-4 w-4 text-fg/70" />
               </div>
-              <span className="text-sm font-medium text-white">
+              <span className="text-sm font-medium text-fg">
                 {selectedItem.itemType === "character"
                   ? "Edit Character"
                   : selectedItem.itemType === "persona"
@@ -423,12 +423,12 @@ export function LibraryPage() {
                   setRenameName(getItemName(selectedItem));
                   setSelectedItem(null); // Close main menu
                 }}
-                className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-left transition hover:border-white/20 hover:bg-white/10"
+                className="flex w-full items-center gap-3 rounded-xl border border-fg/10 bg-fg/5 px-4 py-3 text-left transition hover:border-fg/20 hover:bg-fg/10"
               >
-                <div className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/10">
-                  <Pencil className="h-4 w-4 text-white/70" />
+                <div className="flex h-8 w-8 items-center justify-center rounded-full border border-fg/10 bg-fg/10">
+                  <Pencil className="h-4 w-4 text-fg/70" />
                 </div>
-                <span className="text-sm font-medium text-white">Rename Lorebook</span>
+                <span className="text-sm font-medium text-fg">Rename Lorebook</span>
               </button>
             )}
 
@@ -436,12 +436,12 @@ export function LibraryPage() {
               <button
                 onClick={handleExport}
                 disabled={exporting}
-                className="flex w-full items-center gap-3 rounded-xl border border-blue-400/30 bg-blue-400/10 px-4 py-3 text-left transition hover:border-blue-400/50 hover:bg-blue-400/20 disabled:opacity-50"
+                className="flex w-full items-center gap-3 rounded-xl border border-info/30 bg-info/10 px-4 py-3 text-left transition hover:border-info/50 hover:bg-info/20 disabled:opacity-50"
               >
-                <div className="flex h-8 w-8 items-center justify-center rounded-full border border-blue-400/30 bg-blue-400/20">
-                  <Download className="h-4 w-4 text-blue-400" />
+                <div className="flex h-8 w-8 items-center justify-center rounded-full border border-info/30 bg-info/20">
+                  <Download className="h-4 w-4 text-info" />
                 </div>
-                <span className="text-sm font-medium text-blue-300">
+                <span className="text-sm font-medium text-info">
                   {exporting ? "Exporting..." : "Export Character"}
                 </span>
               </button>
@@ -451,12 +451,12 @@ export function LibraryPage() {
               <button
                 onClick={handlePersonaExport}
                 disabled={exporting}
-                className="flex w-full items-center gap-3 rounded-xl border border-blue-400/30 bg-blue-400/10 px-4 py-3 text-left transition hover:border-blue-400/50 hover:bg-blue-400/20 disabled:opacity-50"
+                className="flex w-full items-center gap-3 rounded-xl border border-info/30 bg-info/10 px-4 py-3 text-left transition hover:border-info/50 hover:bg-info/20 disabled:opacity-50"
               >
-                <div className="flex h-8 w-8 items-center justify-center rounded-full border border-blue-400/30 bg-blue-400/20">
-                  <Download className="h-4 w-4 text-blue-400" />
+                <div className="flex h-8 w-8 items-center justify-center rounded-full border border-info/30 bg-info/20">
+                  <Download className="h-4 w-4 text-info" />
                 </div>
-                <span className="text-sm font-medium text-blue-300">
+                <span className="text-sm font-medium text-info">
                   {exporting ? "Exporting..." : "Export Persona"}
                 </span>
               </button>
@@ -464,12 +464,12 @@ export function LibraryPage() {
 
             <button
               onClick={() => setShowDeleteConfirm(true)}
-              className="flex w-full items-center gap-3 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-left transition hover:border-red-500/50 hover:bg-red-500/20"
+              className="flex w-full items-center gap-3 rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-left transition hover:border-danger/50 hover:bg-danger/20"
             >
-              <div className="flex h-8 w-8 items-center justify-center rounded-full border border-red-500/30 bg-red-500/20">
-                <Trash2 className="h-4 w-4 text-red-400" />
+              <div className="flex h-8 w-8 items-center justify-center rounded-full border border-danger/30 bg-danger/20">
+                <Trash2 className="h-4 w-4 text-danger" />
               </div>
-              <span className="text-sm font-medium text-red-300">
+              <span className="text-sm font-medium text-danger">
                 {selectedItem.itemType === "character"
                   ? "Delete Character"
                   : selectedItem.itemType === "persona"
@@ -498,7 +498,7 @@ export function LibraryPage() {
         title={`Delete ${selectedItem?.itemType === "character" ? "Character" : selectedItem?.itemType === "persona" ? "Persona" : "Lorebook"}?`}
       >
         <div className="space-y-4">
-          <p className="text-sm text-white/70">
+          <p className="text-sm text-fg/70">
             Are you sure you want to delete \"{selectedItem ? getItemName(selectedItem) : ""}\"?
             {selectedItem?.itemType === "character" &&
               " This will also delete all chat sessions with this character."}
@@ -507,14 +507,14 @@ export function LibraryPage() {
             <button
               onClick={() => setShowDeleteConfirm(false)}
               disabled={deleting}
-              className="flex-1 rounded-xl border border-white/10 bg-white/5 py-3 text-sm font-medium text-white transition hover:border-white/20 hover:bg-white/10 disabled:opacity-50"
+              className="flex-1 rounded-xl border border-fg/10 bg-fg/5 py-3 text-sm font-medium text-fg transition hover:border-fg/20 hover:bg-fg/10 disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               onClick={handleDelete}
               disabled={deleting}
-              className="flex-1 rounded-xl border border-red-500/30 bg-red-500/20 py-3 text-sm font-medium text-red-300 transition hover:bg-red-500/30 disabled:opacity-50"
+              className="flex-1 rounded-xl border border-danger/30 bg-danger/20 py-3 text-sm font-medium text-danger transition hover:bg-danger/30 disabled:opacity-50"
             >
               {deleting ? "Deleting..." : "Delete"}
             </button>
@@ -532,20 +532,20 @@ export function LibraryPage() {
             value={renameName}
             onChange={(e) => setRenameName(e.target.value)}
             placeholder="Enter new name..."
-            className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-base text-white placeholder-white/40 transition focus:border-white/25 focus:outline-none"
+            className="w-full rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3 text-base text-fg placeholder-fg/40 transition focus:border-fg/25 focus:outline-none"
             autoFocus
           />
           <div className="flex gap-3">
             <button
               onClick={() => setRenameItem(null)}
-              className="flex-1 rounded-xl border border-white/10 bg-white/5 py-3 text-sm font-medium text-white transition hover:border-white/20 hover:bg-white/10"
+              className="flex-1 rounded-xl border border-fg/10 bg-fg/5 py-3 text-sm font-medium text-fg transition hover:border-fg/20 hover:bg-fg/10"
             >
               Cancel
             </button>
             <button
               onClick={handleRenameConfirm}
               disabled={renaming || !renameName.trim()}
-              className="flex-1 rounded-xl border border-emerald-500/30 bg-emerald-500/20 py-3 text-sm font-medium text-emerald-100 transition hover:border-emerald-500/50 hover:bg-emerald-500/30 disabled:opacity-50"
+              className="flex-1 rounded-xl border border-accent/30 bg-accent/20 py-3 text-sm font-medium text-accent/70 transition hover:border-accent/50 hover:bg-accent/30 disabled:opacity-50"
             >
               {renaming ? "Saving..." : "Save"}
             </button>
@@ -584,11 +584,11 @@ const ItemAvatar = memo(({ item, className }: { item: LibraryItem; className?: s
     return (
       <div
         className={cn(
-          "flex h-full w-full items-center justify-center bg-linear-to-br from-amber-500/20 to-orange-600/30",
+          "flex h-full w-full items-center justify-center bg-linear-to-br from-warning/20 to-warning/80/30",
           className,
         )}
       >
-        <BookOpen className="h-12 w-12 text-amber-300/80" />
+        <BookOpen className="h-12 w-12 text-warning/80" />
       </div>
     );
   }
@@ -633,10 +633,10 @@ const LibraryCard = memo(
 
     const badge =
       item.itemType === "character"
-        ? { label: "Character", dotClass: "bg-sky-300" }
+        ? { label: "Character", dotClass: "bg-info" }
         : item.itemType === "persona"
-          ? { label: "Persona", dotClass: "bg-violet-300" }
-          : { label: "Lorebook", dotClass: "bg-amber-300" };
+          ? { label: "Persona", dotClass: "bg-secondary" }
+          : { label: "Lorebook", dotClass: "bg-warning" };
 
     return (
       <motion.button
@@ -644,7 +644,7 @@ const LibraryCard = memo(
         onClick={() => onSelect(item)}
         className={cn(
           "group relative flex aspect-3/4 w-full flex-col justify-end overflow-hidden rounded-2xl text-left",
-          "border border-white/10",
+          "border border-fg/10",
           interactive.active.scale,
         )}
         style={hasGradient && item.itemType !== "lorebook" ? { background: gradientCss } : {}}
@@ -662,7 +662,7 @@ const LibraryCard = memo(
 
         {/* Type Badge */}
         <div className="absolute left-2 top-2 z-20">
-          <span className="flex items-center gap-1.5 rounded-full border border-white/15 bg-black/60 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-white/80 backdrop-blur-md shadow-sm shadow-black/30">
+          <span className="flex items-center gap-1.5 rounded-full border border-fg/15 bg-surface-el/60 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-fg/80 backdrop-blur-md shadow-sm shadow-black/30">
             <span className={cn("h-2 w-2 rounded-full", badge.dotClass)} />
             {badge.label}
           </span>
@@ -670,13 +670,13 @@ const LibraryCard = memo(
 
         {/* Glass Content Area */}
         <div className="relative z-20 flex w-full flex-col gap-1 p-3">
-          <h3 className={cn(typography.body.size, "font-bold text-white truncate leading-tight")}>
+          <h3 className={cn(typography.body.size, "font-bold text-fg truncate leading-tight")}>
             {getItemName(item)}
           </h3>
           <p
             className={cn(
               typography.bodySmall.size,
-              "text-white/70 line-clamp-2 text-xs leading-relaxed",
+              "text-fg/70 line-clamp-2 text-xs leading-relaxed",
             )}
           >
             {descriptionPreview}
@@ -684,7 +684,7 @@ const LibraryCard = memo(
         </div>
 
         {/* Hover Highlight */}
-        <div className="absolute inset-0 z-30 bg-white/0 transition-colors group-hover:bg-white/5" />
+        <div className="absolute inset-0 z-30 bg-fg/0 transition-colors group-hover:bg-fg/5" />
       </motion.button>
     );
   },

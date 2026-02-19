@@ -63,13 +63,13 @@ export function PersonaPreviewCard({
   }, [avatarPath, sessionId]);
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden">
+    <div className="rounded-2xl border border-fg/10 bg-fg/5 overflow-hidden">
       <div className="p-4">
         <div className="flex items-start gap-3">
           <div
             className={cn(
               "shrink-0 overflow-hidden rounded-full border-2",
-              avatarSrc ? "border-white/20" : "border-white/10 bg-white/5",
+              avatarSrc ? "border-fg/20" : "border-fg/10 bg-fg/5",
               "h-16 w-16",
             )}
           >
@@ -77,18 +77,18 @@ export function PersonaPreviewCard({
               <img src={avatarSrc} alt={title} className="h-full w-full object-cover" />
             ) : (
               <div className="h-full w-full flex items-center justify-center">
-                <User className="h-6 w-6 text-white/30" />
+                <User className="h-6 w-6 text-fg/30" />
               </div>
             )}
           </div>
 
           <div className="flex-1 min-w-0">
-            <h3 className={cn(typography.h2.size, typography.h2.weight, "text-white truncate")}>
+            <h3 className={cn(typography.h2.size, typography.h2.weight, "text-fg truncate")}>
               {title}
             </h3>
             <div className="flex items-center gap-2 mt-1">
               {isDefault && (
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-400/30 text-emerald-200">
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-accent/15 border border-accent/30 text-accent/80">
                   Default
                 </span>
               )}
@@ -97,8 +97,8 @@ export function PersonaPreviewCard({
         </div>
 
         <div className="mt-4">
-          <p className="text-xs text-white/40 uppercase tracking-wider mb-1">Description</p>
-          <p className="text-sm text-white/70 line-clamp-4">{description}</p>
+          <p className="text-xs text-fg/40 uppercase tracking-wider mb-1">Description</p>
+          <p className="text-sm text-fg/70 line-clamp-4">{description}</p>
         </div>
       </div>
     </div>

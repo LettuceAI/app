@@ -264,7 +264,7 @@ export function GroupChatFooter({
     <footer
       className={cn(
         "z-20 shrink-0 px-4 pb-3 pt-3",
-        hasBackgroundImage ? "backdrop-blur-xl" : "bg-[#050505]",
+        hasBackgroundImage ? "backdrop-blur-xl" : "bg-surface",
       )}
     >
       {error && (
@@ -272,9 +272,9 @@ export function GroupChatFooter({
           className={cn(
             "mb-3 px-4 py-2.5 flex items-start justify-between gap-2",
             radius.md,
-            "border border-red-400/30 bg-red-400/10",
+            "border border-danger/30 bg-danger/10",
             typography.bodySmall.size,
-            "text-red-200",
+            "text-danger",
           )}
         >
           <span className="flex-1">{error}</span>
@@ -283,7 +283,7 @@ export function GroupChatFooter({
               onClick={() => setError(null)}
               className={cn(
                 "shrink-0 p-1 rounded",
-                "text-red-200/70 hover:text-red-200 hover:bg-red-400/20",
+                "text-danger/70 hover:text-danger hover:bg-danger/20",
                 interactive.transition.fast,
               )}
               aria-label="Dismiss error"
@@ -300,7 +300,7 @@ export function GroupChatFooter({
           {pendingAttachments.map((attachment) => (
             <div
               key={attachment.id}
-              className={cn("relative", radius.md, "border border-white/20 bg-white/10")}
+              className={cn("relative", radius.md, "border border-fg/20 bg-fg/10")}
             >
               <img
                 src={attachment.data}
@@ -317,7 +317,7 @@ export function GroupChatFooter({
                   )}
                   aria-label="Remove attachment"
                 >
-                  <X className="h-5 w-5 text-black drop-shadow-[0_1px_2px_rgba(255,255,255,0.8)]" />
+                  <X className="h-5 w-5 text-surface drop-shadow-[0_1px_2px_rgba(255,255,255,0.8)]" />
                 </button>
               )}
             </div>
@@ -336,12 +336,12 @@ export function GroupChatFooter({
             className={cn(
               "mention-picker mb-2 max-h-48 overflow-y-auto",
               radius.lg,
-              "border border-white/15 bg-[#0c0d13]/95 backdrop-blur-md",
+              "border border-fg/15 bg-surface-el/95 backdrop-blur-md",
               shadows.lg,
             )}
           >
             <div className="p-1.5">
-              <div className="px-2 py-1.5 text-[10px] uppercase tracking-wider text-white/40 font-medium">
+              <div className="px-2 py-1.5 text-[10px] uppercase tracking-wider text-fg/40 font-medium">
                 Mention a character
               </div>
               {filteredCharacters.map((character) => (
@@ -353,7 +353,7 @@ export function GroupChatFooter({
                 />
               ))}
               {filteredCharacters.length === 0 && (
-                <div className="px-3 py-4 text-center text-sm text-white/40">
+                <div className="px-3 py-4 text-center text-sm text-fg/40">
                   No characters found
                 </div>
               )}
@@ -376,7 +376,7 @@ export function GroupChatFooter({
         className={cn(
           "relative flex items-end gap-2.5 p-2",
           "rounded-4xl",
-          "border border-white/15 bg-white/5 backdrop-blur-md",
+          "border border-fg/15 bg-fg/5 backdrop-blur-md",
           shadows.md,
         )}
       >
@@ -388,10 +388,10 @@ export function GroupChatFooter({
             className={cn(
               "mb-0.5 flex h-10 w-11 shrink-0 items-center justify-center self-end",
               radius.full,
-              "border border-white/15 bg-white/10 text-white/70",
+              "border border-fg/15 bg-fg/10 text-fg/70",
               interactive.transition.fast,
               interactive.active.scale,
-              "hover:border-white/25 hover:bg-white/15",
+              "hover:border-fg/25 hover:bg-fg/15",
               "disabled:cursor-not-allowed disabled:opacity-40",
             )}
             title={onOpenPlusMenu ? "More options" : "Add image"}
@@ -411,7 +411,7 @@ export function GroupChatFooter({
           className={cn(
             "max-h-32 flex-1 resize-none bg-transparent py-2.5",
             typography.body.size,
-            "text-white placeholder:text-transparent",
+            "text-fg placeholder:text-transparent",
             "focus:outline-none",
           )}
           disabled={sending}
@@ -423,7 +423,7 @@ export function GroupChatFooter({
               "pointer-events-none absolute",
               onOpenPlusMenu || onAddAttachment ? "left-16" : "left-5",
               "top-1/2 -translate-y-1/2",
-              "text-white/40",
+              "text-fg/40",
               "transition-opacity duration-150",
               "peer-not-placeholder-shown:opacity-0",
               "peer-focus:opacity-70",
@@ -440,23 +440,23 @@ export function GroupChatFooter({
             "mb-0.5 flex h-10 w-11 shrink-0 items-center justify-center self-end",
             radius.full,
             sending && onAbort
-              ? "border border-red-400/40 bg-red-400/20 text-red-100"
+              ? "border border-danger/40 bg-danger/20 text-danger"
               : hasDraft || hasAttachments
-                ? "border border-emerald-400/40 bg-emerald-400/20 text-emerald-100"
+                ? "border border-accent/40 bg-accent/20 text-accent"
                 : onContinue
-                  ? "border border-white/15 bg-white/10 text-white/70"
-                  : "border border-white/15 bg-white/10 text-white/40",
+                  ? "border border-fg/15 bg-fg/10 text-fg/70"
+                  : "border border-fg/15 bg-fg/10 text-fg/40",
             interactive.transition.fast,
             interactive.active.scale,
-            sending && onAbort && "hover:border-red-400/60 hover:bg-red-400/30",
+            sending && onAbort && "hover:border-danger/60 hover:bg-danger/30",
             !sending &&
               (hasDraft || hasAttachments) &&
-              "hover:border-emerald-400/60 hover:bg-emerald-400/30",
+              "hover:border-accent/60 hover:bg-accent/30",
             !sending &&
               !hasDraft &&
               !hasAttachments &&
               onContinue &&
-              "hover:border-white/25 hover:bg-white/15",
+              "hover:border-fg/25 hover:bg-fg/15",
             "disabled:cursor-not-allowed disabled:opacity-40",
           )}
           title={
@@ -518,7 +518,7 @@ function MentionPickerItem({
     return (
       <>
         {text.slice(0, index)}
-        <span className="text-emerald-400 font-medium">
+        <span className="text-accent font-medium">
           {text.slice(index, index + query.length)}
         </span>
         {text.slice(index + query.length)}
@@ -535,7 +535,7 @@ function MentionPickerItem({
         "flex w-full items-center gap-2.5 px-2 py-2 text-left",
         radius.md,
         "transition-colors",
-        "hover:bg-white/10 active:bg-white/15",
+        "hover:bg-fg/10 active:bg-fg/15",
       )}
     >
       <div
@@ -548,21 +548,21 @@ function MentionPickerItem({
         {avatarUrl ? (
           <AvatarImage src={avatarUrl} alt={character.name} crop={character.avatarCrop} applyCrop />
         ) : (
-          <div className="flex h-full w-full items-center justify-center text-xs font-bold text-white/60">
+          <div className="flex h-full w-full items-center justify-center text-xs font-bold text-fg/60">
             {character.name.slice(0, 1).toUpperCase()}
           </div>
         )}
       </div>
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium text-white truncate">{highlightMatch(character.name)}</p>
+        <p className="text-sm font-medium text-fg truncate">{highlightMatch(character.name)}</p>
         {description && (
-          <p className="text-[11px] text-white/40 truncate">
+          <p className="text-[11px] text-fg/40 truncate">
             {description.slice(0, 50)}
             {description.length > 50 ? "..." : ""}
           </p>
         )}
       </div>
-      <div className="text-[10px] text-white/30 shrink-0">Tab to select</div>
+      <div className="text-[10px] text-fg/30 shrink-0">Tab to select</div>
     </button>
   );
 }

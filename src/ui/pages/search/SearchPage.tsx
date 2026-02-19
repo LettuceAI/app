@@ -80,7 +80,7 @@ export function SearchPage() {
   const hasQuery = searchQuery.trim().length > 0;
 
   return (
-    <div className="flex h-screen flex-col bg-[#050505] text-gray-200">
+    <div className="flex h-screen flex-col bg-surface text-fg/80">
       {/* Minimal Header */}
       <header
         className="shrink-0 px-3"
@@ -90,29 +90,29 @@ export function SearchPage() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => navigate(-1)}
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-white/60 transition hover:bg-white/10 hover:text-white active:scale-95"
+            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-fg/60 transition hover:bg-fg/10 hover:text-fg active:scale-95"
             aria-label="Go back"
           >
             <ArrowLeft size={20} />
           </button>
 
-          <div className="relative flex flex-1 items-center gap-2.5 rounded-full border border-white/10 bg-white/5 px-4 py-2.5 transition focus-within:border-white/20 focus-within:bg-white/8">
-            <Search size={18} className="shrink-0 text-white/40" />
+          <div className="relative flex flex-1 items-center gap-2.5 rounded-full border border-fg/10 bg-fg/5 px-4 py-2.5 transition focus-within:border-fg/20 focus-within:bg-fg/8">
+            <Search size={18} className="shrink-0 text-fg/40" />
             <input
               type="text"
               placeholder="Search..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               autoFocus
-              className="flex-1 bg-transparent text-[15px] text-white placeholder:text-white/40 outline-none"
+              className="flex-1 bg-transparent text-[15px] text-fg placeholder:text-fg/40 outline-none"
             />
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery("")}
-                className="shrink-0 rounded-full p-1 transition hover:bg-white/10 active:scale-95"
+                className="shrink-0 rounded-full p-1 transition hover:bg-fg/10 active:scale-95"
                 aria-label="Clear search"
               >
-                <X size={16} className="text-white/50" />
+                <X size={16} className="text-fg/50" />
               </button>
             )}
           </div>
@@ -203,8 +203,8 @@ function TabButton({
       className={cn(
         "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-medium transition-all",
         active
-          ? "bg-white/15 text-white"
-          : "bg-white/5 text-white/50 hover:bg-white/10 hover:text-white/70",
+          ? "bg-fg/15 text-fg"
+          : "bg-fg/5 text-fg/50 hover:bg-fg/10 hover:text-fg/70",
       )}
     >
       {icon}
@@ -212,7 +212,7 @@ function TabButton({
       <span
         className={cn(
           "ml-0.5 rounded-full px-1.5 py-0.5 text-[11px] font-semibold",
-          active ? "bg-white/20 text-white" : "bg-white/10 text-white/50",
+          active ? "bg-fg/20 text-fg" : "bg-fg/10 text-fg/50",
         )}
       >
         {count}
@@ -239,7 +239,7 @@ const CharacterAvatar = memo(({ character }: { character: Character }) => {
   const initials = character.name.slice(0, 2).toUpperCase();
   return (
     <div className="flex h-full w-full items-center justify-center bg-linear-to-br from-white/20 to-white/5">
-      <span className="text-base font-bold text-white/80">{initials}</span>
+      <span className="text-base font-bold text-fg/80">{initials}</span>
     </div>
   );
 });
@@ -273,7 +273,7 @@ const CharacterCard = memo(
         className={cn(
           "group relative flex w-full items-center gap-3.5 p-3.5 text-left",
           "rounded-2xl transition-all",
-          hasGradient ? "" : "bg-[#1a1b23] hover:bg-[#22232d]",
+          hasGradient ? "" : "bg-surface-el hover:bg-surface-el",
         )}
         style={hasGradient ? { background: gradientCss } : {}}
       >
@@ -293,7 +293,7 @@ const CharacterCard = memo(
           <h3
             className={cn(
               "truncate font-semibold text-[15px] leading-tight",
-              hasGradient ? "" : "text-white",
+              hasGradient ? "" : "text-fg",
             )}
             style={hasGradient ? { color: textColor } : {}}
           >
@@ -302,7 +302,7 @@ const CharacterCard = memo(
           <p
             className={cn(
               "line-clamp-1 text-[13px] leading-tight",
-              hasGradient ? "" : "text-white/50",
+              hasGradient ? "" : "text-fg/50",
             )}
             style={hasGradient ? { color: textSecondary } : {}}
           >
@@ -322,7 +322,7 @@ const CharacterCard = memo(
           strokeLinejoin="round"
           className={cn(
             "shrink-0 transition-all",
-            hasGradient ? "" : "text-white/30 group-hover:text-white/60",
+            hasGradient ? "" : "text-fg/30 group-hover:text-fg/60",
           )}
           style={hasGradient ? { color: textSecondary } : {}}
         >
@@ -360,15 +360,15 @@ const PersonaCard = memo(
       <motion.button
         whileTap={{ scale: 0.98 }}
         onClick={() => onSelect(persona)}
-        className="group relative flex w-full items-center gap-3.5 p-3.5 text-left rounded-2xl bg-[#1a1b23] transition-all hover:bg-[#22232d]"
+        className="group relative flex w-full items-center gap-3.5 p-3.5 text-left rounded-2xl bg-surface-el transition-all hover:bg-surface-el"
       >
         {/* Circular Avatar */}
         <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-full ring-1 ring-white/10 shadow-lg">
           {avatarUrl && isImageLike(avatarUrl) ? (
             <img src={avatarUrl} alt={persona.title} className="h-full w-full object-cover" />
           ) : (
-            <div className="flex h-full w-full items-center justify-center bg-linear-to-br from-blue-500/30 to-purple-500/20">
-              <User size={24} className="text-white/60" />
+            <div className="flex h-full w-full items-center justify-center bg-linear-to-br from-info/30 to-secondary/80/20">
+              <User size={24} className="text-fg/60" />
             </div>
           )}
         </div>
@@ -376,16 +376,16 @@ const PersonaCard = memo(
         {/* Content */}
         <div className="flex min-w-0 flex-1 flex-col gap-0.5 py-1">
           <div className="flex items-center gap-2">
-            <h3 className="truncate font-semibold text-[15px] leading-tight text-white">
+            <h3 className="truncate font-semibold text-[15px] leading-tight text-fg">
               {persona.title}
             </h3>
             {persona.isDefault && (
-              <span className="shrink-0 rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-400">
+              <span className="shrink-0 rounded-full bg-accent/20 px-2 py-0.5 text-[10px] font-semibold text-accent">
                 Default
               </span>
             )}
           </div>
-          <p className="line-clamp-1 text-[13px] leading-tight text-white/50">
+          <p className="line-clamp-1 text-[13px] leading-tight text-fg/50">
             {persona.description}
           </p>
         </div>
@@ -400,7 +400,7 @@ const PersonaCard = memo(
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
-          className="shrink-0 text-white/30 transition-all group-hover:text-white/60"
+          className="shrink-0 text-fg/30 transition-all group-hover:text-fg/60"
         >
           <path d="m9 18 6-6-6-6" />
         </svg>
@@ -431,12 +431,12 @@ function LoadingSkeleton() {
   return (
     <div className="space-y-2 pb-4">
       {[0, 1, 2, 3].map((index) => (
-        <div key={index} className="h-[76px] animate-pulse rounded-2xl bg-[#1a1b23] p-3.5">
+        <div key={index} className="h-[76px] animate-pulse rounded-2xl bg-surface-el p-3.5">
           <div className="flex items-center gap-3.5">
-            <div className="h-14 w-14 rounded-full bg-white/10" />
+            <div className="h-14 w-14 rounded-full bg-fg/10" />
             <div className="flex-1 space-y-2">
-              <div className="h-4 w-1/3 rounded-full bg-white/10" />
-              <div className="h-3 w-2/3 rounded-full bg-white/5" />
+              <div className="h-4 w-1/3 rounded-full bg-fg/10" />
+              <div className="h-3 w-2/3 rounded-full bg-fg/5" />
             </div>
           </div>
         </div>
@@ -456,22 +456,22 @@ function EmptyState({ type, hasQuery }: { type: "characters" | "personas"; hasQu
     >
       {rocket.isLaunched && (
         <div className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 rocket-launch">
-          <div className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/10">
-            <Rocket className="h-4 w-4 text-white/80" />
+          <div className="flex h-9 w-9 items-center justify-center rounded-full border border-fg/10 bg-fg/10">
+            <Rocket className="h-4 w-4 text-fg/80" />
           </div>
         </div>
       )}
-      <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-white/5">
+      <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-fg/5">
         {isCharacters ? (
-          <MessageCircle size={36} className="text-white/20" />
+          <MessageCircle size={36} className="text-fg/20" />
         ) : (
-          <User size={36} className="text-white/20" />
+          <User size={36} className="text-fg/20" />
         )}
       </div>
-      <h3 className="mb-1 text-lg font-semibold text-white/80">
+      <h3 className="mb-1 text-lg font-semibold text-fg/80">
         {hasQuery ? `No ${type} found` : `No ${type} yet`}
       </h3>
-      <p className="text-sm text-white/40">
+      <p className="text-sm text-fg/40">
         {hasQuery
           ? "Try a different search term"
           : isCharacters

@@ -85,7 +85,7 @@ export function CharacterPreviewCard({
   }, [draft.avatarPath, draft.backgroundImagePath, sessionId]);
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden">
+    <div className="rounded-2xl border border-fg/10 bg-fg/5 overflow-hidden">
       {/* Background Image Preview */}
       {bgSrc && (
         <div
@@ -103,7 +103,7 @@ export function CharacterPreviewCard({
           <div
             className={cn(
               "shrink-0 overflow-hidden rounded-full border-2",
-              hasAvatar ? "border-white/20" : "border-white/10 bg-white/5",
+              hasAvatar ? "border-fg/20" : "border-fg/10 bg-fg/5",
               compact ? "h-12 w-12" : "h-16 w-16",
             )}
           >
@@ -115,26 +115,26 @@ export function CharacterPreviewCard({
               />
             ) : (
               <div className="h-full w-full flex items-center justify-center">
-                <User className="h-6 w-6 text-white/30" />
+                <User className="h-6 w-6 text-fg/30" />
               </div>
             )}
           </div>
 
           {/* Name + Stats */}
           <div className="flex-1 min-w-0">
-            <h3 className={cn(typography.h2.size, typography.h2.weight, "text-white truncate")}>
+            <h3 className={cn(typography.h2.size, typography.h2.weight, "text-fg truncate")}>
               {draft.name || "Unnamed Character"}
             </h3>
 
             <div className="flex items-center gap-3 mt-1">
               {draft.scenes.length > 0 && (
-                <span className="flex items-center gap-1 text-xs text-white/50">
+                <span className="flex items-center gap-1 text-xs text-fg/50">
                   <MessageSquare className="h-3 w-3" />
                   {draft.scenes.length} scene{draft.scenes.length !== 1 ? "s" : ""}
                 </span>
               )}
               {draft.promptTemplateId && (
-                <span className="flex items-center gap-1 text-xs text-white/50">
+                <span className="flex items-center gap-1 text-xs text-fg/50">
                   <Sparkles className="h-3 w-3" />
                   Custom prompt
                 </span>
@@ -146,16 +146,16 @@ export function CharacterPreviewCard({
         {/* Description Preview */}
         {!compact && previewDescription && (
           <div className="mt-4">
-            <p className="text-xs text-white/40 uppercase tracking-wider mb-1">Description</p>
-            <p className="text-sm text-white/70 line-clamp-3">{previewDescription}</p>
+            <p className="text-xs text-fg/40 uppercase tracking-wider mb-1">Description</p>
+            <p className="text-sm text-fg/70 line-clamp-3">{previewDescription}</p>
           </div>
         )}
 
         {/* Scene Preview */}
         {!compact && defaultScene && (
           <div className="mt-4">
-            <p className="text-xs text-white/40 uppercase tracking-wider mb-1">Starting Scene</p>
-            <p className="text-sm text-white/60 italic line-clamp-2">
+            <p className="text-xs text-fg/40 uppercase tracking-wider mb-1">Starting Scene</p>
+            <p className="text-sm text-fg/60 italic line-clamp-2">
               "{defaultScene.content.slice(0, 150)}
               {defaultScene.content.length > 150 ? "..." : ""}"
             </p>
@@ -166,12 +166,12 @@ export function CharacterPreviewCard({
         {!compact && (draft.defaultModelId || !draft.disableAvatarGradient) && (
           <div className="mt-4 flex flex-wrap gap-1.5">
             {!draft.disableAvatarGradient && (
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-white/50">
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-fg/5 border border-fg/10 text-fg/50">
                 Gradient enabled
               </span>
             )}
             {draft.defaultModelId && (
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-white/50">
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-fg/5 border border-fg/10 text-fg/50">
                 Custom model
               </span>
             )}

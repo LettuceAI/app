@@ -58,14 +58,14 @@ export function GroupSessionSkeleton() {
           className={cn(
             "h-20 animate-pulse p-4",
             "rounded-2xl",
-            "border border-white/5 bg-white/5",
+            "border border-fg/5 bg-fg/5",
           )}
         >
           <div className="flex items-center gap-3">
-            <div className="h-12 w-12 rounded-full bg-white/10" />
+            <div className="h-12 w-12 rounded-full bg-fg/10" />
             <div className="flex-1 space-y-2">
-              <div className="h-4 w-1/3 rounded-full bg-white/10" />
-              <div className="h-3 w-2/3 rounded-full bg-white/5" />
+              <div className="h-4 w-1/3 rounded-full bg-fg/10" />
+              <div className="h-3 w-2/3 rounded-full bg-fg/5" />
             </div>
           </div>
         </div>
@@ -81,23 +81,23 @@ export function EmptyState() {
       className={cn(
         "relative p-8 text-center overflow-hidden",
         radius.lg,
-        "border border-dashed border-white/10 bg-white/2",
+        "border border-dashed border-fg/10 bg-fg/2",
       )}
       {...rocket.bind}
     >
       {rocket.isLaunched && (
         <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rocket-launch">
-          <div className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/10">
-            <Rocket className="h-4 w-4 text-white/80" />
+          <div className="flex h-9 w-9 items-center justify-center rounded-full border border-fg/10 bg-fg/10">
+            <Rocket className="h-4 w-4 text-fg/80" />
           </div>
         </div>
       )}
       <div className={spacing.field}>
-        <Users className="mx-auto h-12 w-12 text-white/30 mb-4" />
-        <h3 className={cn(typography.h3.size, typography.h3.weight, "text-white")}>
+        <Users className="mx-auto h-12 w-12 text-fg/30 mb-4" />
+        <h3 className={cn(typography.h3.size, typography.h3.weight, "text-fg")}>
           No group chats yet
         </h3>
-        <p className={cn(typography.body.size, typography.body.lineHeight, "text-white/50")}>
+        <p className={cn(typography.body.size, typography.body.lineHeight, "text-fg/50")}>
           Create your first group chat from the + button below to have conversations with multiple
           characters at once
         </p>
@@ -125,7 +125,7 @@ const CharacterMiniAvatar = memo(({ character }: { character: Character }) => {
 
   const initials = character.name.slice(0, 2).toUpperCase();
   return (
-    <div className="flex h-full w-full items-center justify-center text-xs font-bold text-white/60">
+    <div className="flex h-full w-full items-center justify-center text-xs font-bold text-fg/60">
       {initials}
     </div>
   );
@@ -210,7 +210,7 @@ const GroupSessionCard = memo(
           "rounded-2xl lg:rounded-3xl",
           interactive.transition.default,
           interactive.active.scale,
-          "bg-[#1a1b23] hover:bg-[#22232d]",
+          "bg-surface-el hover:bg-surface-el",
         )}
       >
         <div className="flex -space-x-2">
@@ -219,7 +219,7 @@ const GroupSessionCard = memo(
               key={character.id}
               className={cn(
                 "flex h-10 w-10 items-center justify-center overflow-hidden rounded-full",
-                "border border-white/10 bg-linear-to-br from-white/10 to-white/5",
+                "border border-fg/10 bg-linear-to-br from-white/10 to-white/5",
               )}
             >
               <CharacterMiniAvatar character={character} />
@@ -229,8 +229,8 @@ const GroupSessionCard = memo(
             <div
               className={cn(
                 "flex h-10 w-10 items-center justify-center rounded-full",
-                "border border-white/10 bg-white/10",
-                "text-xs font-semibold text-white/60",
+                "border border-fg/10 bg-fg/10",
+                "text-xs font-semibold text-fg/60",
               )}
             >
               +{session.characterIds.length - 3}
@@ -239,10 +239,10 @@ const GroupSessionCard = memo(
         </div>
 
         <div className="min-w-0 flex-1">
-          <h3 className={cn(typography.body.size, typography.h3.weight, "text-white truncate")}>
+          <h3 className={cn(typography.body.size, typography.h3.weight, "text-fg truncate")}>
             {session.name}
           </h3>
-          <p className={cn(typography.caption.size, "text-white/50 truncate mt-1")}>
+          <p className={cn(typography.caption.size, "text-fg/50 truncate mt-1")}>
             {characterSummary}
           </p>
         </div>

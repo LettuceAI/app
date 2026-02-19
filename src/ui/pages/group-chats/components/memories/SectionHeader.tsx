@@ -17,7 +17,7 @@ export function SectionHeader({
     <div className="flex items-end justify-between gap-3 mb-3">
       <div className="min-w-0">
         <div className="flex items-center gap-2 min-w-0">
-          {Icon ? <Icon size={16} className="text-white/40" /> : null}
+          {Icon ? <Icon size={16} className="text-fg/40" /> : null}
           <h2
             className={cn(
               typography.h2.size,

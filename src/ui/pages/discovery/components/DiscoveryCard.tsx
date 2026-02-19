@@ -13,7 +13,7 @@ interface DiscoveryCardProps {
 
 function StatBadge({ icon: Icon, value }: { icon: typeof Heart; value: string }) {
   return (
-    <span className="flex items-center gap-1 text-[10px] text-white/60">
+    <span className="flex items-center gap-1 text-[10px] text-fg/60">
       <Icon className="h-3 w-3" />
       {value}
     </span>
@@ -63,7 +63,7 @@ export const DiscoveryCard = memo(function DiscoveryCard({
       onClick={handleClick}
       className={cn(
         "group relative flex flex-col justify-end overflow-hidden text-left",
-        "border border-white/10 hover:border-white/20",
+        "border border-fg/10 hover:border-fg/20",
         "transition-all duration-200 active:scale-[0.98]",
         isFeatured
           ? "aspect-16/10 w-full rounded-xl lg:aspect-21/9 lg:max-w-5xl lg:mx-auto xl:max-w-6xl"
@@ -97,10 +97,10 @@ export const DiscoveryCard = memo(function DiscoveryCard({
 
       {/* NSFW Overlay */}
       {card.isNsfw && (
-        <div className="absolute inset-0 z-5 flex items-center justify-center bg-black/40">
+        <div className="absolute inset-0 z-5 flex items-center justify-center bg-surface-el/40">
           <div className="flex flex-col items-center gap-1">
-            <Shield className="h-8 w-8 text-red-400" />
-            <span className="text-xs font-bold uppercase tracking-wider text-red-400">NSFW</span>
+            <Shield className="h-8 w-8 text-danger" />
+            <span className="text-xs font-bold uppercase tracking-wider text-danger">NSFW</span>
           </div>
         </div>
       )}
@@ -114,7 +114,7 @@ export const DiscoveryCard = memo(function DiscoveryCard({
         <div className="flex flex-wrap gap-1.5">
           {/* NSFW Badge */}
           {card.isNsfw && (
-            <span className="flex items-center gap-1 rounded-full bg-red-600 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white shadow-lg shadow-red-600/40">
+            <span className="flex items-center gap-1 rounded-full bg-danger px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-fg shadow-lg shadow-red-600/40">
               <Shield className="h-2.5 w-2.5" />
               NSFW
             </span>
@@ -122,7 +122,7 @@ export const DiscoveryCard = memo(function DiscoveryCard({
 
           {/* Original Character Badge */}
           {card.isOc && (
-            <span className="flex items-center gap-1 rounded-full bg-violet-500/80 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white shadow-lg shadow-violet-500/30 backdrop-blur-sm">
+            <span className="flex items-center gap-1 rounded-full bg-secondary/80 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-fg shadow-lg shadow-violet-500/30 backdrop-blur-sm">
               <Sparkles className="h-2.5 w-2.5" />
               OC
             </span>
@@ -130,7 +130,7 @@ export const DiscoveryCard = memo(function DiscoveryCard({
 
           {/* Has Lorebook Badge */}
           {card.hasLorebook && (
-            <span className="flex items-center gap-1 rounded-full bg-amber-500/80 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white shadow-lg shadow-amber-500/30 backdrop-blur-sm">
+            <span className="flex items-center gap-1 rounded-full bg-warning/80 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-fg shadow-lg shadow-amber-500/30 backdrop-blur-sm">
               <BookOpen className="h-2.5 w-2.5" />
             </span>
           )}
@@ -138,8 +138,8 @@ export const DiscoveryCard = memo(function DiscoveryCard({
 
         {/* Likes count prominent */}
         {card.likes !== undefined && card.likes > 0 && (
-          <span className="flex items-center gap-1 rounded-full bg-black/50 px-2 py-1 text-[10px] font-semibold text-white backdrop-blur-md">
-            <Heart className="h-3 w-3 fill-rose-400 text-rose-400" />
+          <span className="flex items-center gap-1 rounded-full bg-surface-el/50 px-2 py-1 text-[10px] font-semibold text-fg backdrop-blur-md">
+            <Heart className="h-3 w-3 fill-danger text-danger" />
             {formatCount(card.likes)}
           </span>
         )}
@@ -149,7 +149,7 @@ export const DiscoveryCard = memo(function DiscoveryCard({
       <div className="relative z-20 flex flex-col gap-1.5 p-3">
         {/* Author */}
         {card.author && !isCompact && (
-          <span className="text-[10px] font-medium text-white/50 tracking-wide">
+          <span className="text-[10px] font-medium text-fg/50 tracking-wide">
             by {card.author}
           </span>
         )}
@@ -157,7 +157,7 @@ export const DiscoveryCard = memo(function DiscoveryCard({
         {/* Name */}
         <h3
           className={cn(
-            "font-bold text-white leading-tight",
+            "font-bold text-fg leading-tight",
             isFeatured ? "text-xl" : isCompact ? "text-xs" : typography.body.size,
             "line-clamp-2",
           )}
@@ -169,7 +169,7 @@ export const DiscoveryCard = memo(function DiscoveryCard({
         {card.tagline && !isCompact && (
           <p
             className={cn(
-              "text-white/60 line-clamp-2",
+              "text-fg/60 line-clamp-2",
               isFeatured ? "text-sm" : "text-[11px]",
               "leading-relaxed",
             )}
@@ -197,13 +197,13 @@ export const DiscoveryCard = memo(function DiscoveryCard({
             {card.tags.slice(0, 4).map((tag) => (
               <span
                 key={tag}
-                className="rounded-full bg-white/10 px-2 py-0.5 text-[9px] font-medium text-white/70 backdrop-blur-sm"
+                className="rounded-full bg-fg/10 px-2 py-0.5 text-[9px] font-medium text-fg/70 backdrop-blur-sm"
               >
                 {tag}
               </span>
             ))}
             {card.tags.length > 4 && (
-              <span className="rounded-full bg-white/5 px-2 py-0.5 text-[9px] font-medium text-white/40">
+              <span className="rounded-full bg-fg/5 px-2 py-0.5 text-[9px] font-medium text-fg/40">
                 +{card.tags.length - 4}
               </span>
             )}
