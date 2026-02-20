@@ -9,6 +9,9 @@ import {
   Check,
   Loader2,
   HelpCircle,
+  LayoutList,
+  LayoutGrid,
+  Grid3X3,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { typography, interactive, cn } from "../../design-tokens";
@@ -132,6 +135,25 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
       basePath === "/group-chats"
     );
   }, [basePath]);
+
+  const showLayoutToggle = useMemo(() => {
+    return basePath === "/chat" || basePath === "/";
+  }, [basePath]);
+
+  // Track chats view mode from window global (set by Chats page)
+  const [chatsViewMode, setChatsViewMode] = useState<string>("hero");
+  useEffect(() => {
+    if (!showLayoutToggle) return;
+    const sync = () => {
+      const mode = (window as any).__chatsViewMode;
+      if (mode) setChatsViewMode(mode);
+    };
+    sync();
+    window.addEventListener("chats:viewModeChanged", sync);
+    return () => window.removeEventListener("chats:viewModeChanged", sync);
+  }, [showLayoutToggle]);
+
+  const LayoutToggleIcon = chatsViewMode === "hero" ? LayoutGrid : chatsViewMode === "gallery" ? Grid3X3 : LayoutList;
 
   const showAddButton = useMemo(() => {
     if (basePath.startsWith("/settings/providers")) return true;
@@ -408,6 +430,20 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
         </div>
 
         <div className="flex items-center justify-end gap-1 shrink-0 min-w-10 h-full">
+          {showLayoutToggle && (
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent("chats:cycleViewMode"))}
+              className={cn(
+                "hidden lg:flex items-center px-[0.6em] py-[0.3em] justify-center rounded-full",
+                "text-fg/70 hover:text-fg hover:bg-fg/10",
+                interactive.transition.fast,
+                interactive.active.scale,
+              )}
+              aria-label="Change layout"
+            >
+              <LayoutToggleIcon size={20} strokeWidth={2.5} className="text-fg" />
+            </button>
+          )}
           {showSearchButton && (
             <button
               onClick={() => navigate("/search")}

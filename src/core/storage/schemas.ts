@@ -1528,6 +1528,9 @@ export const CustomColorsSchema = z.object({
 });
 export type CustomColors = z.infer<typeof CustomColorsSchema>;
 
+export const ChatsViewModeSchema = z.enum(["hero", "gallery", "list"]);
+export type ChatsViewMode = z.infer<typeof ChatsViewModeSchema>;
+
 export const AppStateSchema = z.object({
   onboarding: OnboardingStateSchema,
   theme: z.enum(["light", "dark"]),
@@ -1541,6 +1544,7 @@ export const AppStateSchema = z.object({
   appActiveUsageStartedAtMs: z.number().int().nonnegative().optional(),
   appActiveUsageLastUpdatedAtMs: z.number().int().nonnegative().optional(),
   customColors: CustomColorsSchema.optional(),
+  chatsViewMode: ChatsViewModeSchema.default("hero"),
 });
 export type AppState = z.infer<typeof AppStateSchema>;
 
@@ -1648,6 +1652,7 @@ export function createDefaultAppState(): AppState {
     analyticsEnabled: true,
     appActiveUsageMs: 0,
     appActiveUsageByDayMs: {},
+    chatsViewMode: "hero",
   };
 }
 

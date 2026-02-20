@@ -1,7 +1,7 @@
 import { useEffect, useState, memo, useRef } from "react";
 import { Edit2, Trash2, Download, EyeOff, Paintbrush } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
 
 import {
@@ -12,12 +12,13 @@ import {
   SESSION_UPDATED_EVENT,
   deleteCharacter,
 } from "../../../core/storage/repo";
-import type { Character } from "../../../core/storage/schemas";
+import type { Character, ChatsViewMode } from "../../../core/storage/schemas";
 import { typography, radius, spacing, interactive, cn } from "../../design-tokens";
 import { BottomMenu, CharacterExportMenu } from "../../components";
 import { AvatarImage } from "../../components/AvatarImage";
 import { useAvatar } from "../../hooks/useAvatar";
 import { useAvatarGradient } from "../../hooks/useAvatarGradient";
+import { getChatsViewMode, setChatsViewMode } from "../../../core/storage/appState";
 import {
   exportCharacterWithFormat,
   downloadJson,
@@ -38,7 +39,36 @@ export function ChatPage() {
     Record<string, { id: string; updatedAt: number; archived: boolean }>
   >({});
   const [hiding, setHiding] = useState(false);
+  const [viewMode, setViewMode] = useState<ChatsViewMode>("hero");
   const navigate = useNavigate();
+
+  useEffect(() => {
+    getChatsViewMode().then((mode) => {
+      setViewMode(mode);
+      (window as any).__chatsViewMode = mode;
+      window.dispatchEvent(new CustomEvent("chats:viewModeChanged"));
+    }).catch(() => {});
+  }, []);
+
+  // Sync window global whenever viewMode changes
+  useEffect(() => {
+    (window as any).__chatsViewMode = viewMode;
+    window.dispatchEvent(new CustomEvent("chats:viewModeChanged"));
+  }, [viewMode]);
+
+  // Listen for cycle event from TopNav
+  useEffect(() => {
+    const handler = () => {
+      setViewMode((prev) => {
+        const modes: ChatsViewMode[] = ["hero", "gallery", "list"];
+        const next = modes[(modes.indexOf(prev) + 1) % modes.length];
+        setChatsViewMode(next).catch(() => {});
+        return next;
+      });
+    };
+    window.addEventListener("chats:cycleViewMode", handler);
+    return () => window.removeEventListener("chats:cycleViewMode", handler);
+  }, []);
 
   const loadCharacters = async () => {
     try {
@@ -197,12 +227,13 @@ export function ChatPage() {
 
   return (
     <div className="flex h-full flex-col pb-6 text-gray-200">
-      <main className="flex-1 overflow-y-auto px-1 lg:px-8 pt-4 mx-auto w-full max-w-md lg:max-w-none">
+      <main className="flex-1 overflow-y-auto px-1 lg:px-8 pt-4 mx-auto w-full max-w-md lg:max-w-5xl">
         {loading ? (
           <CharacterSkeleton />
         ) : characters.length ? (
           <CharacterList
             characters={characters}
+            viewMode={viewMode}
             onSelect={startChat}
             onLongPress={setSelectedCharacter}
           />
@@ -328,12 +359,21 @@ export function ChatPage() {
   );
 }
 
+const viewModeTransition = {
+  initial: { opacity: 0 },
+  animate: { opacity: 1 },
+  exit: { opacity: 0 },
+  transition: { duration: 0.2, ease: "easeInOut" as const },
+};
+
 function CharacterList({
   characters,
+  viewMode,
   onSelect,
   onLongPress,
 }: {
   characters: Character[];
+  viewMode: ChatsViewMode;
   onSelect: (character: Character) => void | Promise<void>;
   onLongPress: (character: Character) => void;
 }) {
@@ -352,17 +392,55 @@ function CharacterList({
     setVisibleCount(10);
   }, [characters]);
 
+  const visible = characters.slice(0, visibleCount);
+
   return (
-    <div className="space-y-2 lg:space-y-3 pb-24">
-      {characters.slice(0, visibleCount).map((character) => (
-        <CharacterCard
-          key={character.id}
-          character={character}
-          onSelect={onSelect}
-          onLongPress={onLongPress}
-        />
-      ))}
-    </div>
+    <AnimatePresence mode="wait" initial={false}>
+      {viewMode === "list" && (
+        <motion.div key="list" {...viewModeTransition} className="space-y-2 pb-24">
+          {visible.map((character) => (
+            <CharacterCard key={character.id} character={character} onSelect={onSelect} onLongPress={onLongPress} />
+          ))}
+        </motion.div>
+      )}
+
+      {viewMode === "gallery" && (
+        <motion.div key="gallery" {...viewModeTransition} className="space-y-2 lg:space-y-0 lg:grid lg:grid-cols-3 lg:gap-3 pb-24">
+          {visible.map((character) => (
+            <div key={character.id}>
+              <div className="lg:hidden">
+                <CharacterCard character={character} onSelect={onSelect} onLongPress={onLongPress} />
+              </div>
+              <div className="hidden lg:block">
+                <GalleryCard character={character} onSelect={onSelect} onLongPress={onLongPress} />
+              </div>
+            </div>
+          ))}
+        </motion.div>
+      )}
+
+      {viewMode === "hero" && (
+        <motion.div key="hero" {...viewModeTransition} className="space-y-2 lg:space-y-3 pb-24">
+          {visible[0] && (
+            <>
+              <div className="lg:hidden">
+                <CharacterCard character={visible[0]} onSelect={onSelect} onLongPress={onLongPress} />
+              </div>
+              <div className="hidden lg:block">
+                <HeroCard character={visible[0]} onSelect={onSelect} onLongPress={onLongPress} />
+              </div>
+            </>
+          )}
+          {visible.length > 1 && (
+            <div className="space-y-2 lg:space-y-0 lg:grid lg:grid-cols-2 lg:gap-3">
+              {visible.slice(1).map((character) => (
+                <CharacterCard key={character.id} character={character} onSelect={onSelect} onLongPress={onLongPress} />
+              ))}
+            </div>
+          )}
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -522,7 +600,7 @@ const CharacterCard = memo(
 
     return (
       <motion.button
-        layoutId={`character-${character.id}`}
+
         onClick={handleClick}
         onContextMenu={handleContextMenu}
         onPointerDown={handlePointerDown}
@@ -530,10 +608,10 @@ const CharacterCard = memo(
         onPointerLeave={handlePointerLeave}
         className={cn(
           "group relative flex w-full items-center gap-3.5 lg:gap-6 p-3.5 lg:p-6 text-left",
-          "rounded-2xl lg:rounded-3xl",
+          "rounded-2xl lg:rounded-3xl border",
           interactive.transition.default,
           interactive.active.scale,
-          hasGradient ? "" : "bg-[#1a1b23] hover:bg-[#22232d]",
+          hasGradient ? "border-white/15" : "border-white/10 bg-[#1a1b23] hover:bg-[#22232d]",
         )}
         style={hasGradient ? { background: gradientCss } : {}}
       >
@@ -541,7 +619,7 @@ const CharacterCard = memo(
         <div
           className={cn(
             "relative h-14 w-14 lg:h-24 lg:w-24 shrink-0 overflow-hidden rounded-full",
-            hasGradient ? "ring-2 ring-white/20" : "ring-1 ring-white/10",
+            hasGradient ? "ring-2 ring-white/25" : "ring-1 ring-white/15",
             "shadow-lg",
           )}
         >
@@ -594,3 +672,197 @@ const CharacterCard = memo(
 );
 
 CharacterCard.displayName = "CharacterCard";
+
+function useLongPress(character: Character, onSelect: (c: Character) => void, onLongPress: (c: Character) => void) {
+  const longPressTimer = useRef<number | null>(null);
+  const isLong = useRef(false);
+
+  const handlePointerDown = () => {
+    isLong.current = false;
+    longPressTimer.current = window.setTimeout(() => {
+      isLong.current = true;
+      onLongPress(character);
+    }, 500);
+  };
+
+  const handlePointerUp = () => {
+    if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
+  };
+
+  const handlePointerLeave = () => {
+    if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
+  };
+
+  const handleClick = () => {
+    if (isLong.current) { isLong.current = false; return; }
+    onSelect(character);
+  };
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    onLongPress(character);
+  };
+
+  return { handlePointerDown, handlePointerUp, handlePointerLeave, handleClick, handleContextMenu };
+}
+
+const HeroCard = memo(
+  ({
+    character,
+    onSelect,
+    onLongPress,
+  }: {
+    character: Character;
+    onSelect: (character: Character) => void;
+    onLongPress: (character: Character) => void;
+  }) => {
+    const descriptionPreview =
+      (character.description || character.definition || "").trim() || "No description yet";
+    const { gradientCss, hasGradient, textColor, textSecondary } = useAvatarGradient(
+      "character",
+      character.id,
+      character.avatarPath,
+      character.disableAvatarGradient,
+      character.customGradientEnabled && character.customGradientColors?.length
+        ? { colors: character.customGradientColors, textColor: character.customTextColor, textSecondary: character.customTextSecondary }
+        : undefined,
+    );
+    const { handlePointerDown, handlePointerUp, handlePointerLeave, handleClick, handleContextMenu } =
+      useLongPress(character, onSelect, onLongPress);
+
+    return (
+      <motion.button
+
+        onClick={handleClick}
+        onContextMenu={handleContextMenu}
+        onPointerDown={handlePointerDown}
+        onPointerUp={handlePointerUp}
+        onPointerLeave={handlePointerLeave}
+        className={cn(
+          "group relative flex w-full items-center gap-8 p-8 text-left",
+          "rounded-3xl border",
+          interactive.transition.default,
+          interactive.active.scale,
+          hasGradient ? "border-white/15" : "border-white/10 bg-[#1a1b23] hover:bg-[#22232d]",
+        )}
+        style={hasGradient ? { background: gradientCss } : {}}
+      >
+        {/* Large Avatar */}
+        <div
+          className={cn(
+            "relative h-32 w-32 shrink-0 overflow-hidden rounded-full",
+            hasGradient ? "ring-2 ring-white/25" : "ring-2 ring-white/15",
+            "shadow-xl",
+          )}
+        >
+          <CharacterAvatar character={character} />
+        </div>
+
+        {/* Content */}
+        <div className="flex min-w-0 flex-1 flex-col gap-2 py-1">
+          <h3
+            className={cn("truncate font-bold text-2xl leading-tight", hasGradient ? "" : "text-white")}
+            style={hasGradient ? { color: textColor } : {}}
+          >
+            {character.name}
+          </h3>
+          <p
+            className={cn("line-clamp-3 text-base leading-relaxed", hasGradient ? "" : "text-white/50")}
+            style={hasGradient ? { color: textSecondary } : {}}
+          >
+            {descriptionPreview}
+          </p>
+        </div>
+
+        {/* Chevron */}
+        <svg
+          width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+          className={cn("shrink-0 transition-all", hasGradient ? "" : "text-white/30 group-hover:text-white/60")}
+          style={hasGradient ? { color: textSecondary } : {}}
+        >
+          <path d="m9 18 6-6-6-6" />
+        </svg>
+      </motion.button>
+    );
+  },
+);
+
+HeroCard.displayName = "HeroCard";
+
+const GalleryCard = memo(
+  ({
+    character,
+    onSelect,
+    onLongPress,
+  }: {
+    character: Character;
+    onSelect: (character: Character) => void;
+    onLongPress: (character: Character) => void;
+  }) => {
+    const descriptionPreview =
+      (character.description || character.definition || "").trim() || "No description yet";
+    const avatarUrl = useAvatar("character", character.id, character.avatarPath, "base");
+    const hasAvatar = avatarUrl && isImageLike(avatarUrl);
+    const { gradientCss, hasGradient } = useAvatarGradient(
+      "character",
+      character.id,
+      character.avatarPath,
+      character.disableAvatarGradient,
+      character.customGradientEnabled && character.customGradientColors?.length
+        ? { colors: character.customGradientColors, textColor: character.customTextColor, textSecondary: character.customTextSecondary }
+        : undefined,
+    );
+    const { handlePointerDown, handlePointerUp, handlePointerLeave, handleClick, handleContextMenu } =
+      useLongPress(character, onSelect, onLongPress);
+
+    return (
+      <motion.button
+
+        onClick={handleClick}
+        onContextMenu={handleContextMenu}
+        onPointerDown={handlePointerDown}
+        onPointerUp={handlePointerUp}
+        onPointerLeave={handlePointerLeave}
+        className={cn(
+          "group relative flex w-full flex-col overflow-hidden text-left",
+          "aspect-[3/4] rounded-2xl border border-white/12",
+          interactive.transition.default,
+          interactive.active.scale,
+          !hasAvatar && !hasGradient ? "bg-[#1a1b23]" : "",
+        )}
+        style={
+          hasAvatar
+            ? { backgroundImage: `url(${avatarUrl})`, backgroundSize: "cover", backgroundPosition: "center" }
+            : hasGradient
+              ? { background: gradientCss }
+              : {}
+        }
+      >
+        {/* Dark scrim at bottom */}
+        <div className="mt-auto relative z-10">
+          <div className="absolute inset-0 -top-16 bg-gradient-to-t from-black/80 via-black/40 to-transparent" />
+          <div className="relative p-4 pt-6">
+            <h3 className="truncate font-semibold text-lg leading-tight text-white drop-shadow-md">
+              {character.name}
+            </h3>
+            <p className="line-clamp-1 text-sm leading-snug text-white/70 mt-0.5 drop-shadow-md">
+              {descriptionPreview}
+            </p>
+          </div>
+        </div>
+
+        {/* Fallback initials when no avatar and no gradient */}
+        {!hasAvatar && !hasGradient && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <span className="text-4xl font-bold text-white/15">
+              {character.name.slice(0, 2).toUpperCase()}
+            </span>
+          </div>
+        )}
+      </motion.button>
+    );
+  },
+);
+
+GalleryCard.displayName = "GalleryCard";

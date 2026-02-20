@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { readSettings, setAppState } from "./repo";
-import { createDefaultAppState, type AppState, type CustomColors, type PureModeLevel } from "./schemas";
+import { createDefaultAppState, type AppState, type ChatsViewMode, type CustomColors, type PureModeLevel } from "./schemas";
 
 type Theme = AppState["theme"];
 
@@ -19,6 +19,7 @@ function cloneAppState(state?: AppState): AppState {
     appActiveUsageStartedAtMs: source.appActiveUsageStartedAtMs,
     appActiveUsageLastUpdatedAtMs: source.appActiveUsageLastUpdatedAtMs,
     customColors: source.customColors ? { ...source.customColors } : undefined,
+    chatsViewMode: source.chatsViewMode ?? "hero",
   };
 }
 
@@ -182,5 +183,16 @@ export async function getCustomColors(): Promise<CustomColors | undefined> {
 export async function setCustomColors(colors: CustomColors): Promise<void> {
   await withAppState((state) => {
     state.customColors = colors;
+  });
+}
+
+export async function getChatsViewMode(): Promise<ChatsViewMode> {
+  const state = await getAppState();
+  return state.chatsViewMode ?? "hero";
+}
+
+export async function setChatsViewMode(mode: ChatsViewMode): Promise<void> {
+  await withAppState((state) => {
+    state.chatsViewMode = mode;
   });
 }
