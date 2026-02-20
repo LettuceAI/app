@@ -25,11 +25,15 @@ export function GroupChatHeader({
   return (
     <header
       className={cn(
-        "border-b border-fg/10 px-4 pb-3 pt-3",
+        "border-b border-fg/10 px-3 lg:px-8",
         hasBackgroundImage ? headerOverlayClassName || "bg-surface/80" : "bg-surface",
       )}
+      style={{
+        paddingTop: "calc(env(safe-area-inset-top) + 12px)",
+        paddingBottom: "12px",
+      }}
     >
-      <div className="flex items-center">
+      <div className="flex items-center h-10">
         <button
           onClick={onBack}
           className="flex shrink-0 px-[0.6em] py-[0.3em] items-center justify-center -ml-2 text-fg transition hover:text-fg/80"

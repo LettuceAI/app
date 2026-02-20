@@ -138,11 +138,15 @@ export function ChatHeader({
     <>
       <header
         className={cn(
-          "z-20 shrink-0 border-b border-white/10 px-4 pb-3 pt-10",
+          "z-20 shrink-0 border-b border-white/10 px-3 lg:px-8",
           hasBackgroundImage ? headerOverlayClassName || "bg-surface/40" : "bg-surface",
         )}
+        style={{
+          paddingTop: "calc(env(safe-area-inset-top) + 12px)",
+          paddingBottom: "12px",
+        }}
       >
-        <div className="flex items-center">
+        <div className="flex items-center h-10">
           <button
             onClick={() => navigate("/chat")}
             className="flex px-[0.6em] py-[0.3em] shrink-0 items-center justify-center -ml-2 text-white transition hover:text-white/80"
@@ -162,7 +166,7 @@ export function ChatHeader({
             {headerTitle}
           </button>
 
-          <div className="flex shrink-0 items-center gap-1">
+          <div className="flex shrink-0 items-center gap-1.5">
             {/* Memory Button */}
             {session &&
               (() => {
