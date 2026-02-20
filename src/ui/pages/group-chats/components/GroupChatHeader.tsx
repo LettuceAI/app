@@ -35,7 +35,7 @@ export function GroupChatHeader({
           className="flex shrink-0 px-[0.6em] py-[0.3em] items-center justify-center -ml-2 text-fg transition hover:text-fg/80"
           aria-label="Back"
         >
-          <ArrowLeft size={14} strokeWidth={2.5} />
+          <ArrowLeft size={18} strokeWidth={2.5} />
         </button>
 
         <div className="min-w-0 flex-1 ml-2">
@@ -73,7 +73,7 @@ export function GroupChatHeader({
           className="flex items-center px-[0.6em] py-[0.3em] justify-center text-fg/70 hover:text-fg transition"
           aria-label="Memories"
         >
-          <Brain size={14} />
+          <Brain size={18} />
         </button>
 
         <button
@@ -81,7 +81,7 @@ export function GroupChatHeader({
           className="flex items-center px-[0.6em] py-[0.3em] justify-center text-fg/70 hover:text-fg transition"
           aria-label="Settings"
         >
-          <Settings size={14} />
+          <Settings size={18} />
         </button>
       </div>
     </header>

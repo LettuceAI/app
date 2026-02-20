@@ -148,7 +148,7 @@ export function ChatHeader({
             className="flex px-[0.6em] py-[0.3em] shrink-0 items-center justify-center -ml-2 text-white transition hover:text-white/80"
             aria-label="Back"
           >
-            <ArrowLeft size={14} strokeWidth={2.5} />
+            <ArrowLeft size={18} strokeWidth={2.5} />
           </button>
 
           <button
@@ -187,14 +187,14 @@ export function ChatHeader({
                   >
                     {isBusy ? (
                       <Loader2
-                        size={14}
+                        size={18}
                         strokeWidth={2.5}
                         className="animate-spin text-emerald-400"
                       />
                     ) : isError ? (
-                      <AlertTriangle size={14} strokeWidth={2.5} className="text-red-400" />
+                      <AlertTriangle size={18} strokeWidth={2.5} className="text-red-400" />
                     ) : (
-                      <Brain size={14} strokeWidth={2.5} />
+                      <Brain size={18} strokeWidth={2.5} />
                     )}
                     {!isBusy && !isError && session.memories && session.memories.length > 0 && (
                       <span className="absolute right-1 top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-emerald-500 text-[3px] font-semibold leading-none text-[#050505]">
@@ -215,7 +215,7 @@ export function ChatHeader({
                 className="flex items-center px-[0.6em] py-[0.3em] justify-center text-white/80 transition hover:text-white"
                 aria-label="Search messages"
               >
-                <Search size={14} strokeWidth={2.5} />
+                <Search size={18} strokeWidth={2.5} />
               </button>
             )}
 
@@ -228,7 +228,7 @@ export function ChatHeader({
               className="flex items-center px-[0.6em] py-[0.3em] justify-center text-white/80 transition hover:text-white"
               aria-label="Manage lorebooks"
             >
-              <BookOpen size={14} strokeWidth={2.5} />
+              <BookOpen size={18} strokeWidth={2.5} />
             </button>
 
             {/* Avatar (Settings) Button */}
