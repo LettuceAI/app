@@ -141,7 +141,7 @@ export function ChatHistoryPage() {
 
   if (!characterId) {
     return (
-      <div className="min-h-screen bg-[#050505] flex items-center justify-center">
+      <div className="min-h-screen bg-surface flex items-center justify-center">
         <div className="text-center">
           <MessageCircle className="mx-auto mb-4 h-12 w-12 text-white/30" />
           <p className={cn(typography.body.size, "text-white/60")}>Character not found</p>
@@ -152,7 +152,7 @@ export function ChatHistoryPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-[#050505] flex items-center justify-center">
+      <div className="min-h-screen bg-surface flex items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border border-white/10 border-t-white/60" />
       </div>
     );
@@ -164,7 +164,7 @@ export function ChatHistoryPage() {
       <header
         className={cn(
           "z-20 shrink-0 border-b border-white/10 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+12px)] sticky top-0",
-          "bg-[#050505]",
+          "bg-surface",
         )}
       >
         <div className="flex items-center gap-3">

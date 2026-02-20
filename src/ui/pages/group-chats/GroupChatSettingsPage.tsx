@@ -221,8 +221,7 @@ export function GroupChatSettingsPage() {
 
   return (
     <div
-      className="relative flex h-full flex-col text-fg overflow-hidden"
-      style={{ backgroundColor: backgroundImagePath ? undefined : "#050505" }}
+      className={cn("relative flex h-full flex-col text-fg overflow-hidden", !backgroundImagePath && "bg-surface")}
     >
       {/* Background image + scrim overlay */}
       {backgroundImagePath && (

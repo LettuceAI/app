@@ -95,9 +95,9 @@ function ChatInner({
   );
 
   return (
-    <div className="flex h-dvh flex-col bg-[#050505]">
+    <div className="flex h-dvh flex-col bg-surface">
       {/* ── Header (matches ChatHeader) ─────────────────────────────────── */}
-      <header className="z-20 shrink-0 border-b border-white/10 bg-[#050505] px-4 pb-3 pt-10">
+      <header className="z-20 shrink-0 border-b border-white/10 bg-surface px-4 pb-3 pt-10">
         <div className="flex items-center">
           <button
             onClick={() => navigate(Routes.engineHome(credential.id))}
@@ -271,7 +271,7 @@ function EngineChatFooter({
   };
 
   return (
-    <footer className="z-20 shrink-0 px-4 pb-6 pt-3 bg-[#050505]">
+    <footer className="z-20 shrink-0 px-4 pb-6 pt-3 bg-surface">
       {error && (
         <div
           className={cn(

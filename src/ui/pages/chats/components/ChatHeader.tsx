@@ -139,7 +139,7 @@ export function ChatHeader({
       <header
         className={cn(
           "z-20 shrink-0 border-b border-white/10 px-4 pb-3 pt-10",
-          hasBackgroundImage ? headerOverlayClassName || "bg-[#050505]/40" : "bg-[#050505]",
+          hasBackgroundImage ? headerOverlayClassName || "bg-surface/40" : "bg-surface",
         )}
       >
         <div className="flex items-center">

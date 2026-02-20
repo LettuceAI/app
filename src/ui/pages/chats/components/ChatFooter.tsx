@@ -114,7 +114,7 @@ export function ChatFooter({
     <footer
       className={cn(
         "z-20 shrink-0 px-4 pb-6 pt-3",
-        hasBackgroundImage ? footerOverlayClassName || "bg-[#050505]/45" : "bg-[#050505]",
+        hasBackgroundImage ? footerOverlayClassName || "bg-surface/45" : "bg-surface",
       )}
     >
       {error && (

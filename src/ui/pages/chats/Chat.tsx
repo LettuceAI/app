@@ -1443,8 +1443,7 @@ export function ChatConversationPage() {
 
   return (
     <div
-      className="flex h-screen flex-col overflow-hidden"
-      style={{ backgroundColor: backgroundImageData ? undefined : "#050505" }}
+      className={cn("flex h-screen flex-col overflow-hidden", !backgroundImageData && "bg-surface")}
     >
       <AnimatePresence>
         {swapPlaces && (

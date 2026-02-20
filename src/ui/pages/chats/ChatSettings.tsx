@@ -690,8 +690,7 @@ function ChatSettingsContent({ character }: { character: Character }) {
 
   return (
     <div
-      className={cn("relative flex min-h-screen flex-col overflow-hidden", colors.text.primary)}
-      style={{ backgroundColor: backgroundImageData ? undefined : "#050505" }}
+      className={cn("relative flex min-h-screen flex-col overflow-hidden", colors.text.primary, !backgroundImageData && "bg-surface")}
     >
       {/* Scrim overlay on top of shared background */}
       {backgroundImageData && (
@@ -701,7 +700,7 @@ function ChatSettingsContent({ character }: { character: Character }) {
       <header
         className={cn(
           "z-20 shrink-0 border-b border-white/10 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+12px)] sticky top-0",
-          !backgroundImageData ? "bg-[#050505]" : "",
+          !backgroundImageData ? "bg-surface" : "",
         )}
       >
         <div className="flex items-center gap-3">
@@ -1545,7 +1544,7 @@ export function ChatSettingsPage() {
 
   if (characterLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#050505]">
+      <div className="flex min-h-screen items-center justify-center bg-surface">
         <div className="h-10 w-10 animate-spin rounded-full border-4 border-white/10 border-t-white/60" />
       </div>
     );
@@ -1553,7 +1552,7 @@ export function ChatSettingsPage() {
 
   if (!character) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#050505] px-4">
+      <div className="flex min-h-screen items-center justify-center bg-surface px-4">
         <div className="text-center">
           <p className="text-lg text-white">Character not found</p>
           <p className="mt-2 text-sm text-gray-400">
