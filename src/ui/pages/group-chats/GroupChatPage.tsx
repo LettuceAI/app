@@ -93,7 +93,7 @@ export function GroupChatPage() {
   const isGenerating = sending || regeneratingMessageId !== null;
 
   // Shared data from layout (stays mounted across sub-route navigations)
-  const { session, sessionLoading, characters, personas, settings, backgroundImageData, theme } =
+  const { session, sessionLoading, characters, personas, settings, backgroundImageData, theme, chatAppearance } =
     useGroupChatLayoutContext();
   const helpMeReplyEnabled = settings?.advancedSettings?.helpMeReplyEnabled ?? true;
 
@@ -1051,7 +1051,7 @@ export function GroupChatPage() {
           onScroll={handleScroll}
           className="relative flex-1 overflow-y-auto px-2 pb-2"
         >
-          <div className="space-y-4 pb-6 pt-4">
+          <div className={`${chatAppearance.messageGap === "tight" ? "space-y-2" : chatAppearance.messageGap === "relaxed" ? "space-y-6" : "space-y-4"} pb-6 pt-4`}>
             {messages.length === 0 ? (
               <div className="flex min-h-[50vh] items-center justify-center">
                 <p className="text-fg/30 text-center">
@@ -1078,6 +1078,7 @@ export function GroupChatPage() {
                       persona={currentPersona}
                       characters={groupCharacters}
                       theme={theme}
+                      chatAppearance={chatAppearance}
                       getVariantState={getVariantState}
                       handleVariantDrag={handleVariantDrag}
                       handleRegenerate={async (msg) => {

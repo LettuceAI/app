@@ -1571,6 +1571,70 @@ export function createDefaultAccessibilitySettings(): AccessibilitySettings {
   };
 }
 
+export const ChatAppearanceSettingsSchema = z.object({
+  // Typography
+  fontSize: z.enum(["small", "medium", "large", "xlarge"]).default("medium"),
+  lineSpacing: z.enum(["tight", "normal", "relaxed"]).default("relaxed"),
+
+  // Bubble style
+  bubbleStyle: z.enum(["bordered", "filled", "minimal"]).default("bordered"),
+  bubbleRadius: z.enum(["sharp", "rounded", "pill"]).default("rounded"),
+  bubbleMaxWidth: z.enum(["compact", "normal", "wide"]).default("normal"),
+  bubblePadding: z.enum(["compact", "normal", "spacious"]).default("normal"),
+
+  // Layout
+  messageGap: z.enum(["tight", "normal", "relaxed"]).default("relaxed"),
+  avatarShape: z.enum(["circle", "rounded", "hidden"]).default("circle"),
+  avatarSize: z.enum(["small", "medium", "large"]).default("medium"),
+
+  // Bubble colors (token names)
+  userBubbleColor: z.enum(["accent", "info", "secondary", "warning"]).default("accent"),
+  assistantBubbleColor: z.enum(["neutral", "accent", "info", "secondary"]).default("neutral"),
+
+  // Background handling (only active when character has a background image)
+  backgroundDim: z.number().min(0).max(80).default(0),
+  backgroundBlur: z.number().min(0).max(20).default(0),
+  bubbleBlur: z.enum(["none", "light", "medium", "heavy"]).default("none"),
+  bubbleOpacity: z.number().min(20).max(100).default(35),
+  textMode: z.enum(["auto", "light", "dark"]).default("auto"),
+});
+export type ChatAppearanceSettings = z.infer<typeof ChatAppearanceSettingsSchema>;
+
+export const ChatAppearanceOverrideSchema = ChatAppearanceSettingsSchema.partial();
+export type ChatAppearanceOverride = z.infer<typeof ChatAppearanceOverrideSchema>;
+
+export function createDefaultChatAppearanceSettings(): ChatAppearanceSettings {
+  return {
+    fontSize: "medium",
+    lineSpacing: "relaxed",
+    bubbleStyle: "bordered",
+    bubbleRadius: "rounded",
+    bubbleMaxWidth: "normal",
+    bubblePadding: "normal",
+    messageGap: "relaxed",
+    avatarShape: "circle",
+    avatarSize: "medium",
+    userBubbleColor: "accent",
+    assistantBubbleColor: "neutral",
+    backgroundDim: 0,
+    backgroundBlur: 0,
+    bubbleBlur: "none",
+    bubbleOpacity: 35,
+    textMode: "auto",
+  };
+}
+
+export function mergeChatAppearance(
+  global: ChatAppearanceSettings,
+  override?: ChatAppearanceOverride,
+): ChatAppearanceSettings {
+  if (!override) return global;
+  return {
+    ...global,
+    ...Object.fromEntries(Object.entries(override).filter(([_, v]) => v !== undefined)),
+  } as ChatAppearanceSettings;
+}
+
 export function createDefaultAppState(): AppState {
   return {
     onboarding: createDefaultOnboardingState(),
@@ -1613,6 +1677,7 @@ export const SettingsSchema = z.object({
       dynamicMemory: DynamicMemorySettingsSchema.optional(),
       groupDynamicMemory: DynamicMemorySettingsSchema.optional(),
       accessibility: AccessibilitySettingsSchema.optional(),
+      chatAppearance: ChatAppearanceSettingsSchema.optional(),
     })
     .optional(),
   promptTemplateId: z.string().nullish().optional(),
@@ -1712,6 +1777,7 @@ export const CharacterSchema = z.object({
   customTextSecondary: z.string().optional(), // Custom secondary text color hex
   voiceConfig: CharacterVoiceConfigSchema.optional(),
   voiceAutoplay: z.boolean().default(false).optional(),
+  chatAppearance: ChatAppearanceOverrideSchema.optional(),
   createdAt: z.number().int(),
   updatedAt: z.number().int(),
 });

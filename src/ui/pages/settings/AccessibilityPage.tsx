@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Volume2, Play, Smartphone, Palette, ChevronRight } from "lucide-react";
+import { Volume2, Play, Smartphone, Palette, MessageSquare, ChevronRight } from "lucide-react";
 import { type as getPlatform } from "@tauri-apps/plugin-os";
 import { impactFeedback } from "@tauri-apps/plugin-haptics";
 import { readSettings, saveAdvancedSettings } from "../../../core/storage/repo";
@@ -353,6 +353,27 @@ export function AccessibilityPage() {
               <div className="text-sm font-medium text-fg">Custom Colors</div>
               <div className="mt-0.5 text-[11px] text-fg/45">
                 Personalize the app's color scheme
+              </div>
+            </div>
+            <ChevronRight className="h-4 w-4 shrink-0 text-fg/25 transition-colors group-hover:text-fg/50" />
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate("/settings/accessibility/chat")}
+            className={cn(
+              "group flex w-full items-center gap-3 rounded-xl border px-4 py-3.5 mt-3",
+              "border-fg/10 bg-fg/5",
+              interactive.transition.fast,
+              "hover:border-fg/20 hover:bg-fg/10",
+            )}
+          >
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-fg/10 bg-fg/10">
+              <MessageSquare className="h-4 w-4 text-fg/70" />
+            </div>
+            <div className="flex-1 text-left">
+              <div className="text-sm font-medium text-fg">Chat Appearance</div>
+              <div className="mt-0.5 text-[11px] text-fg/45">
+                Customize message bubbles, fonts, and layout
               </div>
             </div>
             <ChevronRight className="h-4 w-4 shrink-0 text-fg/25 transition-colors group-hover:text-fg/50" />

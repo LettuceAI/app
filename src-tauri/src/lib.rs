@@ -1,5 +1,6 @@
 mod abort_manager;
 mod api;
+mod chat_appearance;
 mod chat_manager;
 mod content_filter;
 mod creation_helper;
@@ -508,6 +509,7 @@ pub fn run() {
             engine::commands::engine_character_delete_cmd,
             engine::commands::engine_chat,
             engine::commands::engine_chat_history,
+            chat_appearance::compute_chat_theme,
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")

@@ -359,7 +359,7 @@ export function ChatConversationPage() {
   const isGenerating = sending || regeneratingMessageId !== null;
   const lastMessageContentLength = messages[messages.length - 1]?.content.length ?? 0;
 
-  const { backgroundImageData, isBackgroundLight, theme } = useChatLayoutContext();
+  const { backgroundImageData, isBackgroundLight, theme, chatAppearance } = useChatLayoutContext();
   const unloadProviderIdRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -1511,7 +1511,7 @@ export function ChatConversationPage() {
         onScroll={handleScroll}
       >
         <div
-          className="space-y-6 px-3 pb-24 pt-4"
+          className={`${chatAppearance.messageGap === "tight" ? "space-y-2" : chatAppearance.messageGap === "relaxed" ? "space-y-6" : "space-y-4"} px-3 pb-24 pt-4`}
           style={{
             backgroundColor: backgroundImageData
               ? swapPlaces
@@ -1602,6 +1602,7 @@ export function ChatConversationPage() {
                     handleRegenerate={handleRegenerateMessage}
                     isStartingSceneMessage={isStartingSceneMessage(message)}
                     theme={theme}
+                    chatAppearance={chatAppearance}
                     displayContent={displayContent}
                     character={character}
                     persona={persona}

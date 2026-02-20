@@ -1,5 +1,5 @@
 import React from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import {
   Loader2,
   Plus,
@@ -20,6 +20,8 @@ import {
   EyeOff,
   Check,
   Info,
+  MessageSquare,
+  ChevronRight,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useEditCharacterForm } from "./hooks/useEditCharacterForm";
@@ -48,6 +50,7 @@ const wordCount = (text: string) => {
 
 export function EditCharacterPage() {
   const { characterId } = useParams();
+  const navigate = useNavigate();
   const { state, actions, computed } = useEditCharacterForm(characterId);
   const [expandedSceneId, setExpandedSceneId] = React.useState<string | null>(null);
   const [newSceneEditorOpen, setNewSceneEditorOpen] = React.useState(false);
@@ -1162,6 +1165,30 @@ export function EditCharacterPage() {
                     </label>
                   </div>
                 </div>
+              </div>
+
+              {/* Chat Appearance */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <div className="rounded-lg border border-info/30 bg-info/10 p-1.5">
+                    <MessageSquare className="h-4 w-4 text-info" />
+                  </div>
+                  <h3 className="text-sm font-semibold text-fg">Chat Appearance</h3>
+                  <span className="ml-auto text-xs text-fg/40">(Optional)</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => navigate(`/settings/accessibility/chat?characterId=${characterId}`)}
+                  className={cn(
+                    "group flex w-full items-center justify-between rounded-xl border px-3.5 py-3",
+                    "border-fg/10 bg-surface-el/20",
+                    interactive.transition.fast,
+                    "hover:bg-surface-el/30",
+                  )}
+                >
+                  <span className="text-sm text-fg/70">Customize bubbles, fonts & layout</span>
+                  <ChevronRight className="h-4 w-4 text-fg/25 group-hover:text-fg/50" />
+                </button>
               </div>
 
               {/* Memory Mode */}

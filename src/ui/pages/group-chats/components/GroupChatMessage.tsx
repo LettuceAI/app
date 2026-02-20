@@ -9,6 +9,7 @@ import type {
   Persona,
 } from "../../../../core/storage/schemas";
 import type { ThemeColors } from "../../../../core/utils/imageAnalysis";
+import type { ChatAppearanceSettings } from "../../../../core/storage/schemas";
 import { radius, typography, interactive, cn } from "../../../design-tokens";
 import { AvatarImage } from "../../../components/AvatarImage";
 import { useAvatar } from "../../../hooks/useAvatar";
@@ -21,6 +22,17 @@ export interface VariantState {
   variants?: GroupMessageVariant[];
 }
 
+// CSS class mappings for chat appearance settings
+const FONT_SIZE_MAP = { small: "text-xs", medium: "text-sm", large: "text-base", xlarge: "text-lg" } as const;
+const LINE_SPACING_MAP = { tight: "leading-snug", normal: "leading-normal", relaxed: "leading-relaxed" } as const;
+const BUBBLE_RADIUS_MAP = { sharp: "rounded-md", rounded: "rounded-lg", pill: "rounded-2xl" } as const;
+const BUBBLE_MAX_WIDTH_MAP = { compact: "max-w-[70%]", normal: "max-w-[82%]", wide: "max-w-[92%]" } as const;
+const BUBBLE_PADDING_MAP = { compact: "px-3 py-1.5", normal: "px-4 py-2.5", spacious: "px-5 py-3.5" } as const;
+const BUBBLE_BLUR_MAP = { none: "", light: "backdrop-blur-sm", medium: "backdrop-blur-md", heavy: "backdrop-blur-lg" } as const;
+const AVATAR_SHAPE_MAP = { circle: "rounded-full", rounded: "rounded-lg", hidden: "" } as const;
+const AVATAR_SIZE_MAP = { small: "h-6 w-6", medium: "h-8 w-8", large: "h-10 w-10" } as const;
+const AVATAR_ICON_SIZE_MAP = { small: 12, medium: 16, large: 20 } as const;
+
 export interface GroupChatMessageProps {
   message: GroupMessage;
   index: number;
@@ -32,6 +44,7 @@ export interface GroupChatMessageProps {
   persona?: Persona | null;
   characters?: Character[];
   theme: ThemeColors;
+  chatAppearance?: ChatAppearanceSettings;
   getVariantState: (message: GroupMessage) => VariantState;
   handleVariantDrag: (messageId: string, offsetX: number) => void;
   handleRegenerate: (message: GroupMessage) => Promise<void>;
@@ -50,10 +63,14 @@ const MessageAvatar = React.memo(function MessageAvatar({
   role,
   character,
   persona,
+  avatarShape = "circle",
+  avatarSize = "medium",
 }: {
   role: "user" | "assistant" | "scene";
   character?: Character;
   persona?: Persona | null;
+  avatarShape?: "circle" | "rounded" | "hidden";
+  avatarSize?: "small" | "medium" | "large";
 }) {
   const characterAvatar = useAvatar(
     "character",
@@ -63,13 +80,19 @@ const MessageAvatar = React.memo(function MessageAvatar({
   );
   const personaAvatar = useAvatar("persona", persona?.id ?? "", persona?.avatarPath, "round");
 
+  if (avatarShape === "hidden") return null;
+
+  const sizeClass = AVATAR_SIZE_MAP[avatarSize];
+  const shapeClass = AVATAR_SHAPE_MAP[avatarShape];
+  const iconSize = AVATAR_ICON_SIZE_MAP[avatarSize];
+
   if (role === "user") {
     return (
-      <div className="relative flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full border border-fg/10 bg-linear-to-br from-white/5 to-white/10">
+      <div className={cn("relative flex shrink-0 items-center justify-center overflow-hidden border border-fg/10 bg-linear-to-br from-white/5 to-white/10", sizeClass, shapeClass)}>
         {personaAvatar ? (
           <AvatarImage src={personaAvatar} alt="User" crop={persona?.avatarCrop} applyCrop />
         ) : (
-          <User size={16} className="text-fg/60" />
+          <User size={iconSize} className="text-fg/60" />
         )}
       </div>
     );
@@ -77,7 +100,7 @@ const MessageAvatar = React.memo(function MessageAvatar({
 
   if (role === "assistant" || role === "scene") {
     return (
-      <div className="relative flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full border border-fg/10 bg-linear-to-br from-white/5 to-white/10">
+      <div className={cn("relative flex shrink-0 items-center justify-center overflow-hidden border border-fg/10 bg-linear-to-br from-white/5 to-white/10", sizeClass, shapeClass)}>
         {characterAvatar ? (
           <AvatarImage
             src={characterAvatar}
@@ -86,7 +109,7 @@ const MessageAvatar = React.memo(function MessageAvatar({
             applyCrop
           />
         ) : (
-          <Bot size={16} className="text-fg/60" />
+          <Bot size={iconSize} className="text-fg/60" />
         )}
       </div>
     );
@@ -236,6 +259,7 @@ function GroupChatMessageInner({
   persona,
   characters = [],
   theme,
+  chatAppearance,
   getVariantState,
   handleVariantDrag,
   handleRegenerate,
@@ -426,9 +450,9 @@ function GroupChatMessageInner({
       )}
     >
       {/* Avatar for assistant/scene messages (left side) */}
-      {(message.role === "assistant" || message.role === "scene") && (
+      {(message.role === "assistant" || message.role === "scene") && chatAppearance?.avatarShape !== "hidden" && (
         <div className="flex shrink-0 flex-col items-center gap-1">
-          <MessageAvatar role={message.role} character={character} persona={persona} />
+          <MessageAvatar role={message.role} character={character} persona={persona} avatarShape={chatAppearance?.avatarShape} avatarSize={chatAppearance?.avatarSize} />
           {canPlayAudio && (
             <button
               type="button"
@@ -473,17 +497,25 @@ function GroupChatMessageInner({
         animate={computed.shouldAnimate ? { opacity: 1, y: 0 } : { opacity: 1, y: 0 }}
         transition={animTransition}
         className={cn(
-          "max-w-[82%] px-4 py-2.5 leading-relaxed",
-          radius.lg,
-          typography.body.size,
+          chatAppearance ? BUBBLE_MAX_WIDTH_MAP[chatAppearance.bubbleMaxWidth] : "max-w-[82%]",
+          chatAppearance ? BUBBLE_PADDING_MAP[chatAppearance.bubblePadding] : "px-4 py-2.5",
+          chatAppearance ? LINE_SPACING_MAP[chatAppearance.lineSpacing] : "leading-relaxed",
+          chatAppearance ? BUBBLE_RADIUS_MAP[chatAppearance.bubbleRadius] : radius.lg,
+          chatAppearance ? FONT_SIZE_MAP[chatAppearance.fontSize] : typography.body.size,
+          chatAppearance ? BUBBLE_BLUR_MAP[chatAppearance.bubbleBlur] : "",
           message.role === "user"
             ? cn(
-                `ml-auto ${theme.userBg} ${theme.userText} border ${theme.userBorder}`,
+                "ml-auto",
+                chatAppearance?.bubbleStyle === "minimal"
+                  ? `${theme.userText}`
+                  : `${theme.userBg} ${theme.userText} border ${theme.userBorder}`,
                 heldMessageId === message.id && "ring-2 ring-accent/50",
               )
             : cn(
-                `border ${theme.assistantBg} ${theme.assistantText}`,
-                heldMessageId === message.id ? "border-fg/30" : theme.assistantBorder,
+                chatAppearance?.bubbleStyle === "minimal"
+                  ? `${theme.assistantText}`
+                  : `border ${theme.assistantBg} ${theme.assistantText}`,
+                chatAppearance?.bubbleStyle !== "minimal" && (heldMessageId === message.id ? "border-fg/30" : theme.assistantBorder),
               ),
         )}
         {...eventHandlers}
@@ -598,8 +630,8 @@ function GroupChatMessageInner({
       </motion.div>
 
       {/* Avatar for user messages (right side) */}
-      {message.role === "user" && (
-        <MessageAvatar role={message.role} character={character} persona={persona} />
+      {message.role === "user" && chatAppearance?.avatarShape !== "hidden" && (
+        <MessageAvatar role={message.role} character={character} persona={persona} avatarShape={chatAppearance?.avatarShape} avatarSize={chatAppearance?.avatarSize} />
       )}
 
       {computed.showRegenerateButton && (
@@ -642,6 +674,7 @@ export const GroupChatMessage = React.memo(GroupChatMessageInner, (prev, next) =
     prev.regeneratingMessageId === next.regeneratingMessageId &&
     prev.sending === next.sending &&
     prev.theme === next.theme &&
+    prev.chatAppearance === next.chatAppearance &&
     prev.character?.id === next.character?.id &&
     prev.character?.avatarPath === next.character?.avatarPath &&
     prev.character?.avatarCrop?.x === next.character?.avatarCrop?.x &&

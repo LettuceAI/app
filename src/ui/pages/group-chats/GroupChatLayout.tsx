@@ -5,13 +5,16 @@ import type {
   Character,
   Persona,
   Settings,
+  ChatAppearanceSettings,
 } from "../../../core/storage/schemas";
+import { createDefaultChatAppearanceSettings } from "../../../core/storage/schemas";
 import { storageBridge } from "../../../core/storage/files";
 import { listCharacters, listPersonas, readSettings } from "../../../core/storage/repo";
 import { useImageData } from "../../hooks/useImageData";
 import {
-  isImageLight,
-  getThemeForBackground,
+  analyzeImageBrightness,
+  computeChatTheme,
+  getDefaultThemeSync,
   type ThemeColors,
 } from "../../../core/utils/imageAnalysis";
 
@@ -24,6 +27,7 @@ export interface GroupChatLayoutContext {
   backgroundImageData: string | undefined;
   isBackgroundLight: boolean;
   theme: ThemeColors;
+  chatAppearance: ChatAppearanceSettings;
   reloadSession: () => void;
 }
 
@@ -40,8 +44,11 @@ export function GroupChatLayout() {
   const [loading, setLoading] = useState(true);
   const [loadCount, setLoadCount] = useState(0);
 
-  const [isBackgroundLight, setIsBackgroundLight] = useState(false);
-  const [theme, setTheme] = useState<ThemeColors>(getThemeForBackground(false));
+  const [bgBrightness, setBgBrightness] = useState<number | null>(null);
+  const [chatAppearance, setChatAppearance] = useState<ChatAppearanceSettings>(
+    createDefaultChatAppearanceSettings(),
+  );
+  const [theme, setTheme] = useState<ThemeColors>(getDefaultThemeSync());
 
   useEffect(() => {
     let cancelled = false;
@@ -64,6 +71,9 @@ export function GroupChatLayout() {
           setCharacters(chars);
           setPersonas(personaList);
           setSettings(settingsData);
+          const globalAppearance =
+            settingsData.advancedSettings?.chatAppearance ?? createDefaultChatAppearanceSettings();
+          setChatAppearance(globalAppearance);
         }
       } catch (err) {
         console.error("GroupChatLayout: failed to load data", err);
@@ -84,23 +94,28 @@ export function GroupChatLayout() {
   const backgroundImageData = useImageData(session?.backgroundImagePath);
 
   useEffect(() => {
+    let mounted = true;
+
     if (!backgroundImageData) {
-      setIsBackgroundLight(false);
-      setTheme(getThemeForBackground(false));
-      return;
+      setBgBrightness(null);
+      computeChatTheme(chatAppearance, null).then((t) => {
+        if (mounted) setTheme(t);
+      });
+      return () => { mounted = false; };
     }
 
-    let mounted = true;
-    isImageLight(backgroundImageData).then((isLight) => {
-      if (mounted) {
-        setIsBackgroundLight(isLight);
-        setTheme(getThemeForBackground(isLight));
-      }
+    analyzeImageBrightness(backgroundImageData).then((brightness) => {
+      if (!mounted) return;
+      setBgBrightness(brightness);
+      computeChatTheme(chatAppearance, brightness).then((t) => {
+        if (mounted) setTheme(t);
+      });
     });
-    return () => {
-      mounted = false;
-    };
-  }, [backgroundImageData]);
+
+    return () => { mounted = false; };
+  }, [backgroundImageData, chatAppearance]);
+
+  const isBackgroundLight = bgBrightness !== null && bgBrightness > 127.5;
 
   const ctx: GroupChatLayoutContext = {
     session,
@@ -111,6 +126,7 @@ export function GroupChatLayout() {
     backgroundImageData,
     isBackgroundLight,
     theme,
+    chatAppearance,
     reloadSession,
   };
 

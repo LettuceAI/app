@@ -19,6 +19,7 @@ import { ConvertPage } from "./ui/pages/settings/ConvertPage";
 import { UsagePage } from "./ui/pages/settings/UsagePage";
 import { AccessibilityPage } from "./ui/pages/settings/AccessibilityPage";
 import { ColorCustomizationPage } from "./ui/pages/settings/ColorCustomizationPage";
+import { ChatAppearancePage } from "./ui/pages/settings/ChatAppearancePage";
 import { LogsPage } from "./ui/pages/settings/LogsPage";
 import { CharactersPage } from "./ui/pages/settings/CharactersPage";
 import { DeveloperPage } from "./ui/pages/settings/DeveloperPage";
@@ -627,6 +628,7 @@ function AppContent() {
               <Route path="/settings/usage" element={<UsagePage />} />
               <Route path="/settings/accessibility" element={<AccessibilityPage />} />
               <Route path="/settings/accessibility/colors" element={<ColorCustomizationPage />} />
+              <Route path="/settings/accessibility/chat" element={<ChatAppearancePage />} />
               <Route path="/settings/logs" element={<LogsPage />} />
               <Route path="/settings/advanced" element={<AdvancedPage />} />
               <Route path="/settings/advanced/memory" element={<DynamicMemoryPage />} />
