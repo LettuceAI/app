@@ -1,5 +1,5 @@
 import { useEffect, useState, memo, useRef } from "react";
-import { Edit2, Trash2, Download, EyeOff } from "lucide-react";
+import { Edit2, Trash2, Download, EyeOff, Paintbrush } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
@@ -241,6 +241,20 @@ export function ChatPage() {
               <span className="text-sm font-medium text-blue-300">
                 {exporting ? "Exporting..." : "Export Character"}
               </span>
+            </button>
+
+            <button
+              onClick={() => {
+                const charId = selectedCharacter.id;
+                setSelectedCharacter(null);
+                navigate(`/settings/accessibility/chat?characterId=${charId}`);
+              }}
+              className="flex w-full items-center gap-3 rounded-xl border border-purple-400/30 bg-purple-400/10 px-4 py-3 text-left transition hover:border-purple-400/50 hover:bg-purple-400/20"
+            >
+              <div className="flex h-8 w-8 items-center justify-center rounded-full border border-purple-400/30 bg-purple-400/20">
+                <Paintbrush className="h-4 w-4 text-purple-400" />
+              </div>
+              <span className="text-sm font-medium text-purple-300">Chat Appearance</span>
             </button>
 
             <button

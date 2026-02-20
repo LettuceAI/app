@@ -1,4 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
 import type { ChatAppearanceSettings } from "../storage/schemas";
 import { createDefaultChatAppearanceSettings } from "../storage/schemas";
 
@@ -85,6 +84,15 @@ export function resolveCSSColor(tokenName: string): string {
     .trim();
 }
 
+const HEX_COLOR_RE = /^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+
+export function normalizeHexColor(value?: string | null): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed || !HEX_COLOR_RE.test(trimmed)) return undefined;
+  const withHash = trimmed.startsWith("#") ? trimmed : `#${trimmed}`;
+  return withHash.toUpperCase();
+}
+
 /**
  * Resolve the CSS color for a bubble color token name.
  */
@@ -105,9 +113,78 @@ export interface ThemeColors {
   userBg: string;
   userBorder: string;
   userText: string;
+  assistantBgColor: string;
+  assistantBorderColor: string;
+  userBgColor: string;
+  userBorderColor: string;
   headerOverlay: string;
   footerOverlay: string;
   contentOverlay: string;
+}
+
+function colorToLuminance(color: string): number {
+  const trimmed = color.trim();
+
+  if (trimmed.startsWith("#")) {
+    const hex = trimmed.slice(1);
+    const expanded =
+      hex.length === 3
+        ? `${hex[0]}${hex[0]}${hex[1]}${hex[1]}${hex[2]}${hex[2]}`
+        : hex.length === 6 || hex.length === 8
+          ? hex.slice(0, 6)
+          : "";
+    if (expanded.length === 6) {
+      const r = parseInt(expanded.slice(0, 2), 16) / 255;
+      const g = parseInt(expanded.slice(2, 4), 16) / 255;
+      const b = parseInt(expanded.slice(4, 6), 16) / 255;
+      return 0.299 * r + 0.587 * g + 0.114 * b;
+    }
+  }
+
+  if (trimmed.startsWith("rgb")) {
+    const inner = trimmed.replace(/^rgba?\(/, "").replace(/\)$/, "");
+    const parts = inner
+      .split(/[,\s/]+/)
+      .map((v) => v.trim())
+      .filter(Boolean)
+      .map((v) => Number.parseFloat(v));
+    if (parts.length >= 3 && parts.every((n) => Number.isFinite(n))) {
+      const r = parts[0] / 255;
+      const g = parts[1] / 255;
+      const b = parts[2] / 255;
+      return 0.299 * r + 0.587 * g + 0.114 * b;
+    }
+  }
+
+  if (trimmed.startsWith("oklch(")) {
+    const inner = trimmed.slice("oklch(".length, -1).trim();
+    const first = inner.split(/\s+/)[0] ?? "0.5";
+    if (first.endsWith("%")) {
+      const parsed = Number.parseFloat(first.slice(0, -1));
+      return Number.isFinite(parsed) ? Math.min(1, Math.max(0, parsed / 100)) : 0.5;
+    }
+    const parsed = Number.parseFloat(first);
+    return Number.isFinite(parsed) ? Math.min(1, Math.max(0, parsed)) : 0.5;
+  }
+
+  return 0.5;
+}
+
+function computeTextClass(
+  bgBrightness: number | null,
+  bubbleLuminance: number,
+  bubbleOpacity01: number,
+  textMode: "auto" | "light" | "dark",
+): string {
+  if (textMode === "light") return "text-white";
+  if (textMode === "dark") return "text-gray-900";
+
+  const effectiveLum =
+    bgBrightness === null
+      ? bubbleLuminance
+      : bubbleOpacity01 * bubbleLuminance + (1 - bubbleOpacity01) * (bgBrightness / 255);
+
+  return effectiveLum > 0.45 ? "text-gray-900" : "text-white/95";
 }
 
 /**
@@ -120,22 +197,72 @@ export async function computeChatTheme(
   settings: ChatAppearanceSettings,
   bgBrightness: number | null,
 ): Promise<ThemeColors> {
-  const userColorCSS = resolveBubbleTokenCSS(settings.userBubbleColor);
-  const assistantColorCSS = resolveBubbleTokenCSS(settings.assistantBubbleColor);
+  const userColorCSS =
+    normalizeHexColor(settings.userBubbleColorHex) ??
+    resolveBubbleTokenCSS(settings.userBubbleColor);
+  const assistantColorCSS =
+    normalizeHexColor(settings.assistantBubbleColorHex) ??
+    resolveBubbleTokenCSS(settings.assistantBubbleColor);
+  const opacity = Math.max(0, Math.min(100, settings.bubbleOpacity));
+  const opacity01 = opacity / 100;
+  const borderPct = 50;
+  const textMode = settings.textMode as "auto" | "light" | "dark";
 
-  return invoke<ThemeColors>("compute_chat_theme", {
-    settings: {
-      userBubbleColor: settings.userBubbleColor,
-      assistantBubbleColor: settings.assistantBubbleColor,
-      bubbleOpacity: settings.bubbleOpacity,
-      textMode: settings.textMode,
-    },
-    bgBrightness,
-    resolved: {
-      userColorCss: userColorCSS,
-      assistantColorCss: assistantColorCSS,
-    },
-  });
+  const userLum = colorToLuminance(userColorCSS);
+  const assistantLum = colorToLuminance(assistantColorCSS);
+  const isNeutralAssistant =
+    settings.assistantBubbleColor === "neutral" &&
+    !normalizeHexColor(settings.assistantBubbleColorHex);
+  const isLightBg = bgBrightness !== null && bgBrightness > 127.5;
+
+  const userText = computeTextClass(bgBrightness, userLum, opacity01, textMode);
+  const assistantText =
+    isNeutralAssistant && bgBrightness === null
+      ? "text-fg"
+      : computeTextClass(
+          bgBrightness,
+          isNeutralAssistant && bgBrightness !== null ? (isLightBg ? 0 : 0.35) : assistantLum,
+          opacity01,
+          textMode,
+        );
+
+  const userBgColor = `color-mix(in oklab, ${userColorCSS} ${opacity}%, transparent)`;
+  const userBorderColor = `color-mix(in oklab, ${userColorCSS} ${borderPct}%, transparent)`;
+
+  const assistantBgColor =
+    isNeutralAssistant && bgBrightness === null
+      ? "color-mix(in oklab, var(--color-fg) 5%, transparent)"
+      : isNeutralAssistant && isLightBg
+        ? `rgba(0, 0, 0, ${opacity01})`
+        : isNeutralAssistant
+          ? `rgba(75, 85, 99, ${Math.max(0, Math.min(1, (opacity * 0.85) / 100))})`
+          : `color-mix(in oklab, ${assistantColorCSS} ${opacity}%, transparent)`;
+
+  const assistantBorderColor =
+    isNeutralAssistant && bgBrightness === null
+      ? "color-mix(in oklab, var(--color-fg) 10%, transparent)"
+      : isNeutralAssistant && isLightBg
+        ? "rgba(0, 0, 0, 0.4)"
+        : isNeutralAssistant
+          ? "rgba(156, 163, 175, 0.4)"
+          : `color-mix(in oklab, ${assistantColorCSS} ${borderPct}%, transparent)`;
+
+  return {
+    userBg: "",
+    userBorder: "",
+    userText,
+    assistantBg: "",
+    assistantBorder: "",
+    assistantText,
+    userBgColor,
+    userBorderColor,
+    assistantBgColor,
+    assistantBorderColor,
+    headerOverlay: bgBrightness === null ? "" : isLightBg ? "bg-white/45" : "bg-[#050505]/40",
+    footerOverlay: bgBrightness === null ? "" : isLightBg ? "bg-white/50" : "bg-[#050505]/45",
+    contentOverlay:
+      bgBrightness === null ? "" : isLightBg ? "rgba(255, 255, 255, 0.20)" : "rgba(5, 5, 5, 0.15)",
+  };
 }
 
 /**
@@ -151,12 +278,16 @@ export async function getThemeForBackground(isLight: boolean): Promise<ThemeColo
  */
 export function getDefaultThemeSync(): ThemeColors {
   return {
-    assistantBg: "bg-fg/5",
-    assistantBorder: "border-fg/10",
+    assistantBg: "",
+    assistantBorder: "",
     assistantText: "text-fg",
-    userBg: "bg-accent/35",
-    userBorder: "border-accent/50",
+    userBg: "",
+    userBorder: "",
     userText: "text-white/95",
+    assistantBgColor: "color-mix(in oklab, var(--color-fg) 5%, transparent)",
+    assistantBorderColor: "color-mix(in oklab, var(--color-fg) 10%, transparent)",
+    userBgColor: "color-mix(in oklab, var(--color-accent) 35%, transparent)",
+    userBorderColor: "color-mix(in oklab, var(--color-accent) 50%, transparent)",
     headerOverlay: "",
     footerOverlay: "",
     contentOverlay: "",

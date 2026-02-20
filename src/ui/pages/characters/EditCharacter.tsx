@@ -708,20 +708,20 @@ export function EditCharacterPage() {
                   <span>Be detailed to create a unique personality</span>
                   <span>{wordCount(definition)} words</span>
                 </div>
-                <div className="rounded-xl border border-info/20 bg-info/10 px-3.5 py-3">
-                  <div className="text-[11px] font-medium text-info">
+                <div className="rounded-xl border border-warning/30 bg-warning/10 px-3.5 py-3">
+                  <div className="text-[11px] font-medium text-warning">
                     Available Placeholders
                   </div>
-                  <div className="mt-2 space-y-1 text-xs text-info/70">
+                  <div className="mt-2 space-y-1 text-xs text-fg/60">
                     <div>
-                      <code className="text-accent/80">{"{{char}}"}</code> - Character name
+                      <code className="text-accent">{"{{char}}"}</code> - Character name
                     </div>
                     <div>
-                      <code className="text-accent/80">{"{{user}}"}</code> - Persona name
+                      <code className="text-accent">{"{{user}}"}</code> - Persona name
                       (preferred, empty if none)
                     </div>
                     <div>
-                      <code className="text-accent/80">{"{{persona}}"}</code> - Persona name
+                      <code className="text-accent">{"{{persona}}"}</code> - Persona name
                       (alias)
                     </div>
                   </div>
@@ -760,8 +760,8 @@ export function EditCharacterPage() {
                             transition={{ duration: 0.15 }}
                             className={`overflow-hidden rounded-xl border ${
                               isDefault
-                                ? "border-accent/30 bg-accent/5"
-                                : "border-fg/10 bg-fg/5"
+                                ? "border-accent/40 bg-accent/10"
+                                : "border-fg/15 bg-fg/8"
                             }`}
                           >
                             {/* Scene Header - clickable to expand/collapse */}
@@ -769,8 +769,8 @@ export function EditCharacterPage() {
                               onClick={() => setExpandedSceneId(isExpanded ? null : scene.id)}
                               className={`flex w-full items-center gap-2 border-b px-3.5 py-2.5 text-left ${
                                 isDefault
-                                  ? "border-accent/20 bg-accent/10"
-                                  : "border-fg/10 bg-fg/5"
+                                  ? "border-accent/30 bg-accent/15"
+                                  : "border-fg/15 bg-fg/8"
                               }`}
                             >
                               {/* Scene number badge */}
@@ -907,7 +907,7 @@ export function EditCharacterPage() {
                       <motion.button
                         onClick={() => setNewSceneEditorOpen(true)}
                         whileTap={{ scale: 0.97 }}
-                        className="flex items-center gap-2 rounded-xl border border-info/40 bg-info/20 px-3.5 py-2 text-sm font-medium text-info transition active:bg-info/30"
+                        className="flex items-center gap-2 rounded-xl border border-accent/50 bg-accent/20 px-3.5 py-2 text-sm font-medium text-accent transition active:bg-accent/30"
                       >
                         <Plus className="h-4 w-4" />
                         Create Scene
@@ -1210,12 +1210,12 @@ export function EditCharacterPage() {
                     onClick={() => setFields({ memoryType: "manual" })}
                     className={`rounded-xl border px-3.5 py-3 text-left transition ${
                       memoryType === "manual"
-                        ? "border-accent/40 bg-accent/15 text-accent shadow-[0_0_0_1px_rgba(16,185,129,0.25)]"
-                        : "border-fg/10 bg-surface-el/20 text-fg/70 hover:border-fg/20 hover:bg-surface-el/30"
+                        ? "border-accent/40 bg-accent/15 shadow-[0_0_0_1px_rgba(16,185,129,0.25)]"
+                        : "border-fg/15 bg-surface-el/20 hover:border-fg/20 hover:bg-surface-el/30"
                     }`}
                   >
-                    <p className="text-sm font-semibold">Manual Memory</p>
-                    <p className="mt-1 text-xs text-fg/60">
+                    <p className={`text-sm font-semibold ${memoryType === "manual" ? "text-fg" : "text-fg/70"}`}>Manual Memory</p>
+                    <p className="mt-1 text-xs text-fg/50">
                       Manage notes yourself (current system).
                     </p>
                   </button>
@@ -1225,12 +1225,12 @@ export function EditCharacterPage() {
                     onClick={() => dynamicMemoryEnabled && setFields({ memoryType: "dynamic" })}
                     className={`rounded-xl border px-3.5 py-3 text-left transition ${
                       memoryType === "dynamic" && dynamicMemoryEnabled
-                        ? "border-info/50 bg-info/20 text-info shadow-[0_0_0_1px_rgba(96,165,250,0.3)]"
-                        : "border-fg/10 bg-surface-el/15 text-fg/60"
+                        ? "border-info/50 bg-info/20 shadow-[0_0_0_1px_rgba(96,165,250,0.3)]"
+                        : "border-fg/15 bg-surface-el/15"
                     } ${!dynamicMemoryEnabled ? "cursor-not-allowed opacity-50" : "hover:border-fg/20 hover:bg-surface-el/25"}`}
                   >
-                    <p className="text-sm font-semibold">Dynamic Memory</p>
-                    <p className="mt-1 text-xs text-fg/60">
+                    <p className={`text-sm font-semibold ${memoryType === "dynamic" && dynamicMemoryEnabled ? "text-fg" : "text-fg/70"}`}>Dynamic Memory</p>
+                    <p className="mt-1 text-xs text-fg/50">
                       Automatic summaries when enabled globally.
                     </p>
                   </button>
@@ -1249,7 +1249,7 @@ export function EditCharacterPage() {
               onClick={() => setExportMenuOpen(true)}
               disabled={exporting}
               whileTap={{ scale: exporting ? 1 : 0.98 }}
-              className="w-full rounded-xl border border-info/40 bg-info/20 px-4 py-3.5 text-sm font-semibold text-info transition hover:bg-info/30 disabled:opacity-50"
+              className="w-full rounded-xl border border-secondary/50 bg-secondary/20 px-4 py-3.5 text-sm font-semibold text-secondary transition hover:bg-secondary/30 disabled:opacity-50"
             >
               {exporting ? (
                 <span className="flex items-center justify-center gap-2">

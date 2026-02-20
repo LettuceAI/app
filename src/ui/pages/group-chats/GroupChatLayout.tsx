@@ -10,6 +10,7 @@ import type {
 import { createDefaultChatAppearanceSettings } from "../../../core/storage/schemas";
 import { storageBridge } from "../../../core/storage/files";
 import { listCharacters, listPersonas, readSettings } from "../../../core/storage/repo";
+import { SETTINGS_UPDATED_EVENT } from "../../../core/storage/repo";
 import { useImageData } from "../../hooks/useImageData";
 import {
   analyzeImageBrightness,
@@ -87,6 +88,14 @@ export function GroupChatLayout() {
     };
   }, [groupSessionId, loadCount]);
 
+  useEffect(() => {
+    const onSettingsUpdated = () => {
+      setLoadCount((c) => c + 1);
+    };
+    window.addEventListener(SETTINGS_UPDATED_EVENT, onSettingsUpdated);
+    return () => window.removeEventListener(SETTINGS_UPDATED_EVENT, onSettingsUpdated);
+  }, []);
+
   const reloadSession = useCallback(() => {
     setLoadCount((c) => c + 1);
   }, []);
@@ -101,7 +110,9 @@ export function GroupChatLayout() {
       computeChatTheme(chatAppearance, null).then((t) => {
         if (mounted) setTheme(t);
       });
-      return () => { mounted = false; };
+      return () => {
+        mounted = false;
+      };
     }
 
     analyzeImageBrightness(backgroundImageData).then((brightness) => {
@@ -112,7 +123,9 @@ export function GroupChatLayout() {
       });
     });
 
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, [backgroundImageData, chatAppearance]);
 
   const isBackgroundLight = bgBrightness !== null && bgBrightness > 127.5;
@@ -130,5 +143,37 @@ export function GroupChatLayout() {
     reloadSession,
   };
 
-  return <Outlet context={ctx} />;
+  return (
+    <>
+      {backgroundImageData && (
+        <div
+          className="pointer-events-none fixed inset-0 z-0"
+          style={{
+            backgroundImage: `url(${backgroundImageData})`,
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            backgroundRepeat: "no-repeat",
+          }}
+        />
+      )}
+      {backgroundImageData && chatAppearance.backgroundBlur > 0 && (
+        <div
+          className="pointer-events-none fixed inset-0 z-0 transform-gpu backdrop-blur-md will-change-opacity"
+          style={{
+            opacity: Math.min(1, chatAppearance.backgroundBlur / 20),
+            backgroundColor: "rgba(0, 0, 0, 0.01)",
+          }}
+        />
+      )}
+      {backgroundImageData && chatAppearance.backgroundDim > 0 && (
+        <div
+          className="pointer-events-none fixed inset-0 z-0"
+          style={{
+            backgroundColor: `rgba(0, 0, 0, ${chatAppearance.backgroundDim / 100})`,
+          }}
+        />
+      )}
+      <Outlet context={ctx} />
+    </>
+  );
 }

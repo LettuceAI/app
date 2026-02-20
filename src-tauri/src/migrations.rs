@@ -7,7 +7,7 @@ use crate::storage_manager::{settings::storage_read_settings, settings::storage_
 use crate::utils::log_info;
 
 /// Current migration version
-pub const CURRENT_MIGRATION_VERSION: u32 = 35;
+pub const CURRENT_MIGRATION_VERSION: u32 = 36;
 
 pub fn run_migrations(app: &AppHandle) -> Result<(), String> {
     log_info(app, "migrations", "Starting migration check");
@@ -20,6 +20,8 @@ pub fn run_migrations(app: &AppHandle) -> Result<(), String> {
         migrate_v31_to_v32(app)?;
         migrate_v32_to_v33(app)?;
         migrate_v33_to_v34(app)?;
+        migrate_v34_to_v35(app)?;
+        migrate_v35_to_v36(app)?;
         log_info(
             app,
             "migrations",
@@ -392,6 +394,16 @@ pub fn run_migrations(app: &AppHandle) -> Result<(), String> {
         );
         migrate_v34_to_v35(app)?;
         version = 35;
+    }
+
+    if version < 36 {
+        log_info(
+            app,
+            "migrations",
+            "Running migration v35 -> v36: Add chat_appearance to characters",
+        );
+        migrate_v35_to_v36(app)?;
+        version = 36;
     }
 
     // Update the stored version
@@ -2367,6 +2379,16 @@ fn migrate_v34_to_v35(app: &AppHandle) -> Result<(), String> {
         "ALTER TABLE group_sessions ADD COLUMN speaker_selection_method TEXT NOT NULL DEFAULT 'llm'",
         [],
     );
+
+    Ok(())
+}
+
+fn migrate_v35_to_v36(app: &AppHandle) -> Result<(), String> {
+    use crate::storage_manager::db::open_db;
+
+    let conn = open_db(app)?;
+
+    let _ = conn.execute("ALTER TABLE characters ADD COLUMN chat_appearance TEXT", []);
 
     Ok(())
 }

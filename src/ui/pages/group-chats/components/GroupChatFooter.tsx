@@ -19,6 +19,7 @@ interface GroupChatFooterProps {
   onContinue?: () => Promise<void>;
   onAbort?: () => Promise<void>;
   hasBackgroundImage?: boolean;
+  footerOverlayClassName?: string;
   pendingAttachments?: ImageAttachment[];
   onAddAttachment?: (attachment: ImageAttachment) => void;
   onRemoveAttachment?: (attachmentId: string) => void;
@@ -38,6 +39,7 @@ export function GroupChatFooter({
   onContinue,
   onAbort,
   hasBackgroundImage,
+  footerOverlayClassName,
   pendingAttachments = [],
   onAddAttachment,
   onRemoveAttachment,
@@ -264,7 +266,7 @@ export function GroupChatFooter({
     <footer
       className={cn(
         "z-20 shrink-0 px-4 pb-3 pt-3",
-        hasBackgroundImage ? "backdrop-blur-xl" : "bg-surface",
+        hasBackgroundImage ? footerOverlayClassName || "bg-surface/85" : "bg-surface",
       )}
     >
       {error && (
@@ -353,9 +355,7 @@ export function GroupChatFooter({
                 />
               ))}
               {filteredCharacters.length === 0 && (
-                <div className="px-3 py-4 text-center text-sm text-fg/40">
-                  No characters found
-                </div>
+                <div className="px-3 py-4 text-center text-sm text-fg/40">No characters found</div>
               )}
             </div>
           </motion.div>
@@ -449,9 +449,7 @@ export function GroupChatFooter({
             interactive.transition.fast,
             interactive.active.scale,
             sending && onAbort && "hover:border-danger/60 hover:bg-danger/30",
-            !sending &&
-              (hasDraft || hasAttachments) &&
-              "hover:border-accent/60 hover:bg-accent/30",
+            !sending && (hasDraft || hasAttachments) && "hover:border-accent/60 hover:bg-accent/30",
             !sending &&
               !hasDraft &&
               !hasAttachments &&
@@ -518,9 +516,7 @@ function MentionPickerItem({
     return (
       <>
         {text.slice(0, index)}
-        <span className="text-accent font-medium">
-          {text.slice(index, index + query.length)}
-        </span>
+        <span className="text-accent font-medium">{text.slice(index, index + query.length)}</span>
         {text.slice(index + query.length)}
       </>
     );

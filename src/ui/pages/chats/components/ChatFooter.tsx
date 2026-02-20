@@ -13,6 +13,7 @@ interface ChatFooterProps {
   onSendMessage: () => Promise<void>;
   onAbort?: () => Promise<void>;
   hasBackgroundImage?: boolean;
+  footerOverlayClassName?: string;
   pendingAttachments?: ImageAttachment[];
   onAddAttachment?: (attachment: ImageAttachment) => void;
   onRemoveAttachment?: (attachmentId: string) => void;
@@ -29,6 +30,7 @@ export function ChatFooter({
   onSendMessage,
   onAbort,
   hasBackgroundImage,
+  footerOverlayClassName,
   pendingAttachments = [],
   onAddAttachment,
   onRemoveAttachment,
@@ -109,7 +111,12 @@ export function ChatFooter({
   }, [triggerFileInput, onFileInputTriggered]);
 
   return (
-    <footer className={`z-20 shrink-0 px-4 pb-6 pt-3 ${!hasBackgroundImage ? "bg-[#050505]" : ""}`}>
+    <footer
+      className={cn(
+        "z-20 shrink-0 px-4 pb-6 pt-3",
+        hasBackgroundImage ? footerOverlayClassName || "bg-[#050505]/45" : "bg-[#050505]",
+      )}
+    >
       {error && (
         <div
           className={cn(

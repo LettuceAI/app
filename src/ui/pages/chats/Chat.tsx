@@ -1469,6 +1469,7 @@ export function ChatConversationPage() {
           sessionId={sessionId}
           session={sessionForHeader}
           hasBackgroundImage={!!backgroundImageData}
+          headerOverlayClassName={theme.headerOverlay}
           onSessionUpdate={handleSessionUpdate}
         />
       </div>
@@ -1518,7 +1519,7 @@ export function ChatConversationPage() {
                 ? isBackgroundLight
                   ? "rgba(5, 12, 11, 0.44)"
                   : "rgba(5, 12, 11, 0.22)"
-                : "transparent"
+                : theme.contentOverlay || "transparent"
               : "transparent",
           }}
         >
@@ -1655,6 +1656,7 @@ export function ChatConversationPage() {
           onSendMessage={handleSendMessage}
           onAbort={handleAbortWithFlag}
           hasBackgroundImage={!!backgroundImageData}
+          footerOverlayClassName={theme.footerOverlay}
           pendingAttachments={pendingAttachments}
           onAddAttachment={supportsImageInput ? addPendingAttachment : undefined}
           onRemoveAttachment={supportsImageInput ? removePendingAttachment : undefined}
@@ -1699,6 +1701,7 @@ export function ChatConversationPage() {
         setMessageAction={setMessageAction}
         characterMemoryType={character?.memoryType}
         characterDefaultModelId={character?.defaultModelId ?? null}
+        characterId={characterId}
       />
 
       {/* Character Selection for Branch */}

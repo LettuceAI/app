@@ -1348,9 +1348,7 @@ export const GroupSessionSchema = z.object({
   /** Token count of the memory summary */
   memorySummaryTokenCount: z.number().int().default(0),
   /** Speaker selection method for group chat */
-  speakerSelectionMethod: z
-    .enum(["llm", "heuristic", "round_robin"])
-    .default("llm"),
+  speakerSelectionMethod: z.enum(["llm", "heuristic", "round_robin"]).default("llm"),
   /** Memory tool events tracking (for dynamic memory cycle gating) */
   memoryToolEvents: z
     .array(
@@ -1590,6 +1588,8 @@ export const ChatAppearanceSettingsSchema = z.object({
   // Bubble colors (token names)
   userBubbleColor: z.enum(["accent", "info", "secondary", "warning"]).default("accent"),
   assistantBubbleColor: z.enum(["neutral", "accent", "info", "secondary"]).default("neutral"),
+  userBubbleColorHex: z.string().optional(),
+  assistantBubbleColorHex: z.string().optional(),
 
   // Background handling (only active when character has a background image)
   backgroundDim: z.number().min(0).max(80).default(0),
@@ -1616,6 +1616,8 @@ export function createDefaultChatAppearanceSettings(): ChatAppearanceSettings {
     avatarSize: "medium",
     userBubbleColor: "accent",
     assistantBubbleColor: "neutral",
+    userBubbleColorHex: undefined,
+    assistantBubbleColorHex: undefined,
     backgroundDim: 0,
     backgroundBlur: 0,
     bubbleBlur: "none",

@@ -210,7 +210,7 @@ const GroupSessionCard = memo(
           "rounded-2xl lg:rounded-3xl",
           interactive.transition.default,
           interactive.active.scale,
-          "bg-surface-el hover:bg-surface-el",
+          "border border-fg/10 bg-fg/5 hover:bg-fg/10",
         )}
       >
         <div className="flex -space-x-2">

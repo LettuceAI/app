@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Edit3,
   Copy,
@@ -10,6 +11,7 @@ import {
   BookOpen,
   GitBranch,
   Users,
+  Paintbrush,
   TriangleAlert,
   type LucideIcon,
 } from "lucide-react";
@@ -44,6 +46,7 @@ interface MessageActionsBottomSheetProps {
   setMessageAction: (value: MessageActionState | null) => void;
   characterMemoryType?: string | null;
   characterDefaultModelId?: string | null;
+  characterId?: string;
 }
 
 // Action row component
@@ -114,7 +117,9 @@ export function MessageActionsBottomSheet({
   setMessageAction,
   characterMemoryType,
   characterDefaultModelId,
+  characterId,
 }: MessageActionsBottomSheetProps) {
+  const navigate = useNavigate();
   const [settings, setSettings] = useState<Settings | null>(null);
   const [modelName, setModelName] = useState<string | null>(null);
 
@@ -337,6 +342,18 @@ export function MessageActionsBottomSheet({
 
               {/* Separator */}
               <div className="h-px bg-white/5 my-2" />
+
+              {characterId && (
+                <ActionRow
+                  icon={Paintbrush}
+                  label="Chat Appearance"
+                  iconBg="bg-purple-500/20"
+                  onClick={() => {
+                    closeMessageActions(true);
+                    navigate(`/settings/accessibility/chat?characterId=${characterId}`);
+                  }}
+                />
+              )}
 
               <ActionRow
                 icon={Trash2}

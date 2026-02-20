@@ -12,6 +12,7 @@ export function GroupChatHeader({
   onSettings,
   onMemories,
   hasBackgroundImage,
+  headerOverlayClassName,
 }: {
   session: GroupSession;
   characters: Character[];
@@ -19,12 +20,13 @@ export function GroupChatHeader({
   onSettings: () => void;
   onMemories: () => void;
   hasBackgroundImage?: boolean;
+  headerOverlayClassName?: string;
 }) {
   return (
     <header
       className={cn(
         "border-b border-fg/10 px-4 pb-3 pt-3",
-        hasBackgroundImage && "backdrop-blur-xl",
+        hasBackgroundImage ? headerOverlayClassName || "bg-surface/80" : "bg-surface",
       )}
     >
       <div className="flex items-center">

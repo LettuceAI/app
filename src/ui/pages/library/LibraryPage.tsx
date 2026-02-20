@@ -27,6 +27,7 @@ import {
   BookOpen,
   Users,
   Pencil,
+  Paintbrush,
   Rocket,
 } from "lucide-react";
 import {
@@ -444,6 +445,22 @@ export function LibraryPage() {
                 <span className="text-sm font-medium text-info">
                   {exporting ? "Exporting..." : "Export Character"}
                 </span>
+              </button>
+            )}
+
+            {selectedItem.itemType === "character" && (
+              <button
+                onClick={() => {
+                  const charId = selectedItem.id;
+                  setSelectedItem(null);
+                  navigate(`/settings/accessibility/chat?characterId=${charId}`);
+                }}
+                className="flex w-full items-center gap-3 rounded-xl border border-secondary/30 bg-secondary/10 px-4 py-3 text-left transition hover:border-secondary/50 hover:bg-secondary/20"
+              >
+                <div className="flex h-8 w-8 items-center justify-center rounded-full border border-secondary/30 bg-secondary/20">
+                  <Paintbrush className="h-4 w-4 text-secondary" />
+                </div>
+                <span className="text-sm font-medium text-secondary">Chat Appearance</span>
               </button>
             )}
 

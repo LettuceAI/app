@@ -190,8 +190,18 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
     [basePath],
   );
   const isPromptNew = useMemo(() => basePath === "/settings/prompts/new", [basePath]);
+  const isChatAppearanceEdit = useMemo(
+    () => basePath === "/settings/accessibility/chat",
+    [basePath],
+  );
   const showSaveButton =
-    isCharacterEdit || isPersonaEdit || isModelEdit || isModelNew || isPromptEdit || isPromptNew;
+    isCharacterEdit ||
+    isPersonaEdit ||
+    isModelEdit ||
+    isModelNew ||
+    isPromptEdit ||
+    isPromptNew ||
+    isChatAppearanceEdit;
 
   // Track save button state from window globals
   const [canSave, setCanSave] = useState(false);
@@ -224,6 +234,11 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
         const newIsSaving = !!globalWindow.__savePromptSaving;
         setCanSave((prev) => (prev !== newCanSave ? newCanSave : prev));
         setIsSaving((prev) => (prev !== newIsSaving ? newIsSaving : prev));
+      } else if (isChatAppearanceEdit) {
+        const newCanSave = !!globalWindow.__saveChatAppearanceCanSave;
+        const newIsSaving = !!globalWindow.__saveChatAppearanceSaving;
+        setCanSave((prev) => (prev !== newCanSave ? newCanSave : prev));
+        setIsSaving((prev) => (prev !== newIsSaving ? newIsSaving : prev));
       }
     };
 
@@ -240,6 +255,7 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
     isModelNew,
     isPromptEdit,
     isPromptNew,
+    isChatAppearanceEdit,
   ]);
 
   useEffect(() => {
@@ -477,6 +493,11 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
                   globalWindow.__saveModel();
                 } else if (isPromptEdit || isPromptNew) {
                   window.dispatchEvent(new CustomEvent("prompt:save"));
+                } else if (
+                  isChatAppearanceEdit &&
+                  typeof globalWindow.__saveChatAppearance === "function"
+                ) {
+                  globalWindow.__saveChatAppearance();
                 }
               }}
               disabled={!canSave || isSaving}

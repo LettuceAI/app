@@ -6,6 +6,7 @@ import {
   mergeChatAppearance,
 } from "../../../core/storage/schemas";
 import { listCharacters, readSettings } from "../../../core/storage/repo";
+import { SETTINGS_UPDATED_EVENT } from "../../../core/storage/repo";
 import { useImageData } from "../../hooks/useImageData";
 import {
   analyzeImageBrightness,
@@ -71,6 +72,14 @@ export function ChatLayout() {
     };
   }, [characterId, loadCount]);
 
+  useEffect(() => {
+    const onSettingsUpdated = () => {
+      setLoadCount((c) => c + 1);
+    };
+    window.addEventListener(SETTINGS_UPDATED_EVENT, onSettingsUpdated);
+    return () => window.removeEventListener(SETTINGS_UPDATED_EVENT, onSettingsUpdated);
+  }, []);
+
   const reloadCharacter = useCallback(() => {
     setLoadCount((c) => c + 1);
   }, []);
@@ -85,7 +94,9 @@ export function ChatLayout() {
       computeChatTheme(chatAppearance, null).then((t) => {
         if (mounted) setTheme(t);
       });
-      return () => { mounted = false; };
+      return () => {
+        mounted = false;
+      };
     }
 
     analyzeImageBrightness(backgroundImageData).then((brightness) => {
@@ -96,7 +107,9 @@ export function ChatLayout() {
       });
     });
 
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, [backgroundImageData, chatAppearance]);
 
   const isBackgroundLight = bgBrightness !== null && bgBrightness > 127.5;
@@ -121,7 +134,15 @@ export function ChatLayout() {
             backgroundSize: "cover",
             backgroundPosition: "center",
             backgroundRepeat: "no-repeat",
-            filter: chatAppearance.backgroundBlur > 0 ? `blur(${chatAppearance.backgroundBlur}px)` : undefined,
+          }}
+        />
+      )}
+      {backgroundImageData && chatAppearance.backgroundBlur > 0 && (
+        <div
+          className="pointer-events-none fixed inset-0 z-0 transform-gpu backdrop-blur-md will-change-opacity"
+          style={{
+            opacity: Math.min(1, chatAppearance.backgroundBlur / 20),
+            backgroundColor: "rgba(0, 0, 0, 0.01)",
           }}
         />
       )}

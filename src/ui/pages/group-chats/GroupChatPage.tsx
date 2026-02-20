@@ -93,8 +93,16 @@ export function GroupChatPage() {
   const isGenerating = sending || regeneratingMessageId !== null;
 
   // Shared data from layout (stays mounted across sub-route navigations)
-  const { session, sessionLoading, characters, personas, settings, backgroundImageData, theme, chatAppearance } =
-    useGroupChatLayoutContext();
+  const {
+    session,
+    sessionLoading,
+    characters,
+    personas,
+    settings,
+    backgroundImageData,
+    theme,
+    chatAppearance,
+  } = useGroupChatLayoutContext();
   const helpMeReplyEnabled = settings?.advancedSettings?.helpMeReplyEnabled ?? true;
 
   // Get current persona
@@ -1015,19 +1023,6 @@ export function GroupChatPage() {
       className="relative flex h-screen flex-col overflow-hidden"
       style={{ backgroundColor: backgroundImageData ? undefined : "#050505" }}
     >
-      {/* Background image */}
-      {backgroundImageData && (
-        <div
-          className="pointer-events-none fixed inset-0 z-0"
-          style={{
-            backgroundImage: `url(${backgroundImageData})`,
-            backgroundSize: "cover",
-            backgroundPosition: "center",
-            backgroundRepeat: "no-repeat",
-          }}
-        />
-      )}
-
       {/* Content layer - on top of background */}
       <div
         className="relative z-10 flex h-full flex-col"
@@ -1042,6 +1037,7 @@ export function GroupChatPage() {
             onSettings={() => navigate(Routes.groupChatSettings(session.id))}
             onMemories={() => navigate(Routes.groupChatMemories(session.id))}
             hasBackgroundImage={!!backgroundImageData}
+            headerOverlayClassName={theme.headerOverlay}
           />
         </div>
 
@@ -1051,7 +1047,14 @@ export function GroupChatPage() {
           onScroll={handleScroll}
           className="relative flex-1 overflow-y-auto px-2 pb-2"
         >
-          <div className={`${chatAppearance.messageGap === "tight" ? "space-y-2" : chatAppearance.messageGap === "relaxed" ? "space-y-6" : "space-y-4"} pb-6 pt-4`}>
+          <div
+            className={`${chatAppearance.messageGap === "tight" ? "space-y-2" : chatAppearance.messageGap === "relaxed" ? "space-y-6" : "space-y-4"} pb-6 pt-4`}
+            style={{
+              backgroundColor: backgroundImageData
+                ? theme.contentOverlay || "transparent"
+                : "transparent",
+            }}
+          >
             {messages.length === 0 ? (
               <div className="flex min-h-[50vh] items-center justify-center">
                 <p className="text-fg/30 text-center">
@@ -1148,6 +1151,7 @@ export function GroupChatPage() {
             onContinue={messages.length > 0 ? () => handleContinue() : undefined}
             onAbort={handleAbort}
             hasBackgroundImage={!!backgroundImageData}
+            footerOverlayClassName={theme.footerOverlay}
             pendingAttachments={pendingAttachments}
             onAddAttachment={supportsImageInput ? addPendingAttachment : undefined}
             onRemoveAttachment={supportsImageInput ? removePendingAttachment : undefined}

@@ -269,6 +269,7 @@ export async function saveCharacter(c: Partial<Character>): Promise<Character> {
     customTextSecondary: c.customTextSecondary,
     voiceConfig: c.voiceConfig,
     voiceAutoplay: c.voiceAutoplay ?? false,
+    chatAppearance: c.chatAppearance,
     createdAt: c.createdAt ?? timestamp,
     updatedAt: timestamp,
   } as Character;

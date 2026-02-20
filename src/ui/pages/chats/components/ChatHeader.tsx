@@ -6,6 +6,7 @@ import { AvatarImage } from "../../../components/AvatarImage";
 import { useAvatar } from "../../../hooks/useAvatar";
 import { listen } from "@tauri-apps/api/event";
 import { Routes } from "../../../navigation";
+import { cn } from "../../../design-tokens";
 
 interface ChatHeaderProps {
   character: Character;
@@ -14,6 +15,7 @@ interface ChatHeaderProps {
   sessionId?: string;
   session?: Session | null;
   hasBackgroundImage?: boolean;
+  headerOverlayClassName?: string;
   onSessionUpdate?: () => void;
 }
 
@@ -32,6 +34,7 @@ export function ChatHeader({
   sessionId,
   session,
   hasBackgroundImage,
+  headerOverlayClassName,
   onSessionUpdate,
 }: ChatHeaderProps) {
   const navigate = useNavigate();
@@ -134,7 +137,10 @@ export function ChatHeader({
   return (
     <>
       <header
-        className={`z-20 shrink-0 border-b border-white/10 px-4 pb-3 pt-10 ${!hasBackgroundImage ? "bg-[#050505]" : ""}`}
+        className={cn(
+          "z-20 shrink-0 border-b border-white/10 px-4 pb-3 pt-10",
+          hasBackgroundImage ? headerOverlayClassName || "bg-[#050505]/40" : "bg-[#050505]",
+        )}
       >
         <div className="flex items-center">
           <button
