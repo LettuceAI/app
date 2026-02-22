@@ -21,7 +21,11 @@ import { useAvatar } from "../../hooks/useAvatar";
 import { useImageData } from "../../hooks/useImageData";
 import { AvatarImage } from "../../components/AvatarImage";
 import { toast } from "../../components/toast";
-import { normalizeHexColor } from "../../../core/utils/imageAnalysis";
+import {
+  colorToLuminance,
+  computeBubbleTextClass,
+  normalizeHexColor,
+} from "../../../core/utils/imageAnalysis";
 
 type AppearanceKey = keyof ChatAppearanceSettings;
 
@@ -366,6 +370,24 @@ function LivePreview({
           backgroundColor: `color-mix(in oklab, ${assistantColor} ${opacity}%, transparent)`,
           borderColor: `color-mix(in oklab, ${assistantColor} 50%, transparent)`,
         };
+  const opacity01 = opacity / 100;
+  const userTextClass = computeBubbleTextClass(
+    null,
+    colorToLuminance(userColor),
+    opacity01,
+    settings.textMode,
+  );
+  const assistantTextClass =
+    settings.assistantBubbleColor === "neutral" && !assistantHex && settings.textMode === "auto"
+      ? "text-fg"
+      : computeBubbleTextClass(
+          null,
+          settings.assistantBubbleColor === "neutral" && !assistantHex
+            ? colorToLuminance("color-mix(in oklab, var(--color-fg) 5%, transparent)")
+            : colorToLuminance(assistantColor),
+          opacity01,
+          settings.textMode,
+        );
 
   const sampleMessages: { role: "assistant" | "user"; text: string }[] = [
     { role: "assistant", text: "Hey! How are you doing today?" },
@@ -445,7 +467,7 @@ function LivePreview({
                   lineSpacing,
                   blur,
                   isBordered && "border",
-                  "text-fg",
+                  assistantTextClass,
                 )}
                 style={assistantBubbleStyle}
               >
@@ -463,7 +485,7 @@ function LivePreview({
                   lineSpacing,
                   blur,
                   isBordered && "border",
-                  "text-fg",
+                  userTextClass,
                 )}
                 style={userBubbleStyle}
               >
@@ -1061,11 +1083,13 @@ export function ChatAppearancePage() {
             </div>
           </div>
           {/* Always visible on desktop (lg+), collapsible on mobile */}
-          <div className={cn(
-            "overflow-hidden transition-all duration-200",
-            mobilePreviewOpen ? "max-h-[2000px] opacity-100" : "max-h-0 opacity-0",
-            "lg:max-h-none lg:opacity-100",
-          )}>
+          <div
+            className={cn(
+              "overflow-hidden transition-all duration-200",
+              mobilePreviewOpen ? "max-h-[2000px] opacity-100" : "max-h-0 opacity-0",
+              "lg:max-h-none lg:opacity-100",
+            )}
+          >
             <LivePreview
               settings={effectiveSettings}
               character={character}

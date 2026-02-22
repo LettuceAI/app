@@ -122,7 +122,7 @@ export interface ThemeColors {
   contentOverlay: string;
 }
 
-function colorToLuminance(color: string): number {
+export function colorToLuminance(color: string): number {
   const trimmed = color.trim();
 
   if (trimmed.startsWith("#")) {
@@ -170,7 +170,7 @@ function colorToLuminance(color: string): number {
   return 0.5;
 }
 
-function computeTextClass(
+export function computeBubbleTextClass(
   bgBrightness: number | null,
   bubbleLuminance: number,
   bubbleOpacity01: number,
@@ -179,9 +179,10 @@ function computeTextClass(
   if (textMode === "light") return "text-white";
   if (textMode === "dark") return "text-gray-900";
 
+  const surfaceLum = colorToLuminance(resolveCSSColor("surface") || "#050505");
   const effectiveLum =
     bgBrightness === null
-      ? bubbleLuminance
+      ? bubbleOpacity01 * bubbleLuminance + (1 - bubbleOpacity01) * surfaceLum
       : bubbleOpacity01 * bubbleLuminance + (1 - bubbleOpacity01) * (bgBrightness / 255);
 
   return effectiveLum > 0.45 ? "text-gray-900" : "text-white/95";
@@ -215,11 +216,11 @@ export async function computeChatTheme(
     !normalizeHexColor(settings.assistantBubbleColorHex);
   const isLightBg = bgBrightness !== null && bgBrightness > 127.5;
 
-  const userText = computeTextClass(bgBrightness, userLum, opacity01, textMode);
+  const userText = computeBubbleTextClass(bgBrightness, userLum, opacity01, textMode);
   const assistantText =
     isNeutralAssistant && bgBrightness === null
       ? "text-fg"
-      : computeTextClass(
+      : computeBubbleTextClass(
           bgBrightness,
           isNeutralAssistant && bgBrightness !== null ? (isLightBg ? 0 : 0.35) : assistantLum,
           opacity01,
