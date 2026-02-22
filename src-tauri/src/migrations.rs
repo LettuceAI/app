@@ -7,7 +7,7 @@ use crate::storage_manager::{settings::storage_read_settings, settings::storage_
 use crate::utils::log_info;
 
 /// Current migration version
-pub const CURRENT_MIGRATION_VERSION: u32 = 36;
+pub const CURRENT_MIGRATION_VERSION: u32 = 37;
 
 pub fn run_migrations(app: &AppHandle) -> Result<(), String> {
     log_info(app, "migrations", "Starting migration check");
@@ -22,6 +22,7 @@ pub fn run_migrations(app: &AppHandle) -> Result<(), String> {
         migrate_v33_to_v34(app)?;
         migrate_v34_to_v35(app)?;
         migrate_v35_to_v36(app)?;
+        migrate_v36_to_v37(app)?;
         log_info(
             app,
             "migrations",
@@ -404,6 +405,16 @@ pub fn run_migrations(app: &AppHandle) -> Result<(), String> {
         );
         migrate_v35_to_v36(app)?;
         version = 36;
+    }
+
+    if version < 37 {
+        log_info(
+            app,
+            "migrations",
+            "Running migration v36 -> v37: Add provider_credential_id to models",
+        );
+        migrate_v36_to_v37(app)?;
+        version = 37;
     }
 
     // Update the stored version
@@ -2389,6 +2400,60 @@ fn migrate_v35_to_v36(app: &AppHandle) -> Result<(), String> {
     let conn = open_db(app)?;
 
     let _ = conn.execute("ALTER TABLE characters ADD COLUMN chat_appearance TEXT", []);
+
+    Ok(())
+}
+
+fn migrate_v36_to_v37(app: &AppHandle) -> Result<(), String> {
+    use crate::storage_manager::db::open_db;
+
+    let conn = open_db(app)?;
+
+    let _ = conn.execute(
+        "ALTER TABLE models ADD COLUMN provider_credential_id TEXT",
+        [],
+    );
+
+    // Backfill using provider label first (exact provider+label match).
+    conn.execute(
+        r#"
+        UPDATE models
+        SET provider_credential_id = (
+            SELECT pc.id
+            FROM provider_credentials pc
+            WHERE pc.provider_id = models.provider_id
+              AND pc.label = models.provider_label
+            ORDER BY pc.id
+            LIMIT 1
+        )
+        WHERE provider_credential_id IS NULL
+           OR provider_credential_id = ''
+        "#,
+        [],
+    )
+    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+
+    // If still missing, backfill only when the provider type has a single credential.
+    conn.execute(
+        r#"
+        UPDATE models
+        SET provider_credential_id = (
+            SELECT pc.id
+            FROM provider_credentials pc
+            WHERE pc.provider_id = models.provider_id
+            ORDER BY pc.id
+            LIMIT 1
+        )
+        WHERE (provider_credential_id IS NULL OR provider_credential_id = '')
+          AND (
+              SELECT COUNT(*)
+              FROM provider_credentials pc2
+              WHERE pc2.provider_id = models.provider_id
+          ) = 1
+        "#,
+        [],
+    )
+    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 
     Ok(())
 }

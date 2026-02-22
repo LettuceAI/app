@@ -255,6 +255,16 @@ pub fn resolve_provider_credential_for_model<'a>(
     settings: &'a Settings,
     model: &Model,
 ) -> Option<&'a ProviderCredential> {
+    if let Some(model_cred_id) = model.provider_credential_id.as_ref() {
+        if let Some(explicit_match) = settings
+            .provider_credentials
+            .iter()
+            .find(|cred| &cred.id == model_cred_id && cred.provider_id == model.provider_id)
+        {
+            return Some(explicit_match);
+        }
+    }
+
     let candidates: Vec<&ProviderCredential> = settings
         .provider_credentials
         .iter()
@@ -313,6 +323,7 @@ mod tests {
             id: "model-1".to_string(),
             name: name.to_string(),
             provider_id: provider_id.to_string(),
+            provider_credential_id: None,
             provider_label: provider_label.to_string(),
             display_name: name.to_string(),
             created_at: 0,
@@ -423,6 +434,21 @@ mod tests {
         );
         let picked = resolve_provider_credential_for_model(&settings, &model).map(|c| c.id.clone());
         assert!(picked.is_none());
+    }
+
+    #[test]
+    fn resolves_explicit_model_provider_credential_id_first() {
+        let mut model = mk_model("custom", "local", "glm-auto");
+        model.provider_credential_id = Some("c2".to_string());
+        let settings = mk_settings(
+            None,
+            vec![
+                mk_cred("c1", "custom", "local", Some("glm-auto")),
+                mk_cred("c2", "custom", "modal", None),
+            ],
+        );
+        let picked = resolve_provider_credential_for_model(&settings, &model).map(|c| c.id.clone());
+        assert_eq!(picked.as_deref(), Some("c2"));
     }
 }
 

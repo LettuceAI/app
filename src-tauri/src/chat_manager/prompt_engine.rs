@@ -1570,6 +1570,7 @@ mod tests {
             id: "m1".into(),
             name: "gpt-test".into(),
             provider_id: "openai".into(),
+            provider_credential_id: None,
             provider_label: "openai".into(),
             display_name: "GPT Test".into(),
             created_at: 0,

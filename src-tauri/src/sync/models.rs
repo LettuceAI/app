@@ -33,6 +33,8 @@ pub struct Model {
     pub id: String,
     pub name: String,
     pub provider_id: String,
+    #[serde(default)]
+    pub provider_credential_id: Option<String>,
     pub provider_label: String,
     pub display_name: String,
     pub created_at: i64,

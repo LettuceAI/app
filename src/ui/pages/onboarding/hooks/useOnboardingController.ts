@@ -365,6 +365,7 @@ export function useOnboardingController(): OnboardingController {
       const model: Omit<Model, "id"> = {
         name: modelName.trim(),
         providerId: selectedCredential.providerId,
+        providerCredentialId: selectedCredential.id,
         providerLabel: selectedCredential.label,
         displayName: displayName.trim(),
         createdAt: Date.now(),

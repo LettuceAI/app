@@ -84,6 +84,9 @@ export async function readSettings(): Promise<Settings> {
     const settings = parsed.data;
 
     const modelsWithoutProviderLabel = settings.models.filter((m) => !m.providerLabel);
+    const modelsWithoutProviderCredentialId = settings.models.filter(
+      (m) => !m.providerCredentialId,
+    );
     const missingAccessibility = !settings.advancedSettings?.accessibility;
 
     for (const model of modelsWithoutProviderLabel) {
@@ -92,6 +95,22 @@ export async function readSettings(): Promise<Settings> {
       );
       if (providerCred) {
         (model as any).providerLabel = providerCred.label;
+      }
+    }
+
+    for (const model of modelsWithoutProviderCredentialId) {
+      const byLabel = settings.providerCredentials.find(
+        (p) => p.providerId === model.providerId && p.label === model.providerLabel,
+      );
+      if (byLabel) {
+        (model as any).providerCredentialId = byLabel.id;
+        continue;
+      }
+      const candidates = settings.providerCredentials.filter(
+        (p) => p.providerId === model.providerId,
+      );
+      if (candidates.length === 1) {
+        (model as any).providerCredentialId = candidates[0].id;
       }
     }
 

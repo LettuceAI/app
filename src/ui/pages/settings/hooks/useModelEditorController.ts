@@ -830,6 +830,7 @@ export function useModelEditorController(): ControllerReturn {
       await addOrUpdateModel({
         ...editorModel,
         providerId: providerCred.providerId,
+        providerCredentialId: providerCred.id,
         providerLabel: providerCred.label,
         advancedModelSettings: sanitizeAdvancedModelSettings(modelAdvancedDraft),
       });

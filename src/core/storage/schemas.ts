@@ -1480,6 +1480,7 @@ export const ModelSchema = z.object({
   id: z.string().uuid(),
   name: z.string().min(1),
   providerId: z.string(),
+  providerCredentialId: z.string().uuid().nullish().optional(),
   providerLabel: z.string().min(1),
   displayName: z.string().min(1),
   createdAt: z.number().int(),

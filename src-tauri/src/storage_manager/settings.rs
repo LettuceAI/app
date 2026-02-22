@@ -126,25 +126,29 @@ fn db_read_settings_json(app: &tauri::AppHandle) -> Result<Option<String>, Strin
 
     // Models
     let mut stmt = conn
-        .prepare("SELECT id, name, provider_id, provider_label, display_name, created_at, input_scopes, output_scopes, advanced_model_settings, prompt_template_id, system_prompt FROM models ORDER BY created_at ASC")
+        .prepare("SELECT id, name, provider_id, provider_credential_id, provider_label, display_name, created_at, input_scopes, output_scopes, advanced_model_settings, prompt_template_id, system_prompt FROM models ORDER BY created_at ASC")
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     let models_iter = stmt
         .query_map([], |r| {
             let id: String = r.get(0)?;
             let name: String = r.get(1)?;
             let provider_id: String = r.get(2)?;
-            let provider_label: String = r.get(3)?;
-            let display_name: String = r.get(4)?;
-            let created_at: i64 = r.get(5)?;
-            let input_scopes: Option<String> = r.get(6)?;
-            let output_scopes: Option<String> = r.get(7)?;
-            let advanced: Option<String> = r.get(8)?;
-            let prompt_template_id: Option<String> = r.get(9)?;
-            let system_prompt: Option<String> = r.get(10)?;
+            let provider_credential_id: Option<String> = r.get(3)?;
+            let provider_label: String = r.get(4)?;
+            let display_name: String = r.get(5)?;
+            let created_at: i64 = r.get(6)?;
+            let input_scopes: Option<String> = r.get(7)?;
+            let output_scopes: Option<String> = r.get(8)?;
+            let advanced: Option<String> = r.get(9)?;
+            let prompt_template_id: Option<String> = r.get(10)?;
+            let system_prompt: Option<String> = r.get(11)?;
             let mut obj = JsonMap::new();
             obj.insert("id".into(), JsonValue::String(id));
             obj.insert("name".into(), JsonValue::String(name));
             obj.insert("providerId".into(), JsonValue::String(provider_id));
+            if let Some(s) = provider_credential_id {
+                obj.insert("providerCredentialId".into(), JsonValue::String(s));
+            }
             obj.insert("providerLabel".into(), JsonValue::String(provider_label));
             obj.insert("displayName".into(), JsonValue::String(display_name));
             obj.insert("createdAt".into(), JsonValue::from(created_at));
@@ -371,6 +375,10 @@ fn db_write_settings_json(app: &tauri::AppHandle, data: String) -> Result<(), St
             let id = m.get("id").and_then(|v| v.as_str()).unwrap_or("");
             let name = m.get("name").and_then(|v| v.as_str()).unwrap_or("");
             let provider_id = m.get("providerId").and_then(|v| v.as_str()).unwrap_or("");
+            let provider_credential_id = m
+                .get("providerCredentialId")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
             let provider_label = m
                 .get("providerLabel")
                 .and_then(|v| v.as_str())
@@ -409,11 +417,12 @@ fn db_write_settings_json(app: &tauri::AppHandle, data: String) -> Result<(), St
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
             tx.execute(
-                "INSERT INTO models (id, name, provider_id, provider_label, display_name, created_at, model_type, input_scopes, output_scopes, advanced_model_settings, prompt_template_id, system_prompt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO models (id, name, provider_id, provider_credential_id, provider_label, display_name, created_at, model_type, input_scopes, output_scopes, advanced_model_settings, prompt_template_id, system_prompt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 params![
                     id,
                     name,
                     provider_id,
+                    provider_credential_id,
                     provider_label,
                     display_name,
                     created_at,

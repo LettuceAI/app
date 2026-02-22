@@ -205,7 +205,7 @@ fn export_provider_credentials(app: &tauri::AppHandle) -> Result<Vec<JsonValue>,
 fn export_models(app: &tauri::AppHandle) -> Result<Vec<JsonValue>, String> {
     let conn = open_db(app)?;
     let mut stmt = conn
-        .prepare("SELECT id, name, provider_id, provider_label, display_name, created_at, input_scopes, output_scopes, advanced_model_settings, prompt_template_id, system_prompt FROM models")
+        .prepare("SELECT id, name, provider_id, provider_credential_id, provider_label, display_name, created_at, input_scopes, output_scopes, advanced_model_settings, prompt_template_id, system_prompt FROM models")
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 
     let rows = stmt
@@ -214,14 +214,15 @@ fn export_models(app: &tauri::AppHandle) -> Result<Vec<JsonValue>, String> {
                 "id": r.get::<_, String>(0)?,
                 "name": r.get::<_, String>(1)?,
                 "provider_id": r.get::<_, String>(2)?,
-                "provider_label": r.get::<_, String>(3)?,
-                "display_name": r.get::<_, String>(4)?,
-                "created_at": r.get::<_, i64>(5)?,
-                "input_scopes": r.get::<_, Option<String>>(6)?,
-                "output_scopes": r.get::<_, Option<String>>(7)?,
-                "advanced_model_settings": r.get::<_, Option<String>>(8)?,
-                "prompt_template_id": r.get::<_, Option<String>>(9)?,
-                "system_prompt": r.get::<_, Option<String>>(10)?,
+                "provider_credential_id": r.get::<_, Option<String>>(3)?,
+                "provider_label": r.get::<_, String>(4)?,
+                "display_name": r.get::<_, String>(5)?,
+                "created_at": r.get::<_, i64>(6)?,
+                "input_scopes": r.get::<_, Option<String>>(7)?,
+                "output_scopes": r.get::<_, Option<String>>(8)?,
+                "advanced_model_settings": r.get::<_, Option<String>>(9)?,
+                "prompt_template_id": r.get::<_, Option<String>>(10)?,
+                "system_prompt": r.get::<_, Option<String>>(11)?,
             }))
         })
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
@@ -1248,8 +1249,8 @@ fn import_models(app: &tauri::AppHandle, data: &JsonValue) -> Result<(), String>
 
             conn.execute(
                 "INSERT INTO models (id, name, provider_id, provider_label, display_name, created_at,
-                 model_type, input_scopes, output_scopes, advanced_model_settings, prompt_template_id, system_prompt)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                 provider_credential_id, model_type, input_scopes, output_scopes, advanced_model_settings, prompt_template_id, system_prompt)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
                 params![
                     item.get("id").and_then(|v| v.as_str()),
                     item.get("name").and_then(|v| v.as_str()),
@@ -1257,6 +1258,7 @@ fn import_models(app: &tauri::AppHandle, data: &JsonValue) -> Result<(), String>
                     item.get("provider_label").and_then(|v| v.as_str()),
                     item.get("display_name").and_then(|v| v.as_str()),
                     item.get("created_at").and_then(|v| v.as_i64()),
+                    item.get("provider_credential_id").and_then(|v| v.as_str()),
                     "chat",
                     input_scopes,
                     output_scopes,

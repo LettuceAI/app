@@ -268,22 +268,23 @@ fn fetch_global_core(conn: &DbConnection) -> Result<GlobalCoreData, String> {
         .collect();
 
     // Models
-    let mut stmt = conn.prepare("SELECT id, name, provider_id, provider_label, display_name, created_at, model_type, input_scopes, output_scopes, advanced_model_settings, prompt_template_id, system_prompt FROM models").map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    let mut stmt = conn.prepare("SELECT id, name, provider_id, provider_credential_id, provider_label, display_name, created_at, model_type, input_scopes, output_scopes, advanced_model_settings, prompt_template_id, system_prompt FROM models").map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     let models: Vec<Model> = stmt
         .query_map([], |r| {
             Ok(Model {
                 id: r.get(0)?,
                 name: r.get(1)?,
                 provider_id: r.get(2)?,
-                provider_label: r.get(3)?,
-                display_name: r.get(4)?,
-                created_at: r.get(5)?,
-                model_type: r.get(6)?,
-                input_scopes: r.get(7)?,
-                output_scopes: r.get(8)?,
-                advanced_model_settings: r.get(9)?,
-                prompt_template_id: r.get(10)?,
-                system_prompt: r.get(11)?,
+                provider_credential_id: r.get(3)?,
+                provider_label: r.get(4)?,
+                display_name: r.get(5)?,
+                created_at: r.get(6)?,
+                model_type: r.get(7)?,
+                input_scopes: r.get(8)?,
+                output_scopes: r.get(9)?,
+                advanced_model_settings: r.get(10)?,
+                prompt_template_id: r.get(11)?,
+                system_prompt: r.get(12)?,
             })
         })
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
@@ -1070,9 +1071,9 @@ fn apply_globals(conn: &mut DbConnection, data: &[u8]) -> Result<(), String> {
 
     // Models
     for m in models {
-        tx.execute(r#"INSERT OR REPLACE INTO models (id, name, provider_id, provider_label, display_name, created_at, model_type, input_scopes, output_scopes, advanced_model_settings, prompt_template_id, system_prompt)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)"#,
-                     params![m.id, m.name, m.provider_id, m.provider_label, m.display_name, m.created_at, m.model_type, m.input_scopes, m.output_scopes, m.advanced_model_settings, m.prompt_template_id, m.system_prompt]).map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        tx.execute(r#"INSERT OR REPLACE INTO models (id, name, provider_id, provider_credential_id, provider_label, display_name, created_at, model_type, input_scopes, output_scopes, advanced_model_settings, prompt_template_id, system_prompt)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)"#,
+                     params![m.id, m.name, m.provider_id, m.provider_credential_id, m.provider_label, m.display_name, m.created_at, m.model_type, m.input_scopes, m.output_scopes, m.advanced_model_settings, m.prompt_template_id, m.system_prompt]).map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     }
 
     // Secrets

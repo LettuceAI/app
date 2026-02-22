@@ -25,6 +25,10 @@ pub fn model_upsert(app: tauri::AppHandle, model_json: String) -> Result<String,
         .get("providerLabel")
         .and_then(|v| v.as_str())
         .unwrap_or(provider_id);
+    let provider_credential_id = model
+        .get("providerCredentialId")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
     let display_name = model
         .get("displayName")
         .and_then(|v| v.as_str())
@@ -88,12 +92,24 @@ pub fn model_upsert(app: tauri::AppHandle, model_json: String) -> Result<String,
         .optional()
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     let created_at = existing_created.unwrap_or(now_ms() as i64);
+    let provider_credential_id = provider_credential_id.or_else(|| {
+        conn.query_row(
+            "SELECT id FROM provider_credentials WHERE provider_id = ? AND label = ? LIMIT 1",
+            params![provider_id, provider_label],
+            |r| r.get::<_, String>(0),
+        )
+        .optional()
+        .ok()
+        .flatten()
+    });
+    let provider_credential_id_for_db = provider_credential_id.clone();
     conn.execute(
-        r#"INSERT INTO models (id, name, provider_id, provider_label, display_name, created_at, model_type, input_scopes, output_scopes, advanced_model_settings, prompt_template_id, system_prompt)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        r#"INSERT INTO models (id, name, provider_id, provider_credential_id, provider_label, display_name, created_at, model_type, input_scopes, output_scopes, advanced_model_settings, prompt_template_id, system_prompt)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
               name=excluded.name,
               provider_id=excluded.provider_id,
+              provider_credential_id=excluded.provider_credential_id,
               provider_label=excluded.provider_label,
               display_name=excluded.display_name,
               input_scopes=excluded.input_scopes,
@@ -105,6 +121,7 @@ pub fn model_upsert(app: tauri::AppHandle, model_json: String) -> Result<String,
             id,
             name,
             provider_id,
+            provider_credential_id_for_db,
             provider_label,
             display_name,
             created_at,
@@ -123,6 +140,15 @@ pub fn model_upsert(app: tauri::AppHandle, model_json: String) -> Result<String,
         "providerId".into(),
         JsonValue::String(provider_id.to_string()),
     );
+    if let Some(v) = model
+        .get("providerCredentialId")
+        .and_then(|v| v.as_str())
+        .map(|s| JsonValue::String(s.to_string()))
+    {
+        out.insert("providerCredentialId".into(), v);
+    } else if let Some(id) = provider_credential_id {
+        out.insert("providerCredentialId".into(), JsonValue::String(id));
+    }
     out.insert(
         "providerLabel".into(),
         JsonValue::String(provider_label.to_string()),

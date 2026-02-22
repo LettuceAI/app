@@ -251,6 +251,7 @@ pub fn init_db(_app: &tauri::AppHandle, conn: &Connection) -> Result<(), String>
           id TEXT PRIMARY KEY,
           name TEXT NOT NULL,
           provider_id TEXT NOT NULL,
+          provider_credential_id TEXT,
           provider_label TEXT NOT NULL,
           display_name TEXT NOT NULL,
           created_at INTEGER NOT NULL,
