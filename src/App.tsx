@@ -222,8 +222,8 @@ function App() {
         }}
       >
         <div id="app-root" className="min-h-screen bg-surface text-fg antialiased">
-          <Toaster
-            position={isMobile ? "bottom-center" : "top-center"}
+          <Toaster // {isMobile ? "bottom-center" : "top-center"}
+            position={"top-center"}
             offset={isMobile ? { bottom: 24 } : { top: 16 }}
             toastOptions={{
               unstyled: true,
