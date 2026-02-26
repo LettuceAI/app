@@ -13,6 +13,9 @@ import {
   Brain,
   BarChart3,
   RefreshCw,
+  Download,
+  Upload,
+  Users,
 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
@@ -77,6 +80,15 @@ export function GroupChatSettingsPage() {
   const [savingBackground, setSavingBackground] = useState(false);
   const [showCloneOptions, setShowCloneOptions] = useState(false);
   const [showBranchOptions, setShowBranchOptions] = useState(false);
+  const [showChatpkgExportMenu, setShowChatpkgExportMenu] = useState(false);
+  const [showChatpkgImportMapMenu, setShowChatpkgImportMapMenu] = useState(false);
+  const [showChatpkgImportConfirmMenu, setShowChatpkgImportConfirmMenu] = useState(false);
+  const [pendingChatpkgImport, setPendingChatpkgImport] = useState<{
+    path: string;
+    info: any;
+  } | null>(null);
+  const [chatpkgParticipantMap, setChatpkgParticipantMap] = useState<Record<string, string>>({});
+  const [importingChatpkg, setImportingChatpkg] = useState(false);
   const [cloning, setCloning] = useState(false);
   const [branching, setBranching] = useState(false);
   const personaAvatarUrl = useAvatar(
@@ -92,7 +104,6 @@ export function GroupChatSettingsPage() {
       setBackgroundImagePath(session.backgroundImagePath || "");
     }
   }, [session?.backgroundImagePath]);
-
 
   const handleBackgroundImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -180,6 +191,93 @@ export function GroupChatSettingsPage() {
     }
   };
 
+  const handleExportGroupChatpkg = async (includeSnapshots: boolean) => {
+    if (!session) return;
+    try {
+      const path = await storageBridge.chatpkgExportGroupChat(session.id, includeSnapshots);
+      setShowChatpkgExportMenu(false);
+      alert(`Group chat package exported to:\n${path}`);
+    } catch (err) {
+      console.error("Failed to export group chat package:", err);
+      alert(typeof err === "string" ? err : "Failed to export group chat package");
+    }
+  };
+
+  const handleOpenImportGroupChatpkg = async () => {
+    try {
+      const picked = await storageBridge.chatpkgPickFile();
+      if (!picked) return;
+      const info = await storageBridge.chatpkgInspect(picked.path);
+      if (info?.type !== "group_chat") {
+        alert("This package is not a group chat package.");
+        return;
+      }
+
+      const participants = Array.isArray(info?.participants) ? info.participants : [];
+      const initialMap: Record<string, string> = {};
+      for (const participant of participants) {
+        const participantId =
+          (typeof participant?.id === "string" && participant.id) ||
+          (typeof participant?.characterId === "string" && participant.characterId) ||
+          null;
+        if (!participantId) continue;
+        const participantCharacterId =
+          typeof participant?.characterId === "string" ? participant.characterId : null;
+        if (participant?.resolved && participantCharacterId) {
+          initialMap[participantId] = participantCharacterId;
+          continue;
+        }
+        const displayName =
+          typeof participant?.characterDisplayName === "string"
+            ? participant.characterDisplayName
+            : "Unknown";
+        const byName = availableCharacters.find(
+          (c) => c.name.trim().toLowerCase() === displayName.trim().toLowerCase(),
+        );
+        if (byName) initialMap[participantId] = byName.id;
+      }
+
+      setPendingChatpkgImport({ path: picked.path, info });
+      setChatpkgParticipantMap(initialMap);
+
+      const unresolved = participants.some((participant: any) => {
+        const participantId =
+          (typeof participant?.id === "string" && participant.id) ||
+          (typeof participant?.characterId === "string" && participant.characterId) ||
+          null;
+        if (!participantId) return false;
+        return !initialMap[participantId];
+      });
+      if (unresolved) setShowChatpkgImportMapMenu(true);
+      else setShowChatpkgImportConfirmMenu(true);
+    } catch (err) {
+      console.error("Failed to inspect group chat package:", err);
+      alert(typeof err === "string" ? err : "Failed to inspect group chat package");
+    }
+  };
+
+  const handleImportGroupChatpkg = async () => {
+    if (!pendingChatpkgImport) return;
+    try {
+      setImportingChatpkg(true);
+      const result = await storageBridge.chatpkgImport(pendingChatpkgImport.path, {
+        participantCharacterMap: chatpkgParticipantMap,
+      });
+      setPendingChatpkgImport(null);
+      setShowChatpkgImportMapMenu(false);
+      setShowChatpkgImportConfirmMenu(false);
+      const importedSessionId = result?.sessionId;
+      if (typeof importedSessionId === "string" && importedSessionId.length > 0) {
+        navigate(Routes.groupChat(importedSessionId));
+      }
+    } catch (err) {
+      console.error("Failed to import group chat package:", err);
+      alert(typeof err === "string" ? err : "Failed to import group chat package");
+    } finally {
+      setImportingChatpkg(false);
+    }
+  };
+
   // Loading state
   if (sessionLoading || loading) {
     return (
@@ -221,7 +319,10 @@ export function GroupChatSettingsPage() {
 
   return (
     <div
-      className={cn("relative flex h-full flex-col text-fg overflow-hidden", !backgroundImagePath && "bg-surface")}
+      className={cn(
+        "relative flex h-full flex-col text-fg overflow-hidden",
+        !backgroundImagePath && "bg-surface",
+      )}
     >
       {/* Background image + scrim overlay */}
       {backgroundImagePath && (
@@ -236,7 +337,10 @@ export function GroupChatSettingsPage() {
             }}
             aria-hidden="true"
           />
-          <div className="pointer-events-none fixed inset-0 z-0 bg-surface-el/40" aria-hidden="true" />
+          <div
+            className="pointer-events-none fixed inset-0 z-0 bg-surface-el/40"
+            aria-hidden="true"
+          />
         </>
       )}
 
@@ -360,11 +464,7 @@ export function GroupChatSettingsPage() {
                   >
                     <div className="min-w-0">
                       <p
-                        className={cn(
-                          typography.h3.size,
-                          typography.h3.weight,
-                          "text-fg truncate",
-                        )}
+                        className={cn(typography.h3.size, typography.h3.weight, "text-fg truncate")}
                       >
                         {session.name}
                       </p>
@@ -483,10 +583,7 @@ export function GroupChatSettingsPage() {
 
           {/* Speaker Selection Method */}
           <section className={spacing.item}>
-            <SectionHeader
-              title="Speaker Selection"
-              subtitle="How the next speaker is chosen"
-            />
+            <SectionHeader title="Speaker Selection" subtitle="How the next speaker is chosen" />
             <div className="grid grid-cols-3 gap-2">
               {(
                 [
@@ -639,6 +736,98 @@ export function GroupChatSettingsPage() {
                 A group chat requires at least 2 characters
               </p>
             )}
+          </section>
+
+          {/* Session Management */}
+          <section className={spacing.item}>
+            <SectionHeader title="Chat Package" subtitle="Export or import this group chat" />
+            <div className={spacing.field}>
+              <button
+                onClick={() => setShowChatpkgExportMenu(true)}
+                className={cn(
+                  "group flex w-full min-h-14 items-center justify-between",
+                  radius.md,
+                  "border p-4 text-left",
+                  interactive.transition.default,
+                  interactive.active.scale,
+                  "border-fg/10 bg-surface-el/85 backdrop-blur-sm hover:border-fg/20 hover:bg-fg/10",
+                )}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div
+                    className={cn(
+                      "flex h-10 w-10 items-center justify-center",
+                      radius.full,
+                      "border border-fg/15 bg-fg/10 text-fg/80",
+                    )}
+                  >
+                    <Download className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <div
+                      className={cn(
+                        typography.overline.size,
+                        typography.overline.weight,
+                        typography.overline.tracking,
+                        typography.overline.transform,
+                        "text-fg/50",
+                      )}
+                    >
+                      Export Chat Package
+                    </div>
+                    <div className={cn(typography.bodySmall.size, "text-fg truncate")}>
+                      Save this group as a `.chatpkg` archive
+                    </div>
+                  </div>
+                </div>
+                <ChevronRight className="h-4 w-4 shrink-0 text-fg/30 transition-colors group-hover:text-fg/60" />
+              </button>
+
+              <button
+                onClick={() => {
+                  void handleOpenImportGroupChatpkg();
+                }}
+                disabled={importingChatpkg}
+                className={cn(
+                  "group flex w-full min-h-14 items-center justify-between",
+                  radius.md,
+                  "border p-4 text-left",
+                  interactive.transition.default,
+                  interactive.active.scale,
+                  "border-fg/10 bg-surface-el/85 backdrop-blur-sm hover:border-fg/20 hover:bg-fg/10",
+                  importingChatpkg && "opacity-50",
+                )}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div
+                    className={cn(
+                      "flex h-10 w-10 items-center justify-center",
+                      radius.full,
+                      "border border-fg/15 bg-fg/10 text-fg/80",
+                    )}
+                  >
+                    <Upload className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <div
+                      className={cn(
+                        typography.overline.size,
+                        typography.overline.weight,
+                        typography.overline.tracking,
+                        typography.overline.transform,
+                        "text-fg/50",
+                      )}
+                    >
+                      Import Chat Package
+                    </div>
+                    <div className={cn(typography.bodySmall.size, "text-fg truncate")}>
+                      Import another group session from `.chatpkg`
+                    </div>
+                  </div>
+                </div>
+                <ChevronRight className="h-4 w-4 shrink-0 text-fg/30 transition-colors group-hover:text-fg/60" />
+              </button>
+            </div>
           </section>
 
           {/* Session Management */}
@@ -1011,6 +1200,185 @@ export function GroupChatSettingsPage() {
                 <ChevronRight className="h-4 w-4 shrink-0 text-fg/30 transition-colors group-hover:text-fg/60" />
               </button>
             ))}
+          </div>
+        </MenuSection>
+      </BottomMenu>
+
+      <BottomMenu
+        isOpen={showChatpkgExportMenu}
+        onClose={() => setShowChatpkgExportMenu(false)}
+        title="Export Chat Package"
+      >
+        <MenuSection>
+          <div className={spacing.field}>
+            <button
+              onClick={() => {
+                void handleExportGroupChatpkg(true);
+              }}
+              className={cn(
+                "group flex w-full items-center justify-between p-4",
+                radius.md,
+                "border text-left",
+                interactive.transition.default,
+                interactive.active.scale,
+                "border-fg/10 bg-surface-el/85 hover:border-fg/20 hover:bg-fg/10",
+              )}
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div
+                  className={cn(
+                    "flex h-10 w-10 items-center justify-center",
+                    radius.full,
+                    "border border-fg/15 bg-fg/10 text-fg/80",
+                  )}
+                >
+                  <Users className="h-4 w-4" />
+                </div>
+                <div className="min-w-0">
+                  <p className={cn(typography.body.size, typography.body.weight, "text-fg")}>
+                    Include character snapshots
+                  </p>
+                  <p className={cn(typography.caption.size, "text-fg/50 mt-0.5")}>
+                    Keep character data inside the package
+                  </p>
+                </div>
+              </div>
+            </button>
+
+            <button
+              onClick={() => {
+                void handleExportGroupChatpkg(false);
+              }}
+              className={cn(
+                "group flex w-full items-center justify-between p-4",
+                radius.md,
+                "border text-left",
+                interactive.transition.default,
+                interactive.active.scale,
+                "border-fg/10 bg-surface-el/85 hover:border-fg/20 hover:bg-fg/10",
+              )}
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div
+                  className={cn(
+                    "flex h-10 w-10 items-center justify-center",
+                    radius.full,
+                    "border border-fg/15 bg-fg/10 text-fg/80",
+                  )}
+                >
+                  <Download className="h-4 w-4" />
+                </div>
+                <div className="min-w-0">
+                  <p className={cn(typography.body.size, typography.body.weight, "text-fg")}>
+                    Session only
+                  </p>
+                  <p className={cn(typography.caption.size, "text-fg/50 mt-0.5")}>
+                    Export messages and metadata only
+                  </p>
+                </div>
+              </div>
+            </button>
+          </div>
+        </MenuSection>
+      </BottomMenu>
+
+      <BottomMenu
+        isOpen={showChatpkgImportMapMenu}
+        onClose={() => {
+          if (importingChatpkg) return;
+          setShowChatpkgImportMapMenu(false);
+          setPendingChatpkgImport(null);
+          setChatpkgParticipantMap({});
+        }}
+        title="Map Participants"
+      >
+        <MenuSection>
+          <div className="space-y-3 max-h-[60vh] overflow-y-auto">
+            {(Array.isArray(pendingChatpkgImport?.info?.participants)
+              ? pendingChatpkgImport?.info?.participants
+              : []
+            ).map((participant: any, idx: number) => {
+              const participantKey =
+                (typeof participant?.id === "string" && participant.id) ||
+                (typeof participant?.characterId === "string" && participant.characterId) ||
+                `${idx}`;
+              const displayName =
+                typeof participant?.characterDisplayName === "string"
+                  ? participant.characterDisplayName
+                  : typeof participant?.displayName === "string"
+                    ? participant.displayName
+                    : "Unknown";
+              const currentValue = chatpkgParticipantMap[participantKey] || "";
+              return (
+                <div key={participantKey} className="rounded-xl border border-fg/10 bg-fg/5 p-3">
+                  <p className={cn(typography.bodySmall.size, "font-medium text-fg")}>
+                    {displayName}
+                  </p>
+                  <p className={cn(typography.caption.size, "mt-0.5 text-fg/50")}>
+                    Select the local character for this participant.
+                  </p>
+                  <select
+                    value={currentValue}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setChatpkgParticipantMap((prev) => {
+                        if (!next) {
+                          const clone = { ...prev };
+                          delete clone[participantKey];
+                          return clone;
+                        }
+                        return { ...prev, [participantKey]: next };
+                      });
+                    }}
+                    className="mt-2 w-full rounded-lg border border-fg/10 bg-black/20 px-3 py-2 text-sm text-fg focus:border-fg/30 focus:outline-none"
+                  >
+                    <option value="">Select character...</option>
+                    {availableCharacters.map((character) => (
+                      <option key={character.id} value={character.id}>
+                        {character.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              );
+            })}
+          </div>
+          <button
+            onClick={() => {
+              setShowChatpkgImportMapMenu(false);
+              setShowChatpkgImportConfirmMenu(true);
+            }}
+            className="mt-4 w-full rounded-xl border border-emerald-500/30 bg-emerald-500/20 py-3 text-sm font-medium text-emerald-200 hover:bg-emerald-500/30"
+          >
+            Continue
+          </button>
+        </MenuSection>
+      </BottomMenu>
+
+      <BottomMenu
+        isOpen={showChatpkgImportConfirmMenu}
+        onClose={() => {
+          if (importingChatpkg) return;
+          setShowChatpkgImportConfirmMenu(false);
+          setPendingChatpkgImport(null);
+          setChatpkgParticipantMap({});
+        }}
+        title="Import Chat Package"
+      >
+        <MenuSection>
+          <div className="space-y-4">
+            <div className="rounded-xl border border-fg/10 bg-fg/5 p-3 text-sm text-fg/80">
+              This will import the selected `.chatpkg` as a new group session.
+            </div>
+            <button
+              onClick={() => {
+                void handleImportGroupChatpkg();
+              }}
+              disabled={importingChatpkg}
+              className="w-full rounded-xl border border-emerald-500/30 bg-emerald-500/20 py-3 text-sm font-medium text-emerald-200 transition hover:bg-emerald-500/30 disabled:opacity-50"
+            >
+              {importingChatpkg ? "Importing..." : "Import"}
+            </button>
           </div>
         </MenuSection>
       </BottomMenu>

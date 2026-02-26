@@ -413,6 +413,31 @@ export const storageBridge = {
     }),
   backupDisableDynamicMemory: () => invoke("backup_disable_dynamic_memory") as Promise<void>,
 
+  // Chat package (single/group chat export/import)
+  chatpkgExportSingleChat: (sessionId: string, includeCharacterId?: boolean) =>
+    invoke<string>("chatpkg_export_single_chat", {
+      sessionId,
+      includeCharacterId: includeCharacterId ?? true,
+    }),
+  chatpkgExportGroupChat: (sessionId: string, includeCharacterSnapshots?: boolean) =>
+    invoke<string>("chatpkg_export_group_chat", {
+      sessionId,
+      includeCharacterSnapshots: includeCharacterSnapshots ?? false,
+    }),
+  chatpkgInspect: (packagePath: string) =>
+    invoke<string>("chatpkg_inspect", { packagePath }).then((s) => JSON.parse(s) as any),
+  chatpkgImport: (
+    packagePath: string,
+    options?: {
+      targetCharacterId?: string;
+      participantCharacterMap?: Record<string, string>;
+    },
+  ) =>
+    invoke<string>("chatpkg_import", {
+      packagePath,
+      optionsJson: options ? JSON.stringify(options) : null,
+    }).then((s) => JSON.parse(s) as any),
+
   // Get the storage root path for temp file operations
   getStorageRoot: () => invoke<string>("get_storage_root"),
 
@@ -670,6 +695,23 @@ export const storageBridge = {
       }
     } catch (error) {
       console.error("[backupPickFile] Error:", error);
+      throw error;
+    }
+  },
+
+  chatpkgPickFile: async (): Promise<{ path: string; filename: string } | null> => {
+    try {
+      const selected = await open({
+        multiple: false,
+        filters: [{ name: "Chat Package", extensions: ["chatpkg"] }],
+      });
+
+      if (!selected || typeof selected !== "string") return null;
+      const parts = selected.split("/");
+      const filename = parts[parts.length - 1] || "chat.chatpkg";
+      return { path: selected, filename };
+    } catch (error) {
+      console.error("[chatpkgPickFile] Error:", error);
       throw error;
     }
   },

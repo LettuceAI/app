@@ -1,5 +1,6 @@
 pub mod backup;
 pub mod characters;
+pub mod chatpkg;
 pub mod db;
 pub mod entity_transfer;
 pub mod group_sessions;

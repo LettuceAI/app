@@ -1020,7 +1020,10 @@ export function GroupChatPage() {
 
   return (
     <div
-      className={cn("relative flex h-screen flex-col overflow-hidden", !backgroundImageData && "bg-surface")}
+      className={cn(
+        "relative flex h-screen flex-col overflow-hidden",
+        !backgroundImageData && "bg-surface",
+      )}
     >
       {/* Content layer - on top of background */}
       <div

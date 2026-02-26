@@ -13,6 +13,7 @@ import {
   Info,
   Sparkles,
   TriangleAlert,
+  Upload,
 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { motion } from "framer-motion";
@@ -53,6 +54,7 @@ import {
 import { typography, radius, spacing, interactive, cn, colors } from "../../design-tokens";
 import { Routes, useNavigationManager } from "../../navigation";
 import { PersonaSelector } from "../group-chats/components/settings";
+import { storageBridge } from "../../../core/storage/files";
 
 function isImageLike(value?: string) {
   if (!value) return false;
@@ -288,6 +290,7 @@ function ChatSettingsContent({ character }: { character: Character }) {
     useState<AdvancedModelSettings | null>(null);
   const [showSessionAdvancedMenu, setShowSessionAdvancedMenu] = useState(false);
   const [showParameterSupport, setShowParameterSupport] = useState(false);
+  const [showChatpkgImportMenu, setShowChatpkgImportMenu] = useState(false);
   const [modelSearchQuery, setModelSearchQuery] = useState("");
   const [sessionAdvancedDraft, setSessionAdvancedDraft] = useState<AdvancedModelSettings>(
     createDefaultAdvancedModelSettings(),
@@ -296,6 +299,11 @@ function ChatSettingsContent({ character }: { character: Character }) {
   const [showPersonaActions, setShowPersonaActions] = useState(false);
   const [selectedPersonaForActions, setSelectedPersonaForActions] = useState<Persona | null>(null);
   const [messageCount, setMessageCount] = useState<number>(0);
+  const [pendingChatpkgImport, setPendingChatpkgImport] = useState<{
+    path: string;
+    info: any;
+  } | null>(null);
+  const [importingChatpkg, setImportingChatpkg] = useState(false);
   const personaForAvatar = useMemo(() => {
     if (!currentSession) return null;
     if (currentSession.personaDisabled || currentSession.personaId === "") return null;
@@ -543,6 +551,45 @@ function ChatSettingsContent({ character }: { character: Character }) {
     }
     navigate(base);
   }, [characterId, currentSession?.id, navigate]);
+
+  const handleOpenImportChatpkg = useCallback(async () => {
+    if (!characterId) return;
+    try {
+      const picked = await storageBridge.chatpkgPickFile();
+      if (!picked) return;
+      const info = await storageBridge.chatpkgInspect(picked.path);
+      if (info?.type !== "single_chat") {
+        alert("This package is not a single chat package.");
+        return;
+      }
+      setPendingChatpkgImport({ path: picked.path, info });
+      setShowChatpkgImportMenu(true);
+    } catch (error) {
+      console.error("Failed to inspect chat package:", error);
+      alert(typeof error === "string" ? error : "Failed to inspect chat package");
+    }
+  }, [characterId]);
+
+  const handleImportChatpkg = useCallback(async () => {
+    if (!characterId || !pendingChatpkgImport) return;
+    try {
+      setImportingChatpkg(true);
+      const result = await storageBridge.chatpkgImport(pendingChatpkgImport.path, {
+        targetCharacterId: characterId,
+      });
+      setShowChatpkgImportMenu(false);
+      setPendingChatpkgImport(null);
+      const importedSessionId = result?.sessionId;
+      if (typeof importedSessionId === "string" && importedSessionId.length > 0) {
+        navigate(Routes.chatSession(characterId, importedSessionId), { replace: true });
+      }
+    } catch (error) {
+      console.error("Failed to import chat package:", error);
+      alert(typeof error === "string" ? error : "Failed to import chat package");
+    } finally {
+      setImportingChatpkg(false);
+    }
+  }, [characterId, navigate, pendingChatpkgImport]);
 
   const avatarDisplay = useMemo(() => {
     if (avatarUrl && isImageLike(avatarUrl)) {
@@ -1014,6 +1061,14 @@ function ChatSettingsContent({ character }: { character: Character }) {
                 title="Chat History"
                 subtitle="View previous sessions"
                 onClick={handleViewHistory}
+              />
+              <SettingsButton
+                icon={<Upload className="h-4 w-4" />}
+                title="Import Chat Package"
+                subtitle="Import a .chatpkg into this character"
+                onClick={() => {
+                  void handleOpenImportChatpkg();
+                }}
               />
             </div>
           </section>
@@ -1511,6 +1566,48 @@ function ChatSettingsContent({ character }: { character: Character }) {
               Open a chat session to configure per-session settings.
             </div>
           )}
+        </MenuSection>
+      </BottomMenu>
+
+      {/* Parameter Support */}
+      <BottomMenu
+        isOpen={showChatpkgImportMenu}
+        onClose={() => {
+          if (importingChatpkg) return;
+          setShowChatpkgImportMenu(false);
+          setPendingChatpkgImport(null);
+        }}
+        title="Import Chat Package"
+      >
+        <MenuSection>
+          <div className="space-y-4">
+            <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-sm text-white/80">
+              {pendingChatpkgImport?.info?.characterId ? (
+                pendingChatpkgImport.info.characterId === characterId ? (
+                  <p>This package is character-specific and matches this character.</p>
+                ) : (
+                  <p>
+                    This package is character-specific and points to another character. It will be
+                    imported into this character.
+                  </p>
+                )
+              ) : (
+                <p>
+                  This package is non-character-specific and will be imported into this character.
+                </p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                void handleImportChatpkg();
+              }}
+              disabled={importingChatpkg}
+              className="w-full rounded-xl border border-emerald-500/30 bg-emerald-500/20 py-3 text-sm font-medium text-emerald-200 hover:bg-emerald-500/30 disabled:opacity-50"
+            >
+              {importingChatpkg ? "Importing..." : "Import"}
+            </button>
+          </div>
         </MenuSection>
       </BottomMenu>
 

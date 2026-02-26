@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Trash2, MessageCircle, AlertCircle, Edit3, Search, X } from "lucide-react";
+import {
+  ArrowLeft,
+  Trash2,
+  MessageCircle,
+  AlertCircle,
+  Edit3,
+  Search,
+  X,
+  Download,
+  User,
+} from "lucide-react";
 import { useLocation, useParams } from "react-router-dom";
 
 import type { Character } from "../../../core/storage/schemas";
@@ -9,6 +19,7 @@ import {
   deleteSession,
   updateSessionTitle,
 } from "../../../core/storage";
+import { storageBridge } from "../../../core/storage/files";
 import { typography, radius, cn, colors, interactive } from "../../design-tokens";
 import { BottomMenu, MenuButton, MenuButtonGroup, MenuDivider } from "../../components";
 import { Routes, useNavigationManager } from "../../navigation";
@@ -31,6 +42,8 @@ export function ChatHistoryPage() {
   const [error, setError] = useState<string | null>(null);
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
   const [deleteTarget, setDeleteTarget] = useState<SessionPreview | null>(null);
+  const [exportTarget, setExportTarget] = useState<SessionPreview | null>(null);
+  const [exporting, setExporting] = useState(false);
   const [query, setQuery] = useState(() => {
     const storageKey = characterId ? `chatHistoryQuery:${characterId}` : "chatHistoryQuery";
     const fromStorage = sessionStorage.getItem(storageKey);
@@ -124,6 +137,27 @@ export function ChatHistoryPage() {
       });
     }
   }, []);
+
+  const handleExportChatpkg = useCallback(
+    async (includeCharacterId: boolean) => {
+      if (!exportTarget) return;
+      try {
+        setExporting(true);
+        const path = await storageBridge.chatpkgExportSingleChat(
+          exportTarget.id,
+          includeCharacterId,
+        );
+        setExportTarget(null);
+        alert(`Chat package exported to:\n${path}`);
+      } catch (err) {
+        console.error("Failed to export chat package:", err);
+        alert(typeof err === "string" ? err : "Failed to export chat package");
+      } finally {
+        setExporting(false);
+      }
+    },
+    [exportTarget],
+  );
 
   const filteredSessions = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -307,6 +341,7 @@ export function ChatHistoryPage() {
                 session={session}
                 onSelect={() => go(Routes.chatSession(characterId!, session.id))}
                 onDelete={() => setDeleteTarget(session)}
+                onExport={() => setExportTarget(session)}
                 onRename={(newTitle) => handleRename(session.id, newTitle)}
                 isBusy={busyIds.has(session.id)}
               />
@@ -314,6 +349,48 @@ export function ChatHistoryPage() {
           </div>
         )}
       </main>
+
+      <BottomMenu
+        isOpen={exportTarget != null}
+        onClose={() => setExportTarget(null)}
+        title="Export Chat Package"
+      >
+        <div className="rounded-xl border border-white/10 bg-white/4 p-3">
+          <p className={cn(typography.bodySmall.size, "font-semibold text-white/90 truncate")}>
+            {exportTarget?.title || "Untitled Chat"}
+          </p>
+          {exportTarget ? (
+            <p className={cn(typography.caption.size, "text-white/45 mt-0.5")}>
+              {formatTimeAgo(exportTarget.updatedAt)}
+            </p>
+          ) : null}
+        </div>
+
+        <MenuDivider />
+
+        <MenuButtonGroup>
+          <MenuButton
+            icon={User}
+            title={exporting ? "Exporting..." : "Character-Specific Export"}
+            description="Bind this package to the chat character by default."
+            color="from-blue-500 to-cyan-600"
+            disabled={!exportTarget || exporting}
+            onClick={() => {
+              void handleExportChatpkg(true);
+            }}
+          />
+          <MenuButton
+            icon={Download}
+            title={exporting ? "Exporting..." : "Non-Character-Specific Export"}
+            description="Require character selection during import."
+            color="from-indigo-500 to-blue-600"
+            disabled={!exportTarget || exporting}
+            onClick={() => {
+              void handleExportChatpkg(false);
+            }}
+          />
+        </MenuButtonGroup>
+      </BottomMenu>
 
       <BottomMenu
         isOpen={deleteTarget != null}
@@ -372,12 +449,14 @@ function SessionCard({
   session,
   onSelect,
   onDelete,
+  onExport,
   onRename,
   isBusy,
 }: {
   session: SessionPreview;
   onSelect: () => void;
   onDelete: () => void;
+  onExport: () => void;
   onRename: (newTitle: string) => void;
   isBusy: boolean;
 }) {
@@ -490,6 +569,19 @@ function SessionCard({
           >
             <Edit3 size={14} />
             Rename
+          </button>
+          <button
+            onClick={onExport}
+            disabled={isBusy}
+            className={cn(
+              "flex items-center gap-2 px-3 py-2 border border-white/10 bg-white/5 text-white/60",
+              radius.md,
+              typography.bodySmall.size,
+              "active:scale-95 active:bg-blue-400/10 active:text-blue-300 active:border-blue-400/40 disabled:opacity-50 transition-all",
+            )}
+          >
+            <Download size={14} />
+            Export
           </button>
           <button
             onClick={onDelete}
