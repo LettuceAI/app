@@ -1,7 +1,6 @@
 name: Desktop Build (Tauri)
 
 on:
-  push:
   workflow_dispatch:
     inputs:
       build_llama_cuda_linux:
@@ -21,8 +20,8 @@ on:
         type: boolean
 
 jobs:
-  linux:
-    name: Linux Build
+  linux_cpu:
+    name: Linux Build (CPU)
     runs-on: blacksmith-4vcpu-ubuntu-2404
     env:
       APTABASE_KEY: ${{ secrets.APTABASE_KEY }}
@@ -59,7 +58,8 @@ jobs:
             librsvg2-dev \
             libwebkit2gtk-4.1-dev \
             libspeechd-dev \
-            patchelf
+            patchelf \
+            zip
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -121,58 +121,267 @@ jobs:
           }
           EOF
 
-      - name: Build Tauri (Linux, Dev build)
+      - name: Build Tauri (Linux, CPU)
         env:
           RUSTFLAGS: "--cfg DEV_BUILD"
         run: bun run tauri build --config dev-config.json
 
-      - name: Upload Linux artifacts
+      - name: Package Linux CPU zip
+        run: |
+          mkdir -p dist-artifacts
+          cd src-tauri/target/release/bundle
+          zip -r ../../../../dist-artifacts/linux-cpu.zip .
+
+      - name: Upload Linux CPU zip
         uses: actions/upload-artifact@v4
         with:
-          name: linux-build
-          path: |
-            src-tauri/target/release/bundle/**
+          name: linux-cpu-zip
+          path: dist-artifacts/linux-cpu.zip
 
-      - name: Install Linux Vulkan dependencies (optional GPU task)
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_llama_vulkan_linux == true }}
+  linux_cuda:
+    name: Linux Build (CUDA)
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_llama_cuda_linux == true }}
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    env:
+      APTABASE_KEY: ${{ secrets.APTABASE_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "lts/*"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "latest"
+
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          cache: true
+
+      - name: Install Linux system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libvulkan-dev vulkan-tools
+          sudo apt-get install -y \
+            build-essential \
+            pkg-config \
+            libssl-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libwebkit2gtk-4.1-dev \
+            libspeechd-dev \
+            patchelf \
+            zip
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Create dev config override
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          VERSION="0.1.${{ github.run_number }}-dev.$SHORT_SHA"
+
+          cat > dev-config.json << EOF
+          {
+            "\$schema": "https://schema.tauri.app/config/2",
+            "productName": "lettuceai-dev",
+            "version": "$VERSION",
+            "identifier": "dev.lettuceai.app",
+            "build": {
+              "beforeDevCommand": "bun run dev",
+              "devUrl": "http://localhost:1420",
+              "beforeBuildCommand": "bun run build",
+              "frontendDist": "../dist"
+            },
+            "app": {
+              "windows": [
+                {
+                  "title": "LettuceAI (Dev)",
+                  "width": 1100,
+                  "height": 720,
+                  "minHeight": 600,
+                  "minWidth": 900,
+                  "transparent": true
+                }
+              ],
+              "security": {
+                "csp": null,
+                "assetProtocol": {
+                  "enable": true,
+                  "scope": [
+                    "\$APPDATA/**"
+                  ]
+                }
+              }
+            },
+            "bundle": {
+              "active": true,
+              "targets": ["deb", "rpm"],
+              "icon": [
+                "icons/32x32.png",
+                "icons/128x128.png",
+                "icons/128x128@2x.png",
+                "icons/icon.icns",
+                "icons/icon.ico"
+              ],
+              "resources": [
+                "./feedback_sounds/fail.mp3",
+                "./feedback_sounds/send.mp3",
+                "./feedback_sounds/success.mp3"
+              ]
+            }
+          }
+          EOF
 
       - name: Build Tauri (Linux, llama.cpp CUDA)
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_llama_cuda_linux == true }}
         env:
           RUSTFLAGS: "--cfg DEV_BUILD"
           CARGO_TARGET_DIR: src-tauri/target-cuda
-        run: |
-          bun run tauri build --config dev-config.json --features llama-gpu-cuda
+        run: bun run tauri build --config dev-config.json --features llama-gpu-cuda
 
-      - name: Upload Linux CUDA artifacts
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_llama_cuda_linux == true }}
+      - name: Package Linux CUDA zip
+        run: |
+          mkdir -p dist-artifacts
+          cd src-tauri/target-cuda/release/bundle
+          zip -r ../../../../dist-artifacts/linux-cuda.zip .
+
+      - name: Upload Linux CUDA zip
         uses: actions/upload-artifact@v4
         with:
-          name: linux-build-llama-cuda
-          path: |
-            src-tauri/target-cuda/release/bundle/**
+          name: linux-cuda-zip
+          path: dist-artifacts/linux-cuda.zip
+
+  linux_vulkan:
+    name: Linux Build (Vulkan)
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_llama_vulkan_linux == true }}
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    env:
+      APTABASE_KEY: ${{ secrets.APTABASE_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "lts/*"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "latest"
+
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          cache: true
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            pkg-config \
+            libssl-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libwebkit2gtk-4.1-dev \
+            libspeechd-dev \
+            patchelf \
+            libvulkan-dev \
+            vulkan-tools \
+            zip
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Create dev config override
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          VERSION="0.1.${{ github.run_number }}-dev.$SHORT_SHA"
+
+          cat > dev-config.json << EOF
+          {
+            "\$schema": "https://schema.tauri.app/config/2",
+            "productName": "lettuceai-dev",
+            "version": "$VERSION",
+            "identifier": "dev.lettuceai.app",
+            "build": {
+              "beforeDevCommand": "bun run dev",
+              "devUrl": "http://localhost:1420",
+              "beforeBuildCommand": "bun run build",
+              "frontendDist": "../dist"
+            },
+            "app": {
+              "windows": [
+                {
+                  "title": "LettuceAI (Dev)",
+                  "width": 1100,
+                  "height": 720,
+                  "minHeight": 600,
+                  "minWidth": 900,
+                  "transparent": true
+                }
+              ],
+              "security": {
+                "csp": null,
+                "assetProtocol": {
+                  "enable": true,
+                  "scope": [
+                    "\$APPDATA/**"
+                  ]
+                }
+              }
+            },
+            "bundle": {
+              "active": true,
+              "targets": ["deb", "rpm"],
+              "icon": [
+                "icons/32x32.png",
+                "icons/128x128.png",
+                "icons/128x128@2x.png",
+                "icons/icon.icns",
+                "icons/icon.ico"
+              ],
+              "resources": [
+                "./feedback_sounds/fail.mp3",
+                "./feedback_sounds/send.mp3",
+                "./feedback_sounds/success.mp3"
+              ]
+            }
+          }
+          EOF
 
       - name: Build Tauri (Linux, llama.cpp Vulkan)
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_llama_vulkan_linux == true }}
         env:
           RUSTFLAGS: "--cfg DEV_BUILD"
           CARGO_TARGET_DIR: src-tauri/target-vulkan
-        run: |
-          bun run tauri build --config dev-config.json --features llama-gpu-vulkan
+        run: bun run tauri build --config dev-config.json --features llama-gpu-vulkan
 
-      - name: Upload Linux Vulkan artifacts
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_llama_vulkan_linux == true }}
+      - name: Package Linux Vulkan zip
+        run: |
+          mkdir -p dist-artifacts
+          cd src-tauri/target-vulkan/release/bundle
+          zip -r ../../../../dist-artifacts/linux-vulkan.zip .
+
+      - name: Upload Linux Vulkan zip
         uses: actions/upload-artifact@v4
         with:
-          name: linux-build-llama-vulkan
-          path: |
-            src-tauri/target-vulkan/release/bundle/**
+          name: linux-vulkan-zip
+          path: dist-artifacts/linux-vulkan.zip
 
-  windows:
-    name: Windows Build
+  windows_cpu:
+    name: Windows Build (CPU)
     runs-on: blacksmith-4vcpu-windows-2025
     env:
       APTABASE_KEY: ${{ secrets.APTABASE_KEY }}
@@ -214,7 +423,6 @@ jobs:
 
       - name: Create dev config override
         run: |
-          $SHORT_SHA = "${{ github.sha }}".Substring(0, 7)
           $VERSION = "0.1.${{ github.run_number }}"
 
           $devConfig = @"
@@ -270,31 +478,138 @@ jobs:
           "@
           $devConfig | Out-File -FilePath dev-config.json -Encoding UTF8
 
-      - name: Build Tauri (Windows, Dev build)
+      - name: Build Tauri (Windows, CPU)
         env:
           RUSTFLAGS: "--cfg DEV_BUILD -C target-feature=-crt-static"
           CMAKE_MSVC_RUNTIME_LIBRARY: "MultiThreadedDLL"
         run: bun run tauri build --config dev-config.json
 
-      - name: Upload Windows artifacts
+      - name: Package Windows CPU zip
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist-artifacts | Out-Null
+          Compress-Archive -Path src-tauri/target/release/bundle/* -DestinationPath dist-artifacts/windows-cpu.zip -Force
+
+      - name: Upload Windows CPU zip
         uses: actions/upload-artifact@v4
         with:
-          name: windows-build
-          path: |
-            src-tauri/target/release/bundle/**
+          name: windows-cpu-zip
+          path: dist-artifacts/windows-cpu.zip
+
+  windows_cuda:
+    name: Windows Build (CUDA)
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_llama_cuda_windows == true }}
+    runs-on: blacksmith-4vcpu-windows-2025
+    env:
+      APTABASE_KEY: ${{ secrets.APTABASE_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "lts/*"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "latest"
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Setup CMake
+        uses: lukka/get-cmake@latest
+
+      - name: Install LLVM (libclang)
+        run: |
+          choco install llvm -y --no-progress
+          echo "LIBCLANG_PATH=C:\\Program Files\\LLVM\\bin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          echo "C:\\Program Files\\LLVM\\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          cache: true
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Create dev config override
+        run: |
+          $VERSION = "0.1.${{ github.run_number }}"
+
+          $devConfig = @"
+          {
+            "`$schema": "https://schema.tauri.app/config/2",
+            "productName": "lettuceai-dev",
+            "version": "$VERSION",
+            "identifier": "dev.lettuceai.app",
+            "build": {
+              "beforeDevCommand": "bun run dev",
+              "devUrl": "http://localhost:1420",
+              "beforeBuildCommand": "bun run build",
+              "frontendDist": "../dist"
+            },
+            "app": {
+              "windows": [
+                {
+                  "title": "LettuceAI (Dev)",
+                  "width": 1100,
+                  "height": 720,
+                  "minHeight": 600,
+                  "minWidth": 900,
+                  "transparent": true
+                }
+              ],
+              "security": {
+                "csp": null,
+                "assetProtocol": {
+                  "enable": true,
+                  "scope": [
+                    "`$APPDATA/**"
+                  ]
+                }
+              }
+            },
+            "bundle": {
+              "active": true,
+              "targets": ["nsis"],
+              "icon": [
+                "icons/32x32.png",
+                "icons/128x128.png",
+                "icons/128x128@2x.png",
+                "icons/icon.icns",
+                "icons/icon.ico"
+              ],
+              "resources": [
+                "./feedback_sounds/fail.mp3",
+                "./feedback_sounds/send.mp3",
+                "./feedback_sounds/success.mp3"
+              ]
+            }
+          }
+          "@
+          $devConfig | Out-File -FilePath dev-config.json -Encoding UTF8
 
       - name: Build Tauri (Windows, llama.cpp CUDA)
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_llama_cuda_windows == true }}
         env:
           RUSTFLAGS: "--cfg DEV_BUILD -C target-feature=-crt-static"
           CMAKE_MSVC_RUNTIME_LIBRARY: "MultiThreadedDLL"
           CARGO_TARGET_DIR: src-tauri/target-cuda
         run: bun run tauri build --config dev-config.json --features llama-gpu-cuda
 
-      - name: Upload Windows CUDA artifacts
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_llama_cuda_windows == true }}
+      - name: Package Windows CUDA zip
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist-artifacts | Out-Null
+          Compress-Archive -Path src-tauri/target-cuda/release/bundle/* -DestinationPath dist-artifacts/windows-cuda.zip -Force
+
+      - name: Upload Windows CUDA zip
         uses: actions/upload-artifact@v4
         with:
-          name: windows-build-llama-cuda
-          path: |
-            src-tauri/target-cuda/release/bundle/**
+          name: windows-cuda-zip
+          path: dist-artifacts/windows-cuda.zip
