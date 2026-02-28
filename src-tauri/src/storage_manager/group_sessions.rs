@@ -1658,6 +1658,13 @@ pub fn group_session_update_muted_character_ids(
     muted_character_ids.retain(|id| session.character_ids.contains(id));
     muted_character_ids.sort();
     muted_character_ids.dedup();
+    if muted_character_ids.len() >= session.character_ids.len() {
+        return Err(crate::utils::err_msg(
+            module_path!(),
+            line!(),
+            "At least one participant must remain active",
+        ));
+    }
     let next_muted_json = serde_json::to_string(&muted_character_ids)
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 

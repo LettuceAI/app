@@ -205,6 +205,11 @@ export function useGroupChatSettingsController(
     async (characterId: string, muted: boolean) => {
       if (!session) return;
       const nextMuted = new Set(session.mutedCharacterIds ?? []);
+      const activeCount = session.characterIds.length - nextMuted.size;
+      if (muted && activeCount <= 1 && !nextMuted.has(characterId)) {
+        setUi({ error: "At least one participant must remain active" });
+        return;
+      }
       if (muted) {
         nextMuted.add(characterId);
       } else {
