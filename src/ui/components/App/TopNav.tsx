@@ -14,11 +14,9 @@ import {
   Grid3X3,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useTranslation } from "react-i18next";
 import { typography, interactive, cn } from "../../design-tokens";
 import { toast } from "../toast";
 import { openDocs } from "../../../core/utils/docs";
-import { getSafeAreaTopPadding } from "../../../core/utils/platform";
 
 interface TopNavProps {
   currentPath: string;
@@ -29,8 +27,6 @@ interface TopNavProps {
 
 export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction }: TopNavProps) {
   const navigate = useNavigate();
-  const safeAreaTop = useMemo(() => getSafeAreaTopPadding(12), []);
-  const { t } = useTranslation();
   const basePath = useMemo(() => currentPath.split("?")[0], [currentPath]);
   const hasAdvancedView = useMemo(() => currentPath.includes("view=advanced"), [currentPath]);
 
@@ -39,71 +35,86 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
 
     const rules: Array<{
       match: (path: string) => boolean;
-      titleKey: string;
+      title: string;
     }> = [
-      { match: (p) => p === "/settings/providers", titleKey: "common.nav.providers" },
-      { match: (p) => p.includes("view=advanced"), titleKey: "common.nav.responseStyle" },
+      { match: (p) => p === "/settings/providers", title: "Providers" },
+      { match: (p) => p.includes("view=advanced"), title: "Response Style" },
       {
         match: (p) => p === "/settings/models" || p.startsWith("/settings/models/"),
-        titleKey: "common.nav.models",
+        title: "Models",
       },
-      { match: (p) => p === "/settings/security", titleKey: "common.nav.security" },
-      { match: (p) => p === "/settings/accessibility", titleKey: "common.nav.accessibility" },
-      { match: (p) => p === "/settings/reset", titleKey: "common.nav.reset" },
-      { match: (p) => p === "/settings/backup", titleKey: "common.nav.backupRestore" },
-      { match: (p) => p === "/settings/convert", titleKey: "common.nav.convertFiles" },
-      { match: (p) => p === "/settings/usage", titleKey: "common.nav.usageAnalytics" },
-      { match: (p) => p === "/settings/changelog", titleKey: "common.nav.changelog" },
-      { match: (p) => p === "/settings/prompts/new", titleKey: "common.nav.createSystemPrompt" },
-      { match: (p) => p.startsWith("/settings/prompts/"), titleKey: "common.nav.editSystemPrompt" },
-      { match: (p) => p === "/settings/prompts", titleKey: "common.nav.systemPrompts" },
-      { match: (p) => p === "/settings/developer", titleKey: "common.nav.developer" },
-      { match: (p) => p === "/settings/advanced", titleKey: "common.nav.advanced" },
-      { match: (p) => p === "/settings/characters", titleKey: "common.nav.characters" },
-      { match: (p) => p.includes("/lorebook"), titleKey: "common.nav.lorebooks" },
-      { match: (p) => p === "/settings/personas", titleKey: "common.nav.personas" },
-      { match: (p) => p === "/settings/advanced/memory", titleKey: "common.nav.dynamicMemory" },
-      { match: (p) => p === "/settings/advanced/creation-helper", titleKey: "common.nav.creationHelper" },
-      { match: (p) => p === "/settings/advanced/help-me-reply", titleKey: "common.nav.helpMeReply" },
+      { match: (p) => p === "/settings/security", title: "Security" },
+      { match: (p) => p === "/settings/accessibility", title: "Accessibility" },
+      { match: (p) => p === "/settings/reset", title: "Reset" },
+      { match: (p) => p === "/settings/backup", title: "Backup & Restore" },
+      { match: (p) => p === "/settings/convert", title: "Convert Files" },
+      { match: (p) => p === "/settings/usage", title: "Usage Analytics" },
+      { match: (p) => p === "/settings/changelog", title: "Changelog" },
+      { match: (p) => p === "/settings/prompts/new", title: "Create System Prompt" },
+      { match: (p) => p.startsWith("/settings/prompts/"), title: "Edit System Prompt" },
+      { match: (p) => p === "/settings/prompts", title: "System Prompts" },
+      { match: (p) => p === "/settings/developer", title: "Developer" },
+      { match: (p) => p === "/settings/advanced", title: "Advanced" },
+      { match: (p) => p === "/settings/characters", title: "Characters" },
+      { match: (p) => p.includes("/lorebook"), title: "Lorebooks" },
+      { match: (p) => p === "/settings/personas", title: "Personas" },
+      { match: (p) => p === "/settings/advanced/memory", title: "Dynamic Memory" },
+      { match: (p) => p === "/settings/advanced/creation-helper", title: "Creation Helper" },
+      { match: (p) => p === "/settings/advanced/help-me-reply", title: "Help Me Reply" },
       {
         match: (p) => p.startsWith("/settings/personas/") && p.endsWith("/edit"),
-        titleKey: "common.nav.editPersona",
+        title: "Edit Persona",
+      },
+      {
+        match: (p) =>
+          p.startsWith("/settings/characters/") && p.includes("/templates/new"),
+        title: "New Template",
+      },
+      {
+        match: (p) =>
+          p.startsWith("/settings/characters/") && p.includes("/templates/") && !p.endsWith("/templates"),
+        title: "Edit Template",
+      },
+      {
+        match: (p) =>
+          p.startsWith("/settings/characters/") && p.endsWith("/templates"),
+        title: "Chat Templates",
       },
       {
         match: (p) => p.startsWith("/settings/characters/") && p.endsWith("/edit"),
-        titleKey: "common.nav.editCharacter",
+        title: "Edit Character",
       },
-      { match: (p) => p === "/settings/sync", titleKey: "common.nav.sync" },
+      { match: (p) => p === "/settings/sync", title: "Sync" },
       {
         match: (p) => p.startsWith("/settings/engine/") && p.includes("/character/new"),
-        titleKey: "common.nav.newCharacter",
+        title: "New Character",
       },
       {
         match: (p) => p.startsWith("/settings/engine/") && p.endsWith("/setup"),
-        titleKey: "common.nav.engineSetup",
+        title: "Engine Setup",
       },
       {
         match: (p) => p.startsWith("/settings/engine/") && p.endsWith("/providers"),
-        titleKey: "common.nav.llmProviders",
+        title: "LLM Providers",
       },
       {
         match: (p) => p.startsWith("/settings/engine/") && p.endsWith("/settings"),
-        titleKey: "common.nav.engineSettings",
+        title: "Engine Settings",
       },
-      { match: (p) => p.startsWith("/settings/engine/"), titleKey: "common.nav.lettuceEngine" },
-      { match: (p) => p.startsWith("/settings"), titleKey: "common.nav.settings" },
-      { match: (p) => p.startsWith("/create"), titleKey: "common.nav.create" },
-      { match: (p) => p.startsWith("/onboarding"), titleKey: "common.nav.setup" },
-      { match: (p) => p.startsWith("/welcome"), titleKey: "common.nav.welcome" },
-      { match: (p) => p.startsWith("/chat/"), titleKey: "common.nav.conversation" },
-      { match: (p) => p === "/library", titleKey: "common.nav.library" },
-      { match: (p) => p === "/group-chats", titleKey: "common.nav.groupChats" },
-      { match: (p) => p.startsWith("/group-chats/"), titleKey: "common.nav.groupChat" },
+      { match: (p) => p.startsWith("/settings/engine/"), title: "Lettuce Engine" },
+      { match: (p) => p.startsWith("/settings"), title: "Settings" },
+      { match: (p) => p.startsWith("/create"), title: "Create" },
+      { match: (p) => p.startsWith("/onboarding"), title: "Setup" },
+      { match: (p) => p.startsWith("/welcome"), title: "Welcome" },
+      { match: (p) => p.startsWith("/chat/"), title: "Conversation" },
+      { match: (p) => p === "/library", title: "Library" },
+      { match: (p) => p === "/group-chats", title: "Group Chats" },
+      { match: (p) => p.startsWith("/group-chats/"), title: "Group Chat" },
     ];
 
     const rule = rules.find((r) => r.match(basePath));
-    return rule ? t(rule.titleKey) : t("common.nav.chats");
-  }, [basePath, titleOverride, t]);
+    return rule?.title ?? "Chats";
+  }, [basePath, titleOverride]);
 
   const showBackButton = useMemo(() => {
     if (basePath.startsWith("/settings/") || basePath === "/settings") return true;
@@ -225,6 +236,10 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
     () => basePath === "/settings/accessibility/colors",
     [basePath],
   );
+  const isTemplateEdit = useMemo(
+    () => /^\/settings\/characters\/[^/]+\/templates\/[^/]+$/.test(basePath),
+    [basePath],
+  );
   const showSaveButton =
     isCharacterEdit ||
     isPersonaEdit ||
@@ -233,7 +248,8 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
     isPromptEdit ||
     isPromptNew ||
     isChatAppearanceEdit ||
-    isColorCustomizationEdit;
+    isColorCustomizationEdit ||
+    isTemplateEdit;
 
   // Track save button state from window globals
   const [canSave, setCanSave] = useState(false);
@@ -276,6 +292,11 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
         const newIsSaving = !!globalWindow.__saveColorCustomizationSaving;
         setCanSave((prev) => (prev !== newCanSave ? newCanSave : prev));
         setIsSaving((prev) => (prev !== newIsSaving ? newIsSaving : prev));
+      } else if (isTemplateEdit) {
+        const newCanSave = !!globalWindow.__saveCharacterCanSave;
+        const newIsSaving = !!globalWindow.__saveCharacterSaving;
+        setCanSave((prev) => (prev !== newCanSave ? newCanSave : prev));
+        setIsSaving((prev) => (prev !== newIsSaving ? newIsSaving : prev));
       }
     };
 
@@ -294,6 +315,7 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
     isPromptNew,
     isChatAppearanceEdit,
     isColorCustomizationEdit,
+    isTemplateEdit,
   ]);
 
   useEffect(() => {
@@ -394,7 +416,7 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
       /* Changed: added bg-opacity (bg-[#0F0F0F]/80) and increased blur to md for a premium feel */
       className="fixed top-0 left-0 right-0 z-30 border-b border-fg/10 backdrop-blur-md bg-nav/80"
       style={{
-        paddingTop: safeAreaTop,
+        paddingTop: "calc(env(safe-area-inset-top) + 12px)",
         paddingBottom: "12px",
       }}
     >
@@ -555,6 +577,11 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
                   typeof globalWindow.__saveColorCustomization === "function"
                 ) {
                   globalWindow.__saveColorCustomization();
+                } else if (
+                  isTemplateEdit &&
+                  typeof globalWindow.__saveCharacter === "function"
+                ) {
+                  globalWindow.__saveCharacter();
                 }
               }}
               disabled={!canSave || isSaving}

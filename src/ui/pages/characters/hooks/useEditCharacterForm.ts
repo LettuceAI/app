@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { listCharacters, saveCharacter, readSettings } from "../../../../core/storage/repo";
 import type {
   AvatarCrop,
+  ChatTemplate,
   CharacterVoiceConfig,
   Model,
   Scene,
@@ -44,7 +45,9 @@ type EditCharacterState = {
   avatarRoundPath: string | null;
   backgroundImagePath: string;
   scenes: Scene[];
+  chatTemplates: ChatTemplate[];
   defaultSceneId: string | null;
+  defaultChatTemplateId: string | null;
   newSceneContent: string;
   newSceneDirection: string;
   selectedModelId: string | null;
@@ -96,7 +99,9 @@ const initialState: EditCharacterState = {
   avatarRoundPath: null,
   backgroundImagePath: "",
   scenes: [],
+  chatTemplates: [],
   defaultSceneId: null,
+  defaultChatTemplateId: null,
   newSceneContent: "",
   newSceneDirection: "",
   selectedModelId: null,
@@ -160,7 +165,9 @@ export function useEditCharacterForm(characterId: string | undefined) {
     avatarRoundPath: string;
     backgroundImagePath: string;
     scenes: string;
+    chatTemplates: string;
     defaultSceneId: string | null;
+    defaultChatTemplateId: string | null;
     selectedModelId: string | null;
     selectedFallbackModelId: string | null;
     systemPromptTemplateId: string | null;
@@ -273,7 +280,9 @@ export function useEditCharacterForm(characterId: string | undefined) {
         avatarRoundPath: loadedAvatarRoundPath,
         backgroundImagePath: backgroundImage,
         scenes: character.scenes || [],
+        chatTemplates: character.chatTemplates || [],
         defaultSceneId: character.defaultSceneId || null,
+        defaultChatTemplateId: character.defaultChatTemplateId || null,
         selectedModelId: character.defaultModelId || null,
         selectedFallbackModelId: character.fallbackModelId || null,
         systemPromptTemplateId: character.promptTemplateId || null,
@@ -307,7 +316,9 @@ export function useEditCharacterForm(characterId: string | undefined) {
         avatarRoundPath: JSON.stringify(loadedAvatarRoundPath ?? null),
         backgroundImagePath: backgroundImage,
         scenes: JSON.stringify(character.scenes || []),
+        chatTemplates: JSON.stringify(character.chatTemplates || []),
         defaultSceneId: character.defaultSceneId || null,
+        defaultChatTemplateId: character.defaultChatTemplateId || null,
         selectedModelId: character.defaultModelId || null,
         selectedFallbackModelId: character.fallbackModelId || null,
         systemPromptTemplateId: character.promptTemplateId || null,
@@ -444,7 +455,9 @@ export function useEditCharacterForm(characterId: string | undefined) {
         avatarCrop: avatarFilename ? (state.avatarCrop ?? undefined) : undefined,
         backgroundImagePath: backgroundImageId,
         scenes: state.scenes,
+        chatTemplates: state.chatTemplates,
         defaultSceneId: state.defaultSceneId,
+        defaultChatTemplateId: state.defaultChatTemplateId,
         defaultModelId: state.selectedModelId,
         fallbackModelId: state.selectedFallbackModelId,
         promptTemplateId: state.systemPromptTemplateId,
@@ -491,7 +504,9 @@ export function useEditCharacterForm(characterId: string | undefined) {
         avatarRoundPath: JSON.stringify(state.avatarRoundPath ?? null),
         backgroundImagePath: state.backgroundImagePath,
         scenes: JSON.stringify(state.scenes),
+        chatTemplates: JSON.stringify(state.chatTemplates),
         defaultSceneId: state.defaultSceneId,
+        defaultChatTemplateId: state.defaultChatTemplateId,
         selectedModelId: state.selectedModelId,
         selectedFallbackModelId: state.selectedFallbackModelId,
         systemPromptTemplateId: state.systemPromptTemplateId,
@@ -742,7 +757,9 @@ export function useEditCharacterForm(characterId: string | undefined) {
           JSON.stringify(state.avatarRoundPath ?? null) !== initial.avatarRoundPath ||
           state.backgroundImagePath !== initial.backgroundImagePath ||
           JSON.stringify(state.scenes) !== initial.scenes ||
+          JSON.stringify(state.chatTemplates) !== initial.chatTemplates ||
           state.defaultSceneId !== initial.defaultSceneId ||
+          state.defaultChatTemplateId !== initial.defaultChatTemplateId ||
           state.selectedModelId !== initial.selectedModelId ||
           state.selectedFallbackModelId !== initial.selectedFallbackModelId ||
           state.systemPromptTemplateId !== initial.systemPromptTemplateId ||

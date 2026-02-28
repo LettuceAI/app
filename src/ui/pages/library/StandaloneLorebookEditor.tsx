@@ -15,7 +15,6 @@ import {
 } from "lucide-react";
 import { motion, type PanInfo, useDragControls } from "framer-motion";
 import type { Lorebook, LorebookEntry } from "../../../core/storage/schemas";
-import { getSafeAreaTopPadding } from "../../../core/utils/platform";
 import {
   listLorebooks,
   listLorebookEntries,
@@ -620,7 +619,6 @@ export function StandaloneLorebookEditor() {
     }
   };
 
-  const safeAreaTop72 = useMemo(() => getSafeAreaTopPadding(72), []);
   const filteredEntries = useMemo(() => {
     if (!searchQuery.trim()) return entries;
     const query = searchQuery.toLowerCase();
@@ -732,7 +730,7 @@ export function StandaloneLorebookEditor() {
           </div>
         }
       />
-      <div className="flex h-full flex-col text-fg/80 overflow-hidden pb-6" style={{ paddingTop: safeAreaTop72 }}>
+      <div className="flex h-full flex-col text-fg/80 overflow-hidden pb-6 pt-[calc(72px+env(safe-area-inset-top))]">
         {/* Search */}
         {entries.length > 0 && (
           <div className="px-4 py-3">

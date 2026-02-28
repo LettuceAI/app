@@ -1,15 +1,10 @@
-import { useMemo } from "react";
 import { MessageCircle, Plus, Library, Users, Compass } from "lucide-react";
 import { useLocation } from "react-router-dom";
-import { useTranslation } from "react-i18next";
 
-import { getSafeAreaBottomPadding } from "../../../core/utils/platform";
 import { TabItem } from "./NavItem";
 
 export function BottomNav({ onCreateClick }: { onCreateClick: () => void }) {
   const { pathname } = useLocation();
-  const { t } = useTranslation();
-  const bottomPadding = useMemo(() => getSafeAreaBottomPadding(8), []);
 
   const handleCreateClick = () => {
     if (typeof window !== "undefined") {
@@ -45,15 +40,12 @@ export function BottomNav({ onCreateClick }: { onCreateClick: () => void }) {
     onCreateClick();
   };
   return (
-    <div
-      className="fixed bottom-0 left-0 right-0 z-30 border-t border-fg/8 bg-nav/95 px-2 pt-2 text-fg shadow-[0_-12px_32px_rgba(0,0,0,0.35)]"
-      style={{ paddingBottom: bottomPadding }}
-    >
+    <div className="fixed bottom-0 left-0 right-0 z-30 border-t border-fg/8 bg-nav/95 px-2 pb-[calc(env(safe-area-inset-bottom)+8px)] pt-2 text-fg shadow-[0_-12px_32px_rgba(0,0,0,0.35)]">
       <div className="mx-auto flex w-full max-w-md lg:max-w-none items-stretch gap-1 lg:gap-2 lg:px-6">
         <TabItem
           to="/chat"
           icon={MessageCircle}
-          label={t("common.bottomNav.chats")}
+          label="Chats"
           active={pathname === "/" || pathname.startsWith("/chat")}
           className="flex-1 h-12 text-sm"
         />
@@ -61,7 +53,7 @@ export function BottomNav({ onCreateClick }: { onCreateClick: () => void }) {
         <TabItem
           to="/group-chats"
           icon={Users}
-          label={t("common.bottomNav.groups")}
+          label="Groups"
           active={pathname.startsWith("/group-chats")}
           className="flex-1 h-12 text-sm"
         />
@@ -69,7 +61,7 @@ export function BottomNav({ onCreateClick }: { onCreateClick: () => void }) {
         <button
           onClick={handleCreateClick}
           className="flex flex-1 h-12 items-center justify-center rounded-xl border border-fg/15 bg-fg/10 text-fg shadow-[0_8px_20px_rgba(0,0,0,0.25)] transition hover:border-fg/25 hover:bg-fg/20"
-          aria-label={t("common.bottomNav.create")}
+          aria-label="Create"
         >
           <Plus size={20} />
         </button>
@@ -77,7 +69,7 @@ export function BottomNav({ onCreateClick }: { onCreateClick: () => void }) {
         <TabItem
           to="/discover"
           icon={Compass}
-          label={t("common.bottomNav.discover")}
+          label="Discover"
           active={pathname.startsWith("/discover")}
           className="flex-1 h-12 text-sm"
         />
@@ -85,7 +77,7 @@ export function BottomNav({ onCreateClick }: { onCreateClick: () => void }) {
         <TabItem
           to="/library"
           icon={Library}
-          label={t("common.bottomNav.library")}
+          label="Library"
           active={pathname.startsWith("/library")}
           className="flex-1 h-12 text-sm"
         />

@@ -49,6 +49,8 @@ import {
   CreationHelperPage,
 } from "./ui/pages/characters";
 import { CreatePersonaPage, PersonasPage, EditPersonaPage } from "./ui/pages/personas";
+import ChatTemplateListPage from "./ui/pages/characters/ChatTemplateListPage";
+import ChatTemplateEditorPage from "./ui/pages/characters/ChatTemplateEditorPage";
 import { SearchPage } from "./ui/pages/search";
 import { LibraryPage } from "./ui/pages/library/LibraryPage";
 import { StandaloneLorebookEditor } from "./ui/pages/library/StandaloneLorebookEditor";
@@ -87,7 +89,7 @@ import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { useAndroidBackHandler } from "./ui/hooks/useAndroidBackHandler";
 import { logManager, isLoggingEnabled } from "./core/utils/logger";
 import { storageBridge } from "./core/storage/files";
-import { getPlatform, getSafeAreaBottomPadding, getSafeAreaTopPadding } from "./core/utils/platform";
+import { getPlatform } from "./core/utils/platform";
 
 const chatLog = logManager({ component: "Chat" });
 
@@ -199,7 +201,7 @@ function App() {
           v7_relativeSplatPath: true,
         }}
       >
-        <div id="app-root" className="min-h-fill min-h-screen min-h-dvh bg-surface text-fg antialiased flex flex-col">
+        <div id="app-root" className="min-h-screen bg-surface text-fg antialiased">
           <Toaster // {isMobile ? "bottom-center" : "top-center"}
             position={"top-center"}
             offset={isMobile ? { bottom: 24 } : { top: 16 }}
@@ -252,6 +254,10 @@ function AppContent() {
 
   const isLorebookEditorRoute = useMemo(
     () => location.pathname.startsWith("/library/lorebooks/"),
+    [location.pathname],
+  );
+  const isTemplateEditorRoute = useMemo(
+    () => /^\/settings\/characters\/[^/]+\/templates\/[^/]+$/.test(location.pathname),
     [location.pathname],
   );
 
@@ -347,10 +353,6 @@ function AppContent() {
     const platform = getPlatform();
     return platform.type === "desktop";
   }, []);
-
-  const safeAreaShellBottom = useMemo(() => getSafeAreaBottomPadding(72), []);
-  const safeAreaShellTop = useMemo(() => getSafeAreaTopPadding(72), []);
-  const safeAreaMainBottom = useMemo(() => getSafeAreaBottomPadding(96), []);
 
   const [glitchStage, setGlitchStage] = useState<0 | 1 | 2 | 3>(0);
   const glitchStageRef = useRef<0 | 1 | 2 | 3>(0);
@@ -512,21 +514,20 @@ function AppContent() {
 
   return (
     <div
-      className={`relative flex min-h-0 flex-1 flex-col min-h-fill min-h-screen min-h-dvh overflow-hidden ${
+      className={`relative min-h-screen overflow-hidden ${
         glitchStage ? `app-glitch app-glitch-${glitchStage}` : ""
       }`}
     >
       <div
-        className={`relative z-10 mx-auto flex min-h-0 flex-1 min-h-fill min-h-screen min-h-dvh w-full flex-col ${
+        className={`relative z-10 mx-auto flex min-h-screen w-full ${
           isChatDetailRoute ? "max-w-full" : "max-w-md lg:max-w-none"
-        } flex-col ${showBottomNav ? "" : "pb-0"}`}
-        style={showBottomNav ? { paddingBottom: safeAreaShellBottom } : undefined}
+        } flex-col ${showBottomNav ? "pb-[calc(72px+env(safe-area-inset-bottom))]" : "pb-0"}`}
       >
         {showTopNav && <TopNav currentPath={location.pathname + location.search} />}
 
         <main
           ref={mainRef}
-          className={`app-fall-target flex-1 ${
+          className={`app-fall-target flex-1 ${showTopNav ? "pt-[calc(72px+env(safe-area-inset-top))]" : ""} ${
             isOnboardingRoute
               ? `overflow-y-auto ${isDesktop ? "" : "px-0 pt-5 pb-5"}`
               : isChatDetailRoute
@@ -537,14 +538,12 @@ function AppContent() {
                     ? "overflow-hidden px-0 pt-0 pb-0"
                     : isLorebookEditorRoute
                       ? "overflow-hidden px-0 pt-0 pb-0"
-                      : isDiscoveryRoute
+                      : isTemplateEditorRoute
                         ? "overflow-hidden px-0 pt-0 pb-0"
-                        : "overflow-y-auto px-4 pt-4"
-          } ${showTopNav ? "" : ""} ${!isOnboardingRoute && !isChatDetailRoute && !isCreateRoute && !isSearchRoute && !isLorebookEditorRoute && !isDiscoveryRoute && !showBottomNav ? "pb-6" : ""}`}
-          style={{
-            ...(showTopNav ? { paddingTop: safeAreaShellTop } : {}),
-            ...(!isOnboardingRoute && !isChatDetailRoute && !isCreateRoute && !isSearchRoute && !isLorebookEditorRoute && !isDiscoveryRoute && showBottomNav ? { paddingBottom: safeAreaMainBottom } : {}),
-          }}
+                        : isDiscoveryRoute
+                        ? "overflow-hidden px-0 pt-0 pb-0"
+                        : `overflow-y-auto px-4 pt-4 ${showBottomNav ? "pb-[calc(96px+env(safe-area-inset-bottom))]" : "pb-6"}`
+          }`}
         >
           {voidActive && (
             <div className="void-overlay pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
@@ -663,6 +662,14 @@ function AppContent() {
               <Route
                 path="/settings/characters/:characterId/lorebook"
                 element={<LorebookEditor />}
+              />
+              <Route
+                path="/settings/characters/:characterId/templates"
+                element={<ChatTemplateListPage />}
+              />
+              <Route
+                path="/settings/characters/:characterId/templates/:templateId"
+                element={<ChatTemplateEditorPage />}
               />
               <Route path="/create/persona" element={<CreatePersonaPage />} />
               <Route path="/personas" element={<PersonasPage />} />

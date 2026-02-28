@@ -1,6 +1,5 @@
 import { useNavigate } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
-import { useTranslation } from "react-i18next";
 import {
   ChevronRight,
   Cpu,
@@ -124,7 +123,6 @@ function Row({ icon, title, subtitle, onClick, count, tone = "default" }: RowPro
 
 export function SettingsPage() {
   const navigate = useNavigate();
-  const { t } = useTranslation();
   const { toModelsList } = useNavigationManager();
   const {
     state: { providers, models, characterCount, isLoading },
@@ -162,8 +160,8 @@ export function SettingsPage() {
       {
         key: "providers",
         icon: <EthernetPort />,
-        title: t("settings.items.providers.title"),
-        subtitle: t("settings.items.providers.subtitle"),
+        title: "Providers",
+        subtitle: "Connect to AI services",
         count: providerCount,
         tone: "intelligence" as const,
         onClick: () => navigate("/settings/providers"),
@@ -171,8 +169,8 @@ export function SettingsPage() {
       {
         key: "models",
         icon: <Cpu />,
-        title: t("settings.items.models.title"),
-        subtitle: t("settings.items.models.subtitle"),
+        title: "Models",
+        subtitle: "Configure AI models",
         count: modelCount,
         tone: "intelligence" as const,
         onClick: () => toModelsList(),
@@ -180,96 +178,96 @@ export function SettingsPage() {
       {
         key: "voices",
         icon: <Volume2 />,
-        title: t("settings.items.voices.title"),
-        subtitle: t("settings.items.voices.subtitle"),
+        title: "Voices",
+        subtitle: "Text-to-speech voices",
         tone: "experience" as const,
         onClick: () => navigate("/settings/providers?tab=audio"),
       },
       {
         key: "accessibility",
         icon: <Accessibility />,
-        title: t("settings.items.accessibility.title"),
-        subtitle: t("settings.items.accessibility.subtitle"),
+        title: "Accessibility",
+        subtitle: "Sound cues & haptics",
         tone: "experience" as const,
         onClick: () => navigate("/settings/accessibility"),
       },
       {
         key: "prompts",
         icon: <FileText />,
-        title: t("settings.items.prompts.title"),
-        subtitle: t("settings.items.prompts.subtitle"),
+        title: "System Prompts",
+        subtitle: "Shape AI personality",
         tone: "intelligence" as const,
         onClick: () => navigate("/settings/prompts"),
       },
       {
         key: "security",
         icon: <Shield />,
-        title: t("settings.items.security.title"),
-        subtitle: t("settings.items.security.subtitle"),
+        title: "Security",
+        subtitle: "Encryption & privacy",
         tone: "security" as const,
         onClick: () => navigate("/settings/security"),
       },
       {
         key: "backup",
         icon: <HardDrive />,
-        title: t("settings.items.backup.title"),
-        subtitle: t("settings.items.backup.subtitle"),
+        title: "Backup & Restore",
+        subtitle: "Export or import data",
         tone: "connectivity" as const,
         onClick: () => navigate("/settings/backup"),
       },
       {
         key: "convert",
         icon: <ArrowLeftRight />,
-        title: t("settings.items.convert.title"),
-        subtitle: t("settings.items.convert.subtitle"),
+        title: "Convert Files",
+        subtitle: "Migrate legacy .json exports to .uec",
         tone: "support" as const,
         onClick: () => navigate("/settings/convert"),
       },
       {
         key: "sync",
         icon: <RefreshCw />,
-        title: t("settings.items.sync.title"),
-        subtitle: t("settings.items.sync.subtitle"),
+        title: "Local Sync",
+        subtitle: "Sync across devices",
         tone: "connectivity" as const,
         onClick: () => navigate("/settings/sync"),
       },
       {
         key: "usage",
         icon: <BarChart3 />,
-        title: t("settings.items.usage.title"),
-        subtitle: t("settings.items.usage.subtitle"),
+        title: "Usage Analytics",
+        subtitle: "Costs & token stats",
         tone: "security" as const,
         onClick: () => navigate("/settings/usage"),
       },
       {
         key: "advanced",
         icon: <Sliders />,
-        title: t("settings.items.advanced.title"),
-        subtitle: t("settings.items.advanced.subtitle"),
+        title: "Advanced",
+        subtitle: "Memory & features",
         tone: "intelligence" as const,
         onClick: () => navigate("/settings/advanced"),
       },
       {
         key: "logs",
         icon: <FileCode />,
-        title: t("settings.items.logs.title"),
-        subtitle: t("settings.items.logs.subtitle"),
+        title: "Logs",
+        subtitle: "Debug & diagnostics",
         tone: "support" as const,
         onClick: () => navigate("/settings/logs"),
       },
       {
         key: "guide",
         icon: <BookOpen />,
-        title: t("settings.items.guide.title"),
-        subtitle: t("settings.items.guide.subtitle"),
+        title: "Setup Guide",
+        subtitle: "Rerun onboarding",
         tone: "support" as const,
         onClick: () => navigate("/welcome"),
       },
       {
         key: "docs",
         icon: <HelpCircle />,
-        title: t("settings.items.docs.title"),
-        subtitle: t("settings.items.docs.subtitle"),
+        title: "Documentation",
+        subtitle: "Guides & reference",
         tone: "support" as const,
         onClick: async () => {
           try {
@@ -284,8 +282,8 @@ export function SettingsPage() {
       {
         key: "github",
         icon: <Github />,
-        title: t("settings.items.github.title"),
-        subtitle: t("settings.items.github.subtitle", { version }),
+        title: "Report Issues",
+        subtitle: `Bugs & feedback • v${version}`,
         tone: "support" as const,
         onClick: async () => {
           try {
@@ -304,8 +302,8 @@ export function SettingsPage() {
             <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515a.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0a12.64 12.64 0 0 0-.617-1.25a.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057a19.9 19.9 0 0 0 5.993 3.03a.078.078 0 0 0 .084-.028a14.09 14.09 0 0 0 1.226-1.994a.076.076 0 0 0-.041-.106a13.107 13.107 0 0 1-1.872-.892a.077.077 0 0 1-.008-.128a10.2 10.2 0 0 0 .372-.292a.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127a12.299 12.299 0 0 1-1.873.892a.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028a19.839 19.839 0 0 0 6.002-3.03a.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419c0-1.333.956-2.419 2.157-2.419c1.21 0 2.176 1.096 2.157 2.42c0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419c0-1.333.955-2.419 2.157-2.419c1.21 0 2.176 1.096 2.157 2.42c0 1.333-.946 2.418-2.157 2.418z" />
           </svg>
         ),
-        title: t("settings.items.discord.title"),
-        subtitle: t("settings.items.discord.subtitle"),
+        title: "Join Discord",
+        subtitle: "Community & help",
         tone: "support" as const,
         onClick: async () => {
           try {
@@ -320,8 +318,8 @@ export function SettingsPage() {
       {
         key: "changelog",
         icon: <ScrollText />,
-        title: t("settings.items.changelog.title"),
-        subtitle: t("settings.items.changelog.subtitle"),
+        title: "Changelog",
+        subtitle: `What's new`,
         tone: "support" as const,
         onClick: async () => {
           try {
@@ -336,8 +334,8 @@ export function SettingsPage() {
       {
         key: "reset",
         icon: <RotateCcw />,
-        title: t("settings.items.reset.title"),
-        subtitle: t("settings.items.reset.subtitle"),
+        title: "Reset",
+        subtitle: "Erase everything",
         tone: "danger" as const,
         onClick: () => navigate("/settings/reset"),
       },
@@ -346,15 +344,15 @@ export function SettingsPage() {
             {
               key: "developer",
               icon: <Wrench />,
-              title: t("settings.items.developer.title"),
-              subtitle: t("settings.items.developer.subtitle"),
+              title: "Developer Tools",
+              subtitle: "Debug & testing",
               tone: "developer" as const,
               onClick: () => navigate("/settings/developer"),
             },
           ]
         : []),
     ],
-    [providerCount, modelCount, characterCount, navigate, version, t],
+    [providerCount, modelCount, characterCount, navigate, version],
   );
 
   return (
@@ -372,7 +370,7 @@ export function SettingsPage() {
               "text-fg/35",
             )}
           >
-            {t("settings.sections.intelligence")}
+            Intelligence
           </h2>
           <div className={spacing.field}>
             {items
@@ -403,7 +401,7 @@ export function SettingsPage() {
               "text-fg/35",
             )}
           >
-            {t("settings.sections.experience")}
+            Experience
           </h2>
           <div className={spacing.field}>
             {items
@@ -434,7 +432,7 @@ export function SettingsPage() {
               "text-fg/35",
             )}
           >
-            {t("settings.sections.connectivity")}
+            Connectivity
           </h2>
           <div className={spacing.field}>
             {items
@@ -465,7 +463,7 @@ export function SettingsPage() {
               "text-fg/35",
             )}
           >
-            {t("settings.sections.securityPrivacy")}
+            Security & Privacy
           </h2>
           <div className={spacing.field}>
             {items
@@ -496,7 +494,7 @@ export function SettingsPage() {
               "text-fg/35",
             )}
           >
-            {t("settings.sections.supportInfo")}
+            Support & Info
           </h2>
           <div className={spacing.field}>
             {items
@@ -528,7 +526,7 @@ export function SettingsPage() {
               "text-fg/35",
             )}
           >
-            {t("settings.sections.dangerZone")}
+            Danger Zone
           </h2>
           <div className={spacing.field}>
             {items
@@ -559,7 +557,7 @@ export function SettingsPage() {
                 "text-fg/35",
               )}
             >
-              {t("settings.sections.developer")}
+              Developer
             </h2>
             <div className={spacing.field}>
               {items

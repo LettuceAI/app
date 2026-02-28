@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   Loader2,
@@ -31,7 +31,6 @@ import { BackgroundPositionModal } from "../../components/BackgroundPositionModa
 import { CharacterExportMenu } from "../../components/CharacterExportMenu";
 import { cn, radius, colors, interactive } from "../../design-tokens";
 import { getProviderIcon } from "../../../core/utils/providerIcons";
-import { getSafeAreaBottomPadding } from "../../../core/utils/platform";
 import type { CharacterFileFormat } from "../../../core/storage/characterTransfer";
 import {
   listAudioProviders,
@@ -63,7 +62,6 @@ export function EditCharacterPage() {
 
   // Tab state
   const [activeTab, setActiveTab] = React.useState<"character" | "settings">("character");
-  const safeAreaBottom12 = useMemo(() => getSafeAreaBottomPadding(12), []);
   const [showModelMenu, setShowModelMenu] = React.useState(false);
   const [modelSearchQuery, setModelSearchQuery] = React.useState("");
   const [showFallbackModelMenu, setShowFallbackModelMenu] = React.useState(false);
@@ -94,6 +92,7 @@ export function EditCharacterPage() {
     avatarRoundPath,
     backgroundImagePath,
     scenes,
+    chatTemplates,
     defaultSceneId,
     newSceneContent,
     newSceneDirection,
@@ -931,6 +930,40 @@ export function EditCharacterPage() {
                   Create multiple starting scenarios. One will be selected when starting a new chat.
                 </p>
               </div>
+
+              {/* Chat Templates Section */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <div className="rounded-lg border border-secondary/30 bg-secondary/10 p-1.5">
+                    <MessageSquare className="h-4 w-4 text-secondary" />
+                  </div>
+                  <h3 className="text-sm font-semibold text-fg">Chat Templates</h3>
+                  {(chatTemplates?.length ?? 0) > 0 && (
+                    <span className="ml-auto rounded-full border border-fg/10 bg-fg/5 px-2 py-0.5 text-xs text-fg/70">
+                      {chatTemplates?.length ?? 0}
+                    </span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    navigate(`/settings/characters/${characterId}/templates`)
+                  }
+                  className="flex w-full items-center gap-3 rounded-xl border border-fg/10 bg-surface-el/20 px-3.5 py-3 text-left transition active:bg-surface-el/40"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-medium text-fg">
+                      Manage Templates
+                    </div>
+                    <p className="mt-0.5 text-xs text-fg/50">
+                      {(chatTemplates?.length ?? 0) > 0
+                        ? `${chatTemplates?.length} template${(chatTemplates?.length ?? 0) !== 1 ? "s" : ""} — multi-message conversation starters`
+                        : "Create conversation starters with multiple messages"}
+                    </p>
+                  </div>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-fg/30" />
+                </button>
+              </div>
             </>
           )}
 
@@ -1279,10 +1312,9 @@ export function EditCharacterPage() {
       {/* Bottom Tab Bar */}
       <div
         className={cn(
-          "fixed bottom-0 left-0 right-0 border-t px-3 pt-3",
+          "fixed bottom-0 left-0 right-0 border-t px-3 pb-[calc(env(safe-area-inset-bottom)+12px)] pt-3",
           colors.glass.strong,
         )}
-        style={{ paddingBottom: safeAreaBottom12 }}
       >
         <div
           role="tablist"

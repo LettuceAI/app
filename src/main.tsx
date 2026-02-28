@@ -1,7 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { isDevelopmentMode } from "./core/utils/env";
-import "./i18n";
 import App from "./App";
 import "./App.css";
 

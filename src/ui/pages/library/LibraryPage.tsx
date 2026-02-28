@@ -136,7 +136,7 @@ export function LibraryPage() {
   const handleStartChat = async () => {
     if (selectedItem && selectedItem.itemType === "character") {
       const sceneId =
-        (selectedItem as Character).defaultSceneId || (selectedItem as Character).scenes?.[0]?.id;
+        (selectedItem as Character).defaultSceneId ?? (selectedItem as Character).scenes?.[0]?.id;
       const session = await createSession(
         selectedItem.id,
         `Chat with ${getItemName(selectedItem)}`,
@@ -369,9 +369,7 @@ export function LibraryPage() {
               }}
               className={cn(
                 "flex w-full items-center justify-between rounded-xl px-4 py-3 text-left transition",
-                filter === option
-                  ? "bg-fg/10 text-fg"
-                  : "text-fg/60 hover:bg-fg/5 hover:text-fg",
+                filter === option ? "bg-fg/10 text-fg" : "text-fg/60 hover:bg-fg/5 hover:text-fg",
               )}
             >
               <span className="text-sm font-medium">{option}</span>

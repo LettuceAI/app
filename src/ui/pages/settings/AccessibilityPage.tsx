@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useTranslation } from "react-i18next";
-import { Volume2, Play, Smartphone, Palette, MessageSquare, ChevronRight, Languages } from "lucide-react";
+import { Volume2, Play, Smartphone, Palette, MessageSquare, ChevronRight } from "lucide-react";
 import { type as getPlatform } from "@tauri-apps/plugin-os";
 import { impactFeedback } from "@tauri-apps/plugin-haptics";
 import { readSettings, saveAdvancedSettings } from "../../../core/storage/repo";
@@ -47,14 +46,8 @@ function percentToVolume(value: number): number {
   return Math.max(0, Math.min(1, value / 100));
 }
 
-const LOCALE_OPTIONS = [
-  { value: "en", label: "English" },
-  { value: "zh-Hant", label: "繁體中文" },
-] as const;
-
 export function AccessibilityPage() {
   const navigate = useNavigate();
-  const { i18n, t } = useTranslation();
   const [accessibility, setAccessibility] = useState<AccessibilitySettings>(
     createDefaultAccessibilitySettings(),
   );
@@ -148,50 +141,9 @@ export function AccessibilityPage() {
     return null;
   }
 
-  const handleLocaleChange = (value: string) => {
-    void i18n.changeLanguage(value);
-    try {
-      localStorage.setItem("app-locale", value);
-    } catch {
-      // ignore
-    }
-  };
-
   return (
     <div className="flex h-full flex-col pb-16">
       <section className="flex-1 overflow-y-auto px-3 pt-3 space-y-6">
-        <div>
-          <h2 className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-fg/35">
-            {t("accessibility.language")}
-          </h2>
-          <div
-            className={cn(
-              "rounded-xl border border-fg/10 bg-fg/5 px-4 py-3",
-              "flex items-center justify-between gap-3",
-            )}
-          >
-            <div className="flex items-center gap-3">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-fg/10 bg-fg/10">
-                <Languages className="h-4 w-4 text-fg/70" />
-              </div>
-              <span className="text-sm font-medium text-fg">{t("accessibility.appLanguage")}</span>
-            </div>
-            <select
-              value={i18n.language === "zh-Hant" ? "zh-Hant" : "en"}
-              onChange={(e) => handleLocaleChange(e.target.value)}
-              className={cn(
-                "rounded-lg border border-fg/15 bg-fg/5 px-3 py-2 text-sm text-fg",
-                "focus:outline-none focus:ring-2 focus:ring-accent/50",
-              )}
-            >
-              {LOCALE_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
         <div>
           <h2 className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-fg/35">
             Sound Feedback
