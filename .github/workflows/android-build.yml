@@ -3,6 +3,10 @@ name: Android Build (Tauri)
 on:
   workflow_dispatch:
 
+concurrency:
+  group: android-build-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   NDK_VERSION: r26d
 

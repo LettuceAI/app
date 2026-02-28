@@ -3,6 +3,10 @@ name: iOS Init + PR
 on:
   workflow_dispatch:
 
+concurrency:
+  group: ios-init-pr-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
   pull-requests: write

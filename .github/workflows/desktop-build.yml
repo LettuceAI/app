@@ -34,6 +34,10 @@ on:
         default: true
         type: boolean
 
+concurrency:
+  group: desktop-build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   linux_cpu:
     name: Linux Build (CPU)
@@ -711,33 +715,43 @@ jobs:
       - name: Install Vulkan SDK
         shell: pwsh
         run: |
+          $ErrorActionPreference = "Stop"
           $version = (Invoke-WebRequest -Uri "https://vulkan.lunarg.com/sdk/latest/windows.txt" -UseBasicParsing).Content.Trim()
           $installer = Join-Path $env:TEMP "vulkan_sdk.exe"
-          Invoke-WebRequest -Uri "https://sdk.lunarg.com/sdk/download/latest/windows/vulkan_sdk.exe" -OutFile $installer
           $installDir = "C:\VulkanSDK\$version"
-          $proc = Start-Process -FilePath $installer -ArgumentList "/S /D=$installDir" -Wait -PassThru
+          $downloadUrl = "https://sdk.lunarg.com/sdk/download/$version/windows/vulkan_sdk.exe?Human=true"
+          $shaInfoUrl = "https://sdk.lunarg.com/sdk/sha/$version/windows/vulkan_sdk.exe.json"
+
+          Invoke-WebRequest -Uri $downloadUrl -OutFile $installer
+          $shaInfo = Invoke-RestMethod -Uri $shaInfoUrl
+          $actualSha = (Get-FileHash -Path $installer -Algorithm SHA256).Hash.ToLower()
+          if ($actualSha -ne $shaInfo.sha.ToLower()) {
+            Write-Error "Vulkan SDK SHA mismatch. Expected $($shaInfo.sha), got $actualSha"
+            exit 1
+          }
+
+          # Qt installer style unattended install args documented by LunarG.
+          $installArgs = @(
+            "--root", $installDir,
+            "--accept-licenses",
+            "--default-answer",
+            "--confirm-command",
+            "install"
+          )
+          $proc = Start-Process -FilePath $installer -ArgumentList $installArgs -Wait -PassThru
           if ($proc.ExitCode -ne 0) {
             Write-Error "Vulkan SDK installer failed with exit code $($proc.ExitCode)"
             exit 1
           }
-          $vkDir = $null
-          foreach ($regPath in @("HKLM:\SOFTWARE\Khronos\Vulkan\SDK", "HKLM:\SOFTWARE\WOW6432Node\Khronos\Vulkan\SDK")) {
-            $reg = Get-ItemProperty -Path $regPath -Name InstallDir -ErrorAction SilentlyContinue
-            if ($reg -and $reg.InstallDir) {
-              $vkDir = $reg.InstallDir
-              break
-            }
-          }
-          if (-not $vkDir) {
-            $vkDir = $installDir
-          }
-          $vkDir = $vkDir.TrimEnd("\")
-          if (-not (Test-Path $vkDir)) {
-            Write-Error "Vulkan SDK not found at $vkDir"
+
+          if (-not (Test-Path "$installDir\Bin\glslc.exe")) {
+            Write-Error "glslc not found after Vulkan SDK install at $installDir"
             exit 1
           }
-          "VULKAN_SDK=$vkDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "$vkDir\Bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+          "VULKAN_SDK=$installDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "$installDir\Bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          Write-Host "Vulkan SDK installed at $installDir"
 
       - name: Verify Vulkan toolchain
         shell: pwsh

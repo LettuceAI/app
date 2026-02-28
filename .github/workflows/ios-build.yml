@@ -13,6 +13,10 @@ on:
           - ad-hoc
           - app-store
 
+concurrency:
+  group: ios-build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   ios:
     runs-on: macos-latest
