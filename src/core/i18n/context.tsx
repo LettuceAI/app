@@ -50,17 +50,25 @@ function detectInitialLocale(): Locale {
   const saved = window.localStorage.getItem(STORAGE_KEY);
   if (isSupportedLocale(saved)) return saved;
 
+  let detected: Locale = "en";
+
   const browserLang = window.navigator.language;
-  if (isSupportedLocale(browserLang)) return browserLang;
+  if (isSupportedLocale(browserLang)) {
+    detected = browserLang;
+  } else {
+    const browserLangLower = browserLang.toLowerCase();
+    if (browserLangLower.startsWith("zh")) {
+      detected = "zh-Hant";
+    } else {
+      const base = browserLangLower.split("-")[0];
+      const baseMatch = SUPPORTED_LOCALES.find((locale) => locale.toLowerCase() === base);
+      if (baseMatch) detected = baseMatch;
+    }
+  }
 
-  const browserLangLower = browserLang.toLowerCase();
-  if (browserLangLower.startsWith("zh")) return "zh-Hant";
-
-  const base = browserLangLower.split("-")[0];
-  const baseMatch = SUPPORTED_LOCALES.find((locale) => locale.toLowerCase() === base);
-  if (baseMatch) return baseMatch;
-
-  return "en";
+  // Persist the detected locale so it sticks across reloads (first boot)
+  window.localStorage.setItem(STORAGE_KEY, detected);
+  return detected;
 }
 
 function translateWithLocale(

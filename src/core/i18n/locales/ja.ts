@@ -1976,6 +1976,10 @@ export const jaMessages: DeepPartialMessageTree<LocaleMessages> = {
         description:
           "デスクトップ版を使用しています。一部の機能がモバイルと異なる場合があります。問題はGitHubで報告してください。",
       },
+      languageSelector: {
+        title: "言語",
+        description: "デバイスから自動検出されました。設定からいつでも変更できます。",
+      },
       getStarted: "始めましょう",
       skipForNow: "今はスキップ",
       restoreFromBackup: "バックアップから復元",

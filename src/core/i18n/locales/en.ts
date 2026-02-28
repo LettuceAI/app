@@ -1973,6 +1973,10 @@ export const enMessages = {
         description:
           "You're using the desktop version. Some features may differ from mobile. Report issues on GitHub.",
       },
+      languageSelector: {
+        title: "Language",
+        description: "Auto-detected from your device. You can change it anytime in settings.",
+      },
       getStarted: "Get Started",
       skipForNow: "Skip for now",
       restoreFromBackup: "Restore from Backup",

@@ -1993,6 +1993,11 @@ export const nlMessages: DeepPartialMessageTree<LocaleMessages> = {
         description:
           "Je gebruikt de desktopversie. Sommige functies kunnen afwijken van mobiel. Meld problemen op GitHub.",
       },
+      languageSelector: {
+        title: "Taal",
+        description:
+          "Automatisch gedetecteerd van je apparaat. Je kunt dit altijd wijzigen in instellingen.",
+      },
       getStarted: "Aan de slag",
       skipForNow: "Voorlopig overslaan",
       restoreFromBackup: "Herstellen vanuit back-up",

@@ -2002,6 +2002,11 @@ export const deMessages: DeepPartialMessageTree<LocaleMessages> = {
         description:
           "Du verwendest die Desktop-Version. Einige Funktionen können von der mobilen Version abweichen. Melde Probleme auf GitHub.",
       },
+      languageSelector: {
+        title: "Sprache",
+        description:
+          "Automatisch von deinem Gerät erkannt. Du kannst sie jederzeit in den Einstellungen ändern.",
+      },
       getStarted: "Loslegen",
       skipForNow: "Vorerst überspringen",
       restoreFromBackup: "Aus Sicherung wiederherstellen",

@@ -1974,6 +1974,11 @@ export const viMessages: DeepPartialMessageTree<LocaleMessages> = {
         description:
           "Bạn đang dùng phiên bản desktop. Một số tính năng có thể khác với di động. Báo lỗi trên GitHub.",
       },
+      languageSelector: {
+        title: "Ngôn ngữ",
+        description:
+          "Tự động phát hiện từ thiết bị của bạn. Bạn có thể thay đổi bất cứ lúc nào trong cài đặt.",
+      },
       getStarted: "Bắt đầu",
       skipForNow: "Bỏ qua",
       restoreFromBackup: "Khôi phục từ bản sao lưu",

@@ -1381,7 +1381,7 @@ export const filMessages: DeepPartialMessageTree<LocaleMessages> = {
     },
     groups: {
       backgrounds: "Mga Background",
-      content: "Nilalaman", 
+      content: "Nilalaman",
       semantic: "Semantic",
     },
   },
@@ -2005,6 +2005,11 @@ export const filMessages: DeepPartialMessageTree<LocaleMessages> = {
         title: "Desktop Beta build",
         description:
           "Ginagamit mo ang bersyon ng desktop. Maaaring mag-iba ang ilang feature mula sa mobile. Mag-report ng mga isyu sa GitHub.",
+      },
+      languageSelector: {
+        title: "Wika",
+        description:
+          "Awtomatikong nakita mula sa iyong device. Maaari mo itong baguhin anumang oras sa settings.",
       },
       getStarted: "Magsimula",
       skipForNow: "Laktawan muna",

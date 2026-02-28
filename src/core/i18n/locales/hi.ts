@@ -1979,6 +1979,10 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
         description:
           "आप डेस्कटॉप संस्करण का उपयोग कर रहे हैं। कुछ सुविधाएँ मोबाइल से भिन्न हो सकती हैं। GitHub पर समस्याएँ रिपोर्ट करें।",
       },
+      languageSelector: {
+        title: "भाषा",
+        description: "आपके डिवाइस से स्वतः पहचानी गई। आप इसे कभी भी सेटिंग्स में बदल सकते हैं।",
+      },
       getStarted: "शुरू करें",
       skipForNow: "अभी छोड़ दें",
       restoreFromBackup: "बैकअप से पुनर्स्थापित करें",

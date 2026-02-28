@@ -1990,6 +1990,11 @@ export const esMessages: DeepPartialMessageTree<LocaleMessages> = {
         description:
           "Estás usando la versión de escritorio. Algunas funciones pueden diferir de la versión móvil. Reporta problemas en GitHub.",
       },
+      languageSelector: {
+        title: "Idioma",
+        description:
+          "Detectado automáticamente desde tu dispositivo. Puedes cambiarlo en cualquier momento en ajustes.",
+      },
       getStarted: "Comenzar",
       skipForNow: "Omitir por ahora",
       restoreFromBackup: "Restaurar desde copia de seguridad",

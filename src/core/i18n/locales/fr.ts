@@ -2001,6 +2001,11 @@ export const frMessages: DeepPartialMessageTree<LocaleMessages> = {
         description:
           "Vous utilisez la version bureau. Certaines fonctionnalités peuvent différer du mobile. Signalez les problèmes sur GitHub.",
       },
+      languageSelector: {
+        title: "Langue",
+        description:
+          "Détectée automatiquement depuis votre appareil. Vous pouvez la modifier à tout moment dans les paramètres.",
+      },
       getStarted: "Commencer",
       skipForNow: "Passer pour l'instant",
       restoreFromBackup: "Restaurer depuis une sauvegarde",

@@ -1965,6 +1965,10 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
         description:
           "데스크톱 버전을 사용 중입니다. 일부 기능이 모바일과 다를 수 있습니다. GitHub에서 문제를 보고하세요.",
       },
+      languageSelector: {
+        title: "언어",
+        description: "기기에서 자동 감지되었습니다. 설정에서 언제든지 변경할 수 있습니다.",
+      },
       getStarted: "시작하기",
       skipForNow: "지금은 건너뛰기",
       restoreFromBackup: "백업에서 복원",

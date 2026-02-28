@@ -1985,6 +1985,11 @@ export const plMessages: DeepPartialMessageTree<LocaleMessages> = {
         description:
           "Używasz wersji desktopowej. Niektóre funkcje mogą się różnić od mobilnych. Zgłaszaj problemy na GitHub.",
       },
+      languageSelector: {
+        title: "Język",
+        description:
+          "Wykryto automatycznie z urządzenia. Możesz zmienić w dowolnym momencie w ustawieniach.",
+      },
       getStarted: "Rozpocznij",
       skipForNow: "Pomiń na razie",
       restoreFromBackup: "Przywróć z kopii zapasowej",

@@ -1980,6 +1980,11 @@ export const ruMessages: DeepPartialMessageTree<LocaleMessages> = {
         description:
           "Вы используете десктоп-версию. Некоторые функции могут отличаться от мобильной. Сообщайте о проблемах на GitHub.",
       },
+      languageSelector: {
+        title: "Язык",
+        description:
+          "Автоматически определён по вашему устройству. Вы можете изменить его в любое время в настройках.",
+      },
       getStarted: "Начать",
       skipForNow: "Пропустить",
       restoreFromBackup: "Восстановить из резервной копии",

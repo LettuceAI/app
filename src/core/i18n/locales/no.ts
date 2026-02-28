@@ -1986,6 +1986,11 @@ export const noMessages: DeepPartialMessageTree<LocaleMessages> = {
         description:
           "Du bruker desktop-versjonen. Noen funksjoner kan avvike fra mobil. Rapporter problemer på GitHub.",
       },
+      languageSelector: {
+        title: "Språk",
+        description:
+          "Automatisk oppdaget fra enheten din. Du kan endre det når som helst i innstillingene.",
+      },
       getStarted: "Kom i gang",
       skipForNow: "Hopp over for nå",
       restoreFromBackup: "Gjenopprett fra sikkerhetskopi",

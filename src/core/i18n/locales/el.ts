@@ -1995,6 +1995,11 @@ export const elMessages: DeepPartialMessageTree<LocaleMessages> = {
         description:
           "Χρησιμοποιείτε την έκδοση desktop. Ορισμένες λειτουργίες μπορεί να διαφέρουν από τη φορητή. Αναφέρετε προβλήματα στο GitHub.",
       },
+      languageSelector: {
+        title: "Γλώσσα",
+        description:
+          "Ανιχνεύτηκε αυτόματα από τη συσκευή σας. Μπορείτε να την αλλάξετε ανά πάσα στιγμή στις ρυθμίσεις.",
+      },
       getStarted: "Ξεκινήστε",
       skipForNow: "Παράλειψη προς το παρόν",
       restoreFromBackup: "Επαναφορά από Αντίγραφο",

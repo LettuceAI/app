@@ -1951,6 +1951,10 @@ export const zhHantMessages: LocaleMessages = {
         title: "桌面版 Beta",
         description: "您正在使用桌面版。部分功能可能與行動版不同。請在 GitHub 上回報問題。",
       },
+      languageSelector: {
+        title: "語言",
+        description: "已從您的裝置自動偵測。您可以隨時在設定中更改。",
+      },
       getStarted: "開始使用",
       skipForNow: "暫時跳過",
       restoreFromBackup: "從備份還原",

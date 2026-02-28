@@ -1982,6 +1982,11 @@ export const idMessages: DeepPartialMessageTree<LocaleMessages> = {
         description:
           "Anda menggunakan versi desktop. Beberapa fitur mungkin berbeda dari seluler. Laporkan masalah di GitHub.",
       },
+      languageSelector: {
+        title: "Bahasa",
+        description:
+          "Terdeteksi otomatis dari perangkat Anda. Anda dapat mengubahnya kapan saja di pengaturan.",
+      },
       getStarted: "Mulai",
       skipForNow: "Lewati untuk sekarang",
       restoreFromBackup: "Pulihkan dari Cadangan",
