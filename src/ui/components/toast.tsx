@@ -7,7 +7,7 @@ type ToastVariant = "info" | "warning" | "success" | "error";
 
 // Base styling that matches your UI design language
 const baseClassName =
-  "pointer-events-auto flex w-full max-w-md items-start gap-3 rounded-xl border border-fg/20 bg-surface/80 px-4 py-3 shadow-lg backdrop-blur-md";
+  "pointer-events-auto flex w-full max-w-md items-start gap-3 rounded-xl border border-fg/20 bg-surface px-4 py-3 shadow-lg backdrop-blur-md";
 
 const titleClassName = "text-sm font-semibold text-fg leading-tight";
 const descriptionClassName = "text-xs text-fg/80 leading-relaxed";
