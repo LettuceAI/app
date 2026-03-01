@@ -836,9 +836,9 @@ mod desktop {
             if let Some(kv_type) = llama_kv_type {
                 ctx_params = ctx_params.with_type_k(kv_type).with_type_v(kv_type);
             }
-            if let Some(policy) = llama_flash_attention_policy {
-                ctx_params = ctx_params.with_flash_attention_policy(policy);
-            }
+            ctx_params = ctx_params.with_flash_attention_policy(
+                llama_flash_attention_policy.unwrap_or(LLAMA_FLASH_ATTN_TYPE_AUTO),
+            );
             if let Some(base) = llama_rope_freq_base {
                 ctx_params = ctx_params.with_rope_freq_base(base as f32);
             }

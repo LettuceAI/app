@@ -185,6 +185,7 @@ export function EditModelPage() {
     handleLlamaOffloadKqvChange,
     handleLlamaBatchSizeChange,
     handleLlamaKvTypeChange,
+    handleLlamaFlashAttentionChange,
     handleOllamaNumCtxChange,
     handleOllamaNumPredictChange,
     handleOllamaNumKeepChange,
@@ -563,23 +564,27 @@ export function EditModelPage() {
       handleLlamaBatchSizeChange(512);
       handleLlamaKvTypeChange("q8_0");
       handleLlamaOffloadKqvChange(true);
+      handleLlamaFlashAttentionChange("auto");
       return;
     }
     if (preset === "throughput") {
       handleLlamaBatchSizeChange(1024);
       handleLlamaKvTypeChange("f16");
       handleLlamaOffloadKqvChange(true);
+      handleLlamaFlashAttentionChange("enabled");
       return;
     }
     if (preset === "vram") {
       handleLlamaBatchSizeChange(512);
       handleLlamaKvTypeChange("q4_k");
       handleLlamaOffloadKqvChange(true);
+      handleLlamaFlashAttentionChange("enabled");
       return;
     }
     handleLlamaBatchSizeChange(256);
     handleLlamaKvTypeChange("q8_0");
     handleLlamaOffloadKqvChange(false);
+    handleLlamaFlashAttentionChange("auto");
   };
 
   // Register window globals for header save button
@@ -1805,6 +1810,44 @@ export function EditModelPage() {
                                 : modelAdvancedDraft.llamaOffloadKqv === false
                                   ? "Using RAM for context (KV cache on CPU)"
                                   : "Auto: runtime decides VRAM vs RAM for context"}
+                            </span>
+                          </div>
+
+                          <div className="space-y-4">
+                            <div className="space-y-0.5">
+                              <span className="block text-xs font-medium text-fg/70">
+                                Flash Attention
+                              </span>
+                              <span className="block text-[10px] text-fg/40">
+                                Faster inference, lower VRAM usage
+                              </span>
+                            </div>
+                            <select
+                              value={modelAdvancedDraft.llamaFlashAttention ?? "auto"}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                handleLlamaFlashAttentionChange(
+                                  val === "auto" ? null : (val as "enabled" | "disabled"),
+                                );
+                              }}
+                              className="w-full rounded-xl border border-fg/10 bg-surface-el/20 px-3 py-2.5 text-sm text-fg transition focus:border-fg/30 focus:outline-none"
+                            >
+                              <option value="auto" className="bg-[#16171d]">
+                                Auto
+                              </option>
+                              <option value="enabled" className="bg-[#16171d]">
+                                Enabled
+                              </option>
+                              <option value="disabled" className="bg-[#16171d]">
+                                Disabled
+                              </option>
+                            </select>
+                            <span className="block text-[10px] text-fg/40">
+                              {modelAdvancedDraft.llamaFlashAttention === "enabled"
+                                ? "Force flash attention on (faster, less VRAM)"
+                                : modelAdvancedDraft.llamaFlashAttention === "disabled"
+                                  ? "Force flash attention off"
+                                  : "llama.cpp decides based on model & hardware"}
                             </span>
                           </div>
                         </div>

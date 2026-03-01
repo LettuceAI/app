@@ -216,6 +216,16 @@ fn build_llama_extra_fields(model: &Model, settings: &Settings) -> Option<HashMa
     {
         extra.insert("llamaKvType".to_string(), json!(v));
     }
+    if let Some(v) = model
+        .advanced_model_settings
+        .as_ref()
+        .and_then(|a| a.llama_flash_attention.clone())
+        .or_else(|| settings.advanced_model_settings.llama_flash_attention.clone())
+        .map(|v| v.trim().to_ascii_lowercase())
+        .filter(|v| !v.is_empty())
+    {
+        extra.insert("llamaFlashAttentionPolicy".to_string(), json!(v));
+    }
 
     if extra.is_empty() {
         None

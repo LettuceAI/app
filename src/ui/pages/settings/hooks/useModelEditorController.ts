@@ -54,6 +54,7 @@ type ControllerReturn = {
   handleLlamaOffloadKqvChange: (value: boolean | null) => void;
   handleLlamaBatchSizeChange: (value: number | null) => void;
   handleLlamaKvTypeChange: (value: AdvancedModelSettings["llamaKvType"]) => void;
+  handleLlamaFlashAttentionChange: (value: AdvancedModelSettings["llamaFlashAttention"]) => void;
   handleOllamaNumCtxChange: (value: number | null) => void;
   handleOllamaNumPredictChange: (value: number | null) => void;
   handleOllamaNumKeepChange: (value: number | null) => void;
@@ -539,6 +540,19 @@ export function useModelEditorController(): ControllerReturn {
         payload: {
           ...state.modelAdvancedDraft,
           llamaKvType: value ?? null,
+        },
+      });
+    },
+    [dispatch, state.modelAdvancedDraft],
+  );
+
+  const handleLlamaFlashAttentionChange = useCallback(
+    (value: AdvancedModelSettings["llamaFlashAttention"]) => {
+      dispatch({
+        type: "set_model_advanced_draft",
+        payload: {
+          ...state.modelAdvancedDraft,
+          llamaFlashAttention: value ?? null,
         },
       });
     },
@@ -1039,6 +1053,7 @@ export function useModelEditorController(): ControllerReturn {
     handleLlamaOffloadKqvChange,
     handleLlamaBatchSizeChange,
     handleLlamaKvTypeChange,
+    handleLlamaFlashAttentionChange,
     handleOllamaNumCtxChange,
     handleOllamaNumPredictChange,
     handleOllamaNumKeepChange,

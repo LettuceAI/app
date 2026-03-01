@@ -278,6 +278,8 @@ pub struct AdvancedModelSettings {
     pub llama_offload_kqv: Option<bool>,
     pub llama_batch_size: Option<u32>,
     pub llama_kv_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub llama_flash_attention: Option<String>,
     pub ollama_num_ctx: Option<u32>,
     pub ollama_num_predict: Option<u32>,
     pub ollama_num_keep: Option<u32>,
@@ -321,6 +323,7 @@ impl Default for AdvancedModelSettings {
             llama_offload_kqv: None,
             llama_batch_size: None,
             llama_kv_type: None,
+            llama_flash_attention: None,
             ollama_num_ctx: None,
             ollama_num_predict: None,
             ollama_num_keep: None,
