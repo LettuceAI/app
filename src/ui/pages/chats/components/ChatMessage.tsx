@@ -649,6 +649,11 @@ function ChatMessageInner({
               content={displayContent ?? message.content}
               className="text-inherit select-none"
               onImageClick={onImageClick}
+              textColors={chatAppearance?.plainTextColorHex || chatAppearance?.italicTextColorHex || chatAppearance?.quotedTextColorHex ? {
+                plain: chatAppearance.plainTextColorHex,
+                italic: chatAppearance.italicTextColorHex,
+                quoted: chatAppearance.quotedTextColorHex,
+              } : undefined}
             />
           </>
         )}

@@ -1398,6 +1398,10 @@ export const enMessages = {
       info: "Info",
       secondary: "Secondary",
       warning: "Warning",
+      textColors: "Text Colors",
+      plainTextHex: "Plain Text Color",
+      italicTextHex: "Italic Text Color",
+      quotedTextHex: "Quoted Text Color",
     },
     backgroundTransparency: {
       label: "Background & Transparency",

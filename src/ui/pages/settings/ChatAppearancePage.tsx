@@ -961,6 +961,36 @@ export function ChatAppearancePage() {
         </div>
       </div>
 
+      {/* Text Colors */}
+      <div>
+        <h2 className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-fg/35">
+          {t("chatAppearance.colors.textColors")}
+        </h2>
+        <div className="space-y-4 rounded-xl border border-fg/10 bg-fg/5 px-4 py-3">
+          <HexColorControl
+            label={t("chatAppearance.colors.plainTextHex")}
+            value={effectiveSettings.plainTextColorHex}
+            onChange={(v) => updateField("plainTextColorHex", v)}
+            overridden={isOverridden("plainTextColorHex")}
+            onReset={mode === "character" ? () => resetField("plainTextColorHex") : undefined}
+          />
+          <HexColorControl
+            label={t("chatAppearance.colors.italicTextHex")}
+            value={effectiveSettings.italicTextColorHex}
+            onChange={(v) => updateField("italicTextColorHex", v)}
+            overridden={isOverridden("italicTextColorHex")}
+            onReset={mode === "character" ? () => resetField("italicTextColorHex") : undefined}
+          />
+          <HexColorControl
+            label={t("chatAppearance.colors.quotedTextHex")}
+            value={effectiveSettings.quotedTextColorHex}
+            onChange={(v) => updateField("quotedTextColorHex", v)}
+            overridden={isOverridden("quotedTextColorHex")}
+            onReset={mode === "character" ? () => resetField("quotedTextColorHex") : undefined}
+          />
+        </div>
+      </div>
+
       {/* Background */}
       <div>
         <h2 className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-fg/35">

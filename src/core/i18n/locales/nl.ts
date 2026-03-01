@@ -1421,6 +1421,10 @@ export const nlMessages: DeepPartialMessageTree<LocaleMessages> = {
       info: "Info",
       secondary: "Secundair",
       warning: "Waarschuwing",
+      textColors: "Text Colors",
+      plainTextHex: "Plain Text Color",
+      italicTextHex: "Italic Text Color",
+      quotedTextHex: "Quoted Text Color",
     },
     backgroundTransparency: {
       label: "Achtergrond & Transparantie",

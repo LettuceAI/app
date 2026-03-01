@@ -1434,6 +1434,10 @@ export const filMessages: DeepPartialMessageTree<LocaleMessages> = {
       info: "Info",
       secondary: "Secondary",
       warning: "Babala",
+      textColors: "Text Colors",
+      plainTextHex: "Plain Text Color",
+      italicTextHex: "Italic Text Color",
+      quotedTextHex: "Quoted Text Color",
     },
     backgroundTransparency: {
       label: "Background at Transparency",

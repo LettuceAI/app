@@ -1422,6 +1422,10 @@ export const elMessages: DeepPartialMessageTree<LocaleMessages> = {
       info: "Πληροφορία",
       secondary: "Δευτερεύον",
       warning: "Προειδοποίηση",
+      textColors: "Text Colors",
+      plainTextHex: "Plain Text Color",
+      italicTextHex: "Italic Text Color",
+      quotedTextHex: "Quoted Text Color",
     },
     backgroundTransparency: {
       label: "Φόντο & Διαφάνεια",

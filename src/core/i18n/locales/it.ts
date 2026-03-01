@@ -1419,6 +1419,10 @@ export const itMessages: DeepPartialMessageTree<LocaleMessages> = {
       info: "Info",
       secondary: "Secondario",
       warning: "Avviso",
+      textColors: "Text Colors",
+      plainTextHex: "Plain Text Color",
+      italicTextHex: "Italic Text Color",
+      quotedTextHex: "Quoted Text Color",
     },
     backgroundTransparency: {
       label: "Sfondo e trasparenza",

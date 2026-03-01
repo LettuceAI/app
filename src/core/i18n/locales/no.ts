@@ -1413,6 +1413,10 @@ export const noMessages: DeepPartialMessageTree<LocaleMessages> = {
       info: "Info",
       secondary: "Sekundær",
       warning: "Advarsel",
+      textColors: "Text Colors",
+      plainTextHex: "Plain Text Color",
+      italicTextHex: "Italic Text Color",
+      quotedTextHex: "Quoted Text Color",
     },
     backgroundTransparency: {
       label: "Bakgrunn og gjennomsiktighet",

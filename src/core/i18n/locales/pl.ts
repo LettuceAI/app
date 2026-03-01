@@ -1413,6 +1413,10 @@ export const plMessages: DeepPartialMessageTree<LocaleMessages> = {
       info: "Informacja",
       secondary: "Drugorzędny",
       warning: "Ostrzeżenie",
+      textColors: "Text Colors",
+      plainTextHex: "Plain Text Color",
+      italicTextHex: "Italic Text Color",
+      quotedTextHex: "Quoted Text Color",
     },
     backgroundTransparency: {
       label: "Tło i przezroczystość",

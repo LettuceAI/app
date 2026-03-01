@@ -1385,6 +1385,10 @@ export const zhHantMessages: LocaleMessages = {
       info: "資訊",
       secondary: "次要",
       warning: "警告",
+      textColors: "Text Colors",
+      plainTextHex: "Plain Text Color",
+      italicTextHex: "Italic Text Color",
+      quotedTextHex: "Quoted Text Color",
     },
     backgroundTransparency: {
       label: "背景與透明度",
