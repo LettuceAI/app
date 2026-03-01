@@ -816,6 +816,7 @@ jobs:
 
           "ROCM_PATH=$rocmRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "HIP_PATH=$rocmRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "HIP_PLATFORM=amd" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "CMAKE_PREFIX_PATH=$rocmRoot\lib\cmake" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           $rocmBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
@@ -899,6 +900,8 @@ jobs:
           RUSTFLAGS: "--cfg DEV_BUILD -C target-feature=-crt-static"
           CMAKE_MSVC_RUNTIME_LIBRARY: "MultiThreadedDLL"
           CMAKE_GENERATOR: "Ninja"
+          CMAKE_HIP_PLATFORM: "amd"
+          HIP_PLATFORM: "amd"
           CARGO_TARGET_DIR: target-rocm
         run: bun run tauri build --config dev-config.json --features llama-gpu-rocm
 
