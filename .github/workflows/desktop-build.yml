@@ -8,8 +8,8 @@ on:
         required: false
         default: false
         type: boolean
-      build_llama_vulkan_linux:
-        description: "Also build Linux desktop with llama.cpp Vulkan support"
+      build_llama_rocm_linux:
+        description: "Also build Linux desktop with llama.cpp ROCm support"
         required: false
         default: false
         type: boolean
@@ -23,8 +23,8 @@ on:
         required: false
         default: false
         type: boolean
-      build_llama_vulkan_windows:
-        description: "Build Windows Vulkan version with llama.cpp Vulkan support"
+      build_llama_rocm_windows:
+        description: "Build Windows ROCm version with llama.cpp ROCm support"
         required: false
         default: false
         type: boolean
@@ -324,9 +324,9 @@ jobs:
           name: linux-cuda-zip
           path: dist-artifacts/linux-cuda.zip
 
-  linux_vulkan:
-    name: Linux Build (Vulkan)
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_llama_vulkan_linux == true }}
+  linux_rocm:
+    name: Linux Build (ROCm)
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_llama_rocm_linux == true }}
     runs-on: blacksmith-4vcpu-ubuntu-2404
     env:
       APTABASE_KEY: ${{ secrets.APTABASE_KEY }}
@@ -356,6 +356,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             build-essential \
+            ca-certificates \
+            curl \
+            gpg \
             pkg-config \
             libssl-dev \
             libgtk-3-dev \
@@ -364,20 +367,33 @@ jobs:
             libwebkit2gtk-4.1-dev \
             libspeechd-dev \
             patchelf \
-            libvulkan-dev \
-            vulkan-tools \
-            libshaderc-dev \
-            glslc \
-            glslang-tools \
             zip
 
-      - name: Verify Vulkan shader toolchain
+      - name: Install ROCm HIP toolchain (Linux)
         run: |
-          command -v glslc >/dev/null 2>&1 || {
-            echo "glslc not found (required by FindVulkan).";
-            echo "Install package 'glslc' (from shaderc) for this runner image.";
+          set -euxo pipefail
+          sudo mkdir -p /etc/apt/keyrings
+          curl -fsSL https://repo.radeon.com/rocm/rocm.gpg.key | gpg --dearmor | sudo tee /etc/apt/keyrings/rocm.gpg >/dev/null
+          echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com/rocm/apt/latest noble main" | sudo tee /etc/apt/sources.list.d/rocm.list
+          sudo apt-get update
+          sudo apt-get install -y \
+            rocm-core \
+            rocm-hip-runtime \
+            rocm-hip-sdk \
+            hipcc
+          echo "/opt/rocm/bin" >> "$GITHUB_PATH"
+          echo "ROCM_PATH=/opt/rocm" >> "$GITHUB_ENV"
+          echo "HIP_PATH=/opt/rocm" >> "$GITHUB_ENV"
+          echo "CMAKE_PREFIX_PATH=/opt/rocm" >> "$GITHUB_ENV"
+
+      - name: Verify ROCm toolchain
+        run: |
+          command -v hipcc >/dev/null 2>&1 || {
+            echo "hipcc not found (required for llama-gpu-rocm build).";
+            echo "Install ROCm/HIP on this runner image and ensure hipcc is on PATH.";
             exit 1;
           }
+          hipcc --version
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -439,30 +455,30 @@ jobs:
           }
           EOF
 
-      - name: Build Tauri binary (Linux, llama.cpp Vulkan)
+      - name: Build Tauri binary (Linux, llama.cpp ROCm)
         env:
           RUSTFLAGS: "--cfg DEV_BUILD"
-          CARGO_TARGET_DIR: target-vulkan
-        run: bun run tauri build --config dev-config.json --features llama-gpu-vulkan --no-bundle
+          CARGO_TARGET_DIR: target-rocm
+        run: bun run tauri build --config dev-config.json --features llama-gpu-rocm --no-bundle
 
-      - name: Bundle Linux Vulkan deb
+      - name: Bundle Linux ROCm deb
         timeout-minutes: 20
         env:
           RUSTFLAGS: "--cfg DEV_BUILD"
-          CARGO_TARGET_DIR: target-vulkan
-        run: bun run tauri bundle --config dev-config.json --features llama-gpu-vulkan --bundles deb
+          CARGO_TARGET_DIR: target-rocm
+        run: bun run tauri bundle --config dev-config.json --features llama-gpu-rocm --bundles deb
 
-      - name: Package Linux Vulkan bundle zip
+      - name: Package Linux ROCm bundle zip
         run: |
           mkdir -p dist-artifacts
-          cd src-tauri/target-vulkan/release/bundle
-          zip -r ../../../../dist-artifacts/linux-vulkan.zip .
+          cd src-tauri/target-rocm/release/bundle
+          zip -r ../../../../dist-artifacts/linux-rocm.zip .
 
-      - name: Upload Linux Vulkan zip
+      - name: Upload Linux ROCm zip
         uses: actions/upload-artifact@v4
         with:
-          name: linux-vulkan-zip
-          path: dist-artifacts/linux-vulkan.zip
+          name: linux-rocm-zip
+          path: dist-artifacts/linux-rocm.zip
 
   windows_cpu:
     name: Windows Build (CPU)
@@ -714,9 +730,9 @@ jobs:
           name: windows-cuda-zip
           path: dist-artifacts/windows-cuda.zip
 
-  windows_vulkan:
-    name: Windows Build (Vulkan)
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_llama_vulkan_windows == true }}
+  windows_rocm:
+    name: Windows Build (ROCm)
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_llama_rocm_windows == true }}
     runs-on: blacksmith-4vcpu-windows-2025
     env:
       APTABASE_KEY: ${{ secrets.APTABASE_KEY }}
@@ -751,55 +767,52 @@ jobs:
           echo "LIBCLANG_PATH=C:\\Program Files\\LLVM\\bin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           echo "C:\\Program Files\\LLVM\\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
-      - name: Install Vulkan SDK
+      - name: Install ROCm HIP toolchain (Windows)
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $version = (Invoke-WebRequest -Uri "https://vulkan.lunarg.com/sdk/latest/windows.txt" -UseBasicParsing).Content.Trim()
-          $installer = Join-Path $env:TEMP "vulkan_sdk.exe"
-          $installDir = "C:\VulkanSDK\$version"
-          $downloadUrl = "https://sdk.lunarg.com/sdk/download/$version/windows/vulkan_sdk.exe?Human=true"
-          $shaInfoUrl = "https://sdk.lunarg.com/sdk/sha/$version/windows/vulkan_sdk.exe.json"
+          python --version
+          python -m pip install --upgrade pip
 
-          Invoke-WebRequest -Uri $downloadUrl -OutFile $installer
-          $shaInfo = Invoke-RestMethod -Uri $shaInfoUrl
-          $actualSha = (Get-FileHash -Path $installer -Algorithm SHA256).Hash.ToLower()
-          if ($actualSha -ne $shaInfo.sha.ToLower()) {
-            Write-Error "Vulkan SDK SHA mismatch. Expected $($shaInfo.sha), got $actualSha"
-            exit 1
+          $base = "https://repo.radeon.com/rocm/windows/"
+          $index = (Invoke-WebRequest -Uri $base -UseBasicParsing).Content
+          $releaseTags = [regex]::Matches($index, 'rocm-rel-([0-9]+(?:\.[0-9]+)*)/') | ForEach-Object { $_.Groups[1].Value } | Sort-Object {[version]$_} -Descending
+          if (-not $releaseTags -or $releaseTags.Count -eq 0) {
+            throw "Could not detect ROCm Windows release tags at $base"
+          }
+          $releaseTag = $releaseTags[0]
+          $releaseUrl = "$base" + "rocm-rel-$releaseTag/"
+
+          $releaseIndex = (Invoke-WebRequest -Uri $releaseUrl -UseBasicParsing).Content
+          $versionMatches = [regex]::Matches($releaseIndex, 'rocm-([0-9]+\.[0-9]+\.[0-9]+(?:\.dev[0-9]+)?)\.tar\.gz') | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique
+          if (-not $versionMatches -or $versionMatches.Count -eq 0) {
+            throw "Could not detect ROCm Python package version in $releaseUrl"
+          }
+          $rocmVersion = $versionMatches[0]
+
+          Write-Host "Installing rocm[devel]==$rocmVersion from $releaseUrl"
+          python -m pip install "rocm[devel]==$rocmVersion" --find-links "$releaseUrl"
+          rocm-sdk init
+
+          $rocmBin = (rocm-sdk path --bin).Trim()
+          $rocmRoot = (rocm-sdk path --root).Trim()
+          if (-not (Test-Path (Join-Path $rocmBin "hipcc.bat")) -and -not (Test-Path (Join-Path $rocmBin "hipcc.exe"))) {
+            throw "hipcc not found in ROCm bin path: $rocmBin"
           }
 
-          # Qt installer style unattended install args documented by LunarG.
-          $installArgs = @(
-            "--root", $installDir,
-            "--accept-licenses",
-            "--default-answer",
-            "--confirm-command",
-            "install"
-          )
-          $proc = Start-Process -FilePath $installer -ArgumentList $installArgs -Wait -PassThru
-          if ($proc.ExitCode -ne 0) {
-            Write-Error "Vulkan SDK installer failed with exit code $($proc.ExitCode)"
-            exit 1
-          }
+          "ROCM_PATH=$rocmRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "HIP_PATH=$rocmRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "CMAKE_PREFIX_PATH=$rocmRoot\lib\cmake" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $rocmBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
-          if (-not (Test-Path "$installDir\Bin\glslc.exe")) {
-            Write-Error "glslc not found after Vulkan SDK install at $installDir"
-            exit 1
-          }
-
-          "VULKAN_SDK=$installDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "$installDir\Bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-          Write-Host "Vulkan SDK installed at $installDir"
-
-      - name: Verify Vulkan toolchain
+      - name: Verify ROCm toolchain
         shell: pwsh
         run: |
-          if (-not (Get-Command glslc -ErrorAction SilentlyContinue)) {
-            Write-Error "glslc not found (required for llama-gpu-vulkan build)."
+          if (-not (Get-Command hipcc -ErrorAction SilentlyContinue)) {
+            Write-Error "hipcc not found (required for llama-gpu-rocm build). Install AMD HIP SDK/ROCm on the runner image."
             exit 1
           }
-          glslc --version
+          hipcc --version
 
       - name: Install Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -867,25 +880,25 @@ jobs:
           "@
           $devConfig | Out-File -FilePath dev-config.json -Encoding UTF8
 
-      - name: Build Tauri (Windows, llama.cpp Vulkan)
+      - name: Build Tauri (Windows, llama.cpp ROCm)
         env:
           RUSTFLAGS: "--cfg DEV_BUILD -C target-feature=-crt-static"
           CMAKE_MSVC_RUNTIME_LIBRARY: "MultiThreadedDLL"
           CMAKE_GENERATOR: "Ninja"
-          CARGO_TARGET_DIR: target-vulkan
-        run: bun run tauri build --config dev-config.json --features llama-gpu-vulkan
+          CARGO_TARGET_DIR: target-rocm
+        run: bun run tauri build --config dev-config.json --features llama-gpu-rocm
 
-      - name: Package Windows Vulkan zip
+      - name: Package Windows ROCm zip
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist-artifacts | Out-Null
-          Compress-Archive -Path src-tauri/target-vulkan/release/bundle/* -DestinationPath dist-artifacts/windows-vulkan.zip -Force
+          Compress-Archive -Path src-tauri/target-rocm/release/bundle/* -DestinationPath dist-artifacts/windows-rocm.zip -Force
 
-      - name: Upload Windows Vulkan zip
+      - name: Upload Windows ROCm zip
         uses: actions/upload-artifact@v4
         with:
-          name: windows-vulkan-zip
-          path: dist-artifacts/windows-vulkan.zip
+          name: windows-rocm-zip
+          path: dist-artifacts/windows-rocm.zip
 
   macos_cpu:
     name: macOS Build (CPU)

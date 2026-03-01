@@ -545,8 +545,8 @@ pub(crate) fn app_version(app: &AppHandle) -> String {
     let mut version = app.package_info().version.to_string();
     if cfg!(feature = "llama-gpu-cuda") || cfg!(feature = "llama-gpu-cuda-no-vmm") {
         version.push_str("-cuda");
-    } else if cfg!(feature = "llama-gpu-vulkan") {
-        version.push_str("-vulkan");
+    } else if cfg!(feature = "llama-gpu-rocm") {
+        version.push_str("-rocm");
     }
     version
 }

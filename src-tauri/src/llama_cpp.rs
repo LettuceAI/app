@@ -23,10 +23,11 @@ mod desktop {
     use llama_cpp_2::model::{AddBos, LlamaChatMessage, LlamaChatTemplate, LlamaModel, Special};
     use llama_cpp_2::sampling::LlamaSampler;
     use llama_cpp_sys_2::{
-        ggml_backend_dev_count, ggml_backend_dev_get, ggml_backend_dev_memory, ggml_blck_size,
-        ggml_backend_dev_type, llama_flash_attn_type, GGML_BACKEND_DEVICE_TYPE_ACCEL,
-        GGML_BACKEND_DEVICE_TYPE_GPU, GGML_BACKEND_DEVICE_TYPE_IGPU, LLAMA_FLASH_ATTN_TYPE_AUTO,
-        LLAMA_FLASH_ATTN_TYPE_DISABLED, LLAMA_FLASH_ATTN_TYPE_ENABLED,
+        ggml_backend_dev_count, ggml_backend_dev_get, ggml_backend_dev_memory,
+        ggml_backend_dev_type, ggml_blck_size, llama_flash_attn_type,
+        GGML_BACKEND_DEVICE_TYPE_ACCEL, GGML_BACKEND_DEVICE_TYPE_GPU,
+        GGML_BACKEND_DEVICE_TYPE_IGPU, LLAMA_FLASH_ATTN_TYPE_AUTO, LLAMA_FLASH_ATTN_TYPE_DISABLED,
+        LLAMA_FLASH_ATTN_TYPE_ENABLED,
     };
     use std::num::NonZeroU32;
     use std::path::Path;
@@ -56,10 +57,17 @@ mod desktop {
         if cfg!(feature = "llama-gpu-cuda") || cfg!(feature = "llama-gpu-cuda-no-vmm") {
             out.push("cuda");
         }
-        if cfg!(feature = "llama-gpu-vulkan") {
-            out.push("vulkan");
+        if cfg!(feature = "llama-gpu-rocm") {
+            out.push("rocm");
+        }
+        if cfg!(feature = "llama-gpu-metal") {
+            out.push("metal");
         }
         out
+    }
+
+    fn using_rocm_backend() -> bool {
+        cfg!(feature = "llama-gpu-rocm")
     }
 
     static ENGINE: OnceLock<Mutex<LlamaState>> = OnceLock::new();
@@ -144,11 +152,7 @@ mod desktop {
                     Ok(model) => model,
                     Err(err) => {
                         if let Some(app) = app {
-                            log_warn(
-                                app,
-                                "llama_cpp",
-                                format!("GPU load failed: {err}"),
-                            );
+                            log_warn(app, "llama_cpp", format!("GPU load failed: {err}"));
 
                             let _ = app.emit("app://gpu-fallback-prompt", ());
 
@@ -157,25 +161,17 @@ mod desktop {
                             let id = app.listen("app://gpu-fallback-response", move |event| {
                                 let _ = tx_c.send(event.payload().to_string());
                             });
-                            let response =
-                                rx.recv_timeout(std::time::Duration::from_secs(30));
+                            let response = rx.recv_timeout(std::time::Duration::from_secs(30));
                             app.unlisten(id);
 
                             match response {
                                 Ok(r) if r.contains("switch") => {
-                                    LlamaModel::load_from_file(
-                                        backend,
-                                        model_path,
-                                        &cpu_params,
-                                    )
-                                    .map_err(|e| {
-                                        format!("CPU fallback failed: {e}")
-                                    })?
+                                    LlamaModel::load_from_file(backend, model_path, &cpu_params)
+                                        .map_err(|e| format!("CPU fallback failed: {e}"))?
                                 }
                                 _ => {
                                     return Err(
-                                        "GPU memory insufficient — loading aborted by user"
-                                            .into(),
+                                        "GPU memory insufficient — loading aborted by user".into(),
                                     );
                                 }
                             }
@@ -382,7 +378,10 @@ mod desktop {
         Some(bytes.max(0.0) as u64)
     }
 
-    fn validate_kv_type_compatibility(model: &LlamaModel, kv_type: KvCacheType) -> Result<(), String> {
+    fn validate_kv_type_compatibility(
+        model: &LlamaModel,
+        kv_type: KvCacheType,
+    ) -> Result<(), String> {
         let n_head = u64::from(model.n_head()).max(1);
         let n_embd = u64::try_from(model.n_embd()).unwrap_or(0);
         if n_embd == 0 || n_embd % n_head != 0 {
@@ -766,6 +765,7 @@ mod desktop {
         let mut generation_elapsed_ms: Option<u64> = None;
 
         let result = (|| -> Result<(), String> {
+            log_info(&app, "llama_cpp", "loading llama.cpp engine/model");
             let engine = load_engine(Some(&app), model_path, llama_gpu_layers)?;
             let model = engine
                 .model
@@ -821,6 +821,23 @@ mod desktop {
             }
 
             let n_batch = ctx_size.min(llama_batch_size).max(1);
+            let resolved_offload_kqv = if llama_offload_kqv.is_some() {
+                llama_offload_kqv
+            } else if using_rocm_backend() {
+                // ROCm/HIP builds can be more stable with KQV on CPU by default on some AMD stacks.
+                Some(false)
+            } else {
+                None
+            };
+            let resolved_flash_attention_policy = if let Some(policy) = llama_flash_attention_policy
+            {
+                policy
+            } else if using_rocm_backend() {
+                // Conservative ROCm default to avoid driver/device crashes on some AMD stacks.
+                LLAMA_FLASH_ATTN_TYPE_DISABLED
+            } else {
+                LLAMA_FLASH_ATTN_TYPE_AUTO
+            };
             let mut ctx_params = LlamaContextParams::default()
                 .with_n_ctx(NonZeroU32::new(ctx_size))
                 .with_n_batch(n_batch);
@@ -830,21 +847,27 @@ mod desktop {
             if let Some(n_threads_batch) = llama_threads_batch {
                 ctx_params = ctx_params.with_n_threads_batch(n_threads_batch as i32);
             }
-            if let Some(offload) = llama_offload_kqv {
+            if let Some(offload) = resolved_offload_kqv {
                 ctx_params = ctx_params.with_offload_kqv(offload);
             }
             if let Some(kv_type) = llama_kv_type {
                 ctx_params = ctx_params.with_type_k(kv_type).with_type_v(kv_type);
             }
-            ctx_params = ctx_params.with_flash_attention_policy(
-                llama_flash_attention_policy.unwrap_or(LLAMA_FLASH_ATTN_TYPE_AUTO),
-            );
+            ctx_params = ctx_params.with_flash_attention_policy(resolved_flash_attention_policy);
             if let Some(base) = llama_rope_freq_base {
                 ctx_params = ctx_params.with_rope_freq_base(base as f32);
             }
             if let Some(scale) = llama_rope_freq_scale {
                 ctx_params = ctx_params.with_rope_freq_scale(scale as f32);
             }
+            log_info(
+                &app,
+                "llama_cpp",
+                format!(
+                    "creating context: ctx={} batch={} gpu_layers={:?} offload_kqv={:?} flash_attention_policy={:?}",
+                    ctx_size, n_batch, llama_gpu_layers, resolved_offload_kqv, resolved_flash_attention_policy
+                ),
+            );
             let mut ctx = model.new_context(backend, ctx_params).map_err(|e| {
                 let detail = if e.to_string().contains("null reference from llama.cpp") {
                     if let Some(recommended) = recommended_ctx {
@@ -905,6 +928,14 @@ mod desktop {
                 global_pos += (chunk_end - chunk_start) as i32;
                 chunk_start = chunk_end;
             }
+            log_info(
+                &app,
+                "llama_cpp",
+                format!(
+                    "prompt evaluation complete: prompt_tokens={} target_new_tokens={}",
+                    prompt_tokens, max_tokens
+                ),
+            );
 
             let prompt_len = global_pos;
             let mut n_cur = prompt_len;
