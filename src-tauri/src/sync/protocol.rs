@@ -5,16 +5,18 @@ use std::collections::HashMap;
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum SyncLayer {
     Globals,
-    // settings, personas, models, secrets, provider_credentials, prompt_templates, model_pricing_cache,
-    // audio_providers, audio_voice_cache, user_voices
+    // meta, settings, personas, models, secrets, provider_credentials, prompt_templates,
+    // model_pricing_cache, creation_helper_sessions, group_characters
     Lorebooks,
     // lorebooks, lorebook_entries
     Characters,
-    // characters, rules, scenes, scene_variants, character_lorebooks
+    // characters, rules, scenes, scene_variants, character_lorebooks, chat_templates,
+    // chat_template_messages
     Sessions,
     // sessions, messages, message_variants, usage_records, usage_metadata
     GroupSessions,
-    // group_sessions, group_participation, group_messages, group_message_variants, usage_records, usage_metadata
+    // group_sessions, group_participation, group_messages, group_message_variants,
+    // usage_records, usage_metadata
 }
 
 // 2. The Data Manifest (What do I have?)

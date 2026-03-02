@@ -17,7 +17,7 @@ use crate::sync::protocol::{Manifest, ManifestV2, P2PMessage, SyncLayer};
 use crate::utils::{log_error, log_info, log_warn};
 use std::path::Path;
 
-const PROTOCOL_VERSION: u32 = 3;
+const PROTOCOL_VERSION: u32 = 4;
 
 fn derive_key(pin: &str, salt: &[u8]) -> [u8; 32] {
     let mut hasher = blake3::Hasher::new_derive_key("lettuce_sync_v1");
@@ -611,7 +611,12 @@ async fn handle_sync_request(
             .await
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-        let data = sync_db::fetch_layer_data(&conn, SyncLayer::Lorebooks, &lb_ids_to_send)?;
+        let data = sync_db::fetch_layer_data_for_protocol(
+            &conn,
+            SyncLayer::Lorebooks,
+            &lb_ids_to_send,
+            peer_protocol_version,
+        )?;
         framed
             .send(P2PMessage::DataResponse {
                 layer: SyncLayer::Lorebooks,
@@ -631,7 +636,12 @@ async fn handle_sync_request(
             .await
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-        let data = sync_db::fetch_layer_data(&conn, SyncLayer::Characters, &char_ids_to_send)?;
+        let data = sync_db::fetch_layer_data_for_protocol(
+            &conn,
+            SyncLayer::Characters,
+            &char_ids_to_send,
+            peer_protocol_version,
+        )?;
         framed
             .send(P2PMessage::DataResponse {
                 layer: SyncLayer::Characters,
@@ -660,7 +670,12 @@ async fn handle_sync_request(
             .await
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-        let data = sync_db::fetch_layer_data(&conn, SyncLayer::Sessions, &session_ids_to_send)?;
+        let data = sync_db::fetch_layer_data_for_protocol(
+            &conn,
+            SyncLayer::Sessions,
+            &session_ids_to_send,
+            peer_protocol_version,
+        )?;
         framed
             .send(P2PMessage::DataResponse {
                 layer: SyncLayer::Sessions,
@@ -702,8 +717,12 @@ async fn handle_sync_request(
             .await
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-        let data =
-            sync_db::fetch_layer_data(&conn, SyncLayer::GroupSessions, &group_session_ids_to_send)?;
+        let data = sync_db::fetch_layer_data_for_protocol(
+            &conn,
+            SyncLayer::GroupSessions,
+            &group_session_ids_to_send,
+            peer_protocol_version,
+        )?;
         framed
             .send(P2PMessage::DataResponse {
                 layer: SyncLayer::GroupSessions,
@@ -993,19 +1012,33 @@ async fn run_passenger_session(
                             continue;
                         }
 
-                        if !path.starts_with("avatars/") && !path.starts_with("sessions/") && !path.starts_with("images/") {
+                        if !path.starts_with("avatars/")
+                            && !path.starts_with("sessions/")
+                            && !path.starts_with("images/")
+                            && !path.starts_with("generated_images/")
+                        {
                             log_warn(&app, "sync_passenger", format!("Security Warning: Attempted write to unauthorized directory: {}", path));
                             continue;
                         }
 
-                        let root = match crate::utils::lettuce_dir(&app) {
-                            Ok(r) => r,
-                            Err(e) => {
-                                log_error(&app, "sync_passenger", format!("Failed to get lettuce dir: {}", e));
-                                continue;
+                        let full_path = if path.starts_with("generated_images/") {
+                            match app.path().app_data_dir() {
+                                Ok(root) => root.join(&path),
+                                Err(e) => {
+                                    log_error(&app, "sync_passenger", format!("Failed to get app data dir: {}", e));
+                                    continue;
+                                }
                             }
+                        } else {
+                            let root = match crate::utils::lettuce_dir(&app) {
+                                Ok(r) => r,
+                                Err(e) => {
+                                    log_error(&app, "sync_passenger", format!("Failed to get lettuce dir: {}", e));
+                                    continue;
+                                }
+                            };
+                            root.join(&path)
                         };
-                        let full_path = root.join(&path);
 
                         log_info(&app, "sync_passenger", format!("Writing file to: {:?}", full_path));
 
@@ -1120,6 +1153,39 @@ async fn send_file(
             .await
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     }
+    Ok(())
+}
+
+async fn send_dir_recursive(
+    app: &AppHandle,
+    framed: &mut Framed<TcpStream, P2PCodec>,
+    absolute_dir: &Path,
+    relative_prefix: &str,
+) -> Result<(), String> {
+    if !absolute_dir.exists() {
+        return Ok(());
+    }
+
+    let mut stack = vec![(absolute_dir.to_path_buf(), relative_prefix.to_string())];
+    while let Some((dir, prefix)) = stack.pop() {
+        let mut entries = tokio::fs::read_dir(&dir)
+            .await
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let path = entry.path();
+            let name = match entry.file_name().into_string() {
+                Ok(name) => name,
+                Err(_) => continue,
+            };
+            let rel = format!("{}/{}", prefix, name);
+            if path.is_dir() {
+                stack.push((path, rel));
+            } else if path.is_file() {
+                send_file(app, framed, rel, &path).await?;
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -1338,6 +1404,7 @@ async fn send_global_assets(
     let root = crate::storage_manager::legacy::storage_root(app)
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     let avatars_dir = root.join("avatars");
+    let images_dir = root.join("images");
     let conn = crate::storage_manager::db::open_db(app)?;
 
     let persona_ids: Vec<String> = {
@@ -1391,5 +1458,36 @@ async fn send_global_assets(
             }
         }
     }
+
+    let group_backgrounds: Vec<String> = {
+        let mut stmt = conn
+            .prepare("SELECT background_image_path FROM group_characters WHERE background_image_path IS NOT NULL AND background_image_path != ''")
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        let rows = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
+    };
+
+    for bg_id in group_backgrounds {
+        if bg_id.starts_with("data:") || bg_id.starts_with("http") {
+            continue;
+        }
+        for ext in &["webp", "png", "jpg", "jpeg", "gif"] {
+            let filename = format!("{}.{}", bg_id, ext);
+            let file_path = images_dir.join(&filename);
+            if file_path.exists() {
+                send_file(app, framed, format!("images/{}", filename), &file_path).await?;
+                break;
+            }
+        }
+    }
+
+    if let Ok(app_data_dir) = app.path().app_data_dir() {
+        let generated_dir = app_data_dir.join("generated_images");
+        send_dir_recursive(app, framed, &generated_dir, "generated_images").await?;
+    }
+
     Ok(())
 }

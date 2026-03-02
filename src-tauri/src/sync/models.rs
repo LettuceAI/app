@@ -1,5 +1,19 @@
 use serde::{Deserialize, Serialize};
 
+fn default_speaker_selection_method() -> String {
+    "llm".to_string()
+}
+
+fn default_memory_type() -> String {
+    "manual".to_string()
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MetaEntry {
+    pub key: String,
+    pub value: String,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Settings {
     pub id: i64,
@@ -90,6 +104,17 @@ pub struct ModelPricingCache {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct CreationHelperSession {
+    pub id: String,
+    pub creation_goal: String,
+    pub status: String,
+    pub session_json: String,
+    pub uploaded_images_json: String,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct AudioProvider {
     pub id: String,
     pub provider_type: String,
@@ -122,6 +147,25 @@ pub struct UserVoice {
     pub prompt: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GroupCharacter {
+    pub id: String,
+    pub name: String,
+    pub character_ids: String,
+    pub muted_character_ids: String,
+    pub persona_id: Option<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub archived: i64,
+    pub chat_type: String,
+    pub starting_scene: Option<String>,
+    pub background_image_path: Option<String>,
+    #[serde(default = "default_speaker_selection_method")]
+    pub speaker_selection_method: String,
+    #[serde(default = "default_memory_type")]
+    pub memory_type: String,
 }
 
 // Layer 2: Lorebooks
@@ -163,8 +207,24 @@ pub struct Character {
     pub background_image_path: Option<String>,
     pub definition: Option<String>,
     pub description: Option<String>,
+    #[serde(default)]
+    pub nickname: Option<String>,
+    #[serde(default)]
+    pub scenario: Option<String>,
+    #[serde(default)]
+    pub creator_notes: Option<String>,
+    #[serde(default)]
+    pub creator: Option<String>,
+    #[serde(default)]
+    pub creator_notes_multilingual: Option<String>,
+    #[serde(default)]
+    pub source: Option<String>,
+    #[serde(default)]
+    pub tags: Option<String>,
     pub default_scene_id: Option<String>,
     pub default_model_id: Option<String>,
+    #[serde(default)]
+    pub fallback_model_id: Option<String>,
     pub memory_type: String,
     pub prompt_template_id: Option<String>,
     pub system_prompt: Option<String>,
@@ -176,6 +236,10 @@ pub struct Character {
     pub custom_gradient_colors: Option<String>,
     pub custom_text_color: Option<String>,
     pub custom_text_secondary: Option<String>,
+    #[serde(default)]
+    pub chat_appearance: Option<String>,
+    #[serde(default)]
+    pub default_chat_template_id: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -193,6 +257,8 @@ pub struct Scene {
     pub id: String,
     pub character_id: String,
     pub content: String,
+    #[serde(default)]
+    pub direction: Option<String>,
     pub created_at: i64,
     pub selected_variant_id: Option<String>,
 }
@@ -202,7 +268,28 @@ pub struct SceneVariant {
     pub id: String,
     pub scene_id: String,
     pub content: String,
+    #[serde(default)]
+    pub direction: Option<String>,
     pub created_at: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ChatTemplate {
+    pub id: String,
+    pub character_id: String,
+    pub name: String,
+    pub scene_id: Option<String>,
+    pub prompt_template_id: Option<String>,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ChatTemplateMessage {
+    pub id: String,
+    pub template_id: String,
+    pub idx: i64,
+    pub role: String,
+    pub content: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -224,6 +311,8 @@ pub struct Session {
     pub title: String,
     pub system_prompt: Option<String>,
     pub selected_scene_id: Option<String>,
+    #[serde(default)]
+    pub prompt_template_id: Option<String>,
     pub persona_id: Option<String>,
     pub persona_disabled: Option<i64>,
     #[serde(default)]
@@ -289,6 +378,8 @@ pub struct UsageRecord {
     pub provider_id: String,
     pub provider_label: String,
     pub operation_type: Option<String>,
+    #[serde(default)]
+    pub finish_reason: Option<String>,
     pub prompt_tokens: Option<i64>,
     pub completion_tokens: Option<i64>,
     pub total_tokens: Option<i64>,
@@ -315,6 +406,8 @@ pub struct UsageMetadata {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GroupSession {
     pub id: String,
+    #[serde(default)]
+    pub group_character_id: Option<String>,
     pub name: String,
     pub character_ids: String,
     pub muted_character_ids: String,
@@ -330,6 +423,10 @@ pub struct GroupSession {
     pub memory_summary: String,
     pub memory_summary_token_count: i64,
     pub memory_tool_events: String,
+    #[serde(default = "default_speaker_selection_method")]
+    pub speaker_selection_method: String,
+    #[serde(default = "default_memory_type")]
+    pub memory_type: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

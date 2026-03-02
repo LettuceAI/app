@@ -2,10 +2,11 @@ use rusqlite::params;
 
 use crate::storage_manager::db::DbConnection;
 use crate::sync::models::{
-    AudioProvider, AudioVoiceCache, Character, CharacterLorebookLink, CharacterRule, GroupMessage,
-    GroupMessageVariant, GroupParticipation, GroupSession, Message, MessageVariant, Model,
-    ModelPricingCache, Persona, PromptTemplate, ProviderCredential, Scene, SceneVariant, Secret,
-    Session, Settings, SyncLorebook, SyncLorebookEntry, UsageMetadata, UsageRecord, UserVoice,
+    AudioProvider, AudioVoiceCache, Character, CharacterLorebookLink, CharacterRule, ChatTemplate,
+    ChatTemplateMessage, CreationHelperSession, GroupCharacter, GroupMessage, GroupMessageVariant,
+    GroupParticipation, GroupSession, Message, MessageVariant, MetaEntry, Model, ModelPricingCache,
+    Persona, PromptTemplate, ProviderCredential, Scene, SceneVariant, Secret, Session, Settings,
+    SyncLorebook, SyncLorebookEntry, UsageMetadata, UsageRecord, UserVoice,
 };
 use crate::sync::protocol::{Manifest, ManifestV2, SyncLayer};
 
@@ -113,12 +114,21 @@ pub fn fetch_layer_data(
     layer: SyncLayer,
     ids: &[String],
 ) -> Result<Vec<u8>, String> {
+    fetch_layer_data_for_protocol(conn, layer, ids, 4)
+}
+
+pub fn fetch_layer_data_for_protocol(
+    conn: &DbConnection,
+    layer: SyncLayer,
+    ids: &[String],
+    protocol_version: u32,
+) -> Result<Vec<u8>, String> {
     match layer {
-        SyncLayer::Globals => fetch_globals(conn),
+        SyncLayer::Globals => fetch_globals_for_protocol(conn, protocol_version),
         SyncLayer::Lorebooks => fetch_lorebooks(conn, ids),
-        SyncLayer::Characters => fetch_characters(conn, ids),
-        SyncLayer::Sessions => fetch_sessions(conn, ids),
-        SyncLayer::GroupSessions => fetch_group_sessions(conn, ids),
+        SyncLayer::Characters => fetch_characters_for_protocol(conn, ids, protocol_version),
+        SyncLayer::Sessions => fetch_sessions_for_protocol(conn, ids, protocol_version),
+        SyncLayer::GroupSessions => fetch_group_sessions_for_protocol(conn, ids, protocol_version),
     }
 }
 
@@ -134,6 +144,7 @@ struct LegacyPromptTemplate {
 }
 
 type GlobalCoreData = (
+    Vec<MetaEntry>,
     Vec<Settings>,
     Vec<Persona>,
     Vec<Model>,
@@ -141,18 +152,71 @@ type GlobalCoreData = (
     Vec<ProviderCredential>,
     Vec<PromptTemplate>,
     Vec<ModelPricingCache>,
+    Vec<CreationHelperSession>,
+    Vec<GroupCharacter>,
+);
+
+type GlobalsData = (
+    Vec<MetaEntry>,
+    Vec<Settings>,
+    Vec<Persona>,
+    Vec<Model>,
+    Vec<Secret>,
+    Vec<ProviderCredential>,
+    Vec<PromptTemplate>,
+    Vec<ModelPricingCache>,
+    Vec<CreationHelperSession>,
+    Vec<GroupCharacter>,
+);
+
+type LegacyGlobalsDataV3 = (
+    Vec<Settings>,
+    Vec<Persona>,
+    Vec<Model>,
+    Vec<Secret>,
+    Vec<ProviderCredential>,
+    Vec<PromptTemplate>,
+    Vec<ModelPricingCache>,
+    Vec<AudioProvider>,
+    Vec<AudioVoiceCache>,
+    Vec<UserVoice>,
 );
 
 pub fn fetch_globals_for_protocol(
     conn: &DbConnection,
     protocol_version: u32,
 ) -> Result<Vec<u8>, String> {
-    let (settings, personas, models, secrets, creds, templates, pricing) = fetch_global_core(conn)?;
+    let (
+        meta,
+        settings,
+        personas,
+        models,
+        secrets,
+        creds,
+        templates,
+        pricing,
+        helper_sessions,
+        groups,
+    ) = fetch_global_core(conn)?;
+
+    if protocol_version >= 4 {
+        let payload_tuple = (
+            meta,
+            settings,
+            personas,
+            models,
+            secrets,
+            creds,
+            templates,
+            pricing,
+            helper_sessions,
+            groups,
+        );
+        return bincode::serialize(&payload_tuple)
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e));
+    }
 
     if protocol_version >= 3 {
-        let audio_providers = fetch_audio_providers(conn)?;
-        let voice_cache = fetch_audio_voice_cache(conn)?;
-        let user_voices = fetch_user_voices(conn)?;
         let payload_tuple = (
             settings,
             personas,
@@ -161,9 +225,9 @@ pub fn fetch_globals_for_protocol(
             creds,
             templates,
             pricing,
-            audio_providers,
-            voice_cache,
-            user_voices,
+            Vec::<AudioProvider>::new(),
+            Vec::<AudioVoiceCache>::new(),
+            Vec::<UserVoice>::new(),
         );
         return bincode::serialize(&payload_tuple)
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e));
@@ -202,28 +266,22 @@ pub fn fetch_globals_for_protocol(
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
 }
 
-fn fetch_globals(conn: &DbConnection) -> Result<Vec<u8>, String> {
-    let (settings, personas, models, secrets, creds, templates, pricing) = fetch_global_core(conn)?;
-    let audio_providers = fetch_audio_providers(conn)?;
-    let voice_cache = fetch_audio_voice_cache(conn)?;
-    let user_voices = fetch_user_voices(conn)?;
-    let payload_tuple = (
-        settings,
-        personas,
-        models,
-        secrets,
-        creds,
-        templates,
-        pricing,
-        audio_providers,
-        voice_cache,
-        user_voices,
-    );
-    bincode::serialize(&payload_tuple)
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
-}
-
 fn fetch_global_core(conn: &DbConnection) -> Result<GlobalCoreData, String> {
+    // Meta
+    let mut stmt = conn
+        .prepare("SELECT key, value FROM meta")
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    let meta: Vec<MetaEntry> = stmt
+        .query_map([], |r| {
+            Ok(MetaEntry {
+                key: r.get(0)?,
+                value: r.get(1)?,
+            })
+        })
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
+        .map(|r| r.unwrap())
+        .collect();
+
     // Settings
     let mut stmt = conn.prepare("SELECT id, default_provider_credential_id, default_model_id, app_state, prompt_template_id, system_prompt, advanced_settings, migration_version, created_at, updated_at FROM settings").map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     let settings_iter = stmt
@@ -365,77 +423,62 @@ fn fetch_global_core(conn: &DbConnection) -> Result<GlobalCoreData, String> {
         .map(|r| r.unwrap())
         .collect();
 
+    let mut stmt = conn
+        .prepare("SELECT id, creation_goal, status, session_json, uploaded_images_json, created_at, updated_at FROM creation_helper_sessions")
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    let helper_sessions: Vec<CreationHelperSession> = stmt
+        .query_map([], |r| {
+            Ok(CreationHelperSession {
+                id: r.get(0)?,
+                creation_goal: r.get(1)?,
+                status: r.get(2)?,
+                session_json: r.get(3)?,
+                uploaded_images_json: r.get(4)?,
+                created_at: r.get(5)?,
+                updated_at: r.get(6)?,
+            })
+        })
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
+        .map(|r| r.unwrap())
+        .collect();
+
+    let mut stmt = conn
+        .prepare("SELECT id, name, character_ids, muted_character_ids, persona_id, created_at, updated_at, archived, chat_type, starting_scene, background_image_path, COALESCE(speaker_selection_method, 'llm'), COALESCE(memory_type, 'manual') FROM group_characters")
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    let groups: Vec<GroupCharacter> = stmt
+        .query_map([], |r| {
+            Ok(GroupCharacter {
+                id: r.get(0)?,
+                name: r.get(1)?,
+                character_ids: r.get(2)?,
+                muted_character_ids: r.get(3)?,
+                persona_id: r.get(4)?,
+                created_at: r.get(5)?,
+                updated_at: r.get(6)?,
+                archived: r.get(7)?,
+                chat_type: r.get(8)?,
+                starting_scene: r.get(9)?,
+                background_image_path: r.get(10)?,
+                speaker_selection_method: r.get(11)?,
+                memory_type: r.get(12)?,
+            })
+        })
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
+        .map(|r| r.unwrap())
+        .collect();
+
     Ok((
-        settings, personas, models, secrets, creds, templates, pricing,
+        meta,
+        settings,
+        personas,
+        models,
+        secrets,
+        creds,
+        templates,
+        pricing,
+        helper_sessions,
+        groups,
     ))
-}
-
-fn fetch_audio_providers(conn: &DbConnection) -> Result<Vec<AudioProvider>, String> {
-    let mut stmt = conn
-        .prepare("SELECT id, provider_type, label, api_key, project_id, location, created_at, updated_at FROM audio_providers")
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-    let providers = stmt
-        .query_map([], |r| {
-            Ok(AudioProvider {
-                id: r.get(0)?,
-                provider_type: r.get(1)?,
-                label: r.get(2)?,
-                api_key: r.get(3)?,
-                project_id: r.get(4)?,
-                location: r.get(5)?,
-                created_at: r.get(6)?,
-                updated_at: r.get(7)?,
-            })
-        })
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
-        .map(|r| r.unwrap())
-        .collect::<Vec<_>>();
-    Ok(providers)
-}
-
-fn fetch_audio_voice_cache(conn: &DbConnection) -> Result<Vec<AudioVoiceCache>, String> {
-    let mut stmt = conn
-        .prepare("SELECT id, provider_id, voice_id, name, preview_url, labels, cached_at FROM audio_voice_cache")
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-    let voices = stmt
-        .query_map([], |r| {
-            Ok(AudioVoiceCache {
-                id: r.get(0)?,
-                provider_id: r.get(1)?,
-                voice_id: r.get(2)?,
-                name: r.get(3)?,
-                preview_url: r.get(4)?,
-                labels: r.get(5)?,
-                cached_at: r.get(6)?,
-            })
-        })
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
-        .map(|r| r.unwrap())
-        .collect::<Vec<_>>();
-    Ok(voices)
-}
-
-fn fetch_user_voices(conn: &DbConnection) -> Result<Vec<UserVoice>, String> {
-    let mut stmt = conn
-        .prepare("SELECT id, provider_id, name, model_id, voice_id, prompt, created_at, updated_at FROM user_voices")
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-    let voices = stmt
-        .query_map([], |r| {
-            Ok(UserVoice {
-                id: r.get(0)?,
-                provider_id: r.get(1)?,
-                name: r.get(2)?,
-                model_id: r.get(3)?,
-                voice_id: r.get(4)?,
-                prompt: r.get(5)?,
-                created_at: r.get(6)?,
-                updated_at: r.get(7)?,
-            })
-        })
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
-        .map(|r| r.unwrap())
-        .collect::<Vec<_>>();
-    Ok(voices)
 }
 
 fn fetch_lorebooks(conn: &DbConnection, ids: &[String]) -> Result<Vec<u8>, String> {
@@ -495,14 +538,107 @@ fn fetch_lorebooks(conn: &DbConnection, ids: &[String]) -> Result<Vec<u8>, Strin
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
 }
 
-fn fetch_characters(conn: &DbConnection, ids: &[String]) -> Result<Vec<u8>, String> {
+fn fetch_characters_for_protocol(
+    conn: &DbConnection,
+    ids: &[String],
+    protocol_version: u32,
+) -> Result<Vec<u8>, String> {
+    let (chars, rules, scenes, variants, links, templates, template_messages) =
+        fetch_characters_data(conn, ids)?;
+    if protocol_version >= 4 {
+        return bincode::serialize(&(
+            chars,
+            rules,
+            scenes,
+            variants,
+            links,
+            templates,
+            template_messages,
+        ))
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e));
+    }
+
+    let legacy_chars = chars
+        .into_iter()
+        .map(|c| LegacyCharacterV2 {
+            id: c.id,
+            name: c.name,
+            avatar_path: c.avatar_path,
+            avatar_crop_x: c.avatar_crop_x,
+            avatar_crop_y: c.avatar_crop_y,
+            avatar_crop_scale: c.avatar_crop_scale,
+            background_image_path: c.background_image_path,
+            definition: c.definition,
+            description: c.description,
+            default_scene_id: c.default_scene_id,
+            default_model_id: c.default_model_id,
+            memory_type: c.memory_type,
+            prompt_template_id: c.prompt_template_id,
+            system_prompt: c.system_prompt,
+            voice_config: c.voice_config,
+            voice_autoplay: c.voice_autoplay,
+            disable_avatar_gradient: c.disable_avatar_gradient,
+            custom_gradient_enabled: c.custom_gradient_enabled,
+            custom_gradient_colors: c.custom_gradient_colors,
+            custom_text_color: c.custom_text_color,
+            custom_text_secondary: c.custom_text_secondary,
+            created_at: c.created_at,
+            updated_at: c.updated_at,
+        })
+        .collect::<Vec<_>>();
+    let legacy_scenes = scenes
+        .into_iter()
+        .map(|s| LegacySceneV2 {
+            id: s.id,
+            character_id: s.character_id,
+            content: s.content,
+            created_at: s.created_at,
+            selected_variant_id: s.selected_variant_id,
+        })
+        .collect::<Vec<_>>();
+    let legacy_variants = variants
+        .into_iter()
+        .map(|v| LegacySceneVariantV2 {
+            id: v.id,
+            scene_id: v.scene_id,
+            content: v.content,
+            created_at: v.created_at,
+        })
+        .collect::<Vec<_>>();
+    bincode::serialize(&(legacy_chars, rules, legacy_scenes, legacy_variants, links))
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
+}
+
+fn fetch_characters_data(
+    conn: &DbConnection,
+    ids: &[String],
+) -> Result<
+    (
+        Vec<Character>,
+        Vec<CharacterRule>,
+        Vec<Scene>,
+        Vec<SceneVariant>,
+        Vec<CharacterLorebookLink>,
+        Vec<ChatTemplate>,
+        Vec<ChatTemplateMessage>,
+    ),
+    String,
+> {
     if ids.is_empty() {
-        return Ok(vec![]);
+        return Ok((
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        ));
     }
     let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
 
     // Characters
-    let sql = format!("SELECT id, name, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, background_image_path, description, definition, default_scene_id, default_model_id, memory_type, prompt_template_id, system_prompt, voice_config, voice_autoplay, disable_avatar_gradient, custom_gradient_enabled, custom_gradient_colors, custom_text_color, custom_text_secondary, created_at, updated_at FROM characters WHERE id IN ({})", placeholders);
+    let sql = format!("SELECT id, name, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, background_image_path, definition, description, nickname, scenario, creator_notes, creator, creator_notes_multilingual, source, tags, default_scene_id, default_model_id, fallback_model_id, memory_type, prompt_template_id, system_prompt, voice_config, voice_autoplay, disable_avatar_gradient, custom_gradient_enabled, custom_gradient_colors, custom_text_color, custom_text_secondary, chat_appearance, default_chat_template_id, created_at, updated_at FROM characters WHERE id IN ({})", placeholders);
     let mut stmt = conn
         .prepare(&sql)
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
@@ -516,22 +652,32 @@ fn fetch_characters(conn: &DbConnection, ids: &[String]) -> Result<Vec<u8>, Stri
                 avatar_crop_y: r.get(4)?,
                 avatar_crop_scale: r.get(5)?,
                 background_image_path: r.get(6)?,
-                description: r.get(7)?,
-                definition: r.get(8)?,
-                default_scene_id: r.get(9)?,
-                default_model_id: r.get(10)?,
-                memory_type: r.get(11)?,
-                prompt_template_id: r.get(12)?,
-                system_prompt: r.get(13)?,
-                voice_config: r.get(14)?,
-                voice_autoplay: r.get(15)?,
-                disable_avatar_gradient: r.get(16)?,
-                custom_gradient_enabled: r.get(17)?,
-                custom_gradient_colors: r.get(18)?,
-                custom_text_color: r.get(19)?,
-                custom_text_secondary: r.get(20)?,
-                created_at: r.get(21)?,
-                updated_at: r.get(22)?,
+                definition: r.get(7)?,
+                description: r.get(8)?,
+                nickname: r.get(9)?,
+                scenario: r.get(10)?,
+                creator_notes: r.get(11)?,
+                creator: r.get(12)?,
+                creator_notes_multilingual: r.get(13)?,
+                source: r.get(14)?,
+                tags: r.get(15)?,
+                default_scene_id: r.get(16)?,
+                default_model_id: r.get(17)?,
+                fallback_model_id: r.get(18)?,
+                memory_type: r.get(19)?,
+                prompt_template_id: r.get(20)?,
+                system_prompt: r.get(21)?,
+                voice_config: r.get(22)?,
+                voice_autoplay: r.get(23)?,
+                disable_avatar_gradient: r.get(24)?,
+                custom_gradient_enabled: r.get(25)?,
+                custom_gradient_colors: r.get(26)?,
+                custom_text_color: r.get(27)?,
+                custom_text_secondary: r.get(28)?,
+                chat_appearance: r.get(29)?,
+                default_chat_template_id: r.get(30)?,
+                created_at: r.get(31)?,
+                updated_at: r.get(32)?,
             })
         })
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
@@ -560,7 +706,7 @@ fn fetch_characters(conn: &DbConnection, ids: &[String]) -> Result<Vec<u8>, Stri
         .collect();
 
     // Scenes
-    let sql_scenes = format!("SELECT id, character_id, content, created_at, selected_variant_id FROM scenes WHERE character_id IN ({})", placeholders);
+    let sql_scenes = format!("SELECT id, character_id, content, direction, created_at, selected_variant_id FROM scenes WHERE character_id IN ({})", placeholders);
     let mut stmt = conn
         .prepare(&sql_scenes)
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
@@ -570,8 +716,9 @@ fn fetch_characters(conn: &DbConnection, ids: &[String]) -> Result<Vec<u8>, Stri
                 id: r.get(0)?,
                 character_id: r.get(1)?,
                 content: r.get(2)?,
-                created_at: r.get(3)?,
-                selected_variant_id: r.get(4)?,
+                direction: r.get(3)?,
+                created_at: r.get(4)?,
+                selected_variant_id: r.get(5)?,
             })
         })
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
@@ -579,7 +726,7 @@ fn fetch_characters(conn: &DbConnection, ids: &[String]) -> Result<Vec<u8>, Stri
         .collect();
 
     // Scene Variants
-    let sql_vars = format!("SELECT id, scene_id, content, created_at FROM scene_variants WHERE scene_id IN (SELECT id FROM scenes WHERE character_id IN ({}))", placeholders);
+    let sql_vars = format!("SELECT id, scene_id, content, direction, created_at FROM scene_variants WHERE scene_id IN (SELECT id FROM scenes WHERE character_id IN ({}))", placeholders);
     let mut stmt = conn
         .prepare(&sql_vars)
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
@@ -589,7 +736,8 @@ fn fetch_characters(conn: &DbConnection, ids: &[String]) -> Result<Vec<u8>, Stri
                 id: r.get(0)?,
                 scene_id: r.get(1)?,
                 content: r.get(2)?,
-                created_at: r.get(3)?,
+                direction: r.get(3)?,
+                created_at: r.get(4)?,
             })
         })
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
@@ -616,18 +764,151 @@ fn fetch_characters(conn: &DbConnection, ids: &[String]) -> Result<Vec<u8>, Stri
         .map(|r| r.unwrap())
         .collect();
 
-    bincode::serialize(&(chars, rules, scenes, variants, links))
+    let sql_templates = format!(
+        "SELECT id, character_id, name, scene_id, prompt_template_id, created_at FROM chat_templates WHERE character_id IN ({})",
+        placeholders
+    );
+    let mut stmt = conn
+        .prepare(&sql_templates)
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    let templates: Vec<ChatTemplate> = stmt
+        .query_map(rusqlite::params_from_iter(ids.iter()), |r| {
+            Ok(ChatTemplate {
+                id: r.get(0)?,
+                character_id: r.get(1)?,
+                name: r.get(2)?,
+                scene_id: r.get(3)?,
+                prompt_template_id: r.get(4)?,
+                created_at: r.get(5)?,
+            })
+        })
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
+        .map(|r| r.unwrap())
+        .collect();
+
+    let sql_template_msgs = format!(
+        "SELECT id, template_id, idx, role, content FROM chat_template_messages WHERE template_id IN (SELECT id FROM chat_templates WHERE character_id IN ({}))",
+        placeholders
+    );
+    let mut stmt = conn
+        .prepare(&sql_template_msgs)
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    let template_messages: Vec<ChatTemplateMessage> = stmt
+        .query_map(rusqlite::params_from_iter(ids.iter()), |r| {
+            Ok(ChatTemplateMessage {
+                id: r.get(0)?,
+                template_id: r.get(1)?,
+                idx: r.get(2)?,
+                role: r.get(3)?,
+                content: r.get(4)?,
+            })
+        })
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
+        .map(|r| r.unwrap())
+        .collect();
+
+    Ok((
+        chars,
+        rules,
+        scenes,
+        variants,
+        links,
+        templates,
+        template_messages,
+    ))
+}
+
+fn fetch_sessions_for_protocol(
+    conn: &DbConnection,
+    ids: &[String],
+    protocol_version: u32,
+) -> Result<Vec<u8>, String> {
+    let (sessions, messages, variants, usages, metadata) = fetch_sessions_data(conn, ids)?;
+    if protocol_version >= 4 {
+        return bincode::serialize(&(sessions, messages, variants, usages, metadata))
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e));
+    }
+
+    let legacy_sessions = sessions
+        .into_iter()
+        .map(|s| LegacySessionV2 {
+            id: s.id,
+            character_id: s.character_id,
+            title: s.title,
+            system_prompt: s.system_prompt,
+            selected_scene_id: s.selected_scene_id,
+            persona_id: s.persona_id,
+            persona_disabled: s.persona_disabled,
+            voice_autoplay: s.voice_autoplay,
+            temperature: s.temperature,
+            top_p: s.top_p,
+            max_output_tokens: s.max_output_tokens,
+            frequency_penalty: s.frequency_penalty,
+            presence_penalty: s.presence_penalty,
+            top_k: s.top_k,
+            memories: s.memories,
+            memory_embeddings: s.memory_embeddings,
+            memory_summary: s.memory_summary,
+            memory_summary_token_count: s.memory_summary_token_count,
+            memory_tool_events: s.memory_tool_events,
+            archived: s.archived,
+            created_at: s.created_at,
+            updated_at: s.updated_at,
+            memory_status: s.memory_status,
+            memory_error: s.memory_error,
+        })
+        .collect::<Vec<_>>();
+    let legacy_usages = usages
+        .into_iter()
+        .map(|u| LegacyUsageRecordV2 {
+            id: u.id,
+            timestamp: u.timestamp,
+            session_id: u.session_id,
+            character_id: u.character_id,
+            character_name: u.character_name,
+            model_id: u.model_id,
+            model_name: u.model_name,
+            provider_id: u.provider_id,
+            provider_label: u.provider_label,
+            operation_type: u.operation_type,
+            prompt_tokens: u.prompt_tokens,
+            completion_tokens: u.completion_tokens,
+            total_tokens: u.total_tokens,
+            memory_tokens: u.memory_tokens,
+            summary_tokens: u.summary_tokens,
+            reasoning_tokens: u.reasoning_tokens,
+            image_tokens: u.image_tokens,
+            prompt_cost: u.prompt_cost,
+            completion_cost: u.completion_cost,
+            total_cost: u.total_cost,
+            success: u.success,
+            error_message: u.error_message,
+        })
+        .collect::<Vec<_>>();
+    bincode::serialize(&(legacy_sessions, messages, variants, legacy_usages, metadata))
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
 }
 
-fn fetch_sessions(conn: &DbConnection, ids: &[String]) -> Result<Vec<u8>, String> {
+fn fetch_sessions_data(
+    conn: &DbConnection,
+    ids: &[String],
+) -> Result<
+    (
+        Vec<Session>,
+        Vec<Message>,
+        Vec<MessageVariant>,
+        Vec<UsageRecord>,
+        Vec<UsageMetadata>,
+    ),
+    String,
+> {
     if ids.is_empty() {
-        return Ok(vec![]);
+        return Ok((Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new()));
     }
     let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
 
     // Sessions
-    let sql = format!("SELECT id, character_id, title, system_prompt, selected_scene_id, persona_id, persona_disabled, voice_autoplay, temperature, top_p, max_output_tokens, frequency_penalty, presence_penalty, top_k, memories, memory_embeddings, memory_summary, memory_summary_token_count, memory_tool_events, archived, created_at, updated_at, memory_status, memory_error FROM sessions WHERE id IN ({})", placeholders);
+    let sql = format!("SELECT id, character_id, title, system_prompt, selected_scene_id, prompt_template_id, persona_id, persona_disabled, voice_autoplay, temperature, top_p, max_output_tokens, frequency_penalty, presence_penalty, top_k, memories, memory_embeddings, memory_summary, memory_summary_token_count, memory_tool_events, archived, created_at, updated_at, memory_status, memory_error FROM sessions WHERE id IN ({})", placeholders);
     let mut stmt = conn
         .prepare(&sql)
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
@@ -639,25 +920,26 @@ fn fetch_sessions(conn: &DbConnection, ids: &[String]) -> Result<Vec<u8>, String
                 title: r.get(2)?,
                 system_prompt: r.get(3)?,
                 selected_scene_id: r.get(4)?,
-                persona_id: r.get(5)?,
-                persona_disabled: r.get(6)?,
-                voice_autoplay: r.get(7)?,
-                temperature: r.get(8)?,
-                top_p: r.get(9)?,
-                max_output_tokens: r.get(10)?,
-                frequency_penalty: r.get(11)?,
-                presence_penalty: r.get(12)?,
-                top_k: r.get(13)?,
-                memories: r.get(14)?,
-                memory_embeddings: r.get(15)?,
-                memory_summary: r.get(16)?,
-                memory_summary_token_count: r.get(17)?,
-                memory_tool_events: r.get(18)?,
-                archived: r.get(19)?,
-                created_at: r.get(20)?,
-                updated_at: r.get(21)?,
-                memory_status: r.get(22)?,
-                memory_error: r.get(23)?,
+                prompt_template_id: r.get(5)?,
+                persona_id: r.get(6)?,
+                persona_disabled: r.get(7)?,
+                voice_autoplay: r.get(8)?,
+                temperature: r.get(9)?,
+                top_p: r.get(10)?,
+                max_output_tokens: r.get(11)?,
+                frequency_penalty: r.get(12)?,
+                presence_penalty: r.get(13)?,
+                top_k: r.get(14)?,
+                memories: r.get(15)?,
+                memory_embeddings: r.get(16)?,
+                memory_summary: r.get(17)?,
+                memory_summary_token_count: r.get(18)?,
+                memory_tool_events: r.get(19)?,
+                archived: r.get(20)?,
+                created_at: r.get(21)?,
+                updated_at: r.get(22)?,
+                memory_status: r.get(23)?,
+                memory_error: r.get(24)?,
             })
         })
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
@@ -715,7 +997,7 @@ fn fetch_sessions(conn: &DbConnection, ids: &[String]) -> Result<Vec<u8>, String
         .collect();
 
     // Usage Records
-    let sql_usage = format!("SELECT id, timestamp, session_id, character_id, character_name, model_id, model_name, provider_id, provider_label, operation_type, prompt_tokens, completion_tokens, total_tokens, memory_tokens, summary_tokens, reasoning_tokens, image_tokens, prompt_cost, completion_cost, total_cost, success, error_message FROM usage_records WHERE session_id IN ({})", placeholders);
+    let sql_usage = format!("SELECT id, timestamp, session_id, character_id, character_name, model_id, model_name, provider_id, provider_label, operation_type, finish_reason, prompt_tokens, completion_tokens, total_tokens, memory_tokens, summary_tokens, reasoning_tokens, image_tokens, prompt_cost, completion_cost, total_cost, success, error_message FROM usage_records WHERE session_id IN ({})", placeholders);
     let mut stmt = conn
         .prepare(&sql_usage)
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
@@ -732,18 +1014,19 @@ fn fetch_sessions(conn: &DbConnection, ids: &[String]) -> Result<Vec<u8>, String
                 provider_id: r.get(7)?,
                 provider_label: r.get(8)?,
                 operation_type: r.get(9)?,
-                prompt_tokens: r.get(10)?,
-                completion_tokens: r.get(11)?,
-                total_tokens: r.get(12)?,
-                memory_tokens: r.get(13)?,
-                summary_tokens: r.get(14)?,
-                reasoning_tokens: r.get(15)?,
-                image_tokens: r.get(16)?,
-                prompt_cost: r.get(17)?,
-                completion_cost: r.get(18)?,
-                total_cost: r.get(19)?,
-                success: r.get(20)?,
-                error_message: r.get(21)?,
+                finish_reason: r.get(10)?,
+                prompt_tokens: r.get(11)?,
+                completion_tokens: r.get(12)?,
+                total_tokens: r.get(13)?,
+                memory_tokens: r.get(14)?,
+                summary_tokens: r.get(15)?,
+                reasoning_tokens: r.get(16)?,
+                image_tokens: r.get(17)?,
+                prompt_cost: r.get(18)?,
+                completion_cost: r.get(19)?,
+                total_cost: r.get(20)?,
+                success: r.get(21)?,
+                error_message: r.get(22)?,
             })
         })
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
@@ -767,17 +1050,114 @@ fn fetch_sessions(conn: &DbConnection, ids: &[String]) -> Result<Vec<u8>, String
         .map(|r| r.unwrap())
         .collect();
 
-    bincode::serialize(&(sessions, messages, variants, usages, metadata))
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
+    Ok((sessions, messages, variants, usages, metadata))
 }
 
-fn fetch_group_sessions(conn: &DbConnection, ids: &[String]) -> Result<Vec<u8>, String> {
+fn fetch_group_sessions_for_protocol(
+    conn: &DbConnection,
+    ids: &[String],
+    protocol_version: u32,
+) -> Result<Vec<u8>, String> {
+    let (sessions, participation, messages, variants, usages, metadata) =
+        fetch_group_sessions_data(conn, ids)?;
+    if protocol_version >= 4 {
+        return bincode::serialize(&(
+            sessions,
+            participation,
+            messages,
+            variants,
+            usages,
+            metadata,
+        ))
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e));
+    }
+
+    let legacy_sessions = sessions
+        .into_iter()
+        .map(|s| LegacyGroupSessionV3 {
+            id: s.id,
+            name: s.name,
+            character_ids: s.character_ids,
+            muted_character_ids: s.muted_character_ids,
+            persona_id: s.persona_id,
+            created_at: s.created_at,
+            updated_at: s.updated_at,
+            archived: s.archived,
+            chat_type: s.chat_type,
+            starting_scene: s.starting_scene,
+            background_image_path: s.background_image_path,
+            memories: s.memories,
+            memory_embeddings: s.memory_embeddings,
+            memory_summary: s.memory_summary,
+            memory_summary_token_count: s.memory_summary_token_count,
+            memory_tool_events: s.memory_tool_events,
+        })
+        .collect::<Vec<_>>();
+    let legacy_usages = usages
+        .into_iter()
+        .map(|u| LegacyUsageRecordV2 {
+            id: u.id,
+            timestamp: u.timestamp,
+            session_id: u.session_id,
+            character_id: u.character_id,
+            character_name: u.character_name,
+            model_id: u.model_id,
+            model_name: u.model_name,
+            provider_id: u.provider_id,
+            provider_label: u.provider_label,
+            operation_type: u.operation_type,
+            prompt_tokens: u.prompt_tokens,
+            completion_tokens: u.completion_tokens,
+            total_tokens: u.total_tokens,
+            memory_tokens: u.memory_tokens,
+            summary_tokens: u.summary_tokens,
+            reasoning_tokens: u.reasoning_tokens,
+            image_tokens: u.image_tokens,
+            prompt_cost: u.prompt_cost,
+            completion_cost: u.completion_cost,
+            total_cost: u.total_cost,
+            success: u.success,
+            error_message: u.error_message,
+        })
+        .collect::<Vec<_>>();
+    bincode::serialize(&(
+        legacy_sessions,
+        participation,
+        messages,
+        variants,
+        legacy_usages,
+        metadata,
+    ))
+    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
+}
+
+fn fetch_group_sessions_data(
+    conn: &DbConnection,
+    ids: &[String],
+) -> Result<
+    (
+        Vec<GroupSession>,
+        Vec<GroupParticipation>,
+        Vec<GroupMessage>,
+        Vec<GroupMessageVariant>,
+        Vec<UsageRecord>,
+        Vec<UsageMetadata>,
+    ),
+    String,
+> {
     if ids.is_empty() {
-        return Ok(vec![]);
+        return Ok((
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        ));
     }
     let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
 
-    let sql = format!("SELECT id, name, character_ids, muted_character_ids, persona_id, created_at, updated_at, archived, chat_type, starting_scene, background_image_path, memories, memory_embeddings, memory_summary, memory_summary_token_count, memory_tool_events FROM group_sessions WHERE id IN ({})", placeholders);
+    let sql = format!("SELECT id, group_character_id, name, character_ids, muted_character_ids, persona_id, created_at, updated_at, archived, chat_type, starting_scene, background_image_path, memories, memory_embeddings, memory_summary, memory_summary_token_count, memory_tool_events, COALESCE(speaker_selection_method, 'llm'), COALESCE(memory_type, 'manual') FROM group_sessions WHERE id IN ({})", placeholders);
     let mut stmt = conn
         .prepare(&sql)
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
@@ -785,21 +1165,24 @@ fn fetch_group_sessions(conn: &DbConnection, ids: &[String]) -> Result<Vec<u8>, 
         .query_map(rusqlite::params_from_iter(ids.iter()), |r| {
             Ok(GroupSession {
                 id: r.get(0)?,
-                name: r.get(1)?,
-                character_ids: r.get(2)?,
-                muted_character_ids: r.get(3)?,
-                persona_id: r.get(4)?,
-                created_at: r.get(5)?,
-                updated_at: r.get(6)?,
-                archived: r.get(7)?,
-                chat_type: r.get(8)?,
-                starting_scene: r.get(9)?,
-                background_image_path: r.get(10)?,
-                memories: r.get(11)?,
-                memory_embeddings: r.get(12)?,
-                memory_summary: r.get(13)?,
-                memory_summary_token_count: r.get(14)?,
-                memory_tool_events: r.get(15)?,
+                group_character_id: r.get(1)?,
+                name: r.get(2)?,
+                character_ids: r.get(3)?,
+                muted_character_ids: r.get(4)?,
+                persona_id: r.get(5)?,
+                created_at: r.get(6)?,
+                updated_at: r.get(7)?,
+                archived: r.get(8)?,
+                chat_type: r.get(9)?,
+                starting_scene: r.get(10)?,
+                background_image_path: r.get(11)?,
+                memories: r.get(12)?,
+                memory_embeddings: r.get(13)?,
+                memory_summary: r.get(14)?,
+                memory_summary_token_count: r.get(15)?,
+                memory_tool_events: r.get(16)?,
+                speaker_selection_method: r.get(17)?,
+                memory_type: r.get(18)?,
             })
         })
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
@@ -878,7 +1261,7 @@ fn fetch_group_sessions(conn: &DbConnection, ids: &[String]) -> Result<Vec<u8>, 
         .map(|r| r.unwrap())
         .collect();
 
-    let sql_usage = format!("SELECT id, timestamp, session_id, character_id, character_name, model_id, model_name, provider_id, provider_label, operation_type, prompt_tokens, completion_tokens, total_tokens, memory_tokens, summary_tokens, reasoning_tokens, image_tokens, prompt_cost, completion_cost, total_cost, success, error_message FROM usage_records WHERE session_id IN ({})", placeholders);
+    let sql_usage = format!("SELECT id, timestamp, session_id, character_id, character_name, model_id, model_name, provider_id, provider_label, operation_type, finish_reason, prompt_tokens, completion_tokens, total_tokens, memory_tokens, summary_tokens, reasoning_tokens, image_tokens, prompt_cost, completion_cost, total_cost, success, error_message FROM usage_records WHERE session_id IN ({})", placeholders);
     let mut stmt = conn
         .prepare(&sql_usage)
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
@@ -895,18 +1278,19 @@ fn fetch_group_sessions(conn: &DbConnection, ids: &[String]) -> Result<Vec<u8>, 
                 provider_id: r.get(7)?,
                 provider_label: r.get(8)?,
                 operation_type: r.get(9)?,
-                prompt_tokens: r.get(10)?,
-                completion_tokens: r.get(11)?,
-                total_tokens: r.get(12)?,
-                memory_tokens: r.get(13)?,
-                summary_tokens: r.get(14)?,
-                reasoning_tokens: r.get(15)?,
-                image_tokens: r.get(16)?,
-                prompt_cost: r.get(17)?,
-                completion_cost: r.get(18)?,
-                total_cost: r.get(19)?,
-                success: r.get(20)?,
-                error_message: r.get(21)?,
+                finish_reason: r.get(10)?,
+                prompt_tokens: r.get(11)?,
+                completion_tokens: r.get(12)?,
+                total_tokens: r.get(13)?,
+                memory_tokens: r.get(14)?,
+                summary_tokens: r.get(15)?,
+                reasoning_tokens: r.get(16)?,
+                image_tokens: r.get(17)?,
+                prompt_cost: r.get(18)?,
+                completion_cost: r.get(19)?,
+                total_cost: r.get(20)?,
+                success: r.get(21)?,
+                error_message: r.get(22)?,
             })
         })
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
@@ -929,7 +1313,7 @@ fn fetch_group_sessions(conn: &DbConnection, ids: &[String]) -> Result<Vec<u8>, 
         .map(|r| r.unwrap())
         .collect();
 
-    bincode::serialize(&(
+    Ok((
         sessions,
         participation,
         messages,
@@ -937,7 +1321,6 @@ fn fetch_group_sessions(conn: &DbConnection, ids: &[String]) -> Result<Vec<u8>, 
         usages,
         metadata,
     ))
-    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
 }
 
 pub fn apply_layer_data(
@@ -953,19 +1336,6 @@ pub fn apply_layer_data(
         SyncLayer::GroupSessions => apply_group_sessions(conn, data),
     }
 }
-
-type GlobalsData = (
-    Vec<Settings>,
-    Vec<Persona>,
-    Vec<Model>,
-    Vec<Secret>,
-    Vec<ProviderCredential>,
-    Vec<PromptTemplate>,
-    Vec<ModelPricingCache>,
-    Vec<AudioProvider>,
-    Vec<AudioVoiceCache>,
-    Vec<UserVoice>,
-);
 
 type LegacyGlobalsDataV1 = (
     Vec<Settings>,
@@ -989,6 +1359,7 @@ type LegacyGlobalsDataV0 = (
 
 fn apply_globals(conn: &mut DbConnection, data: &[u8]) -> Result<(), String> {
     let (
+        meta,
         settings,
         personas,
         models,
@@ -996,16 +1367,26 @@ fn apply_globals(conn: &mut DbConnection, data: &[u8]) -> Result<(), String> {
         creds,
         templates,
         pricing,
-        audio_providers,
-        voice_cache,
-        user_voices,
+        helper_sessions,
+        groups,
     ): GlobalsData = match bincode::deserialize(data) {
         Ok(payload) => payload,
         Err(_) => {
-            if let Ok((settings, personas, models, secrets, creds, templates, pricing)) =
-                bincode::deserialize::<LegacyGlobalsDataV1>(data)
+            if let Ok((
+                settings,
+                personas,
+                models,
+                secrets,
+                creds,
+                templates,
+                pricing,
+                _audio_providers,
+                _voice_cache,
+                _user_voices,
+            )) = bincode::deserialize::<LegacyGlobalsDataV3>(data)
             {
                 (
+                    Vec::new(),
                     settings,
                     personas,
                     models,
@@ -1014,6 +1395,20 @@ fn apply_globals(conn: &mut DbConnection, data: &[u8]) -> Result<(), String> {
                     templates,
                     pricing,
                     Vec::new(),
+                    Vec::new(),
+                )
+            } else if let Ok((settings, personas, models, secrets, creds, templates, pricing)) =
+                bincode::deserialize::<LegacyGlobalsDataV1>(data)
+            {
+                (
+                    Vec::new(),
+                    settings,
+                    personas,
+                    models,
+                    secrets,
+                    creds,
+                    templates,
+                    pricing,
                     Vec::new(),
                     Vec::new(),
                 )
@@ -1037,6 +1432,7 @@ fn apply_globals(conn: &mut DbConnection, data: &[u8]) -> Result<(), String> {
                     })
                     .collect();
                 (
+                    Vec::new(),
                     settings,
                     personas,
                     models,
@@ -1044,7 +1440,6 @@ fn apply_globals(conn: &mut DbConnection, data: &[u8]) -> Result<(), String> {
                     creds,
                     templates,
                     pricing,
-                    Vec::new(),
                     Vec::new(),
                     Vec::new(),
                 )
@@ -1055,6 +1450,14 @@ fn apply_globals(conn: &mut DbConnection, data: &[u8]) -> Result<(), String> {
     let tx = conn
         .transaction()
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+
+    for item in meta {
+        tx.execute(
+            r#"INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)"#,
+            params![item.key, item.value],
+        )
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    }
 
     // Settings (ID=1)
     if let Some(s) = settings.first() {
@@ -1102,60 +1505,16 @@ fn apply_globals(conn: &mut DbConnection, data: &[u8]) -> Result<(), String> {
                    params![p.model_id, p.pricing_json, p.cached_at]).map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     }
 
-    // Audio Providers
-    for p in audio_providers {
-        tx.execute(
-            r#"INSERT OR REPLACE INTO audio_providers (id, provider_type, label, api_key, project_id, location, created_at, updated_at)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"#,
-            params![
-                p.id,
-                p.provider_type,
-                p.label,
-                p.api_key,
-                p.project_id,
-                p.location,
-                p.created_at,
-                p.updated_at
-            ],
-        )
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    for session in helper_sessions {
+        tx.execute(r#"INSERT OR REPLACE INTO creation_helper_sessions (id, creation_goal, status, session_json, uploaded_images_json, created_at, updated_at)
+                    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"#,
+                    params![session.id, session.creation_goal, session.status, session.session_json, session.uploaded_images_json, session.created_at, session.updated_at]).map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     }
 
-    // Audio Voice Cache
-    for v in voice_cache {
-        tx.execute(
-            r#"INSERT OR REPLACE INTO audio_voice_cache (id, provider_id, voice_id, name, preview_url, labels, cached_at)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"#,
-            params![
-                v.id,
-                v.provider_id,
-                v.voice_id,
-                v.name,
-                v.preview_url,
-                v.labels,
-                v.cached_at
-            ],
-        )
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-    }
-
-    // User Voices
-    for v in user_voices {
-        tx.execute(
-            r#"INSERT OR REPLACE INTO user_voices (id, provider_id, name, model_id, voice_id, prompt, created_at, updated_at)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"#,
-            params![
-                v.id,
-                v.provider_id,
-                v.name,
-                v.model_id,
-                v.voice_id,
-                v.prompt,
-                v.created_at,
-                v.updated_at
-            ],
-        )
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    for group in groups {
+        tx.execute(r#"INSERT OR REPLACE INTO group_characters (id, name, character_ids, muted_character_ids, persona_id, created_at, updated_at, archived, chat_type, starting_scene, background_image_path, speaker_selection_method, memory_type)
+                    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)"#,
+                    params![group.id, group.name, group.character_ids, group.muted_character_ids, group.persona_id, group.created_at, group.updated_at, group.archived, group.chat_type, group.starting_scene, group.background_image_path, group.speaker_selection_method, group.memory_type]).map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     }
 
     tx.commit()
@@ -1192,13 +1551,23 @@ type CharactersData = (
     Vec<Scene>,
     Vec<SceneVariant>,
     Vec<CharacterLorebookLink>,
+    Vec<ChatTemplate>,
+    Vec<ChatTemplateMessage>,
+);
+
+type LegacyCharactersDataV2 = (
+    Vec<LegacyCharacterV2>,
+    Vec<CharacterRule>,
+    Vec<LegacySceneV2>,
+    Vec<LegacySceneVariantV2>,
+    Vec<CharacterLorebookLink>,
 );
 
 type LegacyCharactersDataV1 = (
     Vec<LegacyCharacterV1>,
     Vec<CharacterRule>,
     Vec<LegacySceneV1>,
-    Vec<SceneVariant>,
+    Vec<LegacySceneVariantV2>,
     Vec<CharacterLorebookLink>,
 );
 
@@ -1206,7 +1575,7 @@ type LegacyCharactersDataV0 = (
     Vec<LegacyCharacterV0>,
     Vec<CharacterRule>,
     Vec<LegacySceneV1>,
-    Vec<SceneVariant>,
+    Vec<LegacySceneVariantV2>,
     Vec<CharacterLorebookLink>,
 );
 
@@ -1214,11 +1583,38 @@ type LegacyCharactersDataVMinus1 = (
     Vec<LegacyCharacterVMinus1>,
     Vec<CharacterRule>,
     Vec<LegacySceneV0>,
-    Vec<SceneVariant>,
+    Vec<LegacySceneVariantV2>,
     Vec<CharacterLorebookLink>,
 );
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
+struct LegacyCharacterV2 {
+    pub id: String,
+    pub name: String,
+    pub avatar_path: Option<String>,
+    pub avatar_crop_x: Option<f64>,
+    pub avatar_crop_y: Option<f64>,
+    pub avatar_crop_scale: Option<f64>,
+    pub background_image_path: Option<String>,
+    pub definition: Option<String>,
+    pub description: Option<String>,
+    pub default_scene_id: Option<String>,
+    pub default_model_id: Option<String>,
+    pub memory_type: String,
+    pub prompt_template_id: Option<String>,
+    pub system_prompt: Option<String>,
+    pub voice_config: Option<String>,
+    pub voice_autoplay: i64,
+    pub disable_avatar_gradient: i64,
+    pub custom_gradient_enabled: Option<i64>,
+    pub custom_gradient_colors: Option<String>,
+    pub custom_text_color: Option<String>,
+    pub custom_text_secondary: Option<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
 struct LegacyCharacterV1 {
     pub id: String,
     pub name: String,
@@ -1241,7 +1637,7 @@ struct LegacyCharacterV1 {
     pub updated_at: i64,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 struct LegacyCharacterV0 {
     pub id: String,
     pub name: String,
@@ -1263,7 +1659,7 @@ struct LegacyCharacterV0 {
     pub updated_at: i64,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 struct LegacyCharacterVMinus1 {
     pub id: String,
     pub name: String,
@@ -1280,7 +1676,24 @@ struct LegacyCharacterVMinus1 {
     pub updated_at: i64,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
+struct LegacySceneV2 {
+    pub id: String,
+    pub character_id: String,
+    pub content: String,
+    pub created_at: i64,
+    pub selected_variant_id: Option<String>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct LegacySceneVariantV2 {
+    pub id: String,
+    pub scene_id: String,
+    pub content: String,
+    pub created_at: i64,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
 struct LegacySceneV1 {
     pub id: String,
     pub character_id: String,
@@ -1289,7 +1702,7 @@ struct LegacySceneV1 {
     pub selected_variant_id: Option<String>,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 struct LegacySceneV0 {
     pub id: String,
     pub character_id: String,
@@ -1298,15 +1711,16 @@ struct LegacySceneV0 {
 }
 
 fn apply_characters(conn: &mut DbConnection, data: &[u8]) -> Result<(), String> {
-    let (chars, rules, scenes, variants, links) = deserialize_characters(data)?;
+    let (chars, rules, scenes, variants, links, templates, template_messages) =
+        deserialize_characters(data)?;
     let tx = conn
         .transaction()
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 
     for c in chars {
-        tx.execute(r#"INSERT OR REPLACE INTO characters (id, name, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, background_image_path, description, definition, default_scene_id, default_model_id, memory_type, prompt_template_id, system_prompt, voice_config, voice_autoplay, disable_avatar_gradient, custom_gradient_enabled, custom_gradient_colors, custom_text_color, custom_text_secondary, created_at, updated_at)
-                    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)"#,
-                    params![c.id, c.name, c.avatar_path, c.avatar_crop_x, c.avatar_crop_y, c.avatar_crop_scale, c.background_image_path, c.description, c.definition, c.default_scene_id, c.default_model_id, c.memory_type, c.prompt_template_id, c.system_prompt, c.voice_config, c.voice_autoplay, c.disable_avatar_gradient, c.custom_gradient_enabled, c.custom_gradient_colors, c.custom_text_color, c.custom_text_secondary, c.created_at, c.updated_at]).map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        tx.execute(r#"INSERT OR REPLACE INTO characters (id, name, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, background_image_path, definition, description, nickname, scenario, creator_notes, creator, creator_notes_multilingual, source, tags, default_scene_id, default_model_id, fallback_model_id, memory_type, prompt_template_id, system_prompt, voice_config, voice_autoplay, disable_avatar_gradient, custom_gradient_enabled, custom_gradient_colors, custom_text_color, custom_text_secondary, chat_appearance, default_chat_template_id, created_at, updated_at)
+                    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33)"#,
+                    params![c.id, c.name, c.avatar_path, c.avatar_crop_x, c.avatar_crop_y, c.avatar_crop_scale, c.background_image_path, c.definition, c.description, c.nickname, c.scenario, c.creator_notes, c.creator, c.creator_notes_multilingual, c.source, c.tags, c.default_scene_id, c.default_model_id, c.fallback_model_id, c.memory_type, c.prompt_template_id, c.system_prompt, c.voice_config, c.voice_autoplay, c.disable_avatar_gradient, c.custom_gradient_enabled, c.custom_gradient_colors, c.custom_text_color, c.custom_text_secondary, c.chat_appearance, c.default_chat_template_id, c.created_at, c.updated_at]).map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     }
 
     for r in &rules {
@@ -1325,19 +1739,34 @@ fn apply_characters(conn: &mut DbConnection, data: &[u8]) -> Result<(), String> 
     }
 
     for s in scenes {
-        tx.execute(r#"INSERT OR REPLACE INTO scenes (id, character_id, content, created_at, selected_variant_id) VALUES (?1, ?2, ?3, ?4, ?5)"#,
-                    params![s.id, s.character_id, s.content, s.created_at, s.selected_variant_id]).map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        tx.execute(r#"INSERT OR REPLACE INTO scenes (id, character_id, content, direction, created_at, selected_variant_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6)"#,
+                    params![s.id, s.character_id, s.content, s.direction, s.created_at, s.selected_variant_id]).map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     }
 
     for v in variants {
-        tx.execute(r#"INSERT OR REPLACE INTO scene_variants (id, scene_id, content, created_at) VALUES (?1, ?2, ?3, ?4)"#,
-                   params![v.id, v.scene_id, v.content, v.created_at]).map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        tx.execute(r#"INSERT OR REPLACE INTO scene_variants (id, scene_id, content, direction, created_at) VALUES (?1, ?2, ?3, ?4, ?5)"#,
+                   params![v.id, v.scene_id, v.content, v.direction, v.created_at]).map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     }
 
     for l in links {
         tx.execute(r#"INSERT OR REPLACE INTO character_lorebooks (character_id, lorebook_id, enabled, display_order, created_at, updated_at)
                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)"#,
                     params![l.character_id, l.lorebook_id, l.enabled, l.display_order, l.created_at, l.updated_at]).map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    }
+
+    for t in templates {
+        tx.execute(r#"INSERT OR REPLACE INTO chat_templates (id, character_id, name, scene_id, prompt_template_id, created_at)
+                    VALUES (?1, ?2, ?3, ?4, ?5, ?6)"#,
+                    params![t.id, t.character_id, t.name, t.scene_id, t.prompt_template_id, t.created_at]).map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    }
+
+    for m in template_messages {
+        tx.execute(
+            r#"INSERT OR REPLACE INTO chat_template_messages (id, template_id, idx, role, content)
+                    VALUES (?1, ?2, ?3, ?4, ?5)"#,
+            params![m.id, m.template_id, m.idx, m.role, m.content],
+        )
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     }
 
     tx.commit()
@@ -1354,11 +1783,86 @@ fn deserialize_characters(
         Vec<Scene>,
         Vec<SceneVariant>,
         Vec<CharacterLorebookLink>,
+        Vec<ChatTemplate>,
+        Vec<ChatTemplateMessage>,
     ),
     String,
 > {
     if let Ok(payload) = bincode::deserialize::<CharactersData>(data) {
         return Ok(payload);
+    }
+
+    if let Ok((chars, rules, scenes, variants, links)) =
+        bincode::deserialize::<LegacyCharactersDataV2>(data)
+    {
+        let mapped_chars = chars
+            .into_iter()
+            .map(|c| Character {
+                id: c.id,
+                name: c.name,
+                avatar_path: c.avatar_path,
+                avatar_crop_x: c.avatar_crop_x,
+                avatar_crop_y: c.avatar_crop_y,
+                avatar_crop_scale: c.avatar_crop_scale,
+                background_image_path: c.background_image_path,
+                definition: c.definition,
+                description: c.description,
+                nickname: None,
+                scenario: None,
+                creator_notes: None,
+                creator: None,
+                creator_notes_multilingual: None,
+                source: None,
+                tags: None,
+                default_scene_id: c.default_scene_id,
+                default_model_id: c.default_model_id,
+                fallback_model_id: None,
+                memory_type: c.memory_type,
+                prompt_template_id: c.prompt_template_id,
+                system_prompt: c.system_prompt,
+                voice_config: c.voice_config,
+                voice_autoplay: c.voice_autoplay,
+                disable_avatar_gradient: c.disable_avatar_gradient,
+                custom_gradient_enabled: c.custom_gradient_enabled,
+                custom_gradient_colors: c.custom_gradient_colors,
+                custom_text_color: c.custom_text_color,
+                custom_text_secondary: c.custom_text_secondary,
+                chat_appearance: None,
+                default_chat_template_id: None,
+                created_at: c.created_at,
+                updated_at: c.updated_at,
+            })
+            .collect();
+        let mapped_scenes = scenes
+            .into_iter()
+            .map(|s| Scene {
+                id: s.id,
+                character_id: s.character_id,
+                content: s.content,
+                direction: None,
+                created_at: s.created_at,
+                selected_variant_id: s.selected_variant_id,
+            })
+            .collect();
+        let mapped_variants = variants
+            .into_iter()
+            .map(|v| SceneVariant {
+                id: v.id,
+                scene_id: v.scene_id,
+                content: v.content,
+                direction: None,
+                created_at: v.created_at,
+            })
+            .collect();
+        return Ok((
+            mapped_chars,
+            rules,
+            mapped_scenes,
+            mapped_variants,
+            links,
+            Vec::new(),
+            Vec::new(),
+        ));
     }
 
     if let Ok((chars, rules, scenes, variants, links)) =
@@ -1374,10 +1878,18 @@ fn deserialize_characters(
                 avatar_crop_y: c.avatar_crop_y,
                 avatar_crop_scale: c.avatar_crop_scale,
                 background_image_path: c.background_image_path,
-                description: c.description,
                 definition: c.definition,
+                description: c.description,
+                nickname: None,
+                scenario: None,
+                creator_notes: None,
+                creator: None,
+                creator_notes_multilingual: None,
+                source: None,
+                tags: None,
                 default_scene_id: c.default_scene_id,
                 default_model_id: c.default_model_id,
+                fallback_model_id: None,
                 memory_type: c.memory_type,
                 prompt_template_id: c.prompt_template_id,
                 system_prompt: c.system_prompt,
@@ -1388,6 +1900,8 @@ fn deserialize_characters(
                 custom_gradient_colors: None,
                 custom_text_color: None,
                 custom_text_secondary: None,
+                chat_appearance: None,
+                default_chat_template_id: None,
                 created_at: c.created_at,
                 updated_at: c.updated_at,
             })
@@ -1398,11 +1912,30 @@ fn deserialize_characters(
                 id: s.id,
                 character_id: s.character_id,
                 content: s.content,
+                direction: None,
                 created_at: s.created_at,
                 selected_variant_id: s.selected_variant_id,
             })
             .collect();
-        return Ok((mapped_chars, rules, mapped_scenes, variants, links));
+        let mapped_variants = variants
+            .into_iter()
+            .map(|v| SceneVariant {
+                id: v.id,
+                scene_id: v.scene_id,
+                content: v.content,
+                direction: None,
+                created_at: v.created_at,
+            })
+            .collect();
+        return Ok((
+            mapped_chars,
+            rules,
+            mapped_scenes,
+            mapped_variants,
+            links,
+            Vec::new(),
+            Vec::new(),
+        ));
     }
 
     if let Ok((chars, rules, scenes, variants, links)) =
@@ -1418,10 +1951,18 @@ fn deserialize_characters(
                 avatar_crop_y: c.avatar_crop_y,
                 avatar_crop_scale: c.avatar_crop_scale,
                 background_image_path: c.background_image_path,
-                description: c.description,
                 definition: c.definition,
+                description: c.description,
+                nickname: None,
+                scenario: None,
+                creator_notes: None,
+                creator: None,
+                creator_notes_multilingual: None,
+                source: None,
+                tags: None,
                 default_scene_id: c.default_scene_id,
                 default_model_id: c.default_model_id,
+                fallback_model_id: None,
                 memory_type: c.memory_type,
                 prompt_template_id: c.prompt_template_id,
                 system_prompt: c.system_prompt,
@@ -1432,6 +1973,8 @@ fn deserialize_characters(
                 custom_gradient_colors: None,
                 custom_text_color: None,
                 custom_text_secondary: None,
+                chat_appearance: None,
+                default_chat_template_id: None,
                 created_at: c.created_at,
                 updated_at: c.updated_at,
             })
@@ -1442,11 +1985,30 @@ fn deserialize_characters(
                 id: s.id,
                 character_id: s.character_id,
                 content: s.content,
+                direction: None,
                 created_at: s.created_at,
                 selected_variant_id: s.selected_variant_id,
             })
             .collect();
-        return Ok((mapped_chars, rules, mapped_scenes, variants, links));
+        let mapped_variants = variants
+            .into_iter()
+            .map(|v| SceneVariant {
+                id: v.id,
+                scene_id: v.scene_id,
+                content: v.content,
+                direction: None,
+                created_at: v.created_at,
+            })
+            .collect();
+        return Ok((
+            mapped_chars,
+            rules,
+            mapped_scenes,
+            mapped_variants,
+            links,
+            Vec::new(),
+            Vec::new(),
+        ));
     }
 
     if let Ok((chars, rules, scenes, variants, links)) =
@@ -1462,10 +2024,18 @@ fn deserialize_characters(
                 avatar_crop_y: None,
                 avatar_crop_scale: None,
                 background_image_path: c.background_image_path,
-                description: c.description,
                 definition: None,
+                description: c.description,
+                nickname: None,
+                scenario: None,
+                creator_notes: None,
+                creator: None,
+                creator_notes_multilingual: None,
+                source: None,
+                tags: None,
                 default_scene_id: c.default_scene_id,
                 default_model_id: c.default_model_id,
+                fallback_model_id: None,
                 memory_type: "manual".to_string(),
                 prompt_template_id: c.prompt_template_id,
                 system_prompt: c.system_prompt,
@@ -1476,6 +2046,8 @@ fn deserialize_characters(
                 custom_gradient_colors: None,
                 custom_text_color: None,
                 custom_text_secondary: None,
+                chat_appearance: None,
+                default_chat_template_id: None,
                 created_at: c.created_at,
                 updated_at: c.updated_at,
             })
@@ -1486,11 +2058,30 @@ fn deserialize_characters(
                 id: s.id,
                 character_id: s.character_id,
                 content: s.content,
+                direction: None,
                 created_at: s.created_at,
                 selected_variant_id: None,
             })
             .collect();
-        return Ok((mapped_chars, rules, mapped_scenes, variants, links));
+        let mapped_variants = variants
+            .into_iter()
+            .map(|v| SceneVariant {
+                id: v.id,
+                scene_id: v.scene_id,
+                content: v.content,
+                direction: None,
+                created_at: v.created_at,
+            })
+            .collect();
+        return Ok((
+            mapped_chars,
+            rules,
+            mapped_scenes,
+            mapped_variants,
+            links,
+            Vec::new(),
+            Vec::new(),
+        ));
     }
 
     bincode::deserialize::<CharactersData>(data)
@@ -1505,11 +2096,19 @@ type SessionsData = (
     Vec<UsageMetadata>,
 );
 
+type LegacySessionsDataV2 = (
+    Vec<LegacySessionV2>,
+    Vec<Message>,
+    Vec<MessageVariant>,
+    Vec<LegacyUsageRecordV2>,
+    Vec<UsageMetadata>,
+);
+
 type LegacySessionsDataV1 = (
     Vec<LegacySessionV1>,
     Vec<LegacyMessageV1>,
     Vec<LegacyMessageVariantV1>,
-    Vec<UsageRecord>,
+    Vec<LegacyUsageRecordV2>,
     Vec<UsageMetadata>,
 );
 
@@ -1517,7 +2116,7 @@ type LegacySessionsDataV0 = (
     Vec<LegacySessionV0>,
     Vec<LegacyMessageV1>,
     Vec<LegacyMessageVariantV1>,
-    Vec<UsageRecord>,
+    Vec<LegacyUsageRecordV2>,
     Vec<UsageMetadata>,
 );
 
@@ -1530,7 +2129,44 @@ type GroupSessionsData = (
     Vec<UsageMetadata>,
 );
 
-#[derive(serde::Deserialize)]
+type LegacyGroupSessionsDataV3 = (
+    Vec<LegacyGroupSessionV3>,
+    Vec<GroupParticipation>,
+    Vec<GroupMessage>,
+    Vec<GroupMessageVariant>,
+    Vec<LegacyUsageRecordV2>,
+    Vec<UsageMetadata>,
+);
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct LegacySessionV2 {
+    pub id: String,
+    pub character_id: String,
+    pub title: String,
+    pub system_prompt: Option<String>,
+    pub selected_scene_id: Option<String>,
+    pub persona_id: Option<String>,
+    pub persona_disabled: Option<i64>,
+    pub voice_autoplay: Option<i64>,
+    pub temperature: Option<f64>,
+    pub top_p: Option<f64>,
+    pub max_output_tokens: Option<i64>,
+    pub frequency_penalty: Option<f64>,
+    pub presence_penalty: Option<f64>,
+    pub top_k: Option<i64>,
+    pub memories: String,
+    pub memory_embeddings: String,
+    pub memory_summary: Option<String>,
+    pub memory_summary_token_count: i64,
+    pub memory_tool_events: String,
+    pub archived: i64,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub memory_status: Option<String>,
+    pub memory_error: Option<String>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
 struct LegacySessionV1 {
     pub id: String,
     pub character_id: String,
@@ -1556,7 +2192,7 @@ struct LegacySessionV1 {
     pub updated_at: i64,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 struct LegacySessionV0 {
     pub id: String,
     pub character_id: String,
@@ -1581,7 +2217,53 @@ struct LegacySessionV0 {
     pub updated_at: i64,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
+struct LegacyUsageRecordV2 {
+    pub id: String,
+    pub timestamp: i64,
+    pub session_id: String,
+    pub character_id: String,
+    pub character_name: String,
+    pub model_id: String,
+    pub model_name: String,
+    pub provider_id: String,
+    pub provider_label: String,
+    pub operation_type: Option<String>,
+    pub prompt_tokens: Option<i64>,
+    pub completion_tokens: Option<i64>,
+    pub total_tokens: Option<i64>,
+    pub memory_tokens: Option<i64>,
+    pub summary_tokens: Option<i64>,
+    pub reasoning_tokens: Option<i64>,
+    pub image_tokens: Option<i64>,
+    pub prompt_cost: Option<f64>,
+    pub completion_cost: Option<f64>,
+    pub total_cost: Option<f64>,
+    pub success: i64,
+    pub error_message: Option<String>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct LegacyGroupSessionV3 {
+    pub id: String,
+    pub name: String,
+    pub character_ids: String,
+    pub muted_character_ids: String,
+    pub persona_id: Option<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub archived: i64,
+    pub chat_type: String,
+    pub starting_scene: Option<String>,
+    pub background_image_path: Option<String>,
+    pub memories: String,
+    pub memory_embeddings: String,
+    pub memory_summary: String,
+    pub memory_summary_token_count: i64,
+    pub memory_tool_events: String,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
 struct LegacyMessageV1 {
     pub id: String,
     pub session_id: String,
@@ -1597,7 +2279,7 @@ struct LegacyMessageV1 {
     pub attachments: String,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 struct LegacyMessageVariantV1 {
     pub id: String,
     pub message_id: String,
@@ -1615,9 +2297,9 @@ fn apply_sessions(conn: &mut DbConnection, data: &[u8]) -> Result<(), String> {
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 
     for s in sessions {
-        tx.execute(r#"INSERT OR REPLACE INTO sessions (id, character_id, title, system_prompt, selected_scene_id, persona_id, persona_disabled, voice_autoplay, temperature, top_p, max_output_tokens, frequency_penalty, presence_penalty, top_k, memories, memory_embeddings, memory_summary, memory_summary_token_count, memory_tool_events, archived, created_at, updated_at, memory_status, memory_error)
-                    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)"#,
-                    params![s.id, s.character_id, s.title, s.system_prompt, s.selected_scene_id, s.persona_id, s.persona_disabled, s.voice_autoplay, s.temperature, s.top_p, s.max_output_tokens, s.frequency_penalty, s.presence_penalty, s.top_k, s.memories, s.memory_embeddings, s.memory_summary, s.memory_summary_token_count, s.memory_tool_events, s.archived, s.created_at, s.updated_at, s.memory_status, s.memory_error]).map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        tx.execute(r#"INSERT OR REPLACE INTO sessions (id, character_id, title, system_prompt, selected_scene_id, prompt_template_id, persona_id, persona_disabled, voice_autoplay, temperature, top_p, max_output_tokens, frequency_penalty, presence_penalty, top_k, memories, memory_embeddings, memory_summary, memory_summary_token_count, memory_tool_events, archived, created_at, updated_at, memory_status, memory_error)
+                    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)"#,
+                    params![s.id, s.character_id, s.title, s.system_prompt, s.selected_scene_id, s.prompt_template_id, s.persona_id, s.persona_disabled, s.voice_autoplay, s.temperature, s.top_p, s.max_output_tokens, s.frequency_penalty, s.presence_penalty, s.top_k, s.memories, s.memory_embeddings, s.memory_summary, s.memory_summary_token_count, s.memory_tool_events, s.archived, s.created_at, s.updated_at, s.memory_status, s.memory_error]).map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     }
 
     for m in messages {
@@ -1638,9 +2320,9 @@ fn apply_sessions(conn: &mut DbConnection, data: &[u8]) -> Result<(), String> {
     }
 
     for u in usages {
-        tx.execute(r#"INSERT OR REPLACE INTO usage_records (id, timestamp, session_id, character_id, character_name, model_id, model_name, provider_id, provider_label, operation_type, prompt_tokens, completion_tokens, total_tokens, memory_tokens, summary_tokens, reasoning_tokens, image_tokens, prompt_cost, completion_cost, total_cost, success, error_message)
-                    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)"#,
-                    params![u.id, u.timestamp, u.session_id, u.character_id, u.character_name, u.model_id, u.model_name, u.provider_id, u.provider_label, u.operation_type, u.prompt_tokens, u.completion_tokens, u.total_tokens, u.memory_tokens, u.summary_tokens, u.reasoning_tokens, u.image_tokens, u.prompt_cost, u.completion_cost, u.total_cost, u.success, u.error_message]).map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        tx.execute(r#"INSERT OR REPLACE INTO usage_records (id, timestamp, session_id, character_id, character_name, model_id, model_name, provider_id, provider_label, operation_type, finish_reason, prompt_tokens, completion_tokens, total_tokens, memory_tokens, summary_tokens, reasoning_tokens, image_tokens, prompt_cost, completion_cost, total_cost, success, error_message)
+                    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)"#,
+                    params![u.id, u.timestamp, u.session_id, u.character_id, u.character_name, u.model_id, u.model_name, u.provider_id, u.provider_label, u.operation_type, u.finish_reason, u.prompt_tokens, u.completion_tokens, u.total_tokens, u.memory_tokens, u.summary_tokens, u.reasoning_tokens, u.image_tokens, u.prompt_cost, u.completion_cost, u.total_cost, u.success, u.error_message]).map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     }
 
     for md in metadata {
@@ -1661,17 +2343,16 @@ fn apply_group_sessions(conn: &mut DbConnection, data: &[u8]) -> Result<(), Stri
         return Ok(());
     }
 
-    let (sessions, participation, messages, variants, usages, metadata): GroupSessionsData =
-        bincode::deserialize(data)
-            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    let (sessions, participation, messages, variants, usages, metadata) =
+        deserialize_group_sessions(data)?;
     let tx = conn
         .transaction()
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 
     for s in sessions {
-        tx.execute(r#"INSERT OR REPLACE INTO group_sessions (id, name, character_ids, muted_character_ids, persona_id, created_at, updated_at, archived, chat_type, starting_scene, background_image_path, memories, memory_embeddings, memory_summary, memory_summary_token_count, memory_tool_events)
-                    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)"#,
-                    params![s.id, s.name, s.character_ids, s.muted_character_ids, s.persona_id, s.created_at, s.updated_at, s.archived, s.chat_type, s.starting_scene, s.background_image_path, s.memories, s.memory_embeddings, s.memory_summary, s.memory_summary_token_count, s.memory_tool_events]).map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        tx.execute(r#"INSERT OR REPLACE INTO group_sessions (id, group_character_id, name, character_ids, muted_character_ids, persona_id, created_at, updated_at, archived, chat_type, starting_scene, background_image_path, memories, memory_embeddings, memory_summary, memory_summary_token_count, memory_tool_events, speaker_selection_method, memory_type)
+                    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)"#,
+                    params![s.id, s.group_character_id, s.name, s.character_ids, s.muted_character_ids, s.persona_id, s.created_at, s.updated_at, s.archived, s.chat_type, s.starting_scene, s.background_image_path, s.memories, s.memory_embeddings, s.memory_summary, s.memory_summary_token_count, s.memory_tool_events, s.speaker_selection_method, s.memory_type]).map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     }
 
     for p in participation {
@@ -1693,9 +2374,9 @@ fn apply_group_sessions(conn: &mut DbConnection, data: &[u8]) -> Result<(), Stri
     }
 
     for u in usages {
-        tx.execute(r#"INSERT OR REPLACE INTO usage_records (id, timestamp, session_id, character_id, character_name, model_id, model_name, provider_id, provider_label, operation_type, prompt_tokens, completion_tokens, total_tokens, memory_tokens, summary_tokens, reasoning_tokens, image_tokens, prompt_cost, completion_cost, total_cost, success, error_message)
-                    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)"#,
-                    params![u.id, u.timestamp, u.session_id, u.character_id, u.character_name, u.model_id, u.model_name, u.provider_id, u.provider_label, u.operation_type, u.prompt_tokens, u.completion_tokens, u.total_tokens, u.memory_tokens, u.summary_tokens, u.reasoning_tokens, u.image_tokens, u.prompt_cost, u.completion_cost, u.total_cost, u.success, u.error_message]).map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        tx.execute(r#"INSERT OR REPLACE INTO usage_records (id, timestamp, session_id, character_id, character_name, model_id, model_name, provider_id, provider_label, operation_type, finish_reason, prompt_tokens, completion_tokens, total_tokens, memory_tokens, summary_tokens, reasoning_tokens, image_tokens, prompt_cost, completion_cost, total_cost, success, error_message)
+                    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)"#,
+                    params![u.id, u.timestamp, u.session_id, u.character_id, u.character_name, u.model_id, u.model_name, u.provider_id, u.provider_label, u.operation_type, u.finish_reason, u.prompt_tokens, u.completion_tokens, u.total_tokens, u.memory_tokens, u.summary_tokens, u.reasoning_tokens, u.image_tokens, u.prompt_cost, u.completion_cost, u.total_cost, u.success, u.error_message]).map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     }
 
     for md in metadata {
@@ -1728,6 +2409,43 @@ fn deserialize_sessions(
     }
 
     if let Ok((sessions, messages, variants, usages, metadata)) =
+        bincode::deserialize::<LegacySessionsDataV2>(data)
+    {
+        let mapped_sessions = sessions
+            .into_iter()
+            .map(|s| Session {
+                id: s.id,
+                character_id: s.character_id,
+                title: s.title,
+                system_prompt: s.system_prompt,
+                selected_scene_id: s.selected_scene_id,
+                prompt_template_id: None,
+                persona_id: s.persona_id,
+                persona_disabled: s.persona_disabled,
+                voice_autoplay: s.voice_autoplay,
+                temperature: s.temperature,
+                top_p: s.top_p,
+                max_output_tokens: s.max_output_tokens,
+                frequency_penalty: s.frequency_penalty,
+                presence_penalty: s.presence_penalty,
+                top_k: s.top_k,
+                memories: s.memories,
+                memory_embeddings: s.memory_embeddings,
+                memory_summary: s.memory_summary,
+                memory_summary_token_count: s.memory_summary_token_count,
+                memory_tool_events: s.memory_tool_events,
+                archived: s.archived,
+                created_at: s.created_at,
+                updated_at: s.updated_at,
+                memory_status: s.memory_status,
+                memory_error: s.memory_error,
+            })
+            .collect();
+        let mapped_usages = usages.into_iter().map(map_legacy_usage).collect();
+        return Ok((mapped_sessions, messages, variants, mapped_usages, metadata));
+    }
+
+    if let Ok((sessions, messages, variants, usages, metadata)) =
         bincode::deserialize::<LegacySessionsDataV1>(data)
     {
         let mapped_sessions = sessions
@@ -1738,6 +2456,7 @@ fn deserialize_sessions(
                 title: s.title,
                 system_prompt: s.system_prompt,
                 selected_scene_id: s.selected_scene_id,
+                prompt_template_id: None,
                 persona_id: s.persona_id,
                 persona_disabled: s.persona_disabled,
                 voice_autoplay: s.voice_autoplay,
@@ -1759,6 +2478,7 @@ fn deserialize_sessions(
                 memory_error: None,
             })
             .collect();
+        let mapped_usages = usages.into_iter().map(map_legacy_usage).collect();
         let mapped_messages = messages
             .into_iter()
             .map(|m| Message {
@@ -1795,7 +2515,7 @@ fn deserialize_sessions(
             mapped_sessions,
             mapped_messages,
             mapped_variants,
-            usages,
+            mapped_usages,
             metadata,
         ));
     }
@@ -1811,6 +2531,7 @@ fn deserialize_sessions(
                 title: s.title,
                 system_prompt: s.system_prompt,
                 selected_scene_id: s.selected_scene_id,
+                prompt_template_id: None,
                 persona_id: s.persona_id,
                 persona_disabled: s.persona_disabled,
                 voice_autoplay: None,
@@ -1832,6 +2553,7 @@ fn deserialize_sessions(
                 memory_error: None,
             })
             .collect();
+        let mapped_usages = usages.into_iter().map(map_legacy_usage).collect();
         let mapped_messages = messages
             .into_iter()
             .map(|m| Message {
@@ -1868,13 +2590,100 @@ fn deserialize_sessions(
             mapped_sessions,
             mapped_messages,
             mapped_variants,
-            usages,
+            mapped_usages,
             metadata,
         ));
     }
 
     bincode::deserialize::<SessionsData>(data)
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
+}
+
+fn deserialize_group_sessions(
+    data: &[u8],
+) -> Result<
+    (
+        Vec<GroupSession>,
+        Vec<GroupParticipation>,
+        Vec<GroupMessage>,
+        Vec<GroupMessageVariant>,
+        Vec<UsageRecord>,
+        Vec<UsageMetadata>,
+    ),
+    String,
+> {
+    if let Ok(payload) = bincode::deserialize::<GroupSessionsData>(data) {
+        return Ok(payload);
+    }
+
+    if let Ok((sessions, participation, messages, variants, usages, metadata)) =
+        bincode::deserialize::<LegacyGroupSessionsDataV3>(data)
+    {
+        let mapped_sessions = sessions
+            .into_iter()
+            .map(|s| GroupSession {
+                id: s.id,
+                group_character_id: None,
+                name: s.name,
+                character_ids: s.character_ids,
+                muted_character_ids: s.muted_character_ids,
+                persona_id: s.persona_id,
+                created_at: s.created_at,
+                updated_at: s.updated_at,
+                archived: s.archived,
+                chat_type: s.chat_type,
+                starting_scene: s.starting_scene,
+                background_image_path: s.background_image_path,
+                memories: s.memories,
+                memory_embeddings: s.memory_embeddings,
+                memory_summary: s.memory_summary,
+                memory_summary_token_count: s.memory_summary_token_count,
+                memory_tool_events: s.memory_tool_events,
+                speaker_selection_method: "llm".to_string(),
+                memory_type: "manual".to_string(),
+            })
+            .collect();
+        let mapped_usages = usages.into_iter().map(map_legacy_usage).collect();
+        return Ok((
+            mapped_sessions,
+            participation,
+            messages,
+            variants,
+            mapped_usages,
+            metadata,
+        ));
+    }
+
+    bincode::deserialize::<GroupSessionsData>(data)
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
+}
+
+fn map_legacy_usage(usage: LegacyUsageRecordV2) -> UsageRecord {
+    UsageRecord {
+        id: usage.id,
+        timestamp: usage.timestamp,
+        session_id: usage.session_id,
+        character_id: usage.character_id,
+        character_name: usage.character_name,
+        model_id: usage.model_id,
+        model_name: usage.model_name,
+        provider_id: usage.provider_id,
+        provider_label: usage.provider_label,
+        operation_type: usage.operation_type,
+        finish_reason: None,
+        prompt_tokens: usage.prompt_tokens,
+        completion_tokens: usage.completion_tokens,
+        total_tokens: usage.total_tokens,
+        memory_tokens: usage.memory_tokens,
+        summary_tokens: usage.summary_tokens,
+        reasoning_tokens: usage.reasoning_tokens,
+        image_tokens: usage.image_tokens,
+        prompt_cost: usage.prompt_cost,
+        completion_cost: usage.completion_cost,
+        total_cost: usage.total_cost,
+        success: usage.success,
+        error_message: usage.error_message,
+    }
 }
 
 pub struct FileMeta {
