@@ -88,7 +88,7 @@ export function GroupChatHeader({
         hasBackgroundImage ? headerOverlayClassName || "bg-surface/40" : "bg-surface",
       )}
       style={{
-        paddingTop: "calc(env(safe-area-inset-top) + 12px)",
+        paddingTop: "calc(env(safe-area-inset-top))",
         paddingBottom: "12px",
       }}
     >
