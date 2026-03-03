@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use serde_json::{json, Value};
 use tauri::AppHandle;
 #[cfg(not(mobile))]
-use tauri::{Emitter, Listener};
+use tauri::Emitter;
 
 use crate::api::{ApiRequest, ApiResponse};
 use crate::chat_manager::types::{ErrorEnvelope, NormalizedEvent, UsageSummary};
@@ -20,7 +20,7 @@ mod desktop {
     use llama_cpp_2::llama_backend::LlamaBackend;
     use llama_cpp_2::llama_batch::LlamaBatch;
     use llama_cpp_2::model::params::LlamaModelParams;
-    use llama_cpp_2::model::{AddBos, LlamaChatMessage, LlamaChatTemplate, LlamaModel, Special};
+    use llama_cpp_2::model::{AddBos, LlamaChatMessage, LlamaChatTemplate, LlamaModel};
     use llama_cpp_2::sampling::LlamaSampler;
     use llama_cpp_2::TokenToStringError;
     use llama_cpp_sys_2::{
@@ -50,6 +50,102 @@ mod desktop {
         model_path: Option<String>,
         model_params_key: Option<String>,
         model: Option<LlamaModel>,
+    }
+
+    fn push_unique_u32(out: &mut Vec<u32>, value: u32) {
+        if !out.contains(&value) {
+            out.push(value);
+        }
+    }
+
+    fn context_attempt_candidates(
+        initial_ctx_size: u32,
+        prompt_tokens: usize,
+        requested_context: Option<u32>,
+        llama_batch_size: u32,
+    ) -> Vec<(u32, u32)> {
+        let minimum_ctx = (prompt_tokens as u32).saturating_add(1).max(1);
+        let mut ctx_candidates = Vec::new();
+        push_unique_u32(&mut ctx_candidates, initial_ctx_size.max(minimum_ctx));
+
+        let mut scaled = if requested_context.is_some() {
+            vec![initial_ctx_size.saturating_mul(3) / 4, initial_ctx_size / 2]
+        } else {
+            vec![
+                initial_ctx_size.saturating_mul(3) / 4,
+                initial_ctx_size / 2,
+                initial_ctx_size / 3,
+                initial_ctx_size / 4,
+            ]
+        };
+        scaled.extend([8192, 4096, 3072, 2048, 1024, 768, 512]);
+
+        for candidate in scaled {
+            let clamped = candidate.max(minimum_ctx);
+            if clamped > 0 {
+                push_unique_u32(&mut ctx_candidates, clamped);
+            }
+        }
+
+        let mut attempts = Vec::new();
+        for ctx in ctx_candidates {
+            let primary_batch = ctx.min(llama_batch_size).max(1);
+            if !attempts.contains(&(ctx, primary_batch)) {
+                attempts.push((ctx, primary_batch));
+            }
+            let reduced_batch = (primary_batch / 2).max(1);
+            if reduced_batch != primary_batch && !attempts.contains(&(ctx, reduced_batch)) {
+                attempts.push((ctx, reduced_batch));
+            }
+        }
+        attempts
+    }
+
+    fn is_likely_context_oom_error(raw_error: &str) -> bool {
+        let lower = raw_error.to_ascii_lowercase();
+        lower.contains("null reference from llama.cpp")
+            || lower.contains("out of memory")
+            || lower.contains("oom")
+            || lower.contains("alloc")
+            || lower.contains("reserve")
+            || lower.contains("failed to create")
+    }
+
+    fn context_error_detail(
+        raw_error: &str,
+        ctx_size: u32,
+        n_batch: u32,
+        resolved_offload_kqv: Option<bool>,
+        llama_offload_kqv: Option<bool>,
+        recommended_ctx: Option<u32>,
+        llama_kv_type_raw: Option<&str>,
+    ) -> String {
+        if let Some(kv_type_raw) = llama_kv_type_raw {
+            return format!(
+                "llama.cpp rejected llamaKvType='{}' while creating the context (ctx={}, batch={}, offload_kqv={:?}): {}",
+                kv_type_raw, ctx_size, n_batch, resolved_offload_kqv, raw_error
+            );
+        }
+
+        if raw_error.contains("null reference from llama.cpp") {
+            if let Some(recommended) = recommended_ctx {
+                if recommended > 0 && ctx_size > recommended {
+                    return format!(
+                        "Likely memory allocation failure for context {}. Recommended <= {} tokens for current {} budget.",
+                        ctx_size,
+                        recommended,
+                        if llama_offload_kqv == Some(true) {
+                            "VRAM"
+                        } else {
+                            "RAM"
+                        }
+                    );
+                }
+            }
+            return "Likely memory allocation failure (OOM) in llama.cpp. Try lower context length, lower llamaBatchSize, or a denser KV type (q8_0/q4_0).".to_string();
+        }
+
+        raw_error.to_string()
     }
 
     fn compiled_gpu_backends() -> Vec<&'static str> {
@@ -134,50 +230,63 @@ mod desktop {
                 );
             }
         }
-        let resolved_gpu_layers = if supports_gpu {
-            requested_gpu_layers.unwrap_or(u32::MAX)
-        } else {
-            0
-        };
-        let model_params_key = format!("gpu_layers={}", resolved_gpu_layers);
+        let requested_gpu_layers_key = requested_gpu_layers
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "auto".to_string());
+        let model_params_key = format!("requested_gpu_layers={requested_gpu_layers_key}");
         let should_reload = guard.model.is_none()
             || guard.model_path.as_deref() != Some(model_path)
             || guard.model_params_key.as_deref() != Some(&model_params_key);
         if should_reload {
-            let gpu_params = LlamaModelParams::default().with_n_gpu_layers(resolved_gpu_layers);
             let cpu_params = LlamaModelParams::default().with_n_gpu_layers(0);
 
-            let model = if supports_gpu {
+            let model = if supports_gpu && requested_gpu_layers != Some(0) {
+                let gpu_params = if let Some(explicit_layers) = requested_gpu_layers {
+                    LlamaModelParams::default().with_n_gpu_layers(explicit_layers)
+                } else {
+                    // Let llama.cpp choose the default GPU offload policy/layers.
+                    LlamaModelParams::default()
+                };
+
                 match LlamaModel::load_from_file(backend, model_path, &gpu_params) {
-                    Ok(model) => model,
+                    Ok(model) => {
+                        if let Some(app) = app {
+                            let mode = requested_gpu_layers
+                                .map(|v| v.to_string())
+                                .unwrap_or_else(|| "llama-default".to_string());
+                            log_info(
+                                app,
+                                "llama_cpp",
+                                format!("Loaded model with GPU mode {}", mode),
+                            );
+                        }
+                        model
+                    }
                     Err(err) => {
                         if let Some(app) = app {
-                            log_warn(app, "llama_cpp", format!("GPU load failed: {err}"));
-
-                            let _ = app.emit("app://gpu-fallback-prompt", ());
-
-                            let (tx, rx) = std::sync::mpsc::channel();
-                            let tx_c = tx.clone();
-                            let id = app.listen("app://gpu-fallback-response", move |event| {
-                                let _ = tx_c.send(event.payload().to_string());
-                            });
-                            let response = rx.recv_timeout(std::time::Duration::from_secs(30));
-                            app.unlisten(id);
-
-                            match response {
-                                Ok(r) if r.contains("switch") => {
-                                    LlamaModel::load_from_file(backend, model_path, &cpu_params)
-                                        .map_err(|e| format!("CPU fallback failed: {e}"))?
-                                }
-                                _ => {
-                                    return Err(
-                                        "GPU memory insufficient — loading aborted by user".into(),
-                                    );
-                                }
-                            }
-                        } else {
-                            return Err(format!("GPU load failed: {err}"));
+                            log_warn(
+                                app,
+                                "llama_cpp",
+                                format!("GPU model load failed, falling back to CPU: {}", err),
+                            );
+                            let _ = app.emit(
+                                "app://toast",
+                                json!({
+                                    "variant": "warning",
+                                    "title": "GPU fallback",
+                                    "description": "Model did not fit in GPU memory. Switched to CPU automatically."
+                                }),
+                            );
                         }
+                        LlamaModel::load_from_file(backend, model_path, &cpu_params).map_err(
+                            |e| {
+                                crate::utils::err_msg(
+                                    module_path!(),
+                                    line!(),
+                                    format!("Failed to load llama model: {e}"),
+                                )
+                            },
+                        )?
                     }
                 }
             } else {
@@ -793,7 +902,7 @@ mod desktop {
                 llama_offload_kqv,
                 llama_kv_type_raw.as_deref(),
             );
-            let ctx_size = if let Some(requested) = requested_context {
+            let mut ctx_size = if let Some(requested) = requested_context {
                 requested.min(max_ctx)
             } else if let Some(recommended) = recommended_ctx {
                 if recommended == 0 {
@@ -823,7 +932,6 @@ mod desktop {
                 ));
             }
 
-            let n_batch = ctx_size.min(llama_batch_size).max(1);
             let resolved_offload_kqv = if llama_offload_kqv.is_some() {
                 llama_offload_kqv
             } else if using_rocm_backend() {
@@ -841,67 +949,120 @@ mod desktop {
             } else {
                 LLAMA_FLASH_ATTN_TYPE_AUTO
             };
-            let mut ctx_params = LlamaContextParams::default()
-                .with_n_ctx(NonZeroU32::new(ctx_size))
-                .with_n_batch(n_batch);
-            if let Some(n_threads) = llama_threads {
-                ctx_params = ctx_params.with_n_threads(n_threads as i32);
-            }
-            if let Some(n_threads_batch) = llama_threads_batch {
-                ctx_params = ctx_params.with_n_threads_batch(n_threads_batch as i32);
-            }
-            if let Some(offload) = resolved_offload_kqv {
-                ctx_params = ctx_params.with_offload_kqv(offload);
-            }
-            if let Some(kv_type) = llama_kv_type {
-                ctx_params = ctx_params.with_type_k(kv_type).with_type_v(kv_type);
-            }
-            ctx_params = ctx_params.with_flash_attention_policy(resolved_flash_attention_policy);
-            if let Some(base) = llama_rope_freq_base {
-                ctx_params = ctx_params.with_rope_freq_base(base as f32);
-            }
-            if let Some(scale) = llama_rope_freq_scale {
-                ctx_params = ctx_params.with_rope_freq_scale(scale as f32);
-            }
-            log_info(
-                &app,
-                "llama_cpp",
-                format!(
-                    "creating context: ctx={} batch={} gpu_layers={:?} offload_kqv={:?} flash_attention_policy={:?}",
-                    ctx_size, n_batch, llama_gpu_layers, resolved_offload_kqv, resolved_flash_attention_policy
-                ),
+            let initial_batch = ctx_size.min(llama_batch_size).max(1);
+            let mut resolved_ctx_size = ctx_size;
+            let mut resolved_n_batch = initial_batch;
+            let mut context_failures = Vec::new();
+            let context_attempts = context_attempt_candidates(
+                ctx_size,
+                tokens.len(),
+                requested_context,
+                llama_batch_size,
             );
-            let mut ctx = model.new_context(backend, ctx_params).map_err(|e| {
-                let raw_error = e.to_string();
-                let detail = if let Some(kv_type_raw) = llama_kv_type_raw.as_deref() {
+            let mut ctx: Option<_> = None;
+
+            for (attempt_ctx, attempt_batch) in context_attempts {
+                let mut ctx_params = LlamaContextParams::default()
+                    .with_n_ctx(NonZeroU32::new(attempt_ctx))
+                    .with_n_batch(attempt_batch);
+                if let Some(n_threads) = llama_threads {
+                    ctx_params = ctx_params.with_n_threads(n_threads as i32);
+                }
+                if let Some(n_threads_batch) = llama_threads_batch {
+                    ctx_params = ctx_params.with_n_threads_batch(n_threads_batch as i32);
+                }
+                if let Some(offload) = resolved_offload_kqv {
+                    ctx_params = ctx_params.with_offload_kqv(offload);
+                }
+                if let Some(kv_type) = llama_kv_type {
+                    ctx_params = ctx_params.with_type_k(kv_type).with_type_v(kv_type);
+                }
+                ctx_params =
+                    ctx_params.with_flash_attention_policy(resolved_flash_attention_policy);
+                if let Some(base) = llama_rope_freq_base {
+                    ctx_params = ctx_params.with_rope_freq_base(base as f32);
+                }
+                if let Some(scale) = llama_rope_freq_scale {
+                    ctx_params = ctx_params.with_rope_freq_scale(scale as f32);
+                }
+
+                log_info(
+                    &app,
+                    "llama_cpp",
                     format!(
-                        "llama.cpp rejected llamaKvType='{}' while creating the context (ctx={}, batch={}, offload_kqv={:?}): {}",
-                        kv_type_raw, ctx_size, n_batch, resolved_offload_kqv, raw_error
-                    )
-                } else if raw_error.contains("null reference from llama.cpp") {
-                    if let Some(recommended) = recommended_ctx {
-                        if recommended > 0 && ctx_size > recommended {
-                            format!(
-                                "Likely memory allocation failure for context {}. Recommended <= {} tokens for current {} budget.",
-                                ctx_size,
-                                recommended,
-                                if llama_offload_kqv == Some(true) { "VRAM" } else { "RAM" }
-                            )
-                        } else {
-                            "Likely memory allocation failure (OOM) in llama.cpp. Try lower context length, lower llamaBatchSize, or a denser KV type (q8_0/q4_0).".to_string()
+                        "creating context attempt: ctx={} batch={} gpu_layers={:?} offload_kqv={:?} flash_attention_policy={:?}",
+                        attempt_ctx,
+                        attempt_batch,
+                        llama_gpu_layers,
+                        resolved_offload_kqv,
+                        resolved_flash_attention_policy
+                    ),
+                );
+
+                match model.new_context(backend, ctx_params) {
+                    Ok(created) => {
+                        resolved_ctx_size = attempt_ctx;
+                        resolved_n_batch = attempt_batch;
+                        if (attempt_ctx, attempt_batch) != (ctx_size, initial_batch) {
+                            log_warn(
+                                &app,
+                                "llama_cpp",
+                                format!(
+                                    "context fallback activated: requested ctx={} batch={} -> using ctx={} batch={}",
+                                    ctx_size, initial_batch, attempt_ctx, attempt_batch
+                                ),
+                            );
                         }
-                    } else {
-                        "Likely memory allocation failure (OOM) in llama.cpp. Try lower context length, lower llamaBatchSize, or a denser KV type (q8_0/q4_0).".to_string()
+                        ctx = Some(created);
+                        break;
                     }
-                } else {
-                    raw_error
-                };
+                    Err(err) => {
+                        let raw_error = err.to_string();
+                        let detail = context_error_detail(
+                            &raw_error,
+                            attempt_ctx,
+                            attempt_batch,
+                            resolved_offload_kqv,
+                            llama_offload_kqv,
+                            recommended_ctx,
+                            llama_kv_type_raw.as_deref(),
+                        );
+
+                        let has_explicit_kv = llama_kv_type_raw.is_some();
+                        let likely_oom = is_likely_context_oom_error(&raw_error);
+                        if has_explicit_kv || !likely_oom {
+                            return Err(crate::utils::err_msg(
+                                module_path!(),
+                                line!(),
+                                format!("Failed to create llama context: {detail}"),
+                            ));
+                        }
+
+                        context_failures.push(format!(
+                            "ctx={} batch={} -> {}",
+                            attempt_ctx, attempt_batch, detail
+                        ));
+                    }
+                }
+            }
+
+            let mut ctx = ctx.ok_or_else(|| {
+                let last_detail = context_failures
+                    .last()
+                    .cloned()
+                    .unwrap_or_else(|| "unknown error".to_string());
                 crate::utils::err_msg(
                     module_path!(),
                     line!(),
-                    format!("Failed to create llama context: {detail}"),
+                    format!(
+                        "Failed to create llama context after {} fallback attempts. Last failure: {}",
+                        context_failures.len(),
+                        last_detail
+                    ),
                 )
             })?;
+            ctx_size = resolved_ctx_size;
+            let n_batch = resolved_n_batch;
 
             let batch_size = n_batch as usize;
             let mut batch = LlamaBatch::new(batch_size, 1);
