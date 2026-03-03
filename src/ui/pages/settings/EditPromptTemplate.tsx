@@ -1,5 +1,12 @@
 import { useState, useEffect, useRef } from "react";
-import { AnimatePresence, Reorder, motion, useDragControls, useMotionValue } from "framer-motion";
+import {
+  AnimatePresence,
+  Reorder,
+  motion,
+  useDragControls,
+  useMotionValue,
+  type PanInfo,
+} from "framer-motion";
 import { useParams } from "react-router-dom";
 import {
   RotateCcw,
@@ -131,6 +138,97 @@ const ENTRY_POSITION_OPTIONS = [
 ] as const;
 
 const DRAG_HOLD_MS = 450;
+const AUTO_SCROLL_EDGE_PX = 96;
+const AUTO_SCROLL_MAX_SPEED_PX = 18;
+
+function resolveScrollContainer(from: HTMLElement | null): HTMLElement | null {
+  let current = from;
+  while (current) {
+    const style = getComputedStyle(current);
+    const overflowY = style.overflowY;
+    if (
+      (overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay") &&
+      current.scrollHeight > current.clientHeight
+    ) {
+      return current;
+    }
+    current = current.parentElement;
+  }
+  return null;
+}
+
+function computeAutoScrollSpeed(pointerY: number, rectTop: number, rectBottom: number): number {
+  const topEdge = rectTop + AUTO_SCROLL_EDGE_PX;
+  const bottomEdge = rectBottom - AUTO_SCROLL_EDGE_PX;
+  if (pointerY < topEdge) {
+    const ratio = Math.min(1, (topEdge - pointerY) / AUTO_SCROLL_EDGE_PX);
+    return -Math.ceil(ratio * AUTO_SCROLL_MAX_SPEED_PX);
+  }
+  if (pointerY > bottomEdge) {
+    const ratio = Math.min(1, (pointerY - bottomEdge) / AUTO_SCROLL_EDGE_PX);
+    return Math.ceil(ratio * AUTO_SCROLL_MAX_SPEED_PX);
+  }
+  return 0;
+}
+
+function useDragEdgeAutoScroll() {
+  const containerRef = useRef<HTMLElement | null>(null);
+  const pointerYRef = useRef<number | null>(null);
+  const draggingRef = useRef(false);
+  const rafRef = useRef<number | null>(null);
+
+  const stop = () => {
+    draggingRef.current = false;
+    pointerYRef.current = null;
+    if (rafRef.current !== null) {
+      window.cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+  };
+
+  const tick = () => {
+    if (!draggingRef.current) {
+      rafRef.current = null;
+      return;
+    }
+
+    const pointerY = pointerYRef.current;
+    const container = containerRef.current;
+    if (pointerY == null || !container) {
+      rafRef.current = window.requestAnimationFrame(tick);
+      return;
+    }
+
+    const rect = container.getBoundingClientRect();
+    const speed = computeAutoScrollSpeed(pointerY, rect.top, rect.bottom);
+    if (speed !== 0) {
+      const maxScrollTop = container.scrollHeight - container.clientHeight;
+      const next = Math.max(0, Math.min(maxScrollTop, container.scrollTop + speed));
+      if (next !== container.scrollTop) {
+        container.scrollTop = next;
+      }
+    }
+
+    rafRef.current = window.requestAnimationFrame(tick);
+  };
+
+  const start = (from: HTMLElement | null, pointerY: number) => {
+    containerRef.current = resolveScrollContainer(from) ?? document.querySelector("main");
+    pointerYRef.current = pointerY;
+    draggingRef.current = true;
+    if (rafRef.current === null) {
+      rafRef.current = window.requestAnimationFrame(tick);
+    }
+  };
+
+  const update = (pointerY: number) => {
+    pointerYRef.current = pointerY;
+  };
+
+  useEffect(() => stop, []);
+
+  return { start, update, stop };
+}
 
 const createEntryId = () =>
   typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -212,6 +310,7 @@ function PromptEntryCard({
 }) {
   const { t } = useI18n();
   const controls = useDragControls();
+  const autoScroll = useDragEdgeAutoScroll();
   const toggleId = `prompt-entry-${entry.id}`;
 
   return (
@@ -230,6 +329,15 @@ function PromptEntryCard({
       }}
       transition={{ layout: { duration: 0.2, ease: "easeOut" } }}
       style={{ position: "relative", zIndex: 0 }}
+      onDragStart={(event, info) => {
+        autoScroll.start(event.currentTarget as HTMLElement, info.point.y);
+      }}
+      onDrag={(_event, info) => {
+        autoScroll.update(info.point.y);
+      }}
+      onDragEnd={() => {
+        autoScroll.stop();
+      }}
       className={cn(
         "rounded-xl border bg-fg/5 p-4 space-y-3 cursor-default",
         highlighted
@@ -445,6 +553,7 @@ function PromptEntryListItem({
 }) {
   const { t } = useI18n();
   const controls = useDragControls();
+  const autoScroll = useDragEdgeAutoScroll();
   const dragTimeoutRef = useRef<number | null>(null);
   const draggingRef = useRef(false);
   const pendingEventRef = useRef<PointerEvent | null>(null);
@@ -452,7 +561,6 @@ function PromptEntryListItem({
     el: HTMLElement;
     overflow: string;
     touchAction: string;
-    scrollTop: number;
   } | null>(null);
   const toggleId = `prompt-entry-mobile-${entry.id}`;
 
@@ -493,7 +601,6 @@ function PromptEntryListItem({
       el: scrollEl,
       overflow: scrollEl.style.overflow,
       touchAction: scrollEl.style.touchAction,
-      scrollTop: scrollEl.scrollTop,
     };
     scrollEl.style.overflow = "hidden";
     scrollEl.style.touchAction = "none";
@@ -501,10 +608,9 @@ function PromptEntryListItem({
 
   const unlockScrollContainer = () => {
     if (!scrollLockRef.current) return;
-    const { el, overflow, touchAction, scrollTop } = scrollLockRef.current;
+    const { el, overflow, touchAction } = scrollLockRef.current;
     el.style.overflow = overflow;
     el.style.touchAction = touchAction;
-    el.scrollTop = scrollTop;
     scrollLockRef.current = null;
   };
 
@@ -535,17 +641,22 @@ function PromptEntryListItem({
       }}
       transition={{ layout: { duration: 0.2, ease: "easeOut" } }}
       style={{ position: "relative", zIndex: 0 }}
-      onDragStart={() => {
+      onDragStart={(event, info: PanInfo) => {
         draggingRef.current = true;
         document.body.style.overflow = "hidden";
         document.body.style.touchAction = "none";
         lockScrollContainer();
+        autoScroll.start(event.currentTarget as HTMLElement, info.point.y);
+      }}
+      onDrag={(_event, info: PanInfo) => {
+        autoScroll.update(info.point.y);
       }}
       onDragEnd={() => {
         draggingRef.current = false;
         document.body.style.overflow = "";
         document.body.style.touchAction = "";
         unlockScrollContainer();
+        autoScroll.stop();
       }}
       onPointerMove={(event) => {
         if (dragTimeoutRef.current) {
@@ -559,11 +670,13 @@ function PromptEntryListItem({
         draggingRef.current = false;
         pendingEventRef.current = null;
         unlockScrollContainer();
+        autoScroll.stop();
       }}
       onPointerCancel={() => {
         draggingRef.current = false;
         pendingEventRef.current = null;
         unlockScrollContainer();
+        autoScroll.stop();
       }}
       className={cn("rounded-xl border border-fg/10 bg-fg/5 p-3 select-none", "space-y-2")}
     >
