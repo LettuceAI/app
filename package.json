@@ -25,7 +25,7 @@
     "check": "(tsc --noEmit && cd src-tauri && cargo check) && echo 'All checks successful.' || echo 'Check failed.'"
   },
   "dependencies": {
-    "@tailwindcss/vite": "^4.1.18",
+    "@tailwindcss/vite": "^4.2.1",
     "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/plugin-barcode-scanner": "^2.4.4",
     "@tauri-apps/plugin-dialog": "^2.6.0",
@@ -36,7 +36,7 @@
     "@tauri-apps/plugin-process": "^2.3.1",
     "@types/dompurify": "^3.2.0",
     "dompurify": "^3.3.1",
-    "framer-motion": "^12.31.0",
+    "framer-motion": "^12.35.0",
     "lucide-react": "^0.542.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -53,14 +53,14 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.10.0",
-    "@types/react": "^18.3.27",
+    "@tauri-apps/cli": "^2.10.1",
+    "@types/react": "^18.3.28",
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^4.7.0",
     "husky": "^9.1.7",
     "lint-staged": "^15.5.2",
     "prettier": "^3.8.1",
-    "tailwindcss": "^4.1.18",
+    "tailwindcss": "^4.2.1",
     "typescript": "~5.6.3",
     "vite": "^6.4.1"
   },
