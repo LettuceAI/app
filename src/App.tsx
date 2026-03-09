@@ -98,6 +98,25 @@ const chatLog = logManager({ component: "Chat" });
 
 function App() {
   const [isMobile, setIsMobile] = useState(false);
+  const platform = useMemo(() => getPlatform(), []);
+
+  useEffect(() => {
+    if (typeof document === "undefined" || platform.os !== "linux") return;
+
+    const styleId = "linux-color-scheme-dark";
+    let style = document.getElementById(styleId) as HTMLStyleElement | null;
+
+    if (!style) {
+      style = document.createElement("style");
+      style.id = styleId;
+      style.textContent = ":root { color-scheme: dark; }";
+      document.head.appendChild(style);
+    }
+
+    return () => {
+      style?.remove();
+    };
+  }, [platform.os]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -162,14 +181,18 @@ function App() {
     (async () => {
       try {
         unlisten = await listen("app://gpu-fallback-prompt", () => {
-          toast.warning("GPU memory insufficient", "This model doesn't fit in GPU memory. Switch to CPU (slower) or abort?", {
-            actionLabel: "Switch to CPU",
-            onAction: () => emit("app://gpu-fallback-response", "switch"),
-            secondaryLabel: "Abort",
-            onSecondary: () => emit("app://gpu-fallback-response", "abort"),
-            id: "gpu-fallback",
-            duration: Infinity,
-          });
+          toast.warning(
+            "GPU memory insufficient",
+            "This model doesn't fit in GPU memory. Switch to CPU (slower) or abort?",
+            {
+              actionLabel: "Switch to CPU",
+              onAction: () => emit("app://gpu-fallback-response", "switch"),
+              secondaryLabel: "Abort",
+              onSecondary: () => emit("app://gpu-fallback-response", "abort"),
+              id: "gpu-fallback",
+              duration: Infinity,
+            },
+          );
         });
       } catch (err) {
         console.error("Failed to attach gpu-fallback listener:", err);

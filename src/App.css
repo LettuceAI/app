@@ -430,7 +430,3 @@ input[type="range"]:active::-moz-range-thumb {
   content-visibility: auto;
   contain-intrinsic-size: 240px;
 }
-
-:root {
-  color-scheme: dark;
-}
