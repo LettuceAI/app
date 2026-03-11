@@ -225,16 +225,29 @@ impl ProviderAdapter for CustomAnthropicAdapter {
         };
 
         let mut msgs: Vec<AnthropicMessage> = Vec::new();
+        let mut system_parts: Vec<String> = Vec::new();
+
+        if let Some(s) = system_prompt {
+            if !s.is_empty() {
+                system_parts.push(s);
+            }
+        }
+
         for msg in &source_messages {
             let role = msg.get("role").and_then(|v| v.as_str()).unwrap_or("");
-            if role == "system" || role == "developer" {
-                continue;
-            }
             let content_text = msg
                 .get("content")
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
+
+            if role == "system" || role == "developer" {
+                if !content_text.is_empty() {
+                    system_parts.push(content_text);
+                }
+                continue;
+            }
+
             if content_text.is_empty() {
                 continue;
             }
@@ -254,6 +267,12 @@ impl ProviderAdapter for CustomAnthropicAdapter {
                 }],
             });
         }
+
+        let combined_system = if system_parts.is_empty() {
+            None
+        } else {
+            Some(system_parts.join("\n\n"))
+        };
 
         let thinking = if reasoning_enabled {
             reasoning_budget.map(|budget| AnthropicThinking {
@@ -280,7 +299,7 @@ impl ProviderAdapter for CustomAnthropicAdapter {
             top_p,
             max_tokens: total_max_tokens,
             stream: should_stream,
-            system: system_prompt.filter(|s| !s.is_empty()),
+            system: combined_system,
             top_k,
             tools,
             tool_choice,
