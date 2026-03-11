@@ -1,6 +1,6 @@
 use base64::{engine::general_purpose, Engine as _};
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager};
@@ -9,11 +9,11 @@ use uuid::Uuid;
 use super::tools::{get_creation_helper_system_prompt, get_creation_helper_tools};
 use super::types::*;
 use crate::abort_manager::AbortRegistry;
-use crate::api::{api_request, ApiRequest};
+use crate::api::{api_request, ApiRequest, ApiResponse};
 use crate::chat_manager::request as chat_request;
 use crate::chat_manager::request_builder::build_chat_request;
 use crate::chat_manager::sse::accumulate_tool_calls_from_sse;
-use crate::chat_manager::tooling::{parse_tool_calls, ToolConfig};
+use crate::chat_manager::tooling::{parse_tool_calls, ToolChoice, ToolConfig};
 use crate::image_generator::commands::generate_image;
 use crate::image_generator::types::ImageGenerationRequest;
 use crate::storage_manager::characters as characters_storage;
@@ -567,6 +567,762 @@ fn get_last_generated_image(session_id: &str) -> Result<Option<String>, String> 
     Ok(latest.get(session_id).cloned())
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CreationTurnStage {
+    Discovery,
+    Drafting,
+    Preview,
+    Finalize,
+}
+
+struct CreationTurnPlan {
+    stage: CreationTurnStage,
+    tool_config: ToolConfig,
+    guidance: String,
+}
+
+fn has_text(value: Option<&str>) -> bool {
+    value.map(|s| !s.trim().is_empty()).unwrap_or(false)
+}
+
+fn latest_user_message_text(session: &CreationSession) -> Option<&str> {
+    session
+        .messages
+        .iter()
+        .rev()
+        .find(|msg| msg.role == CreationMessageRole::User)
+        .map(|msg| msg.content.as_str())
+}
+
+fn has_progress(session: &CreationSession) -> bool {
+    has_text(session.draft.name.as_deref())
+        || has_text(session.draft.definition.as_deref())
+        || has_text(session.draft.description.as_deref())
+        || !session.draft.scenes.is_empty()
+        || has_text(session.draft.avatar_path.as_deref())
+        || has_text(session.draft.background_image_path.as_deref())
+}
+
+fn is_substantive_request(message: &str) -> bool {
+    let trimmed = message.trim();
+    if trimmed.len() >= 40 {
+        return true;
+    }
+    trimmed.split_whitespace().count() >= 6
+}
+
+fn lower_contains_any(haystack: &str, needles: &[&str]) -> bool {
+    needles.iter().any(|needle| haystack.contains(needle))
+}
+
+fn user_requested_edits(message: &str) -> bool {
+    lower_contains_any(
+        message,
+        &[
+            "change",
+            "edit",
+            "update",
+            "rewrite",
+            "rename",
+            "remove",
+            "delete",
+            "different",
+            "instead",
+            "replace",
+            "add ",
+        ],
+    )
+}
+
+fn user_requested_visuals(message: &str) -> bool {
+    lower_contains_any(
+        message,
+        &[
+            "avatar",
+            "background",
+            "image",
+            "picture",
+            "photo",
+            "portrait",
+            "art",
+            "illustration",
+        ],
+    )
+}
+
+fn user_requested_model_tools(message: &str) -> bool {
+    lower_contains_any(message, &[" model", "provider", "engine", "llm"])
+}
+
+fn user_requested_prompt_tools(message: &str) -> bool {
+    lower_contains_any(
+        message,
+        &[
+            "system prompt",
+            "prompt template",
+            "template",
+            "jailbreak",
+            "instructions",
+        ],
+    )
+}
+
+fn user_requested_scene_work(message: &str) -> bool {
+    lower_contains_any(
+        message,
+        &["scene", "opening", "starter", "first message", "intro"],
+    )
+}
+
+fn user_requested_lorebooks(message: &str) -> bool {
+    lower_contains_any(
+        message,
+        &["lorebook", "lore book", "world info", "encyclopedia"],
+    )
+}
+
+fn user_requested_persona_admin(message: &str) -> bool {
+    lower_contains_any(
+        message,
+        &["default persona", "existing persona", "delete persona"],
+    )
+}
+
+fn user_requested_lorebook_admin(message: &str) -> bool {
+    lower_contains_any(
+        message,
+        &[
+            "entry",
+            "entries",
+            "keyword",
+            "reorder",
+            "delete lorebook",
+            "delete entry",
+        ],
+    )
+}
+
+fn draft_ready_for_preview(session: &CreationSession) -> bool {
+    match session.creation_goal {
+        CreationGoal::Character => {
+            has_text(session.draft.name.as_deref())
+                && (has_text(session.draft.definition.as_deref())
+                    || has_text(session.draft.description.as_deref()))
+                && !session.draft.scenes.is_empty()
+        }
+        CreationGoal::Persona => {
+            has_text(session.draft.name.as_deref())
+                && (has_text(session.draft.description.as_deref())
+                    || has_text(session.draft.definition.as_deref()))
+        }
+        CreationGoal::Lorebook => has_text(session.draft.name.as_deref()),
+    }
+}
+
+fn infer_turn_stage(session: &CreationSession, latest_user_message: &str) -> CreationTurnStage {
+    let lowered = latest_user_message.to_ascii_lowercase();
+    if user_requested_edits(&lowered) {
+        return CreationTurnStage::Drafting;
+    }
+
+    if session.status == CreationStatus::PreviewShown {
+        return CreationTurnStage::Finalize;
+    }
+
+    if draft_ready_for_preview(session) {
+        return CreationTurnStage::Preview;
+    }
+
+    if !has_progress(session) && !is_substantive_request(latest_user_message) {
+        return CreationTurnStage::Discovery;
+    }
+
+    CreationTurnStage::Drafting
+}
+
+fn push_tool_name(names: &mut Vec<String>, name: &str) {
+    if !names.iter().any(|existing| existing == name) {
+        names.push(name.to_string());
+    }
+}
+
+fn infer_default_image_id(session: &CreationSession) -> Option<String> {
+    if let Ok(Some(last)) = get_last_generated_image(&session.id) {
+        return Some(last);
+    }
+
+    get_all_uploaded_images(&session.id)
+        .ok()
+        .and_then(|images| {
+            if images.len() == 1 {
+                images.into_iter().next().map(|img| img.id)
+            } else {
+                None
+            }
+        })
+}
+
+fn scene_id_hint(session: &CreationSession) -> Option<String> {
+    session
+        .draft
+        .default_scene_id
+        .clone()
+        .or_else(|| session.draft.scenes.first().map(|scene| scene.id.clone()))
+}
+
+fn stage_label(stage: CreationTurnStage) -> &'static str {
+    match stage {
+        CreationTurnStage::Discovery => "discovery",
+        CreationTurnStage::Drafting => "drafting",
+        CreationTurnStage::Preview => "preview",
+        CreationTurnStage::Finalize => "finalize",
+    }
+}
+
+fn filter_tools_by_name(
+    tools: Vec<crate::chat_manager::tooling::ToolDefinition>,
+    names: &[String],
+) -> Vec<crate::chat_manager::tooling::ToolDefinition> {
+    let allowed: HashSet<&str> = names.iter().map(|name| name.as_str()).collect();
+    tools
+        .into_iter()
+        .filter(|tool| allowed.contains(tool.name.as_str()))
+        .collect()
+}
+
+fn choose_tool_choice(
+    stage: CreationTurnStage,
+    tool_names: &[String],
+    latest_user_message: &str,
+) -> Option<ToolChoice> {
+    if tool_names.is_empty() {
+        return None;
+    }
+
+    if tool_names.len() == 1 {
+        return Some(ToolChoice::Tool {
+            name: tool_names[0].clone(),
+        });
+    }
+
+    if matches!(stage, CreationTurnStage::Drafting) && is_substantive_request(latest_user_message) {
+        return Some(ToolChoice::Required);
+    }
+
+    None
+}
+
+fn build_turn_guidance(
+    smart_tool_selection: bool,
+    stage: CreationTurnStage,
+    tool_names: &[String],
+) -> String {
+    if !smart_tool_selection {
+        if tool_names.is_empty() {
+            return "Manual tool selection mode is enabled and no tools are available on this turn. Ask at most two short follow-up questions.".to_string();
+        }
+
+        return format!(
+            "Manual tool selection mode is enabled. Use only these tools if they are clearly needed on this turn: {}. Prefer a single tool call, otherwise respond conversationally.",
+            tool_names.join(", ")
+        );
+    }
+
+    if tool_names.is_empty() {
+        return format!(
+            "Current phase: {}. No tools are available on this turn. Ask at most two short follow-up questions, gather missing details, and do not invent IDs or state.",
+            stage_label(stage)
+        );
+    }
+
+    let phase_instruction = match stage {
+        CreationTurnStage::Discovery => {
+            "Ask focused questions first. Only move into editing once the user has given enough detail."
+        }
+        CreationTurnStage::Drafting => {
+            "Use the available drafting tools once details are clear. Prefer one concrete tool call instead of describing actions in prose."
+        }
+        CreationTurnStage::Preview => {
+            "Call the preview tool now instead of only describing the preview."
+        }
+        CreationTurnStage::Finalize => {
+            "Call the confirmation tool now unless the user explicitly asked for more edits."
+        }
+    };
+
+    format!(
+        "Current phase: {}. Tools available on this turn: {}. {} Never mention or invent unavailable tools.",
+        stage_label(stage),
+        tool_names.join(", "),
+        phase_instruction
+    )
+}
+
+fn build_creation_turn_plan(
+    session: &CreationSession,
+    smart_tool_selection: bool,
+    enabled_tools: Option<&[String]>,
+) -> CreationTurnPlan {
+    let all_tools = get_creation_helper_tools(&session.creation_goal, smart_tool_selection);
+    let latest_user_message = latest_user_message_text(session).unwrap_or("").trim();
+    let lowered = latest_user_message.to_ascii_lowercase();
+    let stage = infer_turn_stage(session, latest_user_message);
+
+    let mut tool_names = if smart_tool_selection {
+        let mut planned = Vec::new();
+
+        match session.creation_goal {
+            CreationGoal::Character => match stage {
+                CreationTurnStage::Discovery => {}
+                CreationTurnStage::Drafting => {
+                    if !has_text(session.draft.name.as_deref()) {
+                        push_tool_name(&mut planned, "set_character_name");
+                    }
+                    if !has_text(session.draft.definition.as_deref())
+                        && !has_text(session.draft.description.as_deref())
+                    {
+                        push_tool_name(&mut planned, "set_character_definition");
+                    }
+                    if session.draft.scenes.is_empty() {
+                        push_tool_name(&mut planned, "add_scene");
+                    } else if user_requested_scene_work(&lowered)
+                        || session.creation_mode == CreationMode::Edit
+                    {
+                        push_tool_name(&mut planned, "update_scene");
+                    }
+                }
+                CreationTurnStage::Preview => push_tool_name(&mut planned, "show_preview"),
+                CreationTurnStage::Finalize => push_tool_name(&mut planned, "request_confirmation"),
+            },
+            CreationGoal::Persona => match stage {
+                CreationTurnStage::Discovery => {}
+                CreationTurnStage::Drafting => push_tool_name(&mut planned, "upsert_persona"),
+                CreationTurnStage::Preview => push_tool_name(&mut planned, "show_preview"),
+                CreationTurnStage::Finalize => push_tool_name(&mut planned, "request_confirmation"),
+            },
+            CreationGoal::Lorebook => match stage {
+                CreationTurnStage::Discovery => {}
+                CreationTurnStage::Drafting => {
+                    push_tool_name(&mut planned, "upsert_lorebook");
+                    if session.target_id.is_some() || has_text(session.draft.name.as_deref()) {
+                        push_tool_name(&mut planned, "upsert_lorebook_entry");
+                        push_tool_name(&mut planned, "create_blank_lorebook_entry");
+                    }
+                }
+                CreationTurnStage::Preview => push_tool_name(&mut planned, "show_preview"),
+                CreationTurnStage::Finalize => push_tool_name(&mut planned, "request_confirmation"),
+            },
+        }
+
+        if user_requested_visuals(&lowered) {
+            push_tool_name(&mut planned, "generate_image");
+            if infer_default_image_id(session).is_some() {
+                match session.creation_goal {
+                    CreationGoal::Character => {
+                        push_tool_name(&mut planned, "use_uploaded_image_as_avatar");
+                        if lowered.contains("background") {
+                            push_tool_name(&mut planned, "use_uploaded_image_as_chat_background");
+                        }
+                    }
+                    CreationGoal::Persona => {
+                        push_tool_name(&mut planned, "use_uploaded_image_as_persona_avatar");
+                    }
+                    CreationGoal::Lorebook => {}
+                }
+            }
+            if lowered.contains("gradient") && session.creation_goal == CreationGoal::Character {
+                push_tool_name(&mut planned, "toggle_avatar_gradient");
+            }
+        }
+
+        if user_requested_model_tools(&lowered) && session.creation_goal == CreationGoal::Character
+        {
+            push_tool_name(&mut planned, "get_model_list");
+            push_tool_name(&mut planned, "set_default_model");
+        }
+
+        if user_requested_prompt_tools(&lowered) && session.creation_goal == CreationGoal::Character
+        {
+            push_tool_name(&mut planned, "get_system_prompt_list");
+            push_tool_name(&mut planned, "set_system_prompt");
+        }
+
+        if session.creation_goal == CreationGoal::Character
+            && session.target_type == Some(CreationGoal::Character)
+            && session.target_id.is_some()
+            && user_requested_lorebooks(&lowered)
+        {
+            push_tool_name(&mut planned, "list_character_lorebooks");
+            push_tool_name(&mut planned, "set_character_lorebooks");
+        }
+
+        if session.creation_goal == CreationGoal::Persona && user_requested_persona_admin(&lowered)
+        {
+            push_tool_name(&mut planned, "list_personas");
+            push_tool_name(&mut planned, "get_default_persona");
+            if lowered.contains("delete") {
+                push_tool_name(&mut planned, "delete_persona");
+            }
+        }
+
+        if session.creation_goal == CreationGoal::Lorebook
+            && user_requested_lorebook_admin(&lowered)
+        {
+            push_tool_name(&mut planned, "list_lorebooks");
+            if session.target_id.is_some() {
+                push_tool_name(&mut planned, "list_lorebook_entries");
+            }
+            if lowered.contains("reorder") {
+                push_tool_name(&mut planned, "reorder_lorebook_entries");
+            }
+            if lowered.contains("delete") {
+                push_tool_name(&mut planned, "delete_lorebook");
+                push_tool_name(&mut planned, "delete_lorebook_entry");
+            }
+        }
+
+        planned
+    } else {
+        all_tools.iter().map(|tool| tool.name.clone()).collect()
+    };
+
+    if let Some(enabled) = enabled_tools {
+        let enabled_set: HashSet<&str> = enabled.iter().map(|tool| tool.as_str()).collect();
+        tool_names.retain(|tool| enabled_set.contains(tool.as_str()));
+    }
+
+    let tools = if smart_tool_selection {
+        filter_tools_by_name(all_tools, &tool_names)
+    } else {
+        let enabled: HashSet<&str> = tool_names.iter().map(|name| name.as_str()).collect();
+        all_tools
+            .into_iter()
+            .filter(|tool| enabled.contains(tool.name.as_str()))
+            .collect()
+    };
+
+    let choice = if smart_tool_selection {
+        choose_tool_choice(stage, &tool_names, latest_user_message)
+    } else {
+        None
+    };
+
+    CreationTurnPlan {
+        stage,
+        guidance: build_turn_guidance(smart_tool_selection, stage, &tool_names),
+        tool_config: ToolConfig { tools, choice },
+    }
+}
+
+fn first_string_argument(
+    arguments: &serde_json::Map<String, Value>,
+    keys: &[&str],
+) -> Option<String> {
+    keys.iter().find_map(|key| {
+        arguments
+            .get(*key)
+            .and_then(|value| value.as_str())
+            .map(|value| value.to_string())
+            .filter(|value| !value.trim().is_empty())
+    })
+}
+
+fn insert_string_if_missing(
+    arguments: &mut serde_json::Map<String, Value>,
+    key: &str,
+    value: Option<String>,
+) {
+    if arguments
+        .get(key)
+        .and_then(|value| value.as_str())
+        .is_some()
+    {
+        return;
+    }
+    if let Some(value) = value.filter(|value| !value.trim().is_empty()) {
+        arguments.insert(key.to_string(), Value::String(value));
+    }
+}
+
+fn normalize_tool_arguments(
+    session: &CreationSession,
+    tool_name: &str,
+    arguments: &Value,
+) -> Value {
+    let mut normalized = arguments.as_object().cloned().unwrap_or_default();
+    let fallback_image_id = infer_default_image_id(session);
+
+    match tool_name {
+        "set_character_name" => {
+            let inferred_name = first_string_argument(&normalized, &["character_name", "title"]);
+            insert_string_if_missing(&mut normalized, "name", inferred_name);
+        }
+        "set_character_definition" | "set_character_description" => {
+            let inferred_definition = first_string_argument(
+                &normalized,
+                &["description", "personality", "bio", "content", "text"],
+            );
+            insert_string_if_missing(&mut normalized, "definition", inferred_definition);
+        }
+        "add_scene" => {
+            let inferred_content = first_string_argument(
+                &normalized,
+                &["scene", "opening", "opening_message", "message", "text"],
+            );
+            insert_string_if_missing(&mut normalized, "content", inferred_content);
+        }
+        "update_scene" => {
+            let inferred_scene_id =
+                first_string_argument(&normalized, &["id"]).or_else(|| scene_id_hint(session));
+            insert_string_if_missing(&mut normalized, "scene_id", inferred_scene_id);
+
+            let inferred_content = first_string_argument(
+                &normalized,
+                &["scene", "opening", "opening_message", "message", "text"],
+            );
+            insert_string_if_missing(&mut normalized, "content", inferred_content);
+        }
+        "set_default_model" => {
+            let inferred_model_id = first_string_argument(&normalized, &["id", "model"]);
+            insert_string_if_missing(&mut normalized, "model_id", inferred_model_id);
+        }
+        "set_system_prompt" => {
+            let inferred_prompt_id =
+                first_string_argument(&normalized, &["id", "system_prompt_id", "prompt_template_id"]);
+            insert_string_if_missing(&mut normalized, "prompt_id", inferred_prompt_id);
+        }
+        "use_uploaded_image_as_avatar" | "use_uploaded_image_as_chat_background" => {
+            let inferred_image_id = first_string_argument(&normalized, &["id", "image"])
+                .or_else(|| fallback_image_id.clone());
+            insert_string_if_missing(&mut normalized, "image_id", inferred_image_id);
+        }
+        "use_uploaded_image_as_persona_avatar" => {
+            let inferred_persona_id = first_string_argument(&normalized, &["id"]).or_else(|| {
+                if session.target_type == Some(CreationGoal::Persona) {
+                    session.target_id.clone()
+                } else {
+                    None
+                }
+            });
+            insert_string_if_missing(&mut normalized, "persona_id", inferred_persona_id);
+
+            let inferred_image_id = first_string_argument(&normalized, &["image", "id"])
+                .or_else(|| fallback_image_id.clone());
+            insert_string_if_missing(&mut normalized, "image_id", inferred_image_id);
+        }
+        "upsert_persona" => {
+            insert_string_if_missing(
+                &mut normalized,
+                "id",
+                if session.target_type == Some(CreationGoal::Persona) {
+                    session.target_id.clone()
+                } else {
+                    None
+                },
+            );
+            let inferred_title = first_string_argument(&normalized, &["name"]);
+            insert_string_if_missing(&mut normalized, "title", inferred_title);
+
+            let inferred_description =
+                first_string_argument(&normalized, &["definition", "content", "text"]);
+            insert_string_if_missing(&mut normalized, "description", inferred_description);
+        }
+        "delete_persona" => {
+            let inferred_id = first_string_argument(&normalized, &["persona_id"]).or_else(|| {
+                if session.target_type == Some(CreationGoal::Persona) {
+                    session.target_id.clone()
+                } else {
+                    None
+                }
+            });
+            insert_string_if_missing(&mut normalized, "id", inferred_id);
+        }
+        "upsert_lorebook" => {
+            insert_string_if_missing(
+                &mut normalized,
+                "id",
+                if session.target_type == Some(CreationGoal::Lorebook) {
+                    session.target_id.clone()
+                } else {
+                    None
+                },
+            );
+            let inferred_name = first_string_argument(&normalized, &["title"]);
+            insert_string_if_missing(&mut normalized, "name", inferred_name);
+        }
+        "delete_lorebook" | "list_lorebook_entries" | "create_blank_lorebook_entry" => {
+            let inferred_lorebook_id = first_string_argument(&normalized, &["id"]).or_else(|| {
+                if session.target_type == Some(CreationGoal::Lorebook) {
+                    session.target_id.clone()
+                } else {
+                    None
+                }
+            });
+            insert_string_if_missing(&mut normalized, "lorebook_id", inferred_lorebook_id);
+        }
+        "upsert_lorebook_entry" => {
+            let inferred_lorebook_id = first_string_argument(&normalized, &["id"]).or_else(|| {
+                if session.target_type == Some(CreationGoal::Lorebook) {
+                    session.target_id.clone()
+                } else {
+                    None
+                }
+            });
+            insert_string_if_missing(&mut normalized, "lorebook_id", inferred_lorebook_id);
+
+            let inferred_content =
+                first_string_argument(&normalized, &["description", "body", "text"]);
+            insert_string_if_missing(&mut normalized, "content", inferred_content);
+        }
+        "get_lorebook_entry" | "delete_lorebook_entry" => {
+            let inferred_entry_id = first_string_argument(&normalized, &["id"]);
+            insert_string_if_missing(&mut normalized, "entry_id", inferred_entry_id);
+        }
+        "list_character_lorebooks" | "set_character_lorebooks" => {
+            let inferred_character_id = first_string_argument(&normalized, &["id"]).or_else(|| {
+                if session.target_type == Some(CreationGoal::Character) {
+                    session.target_id.clone()
+                } else {
+                    None
+                }
+            });
+            insert_string_if_missing(&mut normalized, "character_id", inferred_character_id);
+        }
+        _ => {}
+    }
+
+    Value::Object(normalized)
+}
+
+fn tool_choice_requires_auto(error: &str) -> bool {
+    let lower = error.to_ascii_lowercase();
+    lower.contains("tool choice must be auto")
+        || lower.contains("tool_choice must be auto")
+        || (lower.contains("tool choice") && lower.contains("auto"))
+}
+
+fn tool_config_with_auto_choice(tool_config: &ToolConfig) -> ToolConfig {
+    let mut cloned = tool_config.clone();
+    cloned.choice = Some(ToolChoice::Auto);
+    cloned
+}
+
+async fn send_creation_api_request(
+    app: &AppHandle,
+    session_id: &str,
+    stream_request_id: &str,
+    provider_id: &str,
+    cred: &crate::chat_manager::types::ProviderCredential,
+    api_key: &str,
+    model_name: &str,
+    messages: &Vec<Value>,
+    streaming_enabled: bool,
+    tool_config: Option<&ToolConfig>,
+) -> Result<ApiResponse, String> {
+    let mut current_tool_config = tool_config.cloned();
+
+    loop {
+        let built = build_chat_request(
+            cred,
+            api_key,
+            model_name,
+            messages,
+            None,
+            0.7,
+            1.0,
+            20480,
+            None,
+            streaming_enabled,
+            if streaming_enabled {
+                Some(stream_request_id.to_string())
+            } else {
+                None
+            },
+            None,
+            None,
+            None,
+            current_tool_config.as_ref(),
+            false,
+            None,
+            None,
+            None,
+        );
+
+        log_info(
+            app,
+            "creation_helper",
+            format!("Sending request to {} with model {}", built.url, model_name),
+        );
+
+        let api_request_payload = ApiRequest {
+            url: built.url,
+            method: Some("POST".into()),
+            headers: Some(built.headers),
+            query: None,
+            body: Some(built.body),
+            timeout_ms: Some(120_000),
+            stream: Some(streaming_enabled),
+            request_id: if streaming_enabled {
+                Some(stream_request_id.to_string())
+            } else {
+                None
+            },
+            provider_id: Some(provider_id.to_string()),
+        };
+
+        let mut abort_rx = {
+            let registry = app.state::<AbortRegistry>();
+            registry.register(session_id.to_string())
+        };
+
+        let api_response = tokio::select! {
+            _ = &mut abort_rx => {
+                log_warn(
+                    app,
+                    "creation_helper",
+                    format!("[creation_helper] request aborted by user for session {}", session_id),
+                );
+                return Err(crate::utils::err_msg(module_path!(), line!(), "Request aborted by user"));
+            }
+            res = api_request(app.clone(), api_request_payload) => res?
+        };
+
+        {
+            let registry = app.state::<AbortRegistry>();
+            registry.unregister(session_id);
+        }
+
+        if !api_response.ok {
+            let err_message = api_response
+                .data()
+                .get("error")
+                .and_then(|e| e.get("message"))
+                .and_then(|m| m.as_str())
+                .unwrap_or("API request failed")
+                .to_string();
+
+            if let Some(cfg) = current_tool_config.as_ref() {
+                if !matches!(cfg.choice, None | Some(ToolChoice::Auto))
+                    && tool_choice_requires_auto(&err_message)
+                {
+                    log_warn(
+                        app,
+                        "creation_helper",
+                        format!(
+                            "Provider rejected forced tool choice; retrying creation helper request with auto tool choice. Provider={}, model={}",
+                            provider_id, model_name
+                        ),
+                    );
+                    current_tool_config = Some(tool_config_with_auto_choice(cfg));
+                    continue;
+                }
+            }
+        }
+
+        return Ok(api_response);
+    }
+}
+
 fn record_image_generation_usage(
     app: &AppHandle,
     session_id: &str,
@@ -628,6 +1384,19 @@ async fn execute_tool(
     tool_name: &str,
     arguments: &Value,
 ) -> CreationToolResult {
+    let normalized_arguments = normalize_tool_arguments(session, tool_name, arguments);
+    if normalized_arguments != *arguments {
+        log_info(
+            app,
+            "creation_helper",
+            format!(
+                "Normalized tool args for {}: original={} normalized={}",
+                tool_name, arguments, normalized_arguments
+            ),
+        );
+    }
+    let arguments = &normalized_arguments;
+
     log_info(
         app,
         "creation_helper",
@@ -1704,19 +2473,8 @@ async fn process_assistant_turn(
         }
     }
 
-    let tools = get_creation_helper_tools(&session.creation_goal, smart_tool_selection);
-    let tools = if let Some(enabled_tools) = enabled_tools {
-        tools
-            .into_iter()
-            .filter(|tool| enabled_tools.contains(&tool.name))
-            .collect()
-    } else {
-        tools
-    };
-    let tool_config = ToolConfig {
-        tools,
-        choice: None,
-    };
+    let initial_turn_plan =
+        build_creation_turn_plan(&session, smart_tool_selection, enabled_tools.as_deref());
 
     let cred = crate::chat_manager::types::ProviderCredential {
         id: credential
@@ -1743,77 +2501,36 @@ async fn process_assistant_turn(
         format!("Streaming enabled: {}", streaming_enabled),
     );
 
-    let built = build_chat_request(
-        &cred,
-        api_key,
-        model_name,
-        &api_messages,
-        None,              // system_prompt (already in messages)
-        0.7,               // temperature
-        1.0,               // top_p
-        20480,             // max_tokens
-        None,              // context_length
-        streaming_enabled, // streaming based on settings
-        if streaming_enabled {
-            Some(stream_request_id.clone())
-        } else {
-            None
-        },
-        None,               // frequency_penalty
-        None,               // presence_penalty
-        None,               // top_k
-        Some(&tool_config), // tool_config
-        false,              // reasoning_enabled
-        None,               // reasoning_effort
-        None,               // reasoning_budget
-        None,               // extra_body_fields
-    );
-
     log_info(
         &app,
         "creation_helper",
-        format!("Sending request to {} with model {}", built.url, model_name),
+        format!(
+            "Initial turn plan: stage={:?}, tools={}, choice={:?}",
+            initial_turn_plan.stage,
+            initial_turn_plan.tool_config.tools.len(),
+            initial_turn_plan.tool_config.choice
+        ),
     );
 
-    let api_request_payload = ApiRequest {
-        url: built.url,
-        method: Some("POST".into()),
-        headers: Some(built.headers),
-        query: None,
-        body: Some(built.body),
-        timeout_ms: Some(120_000),
-        stream: Some(streaming_enabled),
-        request_id: if streaming_enabled {
-            Some(stream_request_id.clone())
-        } else {
-            None
-        },
-        provider_id: Some(provider_id.to_string()),
-    };
+    let mut request_messages = api_messages.clone();
+    request_messages.push(json!({
+        "role": "system",
+        "content": initial_turn_plan.guidance.clone()
+    }));
 
-    // Register this request for abort capability
-    let mut abort_rx = {
-        let registry = app.state::<AbortRegistry>();
-        registry.register(session_id.clone())
-    };
-
-    let api_response = tokio::select! {
-        _ = &mut abort_rx => {
-             log_warn(
-                &app,
-                "creation_helper",
-                format!("[creation_helper] request aborted by user for session {}", session_id),
-            );
-            return Err(crate::utils::err_msg(module_path!(), line!(), "Request aborted by user"));
-        }
-        res = api_request(app.clone(), api_request_payload) => res?
-    };
-
-    // Unregister after completion
-    {
-        let registry = app.state::<AbortRegistry>();
-        registry.unregister(&session_id);
-    }
+    let api_response = send_creation_api_request(
+        &app,
+        &session_id,
+        &stream_request_id,
+        provider_id,
+        &cred,
+        api_key,
+        model_name,
+        &request_messages,
+        streaming_enabled,
+        Some(&initial_turn_plan.tool_config),
+    )
+    .await?;
 
     if !api_response.ok {
         let full_error = serde_json::to_string_pretty(api_response.data()).unwrap_or_default();
@@ -1978,71 +2695,38 @@ async fn process_assistant_turn(
             ),
         );
 
-        let followup_built = build_chat_request(
+        let followup_turn_plan =
+            build_creation_turn_plan(&session, smart_tool_selection, enabled_tools.as_deref());
+        log_info(
+            &app,
+            "creation_helper",
+            format!(
+                "Follow-up turn plan: stage={:?}, tools={}, choice={:?}",
+                followup_turn_plan.stage,
+                followup_turn_plan.tool_config.tools.len(),
+                followup_turn_plan.tool_config.choice
+            ),
+        );
+
+        let mut followup_messages = api_messages.clone();
+        followup_messages.push(json!({
+            "role": "system",
+            "content": followup_turn_plan.guidance.clone()
+        }));
+
+        let followup_response = send_creation_api_request(
+            &app,
+            &session_id,
+            &stream_request_id,
+            provider_id,
             &cred,
             api_key,
             model_name,
-            &api_messages,
-            None,
-            0.7,
-            1.0,
-            20480,
-            None,
+            &followup_messages,
             streaming_enabled,
-            if streaming_enabled {
-                Some(stream_request_id.clone())
-            } else {
-                None
-            },
-            None,
-            None,
-            None,
-            Some(&tool_config),
-            false,
-            None,
-            None,
-            None,
-        );
-
-        let followup_request = ApiRequest {
-            url: followup_built.url,
-            method: Some("POST".into()),
-            headers: Some(followup_built.headers),
-            query: None,
-            body: Some(followup_built.body),
-            timeout_ms: Some(120_000),
-            stream: Some(streaming_enabled),
-            request_id: if streaming_enabled {
-                Some(stream_request_id.clone())
-            } else {
-                None
-            },
-            provider_id: Some(provider_id.to_string()),
-        };
-
-        // Register this request for abort capability
-        let mut abort_rx = {
-            let registry = app.state::<AbortRegistry>();
-            registry.register(session_id.clone())
-        };
-
-        let followup_response = tokio::select! {
-            _ = &mut abort_rx => {
-                 log_warn(
-                    &app,
-                    "creation_helper",
-                    format!("[creation_helper] follow-up request aborted by user for session {}", session_id),
-                );
-                return Err(crate::utils::err_msg(module_path!(), line!(), "Request aborted by user"));
-            }
-            res = api_request(app.clone(), followup_request) => res?
-        };
-
-        // Unregister after completion
-        {
-            let registry = app.state::<AbortRegistry>();
-            registry.unregister(&session_id);
-        }
+            Some(&followup_turn_plan.tool_config),
+        )
+        .await?;
 
         if !followup_response.ok {
             let full_error =
