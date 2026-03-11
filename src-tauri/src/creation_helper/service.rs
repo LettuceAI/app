@@ -87,6 +87,29 @@ fn persist_session(app: &AppHandle, session: &CreationSession) -> Result<(), Str
     Ok(())
 }
 
+fn emit_creation_helper_update(
+    app: &AppHandle,
+    session_id: &str,
+    session: &CreationSession,
+    active_tool_calls: Option<&[CreationToolCall]>,
+    active_tool_results: Option<&[CreationToolResult]>,
+) {
+    let active_tool_calls = active_tool_calls.map(|calls| calls.to_vec());
+    let active_tool_results = active_tool_results.map(|results| results.to_vec());
+
+    let _ = app.emit(
+        "creation-helper-update",
+        json!({
+            "sessionId": session_id,
+            "draft": session.draft,
+            "status": session.status,
+            "messages": session.messages,
+            "activeToolCalls": active_tool_calls,
+            "activeToolResults": active_tool_results,
+        }),
+    );
+}
+
 fn hydrate_session_cache(
     session: &CreationSession,
     images: HashMap<String, UploadedImage>,
@@ -2636,16 +2659,33 @@ async fn process_assistant_turn(
             ),
         );
 
-        for tc in &tool_calls {
-            let creation_call = CreationToolCall {
+        let current_batch_calls: Vec<CreationToolCall> = tool_calls
+            .iter()
+            .map(|tc| CreationToolCall {
                 id: tc.id.clone(),
                 name: tc.name.clone(),
                 arguments: tc.arguments.clone(),
-            };
-            all_tool_calls.push(creation_call);
+            })
+            .collect();
+        all_tool_calls.extend(current_batch_calls);
+        emit_creation_helper_update(
+            &app,
+            &session_id,
+            &session,
+            Some(&all_tool_calls),
+            Some(&all_tool_results),
+        );
 
+        for tc in &tool_calls {
             let result = execute_tool(&app, &mut session, &tc.id, &tc.name, &tc.arguments).await;
             all_tool_results.push(result);
+            emit_creation_helper_update(
+                &app,
+                &session_id,
+                &session,
+                Some(&all_tool_calls),
+                Some(&all_tool_results),
+            );
         }
 
         let tool_calls_json: Vec<Value> = tool_calls
@@ -2988,15 +3028,7 @@ async fn process_assistant_turn(
 
     persist_session(&app, &session)?;
 
-    let _ = app.emit(
-        "creation-helper-update",
-        json!({
-            "sessionId": session_id,
-            "draft": session.draft,
-            "status": session.status,
-            "messages": session.messages,
-        }),
-    );
+    emit_creation_helper_update(&app, &session_id, &session, None, None);
 
     Ok(session)
 }

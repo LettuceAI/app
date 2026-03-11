@@ -108,6 +108,15 @@ interface CreationSessionSummary {
   status: "active" | "previewShown" | "completed" | "cancelled";
 }
 
+interface CreationHelperUpdatePayload {
+  sessionId: string;
+  draft: DraftCharacter;
+  status: CreationSession["status"];
+  messages: CreationMessage[];
+  activeToolCalls?: ToolCall[] | null;
+  activeToolResults?: ToolResult[] | null;
+}
+
 interface ImageAttachment {
   id: string;
   data: string;
@@ -307,6 +316,7 @@ export function CreationHelperPage() {
   const [streamingContent, setStreamingContent] = useState<string>("");
   const [, setStreamingReasoning] = useState<string>("");
   const [activeTools, setActiveTools] = useState<ToolCall[]>([]);
+  const [activeToolResults, setActiveToolResults] = useState<ToolResult[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const streamUnlistenRef = useRef<(() => void) | null>(null);
   const streamingContentRef = useRef<string>("");
@@ -478,6 +488,7 @@ export function CreationHelperPage() {
     streamingContentRef.current = "";
     setStreamingReasoning("");
     setActiveTools([]);
+    setActiveToolResults([]);
     lastActionRef.current = null;
     lastSendSnapshotRef.current = null;
     setImageGenerations([]);
@@ -513,7 +524,20 @@ export function CreationHelperPage() {
     setImageGenerations((prev) => {
       const next = [...prev];
       let changed = false;
-      for (const message of session.messages) {
+      const resultSources = [
+        ...session.messages.map((message) => ({
+          toolCalls: message.toolCalls ?? [],
+          toolResults: message.toolResults ?? [],
+          createdAt: message.createdAt ?? Date.now(),
+        })),
+        {
+          toolCalls: activeTools,
+          toolResults: activeToolResults,
+          createdAt: Date.now(),
+        },
+      ];
+
+      for (const message of resultSources) {
         if (!message.toolResults?.length || !message.toolCalls?.length) continue;
         for (const result of message.toolResults) {
           const toolCall = message.toolCalls.find((call) => call.id === result.toolCallId);
@@ -541,17 +565,12 @@ export function CreationHelperPage() {
       }
       return changed ? next : prev;
     });
-  }, [session?.messages]);
+  }, [session?.messages, activeTools, activeToolResults]);
 
   // Listen for updates from backend
   useEffect(() => {
     const unlisten = listen("creation-helper-update", (event) => {
-      const payload = event.payload as {
-        sessionId: string;
-        draft: DraftCharacter;
-        status: string;
-        messages: CreationMessage[];
-      };
+      const payload = event.payload as CreationHelperUpdatePayload;
 
       if (session && payload.sessionId === session.id) {
         setSession((prev) =>
@@ -564,6 +583,29 @@ export function CreationHelperPage() {
               }
             : null,
         );
+
+        if (Array.isArray(payload.activeToolCalls)) {
+          setActiveTools(payload.activeToolCalls);
+        }
+        if (Array.isArray(payload.activeToolResults)) {
+          setActiveToolResults(payload.activeToolResults);
+          const wantsConfirmation = payload.activeToolResults.some((result) => {
+            const resObj = result.result as any;
+            return resObj?.action === "request_confirmation";
+          });
+          const wantsPreview = payload.activeToolResults.some((result) => {
+            const resObj = result.result as any;
+            return (
+              resObj?.action === "show_preview" || resObj?.action === "request_confirmation"
+            );
+          });
+          if (wantsPreview) {
+            setShowPreview(true);
+          }
+          if (wantsConfirmation) {
+            setShowConfirmation(true);
+          }
+        }
 
         // Only UI state like preview:
         if (payload.status === "previewShown") {
@@ -666,6 +708,7 @@ export function CreationHelperPage() {
     streamingContentRef.current = "";
     setStreamingReasoning("");
     setActiveTools([]);
+    setActiveToolResults([]);
     lastActionRef.current = "send";
 
     const requestId = crypto.randomUUID();
@@ -739,6 +782,7 @@ export function CreationHelperPage() {
           streamingContentRef.current = "";
           setStreamingReasoning("");
           setActiveTools([]);
+          setActiveToolResults([]);
           const snapshot = lastSendSnapshotRef.current;
           if (snapshot) {
             setInputValue((prev) => (prev.trim() ? prev : snapshot.draft));
@@ -815,6 +859,7 @@ export function CreationHelperPage() {
       streamingContentRef.current = "";
       setStreamingReasoning("");
       setActiveTools([]);
+      setActiveToolResults([]);
     }
   }, [session, inputValue, sending, references, pendingAttachments]);
 
@@ -847,6 +892,7 @@ export function CreationHelperPage() {
     streamingContentRef.current = "";
     setStreamingReasoning("");
     setActiveTools([]);
+    setActiveToolResults([]);
     lastActionRef.current = "regenerate";
 
     const requestId = crypto.randomUUID();
@@ -899,6 +945,7 @@ export function CreationHelperPage() {
           streamingContentRef.current = "";
           setStreamingReasoning("");
           setActiveTools([]);
+          setActiveToolResults([]);
         }
       });
       streamUnlistenRef.current = unlistenStream;
@@ -946,6 +993,7 @@ export function CreationHelperPage() {
       streamingContentRef.current = "";
       setStreamingReasoning("");
       setActiveTools([]);
+      setActiveToolResults([]);
     }
   }, [session, sending]);
 
@@ -1074,14 +1122,22 @@ export function CreationHelperPage() {
     if (!session) return [];
 
     const msgs = [...session.messages];
+    const lastMessage = msgs[msgs.length - 1];
+    const hasCommittedAssistantTail =
+      lastMessage?.role === "assistant" &&
+      (!!lastMessage.content?.trim() ||
+        (lastMessage.toolCalls?.length ?? 0) > 0 ||
+        (lastMessage.toolResults?.length ?? 0) > 0);
+    const hasTransientAssistantState =
+      !!streamingContent.trim() || activeTools.length > 0 || activeToolResults.length > 0;
 
-    if (sending) {
+    if (sending && !hasCommittedAssistantTail && hasTransientAssistantState) {
       msgs.push({
         id: "__streaming__",
         role: "assistant",
         content: streamingContent || "",
         toolCalls: activeTools,
-        toolResults: [],
+        toolResults: activeToolResults,
         createdAt: Date.now(),
       });
     }
