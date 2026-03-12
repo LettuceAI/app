@@ -742,13 +742,16 @@ jobs:
         env:
           RUSTFLAGS: "--cfg DEV_BUILD -C target-feature=-crt-static"
           CMAKE_MSVC_RUNTIME_LIBRARY: "MultiThreadedDLL"
-        run: bun run tauri build --config dev-config.json
+          CARGO_TARGET_DIR: C:\t
+        run: |
+          mkdir C:\t -ErrorAction SilentlyContinue | Out-Null
+          bun run tauri build --config dev-config.json
 
       - name: Package Windows CPU zip
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist-artifacts | Out-Null
-          Compress-Archive -Path src-tauri/target/release/bundle/* -DestinationPath dist-artifacts/windows-cpu.zip -Force
+          Compress-Archive -Path C:\t\release\bundle\* -DestinationPath dist-artifacts/windows-cpu.zip -Force
 
       - name: Upload Windows CPU zip to GitHub Release
         uses: softprops/action-gh-release@v2
@@ -876,14 +879,16 @@ jobs:
         env:
           RUSTFLAGS: "--cfg DEV_BUILD -C target-feature=-crt-static"
           CMAKE_MSVC_RUNTIME_LIBRARY: "MultiThreadedDLL"
-          CARGO_TARGET_DIR: target-cuda
-        run: bun run tauri build --config dev-config.json --features llama-gpu-cuda
+          CARGO_TARGET_DIR: C:\t
+        run: |
+          mkdir C:\t -ErrorAction SilentlyContinue | Out-Null
+          bun run tauri build --config dev-config.json --features llama-gpu-cuda
 
       - name: Package Windows CUDA zip
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist-artifacts | Out-Null
-          Compress-Archive -Path src-tauri/target-cuda/release/bundle/* -DestinationPath dist-artifacts/windows-cuda.zip -Force
+          Compress-Archive -Path C:\t\release\bundle\* -DestinationPath dist-artifacts/windows-cuda.zip -Force
 
       - name: Upload Windows CUDA zip to GitHub Release
         uses: softprops/action-gh-release@v2
@@ -940,14 +945,16 @@ jobs:
 
           $installerPath = Join-Path $env:RUNNER_TEMP "vulkan_sdk.exe"
           $downloadUrl = "https://sdk.lunarg.com/sdk/download/$sdkVersion/windows/vulkan_sdk.exe?Human=true"
-          $shaUrl = "https://sdk.lunarg.com/sdk/sha/$sdkVersion/windows/vulkan_sdk.exe.json"
+
+          $filename = "VulkanSDK-$sdkVersion-Installer.exe"
+          $shaUrl = "https://sdk.lunarg.com/sdk/sha/$sdkVersion/windows/$filename.json"
 
           Invoke-WebRequest -Uri $downloadUrl -OutFile $installerPath
 
           $expectedSha = (Invoke-RestMethod -Uri $shaUrl).sha.ToLowerInvariant()
           $actualSha = (Get-FileHash -Path $installerPath -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($expectedSha -ne $actualSha) {
-            throw "Downloaded Vulkan SDK checksum mismatch for version $sdkVersion."
+            throw "Downloaded Vulkan SDK checksum mismatch for version $sdkVersion. Expected: $expectedSha, Actual: $actualSha"
           }
 
           $install = Start-Process `
@@ -1087,9 +1094,10 @@ jobs:
           CMAKE_C_COMPILER: "cl.exe"
           CMAKE_CXX_COMPILER: "cl.exe"
           CXXFLAGS: "/EHsc"
-          CARGO_TARGET_DIR: target-vulkan
+          CARGO_TARGET_DIR: C:\t
         shell: pwsh
         run: |
+          mkdir C:\t -ErrorAction SilentlyContinue | Out-Null
           echo "VULKAN_SDK=$env:VULKAN_SDK"
           $vulkanBin = Join-Path $env:VULKAN_SDK "Bin"
           if (!(Test-Path $vulkanBin)) {
@@ -1116,7 +1124,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist-artifacts | Out-Null
-          Compress-Archive -Path src-tauri/target-vulkan/release/bundle/* -DestinationPath dist-artifacts/windows-vulkan.zip -Force
+          Compress-Archive -Path C:\t\release\bundle\* -DestinationPath dist-artifacts/windows-vulkan.zip -Force
 
       - name: Upload Windows Vulkan zip to GitHub Release
         uses: softprops/action-gh-release@v2
