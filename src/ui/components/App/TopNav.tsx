@@ -426,8 +426,7 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
 
   return (
     <header
-      /* Changed: added bg-opacity (bg-[#0F0F0F]/80) and increased blur to md for a premium feel */
-      className="fixed top-0 left-0 right-0 z-30 border-b border-fg/10 backdrop-blur-md bg-nav/80"
+      className="fixed top-0 left-0 right-0 z-40 border-b border-fg/10 backdrop-blur-md bg-nav/80"
       style={{
         paddingTop: "calc(env(safe-area-inset-top) + 12px)",
         paddingBottom: "12px",
