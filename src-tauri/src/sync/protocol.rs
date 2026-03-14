@@ -39,6 +39,27 @@ pub struct ManifestV2 {
     pub group_sessions: HashMap<String, i64>,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SyncDomain {
+    Core,
+    Tts,
+    Lorebooks,
+    Characters,
+    Groups,
+    Conversations,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct DomainManifest {
+    pub domain: SyncDomain,
+    pub fingerprint: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
+pub struct SyncManifest {
+    pub domains: Vec<DomainManifest>,
+}
+
 // 3. The Actual Messages over TCP
 #[derive(Serialize, Deserialize, Debug)]
 pub enum P2PMessage {
@@ -69,10 +90,17 @@ pub enum P2PMessage {
     SyncRequestV2 {
         manifest: ManifestV2,
     },
+    SyncManifest {
+        manifest: SyncManifest,
+    },
 
     // Data Transfer
     DataResponse {
         layer: SyncLayer,
+        payload: Vec<u8>,
+    },
+    DomainSnapshot {
+        domain: SyncDomain,
         payload: Vec<u8>,
     },
 

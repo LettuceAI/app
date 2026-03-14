@@ -13,11 +13,11 @@ use tokio_util::codec::Framed;
 
 use crate::sync::codec::P2PCodec;
 use crate::sync::db as sync_db;
-use crate::sync::protocol::{Manifest, ManifestV2, P2PMessage, SyncLayer};
+use crate::sync::protocol::{P2PMessage, SyncDomain, SyncManifest};
 use crate::utils::{log_error, log_info, log_warn};
 use std::path::Path;
 
-const PROTOCOL_VERSION: u32 = 5;
+const PROTOCOL_VERSION: u32 = 6;
 
 fn derive_key(pin: &str, salt: &[u8]) -> [u8; 32] {
     let mut hasher = blake3::Hasher::new_derive_key("lettuce_sync_v1");
@@ -446,28 +446,8 @@ async fn handle_driver_connection(
     // Main Loop
     while let Some(msg) = framed.next().await {
         match msg {
-            Ok(P2PMessage::SyncRequest { manifest }) => {
-                handle_sync_request(
-                    &app,
-                    &mut framed,
-                    manifest,
-                    None,
-                    false,
-                    peer_protocol_version,
-                )
-                .await?;
-            }
-            Ok(P2PMessage::SyncRequestV2 { manifest }) => {
-                let allow_group = peer_protocol_version >= 2;
-                handle_sync_request(
-                    &app,
-                    &mut framed,
-                    Manifest::default(),
-                    Some(manifest),
-                    allow_group,
-                    peer_protocol_version,
-                )
-                .await?;
+            Ok(P2PMessage::SyncManifest { manifest }) => {
+                handle_sync_manifest(&app, &mut framed, manifest, peer_protocol_version).await?;
             }
             Ok(P2PMessage::Disconnect) => break,
             Ok(other) => log_warn(
@@ -482,22 +462,14 @@ async fn handle_driver_connection(
     Ok(())
 }
 
-async fn handle_sync_request(
+async fn handle_sync_manifest(
     app: &AppHandle,
     framed: &mut Framed<TcpStream, P2PCodec>,
-    passenger_manifest: Manifest,
-    passenger_manifest_v2: Option<ManifestV2>,
-    allow_group: bool,
+    passenger_manifest: SyncManifest,
     peer_protocol_version: u32,
 ) -> Result<(), String> {
-    // Get Local Manifest
     let conn = crate::storage_manager::db::open_db(app)?;
-    let local_manifest = sync_db::get_local_manifest(&conn)?;
-    let local_manifest_v2 = if allow_group {
-        Some(sync_db::get_local_manifest_v2(&conn)?)
-    } else {
-        None
-    };
+    let local_manifest = sync_db::build_sync_manifest(&conn)?;
 
     if peer_protocol_version < PROTOCOL_VERSION {
         let warning = format!(
@@ -521,226 +493,42 @@ async fn handle_sync_request(
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     }
 
-    // Host-authoritative sync policy:
-    // - Host is always the source of truth.
-    // - Any timestamp mismatch is resolved by sending host's record to passenger.
-    // This ensures client-side newer values never overwrite host canonical state.
-    let mut lb_ids_to_send = Vec::new();
-    for (id, host_updated_at) in local_manifest.lorebooks.iter() {
-        let passenger_updated_at = passenger_manifest.lorebooks.get(id).copied();
-        if passenger_updated_at != Some(*host_updated_at) {
-            lb_ids_to_send.push(id.clone());
-        }
-    }
-
-    let mut char_ids_to_send = Vec::new();
-    for (id, host_updated_at) in local_manifest.characters.iter() {
-        let passenger_updated_at = passenger_manifest.characters.get(id).copied();
-        if passenger_updated_at != Some(*host_updated_at) {
-            char_ids_to_send.push(id.clone());
-        }
-    }
-
-    let mut session_ids_to_send = Vec::new();
-    for (id, host_updated_at) in local_manifest.sessions.iter() {
-        let passenger_updated_at = passenger_manifest.sessions.get(id).copied();
-        if passenger_updated_at != Some(*host_updated_at) {
-            session_ids_to_send.push(id.clone());
-        }
-    }
-
-    let mut group_session_ids_to_send = Vec::new();
-    if allow_group {
-        if let (Some(host_v2), Some(passenger_v2)) =
-            (local_manifest_v2.as_ref(), passenger_manifest_v2.as_ref())
-        {
-            for (id, host_updated_at) in host_v2.group_sessions.iter() {
-                let passenger_updated_at = passenger_v2.group_sessions.get(id).copied();
-                if passenger_updated_at != Some(*host_updated_at) {
-                    group_session_ids_to_send.push(id.clone());
-                }
-            }
-        } else if let Some(host_v2) = local_manifest_v2.as_ref() {
-            for id in host_v2.group_sessions.keys() {
-                group_session_ids_to_send.push(id.clone());
-            }
-        }
-    }
+    let passenger_map = passenger_manifest
+        .domains
+        .into_iter()
+        .map(|entry| (entry.domain, entry.fingerprint))
+        .collect::<std::collections::HashMap<_, _>>();
+    let domains_to_send = local_manifest
+        .domains
+        .iter()
+        .filter(|entry| passenger_map.get(&entry.domain) != Some(&entry.fingerprint))
+        .map(|entry| entry.domain)
+        .collect::<Vec<_>>();
 
     log_info(
         app,
         "sync_driver",
-        format!(
-            "Host-authoritative diff: lorebooks={} characters={} sessions={} group_sessions={}",
-            lb_ids_to_send.len(),
-            char_ids_to_send.len(),
-            session_ids_to_send.len(),
-            group_session_ids_to_send.len()
-        ),
+        format!("Snapshot diff: {} domain(s) changed", domains_to_send.len()),
     );
 
-    // Send Globals
-    framed
-        .send(P2PMessage::StatusUpdate(
-            "Syncing Global Settings...".into(),
-        ))
-        .await
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-    {
-        let data = sync_db::fetch_globals_for_protocol(&conn, peer_protocol_version)?;
-        framed
-            .send(P2PMessage::DataResponse {
-                layer: SyncLayer::Globals,
-                payload: data,
-            })
-            .await
-            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-
-        // Send Global Assets (Personas)
-        send_global_assets(app, framed).await?;
-    }
-
-    // Send Lorebooks
-    if !lb_ids_to_send.is_empty() {
-        framed
-            .send(P2PMessage::StatusUpdate(format!(
-                "Syncing {} Lorebooks...",
-                lb_ids_to_send.len()
-            )))
-            .await
-            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-        let data = sync_db::fetch_layer_data_for_protocol(
-            &conn,
-            SyncLayer::Lorebooks,
-            &lb_ids_to_send,
-            peer_protocol_version,
-        )?;
-        framed
-            .send(P2PMessage::DataResponse {
-                layer: SyncLayer::Lorebooks,
-                payload: data,
-            })
-            .await
-            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-    }
-
-    // Send Characters
-    if !char_ids_to_send.is_empty() {
-        framed
-            .send(P2PMessage::StatusUpdate(format!(
-                "Syncing {} Characters...",
-                char_ids_to_send.len()
-            )))
-            .await
-            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-        let data = sync_db::fetch_layer_data_for_protocol(
-            &conn,
-            SyncLayer::Characters,
-            &char_ids_to_send,
-            peer_protocol_version,
-        )?;
-        framed
-            .send(P2PMessage::DataResponse {
-                layer: SyncLayer::Characters,
-                payload: data,
-            })
-            .await
-            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-
-        // Send Character Assets (Avatars)
+    for domain in domains_to_send {
         framed
             .send(P2PMessage::StatusUpdate(
-                "Syncing Character Assets...".into(),
+                sync_status_text(domain).to_string(),
             ))
             .await
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-        send_character_assets(app, framed, &char_ids_to_send).await?;
+        tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
+
+        let payload = sync_db::fetch_domain_snapshot(&conn, domain)?;
+        framed
+            .send(P2PMessage::DomainSnapshot { domain, payload })
+            .await
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+
+        send_domain_assets(app, framed, domain).await?;
     }
 
-    // Send Sessions
-    if !session_ids_to_send.is_empty() {
-        framed
-            .send(P2PMessage::StatusUpdate(format!(
-                "Syncing {} Sessions...",
-                session_ids_to_send.len()
-            )))
-            .await
-            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-        let data = sync_db::fetch_layer_data_for_protocol(
-            &conn,
-            SyncLayer::Sessions,
-            &session_ids_to_send,
-            peer_protocol_version,
-        )?;
-        framed
-            .send(P2PMessage::DataResponse {
-                layer: SyncLayer::Sessions,
-                payload: data,
-            })
-            .await
-            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-
-        // Send Session Assets (Attachments)
-        framed
-            .send(P2PMessage::StatusUpdate(
-                "Syncing Session Attachments...".into(),
-            ))
-            .await
-            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-
-        // Prepare asset info synchronously to avoid holding &Connection across await
-        let mut session_asset_info = Vec::new();
-        for sid in &session_ids_to_send {
-            let char_id_res: Result<String, _> = conn.query_row(
-                "SELECT character_id FROM sessions WHERE id = ?",
-                [sid],
-                |row| row.get(0),
-            );
-            if let Ok(cid) = char_id_res {
-                session_asset_info.push((sid.clone(), cid));
-            }
-        }
-
-        send_session_assets(app, framed, &session_asset_info).await?;
-    }
-
-    if allow_group && !group_session_ids_to_send.is_empty() {
-        framed
-            .send(P2PMessage::StatusUpdate(format!(
-                "Syncing {} Group Sessions...",
-                group_session_ids_to_send.len()
-            )))
-            .await
-            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-        let data = sync_db::fetch_layer_data_for_protocol(
-            &conn,
-            SyncLayer::GroupSessions,
-            &group_session_ids_to_send,
-            peer_protocol_version,
-        )?;
-        framed
-            .send(P2PMessage::DataResponse {
-                layer: SyncLayer::GroupSessions,
-                payload: data,
-            })
-            .await
-            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-
-        framed
-            .send(P2PMessage::StatusUpdate(
-                "Syncing Group Session Assets...".into(),
-            ))
-            .await
-            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-        send_group_session_assets(app, framed, &group_session_ids_to_send).await?;
-    }
-
-    // Finish
     framed
         .send(P2PMessage::SyncComplete)
         .await
@@ -940,21 +728,11 @@ async fn run_passenger_session(
 
     // Prepare Manifest
     let mut conn = crate::storage_manager::db::open_db(&app)?;
-
-    // Send Sync Request
-    if driver_protocol_version >= 2 {
-        let manifest = sync_db::get_local_manifest_v2(&conn)?;
-        framed
-            .send(P2PMessage::SyncRequestV2 { manifest })
-            .await
-            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-    } else {
-        let manifest = sync_db::get_local_manifest(&conn)?;
-        framed
-            .send(P2PMessage::SyncRequest { manifest })
-            .await
-            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-    }
+    let manifest = sync_db::build_sync_manifest(&conn)?;
+    framed
+        .send(P2PMessage::SyncManifest { manifest })
+        .await
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 
     if driver_protocol_version < PROTOCOL_VERSION {
         let warning = format!(
@@ -991,10 +769,10 @@ async fn run_passenger_session(
             }
             msg = framed.next() => {
                 match msg {
-                    Some(Ok(P2PMessage::DataResponse { layer, payload })) => {
-                        log_info(&app, "sync_passenger", format!("Received DataResponse for layer: {:?}", layer));
-                        if let Err(e) = sync_db::apply_layer_data(&mut conn, layer.clone(), &payload) {
-                            log_error(&app, "sync_passenger", format!("Failed to apply layer {:?}: {}", layer, e));
+                    Some(Ok(P2PMessage::DomainSnapshot { domain, payload })) => {
+                        log_info(&app, "sync_passenger", format!("Received snapshot for domain: {:?}", domain));
+                        if let Err(e) = sync_db::apply_domain_snapshot(&mut conn, domain, &payload) {
+                            log_error(&app, "sync_passenger", format!("Failed to apply domain {:?}: {}", domain, e));
                         }
                     }
                     Some(Ok(P2PMessage::StatusUpdate(msg))) => {
@@ -1126,6 +904,77 @@ pub async fn start_sync_session(app: AppHandle, ip: String) -> Result<(), String
     }
 
     Ok(())
+}
+
+fn sync_status_text(domain: SyncDomain) -> &'static str {
+    match domain {
+        SyncDomain::Core => "Syncing Core Data...",
+        SyncDomain::Tts => "Syncing Voice Settings...",
+        SyncDomain::Lorebooks => "Syncing Lorebooks...",
+        SyncDomain::Characters => "Syncing Characters...",
+        SyncDomain::Groups => "Syncing Groups...",
+        SyncDomain::Conversations => "Syncing Conversations...",
+    }
+}
+
+fn collect_text_ids_from_conn(
+    conn: &crate::storage_manager::db::DbConnection,
+    sql: &str,
+) -> Result<Vec<String>, String> {
+    let mut stmt = conn
+        .prepare(sql)
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    let rows = stmt
+        .query_map([], |row| row.get(0))
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
+}
+
+async fn send_domain_assets(
+    app: &AppHandle,
+    framed: &mut Framed<TcpStream, P2PCodec>,
+    domain: SyncDomain,
+) -> Result<(), String> {
+    match domain {
+        SyncDomain::Core => send_global_assets(app, framed).await,
+        SyncDomain::Characters => {
+            let conn = crate::storage_manager::db::open_db(app)?;
+            let ids = collect_text_ids_from_conn(&conn, "SELECT id FROM characters")?;
+            send_character_assets(app, framed, &ids).await
+        }
+        SyncDomain::Groups => {
+            send_group_assets(app, framed).await?;
+
+            let conn = crate::storage_manager::db::open_db(app)?;
+            let group_ids = collect_text_ids_from_conn(&conn, "SELECT id FROM group_sessions")?;
+            if !group_ids.is_empty() {
+                send_group_session_assets(app, framed, &group_ids).await?;
+            }
+
+            Ok(())
+        }
+        SyncDomain::Conversations => {
+            let session_asset_info = {
+                let conn = crate::storage_manager::db::open_db(app)?;
+                let mut stmt = conn
+                    .prepare("SELECT id, character_id FROM sessions")
+                    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+                let rows = stmt
+                    .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+                    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+                rows.collect::<Result<Vec<(String, String)>, _>>()
+                    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
+            };
+
+            if !session_asset_info.is_empty() {
+                send_session_assets(app, framed, &session_asset_info).await?;
+            }
+
+            Ok(())
+        }
+        SyncDomain::Tts | SyncDomain::Lorebooks => Ok(()),
+    }
 }
 
 async fn send_file(
@@ -1396,6 +1245,43 @@ async fn send_group_session_assets(
     Ok(())
 }
 
+async fn send_group_assets(
+    app: &AppHandle,
+    framed: &mut Framed<TcpStream, P2PCodec>,
+) -> Result<(), String> {
+    let root = crate::storage_manager::legacy::storage_root(app)
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    let images_dir = root.join("images");
+    let conn = crate::storage_manager::db::open_db(app)?;
+
+    let background_ids: Vec<String> = {
+        let mut stmt = conn
+            .prepare("SELECT background_image_path FROM group_characters WHERE background_image_path IS NOT NULL AND background_image_path != ''")
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        let rows = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
+    };
+
+    for bg_id in background_ids {
+        if bg_id.starts_with("data:") || bg_id.starts_with("http") {
+            continue;
+        }
+        for ext in &["webp", "png", "jpg", "jpeg", "gif"] {
+            let filename = format!("{}.{}", bg_id, ext);
+            let file_path = images_dir.join(&filename);
+            if file_path.exists() {
+                send_file(app, framed, format!("images/{}", filename), &file_path).await?;
+                break;
+            }
+        }
+    }
+
+    Ok(())
+}
+
 async fn send_global_assets(
     app: &AppHandle,
     framed: &mut Framed<TcpStream, P2PCodec>,
@@ -1404,7 +1290,6 @@ async fn send_global_assets(
     let root = crate::storage_manager::legacy::storage_root(app)
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     let avatars_dir = root.join("avatars");
-    let images_dir = root.join("images");
     let conn = crate::storage_manager::db::open_db(app)?;
 
     let persona_ids: Vec<String> = {
@@ -1455,31 +1340,6 @@ async fn send_global_assets(
                         .await?;
                     }
                 }
-            }
-        }
-    }
-
-    let group_backgrounds: Vec<String> = {
-        let mut stmt = conn
-            .prepare("SELECT background_image_path FROM group_characters WHERE background_image_path IS NOT NULL AND background_image_path != ''")
-            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-        let rows = stmt
-            .query_map([], |row| row.get::<_, String>(0))
-            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-        rows.collect::<Result<Vec<_>, _>>()
-            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
-    };
-
-    for bg_id in group_backgrounds {
-        if bg_id.starts_with("data:") || bg_id.starts_with("http") {
-            continue;
-        }
-        for ext in &["webp", "png", "jpg", "jpeg", "gif"] {
-            let filename = format!("{}.{}", bg_id, ext);
-            let file_path = images_dir.join(&filename);
-            if file_path.exists() {
-                send_file(app, framed, format!("images/{}", filename), &file_path).await?;
-                break;
             }
         }
     }
