@@ -13,9 +13,8 @@ use tokio_util::codec::Framed;
 
 use crate::sync::codec::P2PCodec;
 use crate::sync::db as sync_db;
-use crate::sync::protocol::{P2PMessage, SyncDomain};
+use crate::sync::protocol::{ChangeOp, P2PMessage, SyncDomain};
 use crate::utils::{log_error, log_info, log_warn};
-use std::path::Path;
 
 const PROTOCOL_VERSION: u32 = 7;
 
@@ -483,7 +482,7 @@ async fn handle_advertise_cursors(
     peer_protocol_version: u32,
 ) -> Result<(), String> {
     let mut conn = crate::storage_manager::db::open_db(app)?;
-    sync_db::rebuild_change_log(&mut conn)?;
+    sync_db::rebuild_change_log(app, &mut conn)?;
 
     if peer_protocol_version < PROTOCOL_VERSION {
         let warning = format!(
@@ -527,12 +526,14 @@ async fn handle_advertise_cursors(
         framed
             .send(P2PMessage::PushChanges {
                 domain: cursor.domain,
-                changes,
+                changes: changes.clone(),
             })
             .await
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 
-        send_domain_assets(app, framed, cursor.domain).await?;
+        if cursor.domain == SyncDomain::Assets {
+            send_asset_change_contents(app, framed, &changes).await?;
+        }
     }
 
     framed
@@ -736,7 +737,7 @@ async fn run_passenger_session(
         )
         .await;
 
-    sync_db::rebuild_change_log(&mut conn)?;
+    sync_db::rebuild_change_log(&app, &mut conn)?;
     let cursors = sync_db::load_peer_cursors(&conn, &driver_device_id)?;
     framed
         .send(P2PMessage::AdvertiseCursors { cursors })
@@ -781,6 +782,13 @@ async fn run_passenger_session(
                     Some(Ok(P2PMessage::PushChanges { domain, changes })) => {
                         log_info(&app, "sync_passenger", format!("Received {} changes for {:?}", changes.len(), domain));
                         let last_change_id = changes.last().map(|change| change.change_id).unwrap_or(0);
+                        if domain == SyncDomain::Assets {
+                            for change in &changes {
+                                if change.op == ChangeOp::Delete {
+                                    let _ = remove_asset_path(&app, &change.entity_id);
+                                }
+                            }
+                        }
                         if let Err(e) = sync_db::apply_change_batch(&mut conn, domain, &changes) {
                             log_error(&app, "sync_passenger", format!("Failed to apply domain {:?}: {}", domain, e));
                         } else if last_change_id > 0 {
@@ -794,54 +802,10 @@ async fn run_passenger_session(
                             progress: None,
                         }).await;
                     }
-                    Some(Ok(P2PMessage::FileTransfer { path, content })) => {
-                        log_info(&app, "sync_passenger", format!("Received FileTransfer request: {}", path));
-
-                        if path.contains("..") || path.starts_with("/") || path.contains("\\") {
-                            log_warn(&app, "sync_passenger", format!("Security Warning: Attempted path traversal in sync: {}", path));
-                            continue;
-                        }
-
-                        if !path.starts_with("avatars/")
-                            && !path.starts_with("sessions/")
-                            && !path.starts_with("images/")
-                            && !path.starts_with("generated_images/")
-                        {
-                            log_warn(&app, "sync_passenger", format!("Security Warning: Attempted write to unauthorized directory: {}", path));
-                            continue;
-                        }
-
-                        let full_path = if path.starts_with("generated_images/") {
-                            match app.path().app_data_dir() {
-                                Ok(root) => root.join(&path),
-                                Err(e) => {
-                                    log_error(&app, "sync_passenger", format!("Failed to get app data dir: {}", e));
-                                    continue;
-                                }
-                            }
-                        } else {
-                            let root = match crate::utils::lettuce_dir(&app) {
-                                Ok(r) => r,
-                                Err(e) => {
-                                    log_error(&app, "sync_passenger", format!("Failed to get lettuce dir: {}", e));
-                                    continue;
-                                }
-                            };
-                            root.join(&path)
-                        };
-
-                        log_info(&app, "sync_passenger", format!("Writing file to: {:?}", full_path));
-
-                        if let Some(parent) = full_path.parent() {
-                            if let Err(e) = tokio::fs::create_dir_all(parent).await {
-                                 log_error(&app, "sync_passenger", format!("Failed to create parent dir for {}: {}", path, e));
-                                 continue;
-                            }
-                        }
-                        if let Err(e) = tokio::fs::write(&full_path, content).await {
-                             log_error(&app, "sync_passenger", format!("Failed to write file {}: {}", path, e));
-                        } else {
-                             log_info(&app, "sync_passenger", format!("Successfully wrote file: {}", path));
+                    Some(Ok(P2PMessage::AssetContent { path, content, .. })) => {
+                        log_info(&app, "sync_passenger", format!("Received asset content: {}", path));
+                        if let Err(e) = write_asset_path(&app, &path, &content).await {
+                            log_error(&app, "sync_passenger", format!("Failed to write asset {}: {}", path, e));
                         }
                     }
                     Some(Ok(P2PMessage::SyncComplete)) => {
@@ -927,439 +891,100 @@ fn sync_status_text(domain: SyncDomain) -> &'static str {
         SyncDomain::Groups => "Syncing Groups...",
         SyncDomain::Sessions => "Syncing Sessions...",
         SyncDomain::Messages => "Syncing Messages...",
+        SyncDomain::Assets => "Syncing Assets...",
     }
 }
 
-fn collect_text_ids_from_conn(
-    conn: &crate::storage_manager::db::DbConnection,
-    sql: &str,
-) -> Result<Vec<String>, String> {
-    let mut stmt = conn
-        .prepare(sql)
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-    let rows = stmt
-        .query_map([], |row| row.get(0))
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-    rows.collect::<Result<Vec<_>, _>>()
+fn resolve_asset_path(app: &AppHandle, relative_path: &str) -> Result<std::path::PathBuf, String> {
+    if relative_path.contains("..")
+        || relative_path.starts_with('/')
+        || relative_path.contains('\\')
+    {
+        return Err(crate::utils::err_msg(
+            module_path!(),
+            line!(),
+            format!("Invalid asset path: {}", relative_path),
+        ));
+    }
+
+    if !relative_path.starts_with("avatars/")
+        && !relative_path.starts_with("sessions/")
+        && !relative_path.starts_with("images/")
+        && !relative_path.starts_with("generated_images/")
+    {
+        return Err(crate::utils::err_msg(
+            module_path!(),
+            line!(),
+            format!("Unauthorized asset path: {}", relative_path),
+        ));
+    }
+
+    if relative_path.starts_with("generated_images/") {
+        Ok(app
+            .path()
+            .app_data_dir()
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
+            .join(relative_path))
+    } else {
+        Ok(crate::storage_manager::legacy::storage_root(app)?.join(relative_path))
+    }
+}
+
+async fn write_asset_path(
+    app: &AppHandle,
+    relative_path: &str,
+    content: &[u8],
+) -> Result<(), String> {
+    let full_path = resolve_asset_path(app, relative_path)?;
+
+    if let Some(parent) = full_path.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    }
+    tokio::fs::write(&full_path, content)
+        .await
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
 }
 
-async fn send_domain_assets(
-    app: &AppHandle,
-    framed: &mut Framed<TcpStream, P2PCodec>,
-    domain: SyncDomain,
-) -> Result<(), String> {
-    match domain {
-        SyncDomain::Core => send_global_assets(app, framed).await,
-        SyncDomain::Characters => {
-            let conn = crate::storage_manager::db::open_db(app)?;
-            let ids = collect_text_ids_from_conn(&conn, "SELECT id FROM characters")?;
-            send_character_assets(app, framed, &ids).await
-        }
-        SyncDomain::Groups => {
-            send_group_assets(app, framed).await?;
-
-            let conn = crate::storage_manager::db::open_db(app)?;
-            let group_ids = collect_text_ids_from_conn(&conn, "SELECT id FROM group_sessions")?;
-            if !group_ids.is_empty() {
-                send_group_session_assets(app, framed, &group_ids).await?;
-            }
-
-            Ok(())
-        }
-        SyncDomain::Messages => {
-            let session_asset_info = {
-                let conn = crate::storage_manager::db::open_db(app)?;
-                let mut stmt = conn
-                    .prepare("SELECT id, character_id FROM sessions")
-                    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-                let rows = stmt
-                    .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
-                    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-                rows.collect::<Result<Vec<(String, String)>, _>>()
-                    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
-            };
-
-            if !session_asset_info.is_empty() {
-                send_session_assets(app, framed, &session_asset_info).await?;
-            }
-
-            Ok(())
-        }
-        SyncDomain::Sessions | SyncDomain::Tts | SyncDomain::Lorebooks => Ok(()),
+fn remove_asset_path(app: &AppHandle, relative_path: &str) -> Result<(), String> {
+    let full_path = resolve_asset_path(app, relative_path)?;
+    if full_path.exists() {
+        std::fs::remove_file(&full_path)
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     }
+    Ok(())
 }
 
-async fn send_file(
+async fn send_asset_change_contents(
     app: &AppHandle,
     framed: &mut Framed<TcpStream, P2PCodec>,
-    relative_path: String,
-    absolute_path: &Path,
+    changes: &[crate::sync::protocol::ChangeRecord],
 ) -> Result<(), String> {
-    if absolute_path.exists() {
-        let content = tokio::fs::read(absolute_path)
+    for change in changes {
+        if change.op != ChangeOp::Upsert {
+            continue;
+        }
+
+        let asset: sync_db::AssetRecord = bincode::deserialize(&change.payload)
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        let absolute_path = resolve_asset_path(app, &asset.path)?;
+        if !absolute_path.exists() {
+            continue;
+        }
+
+        let content = tokio::fs::read(&absolute_path)
             .await
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-
-        log_info(
-            app,
-            "sync_driver",
-            format!("Sending file: {} ({} bytes)", relative_path, content.len()),
-        );
-
         framed
-            .send(P2PMessage::FileTransfer {
-                path: relative_path,
+            .send(P2PMessage::AssetContent {
+                entity_id: change.entity_id.clone(),
+                path: asset.path,
+                content_hash: asset.content_hash,
                 content,
             })
             .await
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-    }
-    Ok(())
-}
-
-async fn send_dir_recursive(
-    app: &AppHandle,
-    framed: &mut Framed<TcpStream, P2PCodec>,
-    absolute_dir: &Path,
-    relative_prefix: &str,
-) -> Result<(), String> {
-    if !absolute_dir.exists() {
-        return Ok(());
-    }
-
-    let mut stack = vec![(absolute_dir.to_path_buf(), relative_prefix.to_string())];
-    while let Some((dir, prefix)) = stack.pop() {
-        let mut entries = tokio::fs::read_dir(&dir)
-            .await
-            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-        while let Ok(Some(entry)) = entries.next_entry().await {
-            let path = entry.path();
-            let name = match entry.file_name().into_string() {
-                Ok(name) => name,
-                Err(_) => continue,
-            };
-            let rel = format!("{}/{}", prefix, name);
-            if path.is_dir() {
-                stack.push((path, rel));
-            } else if path.is_file() {
-                send_file(app, framed, rel, &path).await?;
-            }
-        }
-    }
-
-    Ok(())
-}
-
-async fn send_character_assets(
-    app: &AppHandle,
-    framed: &mut Framed<TcpStream, P2PCodec>,
-    char_ids: &[String],
-) -> Result<(), String> {
-    log_info(
-        app,
-        "sync_driver",
-        format!(
-            "Starting send_character_assets for {} chars",
-            char_ids.len()
-        ),
-    );
-    let root = crate::storage_manager::legacy::storage_root(app)
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-    let avatars_dir = root.join("avatars");
-    let images_dir = root.join("images");
-
-    let conn = crate::storage_manager::db::open_db(app)?;
-
-    for id in char_ids {
-        let mut char_dir_name = id.clone();
-        let mut char_dir = avatars_dir.join(id);
-
-        if !char_dir.exists() {
-            let prefixed = format!("character-{}", id);
-            let prefixed_dir = avatars_dir.join(&prefixed);
-            if prefixed_dir.exists() {
-                char_dir = prefixed_dir;
-                char_dir_name = prefixed;
-            }
-        }
-
-        log_info(
-            app,
-            "sync_driver",
-            format!("Checking avatar dir: {:?}", char_dir),
-        );
-        if char_dir.exists() {
-            let mut entries = tokio::fs::read_dir(&char_dir)
-                .await
-                .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-
-            while let Ok(Some(entry)) = entries.next_entry().await {
-                let path = entry.path();
-                if path.is_file() {
-                    if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
-                        log_info(
-                            app,
-                            "sync_driver",
-                            format!("Sending avatar file: {}", filename),
-                        );
-                        send_file(
-                            app,
-                            framed,
-                            format!("avatars/{}/{}", char_dir_name, filename),
-                            &path,
-                        )
-                        .await?;
-                    }
-                }
-            }
-        } else {
-            log_info(
-                app,
-                "sync_driver",
-                format!(
-                    "Avatar dir not found for char {} (checked raw and prefixed)",
-                    id
-                ),
-            );
-        }
-
-        let bg_path: Option<String> = conn
-            .query_row(
-                "SELECT background_image_path FROM characters WHERE id = ?",
-                [id],
-                |row| row.get(0),
-            )
-            .unwrap_or(None);
-
-        if let Some(bg_id) = bg_path {
-            log_info(app, "sync_driver", format!("Found bg_id: {}", bg_id));
-            if !bg_id.is_empty() && !bg_id.starts_with("data:") && !bg_id.starts_with("http") {
-                for ext in &["webp", "png", "jpg", "jpeg", "gif"] {
-                    let filename = format!("{}.{}", bg_id, ext);
-                    let file_path = images_dir.join(&filename);
-                    if file_path.exists() {
-                        log_info(app, "sync_driver", format!("Sending bg file: {}", filename));
-                        send_file(app, framed, format!("images/{}", filename), &file_path).await?;
-                        break;
-                    }
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
-async fn send_session_assets(
-    app: &AppHandle,
-    framed: &mut Framed<TcpStream, P2PCodec>,
-    sessions_with_chars: &[(String, String)],
-) -> Result<(), String> {
-    log_info(
-        app,
-        "sync_driver",
-        format!(
-            "Starting send_session_assets for {} sessions",
-            sessions_with_chars.len()
-        ),
-    );
-    let root = crate::storage_manager::legacy::storage_root(app)
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-
-    for (session_id, char_id) in sessions_with_chars {
-        let mut char_dir_name = char_id.clone();
-        let mut session_base_dir = root.join("sessions").join(char_id);
-
-        if !session_base_dir.exists() {
-            let prefixed = format!("character-{}", char_id);
-            let prefixed_base = root.join("sessions").join(&prefixed);
-            if prefixed_base.exists() {
-                session_base_dir = prefixed_base;
-                char_dir_name = prefixed;
-            }
-        }
-
-        let session_dir = session_base_dir.join(session_id);
-        // log_info(app, "sync_driver", format!("Checking session dir: {:?}", session_dir));
-
-        if session_dir.exists() {
-            let mut entries = tokio::fs::read_dir(&session_dir)
-                .await
-                .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-            while let Ok(Some(entry)) = entries.next_entry().await {
-                let path = entry.path();
-                if path.is_file() {
-                    if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
-                        log_info(
-                            app,
-                            "sync_driver",
-                            format!("Sending session file: {}", filename),
-                        );
-                        send_file(
-                            app,
-                            framed,
-                            format!("sessions/{}/{}/{}", char_dir_name, session_id, filename),
-                            &path,
-                        )
-                        .await?;
-                    }
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
-async fn send_group_session_assets(
-    app: &AppHandle,
-    framed: &mut Framed<TcpStream, P2PCodec>,
-    group_session_ids: &[String],
-) -> Result<(), String> {
-    log_info(
-        app,
-        "sync_driver",
-        format!(
-            "Starting send_group_session_assets for {} sessions",
-            group_session_ids.len()
-        ),
-    );
-    let root = crate::storage_manager::legacy::storage_root(app)
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-    let images_dir = root.join("images");
-    let conn = crate::storage_manager::db::open_db(app)?;
-
-    for id in group_session_ids {
-        let bg_path: Option<String> = conn
-            .query_row(
-                "SELECT background_image_path FROM group_sessions WHERE id = ?",
-                [id],
-                |row| row.get(0),
-            )
-            .unwrap_or(None);
-
-        if let Some(bg_id) = bg_path {
-            if !bg_id.is_empty() && !bg_id.starts_with("data:") && !bg_id.starts_with("http") {
-                for ext in &["webp", "png", "jpg", "jpeg", "gif"] {
-                    let filename = format!("{}.{}", bg_id, ext);
-                    let file_path = images_dir.join(&filename);
-                    if file_path.exists() {
-                        log_info(
-                            app,
-                            "sync_driver",
-                            format!("Sending group bg file: {}", filename),
-                        );
-                        send_file(app, framed, format!("images/{}", filename), &file_path).await?;
-                        break;
-                    }
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
-async fn send_group_assets(
-    app: &AppHandle,
-    framed: &mut Framed<TcpStream, P2PCodec>,
-) -> Result<(), String> {
-    let root = crate::storage_manager::legacy::storage_root(app)
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-    let images_dir = root.join("images");
-    let conn = crate::storage_manager::db::open_db(app)?;
-
-    let background_ids: Vec<String> = {
-        let mut stmt = conn
-            .prepare("SELECT background_image_path FROM group_characters WHERE background_image_path IS NOT NULL AND background_image_path != ''")
-            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-        let rows = stmt
-            .query_map([], |row| row.get::<_, String>(0))
-            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-        rows.collect::<Result<Vec<_>, _>>()
-            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
-    };
-
-    for bg_id in background_ids {
-        if bg_id.starts_with("data:") || bg_id.starts_with("http") {
-            continue;
-        }
-        for ext in &["webp", "png", "jpg", "jpeg", "gif"] {
-            let filename = format!("{}.{}", bg_id, ext);
-            let file_path = images_dir.join(&filename);
-            if file_path.exists() {
-                send_file(app, framed, format!("images/{}", filename), &file_path).await?;
-                break;
-            }
-        }
-    }
-
-    Ok(())
-}
-
-async fn send_global_assets(
-    app: &AppHandle,
-    framed: &mut Framed<TcpStream, P2PCodec>,
-) -> Result<(), String> {
-    log_info(app, "sync_driver", "Starting send_global_assets (Personas)");
-    let root = crate::storage_manager::legacy::storage_root(app)
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-    let avatars_dir = root.join("avatars");
-    let conn = crate::storage_manager::db::open_db(app)?;
-
-    let persona_ids: Vec<String> = {
-        let stmt_sql = "SELECT id FROM personas";
-        let mut stmt = conn
-            .prepare(stmt_sql)
-            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-        let rows = stmt
-            .query_map([], |row| row.get(0))
-            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-        rows.collect::<Result<_, _>>()
-            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
-    };
-
-    for id in persona_ids {
-        let mut dir_name = id.clone();
-        let mut dir = avatars_dir.join(&id);
-
-        if !dir.exists() {
-            let prefixed = format!("persona-{}", id);
-            let prefixed_dir = avatars_dir.join(&prefixed);
-            if prefixed_dir.exists() {
-                dir = prefixed_dir;
-                dir_name = prefixed;
-            }
-        }
-
-        if dir.exists() {
-            let mut entries = tokio::fs::read_dir(&dir)
-                .await
-                .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-
-            while let Ok(Some(entry)) = entries.next_entry().await {
-                let path = entry.path();
-                if path.is_file() {
-                    if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
-                        log_info(
-                            app,
-                            "sync_driver",
-                            format!("Sending persona asset: {}", filename),
-                        );
-                        send_file(
-                            app,
-                            framed,
-                            format!("avatars/{}/{}", dir_name, filename),
-                            &path,
-                        )
-                        .await?;
-                    }
-                }
-            }
-        }
-    }
-
-    if let Ok(app_data_dir) = app.path().app_data_dir() {
-        let generated_dir = app_data_dir.join("generated_images");
-        send_dir_recursive(app, framed, &generated_dir, "generated_images").await?;
     }
 
     Ok(())

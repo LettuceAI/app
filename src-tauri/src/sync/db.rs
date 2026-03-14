@@ -1,5 +1,7 @@
 use rusqlite::params;
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
+use tauri::Manager;
 
 use crate::storage_manager::db::DbConnection;
 use crate::sync::models::{
@@ -31,10 +33,10 @@ struct CurrentEntityRecord {
 #[derive(Debug, Clone)]
 struct EntityHeadRecord {
     payload_hash: String,
-    payload_schema: u16,
+    _payload_schema: u16,
     payload: Vec<u8>,
     deleted: bool,
-    last_change_id: i64,
+    _last_change_id: i64,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -141,6 +143,13 @@ struct MessagesSnapshot {
     usage_metadata: Vec<UsageMetadata>,
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct AssetRecord {
+    pub path: String,
+    pub content_hash: String,
+    pub size_bytes: u64,
+}
+
 pub fn get_or_create_local_device_id(conn: &DbConnection) -> Result<String, String> {
     if let Ok(device_id) = conn.query_row(
         "SELECT value FROM sync_local_state WHERE key = 'device_id'",
@@ -160,8 +169,8 @@ pub fn get_or_create_local_device_id(conn: &DbConnection) -> Result<String, Stri
     Ok(device_id)
 }
 
-pub fn rebuild_change_log(conn: &mut DbConnection) -> Result<(), String> {
-    let current_records = collect_current_entity_records(conn)?;
+pub fn rebuild_change_log(app: &tauri::AppHandle, conn: &mut DbConnection) -> Result<(), String> {
+    let current_records = collect_current_entity_records(app, conn)?;
     let current_keys = current_records
         .iter()
         .map(|record| record.key.clone())
@@ -206,6 +215,7 @@ pub fn load_peer_cursors(conn: &DbConnection, peer_device_id: &str) -> Result<Cu
         SyncDomain::Groups,
         SyncDomain::Sessions,
         SyncDomain::Messages,
+        SyncDomain::Assets,
     ];
     let mut cursors = Vec::with_capacity(domains.len());
 
@@ -308,129 +318,6 @@ pub fn apply_change_batch(
     materialize_domain_heads(conn, domain)
 }
 
-fn serialize_core_snapshot(conn: &DbConnection) -> Result<Vec<u8>, String> {
-    let (
-        meta,
-        settings,
-        personas,
-        models,
-        secrets,
-        provider_credentials,
-        prompt_templates,
-        _audio_providers,
-        _user_voices,
-    ) = fetch_global_core(conn)?;
-
-    bincode::serialize(&CoreSnapshot {
-        meta,
-        settings,
-        personas,
-        models,
-        secrets,
-        provider_credentials,
-        prompt_templates,
-    })
-    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
-}
-
-fn serialize_tts_snapshot(conn: &DbConnection) -> Result<Vec<u8>, String> {
-    let (
-        _meta,
-        _settings,
-        _personas,
-        _models,
-        _secrets,
-        _provider_credentials,
-        _prompt_templates,
-        audio_providers,
-        user_voices,
-    ) = fetch_global_core(conn)?;
-
-    bincode::serialize(&TtsSnapshot {
-        audio_providers,
-        user_voices,
-    })
-    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
-}
-
-fn serialize_lorebooks_snapshot(conn: &DbConnection) -> Result<Vec<u8>, String> {
-    let ids = collect_text_ids(conn, "SELECT id FROM lorebooks")?;
-    let payload = fetch_lorebooks(conn, &ids)?;
-    let (lorebooks, entries): (Vec<SyncLorebook>, Vec<SyncLorebookEntry>) =
-        bincode::deserialize(&payload)
-            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-    bincode::serialize(&LorebooksSnapshot { lorebooks, entries })
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
-}
-
-fn serialize_characters_snapshot(conn: &DbConnection) -> Result<Vec<u8>, String> {
-    let ids = collect_text_ids(conn, "SELECT id FROM characters")?;
-    let (
-        characters,
-        rules,
-        scenes,
-        scene_variants,
-        character_lorebooks,
-        chat_templates,
-        chat_template_messages,
-    ) = fetch_characters_data(conn, &ids)?;
-    bincode::serialize(&CharactersSnapshot {
-        characters,
-        rules,
-        scenes,
-        scene_variants,
-        character_lorebooks,
-        chat_templates,
-        chat_template_messages,
-    })
-    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
-}
-
-fn serialize_groups_snapshot(conn: &DbConnection) -> Result<Vec<u8>, String> {
-    let group_characters = fetch_group_configs(conn)?;
-    let group_session_ids = collect_text_ids(conn, "SELECT id FROM group_sessions")?;
-    let (
-        group_sessions,
-        group_participation,
-        group_messages,
-        group_message_variants,
-        usage_records,
-        usage_metadata,
-    ) = fetch_group_sessions_full(conn, &group_session_ids)?;
-    bincode::serialize(&GroupsSnapshot {
-        group_characters,
-        group_sessions,
-        group_participation,
-        group_messages,
-        group_message_variants,
-        usage_records,
-        usage_metadata,
-    })
-    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
-}
-
-fn serialize_sessions_snapshot(conn: &DbConnection) -> Result<Vec<u8>, String> {
-    let session_ids = collect_text_ids(conn, "SELECT id FROM sessions")?;
-    let (sessions, _, _, _, _) = fetch_sessions_data(conn, &session_ids)?;
-
-    bincode::serialize(&SessionsSnapshot { sessions })
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
-}
-
-fn serialize_messages_snapshot(conn: &DbConnection) -> Result<Vec<u8>, String> {
-    let session_ids = collect_text_ids(conn, "SELECT id FROM sessions")?;
-    let (_, messages, message_variants, session_usage_records, session_usage_metadata) =
-        fetch_sessions_data(conn, &session_ids)?;
-
-    bincode::serialize(&MessagesSnapshot {
-        messages,
-        message_variants,
-        usage_records: session_usage_records,
-        usage_metadata: session_usage_metadata,
-    })
-    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
-}
-
 fn sync_domain_name(domain: SyncDomain) -> &'static str {
     match domain {
         SyncDomain::Core => "core",
@@ -440,6 +327,7 @@ fn sync_domain_name(domain: SyncDomain) -> &'static str {
         SyncDomain::Groups => "groups",
         SyncDomain::Sessions => "sessions",
         SyncDomain::Messages => "messages",
+        SyncDomain::Assets => "assets",
     }
 }
 
@@ -452,6 +340,7 @@ fn parse_sync_domain(value: &str) -> Result<SyncDomain, String> {
         "groups" => Ok(SyncDomain::Groups),
         "sessions" => Ok(SyncDomain::Sessions),
         "messages" => Ok(SyncDomain::Messages),
+        "assets" => Ok(SyncDomain::Assets),
         _ => Err(crate::utils::err_msg(
             module_path!(),
             line!(),
@@ -506,7 +395,10 @@ fn push_entity_record<T: serde::Serialize>(
     Ok(())
 }
 
-fn collect_current_entity_records(conn: &DbConnection) -> Result<Vec<CurrentEntityRecord>, String> {
+fn collect_current_entity_records(
+    app: &tauri::AppHandle,
+    conn: &DbConnection,
+) -> Result<Vec<CurrentEntityRecord>, String> {
     let mut records = Vec::new();
 
     let (
@@ -824,7 +716,262 @@ fn collect_current_entity_records(conn: &DbConnection) -> Result<Vec<CurrentEnti
         )?;
     }
 
+    for item in collect_asset_records(app, conn)? {
+        push_entity_record(
+            &mut records,
+            SyncDomain::Assets,
+            "asset",
+            item.path.clone(),
+            &item,
+        )?;
+    }
+
     Ok(records)
+}
+
+fn collect_asset_records(
+    app: &tauri::AppHandle,
+    conn: &DbConnection,
+) -> Result<Vec<AssetRecord>, String> {
+    #[derive(serde::Deserialize)]
+    struct AttachmentStub {
+        path: String,
+    }
+
+    let mut records = Vec::new();
+    let mut seen = HashSet::new();
+    let root = crate::storage_manager::legacy::storage_root(app)?;
+    let avatars_dir = root.join("avatars");
+    let images_dir = root.join("images");
+
+    let persona_ids = collect_text_ids(conn, "SELECT id FROM personas")?;
+    for id in persona_ids {
+        let raw = avatars_dir.join(&id);
+        let prefixed = avatars_dir.join(format!("persona-{}", id));
+        let dir = if raw.exists() { raw } else { prefixed };
+        if dir.exists() {
+            collect_dir_assets(app, &dir, &mut seen, &mut records, |path, name| {
+                let dir_name = path
+                    .file_name()
+                    .and_then(|value| value.to_str())
+                    .unwrap_or_default();
+                format!("avatars/{}/{}", dir_name, name)
+            })?;
+        }
+    }
+
+    let character_ids = collect_text_ids(conn, "SELECT id FROM characters")?;
+    for id in &character_ids {
+        let raw = avatars_dir.join(id);
+        let prefixed = avatars_dir.join(format!("character-{}", id));
+        let dir = if raw.exists() { raw } else { prefixed };
+        if dir.exists() {
+            collect_dir_assets(app, &dir, &mut seen, &mut records, |path, name| {
+                let dir_name = path
+                    .file_name()
+                    .and_then(|value| value.to_str())
+                    .unwrap_or_default();
+                format!("avatars/{}/{}", dir_name, name)
+            })?;
+        }
+
+        let bg_path: Option<String> = conn
+            .query_row(
+                "SELECT background_image_path FROM characters WHERE id = ?1",
+                params![id],
+                |row| row.get(0),
+            )
+            .unwrap_or(None);
+        if let Some(bg_id) = bg_path {
+            add_image_asset(&images_dir, &bg_id, app, &mut seen, &mut records)?;
+        }
+    }
+
+    let group_background_ids = collect_text_ids(
+        conn,
+        "SELECT background_image_path FROM group_characters WHERE background_image_path IS NOT NULL AND background_image_path != ''",
+    )?;
+    for bg_id in group_background_ids {
+        add_image_asset(&images_dir, &bg_id, app, &mut seen, &mut records)?;
+    }
+
+    let group_session_background_ids = collect_text_ids(
+        conn,
+        "SELECT background_image_path FROM group_sessions WHERE background_image_path IS NOT NULL AND background_image_path != ''",
+    )?;
+    for bg_id in group_session_background_ids {
+        add_image_asset(&images_dir, &bg_id, app, &mut seen, &mut records)?;
+    }
+
+    let mut stmt = conn
+        .prepare("SELECT id, character_id FROM sessions")
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    for row in rows {
+        let (session_id, character_id) =
+            row.map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        let raw_base = root.join("sessions").join(&character_id);
+        let prefixed_name = format!("character-{}", character_id);
+        let (base_dir, dir_name) = if raw_base.exists() {
+            (raw_base, character_id.clone())
+        } else {
+            (root.join("sessions").join(&prefixed_name), prefixed_name)
+        };
+        let session_dir = base_dir.join(&session_id);
+        if session_dir.exists() {
+            collect_dir_assets(app, &session_dir, &mut seen, &mut records, |_, name| {
+                format!("sessions/{}/{}/{}", dir_name, session_id, name)
+            })?;
+        }
+    }
+
+    for table in ["messages", "group_messages"] {
+        let mut stmt = conn
+            .prepare(&format!(
+                "SELECT attachments FROM {} WHERE attachments != '[]'",
+                table
+            ))
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        let rows = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        for row in rows {
+            let json = row.map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+            if let Ok(atts) = serde_json::from_str::<Vec<AttachmentStub>>(&json) {
+                for att in atts {
+                    add_file_asset(app, &att.path, &mut seen, &mut records)?;
+                }
+            }
+        }
+    }
+
+    if let Ok(app_data_dir) = app.path().app_data_dir() {
+        let generated_dir = app_data_dir.join("generated_images");
+        if generated_dir.exists() {
+            collect_recursive_assets(
+                app,
+                &generated_dir,
+                "generated_images",
+                &mut seen,
+                &mut records,
+            )?;
+        }
+    }
+
+    Ok(records)
+}
+
+fn collect_dir_assets<F: Fn(&Path, &str) -> String>(
+    app: &tauri::AppHandle,
+    dir: &Path,
+    seen: &mut HashSet<String>,
+    records: &mut Vec<AssetRecord>,
+    path_builder: F,
+) -> Result<(), String> {
+    let entries = std::fs::read_dir(dir)
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        let path = entry.path();
+        if path.is_file() {
+            if let Some(name) = path.file_name().and_then(|value| value.to_str()) {
+                add_file_asset(app, &path_builder(dir, name), seen, records)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn collect_recursive_assets(
+    app: &tauri::AppHandle,
+    dir: &Path,
+    prefix: &str,
+    seen: &mut HashSet<String>,
+    records: &mut Vec<AssetRecord>,
+) -> Result<(), String> {
+    let entries = std::fs::read_dir(dir)
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        let path = entry.path();
+        let name = match path.file_name().and_then(|value| value.to_str()) {
+            Some(value) => value,
+            None => continue,
+        };
+        let rel = format!("{}/{}", prefix, name);
+        if path.is_dir() {
+            collect_recursive_assets(app, &path, &rel, seen, records)?;
+        } else if path.is_file() {
+            add_file_asset(app, &rel, seen, records)?;
+        }
+    }
+    Ok(())
+}
+
+fn add_image_asset(
+    images_dir: &Path,
+    bg_id: &str,
+    app: &tauri::AppHandle,
+    seen: &mut HashSet<String>,
+    records: &mut Vec<AssetRecord>,
+) -> Result<(), String> {
+    if bg_id.is_empty() || bg_id.starts_with("data:") || bg_id.starts_with("http") {
+        return Ok(());
+    }
+
+    for ext in ["webp", "png", "jpg", "jpeg", "gif"] {
+        let filename = format!("{}.{}", bg_id, ext);
+        let file_path = images_dir.join(&filename);
+        if file_path.exists() {
+            add_file_asset(app, &format!("images/{}", filename), seen, records)?;
+            break;
+        }
+    }
+
+    Ok(())
+}
+
+fn add_file_asset(
+    app: &tauri::AppHandle,
+    relative_path: &str,
+    seen: &mut HashSet<String>,
+    records: &mut Vec<AssetRecord>,
+) -> Result<(), String> {
+    if relative_path.starts_with("http")
+        || relative_path.starts_with("data:")
+        || relative_path.contains("..")
+        || relative_path.starts_with('/')
+        || relative_path.contains('\\')
+        || !seen.insert(relative_path.to_string())
+    {
+        return Ok(());
+    }
+
+    let absolute_path = if relative_path.starts_with("generated_images/") {
+        app.path()
+            .app_data_dir()
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
+            .join(relative_path)
+    } else {
+        crate::storage_manager::legacy::storage_root(app)?.join(relative_path)
+    };
+
+    if !absolute_path.is_file() {
+        return Ok(());
+    }
+
+    let content = std::fs::read(&absolute_path)
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    records.push(AssetRecord {
+        path: relative_path.to_string(),
+        content_hash: blake3::hash(&content).to_hex().to_string(),
+        size_bytes: content.len() as u64,
+    });
+    Ok(())
 }
 
 fn load_entity_heads(conn: &DbConnection) -> Result<HashMap<EntityKey, EntityHeadRecord>, String> {
@@ -870,10 +1017,10 @@ fn load_entity_heads(conn: &DbConnection) -> Result<HashMap<EntityKey, EntityHea
             },
             EntityHeadRecord {
                 payload_hash,
-                payload_schema,
+                _payload_schema: payload_schema,
                 payload,
                 deleted: deleted != 0,
-                last_change_id,
+                _last_change_id: last_change_id,
             },
         );
     }
@@ -1102,6 +1249,7 @@ fn materialize_domain_heads(conn: &mut DbConnection, domain: SyncDomain) -> Resu
                 .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
             apply_messages_snapshot(conn, &payload)
         }
+        SyncDomain::Assets => Ok(()),
     }
 }
 

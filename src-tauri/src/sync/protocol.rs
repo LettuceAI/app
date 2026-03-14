@@ -9,6 +9,7 @@ pub enum SyncDomain {
     Groups,
     Sessions,
     Messages,
+    Assets,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -74,14 +75,16 @@ pub enum P2PMessage {
         domain: SyncDomain,
         changes: Vec<ChangeRecord>,
     },
+    AssetContent {
+        entity_id: String,
+        path: String,
+        content_hash: String,
+        content: Vec<u8>,
+    },
 
     // Control
     SyncComplete,
     StatusUpdate(String),
-    FileTransfer {
-        path: String,
-        content: Vec<u8>,
-    },
     Disconnect,
     Error(String),
 }

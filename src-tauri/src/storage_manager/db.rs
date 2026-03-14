@@ -786,6 +786,38 @@ pub fn init_db(_app: &tauri::AppHandle, conn: &Connection) -> Result<(), String>
     )
     .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 
+    let mut stmt_sync_heads = conn
+        .prepare("PRAGMA table_info(sync_entity_heads)")
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    let mut sync_head_cols = std::collections::HashSet::new();
+    let mut rows_sync_heads = stmt_sync_heads
+        .query([])
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    while let Some(row) = rows_sync_heads
+        .next()
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
+    {
+        let col_name: String = row
+            .get(1)
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        sync_head_cols.insert(col_name);
+    }
+
+    if !sync_head_cols.contains("payload_schema") {
+        conn.execute(
+            "ALTER TABLE sync_entity_heads ADD COLUMN payload_schema INTEGER NOT NULL DEFAULT 1",
+            [],
+        )
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    }
+    if !sync_head_cols.contains("payload") {
+        conn.execute(
+            "ALTER TABLE sync_entity_heads ADD COLUMN payload BLOB NOT NULL DEFAULT X''",
+            [],
+        )
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    }
+
     // Migrations: add reasoning_tokens and image_tokens to usage_records if missing
     let mut stmt = conn
         .prepare("PRAGMA table_info(usage_records)")
