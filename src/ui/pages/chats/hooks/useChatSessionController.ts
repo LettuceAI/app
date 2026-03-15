@@ -228,6 +228,28 @@ export function useChatSessionController({
         }
 
         if (!cancelled) {
+          const rawSavedDraft = localStorage.getItem(`chat_draft_${normalizedSession.id}`);
+          let savedDraft = "";
+          if (rawSavedDraft) {
+            try {
+              const parsed = JSON.parse(rawSavedDraft);
+              savedDraft = parsed.text || "";
+            } catch (e) {
+              // Legacy format or corrupted
+              savedDraft = rawSavedDraft;
+            }
+          }
+
+          // Don't restore draft if it matches the last user message (it was probably already sent)
+          if (savedDraft) {
+            const lastUserMessage = [...orderedMessages]
+              .reverse()
+              .find((m) => m.role === "user");
+            if (lastUserMessage && lastUserMessage.content.trim() === savedDraft.trim()) {
+              savedDraft = "";
+            }
+          }
+
           recordSessionTimestamp(normalizedSession.updatedAt);
           dispatch({
             type: "BATCH",
@@ -236,6 +258,7 @@ export function useChatSessionController({
               { type: "SET_PERSONA", payload: selectedPersona },
               { type: "SET_SESSION", payload: normalizedSession },
               { type: "SET_MESSAGES", payload: orderedMessages },
+              { type: "SET_DRAFT", payload: savedDraft || "" },
             ],
           });
         }

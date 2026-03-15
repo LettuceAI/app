@@ -1,4 +1,4 @@
-import { useCallback, useReducer, useRef } from "react";
+import { useCallback, useReducer, useRef, useEffect } from "react";
 
 import { useChatAbortController } from "./useChatAbortController";
 import { isStartingSceneMessage, queueSessionSave } from "./chatControllerShared";
@@ -163,6 +163,18 @@ export function useChatController(
     context: controllerContext,
   });
 
+  useEffect(() => {
+    const sessionId = state.session?.id;
+    if (!sessionId) return;
+
+    const key = `chat_draft_${sessionId}`;
+    if (state.draft.trim()) {
+      localStorage.setItem(key, JSON.stringify({ text: state.draft, updatedAt: Date.now() }));
+    } else {
+      localStorage.removeItem(key);
+    }
+  }, [state.session?.id, state.draft]);
+
   return {
     // State
     character: state.character,
@@ -186,7 +198,7 @@ export function useChatController(
     hasMoreMessagesBefore: hasMoreMessagesBeforeRef.current,
 
     // Setters
-    setDraft: useCallback((value: string) => dispatch({ type: "SET_DRAFT", payload: value }), []),
+    setDraft: useCallback((value: string) => dispatch({ type: "SET_DRAFT", payload: value }), [dispatch]),
     setError: useCallback(
       (value: string | null) => dispatch({ type: "SET_ERROR", payload: value }),
       [],

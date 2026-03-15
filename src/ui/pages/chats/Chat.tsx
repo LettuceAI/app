@@ -1328,7 +1328,6 @@ export function ChatConversationPage() {
 
     if (hasContent) {
       const content = draft.trim();
-      setDraft("");
       playAccessibilitySound("send", accessibilitySettings);
       await handleSend(content, undefined, { swapPlaces });
     } else {

@@ -95,6 +95,7 @@ export type ChatAction =
   | { type: "ADD_PENDING_ATTACHMENT"; payload: ImageAttachment }
   | { type: "REMOVE_PENDING_ATTACHMENT"; payload: string }
   | { type: "CLEAR_PENDING_ATTACHMENTS" }
+  | { type: "CLEAR_DRAFT" }
   | { type: "UPDATE_MESSAGE_REASONING"; payload: { messageId: string; reasoning: string } }
   | { type: "CLEAR_STREAMING_REASONING"; payload: string }
   | { type: "TRANSFER_REASONING"; payload: { fromId: string; toId: string } };
@@ -239,6 +240,9 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
 
     case "CLEAR_PENDING_ATTACHMENTS":
       return { ...state, pendingAttachments: [] };
+
+    case "CLEAR_DRAFT":
+      return { ...state, draft: "" };
 
     case "UPDATE_MESSAGE_REASONING":
       const existingReasoning = state.streamingReasoning[action.payload.messageId] || "";

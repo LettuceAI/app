@@ -28,6 +28,7 @@ import {
 import { storageBridge } from "../../../core/storage/files";
 import { ChatTemplateSelector } from "./components/ChatTemplateSelector";
 import { useI18n } from "../../../core/i18n/context";
+import { cleanupOldDrafts } from "./utils/draftCleanup";
 
 export function ChatPage() {
   const [characters, setCharacters] = useState<Character[]>([]);
@@ -83,6 +84,10 @@ export function ChatPage() {
     };
     window.addEventListener("chats:cycleViewMode", handler);
     return () => window.removeEventListener("chats:cycleViewMode", handler);
+  }, []);
+
+  useEffect(() => {
+    cleanupOldDrafts();
   }, []);
 
   const loadCharacters = async () => {
