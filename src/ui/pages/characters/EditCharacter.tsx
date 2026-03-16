@@ -20,6 +20,7 @@ import {
   EyeOff,
   Check,
   Info,
+  AlertTriangle,
   MessageSquare,
   ChevronRight,
 } from "lucide-react";
@@ -277,268 +278,12 @@ export function EditCharacterPage() {
                   </motion.div>
                 )}
               </AnimatePresence>
-
-              {/* Avatar Section - CreateCharacter Style */}
-              <div className="flex flex-col items-center py-4">
-                <div className="relative">
-                  <AvatarPicker
-                    currentAvatarPath={avatarPath}
-                    onAvatarChange={(path) => setFields({ avatarPath: path })}
-                    avatarCrop={avatarCrop}
-                    onAvatarCropChange={(crop) => setFields({ avatarCrop: crop })}
-                    avatarRoundPath={avatarRoundPath}
-                    onAvatarRoundChange={(roundPath) => setFields({ avatarRoundPath: roundPath })}
-                    placeholder={avatarInitial}
-                  />
-
-                  {/* Remove Button - top left */}
-                  {avatarPath && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setFields({ avatarPath: "", avatarCrop: null, avatarRoundPath: null })
-                      }
-                      className="absolute -top-1 -left-1 z-30 flex h-10 w-10 items-center justify-center rounded-full border border-fg/10 bg-surface-el text-fg/60 transition hover:bg-danger/80 hover:border-danger/50 hover:text-fg active:scale-95"
-                      aria-label={t("common.buttons.remove")}
-                    >
-                      <X size={14} strokeWidth={2.5} />
-                    </button>
-                  )}
-                </div>
-                <p className="mt-3 text-xs text-fg/40">{t("common.buttons.add")}</p>
-              </div>
-
-              {/* Name Input */}
-              <div className="space-y-2">
-                <label className="text-[10px] font-medium uppercase tracking-wide text-fg/50">
-                  Character Name
-                </label>
-                <input
-                  value={name}
-                  onChange={(e) => setFields({ name: e.target.value })}
-                  placeholder="Enter character name..."
-                  className="w-full rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3 text-base text-fg placeholder-fg/40 transition focus:border-fg/25 focus:outline-none"
-                />
-              </div>
             </>
           )}
 
           {/* Settings Tab Content */}
           {activeTab === "settings" && (
             <>
-              {/* Avatar Gradient Toggle */}
-              {avatarPath && (
-                <div className="space-y-3">
-                  <label className="flex cursor-pointer items-center justify-between rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3 transition hover:bg-surface-el/30">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <Sparkles className="h-4 w-4 text-accent" />
-                        <p className="text-sm font-medium text-fg">Avatar Gradient</p>
-                      </div>
-                      <p className="mt-0.5 text-xs text-fg/50">
-                        Generate colorful gradients from avatar colors
-                      </p>
-                    </div>
-                    <div className="relative ml-3">
-                      <input
-                        type="checkbox"
-                        checked={!disableAvatarGradient}
-                        onChange={(e) => setFields({ disableAvatarGradient: !e.target.checked })}
-                        className="peer sr-only"
-                      />
-                      <div className="h-6 w-11 rounded-full bg-fg/20 transition peer-checked:bg-accent/80"></div>
-                      <div className="absolute left-1 top-1 h-4 w-4 rounded-full bg-fg transition peer-checked:translate-x-5"></div>
-                    </div>
-                  </label>
-                </div>
-              )}
-
-              {/* Custom Gradient Override */}
-              {avatarPath && (
-                <div className="space-y-3">
-                  <div className="rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <Sparkles className="h-4 w-4 text-secondary" />
-                          <p className="text-sm font-medium text-fg">Custom Gradient</p>
-                        </div>
-                        <p className="mt-0.5 text-xs text-fg/50">
-                          Override auto-detected colors with your own
-                        </p>
-                      </div>
-                      <label className="relative ml-3 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={customGradientEnabled}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              // Enable - set default colors if none exist
-                              const colors =
-                                customGradientColors.length > 0
-                                  ? customGradientColors
-                                  : ["#4f46e5", "#7c3aed"];
-                              setFields({
-                                customGradientEnabled: true,
-                                customGradientColors: colors,
-                              });
-                            } else {
-                              // Disable but preserve colors
-                              setFields({ customGradientEnabled: false });
-                            }
-                          }}
-                          className="peer sr-only"
-                        />
-                        <div className="h-6 w-11 rounded-full bg-fg/20 transition peer-checked:bg-secondary/80"></div>
-                        <div className="absolute left-1 top-1 h-4 w-4 rounded-full bg-fg transition peer-checked:translate-x-5"></div>
-                      </label>
-                    </div>
-
-                    {/* Color Pickers - shown when custom gradient enabled */}
-                    {customGradientEnabled && (
-                      <div className="mt-4 space-y-3 border-t border-fg/10 pt-4">
-                        {/* Gradient Preview */}
-                        <div
-                          className="h-16 w-full rounded-lg"
-                          style={{
-                            background:
-                              customGradientColors.length >= 3
-                                ? `linear-gradient(135deg, ${customGradientColors[0]}, ${customGradientColors[2]}, ${customGradientColors[1]})`
-                                : customGradientColors.length >= 2
-                                  ? `linear-gradient(135deg, ${customGradientColors[0]}, ${customGradientColors[1]})`
-                                  : customGradientColors[0],
-                          }}
-                        />
-
-                        {/* Color 1 */}
-                        <div className="flex items-center gap-3">
-                          <label className="text-xs text-fg/50 w-12">Start</label>
-                          <div className="relative shrink-0">
-                            <input
-                              type="color"
-                              value={customGradientColors[0] || "#4f46e5"}
-                              onChange={(e) => {
-                                const newColors = [...customGradientColors];
-                                newColors[0] = e.target.value;
-                                setFields({ customGradientColors: newColors });
-                              }}
-                              className="h-10 w-10 cursor-pointer rounded-lg border-2 border-fg/20 p-0.5"
-                              style={{ backgroundColor: customGradientColors[0] || "#4f46e5" }}
-                            />
-                          </div>
-                          <input
-                            type="text"
-                            value={customGradientColors[0] || ""}
-                            onChange={(e) => {
-                              const newColors = [...customGradientColors];
-                              newColors[0] = e.target.value;
-                              setFields({ customGradientColors: newColors });
-                            }}
-                            placeholder="#4f46e5"
-                            className="flex-1 rounded-lg border border-fg/10 bg-surface-el/50 px-3 py-2 text-sm font-mono text-fg placeholder:text-fg/30 focus:border-secondary/50 focus:outline-none"
-                          />
-                        </div>
-
-                        {/* Middle Color (optional) */}
-                        {customGradientColors.length >= 3 ? (
-                          <div className="flex items-center gap-3">
-                            <label className="text-xs text-fg/50 w-12">Mid</label>
-                            <div className="relative shrink-0">
-                              <input
-                                type="color"
-                                value={customGradientColors[2] || "#a855f7"}
-                                onChange={(e) => {
-                                  const newColors = [...customGradientColors];
-                                  newColors[2] = e.target.value;
-                                  setFields({ customGradientColors: newColors });
-                                }}
-                                className="h-10 w-10 cursor-pointer rounded-lg border-2 border-fg/20 p-0.5"
-                                style={{ backgroundColor: customGradientColors[2] || "#a855f7" }}
-                              />
-                            </div>
-                            <input
-                              type="text"
-                              value={customGradientColors[2] || ""}
-                              onChange={(e) => {
-                                const newColors = [...customGradientColors];
-                                newColors[2] = e.target.value;
-                                setFields({ customGradientColors: newColors });
-                              }}
-                              placeholder="#a855f7"
-                              className="flex-1 rounded-lg border border-fg/10 bg-surface-el/50 px-3 py-2 text-sm font-mono text-fg placeholder:text-fg/30 focus:border-secondary/50 focus:outline-none"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => {
-                                // Remove middle color - reorder so End stays at index 1
-                                const newColors = [
-                                  customGradientColors[0],
-                                  customGradientColors[1],
-                                ];
-                                setFields({ customGradientColors: newColors });
-                              }}
-                              className="shrink-0 text-xs text-danger hover:text-danger"
-                            >
-                              ✕
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              // Add middle color between Start and End
-                              const newColors = [
-                                customGradientColors[0],
-                                customGradientColors[1],
-                                "#a855f7",
-                              ];
-                              setFields({ customGradientColors: newColors });
-                            }}
-                            className="text-xs text-secondary hover:text-secondary py-1"
-                          >
-                            + Add middle color
-                          </button>
-                        )}
-
-                        {/* Color 2 (End) */}
-                        <div className="flex items-center gap-3">
-                          <label className="text-xs text-fg/50 w-12">End</label>
-                          <div className="relative shrink-0">
-                            <input
-                              type="color"
-                              value={customGradientColors[1] || "#7c3aed"}
-                              onChange={(e) => {
-                                const newColors = [...customGradientColors];
-                                newColors[1] = e.target.value;
-                                setFields({ customGradientColors: newColors });
-                              }}
-                              className="h-10 w-10 cursor-pointer rounded-lg border-2 p-0.5"
-                              style={{ backgroundColor: customGradientColors[1] || "#7c3aed" }}
-                            />
-                          </div>
-                          <input
-                            type="text"
-                            value={customGradientColors[1] || ""}
-                            onChange={(e) => {
-                              const newColors = [...customGradientColors];
-                              newColors[1] = e.target.value;
-                              setFields({ customGradientColors: newColors });
-                            }}
-                            placeholder="#7c3aed"
-                            className="flex-1 rounded-lg border border-fg/10 bg-surface-el/50 px-3 py-2 text-sm font-mono text-fg placeholder:text-fg/30 focus:border-secondary/50 focus:outline-none"
-                          />
-                        </div>
-
-                        {/* Optional: Text color override hint */}
-                        <p className="text-[10px] text-fg/40 mt-2">
-                          Text colors are auto-calculated based on gradient brightness
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
               {/* Background Image Section */}
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
@@ -604,125 +349,406 @@ export function EditCharacterPage() {
                   Optional background image for chat conversations with this character
                 </p>
               </div>
+
+              {avatarPath && (
+                <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                  {/* Avatar Gradient Toggle */}
+                  <div className="space-y-3">
+                    <label className="flex cursor-pointer items-center justify-between rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3 transition hover:bg-surface-el/30">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <Sparkles className="h-4 w-4 text-accent" />
+                          <p className="text-sm font-medium text-fg">Avatar Gradient</p>
+                        </div>
+                        <p className="mt-0.5 text-xs text-fg/50">
+                          Generate colorful gradients from avatar colors
+                        </p>
+                      </div>
+                      <div className="relative ml-3">
+                        <input
+                          type="checkbox"
+                          checked={!disableAvatarGradient}
+                          onChange={(e) => setFields({ disableAvatarGradient: !e.target.checked })}
+                          className="peer sr-only"
+                        />
+                        <div className="h-6 w-11 rounded-full bg-fg/20 transition peer-checked:bg-accent/80"></div>
+                        <div className="absolute left-1 top-1 h-4 w-4 rounded-full bg-fg transition peer-checked:translate-x-5"></div>
+                      </div>
+                    </label>
+                    <AnimatePresence initial={false}>
+                      {customGradientEnabled && !disableAvatarGradient && (
+                        <motion.div
+                          initial={{ opacity: 0, y: -6 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -6 }}
+                          transition={{ duration: 0.18, ease: "easeOut" }}
+                          className="rounded-lg border border-warning/20 bg-warning/8 px-2.5 py-2"
+                        >
+                          <div className="flex min-h-4 items-center gap-2 text-xs text-warning/85">
+                            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                            <span className="block leading-none">
+                              Custom Gradient overrides the automatic avatar gradient.
+                            </span>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+
+                  {/* Custom Gradient Override */}
+                  <div className="space-y-3">
+                    <div className="rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <Sparkles className="h-4 w-4 text-secondary" />
+                            <p className="text-sm font-medium text-fg">Custom Gradient</p>
+                          </div>
+                          <p className="mt-0.5 text-xs text-fg/50">
+                            Override auto-detected colors with your own
+                          </p>
+                        </div>
+                        <label className="relative ml-3 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={customGradientEnabled}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                const colors =
+                                  customGradientColors.length > 0
+                                    ? customGradientColors
+                                    : ["#4f46e5", "#7c3aed"];
+                                setFields({
+                                  customGradientEnabled: true,
+                                  customGradientColors: colors,
+                                });
+                              } else {
+                                setFields({ customGradientEnabled: false });
+                              }
+                            }}
+                            className="peer sr-only"
+                          />
+                          <div className="h-6 w-11 rounded-full bg-fg/20 transition peer-checked:bg-secondary/80"></div>
+                          <div className="absolute left-1 top-1 h-4 w-4 rounded-full bg-fg transition peer-checked:translate-x-5"></div>
+                        </label>
+                      </div>
+
+                      {customGradientEnabled && (
+                        <div className="mt-4 space-y-3 border-t border-fg/10 pt-4">
+                          <div
+                            className="h-16 w-full rounded-lg"
+                            style={{
+                              background:
+                                customGradientColors.length >= 3
+                                  ? `linear-gradient(135deg, ${customGradientColors[0]}, ${customGradientColors[2]}, ${customGradientColors[1]})`
+                                  : customGradientColors.length >= 2
+                                    ? `linear-gradient(135deg, ${customGradientColors[0]}, ${customGradientColors[1]})`
+                                    : customGradientColors[0],
+                            }}
+                          />
+
+                          <div className="flex items-center gap-3">
+                            <label className="w-12 text-xs text-fg/50">Start</label>
+                            <div className="relative shrink-0">
+                              <input
+                                type="color"
+                                value={customGradientColors[0] || "#4f46e5"}
+                                onChange={(e) => {
+                                  const newColors = [...customGradientColors];
+                                  newColors[0] = e.target.value;
+                                  setFields({ customGradientColors: newColors });
+                                }}
+                                className="h-10 w-10 cursor-pointer rounded-lg border-2 border-fg/20 p-0.5"
+                                style={{ backgroundColor: customGradientColors[0] || "#4f46e5" }}
+                              />
+                            </div>
+                            <input
+                              type="text"
+                              value={customGradientColors[0] || ""}
+                              onChange={(e) => {
+                                const newColors = [...customGradientColors];
+                                newColors[0] = e.target.value;
+                                setFields({ customGradientColors: newColors });
+                              }}
+                              placeholder="#4f46e5"
+                              className="flex-1 rounded-lg border border-fg/10 bg-surface-el/50 px-3 py-2 text-sm font-mono text-fg placeholder:text-fg/30 focus:border-secondary/50 focus:outline-none"
+                            />
+                          </div>
+
+                          {customGradientColors.length >= 3 ? (
+                            <div className="flex items-center gap-3">
+                              <label className="w-12 text-xs text-fg/50">Mid</label>
+                              <div className="relative shrink-0">
+                                <input
+                                  type="color"
+                                  value={customGradientColors[2] || "#a855f7"}
+                                  onChange={(e) => {
+                                    const newColors = [...customGradientColors];
+                                    newColors[2] = e.target.value;
+                                    setFields({ customGradientColors: newColors });
+                                  }}
+                                  className="h-10 w-10 cursor-pointer rounded-lg border-2 border-fg/20 p-0.5"
+                                  style={{ backgroundColor: customGradientColors[2] || "#a855f7" }}
+                                />
+                              </div>
+                              <input
+                                type="text"
+                                value={customGradientColors[2] || ""}
+                                onChange={(e) => {
+                                  const newColors = [...customGradientColors];
+                                  newColors[2] = e.target.value;
+                                  setFields({ customGradientColors: newColors });
+                                }}
+                                placeholder="#a855f7"
+                                className="flex-1 rounded-lg border border-fg/10 bg-surface-el/50 px-3 py-2 text-sm font-mono text-fg placeholder:text-fg/30 focus:border-secondary/50 focus:outline-none"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const newColors = [
+                                    customGradientColors[0],
+                                    customGradientColors[1],
+                                  ];
+                                  setFields({ customGradientColors: newColors });
+                                }}
+                                className="shrink-0 text-xs text-danger hover:text-danger"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const newColors = [
+                                  customGradientColors[0],
+                                  customGradientColors[1],
+                                  "#a855f7",
+                                ];
+                                setFields({ customGradientColors: newColors });
+                              }}
+                              className="py-1 text-xs text-secondary hover:text-secondary"
+                            >
+                              + Add middle color
+                            </button>
+                          )}
+
+                          <div className="flex items-center gap-3">
+                            <label className="w-12 text-xs text-fg/50">End</label>
+                            <div className="relative shrink-0">
+                              <input
+                                type="color"
+                                value={customGradientColors[1] || "#7c3aed"}
+                                onChange={(e) => {
+                                  const newColors = [...customGradientColors];
+                                  newColors[1] = e.target.value;
+                                  setFields({ customGradientColors: newColors });
+                                }}
+                                className="h-10 w-10 cursor-pointer rounded-lg border-2 p-0.5"
+                                style={{ backgroundColor: customGradientColors[1] || "#7c3aed" }}
+                              />
+                            </div>
+                            <input
+                              type="text"
+                              value={customGradientColors[1] || ""}
+                              onChange={(e) => {
+                                const newColors = [...customGradientColors];
+                                newColors[1] = e.target.value;
+                                setFields({ customGradientColors: newColors });
+                              }}
+                              placeholder="#7c3aed"
+                              className="flex-1 rounded-lg border border-fg/10 bg-surface-el/50 px-3 py-2 text-sm font-mono text-fg placeholder:text-fg/30 focus:border-secondary/50 focus:outline-none"
+                            />
+                          </div>
+
+                          <p className="mt-2 text-[10px] text-fg/40">
+                            Text colors are auto-calculated based on gradient brightness
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
             </>
           )}
 
           {/* Character Tab: Personality & Scenes */}
           {activeTab === "character" && (
             <>
-              <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <div className="rounded-lg border border-fg/10 bg-fg/5 p-1.5">
-                    <Info className="h-4 w-4 text-fg/60" />
-                  </div>
-                  <h3 className="text-sm font-semibold text-fg">Description</h3>
-                </div>
-                <textarea
-                  value={description}
-                  onChange={(e) => setFields({ description: e.target.value })}
-                  rows={3}
-                  placeholder="Short summary shown in lists and cards..."
-                  className="w-full resize-none rounded-xl border border-fg/10 bg-surface-el/20 px-3.5 py-3 text-sm leading-relaxed text-fg placeholder-fg/40 transition focus:border-fg/25 focus:outline-none"
-                />
-                <p className="text-xs text-fg/50">
-                  Optional short description for display purposes.
-                </p>
-              </div>
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(320px,360px)_minmax(0,1fr)] xl:items-start">
+                <div className="space-y-4 xl:sticky xl:top-4">
+                  <div className="rounded-2xl border border-fg/10 bg-surface-el/20 p-4">
+                    <div className="flex flex-col items-center">
+                      <div className="relative">
+                        <AvatarPicker
+                          currentAvatarPath={avatarPath}
+                          onAvatarChange={(path) => setFields({ avatarPath: path })}
+                          avatarCrop={avatarCrop}
+                          onAvatarCropChange={(crop) => setFields({ avatarCrop: crop })}
+                          avatarRoundPath={avatarRoundPath}
+                          onAvatarRoundChange={(roundPath) =>
+                            setFields({ avatarRoundPath: roundPath })
+                          }
+                          placeholder={avatarInitial}
+                        />
 
-              <div className="space-y-2">
-                <label className="text-[10px] font-medium uppercase tracking-wide text-fg/50">
-                  Nickname
-                </label>
-                <input
-                  value={nickname}
-                  onChange={(e) => setFields({ nickname: e.target.value })}
-                  placeholder="Optional nickname..."
-                  className="w-full rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3 text-sm text-fg placeholder-fg/40 transition focus:border-fg/25 focus:outline-none"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-medium uppercase tracking-wide text-fg/50">
-                    Creator
-                  </label>
-                  <input
-                    value={creator}
-                    onChange={(e) => setFields({ creator: e.target.value })}
-                    placeholder="Optional creator name..."
-                    className="w-full rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3 text-sm text-fg placeholder-fg/40 transition focus:border-fg/25 focus:outline-none"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-medium uppercase tracking-wide text-fg/50">
-                    Tags
-                  </label>
-                  <input
-                    value={tagsText}
-                    onChange={(e) => setFields({ tagsText: e.target.value })}
-                    placeholder="tag1, tag2"
-                    className="w-full rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3 text-sm text-fg placeholder-fg/40 transition focus:border-fg/25 focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-[10px] font-medium uppercase tracking-wide text-fg/50">
-                  Creator Notes
-                </label>
-                <textarea
-                  value={creatorNotes}
-                  onChange={(e) => setFields({ creatorNotes: e.target.value })}
-                  rows={3}
-                  placeholder="Optional creator notes..."
-                  className="w-full resize-none rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3 text-sm text-fg placeholder-fg/40 transition focus:border-fg/25 focus:outline-none"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-[10px] font-medium uppercase tracking-wide text-fg/50">
-                  Creator Notes Multilingual (JSON)
-                </label>
-                <textarea
-                  value={creatorNotesMultilingualText}
-                  onChange={(e) => setFields({ creatorNotesMultilingualText: e.target.value })}
-                  rows={4}
-                  placeholder='{"en":"note","ja":"メモ"}'
-                  className="w-full resize-none rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3 font-mono text-xs text-fg placeholder-fg/40 transition focus:border-fg/25 focus:outline-none"
-                />
-              </div>
-
-              {/* Personality Section */}
-              <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <div className="rounded-lg border border-accent/30 bg-accent/10 p-1.5">
-                    <Sparkles className="h-4 w-4 text-accent" />
-                  </div>
-                  <h3 className="text-sm font-semibold text-fg">Definition</h3>
-                </div>
-                <textarea
-                  value={definition}
-                  onChange={(e) => setFields({ definition: e.target.value })}
-                  rows={8}
-                  placeholder="Describe who this character is, their personality, background, speaking style, and how they should interact..."
-                  className="w-full resize-none rounded-xl border border-fg/10 bg-surface-el/20 px-3.5 py-3 text-sm leading-relaxed text-fg placeholder-fg/40 transition focus:border-fg/25 focus:outline-none"
-                />
-                <div className="flex justify-between text-[11px] text-fg/50">
-                  <span>Be detailed to create a unique personality</span>
-                  <span>{wordCount(definition)} words</span>
-                </div>
-                <div className="rounded-xl border border-warning/30 bg-warning/10 px-3.5 py-3">
-                  <div className="text-[11px] font-medium text-warning">Available Placeholders</div>
-                  <div className="mt-2 space-y-1 text-xs text-fg/60">
-                    <div>
-                      <code className="text-accent">{"{{char}}"}</code> - Character name
+                        {avatarPath && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setFields({ avatarPath: "", avatarCrop: null, avatarRoundPath: null })
+                            }
+                            className="absolute -top-1 -left-1 z-30 flex h-10 w-10 items-center justify-center rounded-full border border-fg/10 bg-surface-el text-fg/60 transition hover:bg-danger/80 hover:border-danger/50 hover:text-fg active:scale-95"
+                            aria-label={t("common.buttons.remove")}
+                          >
+                            <X size={14} strokeWidth={2.5} />
+                          </button>
+                        )}
+                      </div>
+                      <p className="mt-3 text-xs text-fg/40">{t("common.buttons.add")}</p>
                     </div>
-                    <div>
-                      <code className="text-accent">{"{{user}}"}</code> - Persona name (preferred,
-                      empty if none)
+
+                    <div className="mt-5 space-y-3">
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-medium uppercase tracking-wide text-fg/50">
+                          Character Name
+                        </label>
+                        <input
+                          value={name}
+                          onChange={(e) => setFields({ name: e.target.value })}
+                          placeholder="Enter character name..."
+                          className="w-full rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3 text-base text-fg placeholder-fg/40 transition focus:border-fg/25 focus:outline-none"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-medium uppercase tracking-wide text-fg/50">
+                          Nickname
+                        </label>
+                        <input
+                          value={nickname}
+                          onChange={(e) => setFields({ nickname: e.target.value })}
+                          placeholder="Optional nickname..."
+                          className="w-full rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3 text-sm text-fg placeholder-fg/40 transition focus:border-fg/25 focus:outline-none"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-medium uppercase tracking-wide text-fg/50">
+                          Creator
+                        </label>
+                        <input
+                          value={creator}
+                          onChange={(e) => setFields({ creator: e.target.value })}
+                          placeholder="Optional creator name..."
+                          className="w-full rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3 text-sm text-fg placeholder-fg/40 transition focus:border-fg/25 focus:outline-none"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-medium uppercase tracking-wide text-fg/50">
+                          Tags
+                        </label>
+                        <textarea
+                          value={tagsText}
+                          onChange={(e) => setFields({ tagsText: e.target.value })}
+                          rows={2}
+                          placeholder="tag1, tag2"
+                          className="w-full resize-none rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3 text-sm text-fg placeholder-fg/40 transition focus:border-fg/25 focus:outline-none"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-medium uppercase tracking-wide text-fg/50">
+                          Creator Notes
+                        </label>
+                        <textarea
+                          value={creatorNotes}
+                          onChange={(e) => setFields({ creatorNotes: e.target.value })}
+                          rows={4}
+                          placeholder="Optional creator notes..."
+                          className="w-full resize-none rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3 text-sm text-fg placeholder-fg/40 transition focus:border-fg/25 focus:outline-none"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-medium uppercase tracking-wide text-fg/50">
+                          Creator Notes Multilingual (JSON)
+                        </label>
+                        <textarea
+                          value={creatorNotesMultilingualText}
+                          onChange={(e) =>
+                            setFields({ creatorNotesMultilingualText: e.target.value })
+                          }
+                          rows={5}
+                          placeholder='{"en":"note","ja":"メモ"}'
+                          className="w-full resize-none rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3 font-mono text-xs text-fg placeholder-fg/40 transition focus:border-fg/25 focus:outline-none"
+                        />
+                      </div>
                     </div>
-                    <div>
-                      <code className="text-accent">{"{{persona}}"}</code> - Persona name (alias)
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="rounded-2xl border border-fg/10 bg-surface-el/20 p-4">
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2">
+                        <div className="rounded-lg border border-fg/10 bg-fg/5 p-1.5">
+                          <Info className="h-4 w-4 text-fg/60" />
+                        </div>
+                        <h3 className="text-sm font-semibold text-fg">Description</h3>
+                      </div>
+                      <textarea
+                        value={description}
+                        onChange={(e) => setFields({ description: e.target.value })}
+                        rows={5}
+                        placeholder="Short summary shown in lists and cards..."
+                        className="w-full resize-none rounded-xl border border-fg/10 bg-surface-el/20 px-3.5 py-3 text-sm leading-relaxed text-fg placeholder-fg/40 transition focus:border-fg/25 focus:outline-none"
+                      />
+                      <p className="text-xs text-fg/50">
+                        Optional short description for display purposes.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-fg/10 bg-surface-el/20 p-4">
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2">
+                        <div className="rounded-lg border border-accent/30 bg-accent/10 p-1.5">
+                          <Sparkles className="h-4 w-4 text-accent" />
+                        </div>
+                        <h3 className="text-sm font-semibold text-fg">Definition</h3>
+                      </div>
+                      <textarea
+                        value={definition}
+                        onChange={(e) => setFields({ definition: e.target.value })}
+                        rows={18}
+                        placeholder="Describe who this character is, their personality, background, speaking style, and how they should interact..."
+                        className="w-full resize-none rounded-xl border border-fg/10 bg-surface-el/20 px-3.5 py-3 text-sm leading-relaxed text-fg placeholder-fg/40 transition focus:border-fg/25 focus:outline-none"
+                      />
+                      <div className="flex justify-between text-[11px] text-fg/50">
+                        <span>Be detailed to create a unique personality</span>
+                        <span>{wordCount(definition)} words</span>
+                      </div>
+                      <div className="rounded-xl border border-warning/30 bg-warning/10 px-3.5 py-3">
+                        <div className="text-[11px] font-medium text-warning">
+                          Available Placeholders
+                        </div>
+                        <div className="mt-2 space-y-1 text-xs text-fg/60">
+                          <div>
+                            <code className="text-accent">{"{{char}}"}</code> - Character name
+                          </div>
+                          <div>
+                            <code className="text-accent">{"{{user}}"}</code> - Persona name
+                            (preferred, empty if none)
+                          </div>
+                          <div>
+                            <code className="text-accent">{"{{persona}}"}</code> - Persona name
+                            (alias)
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -961,231 +987,239 @@ export function EditCharacterPage() {
           {/* Settings Tab: Model & Memory */}
           {activeTab === "settings" && (
             <>
-              {/* Model Selection Section */}
-              <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <div className="rounded-lg border border-secondary/30 bg-secondary/10 p-1.5">
-                    <Cpu className="h-4 w-4 text-secondary" />
-                  </div>
-                  <h3 className="text-sm font-semibold text-fg">Default Model</h3>
-                  <span className="ml-auto text-xs text-fg/40">(Optional)</span>
-                </div>
-
-                {loadingModels ? (
-                  <div className="flex items-center gap-2 rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3">
-                    <Loader2 className="h-4 w-4 animate-spin text-fg/50" />
-                    <span className="text-sm text-fg/50">Loading models...</span>
-                  </div>
-                ) : models.length > 0 ? (
-                  <button
-                    type="button"
-                    onClick={() => setShowModelMenu(true)}
-                    className="flex w-full items-center justify-between rounded-xl border border-fg/10 bg-surface-el/20 px-3.5 py-3 text-left transition hover:bg-surface-el/30 focus:border-fg/25 focus:outline-none"
-                  >
-                    <div className="flex items-center gap-2">
-                      {selectedModelId ? (
-                        getProviderIcon(
-                          models.find((m) => m.id === selectedModelId)?.providerId || "",
-                        )
-                      ) : (
-                        <Cpu className="h-5 w-5 text-fg/40" />
-                      )}
-                      <span className={`text-sm ${selectedModelId ? "text-fg" : "text-fg/50"}`}>
-                        {selectedModelId
-                          ? models.find((m) => m.id === selectedModelId)?.displayName ||
-                            "Selected Model"
-                          : "Use global default model"}
-                      </span>
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                {/* Model Selection Section */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <div className="rounded-lg border border-secondary/30 bg-secondary/10 p-1.5">
+                      <Cpu className="h-4 w-4 text-secondary" />
                     </div>
-                    <ChevronDown className="h-4 w-4 text-fg/40" />
-                  </button>
-                ) : (
-                  <div className="rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3">
-                    <p className="text-sm text-fg/50">No models available</p>
+                    <h3 className="text-sm font-semibold text-fg">Default Model</h3>
+                    <span className="ml-auto text-xs text-fg/40">(Optional)</span>
                   </div>
-                )}
-                <p className="text-xs text-fg/50">
-                  Override the default AI model for this character
-                </p>
-              </div>
 
-              {/* Fallback Model Section */}
-              <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <div className="rounded-lg border border-info/30 bg-info/10 p-1.5">
-                    <Cpu className="h-4 w-4 text-info" />
-                  </div>
-                  <h3 className="text-sm font-semibold text-fg">Fallback Model</h3>
-                  <span className="ml-auto text-xs text-fg/40">(Optional)</span>
-                </div>
-
-                {loadingModels ? (
-                  <div className="flex items-center gap-2 rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3">
-                    <Loader2 className="h-4 w-4 animate-spin text-fg/50" />
-                    <span className="text-sm text-fg/50">Loading models...</span>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setShowFallbackModelMenu(true)}
-                    className="flex w-full items-center justify-between rounded-xl border border-fg/10 bg-surface-el/20 px-3.5 py-3 text-left transition hover:bg-surface-el/30 focus:border-fg/25 focus:outline-none"
-                  >
-                    <div className="flex items-center gap-2">
-                      {selectedFallbackModelId ? (
-                        getProviderIcon(
-                          models.find((m) => m.id === selectedFallbackModelId)?.providerId || "",
-                        )
-                      ) : (
-                        <Cpu className="h-5 w-5 text-fg/40" />
-                      )}
-                      <span
-                        className={`text-sm ${selectedFallbackModelId ? "text-fg" : "text-fg/50"}`}
-                      >
-                        {selectedFallbackModelId
-                          ? models.find((m) => m.id === selectedFallbackModelId)?.displayName ||
-                            "Selected Fallback Model"
-                          : "Off (no fallback)"}
-                      </span>
+                  {loadingModels ? (
+                    <div className="flex items-center gap-2 rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3">
+                      <Loader2 className="h-4 w-4 animate-spin text-fg/50" />
+                      <span className="text-sm text-fg/50">Loading models...</span>
                     </div>
-                    <ChevronDown className="h-4 w-4 text-fg/40" />
-                  </button>
-                )}
-                <p className="text-xs text-fg/50">
-                  Retry with this model only when the primary model fails
-                </p>
-              </div>
-
-              {/* System Prompt Template Section */}
-              <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <div className="rounded-lg border border-info/30 bg-info/10 p-1.5">
-                    <BookOpen className="h-4 w-4 text-info" />
-                  </div>
-                  <h3 className="text-sm font-semibold text-fg">System Prompt</h3>
-                  <span className="ml-auto text-xs text-fg/40">(Optional)</span>
-                </div>
-
-                {loadingTemplates ? (
-                  <div className="flex items-center gap-2 rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3">
-                    <Loader2 className="h-4 w-4 animate-spin text-fg/50" />
-                    <span className="text-sm text-fg/50">Loading templates...</span>
-                  </div>
-                ) : promptTemplates.length > 0 ? (
-                  <select
-                    value={systemPromptTemplateId || ""}
-                    onChange={(e) => setFields({ systemPromptTemplateId: e.target.value || null })}
-                    className="w-full appearance-none rounded-xl border border-fg/10 bg-surface-el/20 px-3.5 py-3 text-sm text-fg transition focus:border-fg/25 focus:outline-none"
-                  >
-                    <option value="">Use default system prompt</option>
-                    {promptTemplates.map((template) => (
-                      <option key={template.id} value={template.id}>
-                        {template.name}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <div className="rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3">
-                    <p className="text-sm text-fg/50">No templates available</p>
-                    <p className="text-xs text-fg/40 mt-1">
-                      Create templates in Settings → Prompts
-                    </p>
-                  </div>
-                )}
-                <p className="text-xs text-fg/50">
-                  Override the default system prompt for this character
-                </p>
-              </div>
-
-              {/* Voice Selection */}
-              <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <div className="rounded-lg border border-accent/30 bg-accent/10 p-1.5">
-                    <Volume2 className="h-4 w-4 text-accent/80" />
-                  </div>
-                  <h3 className="text-sm font-semibold text-fg">Voice</h3>
-                  <span className="ml-auto text-xs text-fg/40">(Optional)</span>
-                </div>
-
-                {loadingVoices ? (
-                  <div className="flex items-center gap-2 rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3">
-                    <Loader2 className="h-4 w-4 animate-spin text-fg/50" />
-                    <span className="text-sm text-fg/50">Loading voices...</span>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setShowVoiceMenu(true)}
-                    className="flex w-full items-center justify-between rounded-xl border border-fg/10 bg-surface-el/20 px-3.5 py-3 text-left transition hover:bg-surface-el/30 focus:border-fg/25 focus:outline-none"
-                  >
-                    <div className="flex items-center gap-2">
-                      <Volume2 className="h-5 w-5 text-fg/40" />
-                      <span className={`text-sm ${voiceSelectionValue ? "text-fg" : "text-fg/50"}`}>
-                        {voiceSelectionValue
-                          ? (() => {
-                              if (voiceConfig?.source === "user") {
-                                const v = userVoices.find(
-                                  (uv) => uv.id === voiceConfig.userVoiceId,
-                                );
-                                return v?.name || "Custom Voice";
-                              }
-                              if (voiceConfig?.source === "provider") {
-                                const pv = providerVoices[voiceConfig.providerId || ""]?.find(
-                                  (pv) => pv.voiceId === voiceConfig.voiceId,
-                                );
-                                return pv?.name || "Provider Voice";
-                              }
-                              return "Selected Voice";
-                            })()
-                          : "No voice assigned"}
-                      </span>
-                    </div>
-                    <ChevronDown className="h-4 w-4 text-fg/40" />
-                  </button>
-                )}
-
-                {voiceError && <p className="text-xs font-medium text-danger">{voiceError}</p>}
-                {!loadingVoices && audioProviders.length === 0 && userVoices.length === 0 && (
-                  <p className="text-xs text-fg/40">Add voices in Settings → Voices</p>
-                )}
-                <p className="text-xs text-fg/50">
-                  Assign a voice for future text-to-speech playback
-                </p>
-                <div
-                  className={cn(
-                    "flex items-center justify-between rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3",
-                    !voiceConfig && "opacity-50",
-                  )}
-                >
-                  <div>
-                    <p className="text-sm font-medium text-fg">Autoplay voice</p>
-                    <p className="mt-1 text-xs text-fg/50">
-                      {voiceConfig
-                        ? "Play this character's replies automatically"
-                        : "Select a voice first"}
-                    </p>
-                  </div>
-                  <div className="flex items-center">
-                    <input
-                      id="character-voice-autoplay"
-                      type="checkbox"
-                      checked={voiceAutoplay}
-                      onChange={() => setFields({ voiceAutoplay: !voiceAutoplay })}
-                      disabled={!voiceConfig}
-                      className="peer sr-only"
-                    />
-                    <label
-                      htmlFor="character-voice-autoplay"
-                      className={`relative inline-flex h-6 w-11 shrink-0 rounded-full transition-all ${
-                        voiceAutoplay ? "bg-accent" : "bg-fg/20"
-                      } ${voiceConfig ? "cursor-pointer" : "cursor-not-allowed"}`}
+                  ) : models.length > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowModelMenu(true)}
+                      className="flex w-full items-center justify-between rounded-xl border border-fg/10 bg-surface-el/20 px-3.5 py-3 text-left transition hover:bg-surface-el/30 focus:border-fg/25 focus:outline-none"
                     >
-                      <span
-                        className={`inline-block h-5 w-5 mt-0.5 transform rounded-full bg-fg transition ${
-                          voiceAutoplay ? "translate-x-5" : "translate-x-0.5"
-                        }`}
-                      />
-                    </label>
+                      <div className="flex items-center gap-2">
+                        {selectedModelId ? (
+                          getProviderIcon(
+                            models.find((m) => m.id === selectedModelId)?.providerId || "",
+                          )
+                        ) : (
+                          <Cpu className="h-5 w-5 text-fg/40" />
+                        )}
+                        <span className={`text-sm ${selectedModelId ? "text-fg" : "text-fg/50"}`}>
+                          {selectedModelId
+                            ? models.find((m) => m.id === selectedModelId)?.displayName ||
+                              "Selected Model"
+                            : "Use global default model"}
+                        </span>
+                      </div>
+                      <ChevronDown className="h-4 w-4 text-fg/40" />
+                    </button>
+                  ) : (
+                    <div className="rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3">
+                      <p className="text-sm text-fg/50">No models available</p>
+                    </div>
+                  )}
+                  <p className="text-xs text-fg/50">
+                    Override the default AI model for this character
+                  </p>
+                </div>
+
+                {/* Fallback Model Section */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <div className="rounded-lg border border-info/30 bg-info/10 p-1.5">
+                      <Cpu className="h-4 w-4 text-info" />
+                    </div>
+                    <h3 className="text-sm font-semibold text-fg">Fallback Model</h3>
+                    <span className="ml-auto text-xs text-fg/40">(Optional)</span>
                   </div>
+
+                  {loadingModels ? (
+                    <div className="flex items-center gap-2 rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3">
+                      <Loader2 className="h-4 w-4 animate-spin text-fg/50" />
+                      <span className="text-sm text-fg/50">Loading models...</span>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setShowFallbackModelMenu(true)}
+                      className="flex w-full items-center justify-between rounded-xl border border-fg/10 bg-surface-el/20 px-3.5 py-3 text-left transition hover:bg-surface-el/30 focus:border-fg/25 focus:outline-none"
+                    >
+                      <div className="flex items-center gap-2">
+                        {selectedFallbackModelId ? (
+                          getProviderIcon(
+                            models.find((m) => m.id === selectedFallbackModelId)?.providerId || "",
+                          )
+                        ) : (
+                          <Cpu className="h-5 w-5 text-fg/40" />
+                        )}
+                        <span
+                          className={`text-sm ${selectedFallbackModelId ? "text-fg" : "text-fg/50"}`}
+                        >
+                          {selectedFallbackModelId
+                            ? models.find((m) => m.id === selectedFallbackModelId)?.displayName ||
+                              "Selected Fallback Model"
+                            : "Off (no fallback)"}
+                        </span>
+                      </div>
+                      <ChevronDown className="h-4 w-4 text-fg/40" />
+                    </button>
+                  )}
+                  <p className="text-xs text-fg/50">
+                    Retry with this model only when the primary model fails
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                {/* Voice Selection */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <div className="rounded-lg border border-accent/30 bg-accent/10 p-1.5">
+                      <Volume2 className="h-4 w-4 text-accent/80" />
+                    </div>
+                    <h3 className="text-sm font-semibold text-fg">Voice</h3>
+                    <span className="ml-auto text-xs text-fg/40">(Optional)</span>
+                  </div>
+
+                  {loadingVoices ? (
+                    <div className="flex items-center gap-2 rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3">
+                      <Loader2 className="h-4 w-4 animate-spin text-fg/50" />
+                      <span className="text-sm text-fg/50">Loading voices...</span>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setShowVoiceMenu(true)}
+                      className="flex w-full items-center justify-between rounded-xl border border-fg/10 bg-surface-el/20 px-3.5 py-3 text-left transition hover:bg-surface-el/30 focus:border-fg/25 focus:outline-none"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Volume2 className="h-5 w-5 text-fg/40" />
+                        <span
+                          className={`text-sm ${voiceSelectionValue ? "text-fg" : "text-fg/50"}`}
+                        >
+                          {voiceSelectionValue
+                            ? (() => {
+                                if (voiceConfig?.source === "user") {
+                                  const v = userVoices.find(
+                                    (uv) => uv.id === voiceConfig.userVoiceId,
+                                  );
+                                  return v?.name || "Custom Voice";
+                                }
+                                if (voiceConfig?.source === "provider") {
+                                  const pv = providerVoices[voiceConfig.providerId || ""]?.find(
+                                    (pv) => pv.voiceId === voiceConfig.voiceId,
+                                  );
+                                  return pv?.name || "Provider Voice";
+                                }
+                                return "Selected Voice";
+                              })()
+                            : "No voice assigned"}
+                        </span>
+                      </div>
+                      <ChevronDown className="h-4 w-4 text-fg/40" />
+                    </button>
+                  )}
+
+                  {voiceError && <p className="text-xs font-medium text-danger">{voiceError}</p>}
+                  {!loadingVoices && audioProviders.length === 0 && userVoices.length === 0 && (
+                    <p className="text-xs text-fg/40">Add voices in Settings → Voices</p>
+                  )}
+                  <p className="text-xs text-fg/50">
+                    Assign a voice for future text-to-speech playback
+                  </p>
+                  <div
+                    className={cn(
+                      "flex items-center justify-between rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3",
+                      !voiceConfig && "opacity-50",
+                    )}
+                  >
+                    <div>
+                      <p className="text-sm font-medium text-fg">Autoplay voice</p>
+                      <p className="mt-1 text-xs text-fg/50">
+                        {voiceConfig
+                          ? "Play this character's replies automatically"
+                          : "Select a voice first"}
+                      </p>
+                    </div>
+                    <div className="flex items-center">
+                      <input
+                        id="character-voice-autoplay"
+                        type="checkbox"
+                        checked={voiceAutoplay}
+                        onChange={() => setFields({ voiceAutoplay: !voiceAutoplay })}
+                        disabled={!voiceConfig}
+                        className="peer sr-only"
+                      />
+                      <label
+                        htmlFor="character-voice-autoplay"
+                        className={`relative inline-flex h-6 w-11 shrink-0 rounded-full transition-all ${
+                          voiceAutoplay ? "bg-accent" : "bg-fg/20"
+                        } ${voiceConfig ? "cursor-pointer" : "cursor-not-allowed"}`}
+                      >
+                        <span
+                          className={`mt-0.5 inline-block h-5 w-5 transform rounded-full bg-fg transition ${
+                            voiceAutoplay ? "translate-x-5" : "translate-x-0.5"
+                          }`}
+                        />
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                {/* System Prompt Template Section */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <div className="rounded-lg border border-info/30 bg-info/10 p-1.5">
+                      <BookOpen className="h-4 w-4 text-info" />
+                    </div>
+                    <h3 className="text-sm font-semibold text-fg">System Prompt</h3>
+                    <span className="ml-auto text-xs text-fg/40">(Optional)</span>
+                  </div>
+
+                  {loadingTemplates ? (
+                    <div className="flex items-center gap-2 rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3">
+                      <Loader2 className="h-4 w-4 animate-spin text-fg/50" />
+                      <span className="text-sm text-fg/50">Loading templates...</span>
+                    </div>
+                  ) : promptTemplates.length > 0 ? (
+                    <select
+                      value={systemPromptTemplateId || ""}
+                      onChange={(e) =>
+                        setFields({ systemPromptTemplateId: e.target.value || null })
+                      }
+                      className="w-full appearance-none rounded-xl border border-fg/10 bg-surface-el/20 px-3.5 py-3 text-sm text-fg transition focus:border-fg/25 focus:outline-none"
+                    >
+                      <option value="">Use default system prompt</option>
+                      {promptTemplates.map((template) => (
+                        <option key={template.id} value={template.id}>
+                          {template.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3">
+                      <p className="text-sm text-fg/50">No templates available</p>
+                      <p className="mt-1 text-xs text-fg/40">
+                        Create templates in Settings → Prompts
+                      </p>
+                    </div>
+                  )}
+                  <p className="text-xs text-fg/50">
+                    Override the default system prompt for this character
+                  </p>
                 </div>
               </div>
 
