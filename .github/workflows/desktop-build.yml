@@ -643,7 +643,7 @@ jobs:
     name: Windows Build (CPU)
     needs: prepare_release
     if: ${{ inputs.build_llama_cpu_windows == true }}
-    runs-on: blacksmith-4vcpu-windows-2025
+    runs-on: ubuntu-latest
     env:
       APTABASE_KEY: ${{ secrets.APTABASE_KEY }}
 
@@ -764,7 +764,7 @@ jobs:
     name: Windows Build (CUDA)
     needs: prepare_release
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_llama_cuda_windows == true }}
-    runs-on: blacksmith-4vcpu-windows-2025
+    runs-on: ubuntu-latest
     env:
       APTABASE_KEY: ${{ secrets.APTABASE_KEY }}
 
@@ -901,7 +901,7 @@ jobs:
     name: Windows Build (Vulkan)
     needs: prepare_release
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_llama_vulkan_windows == true }}
-    runs-on: blacksmith-4vcpu-windows-2025
+    runs-on: ubuntu-latest
     env:
       APTABASE_KEY: ${{ secrets.APTABASE_KEY }}
       WINDOWS_VULKAN_SDK_VERSION: "1.3.296.0"
