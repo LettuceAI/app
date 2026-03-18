@@ -38,27 +38,23 @@ const SAMPLE_MESSAGES: { role: "assistant" | "user"; text: string }[] = [
   },
   {
     role: "user",
-    text: "I'm doing **great**, thanks for asking! Just needed a minute to finish a few things before I could relax.",
+    text: "I'm doing **great**, thanks for asking! Just needed a minute to finish a few things before I could \"relax.\"",
   },
   {
     role: "assistant",
-    text: `That's good to hear. I was thinking about the trip we mentioned last time *(the lake cabin plan)* and wanted to revisit it.
-
-> You said you wanted somewhere quiet and close to the water.`,
+    text: "That's good to hear. I was thinking about the trip we mentioned last time *(the lake cabin plan)* and wanted to revisit it.\n\n> You said you wanted somewhere \"quiet\" and close to the water.",
   },
   {
     role: "user",
-    text: "Oh right, that one. Did you find anything *actually quiet*, or just the **usual crowded spots** people keep recommending?",
+    text: "Oh right, that one. Did you find anything *actually* \"quiet\", or just the **usual crowded spots** people keep recommending?",
   },
   {
     role: "assistant",
-    text: "I found a place that looks **perfect**. It's small, close to the water, and the view in the morning looks *incredible* from the deck.",
+    text: "I found a place that looks **\"perfect.\"** It's small, close to the water, and the view in the morning looks *incredible* from the deck.",
   },
   {
     role: "user",
-    text: `That sounds amazing. Send me the **details** when you can, and I'll check the route tonight *(plus the weather and traffic)*.
-
-> If the road is clear, we could leave early Saturday.`,
+    text: "That sounds amazing. Send me the **details** when you can, and I'll check the route tonight *(plus the weather and traffic)*.\n\n> If the road is clear, we could leave \"early Saturday.\"",
   },
 ];
 
