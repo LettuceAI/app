@@ -1,5 +1,6 @@
 use serde_json::{json, Map, Value};
 use std::collections::{HashMap, HashSet};
+use std::fs;
 use tauri::{AppHandle, Emitter, Manager};
 use uuid::Uuid;
 
@@ -10,6 +11,7 @@ use crate::chat_manager::storage::{get_base_prompt, PromptType};
 use crate::dynamic_memory_run_manager::{DynamicMemoryCancellationToken, DynamicMemoryRunManager};
 use crate::embedding_model;
 use crate::storage_manager::db::open_db;
+use crate::storage_manager::legacy::storage_root;
 use crate::utils::{emit_toast, log_error, log_info, log_warn, now_millis};
 
 use super::dynamic_memory::{
@@ -1589,57 +1591,6 @@ fn load_attachment_data(app: &AppHandle, message: &StoredMessage) -> StoredMessa
     loaded_message
 }
 
-<<<<<<< HEAD
-fn rollback_failed_chat_completion(
-    app: &AppHandle,
-    session: &mut Session,
-    user_message_id: &str,
-    previous_updated_at: u64,
-    cancelled: bool,
-    emitted_once: bool,
-    error: String,
-) -> Result<ChatTurnResult, String> {
-    if cancelled || emitted_once {
-        return Err(error);
-    }
-
-    if let Some(message) = session
-        .messages
-        .iter()
-        .find(|message| message.id == user_message_id)
-    {
-        cleanup_message_attachments(app, message);
-    }
-
-    session
-        .messages
-        .retain(|message| message.id != user_message_id);
-    session.updated_at = previous_updated_at;
-
-    if let Err(save_err) = save_session(app, session) {
-        log_error(
-            app,
-            "chat_completion",
-            format!(
-                "failed to roll back failed user message {}: {}",
-                user_message_id, save_err
-            ),
-        );
-    } else {
-        log_info(
-            app,
-            "chat_completion",
-            format!("rolled back failed user message {}", user_message_id),
-        );
-    }
-
-    Err(error)
-}
-
-fn cleanup_message_attachments(app: &AppHandle, message: &StoredMessage) {
-    cleanup_attachments(app, &message.attachments, "chat_completion");
-}
-
 fn cleanup_attachments(app: &AppHandle, attachments: &[ImageAttachment], scope: &str) {
     for attachment in attachments {
         let Some(storage_path) = &attachment.storage_path else {
@@ -1686,9 +1637,6 @@ fn take_aborted_request(app: &AppHandle, request_id: Option<&str>) -> bool {
     let registry = app.state::<crate::abort_manager::AbortRegistry>();
     registry.take_aborted(request_id)
 }
-
-=======
->>>>>>> parent of 0b9bda8 (fix(chat): preserve aborted and partial streamed turns)
 fn role_swap_enabled(flag: Option<bool>) -> bool {
     flag.unwrap_or(false)
 }
@@ -1895,7 +1843,6 @@ pub async fn chat_completion(
             "updatedAt": session.updated_at,
         }),
     );
-
     let prompt_entries = if swap_places {
         let (prompt_character, prompt_persona) = swapped_prompt_entities(&character, persona);
         append_image_directive_instructions(
@@ -2439,15 +2386,7 @@ pub async fn chat_completion(
     };
 
     if take_aborted_request(&app, request_id.as_deref()) {
-        return rollback_failed_chat_completion(
-            &app,
-            &mut session,
-            &user_message_id,
-            previous_updated_at,
-            true,
-            false,
-            "Request aborted by user".to_string(),
-        );
+        return Err("Request aborted by user".to_string());
     }
 
     // Extract assistant text and any image outputs.
@@ -2577,15 +2516,7 @@ pub async fn chat_completion(
 
     if take_aborted_request(&app, request_id.as_deref()) {
         cleanup_attachments(&app, &persisted_assistant_attachments, "chat_completion");
-        return rollback_failed_chat_completion(
-            &app,
-            &mut session,
-            &user_message_id,
-            previous_updated_at,
-            true,
-            false,
-            "Request aborted by user".to_string(),
-        );
+        return Err("Request aborted by user".to_string());
     }
 
     let assistant_message = StoredMessage {
@@ -2622,15 +2553,7 @@ pub async fn chat_completion(
     session.updated_at = now_millis()?;
     if take_aborted_request(&app, request_id.as_deref()) {
         cleanup_attachments(&app, &assistant_message.attachments, "chat_completion");
-        return rollback_failed_chat_completion(
-            &app,
-            &mut session,
-            &user_message_id,
-            previous_updated_at,
-            true,
-            false,
-            "Request aborted by user".to_string(),
-        );
+        return Err("Request aborted by user".to_string());
     }
     save_session(&app, &session)?;
 
@@ -3688,10 +3611,20 @@ pub async fn chat_continue(
         persona_name,
     );
 
-    messages_for_api.push(json!({
-        "role": "user",
-        "content": "[CONTINUE] You were in the middle of a response. Continue writing from exactly where you left off. Do NOT restart, regenerate, or rewrite what you already said. Simply pick up the narrative thread and continue the scene forward with new content."
-    }));
+    let should_inject_continue_prompt = session
+        .messages
+        .iter()
+        .rev()
+        .find(|message| message.role == "user" || message.role == "assistant")
+        .map(|message| message.role != "user")
+        .unwrap_or(true);
+
+    if should_inject_continue_prompt {
+        messages_for_api.push(json!({
+            "role": "user",
+            "content": "[CONTINUE] You were in the middle of a response. Continue writing from exactly where you left off. Do NOT restart, regenerate, or rewrite what you already said. Simply pick up the narrative thread and continue the scene forward with new content."
+        }));
+    }
 
     let should_stream = stream.unwrap_or(true);
     let request_id = if should_stream {

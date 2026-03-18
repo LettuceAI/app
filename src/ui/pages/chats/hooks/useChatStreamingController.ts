@@ -141,6 +141,7 @@ export function useChatStreamingController({
           { type: "SET_SENDING", payload: true },
           { type: "SET_ACTIVE_REQUEST_ID", payload: requestId },
           { type: "SET_MESSAGES", payload: optimisticMessages },
+          { type: "CLEAR_DRAFT" },
           { type: "CLEAR_PENDING_ATTACHMENTS" },
         ],
       });
@@ -150,6 +151,7 @@ export function useChatStreamingController({
           { type: "SET_SENDING", payload: true },
           { type: "SET_ACTIVE_REQUEST_ID", payload: requestId },
           { type: "SET_MESSAGES", payload: optimisticMessages },
+          { type: "CLEAR_DRAFT" },
           { type: "SET_ERROR", payload: null },
         ],
       });
@@ -246,7 +248,6 @@ export function useChatStreamingController({
           actions: [
             { type: "SET_SESSION", payload: updatedSession },
             { type: "SET_MESSAGES", payload: replaced },
-            { type: "CLEAR_DRAFT" },
             {
               type: "TRANSFER_REASONING",
               payload: { fromId: assistantPlaceholder.id, toId: result.assistantMessage.id },
@@ -258,7 +259,6 @@ export function useChatStreamingController({
           actions: [
             { type: "SET_SESSION", payload: updatedSession },
             { type: "SET_MESSAGES", payload: replaced },
-            { type: "CLEAR_DRAFT" },
             {
               type: "TRANSFER_REASONING",
               payload: { fromId: assistantPlaceholder.id, toId: result.assistantMessage.id },
