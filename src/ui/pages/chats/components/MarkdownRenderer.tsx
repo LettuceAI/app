@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import type { ReactElement, ReactNode } from "react";
 import DOMPurify from "dompurify";
 
 type TextColors = {
@@ -98,8 +99,8 @@ function parseInline(
   keyPrefix: string,
   onImageClick?: (src: string, alt: string) => void,
   textColors?: TextColors,
-): (JSX.Element | string)[] {
-  const nodes: (JSX.Element | string)[] = [];
+): ReactNode[] {
+  const nodes: ReactNode[] = [];
   let remaining = text;
   let index = 0;
 
@@ -239,7 +240,7 @@ function parseInline(
 
 function flushParagraph(
   buffer: string[],
-  nodes: JSX.Element[],
+  nodes: ReactElement[],
   keyIndex: { value: number },
   onImageClick?: (src: string, alt: string) => void,
   textColors?: TextColors,
@@ -265,7 +266,7 @@ function flushParagraph(
 
 function flushList(
   list: ListBuffer | null,
-  nodes: JSX.Element[],
+  nodes: ReactElement[],
   keyIndex: { value: number },
   onImageClick?: (src: string, alt: string) => void,
   textColors?: TextColors,
@@ -292,7 +293,7 @@ function flushList(
 
 function flushQuote(
   quoteLines: string[],
-  nodes: JSX.Element[],
+  nodes: ReactElement[],
   keyIndex: { value: number },
   onImageClick?: (src: string, alt: string) => void,
   textColors?: TextColors,
@@ -324,7 +325,7 @@ export function MarkdownRenderer({
   const nodes = useMemo(() => {
     const normalized = content.replace(CRLF_PATTERN, "\n");
     const lines = normalized.split("\n");
-    const out: JSX.Element[] = [];
+    const out: ReactElement[] = [];
     const paragraphBuffer: string[] = [];
     const quoteBuffer: string[] = [];
     let listBuffer: ListBuffer | null = null;
@@ -434,7 +435,7 @@ export function MarkdownRenderer({
       if (headingMatch) {
         flushAll();
         const level = headingMatch[1].length;
-        const HeadingTag = `h${Math.min(level, 6)}` as keyof JSX.IntrinsicElements;
+        const HeadingTag = `h${Math.min(level, 6)}` as "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
         const key = `heading-${keyIndex.value++}`;
         out.push(
           <HeadingTag key={key} className="text-inherit leading-[inherit] font-semibold text-white">

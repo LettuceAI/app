@@ -385,7 +385,10 @@ export function ProvidersPage() {
                       </label>
                       <input
                         type="text"
-                        value={editorProvider.config?.chatEndpoint ?? "/v1/chat/completions"}
+                        value={
+                          (customConfig.chatEndpoint as string | undefined) ??
+                          "/v1/chat/completions"
+                        }
                         onChange={(e) =>
                           updateEditorProvider({
                             config: { ...editorProvider.config, chatEndpoint: e.target.value },
@@ -469,7 +472,7 @@ export function ProvidersPage() {
                           Tool Choice Mode
                         </label>
                         <select
-                          value={editorProvider.config?.toolChoiceMode ?? "auto"}
+                          value={(customConfig.toolChoiceMode as string | undefined) ?? "auto"}
                           onChange={(e) =>
                             updateEditorProvider({
                               config: {
@@ -505,7 +508,7 @@ export function ProvidersPage() {
                         </label>
                         <input
                           type="text"
-                          value={editorProvider.config?.authHeaderName ?? "x-api-key"}
+                          value={(customConfig.authHeaderName as string | undefined) ?? "x-api-key"}
                           onChange={(e) =>
                             updateEditorProvider({
                               config: { ...editorProvider.config, authHeaderName: e.target.value },
@@ -523,7 +526,9 @@ export function ProvidersPage() {
                         </label>
                         <input
                           type="text"
-                          value={editorProvider.config?.authQueryParamName ?? "api_key"}
+                          value={
+                            (customConfig.authQueryParamName as string | undefined) ?? "api_key"
+                          }
                           onChange={(e) =>
                             updateEditorProvider({
                               config: {
@@ -545,7 +550,7 @@ export function ProvidersPage() {
                           </label>
                           <input
                             type="text"
-                            value={editorProvider.config?.modelsEndpoint ?? ""}
+                            value={(customConfig.modelsEndpoint as string | undefined) ?? ""}
                             onChange={(e) =>
                               updateEditorProvider({
                                 config: {
@@ -565,7 +570,7 @@ export function ProvidersPage() {
                             </label>
                             <input
                               type="text"
-                              value={editorProvider.config?.modelsListPath ?? "data"}
+                              value={(customConfig.modelsListPath as string | undefined) ?? "data"}
                               onChange={(e) =>
                                 updateEditorProvider({
                                   config: {
@@ -584,7 +589,7 @@ export function ProvidersPage() {
                             </label>
                             <input
                               type="text"
-                              value={editorProvider.config?.modelsIdPath ?? "id"}
+                              value={(customConfig.modelsIdPath as string | undefined) ?? "id"}
                               onChange={(e) =>
                                 updateEditorProvider({
                                   config: {
@@ -605,7 +610,9 @@ export function ProvidersPage() {
                             </label>
                             <input
                               type="text"
-                              value={editorProvider.config?.modelsDisplayNamePath ?? "name"}
+                              value={
+                                (customConfig.modelsDisplayNamePath as string | undefined) ?? "name"
+                              }
                               onChange={(e) =>
                                 updateEditorProvider({
                                   config: {
@@ -624,7 +631,10 @@ export function ProvidersPage() {
                             </label>
                             <input
                               type="text"
-                              value={editorProvider.config?.modelsDescriptionPath ?? "description"}
+                              value={
+                                (customConfig.modelsDescriptionPath as string | undefined) ??
+                                "description"
+                              }
                               onChange={(e) =>
                                 updateEditorProvider({
                                   config: {
@@ -644,7 +654,9 @@ export function ProvidersPage() {
                           </label>
                           <input
                             type="text"
-                            value={editorProvider.config?.modelsContextLengthPath ?? ""}
+                            value={
+                              (customConfig.modelsContextLengthPath as string | undefined) ?? ""
+                            }
                             onChange={(e) =>
                               updateEditorProvider({
                                 config: {
@@ -665,7 +677,7 @@ export function ProvidersPage() {
                       </label>
                       <input
                         type="text"
-                        value={editorProvider.config?.systemRole ?? "system"}
+                        value={(customConfig.systemRole as string | undefined) ?? "system"}
                         onChange={(e) =>
                           updateEditorProvider({
                             config: { ...editorProvider.config, systemRole: e.target.value },
@@ -682,7 +694,7 @@ export function ProvidersPage() {
                         </label>
                         <input
                           type="text"
-                          value={editorProvider.config?.userRole ?? "user"}
+                          value={(customConfig.userRole as string | undefined) ?? "user"}
                           onChange={(e) =>
                             updateEditorProvider({
                               config: { ...editorProvider.config, userRole: e.target.value },
@@ -698,7 +710,7 @@ export function ProvidersPage() {
                         </label>
                         <input
                           type="text"
-                          value={editorProvider.config?.assistantRole ?? "assistant"}
+                          value={(customConfig.assistantRole as string | undefined) ?? "assistant"}
                           onChange={(e) =>
                             updateEditorProvider({
                               config: { ...editorProvider.config, assistantRole: e.target.value },
@@ -717,7 +729,7 @@ export function ProvidersPage() {
                         <input
                           id="supportsStream"
                           type="checkbox"
-                          checked={editorProvider.config?.supportsStream ?? true}
+                          checked={(customConfig.supportsStream as boolean | undefined) ?? true}
                           onChange={(e) =>
                             updateEditorProvider({
                               config: {
@@ -731,14 +743,14 @@ export function ProvidersPage() {
                         <label
                           htmlFor="supportsStream"
                           className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-all duration-200 ease-in-out ${
-                            (editorProvider.config?.supportsStream ?? true)
+                            ((customConfig.supportsStream as boolean | undefined) ?? true)
                               ? "bg-accent"
                               : "bg-fg/20"
                           }`}
                         >
                           <span
                             className={`inline-block h-5 w-5 transform rounded-full bg-fg shadow ring-0 transition duration-200 ease-in-out ${
-                              (editorProvider.config?.supportsStream ?? true)
+                              ((customConfig.supportsStream as boolean | undefined) ?? true)
                                 ? "translate-x-5"
                                 : "translate-x-0"
                             }`}
@@ -754,7 +766,9 @@ export function ProvidersPage() {
                         <input
                           id="mergeSameRoleMessages"
                           type="checkbox"
-                          checked={editorProvider.config?.mergeSameRoleMessages ?? true}
+                          checked={
+                            (customConfig.mergeSameRoleMessages as boolean | undefined) ?? true
+                          }
                           onChange={(e) =>
                             updateEditorProvider({
                               config: {
@@ -768,14 +782,14 @@ export function ProvidersPage() {
                         <label
                           htmlFor="mergeSameRoleMessages"
                           className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-all duration-200 ease-in-out ${
-                            (editorProvider.config?.mergeSameRoleMessages ?? true)
+                            ((customConfig.mergeSameRoleMessages as boolean | undefined) ?? true)
                               ? "bg-accent"
                               : "bg-fg/20"
                           }`}
                         >
                           <span
                             className={`inline-block h-5 w-5 transform rounded-full bg-fg shadow ring-0 transition duration-200 ease-in-out ${
-                              (editorProvider.config?.mergeSameRoleMessages ?? true)
+                              ((customConfig.mergeSameRoleMessages as boolean | undefined) ?? true)
                                 ? "translate-x-5"
                                 : "translate-x-0"
                             }`}

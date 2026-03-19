@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { RefObject } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Reorder, useDragControls, motion } from "framer-motion";
 import {
@@ -161,7 +162,7 @@ function EditingForm({
   msg: ChatTemplateMessage;
   editContent: string;
   setEditContent: (v: string) => void;
-  editTextareaRef: React.RefObject<HTMLTextAreaElement>;
+  editTextareaRef: RefObject<HTMLTextAreaElement | null>;
   onToggleRole: () => void;
   onSave: () => void;
   onCancel: () => void;

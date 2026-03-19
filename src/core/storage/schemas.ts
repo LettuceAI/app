@@ -1817,8 +1817,8 @@ export const ProviderCredentialSchema = z.object({
   apiKey: z.string().optional(),
   baseUrl: z.string().optional(),
   defaultModel: z.string().optional(),
-  headers: z.record(z.string()).optional(),
-  config: z.record(z.any()).optional(),
+  headers: z.record(z.string(), z.string()).optional(),
+  config: z.record(z.string(), z.any()).optional(),
 });
 export type ProviderCredential = z.infer<typeof ProviderCredentialSchema>;
 
@@ -1874,7 +1874,7 @@ export function createDefaultOnboardingState(): OnboardingState {
   };
 }
 
-export const TooltipsStateSchema = z.record(z.boolean());
+export const TooltipsStateSchema = z.record(z.string(), z.boolean());
 export type TooltipsState = z.infer<typeof TooltipsStateSchema>;
 
 export const PureModeLevelSchema = z.enum(["off", "low", "standard", "strict"]);
@@ -1919,7 +1919,7 @@ export const AppStateSchema = z.object({
   autoDownloadCharacterCardAvatars: z.boolean().default(true),
   analyticsEnabled: z.boolean().default(true),
   appActiveUsageMs: z.number().int().nonnegative().default(0),
-  appActiveUsageByDayMs: z.record(z.number().int().nonnegative()).default({}),
+  appActiveUsageByDayMs: z.record(z.string(), z.number().int().nonnegative()).default({}),
   appActiveUsageStartedAtMs: z.number().int().nonnegative().optional(),
   appActiveUsageLastUpdatedAtMs: z.number().int().nonnegative().optional(),
   settingsCardOpacity: SettingsCardOpacitySchema.default(5),

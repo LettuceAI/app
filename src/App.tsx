@@ -233,12 +233,7 @@ function App() {
   return (
     <I18nProvider>
       <ThemeProvider>
-        <BrowserRouter
-          future={{
-            v7_startTransition: true,
-            v7_relativeSplatPath: true,
-          }}
-        >
+        <BrowserRouter>
           <div id="app-root" className="min-h-screen bg-surface text-fg antialiased">
             <Toaster
               position={"top-center"}

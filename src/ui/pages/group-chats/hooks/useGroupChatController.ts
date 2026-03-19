@@ -53,7 +53,7 @@ type GroupChatController = {
   actionStatus: string | null;
   actionError: string | null;
   heldMessageId: string | null;
-  scrollContainerRef: RefObject<HTMLDivElement>;
+  scrollContainerRef: RefObject<HTMLDivElement | null>;
   isAtBottomRef: MutableRefObject<boolean>;
   setDraft: (value: string) => void;
   setError: (value: string | null) => void;
