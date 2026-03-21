@@ -1849,6 +1849,8 @@ mod tests {
             id: "c1".into(),
             name: "Alice".into(),
             avatar_path: None,
+            design_description: None,
+            design_reference_image_ids: vec![],
             background_image_path: None,
             description: Some("I am {{char}}. Partner: {{persona}}.".into()),
             definition: Some("I am {{char}}. Partner: {{persona}}.".into()),

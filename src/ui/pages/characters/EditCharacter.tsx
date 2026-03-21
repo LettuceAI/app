@@ -27,6 +27,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { useEditCharacterForm } from "./hooks/useEditCharacterForm";
 import { AvatarPicker } from "../../components/AvatarPicker";
+import { DesignReferenceEditor } from "../../components/DesignReferenceEditor";
 import { BottomMenu, MenuSection } from "../../components/BottomMenu";
 import { BackgroundPositionModal } from "../../components/BackgroundPositionModal";
 import { CharacterExportMenu } from "../../components/CharacterExportMenu";
@@ -93,6 +94,8 @@ export function EditCharacterPage() {
     avatarPath,
     avatarCrop,
     avatarRoundPath,
+    designDescription,
+    designReferenceImageIds,
     backgroundImagePath,
     scenes,
     chatTemplates,
@@ -690,6 +693,38 @@ export function EditCharacterPage() {
                       </div>
                     </div>
                   </div>
+
+                  <div className="rounded-2xl border border-fg/10 bg-surface-el/20 p-4">
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2">
+                        <div className="rounded-lg border border-secondary/30 bg-secondary/10 p-1.5">
+                          <MessageSquare className="h-4 w-4 text-secondary" />
+                        </div>
+                        <h3 className="text-sm font-semibold text-fg">Chat Templates</h3>
+                        {(chatTemplates?.length ?? 0) > 0 && (
+                          <span className="ml-auto rounded-full border border-fg/10 bg-fg/5 px-2 py-0.5 text-xs text-fg/70">
+                            {chatTemplates?.length ?? 0}
+                          </span>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/settings/characters/${characterId}/templates`)}
+                        className="flex w-full items-center gap-3 rounded-xl border border-fg/10 bg-surface-el/20 px-3.5 py-3 text-left transition active:bg-surface-el/40"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-medium text-fg">Manage Templates</div>
+                          <p className="mt-0.5 text-xs text-fg/50">
+                            {(chatTemplates?.length ?? 0) > 0
+                              ? `${chatTemplates?.length} template${(chatTemplates?.length ?? 0) !== 1 ? "s" : ""} — multi-message conversation starters`
+                              : "Create conversation starters with multiple messages"}
+                          </p>
+                        </div>
+                        <ChevronRight className="h-4 w-4 shrink-0 text-fg/30" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="space-y-4">
@@ -751,6 +786,29 @@ export function EditCharacterPage() {
                           </div>
                         </div>
                       </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-fg/10 bg-surface-el/20 p-4">
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2">
+                        <div className="rounded-lg border border-fg/10 bg-fg/5 p-1.5">
+                          <Image className="h-4 w-4 text-fg/60" />
+                        </div>
+                        <h3 className="text-sm font-semibold text-fg">Design references</h3>
+                      </div>
+                      <DesignReferenceEditor
+                        designDescription={designDescription}
+                        onDesignDescriptionChange={(value) =>
+                          setFields({ designDescription: value })
+                        }
+                        referenceImages={designReferenceImageIds}
+                        onReferenceImagesChange={(value) =>
+                          setFields({ designReferenceImageIds: value })
+                        }
+                        showHeader={false}
+                        description="Attach a few stable image references and one concise visual note so scene generation keeps the same face, proportions, outfit cues, and style."
+                      />
                     </div>
                   </div>
                 </div>
@@ -952,36 +1010,6 @@ export function EditCharacterPage() {
                 <p className="text-xs text-fg/50">
                   Create multiple starting scenarios. One will be selected when starting a new chat.
                 </p>
-              </div>
-
-              {/* Chat Templates Section */}
-              <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <div className="rounded-lg border border-secondary/30 bg-secondary/10 p-1.5">
-                    <MessageSquare className="h-4 w-4 text-secondary" />
-                  </div>
-                  <h3 className="text-sm font-semibold text-fg">Chat Templates</h3>
-                  {(chatTemplates?.length ?? 0) > 0 && (
-                    <span className="ml-auto rounded-full border border-fg/10 bg-fg/5 px-2 py-0.5 text-xs text-fg/70">
-                      {chatTemplates?.length ?? 0}
-                    </span>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => navigate(`/settings/characters/${characterId}/templates`)}
-                  className="flex w-full items-center gap-3 rounded-xl border border-fg/10 bg-surface-el/20 px-3.5 py-3 text-left transition active:bg-surface-el/40"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-medium text-fg">Manage Templates</div>
-                    <p className="mt-0.5 text-xs text-fg/50">
-                      {(chatTemplates?.length ?? 0) > 0
-                        ? `${chatTemplates?.length} template${(chatTemplates?.length ?? 0) !== 1 ? "s" : ""} — multi-message conversation starters`
-                        : "Create conversation starters with multiple messages"}
-                    </p>
-                  </div>
-                  <ChevronRight className="h-4 w-4 shrink-0 text-fg/30" />
-                </button>
               </div>
             </>
           )}

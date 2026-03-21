@@ -2,6 +2,7 @@ import { useMemo, useReducer } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { savePersona } from "../../../../core/storage/repo";
 import { saveAvatar } from "../../../../core/storage/avatars";
+import { convertToImageRef } from "../../../../core/storage/images";
 import { invalidateAvatarCache } from "../../../hooks/useAvatar";
 import { importPersona, readFileAsText } from "../../../../core/storage/personaTransfer";
 import { toast } from "../../../components/toast";
@@ -14,6 +15,8 @@ export interface PersonaFormState {
   avatarPath: string | null;
   avatarCrop: AvatarCrop | null;
   avatarRoundPath: string | null;
+  designDescription: string;
+  designReferenceImageIds: string[];
   isDefault: boolean;
   saving: boolean;
   importing: boolean;
@@ -27,6 +30,8 @@ export type PersonaFormAction =
   | { type: "set_avatar_path"; value: string | null }
   | { type: "set_avatar_crop"; value: AvatarCrop | null }
   | { type: "set_avatar_round_path"; value: string | null }
+  | { type: "set_design_description"; value: string }
+  | { type: "set_design_reference_image_ids"; value: string[] }
   | { type: "set_default"; value: boolean }
   | { type: "set_saving"; value: boolean }
   | { type: "set_importing"; value: boolean }
@@ -40,6 +45,8 @@ export type PersonaFormAction =
         avatarPath: string | null;
         avatarCrop?: AvatarCrop | null;
         avatarRoundPath?: string | null;
+        designDescription?: string;
+        designReferenceImageIds?: string[];
       };
     };
 
@@ -50,6 +57,8 @@ export const initialCreatePersonaState: PersonaFormState = {
   avatarPath: null,
   avatarCrop: null,
   avatarRoundPath: null,
+  designDescription: "",
+  designReferenceImageIds: [],
   isDefault: false,
   saving: false,
   importing: false,
@@ -73,6 +82,10 @@ export function createPersonaReducer(
       return { ...state, avatarCrop: action.value };
     case "set_avatar_round_path":
       return { ...state, avatarRoundPath: action.value };
+    case "set_design_description":
+      return { ...state, designDescription: action.value };
+    case "set_design_reference_image_ids":
+      return { ...state, designReferenceImageIds: action.value };
     case "set_default":
       return { ...state, isDefault: action.value };
     case "set_saving":
@@ -90,6 +103,8 @@ export function createPersonaReducer(
         avatarPath: action.payload.avatarPath,
         avatarCrop: action.payload.avatarCrop ?? null,
         avatarRoundPath: action.payload.avatarRoundPath ?? null,
+        designDescription: action.payload.designDescription ?? "",
+        designReferenceImageIds: action.payload.designReferenceImageIds ?? [],
         isDefault: false,
       };
     default:
@@ -157,6 +172,8 @@ export function useCreatePersonaController() {
             nickname: importedPersona.nickname ?? "",
             avatarPath: importedPersona.avatarPath || null,
             avatarCrop: importedPersona.avatarCrop ?? null,
+            designDescription: importedPersona.designDescription ?? "",
+            designReferenceImageIds: importedPersona.designReferenceImageIds ?? [],
           },
         });
         dispatch({ type: "set_error", value: null });
@@ -198,6 +215,19 @@ export function useCreatePersonaController() {
         }
       }
 
+      const designReferenceImageIds = (
+        await Promise.all(
+          state.designReferenceImageIds.map(async (value) => {
+            if (!value) return null;
+            if (value.startsWith("data:")) {
+              const imageId = await convertToImageRef(value);
+              return imageId || null;
+            }
+            return value;
+          }),
+        )
+      ).filter((value): value is string => typeof value === "string" && value.length > 0);
+
       await savePersona({
         id: personaId,
         title: state.title.trim(),
@@ -205,6 +235,9 @@ export function useCreatePersonaController() {
         nickname: state.nickname.trim() || undefined,
         avatarPath: avatarFilename,
         avatarCrop: avatarFilename ? (state.avatarCrop ?? undefined) : undefined,
+        designDescription: state.designDescription.trim() || undefined,
+        designReferenceImageIds:
+          designReferenceImageIds.length > 0 ? designReferenceImageIds : undefined,
         isDefault: state.isDefault,
       });
 

@@ -11,6 +11,8 @@ fn read_character(conn: &rusqlite::Connection, id: &str) -> Result<JsonValue, St
         avatar_crop_x,
         avatar_crop_y,
         avatar_crop_scale,
+        design_description,
+        design_reference_image_ids,
         bg_path,
         description,
         definition,
@@ -60,6 +62,8 @@ fn read_character(conn: &rusqlite::Connection, id: &str) -> Result<JsonValue, St
         Option<String>,
         Option<String>,
         Option<String>,
+        Option<String>,
+        Option<String>,
         Option<i64>,
         Option<String>,
         i64,
@@ -73,10 +77,10 @@ fn read_character(conn: &rusqlite::Connection, id: &str) -> Result<JsonValue, St
         i64,
     ) = conn
         .query_row(
-            "SELECT name, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, background_image_path, description, definition, nickname, scenario, creator_notes, creator, creator_notes_multilingual, source, tags, default_scene_id, default_model_id, fallback_model_id, prompt_template_id, system_prompt, voice_config, voice_autoplay, memory_type, disable_avatar_gradient, custom_gradient_enabled, custom_gradient_colors, custom_text_color, custom_text_secondary, chat_appearance, default_chat_template_id, created_at, updated_at FROM characters WHERE id = ?",
+            "SELECT name, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, design_description, design_reference_image_ids, background_image_path, description, definition, nickname, scenario, creator_notes, creator, creator_notes_multilingual, source, tags, default_scene_id, default_model_id, fallback_model_id, prompt_template_id, system_prompt, voice_config, voice_autoplay, memory_type, disable_avatar_gradient, custom_gradient_enabled, custom_gradient_colors, custom_text_color, custom_text_secondary, chat_appearance, default_chat_template_id, created_at, updated_at FROM characters WHERE id = ?",
             params![id],
             |r| Ok((
-                r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?, r.get(10)?, r.get(11)?, r.get(12)?, r.get(13)?, r.get(14)?, r.get(15)?, r.get(16)?, r.get(17)?, r.get(18)?, r.get(19)?, r.get(20)?, r.get(21)?, r.get(22)?, r.get::<_, i64>(23)?, r.get::<_, i64>(24)?, r.get(25)?, r.get(26)?, r.get(27)?, r.get(28)?, r.get(29)?, r.get(30)?, r.get(31)?
+                r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?, r.get(10)?, r.get(11)?, r.get(12)?, r.get(13)?, r.get(14)?, r.get(15)?, r.get(16)?, r.get(17)?, r.get(18)?, r.get(19)?, r.get(20)?, r.get(21)?, r.get(22)?, r.get(23)?, r.get(24)?, r.get::<_, i64>(25)?, r.get::<_, i64>(26)?, r.get(27)?, r.get(28)?, r.get(29)?, r.get(30)?, r.get(31)?, r.get(32)?, r.get(33)?
             )),
         )
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
@@ -211,6 +215,14 @@ fn read_character(conn: &rusqlite::Connection, id: &str) -> Result<JsonValue, St
         crop.insert("y".into(), JsonValue::from(y));
         crop.insert("scale".into(), JsonValue::from(scale));
         root.insert("avatarCrop".into(), JsonValue::Object(crop));
+    }
+    if let Some(value) = design_description {
+        root.insert("designDescription".into(), JsonValue::String(value));
+    }
+    if let Some(value) = design_reference_image_ids {
+        if let Ok(parsed) = serde_json::from_str::<Vec<String>>(&value) {
+            root.insert("designReferenceImageIds".into(), serde_json::json!(parsed));
+        }
     }
     if let Some(b) = bg_path {
         root.insert("backgroundImagePath".into(), JsonValue::String(b));
@@ -397,6 +409,14 @@ pub fn character_upsert(app: tauri::AppHandle, character_json: String) -> Result
     let avatar_crop_x = avatar_crop.and_then(|crop| crop.get("x").and_then(|v| v.as_f64()));
     let avatar_crop_y = avatar_crop.and_then(|crop| crop.get("y").and_then(|v| v.as_f64()));
     let avatar_crop_scale = avatar_crop.and_then(|crop| crop.get("scale").and_then(|v| v.as_f64()));
+    let design_description = c
+        .get("designDescription")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    let design_reference_image_ids: Option<String> = c
+        .get("designReferenceImageIds")
+        .and_then(|v| v.as_array())
+        .and_then(|arr| serde_json::to_string(arr).ok());
     let bg_path = c
         .get("backgroundImagePath")
         .and_then(|v| v.as_str())
@@ -518,14 +538,16 @@ pub fn character_upsert(app: tauri::AppHandle, character_json: String) -> Result
     let created_at = existing_created.unwrap_or(now);
 
     tx.execute(
-        r#"INSERT INTO characters (id, name, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, background_image_path, description, definition, nickname, scenario, creator_notes, creator, creator_notes_multilingual, source, tags, default_scene_id, default_model_id, fallback_model_id, prompt_template_id, system_prompt, voice_config, voice_autoplay, memory_type, disable_avatar_gradient, custom_gradient_enabled, custom_gradient_colors, custom_text_color, custom_text_secondary, chat_appearance, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        r#"INSERT INTO characters (id, name, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, design_description, design_reference_image_ids, background_image_path, description, definition, nickname, scenario, creator_notes, creator, creator_notes_multilingual, source, tags, default_scene_id, default_model_id, fallback_model_id, prompt_template_id, system_prompt, voice_config, voice_autoplay, memory_type, disable_avatar_gradient, custom_gradient_enabled, custom_gradient_colors, custom_text_color, custom_text_secondary, chat_appearance, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
               name=excluded.name,
               avatar_path=excluded.avatar_path,
               avatar_crop_x=excluded.avatar_crop_x,
               avatar_crop_y=excluded.avatar_crop_y,
               avatar_crop_scale=excluded.avatar_crop_scale,
+              design_description=excluded.design_description,
+              design_reference_image_ids=excluded.design_reference_image_ids,
               background_image_path=excluded.background_image_path,
               description=excluded.description,
               definition=excluded.definition,
@@ -557,6 +579,8 @@ pub fn character_upsert(app: tauri::AppHandle, character_json: String) -> Result
             avatar_crop_x,
             avatar_crop_y,
             avatar_crop_scale,
+            design_description,
+            design_reference_image_ids,
             bg_path,
             description,
             definition,

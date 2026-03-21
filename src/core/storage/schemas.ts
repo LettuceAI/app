@@ -2155,12 +2155,17 @@ export const AvatarCropSchema = z.object({
 });
 export type AvatarCrop = z.infer<typeof AvatarCropSchema>;
 
+export const DesignReferenceImageIdsSchema = z.array(z.string()).default([]);
+export type DesignReferenceImageIds = z.infer<typeof DesignReferenceImageIdsSchema>;
+
 export const CharacterSchema = z.object({
   id: z.string().uuid(),
   name: z.string().min(1),
   nickname: z.string().nullish(),
   avatarPath: z.string().optional(),
   avatarCrop: AvatarCropSchema.optional(),
+  designDescription: z.string().optional(),
+  designReferenceImageIds: DesignReferenceImageIdsSchema.optional(),
   backgroundImagePath: z.string().optional(),
   definition: z.string().optional(),
   description: z.string().optional(),
@@ -2262,6 +2267,8 @@ export const PersonaSchema = z.object({
   nickname: z.string().nullish(),
   avatarPath: z.string().optional(),
   avatarCrop: AvatarCropSchema.optional(),
+  designDescription: z.string().optional(),
+  designReferenceImageIds: DesignReferenceImageIdsSchema.optional(),
   isDefault: z.boolean().default(false),
   createdAt: z.number().int(),
   updatedAt: z.number().int(),

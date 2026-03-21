@@ -122,6 +122,10 @@ export function CreateCharacterPage() {
               onAvatarCropChange={actions.setAvatarCrop}
               avatarRoundPath={state.avatarRoundPath}
               onAvatarRoundChange={actions.setAvatarRoundPath}
+              designDescription={state.designDescription}
+              onDesignDescriptionChange={actions.setDesignDescription}
+              designReferenceImageIds={state.designReferenceImageIds}
+              onDesignReferenceImageIdsChange={actions.setDesignReferenceImageIds}
               backgroundImagePath={state.backgroundImagePath}
               onBackgroundImageChange={actions.setBackgroundImagePath}
               onBackgroundImageUpload={actions.handleBackgroundImageUpload}

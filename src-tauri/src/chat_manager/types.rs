@@ -548,6 +548,10 @@ pub struct Character {
     #[serde(default)]
     pub avatar_path: Option<String>,
     #[serde(default)]
+    pub design_description: Option<String>,
+    #[serde(default)]
+    pub design_reference_image_ids: Vec<String>,
+    #[serde(default)]
     pub background_image_path: Option<String>,
     #[serde(default)]
     pub definition: Option<String>,
@@ -589,6 +593,10 @@ pub struct Persona {
     pub nickname: Option<String>,
     #[serde(default)]
     pub avatar_path: Option<String>,
+    #[serde(default)]
+    pub design_description: Option<String>,
+    #[serde(default)]
+    pub design_reference_image_ids: Vec<String>,
     #[serde(default)]
     pub is_default: bool,
     pub created_at: u64,

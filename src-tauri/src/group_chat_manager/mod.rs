@@ -3309,20 +3309,22 @@ fn load_character(conn: &rusqlite::Connection, character_id: &str) -> Result<Cha
     Ok(Character {
         id: row.0,
         name: row.1,
+        avatar_path: None,
+        design_description: None,
+        design_reference_image_ids: Vec::new(),
+        background_image_path: None,
         description,
         definition,
-        created_at: row.4 as u64,
-        updated_at: row.5 as u64,
-        default_model_id: row.6,
-        fallback_model_id: None,
-        avatar_path: None,
-        background_image_path: None,
         rules: Vec::new(),
         scenes: Vec::new(),
         default_scene_id: None,
+        default_model_id: row.6,
+        fallback_model_id: None,
         memory_type: row.7.unwrap_or_else(|| "manual".to_string()),
         prompt_template_id: None,
         system_prompt: None,
+        created_at: row.4 as u64,
+        updated_at: row.5 as u64,
     })
 }
 

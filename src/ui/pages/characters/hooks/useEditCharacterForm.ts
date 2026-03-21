@@ -10,7 +10,7 @@ import type {
   SystemPromptTemplate,
 } from "../../../../core/storage/schemas";
 import { processBackgroundImage } from "../../../../core/utils/image";
-import { convertToImageRef } from "../../../../core/storage/images";
+import { convertToImageRef, deleteImageRef } from "../../../../core/storage/images";
 import { saveAvatar, loadAvatar } from "../../../../core/storage/avatars";
 import { listPromptTemplates } from "../../../../core/prompts/service";
 import { invalidateAvatarCache } from "../../../hooks/useAvatar";
@@ -44,6 +44,8 @@ type EditCharacterState = {
   avatarPath: string;
   avatarCrop: AvatarCrop | null;
   avatarRoundPath: string | null;
+  designDescription: string;
+  designReferenceImageIds: string[];
   backgroundImagePath: string;
   scenes: Scene[];
   chatTemplates: ChatTemplate[];
@@ -98,6 +100,8 @@ const initialState: EditCharacterState = {
   avatarPath: "",
   avatarCrop: null,
   avatarRoundPath: null,
+  designDescription: "",
+  designReferenceImageIds: [],
   backgroundImagePath: "",
   scenes: [],
   chatTemplates: [],
@@ -164,6 +168,8 @@ export function useEditCharacterForm(characterId: string | undefined) {
     avatarPath: string;
     avatarCrop: string;
     avatarRoundPath: string;
+    designDescription: string;
+    designReferenceImageIds: string;
     backgroundImagePath: string;
     scenes: string;
     chatTemplates: string;
@@ -292,6 +298,10 @@ export function useEditCharacterForm(characterId: string | undefined) {
         avatarPath: loadedAvatarPath,
         avatarCrop: character.avatarCrop ?? null,
         avatarRoundPath: loadedAvatarRoundPath,
+        designDescription: character.designDescription || "",
+        designReferenceImageIds: Array.isArray(character.designReferenceImageIds)
+          ? character.designReferenceImageIds
+          : [],
         backgroundImagePath: backgroundImage,
         scenes: character.scenes || [],
         chatTemplates: character.chatTemplates || [],
@@ -328,6 +338,8 @@ export function useEditCharacterForm(characterId: string | undefined) {
         avatarPath: loadedAvatarPath,
         avatarCrop: JSON.stringify(character.avatarCrop ?? null),
         avatarRoundPath: JSON.stringify(loadedAvatarRoundPath ?? null),
+        designDescription: character.designDescription || "",
+        designReferenceImageIds: JSON.stringify(character.designReferenceImageIds || []),
         backgroundImagePath: backgroundImage,
         scenes: JSON.stringify(character.scenes || []),
         chatTemplates: JSON.stringify(character.chatTemplates || []),
@@ -402,6 +414,9 @@ export function useEditCharacterForm(characterId: string | undefined) {
     try {
       setSaving(true);
       setError(null);
+      const previousDesignReferenceImageIds = initialStateRef.current
+        ? (JSON.parse(initialStateRef.current.designReferenceImageIds) as string[])
+        : [];
 
       const parseCommaSeparated = (raw: string): string[] =>
         raw
@@ -462,12 +477,28 @@ export function useEditCharacterForm(characterId: string | undefined) {
             : state.backgroundImagePath
         : undefined;
 
+      const designReferenceImageIds = (
+        await Promise.all(
+          state.designReferenceImageIds.map(async (value) => {
+            if (!value) return null;
+            if (value.startsWith("data:")) {
+              const imageId = await convertToImageRef(value);
+              return imageId || null;
+            }
+            return value;
+          }),
+        )
+      ).filter((value): value is string => typeof value === "string" && value.length > 0);
+
       await saveCharacter({
         id: characterId,
         name: state.name.trim(),
         definition: state.definition.trim(),
         description: state.description.trim() || undefined,
         nickname: state.nickname.trim() || undefined,
+        designDescription: state.designDescription.trim() || undefined,
+        designReferenceImageIds:
+          designReferenceImageIds.length > 0 ? designReferenceImageIds : undefined,
         creator: state.creator.trim() || undefined,
         creatorNotes: state.creatorNotes.trim() || undefined,
         creatorNotesMultilingual,
@@ -501,6 +532,8 @@ export function useEditCharacterForm(characterId: string | undefined) {
         description: state.description.trim(),
         scenario: state.scenario.trim(),
         nickname: state.nickname.trim(),
+        designDescription: state.designDescription.trim(),
+        designReferenceImageIds,
         creator: state.creator.trim(),
         creatorNotes: state.creatorNotes.trim(),
         creatorNotesMultilingualText: state.creatorNotesMultilingualText.trim(),
@@ -523,6 +556,8 @@ export function useEditCharacterForm(characterId: string | undefined) {
         avatarPath: state.avatarPath,
         avatarCrop: JSON.stringify(state.avatarCrop ?? null),
         avatarRoundPath: JSON.stringify(state.avatarRoundPath ?? null),
+        designDescription: state.designDescription.trim(),
+        designReferenceImageIds: JSON.stringify(designReferenceImageIds),
         backgroundImagePath: state.backgroundImagePath,
         scenes: JSON.stringify(state.scenes),
         chatTemplates: JSON.stringify(state.chatTemplates),
@@ -538,6 +573,12 @@ export function useEditCharacterForm(characterId: string | undefined) {
         voiceConfig: JSON.stringify(state.voiceConfig ?? null),
         voiceAutoplay: state.voiceAutoplay,
       };
+      const removedDesignReferenceImageIds = previousDesignReferenceImageIds.filter(
+        (imageId) => !designReferenceImageIds.includes(imageId),
+      );
+      if (removedDesignReferenceImageIds.length > 0) {
+        await Promise.all(removedDesignReferenceImageIds.map((imageId) => deleteImageRef(imageId)));
+      }
     } catch (err: any) {
       console.error("Failed to save character:", err);
       setError(err?.message || "Failed to save character");
@@ -715,6 +756,8 @@ export function useEditCharacterForm(characterId: string | undefined) {
       avatarPath: initial.avatarPath,
       avatarCrop: JSON.parse(initial.avatarCrop) as AvatarCrop | null,
       avatarRoundPath: JSON.parse(initial.avatarRoundPath) as string | null,
+      designDescription: initial.designDescription,
+      designReferenceImageIds: JSON.parse(initial.designReferenceImageIds) as string[],
       backgroundImagePath: initial.backgroundImagePath,
       scenes: JSON.parse(initial.scenes) as Scene[],
       defaultSceneId: initial.defaultSceneId,
@@ -768,6 +811,8 @@ export function useEditCharacterForm(characterId: string | undefined) {
           state.description !== initial.description ||
           state.scenario !== initial.scenario ||
           state.nickname !== initial.nickname ||
+          state.designDescription !== initial.designDescription ||
+          JSON.stringify(state.designReferenceImageIds) !== initial.designReferenceImageIds ||
           state.creator !== initial.creator ||
           state.creatorNotes !== initial.creatorNotes ||
           state.creatorNotesMultilingualText !== initial.creatorNotesMultilingualText ||

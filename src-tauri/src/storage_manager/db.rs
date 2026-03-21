@@ -294,6 +294,8 @@ pub fn init_db(_app: &tauri::AppHandle, conn: &Connection) -> Result<(), String>
           avatar_crop_x REAL,
           avatar_crop_y REAL,
           avatar_crop_scale REAL,
+          design_description TEXT,
+          design_reference_image_ids TEXT,
           background_image_path TEXT,
           description TEXT,
           definition TEXT,
@@ -416,6 +418,8 @@ pub fn init_db(_app: &tauri::AppHandle, conn: &Connection) -> Result<(), String>
           avatar_crop_x REAL,
           avatar_crop_y REAL,
           avatar_crop_scale REAL,
+          design_description TEXT,
+          design_reference_image_ids TEXT,
           is_default INTEGER NOT NULL DEFAULT 0,
           created_at INTEGER NOT NULL,
           updated_at INTEGER NOT NULL

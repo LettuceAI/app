@@ -6746,37 +6746,135 @@ fn resolve_avatar_reference_data(
     })
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SceneReferenceSource {
+    None,
+    AvatarFallback,
+    DesignImages,
+}
+
+struct SceneReferenceImages {
+    images: Vec<String>,
+    character_reference_count: usize,
+    character_reference_source: SceneReferenceSource,
+    persona_reference_count: usize,
+    persona_reference_source: SceneReferenceSource,
+}
+
+fn resolve_design_reference_images(app: &AppHandle, image_ids: &[String]) -> Vec<String> {
+    image_ids
+        .iter()
+        .filter_map(|image_id| {
+            let image_id = image_id.trim();
+            if image_id.is_empty() {
+                return None;
+            }
+            storage_read_image_data(app, image_id).ok()
+        })
+        .collect()
+}
+
 fn build_scene_reference_images(
     app: &AppHandle,
     character: &Character,
     persona: Option<&Persona>,
-) -> (Vec<String>, bool, bool) {
+) -> SceneReferenceImages {
     let mut images = Vec::new();
-    let mut has_character_reference = false;
-    let mut has_persona_reference = false;
+    let character_design_images =
+        resolve_design_reference_images(app, &character.design_reference_image_ids);
+    let (character_reference_count, character_reference_source) =
+        if !character_design_images.is_empty() {
+            let count = character_design_images.len();
+            images.extend(character_design_images);
+            (count, SceneReferenceSource::DesignImages)
+        } else if let Some(character_image) = resolve_avatar_reference_data(
+            app,
+            "character",
+            &character.id,
+            character.avatar_path.as_deref(),
+        ) {
+            images.push(character_image);
+            (1, SceneReferenceSource::AvatarFallback)
+        } else {
+            (0, SceneReferenceSource::None)
+        };
 
-    if let Some(character_image) = resolve_avatar_reference_data(
-        app,
-        "character",
-        &character.id,
-        character.avatar_path.as_deref(),
-    ) {
-        images.push(character_image);
-        has_character_reference = true;
-    }
-
+    let mut persona_reference_count = 0;
+    let mut persona_reference_source = SceneReferenceSource::None;
     if let Some(persona) = persona {
-        if let Some(persona_image) = resolve_avatar_reference_data(
+        let persona_design_images =
+            resolve_design_reference_images(app, &persona.design_reference_image_ids);
+        if !persona_design_images.is_empty() {
+            persona_reference_count = persona_design_images.len();
+            persona_reference_source = SceneReferenceSource::DesignImages;
+            images.extend(persona_design_images);
+        } else if let Some(persona_image) = resolve_avatar_reference_data(
             app,
             "persona",
             &persona.id,
             persona.avatar_path.as_deref(),
         ) {
             images.push(persona_image);
-            has_persona_reference = true;
+            persona_reference_count = 1;
+            persona_reference_source = SceneReferenceSource::AvatarFallback;
         }
     }
-    (images, has_character_reference, has_persona_reference)
+
+    SceneReferenceImages {
+        images,
+        character_reference_count,
+        character_reference_source,
+        persona_reference_count,
+        persona_reference_source,
+    }
+}
+
+fn format_scene_reference_range(start_index: usize, count: usize) -> String {
+    if count <= 1 {
+        format!("attached image {}", start_index)
+    } else {
+        format!(
+            "attached images {}-{}",
+            start_index,
+            start_index + count - 1
+        )
+    }
+}
+
+fn persona_scene_name(persona: Option<&Persona>) -> String {
+    persona
+        .and_then(|value| value.nickname.as_deref())
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| persona.map(|value| value.title.as_str()))
+        .unwrap_or("the persona")
+        .to_string()
+}
+
+fn build_scene_prompt_reference_hint(
+    entity_name: &str,
+    reference_count: usize,
+    reference_source: SceneReferenceSource,
+) -> String {
+    match reference_source {
+        SceneReferenceSource::DesignImages if reference_count > 0 => format!(
+            "The image model will receive {} saved design reference image{} for {}.",
+            reference_count,
+            if reference_count == 1 { "" } else { "s" },
+            entity_name
+        ),
+        SceneReferenceSource::AvatarFallback => {
+            format!(
+                "The image model will receive {}'s base avatar as a visual reference.",
+                entity_name
+            )
+        }
+        SceneReferenceSource::None => String::new(),
+        SceneReferenceSource::DesignImages => String::new(),
+    }
+}
+
+fn build_scene_generation_system_prompt() -> String {
+    "Write exactly one polished image-generation prompt from the user's scene context. Do not explain your reasoning and do not wrap the result in tags, quotes, or code fences.".to_string()
 }
 
 fn build_scene_generation_request(
@@ -6785,34 +6883,75 @@ fn build_scene_generation_request(
     provider_cred: &ProviderCredential,
     character: &Character,
     persona: Option<&Persona>,
-    input_images: Vec<String>,
-    has_character_reference: bool,
-    has_persona_reference: bool,
+    reference_images: SceneReferenceImages,
 ) -> ImageGenerationRequest {
+    let SceneReferenceImages {
+        images: input_images,
+        character_reference_count,
+        character_reference_source,
+        persona_reference_count,
+        persona_reference_source,
+    } = reference_images;
     let mut prompt_sections = Vec::new();
+    let has_character_reference = character_reference_count > 0;
+    let has_persona_reference = persona_reference_count > 0;
+
+    if let Some(design_description) = character
+        .design_description
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        prompt_sections.push(format!(
+            "Character design notes for {}:\n{}",
+            character.name, design_description
+        ));
+    }
+
+    if let Some(persona) = persona {
+        if let Some(design_description) = persona
+            .design_description
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            let persona_name = persona_scene_name(Some(persona));
+            prompt_sections.push(format!(
+                "Persona design notes for {}:\n{}",
+                persona_name, design_description
+            ));
+        }
+    }
 
     if has_character_reference || has_persona_reference {
         let mut reference_lines = Vec::new();
+        let mut next_image_index = 1;
         if has_character_reference {
+            let range_label =
+                format_scene_reference_range(next_image_index, character_reference_count);
+            let source_label = match character_reference_source {
+                SceneReferenceSource::DesignImages => "saved character design reference",
+                SceneReferenceSource::AvatarFallback => "base avatar reference",
+                SceneReferenceSource::None => "character reference",
+            };
             reference_lines.push(format!(
-                "The {} attached image is the character reference for {}. Use it only for that character.",
-                if has_persona_reference { "first" } else { "only" },
-                character.name
+                "The {} is the {} for {}. Use it only for {}'s identity, face, body, outfit cues, and signature styling.",
+                range_label, source_label, character.name, character.name
             ));
+            next_image_index += character_reference_count;
         }
         if has_persona_reference {
-            let persona_name = persona
-                .and_then(|value| value.nickname.as_deref())
-                .filter(|value| !value.trim().is_empty())
-                .unwrap_or_else(|| {
-                    persona
-                        .map(|value| value.title.as_str())
-                        .unwrap_or("the persona")
-                });
+            let persona_name = persona_scene_name(persona);
+            let range_label =
+                format_scene_reference_range(next_image_index, persona_reference_count);
+            let source_label = match persona_reference_source {
+                SceneReferenceSource::DesignImages => "saved persona design reference",
+                SceneReferenceSource::AvatarFallback => "base avatar reference",
+                SceneReferenceSource::None => "persona reference",
+            };
             reference_lines.push(format!(
-                "The {} attached image is the persona reference for {}. Use it only for that persona.",
-                if has_character_reference { "second" } else { "only" },
-                persona_name
+                "The {} is the {} for {}. Use it only for {}'s identity, face, body, outfit cues, and signature styling.",
+                range_label, source_label, persona_name, persona_name
             ));
         }
         reference_lines.push(
@@ -6953,23 +7092,76 @@ fn render_scene_generation_prompt(
 ) -> String {
     let mut prompt = prompts::get_scene_generation_prompt(app);
     let char_name = character.name.as_str();
-    let char_desc = character
+    let mut char_desc_parts = Vec::new();
+    if let Some(value) = character
         .definition
         .as_deref()
         .or(character.description.as_deref())
-        .unwrap_or("");
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        char_desc_parts.push(value.to_string());
+    }
+    if let Some(value) = character
+        .design_description
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        char_desc_parts.push(format!("Visual design notes: {}", value));
+    }
+    let char_desc = char_desc_parts.join("\n\n");
     let persona_name = persona.map(|value| value.title.as_str()).unwrap_or("User");
-    let persona_desc = persona
+    let mut persona_desc_parts = Vec::new();
+    if let Some(value) = persona
         .map(|value| value.description.as_str())
-        .unwrap_or("");
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        persona_desc_parts.push(value.to_string());
+    }
+    if let Some(value) = persona
+        .and_then(|value| value.design_description.as_deref())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        persona_desc_parts.push(format!("Visual design notes: {}", value));
+    }
+    let persona_desc = persona_desc_parts.join("\n\n");
+    let character_reference_hint = build_scene_prompt_reference_hint(
+        char_name,
+        character.design_reference_image_ids.len(),
+        if !character.design_reference_image_ids.is_empty() {
+            SceneReferenceSource::DesignImages
+        } else if character.avatar_path.is_some() {
+            SceneReferenceSource::AvatarFallback
+        } else {
+            SceneReferenceSource::None
+        },
+    );
+    let persona_reference_hint = if let Some(persona) = persona {
+        build_scene_prompt_reference_hint(
+            &persona_scene_name(Some(persona)),
+            persona.design_reference_image_ids.len(),
+            if !persona.design_reference_image_ids.is_empty() {
+                SceneReferenceSource::DesignImages
+            } else if persona.avatar_path.is_some() {
+                SceneReferenceSource::AvatarFallback
+            } else {
+                SceneReferenceSource::None
+            },
+        )
+    } else {
+        String::new()
+    };
 
     prompt = prompt.replace("{{char.name}}", char_name);
     prompt = prompt.replace("{{char}}", char_name);
     prompt = prompt.replace("{{user}}", persona_name);
     prompt = prompt.replace("{{persona}}", persona_name);
-    prompt = prompt.replace("{{char.desc}}", char_desc);
+    prompt = prompt.replace("{{char.desc}}", &char_desc);
     prompt = prompt.replace("{{persona.name}}", persona_name);
-    prompt = prompt.replace("{{persona.desc}}", persona_desc);
+    prompt = prompt.replace("{{persona.desc}}", &persona_desc);
     prompt = prompt.replace("{{recent_messages}}", recent_messages_text);
     let scene_request = if let Some(persona) = persona {
         format!(
@@ -6983,8 +7175,8 @@ fn render_scene_generation_prompt(
         )
     };
     prompt = prompt.replace("{{scene_request}}", &scene_request);
-    prompt = prompt.replace("{{image[character]}}", "");
-    prompt = prompt.replace("{{image[persona]}}", "");
+    prompt = prompt.replace("{{image[character]}}", &character_reference_hint);
+    prompt = prompt.replace("{{image[persona]}}", &persona_reference_hint);
 
     condense_prompt_whitespace(prompt)
 }
@@ -7127,17 +7319,14 @@ pub async fn chat_generate_scene_image(
             .and_then(|persona_id| personas.iter().find(|value| value.id == persona_id))
     };
 
-    let (input_images, has_character_reference, has_persona_reference) =
-        build_scene_reference_images(&app, character, persona);
+    let reference_images = build_scene_reference_images(&app, character, persona);
     let request = build_scene_generation_request(
         &scene_prompt,
         model,
         provider_cred,
         character,
         persona,
-        input_images,
-        has_character_reference,
-        has_persona_reference,
+        reference_images,
     );
     let response = generate_scene_image_with_retry(&app, request, 3).await?;
     let generated = response
@@ -7237,15 +7426,13 @@ pub async fn chat_generate_scene_prompt(
     let api_key = resolve_api_key(&app, provider_cred, "scene_prompt")?;
 
     let recent_messages_text = build_scene_prompt_context_messages(&session, &message_id)?;
-    let system_prompt =
+    let system_prompt = build_scene_generation_system_prompt();
+    let user_prompt =
         render_scene_generation_prompt(&app, &character, persona, &recent_messages_text);
 
     let messages_for_api: Vec<Value> = vec![
         json!({ "role": "system", "content": system_prompt }),
-        json!({
-            "role": "user",
-            "content": "Return only one final scene image prompt. Do not explain your reasoning and do not wrap the result in tags, quotes, or code fences."
-        }),
+        json!({ "role": "user", "content": user_prompt }),
     ];
 
     let context_length = resolve_context_length(&session, model, settings);
@@ -7691,6 +7878,8 @@ mod tests {
             id: "char-1".to_string(),
             name: "Astra".to_string(),
             avatar_path: None,
+            design_description: None,
+            design_reference_image_ids: Vec::new(),
             background_image_path: None,
             definition: Some("A starship captain".to_string()),
             description: Some("Commanding and curious".to_string()),
@@ -7713,6 +7902,9 @@ mod tests {
             title: "Milo".to_string(),
             description: "A reckless smuggler".to_string(),
             nickname: None,
+            avatar_path: None,
+            design_description: None,
+            design_reference_image_ids: Vec::new(),
             is_default: false,
             created_at: 0,
             updated_at: 0,

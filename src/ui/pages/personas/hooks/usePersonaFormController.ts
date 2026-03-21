@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 
 import { getPersona, savePersona } from "../../../../core/storage/repo";
 import { loadAvatar, saveAvatar } from "../../../../core/storage/avatars";
+import { convertToImageRef, deleteImageRef } from "../../../../core/storage/images";
 import { invalidateAvatarCache } from "../../../hooks/useAvatar";
 import type { AvatarCrop } from "../../../../core/storage/schemas";
 
@@ -17,6 +18,8 @@ type PersonaFormState = {
   avatarPath: string | null;
   avatarCrop: AvatarCrop | null;
   avatarRoundPath: string | null;
+  designDescription: string;
+  designReferenceImageIds: string[];
 };
 
 type Action =
@@ -39,6 +42,8 @@ const initialState: PersonaFormState = {
   avatarPath: null,
   avatarCrop: null,
   avatarRoundPath: null,
+  designDescription: "",
+  designReferenceImageIds: [],
 };
 
 function reducer(state: PersonaFormState, action: Action): PersonaFormState {
@@ -69,6 +74,8 @@ export function usePersonaFormController(personaId: string | undefined) {
     avatarPath: string | null;
     avatarCrop: string;
     avatarRoundPath: string;
+    designDescription: string;
+    designReferenceImageIds: string;
   } | null>(null);
   const persistedAvatarRef = useRef<{ filename?: string; url?: string }>({});
 
@@ -113,6 +120,10 @@ export function usePersonaFormController(personaId: string | undefined) {
           avatarPath: avatarDataUrl,
           avatarCrop: persona.avatarCrop ?? null,
           avatarRoundPath: avatarRoundDataUrl,
+          designDescription: persona.designDescription ?? "",
+          designReferenceImageIds: Array.isArray(persona.designReferenceImageIds)
+            ? persona.designReferenceImageIds
+            : [],
         },
       });
 
@@ -125,6 +136,8 @@ export function usePersonaFormController(personaId: string | undefined) {
         avatarPath: avatarDataUrl,
         avatarCrop: JSON.stringify(persona.avatarCrop ?? null),
         avatarRoundPath: JSON.stringify(avatarRoundDataUrl ?? null),
+        designDescription: persona.designDescription ?? "",
+        designReferenceImageIds: JSON.stringify(persona.designReferenceImageIds ?? []),
       };
       dispatch({ type: "set_error", payload: null });
     } catch (error) {
@@ -170,13 +183,30 @@ export function usePersonaFormController(personaId: string | undefined) {
     dispatch({ type: "set_fields", payload: { avatarRoundPath: value } });
   }, []);
 
+  const setDesignDescription = useCallback((value: string) => {
+    dispatch({ type: "set_fields", payload: { designDescription: value } });
+  }, []);
+
+  const setDesignReferenceImageIds = useCallback((value: string[]) => {
+    dispatch({ type: "set_fields", payload: { designReferenceImageIds: value } });
+  }, []);
+
   const handleSave = useCallback(async () => {
     if (!personaId) {
       return;
     }
 
-    const { title, description, nickname, isDefault, avatarPath, avatarCrop, avatarRoundPath } =
-      state;
+    const {
+      title,
+      description,
+      nickname,
+      isDefault,
+      avatarPath,
+      avatarCrop,
+      avatarRoundPath,
+      designDescription,
+      designReferenceImageIds: rawDesignReferenceImageIds,
+    } = state;
     if (!title.trim() || !description.trim()) {
       return;
     }
@@ -185,6 +215,10 @@ export function usePersonaFormController(personaId: string | undefined) {
     dispatch({ type: "set_error", payload: null });
 
     try {
+      const previousDesignReferenceImageIds = initialStateRef.current
+        ? (JSON.parse(initialStateRef.current.designReferenceImageIds) as string[])
+        : [];
+
       // Save avatar if provided
       let avatarFilename: string | undefined = undefined;
       if (avatarPath) {
@@ -203,6 +237,19 @@ export function usePersonaFormController(personaId: string | undefined) {
         }
       }
 
+      const designReferenceImageIds = (
+        await Promise.all(
+          rawDesignReferenceImageIds.map(async (value) => {
+            if (!value) return null;
+            if (value.startsWith("data:")) {
+              const imageId = await convertToImageRef(value);
+              return imageId || null;
+            }
+            return value;
+          }),
+        )
+      ).filter((value): value is string => typeof value === "string" && value.length > 0);
+
       await savePersona({
         id: personaId,
         title: title.trim(),
@@ -211,6 +258,9 @@ export function usePersonaFormController(personaId: string | undefined) {
         isDefault,
         avatarPath: avatarFilename,
         avatarCrop: avatarFilename ? (avatarCrop ?? undefined) : undefined,
+        designDescription: designDescription.trim() || undefined,
+        designReferenceImageIds:
+          designReferenceImageIds.length > 0 ? designReferenceImageIds : undefined,
       });
 
       // Update initial state to match current (for change detection)
@@ -222,6 +272,8 @@ export function usePersonaFormController(personaId: string | undefined) {
         avatarPath,
         avatarCrop: JSON.stringify(avatarCrop ?? null),
         avatarRoundPath: JSON.stringify(avatarRoundPath ?? null),
+        designDescription: designDescription.trim(),
+        designReferenceImageIds: JSON.stringify(designReferenceImageIds),
       };
 
       // Sync trimmed values
@@ -231,8 +283,17 @@ export function usePersonaFormController(personaId: string | undefined) {
           title: title.trim(),
           description: description.trim(),
           nickname: nickname.trim(),
+          designDescription: designDescription.trim(),
+          designReferenceImageIds,
         },
       });
+
+      const removedDesignReferenceImageIds = previousDesignReferenceImageIds.filter(
+        (imageId) => !designReferenceImageIds.includes(imageId),
+      );
+      if (removedDesignReferenceImageIds.length > 0) {
+        await Promise.all(removedDesignReferenceImageIds.map((imageId) => deleteImageRef(imageId)));
+      }
     } catch (error: any) {
       console.error("Failed to save persona:", error);
       dispatch({
@@ -257,6 +318,8 @@ export function usePersonaFormController(personaId: string | undefined) {
         avatarPath: initial.avatarPath,
         avatarCrop: JSON.parse(initial.avatarCrop) as AvatarCrop | null,
         avatarRoundPath: JSON.parse(initial.avatarRoundPath) as string | null,
+        designDescription: initial.designDescription,
+        designReferenceImageIds: JSON.parse(initial.designReferenceImageIds) as string[],
       },
     });
     dispatch({ type: "set_error", payload: null });
@@ -279,7 +342,9 @@ export function usePersonaFormController(personaId: string | undefined) {
       state.isDefault !== initial.isDefault ||
       state.avatarPath !== initial.avatarPath ||
       JSON.stringify(state.avatarCrop ?? null) !== initial.avatarCrop ||
-      JSON.stringify(state.avatarRoundPath ?? null) !== initial.avatarRoundPath;
+      JSON.stringify(state.avatarRoundPath ?? null) !== initial.avatarRoundPath ||
+      state.designDescription !== initial.designDescription ||
+      JSON.stringify(state.designReferenceImageIds) !== initial.designReferenceImageIds;
 
     return hasChanges;
   })();
@@ -293,6 +358,8 @@ export function usePersonaFormController(personaId: string | undefined) {
     setAvatarPath,
     setAvatarCrop,
     setAvatarRoundPath,
+    setDesignDescription,
+    setDesignReferenceImageIds,
     handleSave,
     resetToInitial,
     canSave,

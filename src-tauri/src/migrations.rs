@@ -7,7 +7,7 @@ use crate::storage_manager::{settings::storage_read_settings, settings::storage_
 use crate::utils::log_info;
 
 /// Current migration version
-pub const CURRENT_MIGRATION_VERSION: u32 = 45;
+pub const CURRENT_MIGRATION_VERSION: u32 = 46;
 
 pub fn run_migrations(app: &AppHandle) -> Result<(), String> {
     log_info(app, "migrations", "Starting migration check");
@@ -487,6 +487,16 @@ pub fn run_migrations(app: &AppHandle) -> Result<(), String> {
         );
         migrate_v44_to_v45(app)?;
         version = 45;
+    }
+
+    if version < 46 {
+        log_info(
+            app,
+            "migrations",
+            "Running migration v45 -> v46: Add design reference fields to characters and personas",
+        );
+        migrate_v45_to_v46(app)?;
+        version = 46;
     }
 
     // Update the stored version
@@ -2698,5 +2708,26 @@ fn migrate_v43_to_v44(app: &AppHandle) -> Result<(), String> {
 fn migrate_v44_to_v45(app: &AppHandle) -> Result<(), String> {
     let conn = crate::storage_manager::db::open_db(app)?;
     let _ = conn.execute("ALTER TABLE lorebooks ADD COLUMN avatar_path TEXT", []);
+    Ok(())
+}
+
+fn migrate_v45_to_v46(app: &AppHandle) -> Result<(), String> {
+    let conn = crate::storage_manager::db::open_db(app)?;
+    let _ = conn.execute(
+        "ALTER TABLE characters ADD COLUMN design_description TEXT",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE characters ADD COLUMN design_reference_image_ids TEXT",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE personas ADD COLUMN design_description TEXT",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE personas ADD COLUMN design_reference_image_ids TEXT",
+        [],
+    );
     Ok(())
 }

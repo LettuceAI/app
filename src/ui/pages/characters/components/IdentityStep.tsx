@@ -2,6 +2,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, Camera, Image, Upload, Sparkles, Loader2, AlertCircle } from "lucide-react";
 import { typography, radius, spacing, interactive, shadows, cn } from "../../../design-tokens";
 import { AvatarPicker } from "../../../components/AvatarPicker";
+import { DesignReferenceEditor } from "../../../components/DesignReferenceEditor";
 import type { AvatarCrop } from "../../../../core/storage/schemas";
 import { useI18n } from "../../../../core/i18n/context";
 
@@ -14,6 +15,10 @@ interface IdentityStepProps {
   onAvatarCropChange?: (value: AvatarCrop | null) => void;
   avatarRoundPath?: string | null;
   onAvatarRoundChange?: (value: string | null) => void;
+  designDescription: string;
+  onDesignDescriptionChange: (value: string) => void;
+  designReferenceImageIds: string[];
+  onDesignReferenceImageIdsChange: (value: string[]) => void;
   backgroundImagePath: string;
   onBackgroundImageChange: (value: string) => void;
   onBackgroundImageUpload: (event: React.ChangeEvent<HTMLInputElement>) => void;
@@ -35,6 +40,10 @@ export function IdentityStep({
   onAvatarCropChange,
   avatarRoundPath,
   onAvatarRoundChange,
+  designDescription,
+  onDesignDescriptionChange,
+  designReferenceImageIds,
+  onDesignReferenceImageIdsChange,
   backgroundImagePath,
   onBackgroundImageChange,
   onBackgroundImageUpload,
@@ -218,6 +227,15 @@ export function IdentityStep({
           </AnimatePresence>
 
           {/* Background Image (Optional) */}
+          <DesignReferenceEditor
+            designDescription={designDescription}
+            onDesignDescriptionChange={onDesignDescriptionChange}
+            referenceImages={designReferenceImageIds}
+            onReferenceImagesChange={onDesignReferenceImageIdsChange}
+            title="Design references"
+            description="Add a few stable visual references plus one design note for face, build, outfit cues, and style."
+          />
+
           <div className={spacing.field}>
             <label
               className={cn(

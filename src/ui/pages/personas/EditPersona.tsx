@@ -9,6 +9,7 @@ import {
   generateExportFilename,
 } from "../../../core/storage/personaTransfer";
 import { AvatarPicker } from "../../components/AvatarPicker";
+import { DesignReferenceEditor } from "../../components/DesignReferenceEditor";
 import { useI18n } from "../../../core/i18n/context";
 import { typography, radius, spacing, interactive, cn } from "../../design-tokens";
 
@@ -33,6 +34,8 @@ export function EditPersonaPage() {
       avatarPath,
       avatarCrop,
       avatarRoundPath,
+      designDescription,
+      designReferenceImageIds,
     },
     setTitle,
     setDescription,
@@ -41,6 +44,8 @@ export function EditPersonaPage() {
     setAvatarPath,
     setAvatarCrop,
     setAvatarRoundPath,
+    setDesignDescription,
+    setDesignReferenceImageIds,
     handleSave,
     resetToInitial,
     canSave,
@@ -112,7 +117,7 @@ export function EditPersonaPage() {
 
           <div className="grid gap-8 xl:grid-cols-[minmax(0,480px)_minmax(0,1fr)] xl:items-start">
             <div className="space-y-5">
-              <div className="flex flex-col items-center py-4 xl:items-start xl:py-0">
+              <div className="flex flex-col items-center py-4 xl:py-0">
                 <div className="relative">
                   <AvatarPicker
                     currentAvatarPath={avatarPath ?? ""}
@@ -140,7 +145,7 @@ export function EditPersonaPage() {
                     </button>
                   )}
                 </div>
-                <p className="mt-3 text-center text-xs text-fg/40 xl:text-left">
+                <p className="mt-3 text-center text-xs text-fg/40">
                   {t("personas.edit.avatarHint")}
                 </p>
               </div>
@@ -270,6 +275,30 @@ export function EditPersonaPage() {
                   </div>
                 </button>
               </div>
+
+              <div className={spacing.field}>
+                <motion.button
+                  onClick={handleExport}
+                  disabled={!personaId || exporting}
+                  whileTap={{ scale: exporting ? 1 : 0.98 }}
+                  className={cn(
+                    "w-full border border-info/40 bg-info/20 px-4 py-3.5 text-sm font-semibold text-info transition hover:bg-info/30 disabled:opacity-50",
+                    radius.md,
+                  )}
+                >
+                  {exporting ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      {t("common.buttons.exporting")}
+                    </span>
+                  ) : (
+                    <span className="flex items-center justify-center gap-2">
+                      <Download className="h-4 w-4" />
+                      {t("personas.edit.exportButton")}
+                    </span>
+                  )}
+                </motion.button>
+              </div>
             </div>
 
             <div className="space-y-5">
@@ -304,53 +333,16 @@ export function EditPersonaPage() {
                   {t("personas.edit.descriptionHint")}
                 </p>
               </div>
+
+              <DesignReferenceEditor
+                designDescription={designDescription}
+                onDesignDescriptionChange={setDesignDescription}
+                referenceImages={designReferenceImageIds}
+                onReferenceImagesChange={setDesignReferenceImageIds}
+                title="Design references"
+                description="Attach a few stable image references and one concise design note for scene generation."
+              />
             </div>
-          </div>
-
-          <div className="flex flex-col gap-3 border-t border-fg/10 pt-4 xl:flex-row xl:items-center xl:justify-between">
-            <motion.button
-              onClick={handleExport}
-              disabled={!personaId || exporting}
-              whileTap={{ scale: exporting ? 1 : 0.98 }}
-              className={cn(
-                "w-full border border-info/40 bg-info/20 px-4 py-3.5 text-sm font-semibold text-info transition hover:bg-info/30 disabled:opacity-50 xl:w-auto xl:min-w-56",
-                radius.md,
-              )}
-            >
-              {exporting ? (
-                <span className="flex items-center justify-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  {t("common.buttons.exporting")}
-                </span>
-              ) : (
-                <span className="flex items-center justify-center gap-2">
-                  <Download className="h-4 w-4" />
-                  {t("personas.edit.exportButton")}
-                </span>
-              )}
-            </motion.button>
-
-            <motion.button
-              disabled={!canSave}
-              onClick={handleSave}
-              whileTap={{ scale: canSave ? 0.98 : 1 }}
-              className={cn(
-                "w-full py-3.5 text-sm font-semibold transition xl:w-auto xl:min-w-64",
-                radius.md,
-                canSave
-                  ? "border border-accent/40 bg-accent/20 text-accent/70 shadow-[0_8px_24px_rgba(52,211,153,0.15)] hover:border-accent/60 hover:bg-accent/30"
-                  : "cursor-not-allowed border border-fg/5 bg-fg/5 text-fg/30",
-              )}
-            >
-              {saving ? (
-                <div className="flex items-center justify-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>{t("common.buttons.saving")}</span>
-                </div>
-              ) : (
-                t("common.buttons.save")
-              )}
-            </motion.button>
           </div>
         </motion.div>
       </main>

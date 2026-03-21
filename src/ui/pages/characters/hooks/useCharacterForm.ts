@@ -51,6 +51,8 @@ interface CharacterFormState {
   avatarPath: string;
   avatarCrop: AvatarCrop | null;
   avatarRoundPath: string | null;
+  designDescription: string;
+  designReferenceImageIds: string[];
   backgroundImagePath: string;
   scenes: Scene[];
   defaultSceneId: string | null;
@@ -92,6 +94,8 @@ type CharacterFormAction =
   | { type: "SET_AVATAR_PATH"; payload: string }
   | { type: "SET_AVATAR_CROP"; payload: AvatarCrop | null }
   | { type: "SET_AVATAR_ROUND_PATH"; payload: string | null }
+  | { type: "SET_DESIGN_DESCRIPTION"; payload: string }
+  | { type: "SET_DESIGN_REFERENCE_IMAGE_IDS"; payload: string[] }
   | { type: "SET_BACKGROUND_IMAGE_PATH"; payload: string }
   | { type: "SET_SCENES"; payload: Scene[] }
   | { type: "SET_DEFAULT_SCENE_ID"; payload: string | null }
@@ -127,6 +131,8 @@ const initialState: CharacterFormState = {
   avatarPath: "",
   avatarCrop: null,
   avatarRoundPath: null,
+  designDescription: "",
+  designReferenceImageIds: [],
   backgroundImagePath: "",
   scenes: [],
   defaultSceneId: null,
@@ -171,6 +177,10 @@ function characterFormReducer(
       return { ...state, avatarCrop: action.payload };
     case "SET_AVATAR_ROUND_PATH":
       return { ...state, avatarRoundPath: action.payload };
+    case "SET_DESIGN_DESCRIPTION":
+      return { ...state, designDescription: action.payload };
+    case "SET_DESIGN_REFERENCE_IMAGE_IDS":
+      return { ...state, designReferenceImageIds: action.payload };
     case "SET_BACKGROUND_IMAGE_PATH":
       return { ...state, backgroundImagePath: action.payload };
     case "SET_SCENES":
@@ -283,6 +293,16 @@ export function useCharacterForm(draftCharacter?: any) {
             payload: draftCharacter.backgroundImagePath || "",
           });
           dispatch({
+            type: "SET_DESIGN_DESCRIPTION",
+            payload: draftCharacter.designDescription || "",
+          });
+          dispatch({
+            type: "SET_DESIGN_REFERENCE_IMAGE_IDS",
+            payload: Array.isArray(draftCharacter.designReferenceImageIds)
+              ? draftCharacter.designReferenceImageIds
+              : [],
+          });
+          dispatch({
             type: "SET_DISABLE_AVATAR_GRADIENT",
             payload: draftCharacter.disableAvatarGradient ?? false,
           });
@@ -393,6 +413,12 @@ export function useCharacterForm(draftCharacter?: any) {
 
   const setBackgroundImagePath = useCallback((path: string) => {
     dispatch({ type: "SET_BACKGROUND_IMAGE_PATH", payload: path });
+  }, []);
+  const setDesignDescription = useCallback((value: string) => {
+    dispatch({ type: "SET_DESIGN_DESCRIPTION", payload: value });
+  }, []);
+  const setDesignReferenceImageIds = useCallback((value: string[]) => {
+    dispatch({ type: "SET_DESIGN_REFERENCE_IMAGE_IDS", payload: value });
   }, []);
 
   const setScenes = useCallback((scenes: Scene[]) => {
@@ -585,6 +611,18 @@ export function useCharacterForm(draftCharacter?: any) {
       dispatch({
         type: "SET_TAGS_TEXT",
         payload: Array.isArray(characterData.tags) ? characterData.tags.join(", ") : "",
+      });
+      dispatch({
+        type: "SET_DESIGN_DESCRIPTION",
+        payload: (characterData as { designDescription?: string }).designDescription || "",
+      });
+      dispatch({
+        type: "SET_DESIGN_REFERENCE_IMAGE_IDS",
+        payload: Array.isArray(
+          (characterData as { designReferenceImageIds?: string[] }).designReferenceImageIds,
+        )
+          ? (characterData as { designReferenceImageIds?: string[] }).designReferenceImageIds || []
+          : [],
       });
       dispatch({ type: "SET_SCENES", payload: scenesWithScenario });
       dispatch({ type: "SET_DEFAULT_SCENE_ID", payload: newDefaultSceneId });
@@ -807,6 +845,19 @@ export function useCharacterForm(draftCharacter?: any) {
         }
       }
 
+      const designReferenceImageIds = (
+        await Promise.all(
+          state.designReferenceImageIds.map(async (value) => {
+            if (!value) return null;
+            if (value.startsWith("data:")) {
+              const imageId = await convertToImageRef(value);
+              return imageId || null;
+            }
+            return value;
+          }),
+        )
+      ).filter((value): value is string => typeof value === "string" && value.length > 0);
+
       console.log("[CreateCharacter] Avatar filename:", avatarFilename || "none");
       console.log("[CreateCharacter] Background image ID:", backgroundImageId || "none");
 
@@ -815,6 +866,9 @@ export function useCharacterForm(draftCharacter?: any) {
         name: state.name.trim(),
         avatarPath: avatarFilename || undefined,
         avatarCrop: avatarFilename ? (state.avatarCrop ?? undefined) : undefined,
+        designDescription: state.designDescription.trim() || undefined,
+        designReferenceImageIds:
+          designReferenceImageIds.length > 0 ? designReferenceImageIds : undefined,
         backgroundImagePath: backgroundImageId || undefined,
         definition: state.definition.trim(),
         description: state.description.trim() || undefined,
@@ -889,6 +943,8 @@ export function useCharacterForm(draftCharacter?: any) {
     state.avatarPath,
     state.avatarCrop,
     state.avatarRoundPath,
+    state.designDescription,
+    state.designReferenceImageIds,
     state.backgroundImagePath,
     state.scenes,
     state.defaultSceneId,
@@ -933,6 +989,8 @@ export function useCharacterForm(draftCharacter?: any) {
       setAvatarPath,
       setAvatarCrop,
       setAvatarRoundPath,
+      setDesignDescription,
+      setDesignReferenceImageIds,
       setBackgroundImagePath,
       setScenes,
       setDefaultSceneId,

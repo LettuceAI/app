@@ -3,6 +3,7 @@ import { Bookmark, Camera, X, Upload, Loader2, CheckCircle } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion";
 import { PersonaFormState, PersonaFormAction } from "../hooks/createPersonaReducer";
 import { AvatarPicker } from "../../../components/AvatarPicker";
+import { DesignReferenceEditor } from "../../../components/DesignReferenceEditor";
 import { typography, radius, spacing, interactive, cn } from "../../../design-tokens";
 import type { AvatarCrop } from "../../../../core/storage/schemas";
 import { useI18n } from "../../../../core/i18n/context";
@@ -36,6 +37,8 @@ export function CreatePersonaForm({
     avatarPath,
     avatarCrop,
     avatarRoundPath,
+    designDescription,
+    designReferenceImageIds,
     isDefault,
     saving,
     importing,
@@ -272,6 +275,19 @@ export function CreatePersonaForm({
               {t("personas.edit.descriptionHint")}
             </p>
           </div>
+
+          <DesignReferenceEditor
+            designDescription={designDescription}
+            onDesignDescriptionChange={(value) =>
+              dispatch({ type: "set_design_description", value })
+            }
+            referenceImages={designReferenceImageIds}
+            onReferenceImagesChange={(value) =>
+              dispatch({ type: "set_design_reference_image_ids", value })
+            }
+            title="Design references"
+            description="Attach a few stable image references and one concise design note for scene generation."
+          />
         </div>
       </div>
 
