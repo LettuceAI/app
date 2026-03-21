@@ -31,7 +31,7 @@ import { DesignReferenceEditor } from "../../components/DesignReferenceEditor";
 import { BottomMenu, MenuSection } from "../../components/BottomMenu";
 import { BackgroundPositionModal } from "../../components/BackgroundPositionModal";
 import { CharacterExportMenu } from "../../components/CharacterExportMenu";
-import { cn, radius, colors, interactive } from "../../design-tokens";
+import { cn, radius, colors, interactive, spacing, typography } from "../../design-tokens";
 import { getProviderIcon } from "../../../core/utils/providerIcons";
 import { useI18n } from "../../../core/i18n/context";
 import type { CharacterFileFormat } from "../../../core/storage/characterTransfer";
@@ -579,122 +579,203 @@ export function EditCharacterPage() {
           {/* Character Tab: Personality & Scenes */}
           {activeTab === "character" && (
             <>
-              <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(320px,360px)_minmax(0,1fr)] xl:items-start">
-                <div className="space-y-4 xl:sticky xl:top-4">
-                  <div className="rounded-2xl border border-fg/10 bg-surface-el/20 p-4">
-                    <div className="flex flex-col items-center">
-                      <div className="relative">
-                        <AvatarPicker
-                          currentAvatarPath={avatarPath}
-                          onAvatarChange={(path) => setFields({ avatarPath: path })}
-                          promptSubjectName={name}
-                          promptSubjectDescription={definition}
-                          avatarCrop={avatarCrop}
-                          onAvatarCropChange={(crop) => setFields({ avatarCrop: crop })}
-                          avatarRoundPath={avatarRoundPath}
-                          onAvatarRoundChange={(roundPath) =>
-                            setFields({ avatarRoundPath: roundPath })
+              <div className="grid grid-cols-1 gap-8 xl:grid-cols-[minmax(0,420px)_minmax(0,1fr)] xl:items-start">
+                <div className="space-y-6 xl:sticky xl:top-4">
+                  <div className="flex flex-col items-center py-3 xl:py-0">
+                    <div className="relative">
+                      <AvatarPicker
+                        currentAvatarPath={avatarPath}
+                        onAvatarChange={(path) => setFields({ avatarPath: path })}
+                        promptSubjectName={name}
+                        promptSubjectDescription={definition}
+                        avatarCrop={avatarCrop}
+                        onAvatarCropChange={(crop) => setFields({ avatarCrop: crop })}
+                        avatarRoundPath={avatarRoundPath}
+                        onAvatarRoundChange={(roundPath) =>
+                          setFields({ avatarRoundPath: roundPath })
+                        }
+                        placeholder={avatarInitial}
+                      />
+
+                      {avatarPath && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setFields({ avatarPath: "", avatarCrop: null, avatarRoundPath: null })
                           }
-                          placeholder={avatarInitial}
-                        />
-
-                        {avatarPath && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setFields({ avatarPath: "", avatarCrop: null, avatarRoundPath: null })
-                            }
-                            className="absolute -top-1 -left-1 z-30 flex h-10 w-10 items-center justify-center rounded-full border border-fg/10 bg-surface-el text-fg/60 transition hover:bg-danger/80 hover:border-danger/50 hover:text-fg active:scale-95"
-                            aria-label={t("common.buttons.remove")}
-                          >
-                            <X size={14} strokeWidth={2.5} />
-                          </button>
-                        )}
-                      </div>
-                      <p className="mt-3 text-xs text-fg/40">{t("common.buttons.add")}</p>
+                          className="absolute -top-1 -left-1 z-30 flex h-10 w-10 items-center justify-center rounded-full border border-fg/10 bg-surface-el text-fg/60 transition hover:bg-danger/80 hover:border-danger/50 hover:text-fg active:scale-95"
+                          aria-label={t("common.buttons.remove")}
+                        >
+                          <X size={14} strokeWidth={2.5} />
+                        </button>
+                      )}
                     </div>
-
-                    <div className="mt-5 space-y-3">
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-medium uppercase tracking-wide text-fg/50">
-                          Character Name
-                        </label>
-                        <input
-                          value={name}
-                          onChange={(e) => setFields({ name: e.target.value })}
-                          placeholder="Enter character name..."
-                          className="w-full rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3 text-base text-fg placeholder-fg/40 transition focus:border-fg/25 focus:outline-none"
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-medium uppercase tracking-wide text-fg/50">
-                          Nickname
-                        </label>
-                        <input
-                          value={nickname}
-                          onChange={(e) => setFields({ nickname: e.target.value })}
-                          placeholder="Optional nickname..."
-                          className="w-full rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3 text-sm text-fg placeholder-fg/40 transition focus:border-fg/25 focus:outline-none"
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-medium uppercase tracking-wide text-fg/50">
-                          Creator
-                        </label>
-                        <input
-                          value={creator}
-                          onChange={(e) => setFields({ creator: e.target.value })}
-                          placeholder="Optional creator name..."
-                          className="w-full rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3 text-sm text-fg placeholder-fg/40 transition focus:border-fg/25 focus:outline-none"
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-medium uppercase tracking-wide text-fg/50">
-                          Tags
-                        </label>
-                        <textarea
-                          value={tagsText}
-                          onChange={(e) => setFields({ tagsText: e.target.value })}
-                          rows={2}
-                          placeholder="tag1, tag2"
-                          className="w-full resize-none rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3 text-sm text-fg placeholder-fg/40 transition focus:border-fg/25 focus:outline-none"
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-medium uppercase tracking-wide text-fg/50">
-                          Creator Notes
-                        </label>
-                        <textarea
-                          value={creatorNotes}
-                          onChange={(e) => setFields({ creatorNotes: e.target.value })}
-                          rows={4}
-                          placeholder="Optional creator notes..."
-                          className="w-full resize-none rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3 text-sm text-fg placeholder-fg/40 transition focus:border-fg/25 focus:outline-none"
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-medium uppercase tracking-wide text-fg/50">
-                          Creator Notes Multilingual (JSON)
-                        </label>
-                        <textarea
-                          value={creatorNotesMultilingualText}
-                          onChange={(e) =>
-                            setFields({ creatorNotesMultilingualText: e.target.value })
-                          }
-                          rows={5}
-                          placeholder='{"en":"note","ja":"メモ"}'
-                          className="w-full resize-none rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3 font-mono text-xs text-fg placeholder-fg/40 transition focus:border-fg/25 focus:outline-none"
-                        />
-                      </div>
-                    </div>
+                    <p className="mt-3 text-center text-xs text-fg/40">
+                      Tap to add or generate avatar
+                    </p>
                   </div>
 
-                  <div className="rounded-2xl border border-fg/10 bg-surface-el/20 p-4">
+                  <div className={spacing.field}>
+                    <label
+                      className={cn(
+                        typography.label.size,
+                        typography.label.weight,
+                        typography.label.tracking,
+                        "uppercase text-fg/70",
+                      )}
+                    >
+                      Character Name
+                    </label>
+                    <input
+                      value={name}
+                      onChange={(e) => setFields({ name: e.target.value })}
+                      placeholder="Enter character name..."
+                      className={cn(
+                        "w-full border bg-surface-el/20 px-4 py-3.5 text-fg placeholder-fg/40 backdrop-blur-xl",
+                        radius.md,
+                        typography.body.size,
+                        interactive.transition.default,
+                        "focus:border-fg/30 focus:bg-surface-el/30 focus:outline-none",
+                        name.trim() ? "border-accent/30 bg-accent/5" : "border-fg/10",
+                      )}
+                    />
+                  </div>
+
+                  <div className={spacing.field}>
+                    <label
+                      className={cn(
+                        typography.label.size,
+                        typography.label.weight,
+                        typography.label.tracking,
+                        "uppercase text-fg/70",
+                      )}
+                    >
+                      Nickname
+                    </label>
+                    <input
+                      value={nickname}
+                      onChange={(e) => setFields({ nickname: e.target.value })}
+                      placeholder="Optional nickname..."
+                      className={cn(
+                        "w-full border bg-surface-el/20 px-4 py-3.5 text-fg placeholder-fg/40 backdrop-blur-xl",
+                        radius.md,
+                        typography.body.size,
+                        interactive.transition.default,
+                        "focus:border-fg/30 focus:bg-surface-el/30 focus:outline-none",
+                        nickname.trim() ? "border-accent/30 bg-accent/5" : "border-fg/10",
+                      )}
+                    />
+                  </div>
+
+                  <div className={spacing.field}>
+                    <label
+                      className={cn(
+                        typography.label.size,
+                        typography.label.weight,
+                        typography.label.tracking,
+                        "uppercase text-fg/70",
+                      )}
+                    >
+                      Creator
+                    </label>
+                    <input
+                      value={creator}
+                      onChange={(e) => setFields({ creator: e.target.value })}
+                      placeholder="Optional creator name..."
+                      className={cn(
+                        "w-full border bg-surface-el/20 px-4 py-3.5 text-fg placeholder-fg/40 backdrop-blur-xl",
+                        radius.md,
+                        typography.body.size,
+                        interactive.transition.default,
+                        "focus:border-fg/30 focus:bg-surface-el/30 focus:outline-none",
+                        creator.trim() ? "border-accent/30 bg-accent/5" : "border-fg/10",
+                      )}
+                    />
+                  </div>
+
+                  <div className={spacing.field}>
+                    <label
+                      className={cn(
+                        typography.label.size,
+                        typography.label.weight,
+                        typography.label.tracking,
+                        "uppercase text-fg/70",
+                      )}
+                    >
+                      Tags
+                    </label>
+                    <textarea
+                      value={tagsText}
+                      onChange={(e) => setFields({ tagsText: e.target.value })}
+                      rows={2}
+                      placeholder="tag1, tag2"
+                      className={cn(
+                        "w-full resize-none border bg-surface-el/20 px-4 py-3.5 text-fg placeholder-fg/40 backdrop-blur-xl",
+                        radius.md,
+                        typography.body.size,
+                        interactive.transition.default,
+                        "focus:border-fg/30 focus:bg-surface-el/30 focus:outline-none",
+                        tagsText.trim() ? "border-accent/30 bg-accent/5" : "border-fg/10",
+                      )}
+                    />
+                  </div>
+
+                  <div className={spacing.field}>
+                    <label
+                      className={cn(
+                        typography.label.size,
+                        typography.label.weight,
+                        typography.label.tracking,
+                        "uppercase text-fg/70",
+                      )}
+                    >
+                      Creator Notes
+                    </label>
+                    <textarea
+                      value={creatorNotes}
+                      onChange={(e) => setFields({ creatorNotes: e.target.value })}
+                      rows={4}
+                      placeholder="Optional creator notes..."
+                      className={cn(
+                        "w-full resize-none border bg-surface-el/20 px-4 py-3.5 text-fg placeholder-fg/40 backdrop-blur-xl",
+                        radius.md,
+                        typography.body.size,
+                        interactive.transition.default,
+                        "focus:border-fg/30 focus:bg-surface-el/30 focus:outline-none",
+                        creatorNotes.trim() ? "border-accent/30 bg-accent/5" : "border-fg/10",
+                      )}
+                    />
+                  </div>
+
+                  <div className={spacing.field}>
+                    <label
+                      className={cn(
+                        typography.label.size,
+                        typography.label.weight,
+                        typography.label.tracking,
+                        "uppercase text-fg/70",
+                      )}
+                    >
+                      Creator Notes Multilingual (JSON)
+                    </label>
+                    <textarea
+                      value={creatorNotesMultilingualText}
+                      onChange={(e) => setFields({ creatorNotesMultilingualText: e.target.value })}
+                      rows={5}
+                      placeholder='{"en":"note","ja":"メモ"}'
+                      className={cn(
+                        "w-full resize-none border bg-surface-el/20 px-4 py-3.5 font-mono text-xs text-fg placeholder-fg/40 backdrop-blur-xl",
+                        radius.md,
+                        interactive.transition.default,
+                        "focus:border-fg/30 focus:bg-surface-el/30 focus:outline-none",
+                        creatorNotesMultilingualText.trim()
+                          ? "border-accent/30 bg-accent/5"
+                          : "border-fg/10",
+                      )}
+                    />
+                  </div>
+
+                  <div className="border-t border-fg/10 pt-5">
                     <div className="space-y-3">
                       <div className="flex items-center gap-2">
                         <div className="rounded-lg border border-secondary/30 bg-secondary/10 p-1.5">
@@ -711,7 +792,7 @@ export function EditCharacterPage() {
                       <button
                         type="button"
                         onClick={() => navigate(`/settings/characters/${characterId}/templates`)}
-                        className="flex w-full items-center gap-3 rounded-xl border border-fg/10 bg-surface-el/20 px-3.5 py-3 text-left transition active:bg-surface-el/40"
+                        className="flex w-full items-center gap-3 rounded-xl border border-fg/10 bg-surface-el/20 px-3.5 py-3 text-left transition hover:border-fg/25 hover:bg-surface-el/30 active:bg-surface-el/40"
                       >
                         <div className="min-w-0 flex-1">
                           <div className="text-sm font-medium text-fg">Manage Templates</div>
@@ -727,29 +808,33 @@ export function EditCharacterPage() {
                   </div>
                 </div>
 
-                <div className="space-y-4">
-                  <div className="rounded-2xl border border-fg/10 bg-surface-el/20 p-4">
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-2">
-                        <div className="rounded-lg border border-fg/10 bg-fg/5 p-1.5">
-                          <Info className="h-4 w-4 text-fg/60" />
-                        </div>
-                        <h3 className="text-sm font-semibold text-fg">Description</h3>
+                <div className="space-y-6">
+                  <section className={spacing.field}>
+                    <div className="flex items-center gap-2">
+                      <div className="rounded-lg border border-fg/10 bg-fg/5 p-1.5">
+                        <Info className="h-4 w-4 text-fg/60" />
                       </div>
-                      <textarea
-                        value={description}
-                        onChange={(e) => setFields({ description: e.target.value })}
-                        rows={5}
-                        placeholder="Short summary shown in lists and cards..."
-                        className="w-full resize-none rounded-xl border border-fg/10 bg-surface-el/20 px-3.5 py-3 text-sm leading-relaxed text-fg placeholder-fg/40 transition focus:border-fg/25 focus:outline-none"
-                      />
-                      <p className="text-xs text-fg/50">
-                        Optional short description for display purposes.
-                      </p>
+                      <h3 className="text-sm font-semibold text-fg">Description</h3>
                     </div>
-                  </div>
+                    <textarea
+                      value={description}
+                      onChange={(e) => setFields({ description: e.target.value })}
+                      rows={5}
+                      placeholder="Short summary shown in lists and cards..."
+                      className={cn(
+                        "w-full resize-none border bg-surface-el/20 px-4 py-3.5 text-sm leading-relaxed text-fg placeholder-fg/40 backdrop-blur-xl",
+                        radius.md,
+                        interactive.transition.default,
+                        "focus:border-fg/30 focus:bg-surface-el/30 focus:outline-none",
+                        description.trim() ? "border-fg/20" : "border-fg/10",
+                      )}
+                    />
+                    <p className="text-xs text-fg/50">
+                      Optional short description for display purposes.
+                    </p>
+                  </section>
 
-                  <div className="rounded-2xl border border-fg/10 bg-surface-el/20 p-4">
+                  <section className={spacing.field}>
                     <div className="space-y-3">
                       <div className="flex items-center gap-2">
                         <div className="rounded-lg border border-accent/30 bg-accent/10 p-1.5">
@@ -787,9 +872,9 @@ export function EditCharacterPage() {
                         </div>
                       </div>
                     </div>
-                  </div>
+                  </section>
 
-                  <div className="rounded-2xl border border-fg/10 bg-surface-el/20 p-4">
+                  <section className={spacing.field}>
                     <div className="space-y-3">
                       <div className="flex items-center gap-2">
                         <div className="rounded-lg border border-fg/10 bg-fg/5 p-1.5">
@@ -810,7 +895,7 @@ export function EditCharacterPage() {
                         description="Attach a few stable image references and one concise visual note so scene generation keeps the same face, proportions, outfit cues, and style."
                       />
                     </div>
-                  </div>
+                  </section>
                 </div>
               </div>
 
