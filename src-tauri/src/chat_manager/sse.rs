@@ -5,13 +5,6 @@ use crate::chat_manager::tooling::ToolCall;
 use super::tooling::parse_tool_calls;
 use super::types::{NormalizedEvent, UsageSummary};
 
-//
-// ------------------------------------------------------------
-//  Helpers that operate on a *raw finished SSE dump*
-//  These MUST skip tool frames before extracting text/reasoning
-// ------------------------------------------------------------
-//
-
 pub fn accumulate_text_from_sse(raw: &str, provider_id: Option<&str>) -> Option<String> {
     let mut out = String::new();
 

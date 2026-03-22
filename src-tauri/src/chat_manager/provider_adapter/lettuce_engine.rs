@@ -72,7 +72,6 @@ impl ProviderAdapter for LettuceEngineAdapter {
         _reasoning_effort: Option<String>,
         _reasoning_budget: Option<u32>,
     ) -> Value {
-        // Engine-backed characters never use this adapter for chat.
         json!({})
     }
 }
