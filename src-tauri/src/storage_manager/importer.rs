@@ -202,6 +202,9 @@ fn import_characters(conn: &mut rusqlite::Connection, json: &str) -> Result<(), 
         let name = c.get("name").and_then(|v| v.as_str()).unwrap_or("Unnamed");
         let avatar_path = c
             .get("avatarPath")
+            .or_else(|| c.get("avatar"))
+            .or_else(|| c.get("image"))
+            .or_else(|| c.get("avatar_url"))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
         let avatar_crop = c.get("avatarCrop").and_then(|v| v.as_object());
@@ -345,6 +348,9 @@ fn import_personas(conn: &mut rusqlite::Connection, json: &str) -> Result<(), St
         let description = p.get("description").and_then(|v| v.as_str()).unwrap_or("");
         let avatar_path = p
             .get("avatarPath")
+            .or_else(|| p.get("avatar"))
+            .or_else(|| p.get("image"))
+            .or_else(|| p.get("avatar_url"))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
         let avatar_crop = p.get("avatarCrop").and_then(|v| v.as_object());
