@@ -12,6 +12,7 @@ mod ort_runtime;
 mod settings;
 mod specs;
 mod tests;
+pub mod tokenizer;
 mod util;
 
 use specs::*;

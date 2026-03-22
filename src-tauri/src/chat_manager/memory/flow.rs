@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::api::{api_request, ApiRequest, ApiResponse};
 use crate::dynamic_memory_run_manager::{DynamicMemoryCancellationToken, DynamicMemoryRunManager};
-use crate::embedding_model;
+use crate::embedding;
 use crate::storage_manager::db::open_db;
 use crate::storage_manager::sessions::session_conversation_count;
 use crate::usage::tracking::UsageOperationType;
@@ -252,18 +252,17 @@ pub(crate) async fn select_relevant_memories(
         return Vec::new();
     }
 
-    let query_embedding =
-        match embedding_model::compute_embedding(app.clone(), query.to_string()).await {
-            Ok(vec) => vec,
-            Err(err) => {
-                log_warn(
-                    app,
-                    "memory_retrieval",
-                    format!("embedding failed: {}", err),
-                );
-                return Vec::new();
-            }
-        };
+    let query_embedding = match embedding::compute_embedding(app.clone(), query.to_string()).await {
+        Ok(vec) => vec,
+        Err(err) => {
+            log_warn(
+                app,
+                "memory_retrieval",
+                format!("embedding failed: {}", err),
+            );
+            return Vec::new();
+        }
+    };
 
     if matches!(strategy, MemoryRetrievalStrategy::Cosine) {
         let cosine_indices = select_top_cosine_memory_indices(
@@ -773,7 +772,7 @@ async fn process_dynamic_memory_cycle_with_model(
         format!(
             "summary generated: length={} chars tokens={}",
             summary.len(),
-            crate::tokenizer::count_tokens(app, &summary).unwrap_or(0)
+            crate::embedding::tokenizer::count_tokens(app, &summary).unwrap_or(0)
         ),
     );
 
@@ -829,7 +828,7 @@ async fn process_dynamic_memory_cycle_with_model(
             });
             session.memory_summary = Some(summary.clone());
             session.memory_summary_token_count =
-                crate::tokenizer::count_tokens(app, &summary).unwrap_or(0);
+                crate::embedding::tokenizer::count_tokens(app, &summary).unwrap_or(0);
             session.memory_tool_events.push(event);
             if session.memory_tool_events.len() > 50 {
                 let excess = session.memory_tool_events.len() - 50;
@@ -854,7 +853,8 @@ async fn process_dynamic_memory_cycle_with_model(
     ensure_dynamic_memory_not_cancelled(app, session, &cancel_token)?;
 
     session.memory_summary = Some(summary.clone());
-    session.memory_summary_token_count = crate::tokenizer::count_tokens(app, &summary).unwrap_or(0);
+    session.memory_summary_token_count =
+        crate::embedding::tokenizer::count_tokens(app, &summary).unwrap_or(0);
     let event = json!({
         "id": Uuid::new_v4().to_string(),
         "windowStart": window_start,
@@ -1734,7 +1734,7 @@ async fn run_memory_tool_update(
                     };
                     let mem_id = generate_memory_id();
                     let embedding =
-                        match embedding_model::compute_embedding(app.clone(), text.clone()).await {
+                        match embedding::compute_embedding(app.clone(), text.clone()).await {
                             Ok(vec) => Some(vec),
                             Err(err) => {
                                 log_error(
@@ -1766,7 +1766,8 @@ async fn run_memory_tool_update(
                             continue;
                         }
                     }
-                    let token_count = crate::tokenizer::count_tokens(app, &text).unwrap_or(0);
+                    let token_count =
+                        crate::embedding::tokenizer::count_tokens(app, &text).unwrap_or(0);
                     // Check if memory should be pinned
                     let is_pinned = call
                         .arguments
@@ -1961,7 +1962,7 @@ async fn run_memory_tool_update(
 
                     let mem_id = generate_memory_id();
                     let embedding =
-                        match embedding_model::compute_embedding(app.clone(), text.clone()).await {
+                        match embedding::compute_embedding(app.clone(), text.clone()).await {
                             Ok(vec) => Some(vec),
                             Err(err) => {
                                 log_error(
@@ -1989,7 +1990,8 @@ async fn run_memory_tool_update(
                             continue;
                         }
                     }
-                    let token_count = crate::tokenizer::count_tokens(app, &text).unwrap_or(0);
+                    let token_count =
+                        crate::embedding::tokenizer::count_tokens(app, &text).unwrap_or(0);
                     session.memory_embeddings.push(MemoryEmbedding {
                         id: mem_id.clone(),
                         text: text.clone(),

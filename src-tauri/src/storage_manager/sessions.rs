@@ -10,7 +10,7 @@ use crate::chat_manager::types::{
     AdvancedModelSettings, ImageAttachment, MemoryEmbedding, MessageVariant, Session,
     StoredMessage, UsageSummary,
 };
-use crate::embedding_model;
+use crate::embedding;
 use crate::utils::{log_error, log_info, log_warn};
 
 const ALLOWED_MEMORY_CATEGORIES: &[&str] = &[
@@ -2645,7 +2645,7 @@ pub async fn session_add_memory(
     memories.push(memory.clone());
 
     // Compute embedding (best-effort)
-    let embedding = match embedding_model::compute_embedding(app.clone(), memory.clone()).await {
+    let embedding = match embedding::compute_embedding(app.clone(), memory.clone()).await {
         Ok(vec) => vec,
         Err(err) => {
             log_warn(
@@ -2658,7 +2658,7 @@ pub async fn session_add_memory(
     };
 
     // Count tokens (best-effort)
-    let token_count = crate::tokenizer::count_tokens(&app, &memory).unwrap_or(0);
+    let token_count = crate::embedding::tokenizer::count_tokens(&app, &memory).unwrap_or(0);
     let normalized_category = normalize_memory_category(memory_category)?;
 
     memory_embeddings.push(serde_json::json!({
@@ -2777,18 +2777,17 @@ pub async fn session_update_memory(
         let normalized_category = normalize_memory_category(new_category)?;
 
         // Recompute embedding
-        let embedding =
-            match embedding_model::compute_embedding(app.clone(), new_memory.clone()).await {
-                Ok(vec) => vec,
-                Err(err) => {
-                    log_error(
-                        &app,
-                        "session_update_memory",
-                        format!("embedding failed: {}", err),
-                    );
-                    Vec::new()
-                }
-            };
+        let embedding = match embedding::compute_embedding(app.clone(), new_memory.clone()).await {
+            Ok(vec) => vec,
+            Err(err) => {
+                log_error(
+                    &app,
+                    "session_update_memory",
+                    format!("embedding failed: {}", err),
+                );
+                Vec::new()
+            }
+        };
 
         if memory_index < memory_embeddings.len() {
             if let Some(obj) = memory_embeddings

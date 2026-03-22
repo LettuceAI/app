@@ -15,7 +15,7 @@ fn get_tokenizer(app: &AppHandle) -> Result<Tokenizer, String> {
     })?;
 
     if tokenizer_lock.is_none() {
-        let model_dir = crate::embedding_model::embedding_model_dir(app)?;
+        let model_dir = crate::embedding::embedding_model_dir(app)?;
         let tokenizer_path = model_dir.join("tokenizer.json");
 
         if !tokenizer_path.exists() {

@@ -1699,7 +1699,7 @@ fn migrate_v15_to_v16(app: &AppHandle) -> Result<(), String> {
     // If tokenizer isn't available (embedding model not downloaded), skip backfill
     // Token counts will be calculated when memories/summaries are created
     let tokenizer_available = {
-        use crate::embedding_model::embedding_model_dir;
+        use crate::embedding::embedding_model_dir;
         let model_dir = embedding_model_dir(app).ok();
         model_dir
             .map(|dir| dir.join("tokenizer.json").exists())
@@ -1710,7 +1710,7 @@ fn migrate_v15_to_v16(app: &AppHandle) -> Result<(), String> {
         return Ok(());
     }
 
-    use crate::tokenizer::count_tokens;
+    use crate::embedding::tokenizer::count_tokens;
 
     // Backfill token counts for memory_embeddings
     let mut stmt = conn

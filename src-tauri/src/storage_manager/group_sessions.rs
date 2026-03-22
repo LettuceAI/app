@@ -2382,7 +2382,7 @@ pub async fn group_session_add_memory(
     memory: String,
     pool: State<'_, SwappablePool>,
 ) -> Result<Option<String>, String> {
-    use crate::embedding_model;
+    use crate::embedding;
     use crate::utils::log_info;
 
     log_info(
@@ -2413,13 +2413,13 @@ pub async fn group_session_add_memory(
     memories.push(memory.clone());
 
     // Compute embedding (best-effort)
-    let embedding = match embedding_model::compute_embedding(app.clone(), memory.clone()).await {
+    let embedding = match embedding::compute_embedding(app.clone(), memory.clone()).await {
         Ok(vec) => vec,
         Err(_) => Vec::new(),
     };
 
     // Count tokens (best-effort)
-    let token_count = crate::tokenizer::count_tokens(&app, &memory).unwrap_or(0);
+    let token_count = crate::embedding::tokenizer::count_tokens(&app, &memory).unwrap_or(0);
 
     memory_embeddings.push(MemoryEmbedding {
         id: uuid::Uuid::new_v4().to_string(),
@@ -2521,7 +2521,7 @@ pub async fn group_session_update_memory(
     new_memory: String,
     pool: State<'_, SwappablePool>,
 ) -> Result<Option<String>, String> {
-    use crate::embedding_model;
+    use crate::embedding;
 
     let conn = pool.get_connection()?;
 
@@ -2548,13 +2548,12 @@ pub async fn group_session_update_memory(
 
     if memory_index < memory_embeddings.len() {
         // Recompute embedding
-        let embedding =
-            match embedding_model::compute_embedding(app.clone(), new_memory.clone()).await {
-                Ok(vec) => vec,
-                Err(_) => memory_embeddings[memory_index].embedding.clone(),
-            };
+        let embedding = match embedding::compute_embedding(app.clone(), new_memory.clone()).await {
+            Ok(vec) => vec,
+            Err(_) => memory_embeddings[memory_index].embedding.clone(),
+        };
 
-        let token_count = crate::tokenizer::count_tokens(&app, &new_memory).unwrap_or(0);
+        let token_count = crate::embedding::tokenizer::count_tokens(&app, &new_memory).unwrap_or(0);
 
         memory_embeddings[memory_index].text = new_memory;
         memory_embeddings[memory_index].embedding = embedding;

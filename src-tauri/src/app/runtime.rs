@@ -99,10 +99,7 @@ pub(crate) fn configure_onnxruntime_dylib(app: &tauri::AppHandle) {
                 "onnxruntime.dll".to_string(),
             ]
         } else if cfg!(target_os = "macos") {
-            let versioned = format!(
-                "libonnxruntime.{}.dylib",
-                crate::embedding_model::ORT_VERSION
-            );
+            let versioned = format!("libonnxruntime.{}.dylib", crate::embedding::ORT_VERSION);
             vec![
                 format!("onnxruntime/{}", versioned),
                 versioned,

@@ -86,7 +86,7 @@ pub async fn storage_reset_database(app: tauri::AppHandle) -> Result<(), String>
     }
 
     // Reset the download state since we deleted the model files
-    crate::embedding_model::reset_download_state().await;
+    crate::embedding::reset_download_state().await;
 
     // Note: The database pool will be re-created automatically on next access
     // We don't try to re-manage it here because app.manage() won't replace existing state
