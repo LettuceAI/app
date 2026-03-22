@@ -9,6 +9,7 @@ pub(super) struct ResolvedChatTemplate {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum PromptMode {
     TemplatedChat,
+    OpenAICompatChat,
     RawCompletion,
 }
 
@@ -21,6 +22,8 @@ pub(super) struct BuiltPrompt {
     pub(super) used_raw_completion_fallback: bool,
     pub(super) raw_completion_fallback_reason: Option<String>,
     pub(super) prompt_mode: PromptMode,
+    pub(super) chat_template_result: Option<llama_cpp_2::model::ChatTemplateResult>,
+    pub(super) additional_stop_sequences: Vec<String>,
 }
 
 fn normalize_role(role: &str) -> &'static str {
@@ -112,6 +115,190 @@ fn build_fallback_prompt(messages: &[Value]) -> String {
     prompt
 }
 
+fn message_requires_openai_compat(message: &Value) -> bool {
+    if message
+        .get("role")
+        .and_then(|v| v.as_str())
+        .map(|role| role == "tool")
+        .unwrap_or(false)
+    {
+        return true;
+    }
+
+    if message.get("tool_calls").is_some() || message.get("tool_call_id").is_some() {
+        return true;
+    }
+
+    false
+}
+
+fn template_appears_tool_aware(template: &str) -> bool {
+    [
+        "<tool_call>",
+        "<tool_calls>",
+        "</tool_calls>",
+        "<tool_response>",
+        "<tools>",
+        "</tools>",
+        "<available_tools>",
+        "<function=",
+        "<parameters>",
+        "<parameter=",
+        "<arg_key>",
+        "<arg_value>",
+        "<|tool_call_start|>",
+        "<|tool_calls_section_begin|>",
+        "<|tool_list_start|>",
+        "<|tools_prefix|>",
+        "<｜tool▁calls▁begin｜>",
+        "tool_declare",
+        "# Tools",
+    ]
+    .iter()
+    .any(|marker| template.contains(marker))
+}
+
+fn normalize_tool_choice_for_llama(
+    tools: &mut Vec<Value>,
+    tool_choice: Option<&Value>,
+) -> Result<Option<String>, String> {
+    match tool_choice {
+        None => Ok(Some("auto".to_string())),
+        Some(Value::String(choice)) => match choice.as_str() {
+            "auto" | "none" | "required" => Ok(Some(choice.clone())),
+            other => Err(crate::utils::err_msg(
+                module_path!(),
+                line!(),
+                format!("Unsupported llama.cpp tool_choice '{}'", other),
+            )),
+        },
+        Some(Value::Object(object)) => {
+            let Some(name) = object
+                .get("function")
+                .and_then(|v| v.get("name"))
+                .and_then(|v| v.as_str())
+            else {
+                return Err(crate::utils::err_msg(
+                    module_path!(),
+                    line!(),
+                    "Unsupported llama.cpp named tool choice payload",
+                ));
+            };
+
+            tools.retain(|tool| {
+                tool.get("function")
+                    .and_then(|v| v.get("name"))
+                    .and_then(|v| v.as_str())
+                    == Some(name)
+            });
+
+            if tools.is_empty() {
+                return Err(crate::utils::err_msg(
+                    module_path!(),
+                    line!(),
+                    format!(
+                        "Requested llama.cpp tool '{}' was not found in the tools array",
+                        name
+                    ),
+                ));
+            }
+
+            Ok(Some("required".to_string()))
+        }
+        Some(other) => Err(crate::utils::err_msg(
+            module_path!(),
+            line!(),
+            format!("Unsupported llama.cpp tool_choice payload: {}", other),
+        )),
+    }
+}
+
+fn build_oaicompat_prompt(
+    model: &LlamaModel,
+    messages: &[Value],
+    resolved_template: &ResolvedChatTemplate,
+    tools: Option<&Value>,
+    tool_choice: Option<&Value>,
+) -> Result<BuiltPrompt, String> {
+    if !template_appears_tool_aware(&resolved_template.template_text) {
+        return Err(crate::utils::err_msg(
+            module_path!(),
+            line!(),
+            "Resolved llama.cpp chat template does not appear to support native tool calling. Use a GGUF or override template with explicit tool-call sections.",
+        ));
+    }
+
+    let messages_json = serde_json::to_string(messages).map_err(|e| {
+        crate::utils::err_msg(
+            module_path!(),
+            line!(),
+            format!("Failed to serialize llama.cpp messages for tool calling: {e}"),
+        )
+    })?;
+
+    let mut tools_vec = tools
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let has_tools = !tools_vec.is_empty();
+    let normalized_tool_choice = if has_tools {
+        normalize_tool_choice_for_llama(&mut tools_vec, tool_choice)?
+    } else {
+        Some("none".to_string())
+    };
+    let tools_json = if has_tools {
+        Some(serde_json::to_string(&tools_vec).map_err(|e| {
+            crate::utils::err_msg(
+                module_path!(),
+                line!(),
+                format!("Failed to serialize llama.cpp tools for tool calling: {e}"),
+            )
+        })?)
+    } else {
+        None
+    };
+
+    let params = llama_cpp_2::openai::OpenAIChatTemplateParams {
+        messages_json: &messages_json,
+        tools_json: tools_json.as_deref(),
+        tool_choice: normalized_tool_choice.as_deref(),
+        json_schema: None,
+        grammar: None,
+        reasoning_format: None,
+        chat_template_kwargs: None,
+        add_generation_prompt: true,
+        use_jinja: true,
+        parallel_tool_calls: has_tools,
+        enable_thinking: false,
+        add_bos: false,
+        add_eos: false,
+        parse_tool_calls: has_tools,
+    };
+
+    let chat_template_result = model
+        .apply_chat_template_oaicompat(&resolved_template.template, &params)
+        .map_err(|e| {
+            crate::utils::err_msg(
+                module_path!(),
+                line!(),
+                format!("Failed to apply llama.cpp OpenAI-compatible chat template: {e}"),
+            )
+        })?;
+
+    Ok(BuiltPrompt {
+        prompt: chat_template_result.prompt.clone(),
+        attempted_template_source: Some(resolved_template.source_label.clone()),
+        attempted_template_text: Some(resolved_template.template_text.clone()),
+        applied_template_source: Some(resolved_template.source_label.clone()),
+        applied_template_text: Some(resolved_template.template_text.clone()),
+        used_raw_completion_fallback: false,
+        raw_completion_fallback_reason: None,
+        prompt_mode: PromptMode::OpenAICompatChat,
+        additional_stop_sequences: chat_template_result.additional_stops.clone(),
+        chat_template_result: Some(chat_template_result),
+    })
+}
+
 fn chat_template_text(template: &LlamaChatTemplate) -> String {
     template.as_c_str().to_string_lossy().into_owned()
 }
@@ -175,7 +362,15 @@ pub(super) fn build_prompt(
     chat_template_override: Option<&str>,
     chat_template_preset: Option<&str>,
     allow_raw_completion_fallback: bool,
+    tools: Option<&Value>,
+    tool_choice: Option<&Value>,
 ) -> Result<BuiltPrompt, String> {
+    let needs_openai_compat = tools
+        .and_then(|value| value.as_array())
+        .map(|items| !items.is_empty())
+        .unwrap_or(false)
+        || messages.iter().any(message_requires_openai_compat);
+
     let mut chat_messages = Vec::new();
     for message in messages {
         let role = message
@@ -209,6 +404,16 @@ pub(super) fn build_prompt(
         match resolve_chat_template(model, chat_template_override, chat_template_preset) {
             Ok(resolved) => resolved,
             Err(err) => {
+                if needs_openai_compat {
+                    return Err(crate::utils::err_msg(
+                        module_path!(),
+                        line!(),
+                        format!(
+                            "llama.cpp tool calling requires a resolved native chat template: {}",
+                            err
+                        ),
+                    ));
+                }
                 if allow_raw_completion_fallback {
                     return Ok(BuiltPrompt {
                         prompt: build_fallback_prompt(messages),
@@ -222,11 +427,23 @@ pub(super) fn build_prompt(
                             err
                         )),
                         prompt_mode: PromptMode::RawCompletion,
+                        chat_template_result: None,
+                        additional_stop_sequences: Vec::new(),
                     });
                 }
                 return Err(err);
             }
         };
+
+    if needs_openai_compat {
+        return build_oaicompat_prompt(
+            model,
+            messages,
+            &resolved_template,
+            tools,
+            tool_choice,
+        );
+    }
 
     match model.apply_chat_template(&resolved_template.template, &chat_messages, true) {
         Ok(prompt) => Ok(BuiltPrompt {
@@ -238,6 +455,8 @@ pub(super) fn build_prompt(
             used_raw_completion_fallback: false,
             raw_completion_fallback_reason: None,
             prompt_mode: PromptMode::TemplatedChat,
+            chat_template_result: None,
+            additional_stop_sequences: Vec::new(),
         }),
         Err(err) => {
             if allow_raw_completion_fallback {
@@ -253,6 +472,8 @@ pub(super) fn build_prompt(
                         err
                     )),
                     prompt_mode: PromptMode::RawCompletion,
+                    chat_template_result: None,
+                    additional_stop_sequences: Vec::new(),
                 })
             } else {
                 Err(crate::utils::err_msg(
@@ -281,7 +502,7 @@ pub(super) fn model_tokenizer_adds_bos(model: &LlamaModel) -> Option<bool> {
 
 pub(super) fn resolve_prompt_add_bos(model: &LlamaModel, prompt_mode: PromptMode) -> AddBos {
     match prompt_mode {
-        PromptMode::TemplatedChat => AddBos::Never,
+        PromptMode::TemplatedChat | PromptMode::OpenAICompatChat => AddBos::Never,
         PromptMode::RawCompletion => match model_tokenizer_adds_bos(model) {
             Some(true) => AddBos::Always,
             Some(false) => AddBos::Never,
@@ -293,6 +514,7 @@ pub(super) fn resolve_prompt_add_bos(model: &LlamaModel, prompt_mode: PromptMode
 pub(super) fn prompt_mode_label(prompt_mode: PromptMode) -> &'static str {
     match prompt_mode {
         PromptMode::TemplatedChat => "templated_chat",
+        PromptMode::OpenAICompatChat => "oaicompat_chat",
         PromptMode::RawCompletion => "raw_completion",
     }
 }
@@ -319,7 +541,7 @@ pub(super) fn prompt_add_bos_reason(
     model_tokenizer_adds_bos: Option<bool>,
 ) -> &'static str {
     match prompt_mode {
-        PromptMode::TemplatedChat => {
+        PromptMode::TemplatedChat | PromptMode::OpenAICompatChat => {
             "templated chat prompt already carries template/model BOS handling"
         }
         PromptMode::RawCompletion if model_tokenizer_adds_bos == Some(true) => {

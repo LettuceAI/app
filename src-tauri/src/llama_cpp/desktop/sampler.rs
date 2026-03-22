@@ -111,7 +111,26 @@ pub(super) fn sampler_profile_defaults(profile: Option<&str>) -> SamplerProfileD
     }
 }
 
-pub(super) fn build_sampler(config: &ResolvedSamplerConfig) -> BuiltSampler {
+fn regex_escape(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for ch in value.chars() {
+        match ch {
+            '\\' | '.' | '+' | '*' | '?' | '(' | ')' | '[' | ']' | '{' | '}' | '^' | '$'
+            | '|' => {
+                out.push('\\');
+                out.push(ch);
+            }
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
+pub(super) fn build_sampler(
+    model: &LlamaModel,
+    config: &ResolvedSamplerConfig,
+    chat_template_result: Option<&llama_cpp_2::model::ChatTemplateResult>,
+) -> Result<BuiltSampler, String> {
     let mut samplers = Vec::new();
     let mut order = Vec::new();
     let mut active_params = serde_json::Map::new();
@@ -162,6 +181,84 @@ pub(super) fn build_sampler(config: &ResolvedSamplerConfig) -> BuiltSampler {
         }
     }
 
+    if let Some(template_result) = chat_template_result {
+        if let Some(grammar) = template_result.grammar.as_deref() {
+            let grammar_sampler = if template_result.grammar_lazy {
+                let mut trigger_patterns = Vec::new();
+                let mut trigger_words = Vec::new();
+                let mut trigger_tokens = Vec::new();
+
+                for trigger in &template_result.grammar_triggers {
+                    match trigger.trigger_type {
+                        llama_cpp_2::model::GrammarTriggerType::Token => {
+                            if let Some(token) = trigger.token {
+                                trigger_tokens.push(token);
+                            }
+                        }
+                        llama_cpp_2::model::GrammarTriggerType::Word => {
+                            trigger_words.push(trigger.value.clone());
+                            trigger_patterns.push(regex_escape(&trigger.value));
+                        }
+                        llama_cpp_2::model::GrammarTriggerType::Pattern => {
+                            trigger_patterns.push(trigger.value.clone());
+                        }
+                        llama_cpp_2::model::GrammarTriggerType::PatternFull => {
+                            let mut pattern = trigger.value.clone();
+                            if !pattern.starts_with('^') {
+                                pattern.insert(0, '^');
+                            }
+                            if !pattern.ends_with('$') {
+                                pattern.push('$');
+                            }
+                            trigger_patterns.push(pattern);
+                        }
+                    }
+                }
+
+                if !trigger_patterns.is_empty() {
+                    LlamaSampler::grammar_lazy_patterns(
+                        model,
+                        grammar,
+                        "root",
+                        &trigger_patterns,
+                        &trigger_tokens,
+                    )
+                } else {
+                    LlamaSampler::grammar_lazy(
+                        model,
+                        grammar,
+                        "root",
+                        &trigger_words,
+                        &trigger_tokens,
+                    )
+                }
+            } else {
+                LlamaSampler::grammar(model, grammar, "root")
+            }
+            .map_err(|e| {
+                crate::utils::err_msg(
+                    module_path!(),
+                    line!(),
+                    format!("Failed to initialize llama.cpp grammar sampler: {e}"),
+                )
+            })?;
+
+            order.push(if template_result.grammar_lazy {
+                "grammar_lazy"
+            } else {
+                "grammar"
+            });
+            samplers.push(grammar_sampler);
+            active_params.insert(
+                "grammar".to_string(),
+                json!({
+                    "lazy": template_result.grammar_lazy,
+                    "trigger_count": template_result.grammar_triggers.len(),
+                }),
+            );
+        }
+    }
+
     if config.temperature > 0.0 {
         order.push("temp");
         samplers.push(LlamaSampler::temp(config.temperature as f32));
@@ -174,9 +271,9 @@ pub(super) fn build_sampler(config: &ResolvedSamplerConfig) -> BuiltSampler {
         samplers.push(LlamaSampler::greedy());
     }
 
-    BuiltSampler {
+    Ok(BuiltSampler {
         sampler: LlamaSampler::chain(samplers, false),
         order,
         active_params: Value::Object(active_params),
-    }
+    })
 }

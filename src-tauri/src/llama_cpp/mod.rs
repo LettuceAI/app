@@ -6,6 +6,8 @@ use tauri::AppHandle;
 use tauri::Emitter;
 
 use crate::api::{ApiRequest, ApiResponse};
+use crate::chat_manager::provider_adapter::extract_text_content;
+use crate::chat_manager::tooling::{parse_tool_calls, ToolCall};
 use crate::chat_manager::types::{ErrorEnvelope, NormalizedEvent, UsageSummary};
 use crate::transport;
 #[cfg(not(mobile))]
@@ -130,6 +132,48 @@ mod desktop {
         clamped
     }
 
+    fn emit_structured_deltas(
+        app: &AppHandle,
+        request_id: Option<&String>,
+        deltas: Vec<String>,
+        streamed_text: &mut String,
+    ) -> Result<(), String> {
+        for delta_json in deltas {
+            let delta_value: Value = serde_json::from_str(&delta_json).map_err(|e| {
+                crate::utils::err_msg(
+                    module_path!(),
+                    line!(),
+                    format!("Failed to parse llama.cpp structured delta: {e}"),
+                )
+            })?;
+
+            if let Some(text) = delta_value.get("content").and_then(|v| v.as_str()) {
+                if !text.is_empty() {
+                    streamed_text.push_str(text);
+                    if let Some(id) = request_id {
+                        transport::emit_normalized(
+                            app,
+                            id,
+                            NormalizedEvent::Delta {
+                                text: text.to_string(),
+                            },
+                        );
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn ensure_assistant_role(message: &mut Value) {
+        if let Some(object) = message.as_object_mut() {
+            object
+                .entry("role".to_string())
+                .or_insert_with(|| Value::String("assistant".to_string()));
+        }
+    }
+
     pub async fn handle_local_request(
         app: AppHandle,
         req: ApiRequest,
@@ -155,6 +199,10 @@ mod desktop {
             .get("messages")
             .and_then(|v| v.as_array())
             .ok_or_else(|| "llama.cpp request missing messages".to_string())?;
+        let tools = body
+            .get("tools")
+            .filter(|value| value.as_array().map(|items| !items.is_empty()).unwrap_or(false));
+        let tool_choice = body.get("tool_choice");
 
         let sampler_profile = body
             .get("llamaSamplerProfile")
@@ -299,12 +347,6 @@ mod desktop {
             .and_then(|v| v.as_u64())
             .and_then(|v| u32::try_from(v).ok())
             .filter(|v| *v > 0);
-        let stop_sequences = parse_stop_sequences(body);
-        let max_stop_sequence_len = stop_sequences
-            .iter()
-            .map(|stop| stop.len())
-            .max()
-            .unwrap_or(0);
 
         let request_id = req.request_id.clone();
         let stream = req.stream.unwrap_or(false);
@@ -332,6 +374,7 @@ mod desktop {
         let mut generation_elapsed_ms: Option<u64> = None;
         let mut finish_reason = "stop";
         let mut stream_emitted_len = 0usize;
+        let mut final_message = json!({ "role": "assistant", "content": "" });
 
         let result = (|| -> Result<(), String> {
             log_info(&app, "llama_cpp", "loading llama.cpp engine/model");
@@ -373,7 +416,20 @@ mod desktop {
                 llama_chat_template_override.as_deref(),
                 llama_chat_template_preset.as_deref(),
                 llama_raw_completion_fallback,
+                tools,
+                tool_choice,
             )?;
+            let mut stop_sequences = parse_stop_sequences(body);
+            for stop in &built_prompt.additional_stop_sequences {
+                if !stop.is_empty() && !stop_sequences.iter().any(|existing| existing == stop) {
+                    stop_sequences.push(stop.clone());
+                }
+            }
+            let max_stop_sequence_len = stop_sequences
+                .iter()
+                .map(|stop| stop.len())
+                .max()
+                .unwrap_or(0);
             if built_prompt.used_raw_completion_fallback {
                 log_warn(
                     &app,
@@ -699,7 +755,8 @@ mod desktop {
                 presence_penalty,
                 seed: llama_seed,
             };
-            let built_sampler = build_sampler(&sampler_config);
+            let built_sampler =
+                build_sampler(model, &sampler_config, built_prompt.chat_template_result.as_ref())?;
             log_info(
                 &app,
                 "llama_cpp",
@@ -722,9 +779,24 @@ mod desktop {
                 }),
             );
             let mut sampler = built_sampler.sampler;
+            let mut structured_parser = built_prompt
+                .chat_template_result
+                .as_ref()
+                .map(|result| result.streaming_state_oaicompat())
+                .transpose()
+                .map_err(|e| {
+                    crate::utils::err_msg(
+                        module_path!(),
+                        line!(),
+                        format!("Failed to initialize llama.cpp structured parser: {e}"),
+                    )
+                })?;
+            let mut streamed_structured_text = String::new();
+            let mut structured_parsed_len = 0usize;
 
             let target_len = prompt_len + max_new as i32;
             let mut reached_eos = false;
+            let mut reached_stop_sequence = false;
             let mut pending_utf8 = Vec::<u8>::new();
             while n_cur < target_len {
                 if let Some(rx) = abort_rx.as_mut() {
@@ -743,7 +815,7 @@ mod desktop {
                 let token = sampler.sample(&ctx, batch.n_tokens() - 1);
                 sampler.accept(token);
 
-                if token == model.token_eos() {
+                if model.is_eog_token(token) {
                     reached_eos = true;
                     break;
                 }
@@ -790,50 +862,76 @@ mod desktop {
                     output.push_str(&piece);
                     if let Some((stop_index, _)) = earliest_stop_match(&output, &stop_sequences) {
                         output.truncate(stop_index);
-                        if stream && stream_emitted_len < output.len() {
-                            if let Some(ref id) = request_id {
-                                transport::emit_normalized(
-                                    &app,
-                                    id,
-                                    NormalizedEvent::Delta {
-                                        text: output[stream_emitted_len..].to_string(),
-                                    },
-                                );
-                            }
-                            stream_emitted_len = output.len();
-                        }
-                        finish_reason = "stop";
-                        break;
+                        reached_stop_sequence = true;
                     }
 
-                    if stream && max_stop_sequence_len > 0 {
-                        let safe_emit_end = clamp_to_char_boundary(
-                            &output,
-                            output
-                                .len()
-                                .saturating_sub(max_stop_sequence_len.saturating_sub(1)),
-                        );
-                        if safe_emit_end > stream_emitted_len {
-                            if let Some(ref id) = request_id {
-                                transport::emit_normalized(
-                                    &app,
-                                    id,
-                                    NormalizedEvent::Delta {
-                                        text: output[stream_emitted_len..safe_emit_end].to_string(),
-                                    },
-                                );
+                    if built_prompt.chat_template_result.is_none() {
+                        if stream && stream_emitted_len < output.len() {
+                            let safe_emit_end = if reached_stop_sequence {
+                                output.len()
+                            } else if max_stop_sequence_len > 0 {
+                                clamp_to_char_boundary(
+                                    &output,
+                                    output
+                                        .len()
+                                        .saturating_sub(max_stop_sequence_len.saturating_sub(1)),
+                                )
+                            } else {
+                                output.len()
+                            };
+                            if safe_emit_end > stream_emitted_len {
+                                if let Some(ref id) = request_id {
+                                    transport::emit_normalized(
+                                        &app,
+                                        id,
+                                        NormalizedEvent::Delta {
+                                            text: output[stream_emitted_len..safe_emit_end]
+                                                .to_string(),
+                                        },
+                                    );
+                                }
+                                stream_emitted_len = safe_emit_end;
                             }
-                            stream_emitted_len = safe_emit_end;
                         }
                     } else if stream {
-                        if let Some(ref id) = request_id {
-                            transport::emit_normalized(
-                                &app,
-                                id,
-                                NormalizedEvent::Delta { text: piece },
-                            );
+                        if let Some(parser) = structured_parser.as_mut() {
+                            let safe_parse_end = if reached_stop_sequence {
+                                output.len()
+                            } else if max_stop_sequence_len > 0 {
+                                clamp_to_char_boundary(
+                                    &output,
+                                    output
+                                        .len()
+                                        .saturating_sub(max_stop_sequence_len.saturating_sub(1)),
+                                )
+                            } else {
+                                output.len()
+                            };
+                            if safe_parse_end > structured_parsed_len {
+                                let delta_input = &output[structured_parsed_len..safe_parse_end];
+                                let deltas = parser.update(delta_input, true).map_err(|e| {
+                                    crate::utils::err_msg(
+                                        module_path!(),
+                                        line!(),
+                                        format!(
+                                            "Failed to parse llama.cpp structured stream: {e}"
+                                        ),
+                                    )
+                                })?;
+                                emit_structured_deltas(
+                                    &app,
+                                    request_id.as_ref(),
+                                    deltas,
+                                    &mut streamed_structured_text,
+                                )?;
+                                structured_parsed_len = safe_parse_end;
+                            }
                         }
-                        stream_emitted_len = output.len();
+                    }
+
+                    if reached_stop_sequence {
+                        finish_reason = "stop";
+                        break;
                     }
                 }
 
@@ -866,11 +964,15 @@ mod desktop {
                 output.push_str(&tail);
                 if let Some((stop_index, _)) = earliest_stop_match(&output, &stop_sequences) {
                     output.truncate(stop_index);
+                    reached_stop_sequence = true;
                     finish_reason = "stop";
                 }
             }
 
-            if stream && stream_emitted_len < output.len() {
+            if built_prompt.chat_template_result.is_none()
+                && stream
+                && stream_emitted_len < output.len()
+            {
                 if let Some(ref id) = request_id {
                     transport::emit_normalized(
                         &app,
@@ -885,9 +987,96 @@ mod desktop {
 
             generation_elapsed_ms = Some(inference_started_at.elapsed().as_millis() as u64);
 
-            if finish_reason != "stop" {
-                finish_reason = if reached_eos { "stop" } else { "length" };
+            if let Some(parser) = structured_parser.as_mut() {
+                let is_partial = !reached_eos && !reached_stop_sequence;
+                let final_input = if structured_parsed_len < output.len() {
+                    &output[structured_parsed_len..]
+                } else {
+                    ""
+                };
+                let deltas = parser.update(final_input, is_partial).map_err(|e| {
+                    crate::utils::err_msg(
+                        module_path!(),
+                        line!(),
+                        format!("Failed to finalize llama.cpp structured parse state: {e}"),
+                    )
+                })?;
+                emit_structured_deltas(
+                    &app,
+                    request_id.as_ref(),
+                    deltas,
+                    &mut streamed_structured_text,
+                )?;
             }
+
+            finish_reason = if reached_stop_sequence || reached_eos {
+                "stop"
+            } else {
+                "length"
+            };
+
+            let mut final_tool_calls: Vec<ToolCall> = Vec::new();
+            let parsed_final_message = if let Some(template_result) =
+                built_prompt.chat_template_result.as_ref()
+            {
+                let is_partial = finish_reason == "length";
+                let parsed_message = template_result
+                    .parse_response_oaicompat(&output, is_partial)
+                    .map_err(|e| {
+                        crate::utils::err_msg(
+                            module_path!(),
+                            line!(),
+                            format!("Failed to parse llama.cpp structured response: {e}"),
+                        )
+                    })?;
+                let mut message: Value = serde_json::from_str(&parsed_message).map_err(|e| {
+                    crate::utils::err_msg(
+                        module_path!(),
+                        line!(),
+                        format!("Failed to deserialize llama.cpp structured message: {e}"),
+                    )
+                })?;
+                ensure_assistant_role(&mut message);
+
+                let full_text = extract_text_content(message.get("content")).unwrap_or_default();
+                if stream
+                    && full_text.starts_with(&streamed_structured_text)
+                    && full_text.len() > streamed_structured_text.len()
+                {
+                    if let Some(ref id) = request_id {
+                        transport::emit_normalized(
+                            &app,
+                            id,
+                            NormalizedEvent::Delta {
+                                text: full_text[streamed_structured_text.len()..].to_string(),
+                            },
+                        );
+                    }
+                }
+
+                final_tool_calls = parse_tool_calls(LOCAL_PROVIDER_ID, &message);
+                if !final_tool_calls.is_empty() && finish_reason != "length" {
+                    finish_reason = "tool_calls";
+                }
+                message
+            } else {
+                json!({ "role": "assistant", "content": output })
+            };
+
+            if stream && !final_tool_calls.is_empty() {
+                if let Some(ref id) = request_id {
+                    transport::emit_normalized(
+                        &app,
+                        id,
+                        NormalizedEvent::ToolCall {
+                            calls: final_tool_calls.clone(),
+                        },
+                    );
+                }
+            }
+
+            final_message = parsed_final_message;
+            output = extract_text_content(final_message.get("content")).unwrap_or_default();
 
             Ok(())
         })();
@@ -970,7 +1159,7 @@ mod desktop {
             "object": "chat.completion",
             "choices": [{
                 "index": 0,
-                "message": { "role": "assistant", "content": output },
+                "message": final_message,
                 "finish_reason": finish_reason
             }],
             "usage": usage_value,
