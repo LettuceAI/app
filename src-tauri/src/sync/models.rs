@@ -20,6 +20,7 @@ pub struct Settings {
     pub default_provider_credential_id: Option<String>,
     pub default_model_id: Option<String>,
     pub app_state: String,
+    pub advanced_model_settings: Option<String>,
     pub prompt_template_id: Option<String>,
     pub system_prompt: Option<String>,
     pub advanced_settings: Option<String>,

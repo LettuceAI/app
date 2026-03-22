@@ -7,7 +7,7 @@ use crate::storage_manager::settings::{read_settings_typed, write_settings_typed
 use crate::utils::log_info;
 
 /// Current migration version
-pub const CURRENT_MIGRATION_VERSION: u32 = 46;
+pub const CURRENT_MIGRATION_VERSION: u32 = 47;
 
 pub fn run_migrations(app: &AppHandle) -> Result<(), String> {
     log_info(app, "migrations", "Starting migration check");
@@ -497,6 +497,16 @@ pub fn run_migrations(app: &AppHandle) -> Result<(), String> {
         );
         migrate_v45_to_v46(app)?;
         version = 46;
+    }
+
+    if version < 47 {
+        log_info(
+            app,
+            "migrations",
+            "Running migration v46 -> v47: Add advanced_model_settings to settings",
+        );
+        migrate_v46_to_v47(app)?;
+        version = 47;
     }
 
     // Update the stored version
@@ -2705,5 +2715,17 @@ fn migrate_v45_to_v46(app: &AppHandle) -> Result<(), String> {
         "ALTER TABLE personas ADD COLUMN design_reference_image_ids TEXT",
         [],
     );
+    Ok(())
+}
+
+fn migrate_v46_to_v47(app: &AppHandle) -> Result<(), String> {
+    use crate::storage_manager::db::open_db;
+
+    let conn = open_db(app)?;
+    let _ = conn.execute(
+        "ALTER TABLE settings ADD COLUMN advanced_model_settings TEXT",
+        [],
+    );
+
     Ok(())
 }

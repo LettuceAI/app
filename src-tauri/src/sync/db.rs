@@ -1581,13 +1581,14 @@ fn apply_core_snapshot(conn: &mut DbConnection, payload: &[u8]) -> Result<(), St
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     if let Some(settings) = snapshot.settings.first() {
         tx.execute(
-            r#"INSERT OR REPLACE INTO settings (id, default_provider_credential_id, default_model_id, app_state, prompt_template_id, system_prompt, advanced_settings, migration_version, created_at, updated_at)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"#,
+            r#"INSERT OR REPLACE INTO settings (id, default_provider_credential_id, default_model_id, app_state, advanced_model_settings, prompt_template_id, system_prompt, advanced_settings, migration_version, created_at, updated_at)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)"#,
             params![
                 settings.id,
                 settings.default_provider_credential_id,
                 settings.default_model_id,
                 settings.app_state,
+                settings.advanced_model_settings,
                 settings.prompt_template_id,
                 settings.system_prompt,
                 settings.advanced_settings,
@@ -2416,7 +2417,7 @@ fn fetch_global_core(conn: &DbConnection) -> Result<GlobalCoreData, String> {
         .collect();
 
     // Settings
-    let mut stmt = conn.prepare("SELECT id, default_provider_credential_id, default_model_id, app_state, prompt_template_id, system_prompt, advanced_settings, migration_version, created_at, updated_at FROM settings").map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    let mut stmt = conn.prepare("SELECT id, default_provider_credential_id, default_model_id, app_state, advanced_model_settings, prompt_template_id, system_prompt, advanced_settings, migration_version, created_at, updated_at FROM settings").map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     let settings_iter = stmt
         .query_map([], |r| {
             Ok(Settings {
@@ -2424,12 +2425,13 @@ fn fetch_global_core(conn: &DbConnection) -> Result<GlobalCoreData, String> {
                 default_provider_credential_id: r.get(1)?,
                 default_model_id: r.get(2)?,
                 app_state: r.get(3)?,
-                prompt_template_id: r.get(4)?,
-                system_prompt: r.get(5)?,
-                advanced_settings: r.get(6)?,
-                migration_version: r.get(7)?,
-                created_at: r.get(8)?,
-                updated_at: r.get(9)?,
+                advanced_model_settings: r.get(4)?,
+                prompt_template_id: r.get(5)?,
+                system_prompt: r.get(6)?,
+                advanced_settings: r.get(7)?,
+                migration_version: r.get(8)?,
+                created_at: r.get(9)?,
+                updated_at: r.get(10)?,
             })
         })
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;

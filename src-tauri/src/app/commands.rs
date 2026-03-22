@@ -26,6 +26,7 @@ macro_rules! invoke_handler {
             crate::storage_manager::models::model_delete,
             crate::storage_manager::models::model_export_as_usc,
             crate::storage_manager::settings::settings_set_advanced,
+            crate::storage_manager::settings::settings_set_advanced_model_settings,
             crate::storage_manager::settings::settings_set_default_provider,
             crate::storage_manager::settings::settings_set_default_model,
             crate::storage_manager::settings::settings_set_app_state,

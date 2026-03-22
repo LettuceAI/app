@@ -228,6 +228,7 @@ pub fn init_db(_app: &tauri::AppHandle, conn: &Connection) -> Result<(), String>
           default_provider_credential_id TEXT,
           default_model_id TEXT,
           app_state TEXT NOT NULL DEFAULT '{}',
+          advanced_model_settings TEXT,
           prompt_template_id TEXT,
           system_prompt TEXT,
           advanced_settings TEXT,
