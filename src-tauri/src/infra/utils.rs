@@ -635,9 +635,6 @@ pub fn developer_force_crash(app: AppHandle) -> Result<(), String> {
             libc::kill(pid, libc::SIGKILL);
             libc::_exit(134);
         }
-        loop {
-            std::thread::park();
-        }
     }
 
     #[cfg(not(target_os = "android"))]
