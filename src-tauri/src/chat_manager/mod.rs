@@ -19,7 +19,8 @@ pub use prompting::{
 
 pub use commands::{
     __cmd__abort_dynamic_memory, __cmd__chat_add_message_attachment, __cmd__chat_completion,
-    __cmd__chat_continue, __cmd__chat_generate_scene_image, __cmd__chat_generate_scene_prompt,
+    __cmd__chat_continue, __cmd__chat_generate_design_reference_description,
+    __cmd__chat_generate_scene_image, __cmd__chat_generate_scene_prompt,
     __cmd__chat_generate_user_reply, __cmd__chat_regenerate, __cmd__chat_template_export_as_usc,
     __cmd__create_prompt_template, __cmd__delete_prompt_template,
     __cmd__export_prompt_template_as_usc, __cmd__get_app_default_template_id,
@@ -32,7 +33,8 @@ pub use commands::{
     __cmd__reset_help_me_reply_template, __cmd__reset_scene_generation_template,
     __cmd__retry_dynamic_memory, __cmd__search_messages, __cmd__trigger_dynamic_memory,
     __cmd__update_prompt_template, __cmd__validate_template_variables, abort_dynamic_memory,
-    chat_add_message_attachment, chat_completion, chat_continue, chat_generate_scene_image,
+    chat_add_message_attachment, chat_completion, chat_continue,
+    chat_generate_design_reference_description, chat_generate_scene_image,
     chat_generate_scene_prompt, chat_generate_user_reply, chat_regenerate,
     chat_template_export_as_usc, create_prompt_template, delete_prompt_template,
     export_prompt_template_as_usc, get_app_default_template_id, get_default_character_rules,

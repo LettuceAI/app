@@ -5,6 +5,7 @@ export interface AdvancedSettings {
   summarisationModelId?: string;
   creationHelperEnabled?: boolean;
   creationHelperModelId?: string;
+  sceneWriterModelId?: string;
   helpMeReplyEnabled?: boolean;
   manualModeContextWindow?: number;
   embeddingMaxTokens?: number; // 1024, 2048, or 4096

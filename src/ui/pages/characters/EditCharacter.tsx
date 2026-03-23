@@ -994,6 +994,9 @@ export function EditCharacterPage() {
                         onReferenceImagesChange={(value) =>
                           setFields({ designReferenceImageIds: value })
                         }
+                        subjectName={name}
+                        subjectDescription={definition || description}
+                        avatarImage={avatarPath}
                         showHeader={false}
                         description="Attach a few stable image references and one concise visual note so scene generation keeps the same face, proportions, outfit cues, and style."
                       />

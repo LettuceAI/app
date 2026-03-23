@@ -11,7 +11,8 @@ use super::service::ChatContext;
 
 use super::storage::default_character_rules;
 use super::types::{
-    ChatAddMessageAttachmentArgs, ChatCompletionArgs, ChatContinueArgs, ChatGenerateSceneImageArgs,
+    ChatAddMessageAttachmentArgs, ChatCompletionArgs, ChatContinueArgs,
+    ChatGenerateDesignReferenceDescriptionArgs, ChatGenerateSceneImageArgs,
     ChatGenerateScenePromptArgs, ChatRegenerateArgs, ChatTurnResult, ContinueResult,
     ImageAttachment, PromptScope, RegenerateResult, Session, Settings, StoredMessage,
     SystemPromptEntry, SystemPromptTemplate,
@@ -503,6 +504,14 @@ pub async fn chat_generate_scene_prompt(
     args: ChatGenerateScenePromptArgs,
 ) -> Result<String, String> {
     super::scene::chat_generate_scene_prompt(app, args).await
+}
+
+#[tauri::command]
+pub async fn chat_generate_design_reference_description(
+    app: AppHandle,
+    args: ChatGenerateDesignReferenceDescriptionArgs,
+) -> Result<String, String> {
+    super::scene::chat_generate_design_reference_description(app, args).await
 }
 
 #[tauri::command]

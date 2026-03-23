@@ -528,7 +528,7 @@ export const enMessages = {
       writePrompt: "Write prompt",
       writePromptDesc: "Type the exact scene image prompt you want to use.",
       askAi: "Ask AI",
-      askAiDesc: "Let the current chat model draft a scene prompt from the selected moment.",
+      askAiDesc: "Let the scene writer model draft a scene prompt from the selected moment.",
       generateTitle: "Generate Scene Image",
       regenerateTitle: "Regenerate Scene Image",
       aiTitle: "AI Scene Prompt",
@@ -1830,7 +1830,9 @@ export const enMessages = {
       searchModels: "Search models...",
       selectAvatarModel: "Select Avatar Model",
       selectSceneModel: "Select Scene Model",
+      selectWriterModel: "Select Scene Writer Model",
       useFirstAvailable: "Use first available model",
+      useFirstCompatible: "Use first compatible writer model",
     },
     empty: {
       title: "No Image Models",
@@ -1846,6 +1848,11 @@ export const enMessages = {
         title: "Scene Generation",
         description:
           "Reserved model for scene images generated from conversation context or scene prompts.",
+      },
+      writer: {
+        title: "Scene Writer",
+        description:
+          "Reserved multimodal text model for drafting scene prompts and design reference descriptions from chat context, avatars, and reference images.",
       },
     },
   },

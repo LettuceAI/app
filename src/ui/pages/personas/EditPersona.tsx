@@ -339,6 +339,9 @@ export function EditPersonaPage() {
                 onDesignDescriptionChange={setDesignDescription}
                 referenceImages={designReferenceImageIds}
                 onReferenceImagesChange={setDesignReferenceImageIds}
+                subjectName={title}
+                subjectDescription={description}
+                avatarImage={avatarPath}
                 title="Design references"
                 description="Attach a few stable image references and one concise design note for scene generation."
               />

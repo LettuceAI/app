@@ -164,6 +164,8 @@ pub struct AdvancedSettings {
     #[serde(default)]
     pub scene_generation_model_id: Option<String>,
     #[serde(default)]
+    pub scene_writer_model_id: Option<String>,
+    #[serde(default)]
     pub creation_helper_enabled: Option<bool>,
     #[serde(default)]
     pub creation_helper_model_id: Option<String>,
@@ -740,6 +742,25 @@ pub struct ChatGenerateScenePromptArgs {
     pub session_id: String,
     #[serde(alias = "messageId")]
     pub message_id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatGenerateDesignReferenceDescriptionArgs {
+    #[serde(alias = "subjectName")]
+    pub subject_name: Option<String>,
+    #[serde(alias = "subjectDescription")]
+    pub subject_description: Option<String>,
+    #[serde(alias = "currentDescription")]
+    pub current_description: Option<String>,
+    #[serde(alias = "avatarImage")]
+    pub avatar_image: Option<String>,
+    #[serde(default, alias = "referenceImages")]
+    pub reference_images: Vec<String>,
+    #[serde(alias = "requestId")]
+    pub request_id: Option<String>,
+    #[serde(default)]
+    pub stream: Option<bool>,
 }
 
 #[derive(Serialize)]

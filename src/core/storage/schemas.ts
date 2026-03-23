@@ -2087,6 +2087,7 @@ export const SettingsSchema = z.object({
       avatarGenerationModelId: z.string().optional(),
       sceneGenerationEnabled: z.boolean().optional(),
       sceneGenerationModelId: z.string().optional(),
+      sceneWriterModelId: z.string().optional(),
       creationHelperEnabled: z.boolean().optional(),
       creationHelperModelId: z.string().optional(),
       creationHelperStreaming: z.boolean().optional(),

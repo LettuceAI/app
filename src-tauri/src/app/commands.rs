@@ -143,6 +143,7 @@ macro_rules! invoke_handler {
             crate::chat_manager::chat_add_message_attachment,
             crate::chat_manager::chat_generate_scene_image,
             crate::chat_manager::chat_generate_scene_prompt,
+            crate::chat_manager::chat_generate_design_reference_description,
             crate::chat_manager::get_default_character_rules,
             crate::chat_manager::get_default_system_prompt_template,
             crate::chat_manager::search_messages,

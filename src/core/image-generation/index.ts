@@ -178,6 +178,14 @@ export interface ImageGenerationOptions {
   enabled: boolean;
 }
 
+export function isImageTextToTextModel(model: Model): boolean {
+  const inputScopes = model.inputScopes ?? [];
+  const outputScopes = model.outputScopes ?? [];
+  return (
+    inputScopes.includes("text") && inputScopes.includes("image") && outputScopes.includes("text")
+  );
+}
+
 function resolveImageGenerationOptionsWithPreference(
   settings: Settings,
   preferredModelId?: string | null,
@@ -229,6 +237,27 @@ export function resolveSceneGenerationOptions(settings: Settings): ImageGenerati
     settings.advancedSettings?.sceneGenerationModelId,
     settings.advancedSettings?.sceneGenerationEnabled ?? true,
   );
+}
+
+export function resolveSceneWriterOptions(settings: Settings): ImageGenerationOptions {
+  const models = settings.models.filter(isImageTextToTextModel);
+  const providers = settings.providerCredentials;
+  const preferredModelId = settings.advancedSettings?.sceneWriterModelId;
+  const defaultModel =
+    (preferredModelId ? models.find((model) => model.id === preferredModelId) : null) ??
+    models[0] ??
+    null;
+  const defaultProvider = defaultModel
+    ? resolveProviderCredential(providers, defaultModel.providerId, defaultModel.providerLabel)
+    : null;
+
+  return {
+    models,
+    providers,
+    defaultModel,
+    defaultProvider,
+    enabled: models.length > 0,
+  };
 }
 
 export function resolveProviderCredential(

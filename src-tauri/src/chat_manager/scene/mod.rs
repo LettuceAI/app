@@ -4,7 +4,9 @@ use tauri::AppHandle;
 use crate::api::{api_request, ApiRequest};
 use crate::chat_manager::attachments::{cleanup_attachments, persist_attachments};
 use crate::chat_manager::execution::{find_model_with_credential, prepare_sampling_request};
+use crate::chat_manager::messages::build_multimodal_content;
 use crate::chat_manager::prompts;
+use crate::chat_manager::provider_adapter::adapter_for;
 use crate::chat_manager::request::extract_text;
 use crate::chat_manager::service::{require_api_key, ChatContext};
 use crate::chat_manager::storage::{
@@ -14,9 +16,9 @@ use crate::chat_manager::turn_builder::{
     partition_prompt_entries, should_insert_in_chat_prompt_entry,
 };
 use crate::chat_manager::types::{
-    Character, ChatGenerateSceneImageArgs, ChatGenerateScenePromptArgs, ImageAttachment, Model,
-    Persona, PromptEntryPosition, ProviderCredential, Session, Settings, StoredMessage,
-    SystemPromptEntry,
+    Character, ChatGenerateDesignReferenceDescriptionArgs, ChatGenerateSceneImageArgs,
+    ChatGenerateScenePromptArgs, ImageAttachment, Model, Persona, PromptEntryPosition,
+    ProviderCredential, Session, Settings, StoredMessage, SystemPromptEntry,
 };
 use crate::image_generator::types::ImageGenerationRequest;
 use crate::storage_manager::media::{storage_load_avatar, storage_read_image_data};
@@ -69,6 +71,53 @@ fn resolve_image_generation_target<'a>(
             Some((model, credential))
         })
         .ok_or_else(|| "No image generation model is configured".to_string())
+}
+
+fn supports_scene_writer_model(model: &Model) -> bool {
+    model
+        .input_scopes
+        .iter()
+        .any(|scope| scope.eq_ignore_ascii_case("text"))
+        && model
+            .input_scopes
+            .iter()
+            .any(|scope| scope.eq_ignore_ascii_case("image"))
+        && model
+            .output_scopes
+            .iter()
+            .any(|scope| scope.eq_ignore_ascii_case("text"))
+}
+
+fn resolve_scene_writer_target<'a>(
+    settings: &'a Settings,
+    preferred_model_id: Option<&str>,
+) -> Result<(&'a Model, &'a ProviderCredential), String> {
+    if let Some(model_id) = preferred_model_id.filter(|id| !id.trim().is_empty()) {
+        let (model, credential) = find_model_with_credential(settings, model_id)
+            .ok_or_else(|| "Configured scene writer model could not be resolved".to_string())?;
+        if !supports_scene_writer_model(model) {
+            return Err(
+                "Configured scene writer model must support text and image input with text output"
+                    .to_string(),
+            );
+        }
+        return Ok((model, credential));
+    }
+
+    settings
+        .models
+        .iter()
+        .find_map(|model| {
+            if !supports_scene_writer_model(model) {
+                return None;
+            }
+            let credential = resolve_credential_for_model(settings, model)?;
+            Some((model, credential))
+        })
+        .ok_or_else(|| {
+            "No compatible scene writer model is configured. Add an image-text-to-text model in Settings > Image Generation."
+                .to_string()
+        })
 }
 
 fn scene_generation_enabled(settings: &Settings) -> bool {
@@ -964,7 +1013,13 @@ pub async fn chat_generate_scene_prompt(
         .ok_or_else(|| "Session not found".to_string())?;
     let character = context.find_character(&session.character_id)?;
     let persona = context.choose_persona(resolve_persona_id(&session, None));
-    let (model, credential) = context.select_model_with_credential(&character)?;
+    let (model, credential) = resolve_scene_writer_target(
+        settings,
+        settings
+            .advanced_settings
+            .as_ref()
+            .and_then(|advanced| advanced.scene_writer_model_id.as_deref()),
+    )?;
     let api_key = require_api_key(&app, credential, "scene_prompt")?;
 
     let recent_messages_text = build_scene_prompt_context_messages(&session, &message_id)?;
@@ -1080,6 +1135,214 @@ pub async fn chat_generate_scene_prompt(
 
     if cleaned.is_empty() {
         return Err("Scene prompt generation returned an empty result".to_string());
+    }
+
+    Ok(cleaned)
+}
+
+pub async fn chat_generate_design_reference_description(
+    app: AppHandle,
+    args: ChatGenerateDesignReferenceDescriptionArgs,
+) -> Result<String, String> {
+    let ChatGenerateDesignReferenceDescriptionArgs {
+        subject_name,
+        subject_description,
+        current_description,
+        avatar_image,
+        reference_images,
+        request_id,
+        stream,
+    } = args;
+
+    let context = ChatContext::initialize(app.clone())?;
+    let settings = &context.settings;
+    let (model, credential) = resolve_scene_writer_target(
+        settings,
+        settings
+            .advanced_settings
+            .as_ref()
+            .and_then(|advanced| advanced.scene_writer_model_id.as_deref()),
+    )?;
+    let api_key = require_api_key(&app, credential, "design_reference_writer")?;
+
+    let subject_name = subject_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("Unnamed subject");
+    let subject_description = subject_description
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let current_description = current_description
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+
+    let mut image_inputs = Vec::new();
+    if let Some(image) = avatar_image
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        image_inputs.push(image.to_string());
+    }
+    image_inputs.extend(
+        reference_images
+            .into_iter()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty()),
+    );
+
+    if image_inputs.is_empty() {
+        return Err("At least one avatar or reference image is required".to_string());
+    }
+
+    let system_role = adapter_for(credential).system_role().into_owned();
+    let streaming_enabled = stream.unwrap_or(true) && adapter_for(credential).supports_stream();
+    let system_prompt = [
+        "Write one concise canonical visual reference description for future scene generation.",
+        "Focus only on stable appearance: face visibility, hair, build, age presentation, outfit silhouette, materials, colors, accessories, and art direction.",
+        "Do not write backstory, personality, scene action, camera directions, or poetic prose.",
+        "If the subject's face is hidden or obscured, say so clearly.",
+        "If the references disagree, keep only features supported by the majority of images.",
+        "Output only the final description.",
+    ]
+    .join("\n");
+
+    let mut request_sections = vec![
+        format!("Subject: {}", subject_name),
+        "Use the attached avatar and reference images to write a stable design note for future image prompts."
+            .to_string(),
+    ];
+
+    if let Some(description) = subject_description {
+        request_sections.push(format!("Character context:\n{}", description));
+    }
+    if let Some(existing) = current_description {
+        request_sections.push(format!(
+            "Current notes to refine if they match the images:\n{}",
+            existing
+        ));
+    }
+
+    let image_attachments = image_inputs
+        .iter()
+        .enumerate()
+        .map(|(index, image)| ImageAttachment {
+            id: format!("design-ref-{}", index),
+            data: image.clone(),
+            mime_type: "image/*".to_string(),
+            filename: None,
+            width: None,
+            height: None,
+            storage_path: None,
+        })
+        .collect::<Vec<_>>();
+
+    let messages_for_api = vec![
+        json!({ "role": system_role, "content": system_prompt }),
+        json!({
+            "role": "user",
+            "content": build_multimodal_content(&request_sections.join("\n\n"), &image_attachments),
+        }),
+    ];
+
+    let preview_session = Session {
+        id: "scene-writer-preview".to_string(),
+        character_id: String::new(),
+        title: "Scene writer preview".to_string(),
+        system_prompt: None,
+        selected_scene_id: None,
+        prompt_template_id: None,
+        persona_id: None,
+        persona_disabled: false,
+        voice_autoplay: None,
+        advanced_model_settings: None,
+        memories: Vec::new(),
+        memory_embeddings: Vec::new(),
+        memory_summary: None,
+        memory_summary_token_count: 0,
+        memory_tool_events: Vec::new(),
+        memory_status: None,
+        memory_error: None,
+        messages: Vec::new(),
+        archived: false,
+        created_at: 0,
+        updated_at: 0,
+    };
+
+    let (request_settings, extra_body_fields) = prepare_sampling_request(
+        &credential.provider_id,
+        &preview_session,
+        model,
+        settings,
+        768,
+        0.4,
+        1.0,
+        None,
+        None,
+        None,
+    );
+
+    let built = super::request_builder::build_chat_request(
+        credential,
+        &api_key,
+        &model.name,
+        &messages_for_api,
+        None,
+        request_settings.temperature,
+        request_settings.top_p,
+        request_settings.max_tokens,
+        request_settings.context_length,
+        streaming_enabled,
+        request_id.clone(),
+        None,
+        None,
+        None,
+        None,
+        request_settings.reasoning_enabled,
+        request_settings.reasoning_effort.clone(),
+        request_settings.reasoning_budget,
+        extra_body_fields,
+    );
+
+    let api_request_payload = ApiRequest {
+        url: built.url,
+        method: Some("POST".into()),
+        headers: Some(built.headers),
+        query: None,
+        body: Some(built.body),
+        timeout_ms: Some(60_000),
+        stream: Some(streaming_enabled),
+        request_id: request_id.clone(),
+        provider_id: Some(credential.provider_id.clone()),
+    };
+
+    let api_response = api_request(app.clone(), api_request_payload).await?;
+    if !api_response.ok {
+        return Err(format!(
+            "API request failed with status {}",
+            api_response.status
+        ));
+    }
+
+    let generated_text = extract_text(&api_response.data, Some(&credential.provider_id))
+        .ok_or_else(|| "Failed to extract text from response".to_string())?;
+
+    let cleaned = condense_prompt_whitespace(
+        generated_text
+            .trim()
+            .trim_matches('"')
+            .trim()
+            .trim_start_matches("```")
+            .trim_end_matches("```")
+            .trim()
+            .to_string(),
+    );
+
+    if cleaned.is_empty() {
+        return Err("Design reference generation returned an empty result".to_string());
     }
 
     Ok(cleaned)

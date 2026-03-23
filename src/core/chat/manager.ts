@@ -188,3 +188,31 @@ export async function generateScenePromptForMessage(params: {
     },
   });
 }
+
+export async function generateDesignReferenceDescription(params: {
+  subjectName?: string | null;
+  subjectDescription?: string | null;
+  currentDescription?: string | null;
+  avatarImage?: string | null;
+  referenceImages?: string[];
+  requestId?: string | null;
+  stream?: boolean;
+}): Promise<string> {
+  const requestId = params.requestId ?? null;
+  if (requestId) beginAsyncAction(requestId, "design_reference_writer");
+  try {
+    return await invoke<string>("chat_generate_design_reference_description", {
+      args: {
+        subjectName: params.subjectName ?? null,
+        subjectDescription: params.subjectDescription ?? null,
+        currentDescription: params.currentDescription ?? null,
+        avatarImage: params.avatarImage ?? null,
+        referenceImages: params.referenceImages ?? [],
+        requestId,
+        stream: params.stream ?? true,
+      },
+    });
+  } finally {
+    if (requestId) endAsyncAction(requestId);
+  }
+}

@@ -285,6 +285,9 @@ export function CreatePersonaForm({
             onReferenceImagesChange={(value) =>
               dispatch({ type: "set_design_reference_image_ids", value })
             }
+            subjectName={title}
+            subjectDescription={description}
+            avatarImage={avatarPath}
             title="Design references"
             description="Attach a few stable image references and one concise design note for scene generation."
           />

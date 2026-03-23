@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, ChevronDown, Image, LucideIcon, Sparkles } from "lucide-react";
+import { Check, ChevronDown, Image, LucideIcon, PenLine, Sparkles } from "lucide-react";
 
 import { BottomMenu } from "../../components/BottomMenu";
-import { resolveImageGenerationOptions } from "../../../core/image-generation";
+import {
+  resolveImageGenerationOptions,
+  resolveSceneWriterOptions,
+} from "../../../core/image-generation";
 import { readSettings, saveAdvancedSettings } from "../../../core/storage/repo";
 import type { Model } from "../../../core/storage/schemas";
 import { useI18n } from "../../../core/i18n/context";
@@ -13,24 +16,26 @@ interface ImageGenerationState {
   loading: boolean;
   error: string | null;
   models: Model[];
+  writerModels: Model[];
   avatarEnabled: boolean;
   avatarModelId: string | null;
   sceneEnabled: boolean;
   sceneModelId: string | null;
+  writerModelId: string | null;
 }
 
-type SelectorKey = "avatarModelId" | "sceneModelId";
+type SelectorKey = "avatarModelId" | "sceneModelId" | "writerModelId";
 type ToggleKey = "avatarEnabled" | "sceneEnabled";
 
 type SelectorCardProps = {
   title: string;
   description: string;
-  enabled: boolean;
+  enabled?: boolean;
   selectedModel: Model | null;
   fallbackLabel: string;
   icon: LucideIcon;
   accentClassName: string;
-  onToggle: () => void;
+  onToggle?: () => void;
   onClick: () => void;
 };
 
@@ -47,6 +52,8 @@ function SelectorCard({
 }: SelectorCardProps) {
   const { t } = useI18n();
   const toggleId = `image-generation-toggle-${title.toLowerCase().replace(/\s+/g, "-")}`;
+  const hasToggle = typeof enabled === "boolean" && typeof onToggle === "function";
+  const isCardActive = enabled ?? true;
 
   return (
     <section className="space-y-3 rounded-xl border border-fg/10 bg-fg/5 px-4 py-4">
@@ -60,45 +67,47 @@ function SelectorCard({
               <h2 className="text-sm font-semibold text-fg">{title}</h2>
               <p className="mt-1 text-xs leading-relaxed text-fg/45">{description}</p>
             </div>
-            <div className="flex items-center gap-2 pt-0.5">
-              <span className="text-[11px] font-medium text-fg/50">
-                {enabled ? t("common.labels.on") : t("common.labels.off")}
-              </span>
-              <input
-                id={toggleId}
-                type="checkbox"
-                checked={enabled}
-                onChange={(event) => {
-                  event.stopPropagation();
-                  onToggle();
-                }}
-                onClick={(event) => event.stopPropagation()}
-                className="peer sr-only"
-              />
-              <label
-                htmlFor={toggleId}
-                onClick={(event) => event.stopPropagation()}
-                className={cn(
-                  "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full",
-                  "border-2 border-transparent transition-all duration-200 ease-in-out",
-                  "focus:outline-none focus:ring-2 focus:ring-fg/20",
-                  enabled ? "bg-emerald-500 shadow-sm shadow-emerald-500/20" : "bg-fg/20",
-                )}
-              >
-                <span
-                  className={cn(
-                    "inline-block h-4 w-4 transform rounded-full bg-fg shadow-sm",
-                    "ring-0 transition duration-200 ease-in-out",
-                    enabled ? "translate-x-4" : "translate-x-0",
-                  )}
+            {hasToggle ? (
+              <div className="flex items-center gap-2 pt-0.5">
+                <span className="text-[11px] font-medium text-fg/50">
+                  {enabled ? t("common.labels.on") : t("common.labels.off")}
+                </span>
+                <input
+                  id={toggleId}
+                  type="checkbox"
+                  checked={enabled}
+                  onChange={(event) => {
+                    event.stopPropagation();
+                    onToggle();
+                  }}
+                  onClick={(event) => event.stopPropagation()}
+                  className="peer sr-only"
                 />
-              </label>
-            </div>
+                <label
+                  htmlFor={toggleId}
+                  onClick={(event) => event.stopPropagation()}
+                  className={cn(
+                    "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full",
+                    "border-2 border-transparent transition-all duration-200 ease-in-out",
+                    "focus:outline-none focus:ring-2 focus:ring-fg/20",
+                    enabled ? "bg-emerald-500 shadow-sm shadow-emerald-500/20" : "bg-fg/20",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "inline-block h-4 w-4 transform rounded-full bg-fg shadow-sm",
+                      "ring-0 transition duration-200 ease-in-out",
+                      enabled ? "translate-x-4" : "translate-x-0",
+                    )}
+                  />
+                </label>
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
 
-      {enabled && (
+      {isCardActive && (
         <button
           type="button"
           onClick={onClick}
@@ -136,6 +145,7 @@ type ModelSelectionMenuProps = {
   searchQuery: string;
   emptyLabel: string;
   fallbackLabel: string;
+  clearIcon?: LucideIcon;
   onClose: () => void;
   onSearchChange: (value: string) => void;
   onSelect: (modelId: string | null) => void;
@@ -149,6 +159,7 @@ function ModelSelectionMenu({
   searchQuery,
   emptyLabel,
   fallbackLabel,
+  clearIcon: ClearIcon = Image,
   onClose,
   onSearchChange,
   onSelect,
@@ -198,7 +209,7 @@ function ModelSelectionMenu({
                 : "border-fg/10 bg-fg/5 hover:bg-fg/10",
             )}
           >
-            <Image className="h-5 w-5 text-fg/40" />
+            <ClearIcon className="h-5 w-5 text-fg/40" />
             <span className="text-sm text-fg">{emptyLabel}</span>
             {!selectedModelId && <Check className="ml-auto h-4 w-4 text-accent/80" />}
           </button>
@@ -238,29 +249,36 @@ export function ImageGenerationPage() {
     loading: true,
     error: null,
     models: [],
+    writerModels: [],
     avatarEnabled: true,
     avatarModelId: null,
     sceneEnabled: true,
     sceneModelId: null,
+    writerModelId: null,
   });
   const [showAvatarMenu, setShowAvatarMenu] = useState(false);
   const [showSceneMenu, setShowSceneMenu] = useState(false);
+  const [showWriterMenu, setShowWriterMenu] = useState(false);
   const [avatarSearchQuery, setAvatarSearchQuery] = useState("");
   const [sceneSearchQuery, setSceneSearchQuery] = useState("");
+  const [writerSearchQuery, setWriterSearchQuery] = useState("");
 
   useEffect(() => {
     const load = async () => {
       try {
         const settings = await readSettings();
         const options = resolveImageGenerationOptions(settings);
+        const writerOptions = resolveSceneWriterOptions(settings);
         setState({
           loading: false,
           error: null,
           models: options.models,
+          writerModels: writerOptions.models,
           avatarEnabled: settings.advancedSettings?.avatarGenerationEnabled ?? true,
           avatarModelId: settings.advancedSettings?.avatarGenerationModelId ?? null,
           sceneEnabled: settings.advancedSettings?.sceneGenerationEnabled ?? true,
           sceneModelId: settings.advancedSettings?.sceneGenerationModelId ?? null,
+          writerModelId: settings.advancedSettings?.sceneWriterModelId ?? null,
         });
       } catch (err) {
         console.error("Failed to load image generation settings:", err);
@@ -296,6 +314,10 @@ export function ImageGenerationPage() {
           key === "sceneModelId"
             ? (modelId ?? undefined)
             : settings.advancedSettings?.sceneGenerationModelId,
+        sceneWriterModelId:
+          key === "writerModelId"
+            ? (modelId ?? undefined)
+            : settings.advancedSettings?.sceneWriterModelId,
       });
     } catch (err) {
       console.error("Failed to save image generation settings:", err);
@@ -335,6 +357,7 @@ export function ImageGenerationPage() {
             ? enabled
             : (settings.advancedSettings?.sceneGenerationEnabled ?? true),
         sceneGenerationModelId: settings.advancedSettings?.sceneGenerationModelId,
+        sceneWriterModelId: settings.advancedSettings?.sceneWriterModelId,
       });
     } catch (err) {
       console.error("Failed to save image generation settings:", err);
@@ -351,6 +374,9 @@ export function ImageGenerationPage() {
   const selectedSceneModel = state.sceneModelId
     ? (state.models.find((model) => model.id === state.sceneModelId) ?? null)
     : null;
+  const selectedWriterModel = state.writerModelId
+    ? (state.writerModels.find((model) => model.id === state.writerModelId) ?? null)
+    : null;
 
   if (state.loading) {
     return (
@@ -360,7 +386,7 @@ export function ImageGenerationPage() {
     );
   }
 
-  if (state.models.length === 0) {
+  if (state.models.length === 0 && state.writerModels.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center px-6">
         <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-fg/10 bg-fg/5">
@@ -406,6 +432,16 @@ export function ImageGenerationPage() {
               onToggle={() => void persistToggle("sceneEnabled", !state.sceneEnabled)}
               onClick={() => setShowSceneMenu(true)}
             />
+
+            <SelectorCard
+              title={t("imageGeneration.sections.writer.title")}
+              description={t("imageGeneration.sections.writer.description")}
+              selectedModel={selectedWriterModel}
+              fallbackLabel={t("imageGeneration.labels.useFirstCompatible")}
+              icon={PenLine}
+              accentClassName="border-info/30 bg-info/10 text-info/80"
+              onClick={() => setShowWriterMenu(true)}
+            />
           </div>
         </div>
       </main>
@@ -447,6 +483,27 @@ export function ImageGenerationPage() {
           void persistSelection("sceneModelId", modelId);
           setShowSceneMenu(false);
           setSceneSearchQuery("");
+        }}
+      />
+
+      <ModelSelectionMenu
+        isOpen={showWriterMenu}
+        title={t("imageGeneration.labels.selectWriterModel")}
+        models={state.writerModels}
+        selectedModelId={state.writerModelId}
+        searchQuery={writerSearchQuery}
+        emptyLabel={t("imageGeneration.labels.useFirstCompatible")}
+        fallbackLabel={t("imageGeneration.labels.searchModels")}
+        clearIcon={PenLine}
+        onClose={() => {
+          setShowWriterMenu(false);
+          setWriterSearchQuery("");
+        }}
+        onSearchChange={setWriterSearchQuery}
+        onSelect={(modelId) => {
+          void persistSelection("writerModelId", modelId);
+          setShowWriterMenu(false);
+          setWriterSearchQuery("");
         }}
       />
     </div>

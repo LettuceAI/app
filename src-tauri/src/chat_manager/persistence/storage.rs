@@ -150,6 +150,7 @@ fn default_settings() -> Settings {
             avatar_generation_model_id: None,
             scene_generation_enabled: Some(true),
             scene_generation_model_id: None,
+            scene_writer_model_id: None,
             creation_helper_enabled: None,
             creation_helper_model_id: None,
             help_me_reply_enabled: None,
