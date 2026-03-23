@@ -223,20 +223,7 @@ export function useChatMessageActionsController({ context }: UseChatMessageActio
       if (editedMessageIndex === -1) {
         throw new Error("Message not found");
       }
-
-      const messagesAfter = messagesRef.current.slice(editedMessageIndex + 1);
-      const hasPinnedAfter = messagesAfter.some((message) => message.isPinned);
-      if (hasPinnedAfter) {
-        throw new Error(
-          "Cannot edit this message while pinned messages exist after it. Unpin them first.",
-        );
-      }
-
-      if (messagesAfter.length > 0) {
-        await deleteMessagesAfter(state.session.id, editedMessageId);
-      }
-
-      const updatedMessages = messagesRef.current.slice(0, editedMessageIndex + 1).map((message) =>
+      const updatedMessages = messagesRef.current.map((message) =>
         message.id === editedMessageId
           ? {
               ...message,
