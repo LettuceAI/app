@@ -560,11 +560,7 @@ export function useChatEnhancementsController({ context }: UseChatEnhancementsCo
   );
 
   const applySceneImagePrompt = useCallback(
-    async (
-      message: StoredMessage,
-      scenePrompt: string,
-      options?: { existingAttachmentId?: string | null },
-    ) => {
+    async (message: StoredMessage, scenePrompt: string) => {
       if (!state.session) {
         throw new Error("Session not loaded");
       }
@@ -574,9 +570,8 @@ export function useChatEnhancementsController({ context }: UseChatEnhancementsCo
         throw new Error("Scene prompt cannot be empty");
       }
 
-      const attachmentId = options?.existingAttachmentId?.trim() || crypto.randomUUID();
+      const attachmentId = crypto.randomUUID();
       const previousMessage = message;
-      const hasExistingAttachment = Boolean(options?.existingAttachmentId?.trim());
       const placeholderAttachment: ImageAttachment = {
         id: attachmentId,
         data: "",
@@ -588,11 +583,7 @@ export function useChatEnhancementsController({ context }: UseChatEnhancementsCo
 
       const optimisticMessage: StoredMessage = {
         ...previousMessage,
-        attachments: hasExistingAttachment
-          ? (previousMessage.attachments ?? []).map((attachment) =>
-              attachment.id === attachmentId ? placeholderAttachment : attachment,
-            )
-          : [...(previousMessage.attachments ?? []), placeholderAttachment],
+        attachments: [...(previousMessage.attachments ?? []), placeholderAttachment],
       };
 
       const optimisticMessages = messagesRef.current.map((entry) =>

@@ -83,11 +83,7 @@ export interface ChatController {
   initializeLongPressTimer: (id: number | null) => void;
   isStartingSceneMessage: (message: StoredMessage) => boolean;
   generateAiScenePrompt: (messageId: string) => Promise<string>;
-  applySceneImagePrompt: (
-    message: StoredMessage,
-    scenePrompt: string,
-    options?: { existingAttachmentId?: string | null },
-  ) => Promise<void>;
+  applySceneImagePrompt: (message: StoredMessage, scenePrompt: string) => Promise<void>;
 }
 
 export function useChatController(

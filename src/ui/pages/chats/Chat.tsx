@@ -295,7 +295,8 @@ export function ChatConversationPage() {
 
   const resolveSceneAttachment = useCallback((message: StoredMessage | null | undefined) => {
     if (!message) return null;
-    return message.attachments?.[0] ?? null;
+    const attachments = message.attachments ?? [];
+    return attachments.length > 0 ? attachments[attachments.length - 1] : null;
   }, []);
 
   const resolveScenePromptSeed = useCallback(
@@ -1296,22 +1297,34 @@ export function ChatConversationPage() {
   const handleApplySceneImagePrompt = useCallback(
     async (prompt: string) => {
       if (!scenePromptTargetMessage) return;
+      const targetMessage = scenePromptTargetMessage;
 
+      resetMessageActions();
+      setShowScenePromptModeMenu(false);
+      setShowScenePromptEditorMenu(false);
+      setShowScenePromptResultMenu(false);
       setApplyingSceneImage(true);
       setScenePromptError(null);
 
       try {
-        await applySceneImagePrompt(scenePromptTargetMessage, prompt, {
-          existingAttachmentId: resolveSceneAttachment(scenePromptTargetMessage)?.id ?? null,
-        });
+        await applySceneImagePrompt(targetMessage, prompt);
         resetScenePromptFlow();
       } catch (error) {
         setScenePromptError(error instanceof Error ? error.message : String(error));
+        setScenePromptTargetMessage(targetMessage);
+        setScenePromptDraft(prompt);
+        setShowScenePromptEditorMenu(true);
       } finally {
         setApplyingSceneImage(false);
       }
     },
-    [applySceneImagePrompt, resetScenePromptFlow, resolveSceneAttachment, scenePromptTargetMessage],
+    [
+      applySceneImagePrompt,
+      resetMessageActions,
+      resetScenePromptFlow,
+      resolveSceneAttachment,
+      scenePromptTargetMessage,
+    ],
   );
 
   useEffect(

@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 
+function withCacheBust(url: string, token: string | number): string {
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}v=${encodeURIComponent(String(token))}`;
+}
+
 /**
  * Hook to load attachment data from storage when only storagePath is available.
  * Returns a displayable URL for the image, loading it from disk if needed.
@@ -48,7 +53,7 @@ export function useSessionAttachment(
         if (requestVersionRef.current !== requestVersion) {
           return;
         }
-        setLoadedData(convertFileSrc(filePath));
+        setLoadedData(withCacheBust(convertFileSrc(filePath), requestVersion));
         loadingRef.current = false;
       })
       .catch((err) => {
@@ -75,6 +80,11 @@ interface LazyAttachment {
   filename?: string | null;
   width?: number | null;
   height?: number | null;
+}
+
+interface AttachmentCacheEntry {
+  data: string;
+  storagePath?: string | null;
 }
 
 const MAX_ATTACHMENT_CACHE_ENTRIES = 300;
@@ -106,7 +116,7 @@ export function useSessionAttachments(
   attachments: LazyAttachment[] | undefined | null,
 ): LazyAttachment[] {
   const [loadedAttachments, setLoadedAttachments] = useState<LazyAttachment[]>([]);
-  const dataMapRef = useRef<Map<string, string>>(new Map());
+  const dataMapRef = useRef<Map<string, AttachmentCacheEntry>>(new Map());
   const requestVersionRef = useRef<number>(0);
   const attachmentsKey = useMemo(
     () =>
@@ -139,13 +149,16 @@ export function useSessionAttachments(
     for (const att of attachments) {
       if (att.data) {
         result.push(att);
-        dataMapRef.current.set(att.id, att.data);
+        dataMapRef.current.set(att.id, {
+          data: att.data,
+          storagePath: att.storagePath ?? null,
+        });
         continue;
       }
 
-      const cachedData = dataMapRef.current.get(att.id);
-      if (cachedData) {
-        result.push({ ...att, data: cachedData });
+      const cachedEntry = dataMapRef.current.get(att.id);
+      if (cachedEntry && (cachedEntry.storagePath ?? null) === (att.storagePath ?? null)) {
+        result.push({ ...att, data: cachedEntry.data });
         continue;
       }
 
@@ -153,6 +166,7 @@ export function useSessionAttachments(
         toLoad.push(att);
         result.push(att);
       } else {
+        dataMapRef.current.delete(att.id);
         result.push(att);
       }
     }
@@ -168,8 +182,11 @@ export function useSessionAttachments(
             if (cancelled || requestVersionRef.current !== requestVersion) {
               return;
             }
-            const assetUrl = convertFileSrc(filePath);
-            dataMapRef.current.set(att.id, assetUrl);
+            const assetUrl = withCacheBust(convertFileSrc(filePath), requestVersion);
+            dataMapRef.current.set(att.id, {
+              data: assetUrl,
+              storagePath: att.storagePath ?? null,
+            });
 
             setLoadedAttachments((prev) =>
               prev.map((a) => (a.id === att.id ? { ...a, data: assetUrl } : a)),
