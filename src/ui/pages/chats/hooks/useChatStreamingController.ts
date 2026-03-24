@@ -345,6 +345,14 @@ export function useChatStreamingController({
         if (!isActiveRequest) {
           streamBatcher.cancel();
           if (unlistenNormalized) unlistenNormalized();
+          dispatch({
+            type: "BATCH",
+            actions: [
+              { type: "SET_REGENERATING_MESSAGE_ID", payload: null },
+              { type: "SET_ACTIVE_REQUEST_ID", payload: null },
+              { type: "SET_SENDING", payload: false },
+            ],
+          });
           return;
         }
 

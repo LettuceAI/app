@@ -26,6 +26,7 @@ export function useChatAbortController({
       type: "BATCH",
       actions: [
         { type: "SET_SENDING", payload: false },
+        { type: "SET_REGENERATING_MESSAGE_ID", payload: null },
         { type: "SET_ACTIVE_REQUEST_ID", payload: null },
       ],
     });
@@ -39,6 +40,7 @@ export function useChatAbortController({
         actions: [
           { type: "SET_MESSAGES", payload: messages },
           { type: "SET_SENDING", payload: false },
+          { type: "SET_REGENERATING_MESSAGE_ID", payload: null },
           { type: "SET_ACTIVE_REQUEST_ID", payload: null },
         ],
       });
@@ -75,6 +77,7 @@ export function useChatAbortController({
       type: "BATCH",
       actions: [
         { type: "SET_SENDING", payload: false },
+        { type: "SET_REGENERATING_MESSAGE_ID", payload: null },
         { type: "SET_ACTIVE_REQUEST_ID", payload: null },
       ],
     });
