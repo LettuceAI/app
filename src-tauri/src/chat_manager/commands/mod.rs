@@ -56,6 +56,9 @@ pub struct ChatMessageDebugSnapshot {
     pub endpoint: String,
     pub stream: bool,
     pub request_settings: Value,
+    pub prompt_template_source: String,
+    pub prompt_template_id: Option<String>,
+    pub prompt_template_name: Option<String>,
     pub prompt_entries: Vec<SystemPromptEntry>,
     pub relative_prompt_entries: Vec<SystemPromptEntry>,
     pub in_chat_prompt_entries: Vec<SystemPromptEntry>,
@@ -115,6 +118,64 @@ fn request_settings_json(request_settings: &RequestSettings) -> Value {
         "reasoningEffort": request_settings.reasoning_effort,
         "reasoningBudget": request_settings.reasoning_budget,
     })
+}
+
+fn resolve_debug_prompt_template(
+    app: &AppHandle,
+    session: &Session,
+    character: &super::types::Character,
+    settings: &Settings,
+) -> (String, Option<String>, Option<String>) {
+    if let Some(session_template_id) = &session.prompt_template_id {
+        if let Ok(Some(template)) = prompts::get_template(app, session_template_id) {
+            return (
+                "session_template".to_string(),
+                Some(template.id),
+                Some(template.name),
+            );
+        }
+        if let Some(character_template_id) = &character.prompt_template_id {
+            if let Ok(Some(template)) = prompts::get_template(app, character_template_id) {
+                return (
+                    "character_template".to_string(),
+                    Some(template.id),
+                    Some(template.name),
+                );
+            }
+        }
+    } else if let Some(character_template_id) = &character.prompt_template_id {
+        if let Ok(Some(template)) = prompts::get_template(app, character_template_id) {
+            return (
+                "character_template".to_string(),
+                Some(template.id),
+                Some(template.name),
+            );
+        }
+    }
+
+    if let Some(app_template_id) = &settings.prompt_template_id {
+        if let Ok(Some(template)) = prompts::get_template(app, app_template_id) {
+            return (
+                "app_wide_template".to_string(),
+                Some(template.id),
+                Some(template.name),
+            );
+        }
+    }
+
+    if let Ok(Some(template)) = prompts::get_template(app, prompts::APP_DEFAULT_TEMPLATE_ID) {
+        return (
+            "app_default_template".to_string(),
+            Some(template.id),
+            Some(template.name),
+        );
+    }
+
+    (
+        "emergency_hardcoded_fallback".to_string(),
+        None,
+        Some("Hardcoded Fallback".to_string()),
+    )
 }
 
 fn build_debug_completion_messages(
@@ -417,6 +478,8 @@ pub fn chat_message_debug_snapshot(
         context.build_system_prompt(&character, &model, persona.as_ref(), &prompt_session),
         &context.settings,
     );
+    let (prompt_template_source, prompt_template_id, prompt_template_name) =
+        resolve_debug_prompt_template(&app, &prompt_session, &character, &context.settings);
     let (relative_entries, in_chat_entries) = partition_prompt_entries(prompt_entries.clone());
 
     let system_role = crate::chat_manager::request_builder::system_role_for(&credential);
@@ -525,6 +588,9 @@ pub fn chat_message_debug_snapshot(
         endpoint: built.url,
         stream: built.stream,
         request_settings: request_settings_json(&request_settings),
+        prompt_template_source,
+        prompt_template_id,
+        prompt_template_name,
         prompt_entries,
         relative_prompt_entries: relative_entries,
         in_chat_prompt_entries: in_chat_entries,

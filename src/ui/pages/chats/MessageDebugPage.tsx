@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Copy } from "lucide-react";
 
 import { getMessageDebugSnapshot, type ChatMessageDebugSnapshot } from "../../../core/chat/manager";
 import { getSession, readSettings } from "../../../core/storage/repo";
@@ -79,9 +79,27 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
 }
 
 function JsonBlock({ title, value }: { title: string; value: unknown }) {
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(stringify(value));
+    } catch (error) {
+      console.error(`Failed to copy ${title}:`, error);
+    }
+  };
+
   return (
     <section className="space-y-2">
-      <h2 className="text-sm font-semibold text-white">{title}</h2>
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-sm font-semibold text-white">{title}</h2>
+        <button
+          type="button"
+          onClick={() => void handleCopy()}
+          className="inline-flex items-center gap-2 rounded border border-white/10 bg-[#111111] px-2.5 py-1.5 text-[11px] text-white/70 hover:bg-[#181818] hover:text-white"
+        >
+          <Copy className="h-3.5 w-3.5" />
+          Copy
+        </button>
+      </div>
       <pre className="overflow-x-auto rounded border border-white/10 bg-black px-3 py-3 text-xs leading-6 text-white/85">
         {stringify(value)}
       </pre>
@@ -105,6 +123,14 @@ function MessageRoleBadge({ role }: { role: string }) {
 }
 
 function MessageListBlock({ title, messages }: { title: string; messages: unknown[] }) {
+  const handleCopy = async (value: unknown) => {
+    try {
+      await navigator.clipboard.writeText(stringify(value));
+    } catch (error) {
+      console.error(`Failed to copy ${title}:`, error);
+    }
+  };
+
   return (
     <section className="space-y-2">
       <h2 className="text-sm font-semibold text-white">{title}</h2>
@@ -122,6 +148,14 @@ function MessageListBlock({ title, messages }: { title: string; messages: unknow
                   <MessageRoleBadge role={role} />
                   <span className="font-mono text-[11px] text-white/45">#{index + 1}</span>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => void handleCopy(value)}
+                  className="inline-flex items-center gap-2 rounded border border-white/10 bg-[#111111] px-2.5 py-1.5 text-[11px] text-white/70 hover:bg-[#181818] hover:text-white"
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                  Copy
+                </button>
               </div>
               <pre className="overflow-x-auto text-xs leading-6 text-white/85">
                 {stringify(value)}
@@ -264,6 +298,12 @@ export function MessageDebugPage() {
           <SummaryRow label="Operation" value={inferredOperation} />
           <SummaryRow label="Provider" value={providerLabel} />
           <SummaryRow label="Model" value={modelLabel} />
+          <SummaryRow label="Prompt Template" value={snapshot?.promptTemplateName ?? "unknown"} />
+          <SummaryRow label="Prompt Template ID" value={snapshot?.promptTemplateId ?? "missing"} />
+          <SummaryRow
+            label="Prompt Template Source"
+            value={snapshot?.promptTemplateSource ?? "unknown"}
+          />
           <SummaryRow label="Attempt count" value={String(attempts.length)} />
           <SummaryRow label="Transport retries" value={String(totalTransportRetries)} />
           <SummaryRow

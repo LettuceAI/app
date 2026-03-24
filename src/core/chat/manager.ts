@@ -39,6 +39,9 @@ export interface ChatMessageDebugSnapshot {
   endpoint: string;
   stream: boolean;
   requestSettings: unknown;
+  promptTemplateSource: string;
+  promptTemplateId?: string | null;
+  promptTemplateName?: string | null;
   promptEntries: unknown[];
   relativePromptEntries: unknown[];
   inChatPromptEntries: unknown[];
