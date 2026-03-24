@@ -537,6 +537,9 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
       suggestedPrompt: "제안된 프롬프트",
       regeneratePrompt: "재생성",
       editPrompt: "프롬프트 편집",
+      reviewTitle: "장면 프롬프트 검토",
+      denyPrompt: "거부",
+      acceptPrompt: "수락",
       generateImage: "이미지 생성",
       updateImage: "이미지 업데이트",
     },
@@ -1823,6 +1826,19 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
       selectAvatarModel: "아바타 모델 선택",
       selectSceneModel: "장면 모델 선택",
       useFirstAvailable: "사용 가능한 첫 번째 모델 사용",
+    },
+    mode: {
+      title: "동작 방식",
+      description: "모델 출력에서 감지된 장면 프롬프트를 어떻게 처리할지 선택합니다.",
+      auto: "자동",
+      autoDescription:
+        "모델이 장면 프롬프트를 제공하면 즉시 장면 이미지를 생성합니다.",
+      askFirst: "먼저 확인",
+      askFirstDescription:
+        "감지된 장면 프롬프트를 먼저 보여 주고, 이미지 생성 전에 승인을 기다립니다.",
+      manual: "수동",
+      manualDescription:
+        "모델 응답의 장면 프롬프트는 무시합니다. 사용자가 직접 실행한 작업만 사용합니다.",
     },
     empty: {
       title: "이미지 모델 없음",

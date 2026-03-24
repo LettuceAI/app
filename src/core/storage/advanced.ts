@@ -5,6 +5,9 @@ export interface AdvancedSettings {
   summarisationModelId?: string;
   creationHelperEnabled?: boolean;
   creationHelperModelId?: string;
+  sceneGenerationEnabled?: boolean;
+  sceneGenerationMode?: "auto" | "askFirst" | "manual";
+  sceneGenerationModelId?: string;
   sceneWriterModelId?: string;
   helpMeReplyEnabled?: boolean;
   manualModeContextWindow?: number;

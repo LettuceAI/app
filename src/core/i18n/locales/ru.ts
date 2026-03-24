@@ -544,6 +544,9 @@ export const ruMessages: DeepPartialMessageTree<LocaleMessages> = {
       suggestedPrompt: "Предлагаемая подсказка",
       regeneratePrompt: "Регенерировать",
       editPrompt: "Изменить приглашение",
+      reviewTitle: "Проверить промпт сцены",
+      denyPrompt: "Отклонить",
+      acceptPrompt: "Принять",
       generateImage: "Создать изображение",
       updateImage: "Обновить изображение",
     },
@@ -1839,6 +1842,19 @@ export const ruMessages: DeepPartialMessageTree<LocaleMessages> = {
       selectAvatarModel: "Выберите модель аватара",
       selectSceneModel: "Выберите модель сцены",
       useFirstAvailable: "Использовать первую доступную модель",
+    },
+    mode: {
+      title: "Режим",
+      description: "Выберите, как обрабатывать промпты сцены, найденные в ответе модели.",
+      auto: "Автоматически",
+      autoDescription:
+        "Сразу генерировать изображение сцены, когда модель предлагает промпт сцены.",
+      askFirst: "Сначала спросить",
+      askFirstDescription:
+        "Показывать найденный промпт сцены и ждать вашего подтверждения перед генерацией изображения.",
+      manual: "Вручную",
+      manualDescription:
+        "Игнорировать промпты сцены из ответов модели. Использовать только действия, запущенные пользователем вручную.",
     },
     empty: {
       title: "Нет моделей изображений",

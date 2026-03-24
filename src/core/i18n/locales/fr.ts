@@ -551,6 +551,9 @@ export const frMessages: DeepPartialMessageTree<LocaleMessages> = {
       suggestedPrompt: "Invite suggérée",
       regeneratePrompt: "Régénérer",
       editPrompt: "Modifier l'invite",
+      reviewTitle: "Vérifier le prompt de scène",
+      denyPrompt: "Refuser",
+      acceptPrompt: "Accepter",
       generateImage: "Générer une image",
       updateImage: "Mettre à jour l'image",
     },
@@ -1860,6 +1863,19 @@ export const frMessages: DeepPartialMessageTree<LocaleMessages> = {
       selectAvatarModel: "Sélectionnez le modèle d'avatar",
       selectSceneModel: "Sélectionnez le modèle de scène",
       useFirstAvailable: "Utiliser le premier modèle disponible",
+    },
+    mode: {
+      title: "Comportement",
+      description: "Choisissez comment traiter les prompts de scène détectés dans la sortie du modèle.",
+      auto: "Automatique",
+      autoDescription:
+        "Générer immédiatement l'image de scène lorsque le modèle fournit un prompt de scène.",
+      askFirst: "Demander avant",
+      askFirstDescription:
+        "Afficher le prompt de scène détecté et attendre votre validation avant de générer une image.",
+      manual: "Manuel",
+      manualDescription:
+        "Ignorer les prompts de scène présents dans les réponses du modèle. Utiliser uniquement les actions lancées manuellement par l'utilisateur.",
     },
     empty: {
       title: "Aucun modèle d'image",

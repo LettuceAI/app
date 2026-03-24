@@ -29,6 +29,15 @@ interface ImageGenConfig {
   credentialId: string;
 }
 
+type SceneGenerationMode = "auto" | "askFirst" | "manual";
+export const SCENE_PROMPT_APPROVAL_EVENT = "lettuceai:scene-prompt-approval";
+
+export interface ScenePromptApprovalDetail {
+  sessionId: string;
+  message: StoredMessage;
+  scenePrompt: string;
+}
+
 interface UseChatEnhancementsControllerArgs {
   context: ChatControllerModuleContext;
 }
@@ -41,6 +50,7 @@ export function useChatEnhancementsController({ context }: UseChatEnhancementsCo
   const hapticsEnabledRef = useRef<boolean>(false);
   const hapticIntensityRef = useRef<any>("light");
   const sceneGenerationEnabledRef = useRef<boolean>(false);
+  const sceneGenerationModeRef = useRef<SceneGenerationMode>("auto");
   const lastHapticTimeRef = useRef<number>(0);
   const platformRef = useRef<string>("");
 
@@ -60,6 +70,12 @@ export function useChatEnhancementsController({ context }: UseChatEnhancementsCo
         hapticIntensityRef.current = acc?.hapticIntensity ?? "light";
         sceneGenerationEnabledRef.current =
           settings.advancedSettings?.sceneGenerationEnabled ?? true;
+        sceneGenerationModeRef.current =
+          settings.advancedSettings?.sceneGenerationMode === "manual"
+            ? "manual"
+            : settings.advancedSettings?.sceneGenerationMode === "askFirst"
+              ? "askFirst"
+              : "auto";
       } catch {
         // ignore settings read failures
       }
@@ -224,10 +240,18 @@ export function useChatEnhancementsController({ context }: UseChatEnhancementsCo
     ) => {
       if (!state.session || !state.character) return;
       let sceneGenerationEnabled = sceneGenerationEnabledRef.current;
+      let sceneGenerationMode = sceneGenerationModeRef.current;
       try {
         const settings = await readSettings();
         sceneGenerationEnabled = settings.advancedSettings?.sceneGenerationEnabled ?? true;
+        sceneGenerationMode =
+          settings.advancedSettings?.sceneGenerationMode === "manual"
+            ? "manual"
+            : settings.advancedSettings?.sceneGenerationMode === "askFirst"
+              ? "askFirst"
+              : "auto";
         sceneGenerationEnabledRef.current = sceneGenerationEnabled;
+        sceneGenerationModeRef.current = sceneGenerationMode;
       } catch {
         // Fall back to the last known value.
       }
@@ -245,7 +269,11 @@ export function useChatEnhancementsController({ context }: UseChatEnhancementsCo
       if (!currentMessage) return;
 
       const { cleanContent, directives } = parseImageDirectives(currentMessage.content);
-      const scenePrompt = sceneGenerationEnabled ? (options?.scenePrompt?.trim() ?? "") : "";
+      const scenePrompt =
+        sceneGenerationEnabled && sceneGenerationMode !== "manual"
+          ? (options?.scenePrompt?.trim() ?? "")
+          : "";
+      const shouldAskForSceneApproval = Boolean(scenePrompt) && sceneGenerationMode === "askFirst";
       if (directives.length === 0 && !scenePrompt) return;
 
       const config = directives.length > 0 ? await resolveDefaultImageGenConfig() : null;
@@ -270,15 +298,16 @@ export function useChatEnhancementsController({ context }: UseChatEnhancementsCo
           });
         }
       }
-      const scenePlaceholder = scenePrompt
-        ? {
-            id: crypto.randomUUID(),
-            data: "",
-            mimeType: "image/webp",
-            width: 1024,
-            height: 1024,
-          }
-        : null;
+      const scenePlaceholder =
+        scenePrompt && !shouldAskForSceneApproval
+          ? {
+              id: crypto.randomUUID(),
+              data: "",
+              mimeType: "image/webp",
+              width: 1024,
+              height: 1024,
+            }
+          : null;
       if (scenePlaceholder) {
         placeholderAttachments.push(scenePlaceholder);
       }
@@ -475,6 +504,21 @@ export function useChatEnhancementsController({ context }: UseChatEnhancementsCo
             // leave cleaned UI state in memory if persistence fails
           }
         }
+      }
+
+      if (shouldAskForSceneApproval) {
+        if (requestWasAborted()) {
+          return;
+        }
+        window.dispatchEvent(
+          new CustomEvent<ScenePromptApprovalDetail>(SCENE_PROMPT_APPROVAL_EVENT, {
+            detail: {
+              sessionId: currentSession.id,
+              message: updatedMessage,
+              scenePrompt,
+            },
+          }),
+        );
       }
 
       if (scenePrompt && scenePlaceholder) {

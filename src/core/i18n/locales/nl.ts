@@ -550,6 +550,9 @@ export const nlMessages: DeepPartialMessageTree<LocaleMessages> = {
       suggestedPrompt: "Voorgestelde prompt",
       regeneratePrompt: "Regenereer",
       editPrompt: "Prompt bewerken",
+      reviewTitle: "Scèneprompt bekijken",
+      denyPrompt: "Weigeren",
+      acceptPrompt: "Accepteren",
       generateImage: "Genereer afbeelding",
       updateImage: "Afbeelding bijwerken",
     },
@@ -1849,6 +1852,19 @@ export const nlMessages: DeepPartialMessageTree<LocaleMessages> = {
       selectAvatarModel: "Selecteer Avatarmodel",
       selectSceneModel: "Selecteer Scènemodel",
       useFirstAvailable: "Gebruik het eerst beschikbare model",
+    },
+    mode: {
+      title: "Gedrag",
+      description: "Bepaal hoe scèneprompts uit de modeluitvoer moeten worden verwerkt.",
+      auto: "Automatisch",
+      autoDescription:
+        "Genereer direct een scèneafbeelding zodra het model een scèneprompt geeft.",
+      askFirst: "Eerst vragen",
+      askFirstDescription:
+        "Toon de gedetecteerde scèneprompt en wacht op jouw goedkeuring voordat er een afbeelding wordt gemaakt.",
+      manual: "Handmatig",
+      manualDescription:
+        "Negeer scèneprompts uit modelantwoorden. Gebruik alleen acties die de gebruiker zelf start.",
     },
     empty: {
       title: "Geen afbeeldingsmodellen",

@@ -543,6 +543,9 @@ export const viMessages: DeepPartialMessageTree<LocaleMessages> = {
       suggestedPrompt: "Lời nhắc được đề xuất",
       regeneratePrompt: "tái sinh",
       editPrompt: "Chỉnh sửa lời nhắc",
+      reviewTitle: "Xem lại prompt cảnh",
+      denyPrompt: "Từ chối",
+      acceptPrompt: "Chấp nhận",
       generateImage: "Tạo hình ảnh",
       updateImage: "Cập nhật hình ảnh",
     },
@@ -1832,6 +1835,19 @@ export const viMessages: DeepPartialMessageTree<LocaleMessages> = {
       selectAvatarModel: "Chọn mẫu Avatar",
       selectSceneModel: "Chọn mô hình cảnh",
       useFirstAvailable: "Sử dụng mô hình có sẵn đầu tiên",
+    },
+    mode: {
+      title: "Chế độ",
+      description: "Chọn cách xử lý các prompt cảnh được phát hiện từ đầu ra của mô hình.",
+      auto: "Tự động",
+      autoDescription:
+        "Tạo ảnh cảnh ngay khi mô hình cung cấp prompt cảnh.",
+      askFirst: "Hỏi trước",
+      askFirstDescription:
+        "Hiển thị prompt cảnh đã phát hiện và chờ bạn chấp thuận trước khi tạo ảnh.",
+      manual: "Thủ công",
+      manualDescription:
+        "Bỏ qua các prompt cảnh trong phản hồi của mô hình. Chỉ dùng các hành động do người dùng tự kích hoạt.",
     },
     empty: {
       title: "Không có mô hình hình ảnh",

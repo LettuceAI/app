@@ -538,6 +538,9 @@ export const enMessages = {
       suggestedPrompt: "Suggested prompt",
       regeneratePrompt: "Regenerate",
       editPrompt: "Edit prompt",
+      reviewTitle: "Review Scene Prompt",
+      denyPrompt: "Deny",
+      acceptPrompt: "Accept",
       generateImage: "Generate Image",
       updateImage: "Update Image",
     },
@@ -1834,6 +1837,19 @@ export const enMessages = {
       selectWriterModel: "Select Scene Writer Model",
       useFirstAvailable: "Use first available model",
       useFirstCompatible: "Use first compatible writer model",
+    },
+    mode: {
+      title: "Mode",
+      description: "Choose how scene prompts detected in model output should be handled.",
+      auto: "Automatic",
+      autoDescription:
+        "Generate the scene image as soon as the model provides a scene prompt.",
+      askFirst: "Ask first",
+      askFirstDescription:
+        "Show the detected scene prompt and wait for your approval before generating an image.",
+      manual: "Manual",
+      manualDescription:
+        "Ignore scene prompts in model responses. Only use actions you trigger yourself.",
     },
     empty: {
       title: "No Image Models",

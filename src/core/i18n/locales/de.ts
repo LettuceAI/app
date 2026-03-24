@@ -555,6 +555,9 @@ export const deMessages: DeepPartialMessageTree<LocaleMessages> = {
       suggestedPrompt: "Vorgeschlagene Eingabeaufforderung",
       regeneratePrompt: "Regenerieren",
       editPrompt: "Eingabeaufforderung bearbeiten",
+      reviewTitle: "Szenen-Prompt prüfen",
+      denyPrompt: "Ablehnen",
+      acceptPrompt: "Akzeptieren",
       generateImage: "Bild generieren",
       updateImage: "Bild aktualisieren",
     },
@@ -1862,6 +1865,19 @@ export const deMessages: DeepPartialMessageTree<LocaleMessages> = {
       selectAvatarModel: "Wählen Sie Avatar-Modell aus",
       selectSceneModel: "Wählen Sie Szenenmodell aus",
       useFirstAvailable: "Verwenden Sie das erste verfügbare Modell",
+    },
+    mode: {
+      title: "Modus",
+      description: "Lege fest, wie in der Modellausgabe erkannte Szenen-Prompts behandelt werden.",
+      auto: "Automatisch",
+      autoDescription:
+        "Erzeuge das Szenenbild sofort, sobald das Modell einen Szenen-Prompt liefert.",
+      askFirst: "Erst fragen",
+      askFirstDescription:
+        "Zeige den erkannten Szenen-Prompt und warte auf deine Bestätigung, bevor ein Bild erzeugt wird.",
+      manual: "Manuell",
+      manualDescription:
+        "Ignoriere Szenen-Prompts aus Modellantworten. Verwende nur Aktionen, die du selbst auslöst.",
     },
     empty: {
       title: "Keine Bildmodelle",

@@ -546,6 +546,9 @@ export const plMessages: DeepPartialMessageTree<LocaleMessages> = {
       suggestedPrompt: "Sugerowany monit",
       regeneratePrompt: "Zregenerować",
       editPrompt: "Edytuj monit",
+      reviewTitle: "Sprawdź prompt sceny",
+      denyPrompt: "Odrzuć",
+      acceptPrompt: "Akceptuj",
       generateImage: "Wygeneruj obraz",
       updateImage: "Aktualizuj obraz",
     },
@@ -1844,6 +1847,19 @@ export const plMessages: DeepPartialMessageTree<LocaleMessages> = {
       selectAvatarModel: "Wybierz Model awatara",
       selectSceneModel: "Wybierz Model sceny",
       useFirstAvailable: "Użyj pierwszego dostępnego modelu",
+    },
+    mode: {
+      title: "Tryb działania",
+      description: "Wybierz, jak obsługiwać prompty scen wykryte w odpowiedzi modelu.",
+      auto: "Automatyczny",
+      autoDescription:
+        "Generuj obraz sceny od razu, gdy model poda prompt sceny.",
+      askFirst: "Pytaj najpierw",
+      askFirstDescription:
+        "Pokaż wykryty prompt sceny i poczekaj na akceptację przed wygenerowaniem obrazu.",
+      manual: "Ręczny",
+      manualDescription:
+        "Ignoruj prompty scen z odpowiedzi modelu. Używaj tylko działań uruchomionych ręcznie przez użytkownika.",
     },
     empty: {
       title: "Brak modeli obrazów",

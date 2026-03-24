@@ -562,6 +562,9 @@ export const filMessages: DeepPartialMessageTree<LocaleMessages> = {
       suggestedPrompt: "Iminungkahing prompt",
       regeneratePrompt: "Gumawa muli",
       editPrompt: "I-edit ang prompt",
+      reviewTitle: "Suriin ang scene prompt",
+      denyPrompt: "Tanggihan",
+      acceptPrompt: "Tanggapin",
       generateImage: "Gumawa ng Larawan",
       updateImage: "I-update ang Larawan",
     },
@@ -1877,6 +1880,19 @@ export const filMessages: DeepPartialMessageTree<LocaleMessages> = {
       selectAvatarModel: "Pumili ng Avatar Model",
       selectSceneModel: "Pumili ng Scene Model",
       useFirstAvailable: "Gamitin ang unang available na modelo",
+    },
+    mode: {
+      title: "Pag-uugali",
+      description: "Piliin kung paano hahawakan ang mga scene prompt na natukoy mula sa output ng modelo.",
+      auto: "Awtomatiko",
+      autoDescription:
+        "Gumawa agad ng scene image kapag nagbigay ang modelo ng scene prompt.",
+      askFirst: "Magtanong muna",
+      askFirstDescription:
+        "Ipakita muna ang natukoy na scene prompt at hintayin ang iyong pahintulot bago gumawa ng larawan.",
+      manual: "Manwal",
+      manualDescription:
+        "Huwag pansinin ang mga scene prompt mula sa tugon ng modelo. Gamitin lamang ang mga aksyong manu-manong sinimulan.",
     },
     empty: {
       title: "Walang mga Modelo ng Larawan",

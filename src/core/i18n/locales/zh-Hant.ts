@@ -532,6 +532,9 @@ export const zhHantMessages: DeepPartialMessageTree<LocaleMessages> = {
       suggestedPrompt: "建議提示",
       regeneratePrompt: "再生",
       editPrompt: "編輯提示",
+      reviewTitle: "檢查場景提示詞",
+      denyPrompt: "拒絕",
+      acceptPrompt: "接受",
       generateImage: "產生影像",
       updateImage: "更新圖片",
     },
@@ -1804,6 +1807,19 @@ export const zhHantMessages: DeepPartialMessageTree<LocaleMessages> = {
       selectAvatarModel: "選擇頭像模型",
       selectSceneModel: "選擇場景模型",
       useFirstAvailable: "使用第一個可用模型",
+    },
+    mode: {
+      title: "模式",
+      description: "選擇如何處理由模型輸出中偵測到的場景提示詞。",
+      auto: "自動",
+      autoDescription:
+        "模型提供場景提示詞時立即生成場景圖片。",
+      askFirst: "先詢問",
+      askFirstDescription:
+        "先顯示偵測到的場景提示詞，並在生成圖片前等待你的確認。",
+      manual: "手動",
+      manualDescription:
+        "忽略模型回應中的場景提示詞。只使用由使用者手動觸發的操作。",
     },
     empty: {
       title: "沒有圖片模型",

@@ -543,6 +543,9 @@ export const jaMessages: DeepPartialMessageTree<LocaleMessages> = {
       suggestedPrompt: "推奨されるプロンプト",
       regeneratePrompt: "再生する",
       editPrompt: "プロンプトの編集",
+      reviewTitle: "シーンプロンプトを確認",
+      denyPrompt: "拒否",
+      acceptPrompt: "承認",
       generateImage: "画像の生成",
       updateImage: "画像を更新",
     },
@@ -1833,6 +1836,19 @@ export const jaMessages: DeepPartialMessageTree<LocaleMessages> = {
       selectAvatarModel: "アバターモデルの選択",
       selectSceneModel: "シーンモデルの選択",
       useFirstAvailable: "最初に利用可能なモデルを使用する",
+    },
+    mode: {
+      title: "動作",
+      description: "モデル出力から検出したシーンプロンプトをどう扱うかを選択します。",
+      auto: "自動",
+      autoDescription:
+        "モデルがシーンプロンプトを返したら、すぐにシーン画像を生成します。",
+      askFirst: "先に確認",
+      askFirstDescription:
+        "検出したシーンプロンプトを表示し、画像生成の前に承認を待ちます。",
+      manual: "手動",
+      manualDescription:
+        "モデルの応答に含まれるシーンプロンプトは無視します。ユーザーが手動で実行した操作だけを使います。",
     },
     empty: {
       title: "画像モデルがありません",

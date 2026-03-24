@@ -547,6 +547,9 @@ export const elMessages: DeepPartialMessageTree<LocaleMessages> = {
       suggestedPrompt: "Προτεινόμενη προτροπή",
       regeneratePrompt: "Αναγεννηθείς",
       editPrompt: "Επεξεργασία προτροπής",
+      reviewTitle: "Έλεγχος prompt σκηνής",
+      denyPrompt: "Απόρριψη",
+      acceptPrompt: "Αποδοχή",
       generateImage: "Δημιουργία εικόνας",
       updateImage: "Ενημέρωση εικόνας",
     },
@@ -1851,6 +1854,19 @@ export const elMessages: DeepPartialMessageTree<LocaleMessages> = {
       selectAvatarModel: "Επιλέξτε Μοντέλο Avatar",
       selectSceneModel: "Επιλέξτε Μοντέλο σκηνής",
       useFirstAvailable: "Χρησιμοποιήστε το πρώτο διαθέσιμο μοντέλο",
+    },
+    mode: {
+      title: "Συμπεριφορά",
+      description: "Επιλέξτε πώς θα χειρίζονται τα prompts σκηνής που εντοπίζονται στην έξοδο του μοντέλου.",
+      auto: "Αυτόματα",
+      autoDescription:
+        "Δημιούργησε αμέσως εικόνα σκηνής όταν το μοντέλο δώσει prompt σκηνής.",
+      askFirst: "Να ζητείται πρώτα",
+      askFirstDescription:
+        "Εμφάνισε το ανιχνευμένο prompt σκηνής και περίμενε την έγκρισή σου πριν δημιουργηθεί εικόνα.",
+      manual: "Χειροκίνητα",
+      manualDescription:
+        "Αγνόησε τα prompts σκηνής από τις απαντήσεις του μοντέλου. Χρησιμοποίησε μόνο ενέργειες που ξεκινά ο χρήστης.",
     },
     empty: {
       title: "Δεν υπάρχουν Μοντέλα Εικόνας",

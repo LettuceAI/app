@@ -547,6 +547,9 @@ export const ptMessages: DeepPartialMessageTree<LocaleMessages> = {
       suggestedPrompt: "Solicitação sugerida",
       regeneratePrompt: "Regenerado",
       editPrompt: "Editar solicitação",
+      reviewTitle: "Revisar prompt de cena",
+      denyPrompt: "Negar",
+      acceptPrompt: "Aceitar",
       generateImage: "Gerar imagem",
       updateImage: "Atualizar imagem",
     },
@@ -1849,6 +1852,19 @@ export const ptMessages: DeepPartialMessageTree<LocaleMessages> = {
       selectAvatarModel: "Selecione o modelo do avatar",
       selectSceneModel: "Selecione o modelo de cena",
       useFirstAvailable: "Use o primeiro modelo disponível",
+    },
+    mode: {
+      title: "Comportamento",
+      description: "Defina como os prompts de cena detectados na saída do modelo devem ser tratados.",
+      auto: "Automático",
+      autoDescription:
+        "Gere a imagem da cena assim que o modelo fornecer um prompt de cena.",
+      askFirst: "Perguntar antes",
+      askFirstDescription:
+        "Mostre o prompt de cena detectado e espere sua aprovação antes de gerar uma imagem.",
+      manual: "Manual",
+      manualDescription:
+        "Ignore prompts de cena nas respostas do modelo. Use apenas ações iniciadas manualmente pelo usuário.",
     },
     empty: {
       title: "Sem Modelos de Imagem",

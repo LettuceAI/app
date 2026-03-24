@@ -152,6 +152,7 @@ fn default_settings() -> Settings {
             avatar_generation_enabled: Some(true),
             avatar_generation_model_id: None,
             scene_generation_enabled: Some(true),
+            scene_generation_mode: Some("auto".to_string()),
             scene_generation_model_id: None,
             scene_writer_model_id: None,
             creation_helper_enabled: None,

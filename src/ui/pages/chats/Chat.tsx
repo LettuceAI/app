@@ -70,6 +70,10 @@ import { radius, cn } from "../../design-tokens";
 import { useI18n } from "../../../core/i18n/context";
 import { PersonaSelector } from "../group-chats/components/settings";
 import { sanitizeAssistantSceneDirective } from "./hooks/sceneImageProtocol";
+import {
+  SCENE_PROMPT_APPROVAL_EVENT,
+  type ScenePromptApprovalDetail,
+} from "./hooks/useChatEnhancementsController";
 
 const LONG_PRESS_DELAY = 450;
 const SCROLL_THRESHOLD = 10; // pixels of movement to cancel long press
@@ -161,6 +165,9 @@ export function ChatConversationPage() {
   const [generatingScenePrompt, setGeneratingScenePrompt] = useState(false);
   const [scenePromptError, setScenePromptError] = useState<string | null>(null);
   const [applyingSceneImage, setApplyingSceneImage] = useState(false);
+  const [scenePromptResultMode, setScenePromptResultMode] = useState<"generated" | "approval">(
+    "generated",
+  );
   const [helpMeReplyEnabled, setHelpMeReplyEnabled] = useState(true);
   const [sceneGenerationEnabled, setSceneGenerationEnabled] = useState(false);
   const [shouldTriggerFileInput, setShouldTriggerFileInput] = useState(false);
@@ -1249,6 +1256,7 @@ export function ChatConversationPage() {
     setGeneratingScenePrompt(false);
     setScenePromptError(null);
     setApplyingSceneImage(false);
+    setScenePromptResultMode("generated");
   }, []);
 
   const handleOpenSceneImageFlow = useCallback(
@@ -1261,6 +1269,7 @@ export function ChatConversationPage() {
       setScenePromptError(null);
       setGeneratingScenePrompt(false);
       setApplyingSceneImage(false);
+      setScenePromptResultMode("generated");
       setShowScenePromptEditorMenu(false);
       setShowScenePromptResultMenu(false);
       setShowScenePromptModeMenu(true);
@@ -1277,6 +1286,7 @@ export function ChatConversationPage() {
     setScenePromptError(null);
     setGeneratingScenePrompt(true);
     setGeneratedScenePrompt(null);
+    setScenePromptResultMode("generated");
 
     try {
       const prompt = await generateAiScenePrompt(scenePromptTargetMessage.id);
@@ -1335,6 +1345,27 @@ export function ChatConversationPage() {
     },
     [cancelHelpMeReplyGeneration],
   );
+
+  useEffect(() => {
+    const handleScenePromptApproval = (event: Event) => {
+      const customEvent = event as CustomEvent<ScenePromptApprovalDetail>;
+      if (customEvent.detail.sessionId !== session?.id) return;
+
+      setShowScenePromptModeMenu(false);
+      setShowScenePromptEditorMenu(false);
+      setScenePromptTargetMessage(customEvent.detail.message);
+      setScenePromptDraft(customEvent.detail.scenePrompt);
+      setGeneratedScenePrompt(customEvent.detail.scenePrompt);
+      setScenePromptError(null);
+      setGeneratingScenePrompt(false);
+      setApplyingSceneImage(false);
+      setScenePromptResultMode("approval");
+      setShowScenePromptResultMenu(true);
+    };
+
+    window.addEventListener(SCENE_PROMPT_APPROVAL_EVENT, handleScenePromptApproval);
+    return () => window.removeEventListener(SCENE_PROMPT_APPROVAL_EVENT, handleScenePromptApproval);
+  }, [session?.id]);
 
   const loadOlderFromDb = useCallback(async () => {
     if (!hasMoreMessagesBefore) return;
@@ -2271,7 +2302,11 @@ export function ChatConversationPage() {
       <BottomMenu
         isOpen={showScenePromptResultMenu}
         onClose={resetScenePromptFlow}
-        title={t("chats.sceneImage.aiTitle")}
+        title={
+          scenePromptResultMode === "approval"
+            ? t("chats.sceneImage.reviewTitle")
+            : t("chats.sceneImage.aiTitle")
+        }
       >
         <div className="space-y-4">
           {scenePromptError ? (
@@ -2293,54 +2328,101 @@ export function ChatConversationPage() {
             </div>
           ) : null}
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <button
-              onClick={() => void handleGenerateAiScenePrompt()}
-              disabled={generatingScenePrompt || applyingSceneImage}
-              className={cn(
-                "flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium text-white/80 transition",
-                "border border-white/10 bg-white/5 hover:bg-white/10",
-                "disabled:opacity-50",
-                radius.lg,
-              )}
-            >
-              <RefreshCw size={18} />
-              <span>{t("chats.sceneImage.regeneratePrompt")}</span>
-            </button>
-            <button
-              onClick={() => {
-                setScenePromptDraft(generatedScenePrompt ?? "");
-                setShowScenePromptResultMenu(false);
-                setShowScenePromptEditorMenu(true);
-              }}
-              disabled={generatingScenePrompt || !generatedScenePrompt || applyingSceneImage}
-              className={cn(
-                "flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium text-white/80 transition",
-                "border border-white/10 bg-white/5 hover:bg-white/10",
-                "disabled:opacity-50",
-                radius.lg,
-              )}
-            >
-              <PenLine size={18} />
-              <span>{t("chats.sceneImage.editPrompt")}</span>
-            </button>
-            <button
-              onClick={() => void handleApplySceneImagePrompt(generatedScenePrompt ?? "")}
-              disabled={generatingScenePrompt || !generatedScenePrompt || applyingSceneImage}
-              className={cn(
-                "flex items-center justify-center gap-2 px-4 py-3 text-sm font-semibold text-white transition",
-                "bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50",
-                radius.lg,
-              )}
-            >
-              {applyingSceneImage ? <LoadingSpinner /> : <Check size={18} />}
-              <span>
-                {resolveSceneAttachment(scenePromptTargetMessage)
-                  ? t("chats.sceneImage.updateImage")
-                  : t("chats.sceneImage.generateImage")}
-              </span>
-            </button>
-          </div>
+          {scenePromptResultMode === "approval" ? (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <button
+                onClick={resetScenePromptFlow}
+                disabled={generatingScenePrompt || applyingSceneImage}
+                className={cn(
+                  "flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium text-white/80 transition",
+                  "border border-white/10 bg-white/5 hover:bg-white/10",
+                  "disabled:opacity-50",
+                  radius.lg,
+                )}
+              >
+                <X size={18} />
+                <span>{t("chats.sceneImage.denyPrompt")}</span>
+              </button>
+              <button
+                onClick={() => {
+                  setScenePromptDraft(generatedScenePrompt ?? "");
+                  setShowScenePromptResultMenu(false);
+                  setShowScenePromptEditorMenu(true);
+                }}
+                disabled={generatingScenePrompt || !generatedScenePrompt || applyingSceneImage}
+                className={cn(
+                  "flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium text-white/80 transition",
+                  "border border-white/10 bg-white/5 hover:bg-white/10",
+                  "disabled:opacity-50",
+                  radius.lg,
+                )}
+              >
+                <PenLine size={18} />
+                <span>{t("chats.sceneImage.editPrompt")}</span>
+              </button>
+              <button
+                onClick={() => void handleApplySceneImagePrompt(generatedScenePrompt ?? "")}
+                disabled={generatingScenePrompt || !generatedScenePrompt || applyingSceneImage}
+                className={cn(
+                  "flex items-center justify-center gap-2 px-4 py-3 text-sm font-semibold text-white transition",
+                  "bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50",
+                  radius.lg,
+                )}
+              >
+                {applyingSceneImage ? <LoadingSpinner /> : <Check size={18} />}
+                <span>{t("chats.sceneImage.acceptPrompt")}</span>
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <button
+                onClick={() => void handleGenerateAiScenePrompt()}
+                disabled={generatingScenePrompt || applyingSceneImage}
+                className={cn(
+                  "flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium text-white/80 transition",
+                  "border border-white/10 bg-white/5 hover:bg-white/10",
+                  "disabled:opacity-50",
+                  radius.lg,
+                )}
+              >
+                <RefreshCw size={18} />
+                <span>{t("chats.sceneImage.regeneratePrompt")}</span>
+              </button>
+              <button
+                onClick={() => {
+                  setScenePromptDraft(generatedScenePrompt ?? "");
+                  setShowScenePromptResultMenu(false);
+                  setShowScenePromptEditorMenu(true);
+                }}
+                disabled={generatingScenePrompt || !generatedScenePrompt || applyingSceneImage}
+                className={cn(
+                  "flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium text-white/80 transition",
+                  "border border-white/10 bg-white/5 hover:bg-white/10",
+                  "disabled:opacity-50",
+                  radius.lg,
+                )}
+              >
+                <PenLine size={18} />
+                <span>{t("chats.sceneImage.editPrompt")}</span>
+              </button>
+              <button
+                onClick={() => void handleApplySceneImagePrompt(generatedScenePrompt ?? "")}
+                disabled={generatingScenePrompt || !generatedScenePrompt || applyingSceneImage}
+                className={cn(
+                  "flex items-center justify-center gap-2 px-4 py-3 text-sm font-semibold text-white transition",
+                  "bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50",
+                  radius.lg,
+                )}
+              >
+                {applyingSceneImage ? <LoadingSpinner /> : <Check size={18} />}
+                <span>
+                  {resolveSceneAttachment(scenePromptTargetMessage)
+                    ? t("chats.sceneImage.updateImage")
+                    : t("chats.sceneImage.generateImage")}
+                </span>
+              </button>
+            </div>
+          )}
         </div>
       </BottomMenu>
 

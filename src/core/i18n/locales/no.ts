@@ -547,6 +547,9 @@ export const noMessages: DeepPartialMessageTree<LocaleMessages> = {
       suggestedPrompt: "Foreslått forespørsel",
       regeneratePrompt: "Regenerer",
       editPrompt: "Rediger forespørsel",
+      reviewTitle: "Se over sceneledetekst",
+      denyPrompt: "Avslå",
+      acceptPrompt: "Godta",
       generateImage: "Generer bilde",
       updateImage: "Oppdater bilde",
     },
@@ -1842,6 +1845,19 @@ export const noMessages: DeepPartialMessageTree<LocaleMessages> = {
       selectAvatarModel: "Velg Avatar-modell",
       selectSceneModel: "Velg Scenemodell",
       useFirstAvailable: "Bruk den første tilgjengelige modellen",
+    },
+    mode: {
+      title: "Atferd",
+      description: "Bestem hvordan sceneledetekster som oppdages i modellens utdata skal håndteres.",
+      auto: "Automatisk",
+      autoDescription:
+        "Generer scenebildet med en gang modellen gir en sceneledetekst.",
+      askFirst: "Spør først",
+      askFirstDescription:
+        "Vis den oppdagede sceneledeteksten og vent på godkjenningen din før et bilde genereres.",
+      manual: "Manuell",
+      manualDescription:
+        "Ignorer sceneledetekster fra modelsvar. Bruk bare handlinger som brukeren starter selv.",
     },
     empty: {
       title: "Ingen bildemodeller",

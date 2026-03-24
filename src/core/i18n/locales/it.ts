@@ -548,6 +548,9 @@ export const itMessages: DeepPartialMessageTree<LocaleMessages> = {
       suggestedPrompt: "Pronta suggerita",
       regeneratePrompt: "Rigenerare",
       editPrompt: "Modifica richiesta",
+      reviewTitle: "Controlla prompt scena",
+      denyPrompt: "Rifiuta",
+      acceptPrompt: "Accetta",
       generateImage: "Genera immagine",
       updateImage: "Aggiorna immagine",
     },
@@ -1849,6 +1852,19 @@ export const itMessages: DeepPartialMessageTree<LocaleMessages> = {
       selectAvatarModel: "Seleziona il modello dell'avatar",
       selectSceneModel: "Seleziona modello di scena",
       useFirstAvailable: "Utilizza il primo modello disponibile",
+    },
+    mode: {
+      title: "Comportamento",
+      description: "Scegli come gestire i prompt di scena rilevati nell'output del modello.",
+      auto: "Automatico",
+      autoDescription:
+        "Genera subito l'immagine della scena quando il modello fornisce un prompt di scena.",
+      askFirst: "Chiedi prima",
+      askFirstDescription:
+        "Mostra il prompt di scena rilevato e attendi la tua approvazione prima di generare un'immagine.",
+      manual: "Manuale",
+      manualDescription:
+        "Ignora i prompt di scena nelle risposte del modello. Usa solo le azioni avviate manualmente dall'utente.",
     },
     empty: {
       title: "Nessun modello di immagini",

@@ -162,6 +162,8 @@ pub struct AdvancedSettings {
     #[serde(default)]
     pub scene_generation_enabled: Option<bool>,
     #[serde(default)]
+    pub scene_generation_mode: Option<String>,
+    #[serde(default)]
     pub scene_generation_model_id: Option<String>,
     #[serde(default)]
     pub scene_writer_model_id: Option<String>,

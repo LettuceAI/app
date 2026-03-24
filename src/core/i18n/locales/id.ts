@@ -542,6 +542,9 @@ export const idMessages: DeepPartialMessageTree<LocaleMessages> = {
       suggestedPrompt: "Perintah yang disarankan",
       regeneratePrompt: "Diperbarui",
       editPrompt: "Edit perintah",
+      reviewTitle: "Tinjau prompt adegan",
+      denyPrompt: "Tolak",
+      acceptPrompt: "Terima",
       generateImage: "Hasilkan Gambar",
       updateImage: "Perbarui Gambar",
     },
@@ -1837,6 +1840,19 @@ export const idMessages: DeepPartialMessageTree<LocaleMessages> = {
       selectAvatarModel: "Pilih Model Avatar",
       selectSceneModel: "Pilih Model Pemandangan",
       useFirstAvailable: "Gunakan model pertama yang tersedia",
+    },
+    mode: {
+      title: "Perilaku",
+      description: "Tentukan bagaimana prompt adegan yang terdeteksi dari keluaran model harus ditangani.",
+      auto: "Otomatis",
+      autoDescription:
+        "Segera buat gambar adegan saat model memberikan prompt adegan.",
+      askFirst: "Tanyakan dulu",
+      askFirstDescription:
+        "Tampilkan prompt adegan yang terdeteksi dan tunggu persetujuan Anda sebelum membuat gambar.",
+      manual: "Manual",
+      manualDescription:
+        "Abaikan prompt adegan dari respons model. Gunakan hanya tindakan yang dipicu pengguna.",
     },
     empty: {
       title: "Tidak Ada Model Gambar",

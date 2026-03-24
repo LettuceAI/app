@@ -20,12 +20,15 @@ interface ImageGenerationState {
   avatarEnabled: boolean;
   avatarModelId: string | null;
   sceneEnabled: boolean;
+  sceneMode: "auto" | "askFirst" | "manual";
   sceneModelId: string | null;
   writerModelId: string | null;
 }
 
 type SelectorKey = "avatarModelId" | "sceneModelId" | "writerModelId";
 type ToggleKey = "avatarEnabled" | "sceneEnabled";
+
+type SceneMode = ImageGenerationState["sceneMode"];
 
 type SelectorCardProps = {
   title: string;
@@ -253,6 +256,7 @@ export function ImageGenerationPage() {
     avatarEnabled: true,
     avatarModelId: null,
     sceneEnabled: true,
+    sceneMode: "auto",
     sceneModelId: null,
     writerModelId: null,
   });
@@ -277,6 +281,12 @@ export function ImageGenerationPage() {
           avatarEnabled: settings.advancedSettings?.avatarGenerationEnabled ?? true,
           avatarModelId: settings.advancedSettings?.avatarGenerationModelId ?? null,
           sceneEnabled: settings.advancedSettings?.sceneGenerationEnabled ?? true,
+          sceneMode:
+            settings.advancedSettings?.sceneGenerationMode === "manual"
+              ? "manual"
+              : settings.advancedSettings?.sceneGenerationMode === "askFirst"
+                ? "askFirst"
+                : "auto",
           sceneModelId: settings.advancedSettings?.sceneGenerationModelId ?? null,
           writerModelId: settings.advancedSettings?.sceneWriterModelId ?? null,
         });
@@ -310,6 +320,12 @@ export function ImageGenerationPage() {
             ? (modelId ?? undefined)
             : settings.advancedSettings?.avatarGenerationModelId,
         sceneGenerationEnabled: settings.advancedSettings?.sceneGenerationEnabled ?? true,
+        sceneGenerationMode:
+          settings.advancedSettings?.sceneGenerationMode === "manual"
+            ? "manual"
+            : settings.advancedSettings?.sceneGenerationMode === "askFirst"
+              ? "askFirst"
+              : "auto",
         sceneGenerationModelId:
           key === "sceneModelId"
             ? (modelId ?? undefined)
@@ -356,6 +372,12 @@ export function ImageGenerationPage() {
           key === "sceneEnabled"
             ? enabled
             : (settings.advancedSettings?.sceneGenerationEnabled ?? true),
+        sceneGenerationMode:
+          settings.advancedSettings?.sceneGenerationMode === "manual"
+            ? "manual"
+            : settings.advancedSettings?.sceneGenerationMode === "askFirst"
+              ? "askFirst"
+              : "auto",
         sceneGenerationModelId: settings.advancedSettings?.sceneGenerationModelId,
         sceneWriterModelId: settings.advancedSettings?.sceneWriterModelId,
       });
@@ -364,6 +386,33 @@ export function ImageGenerationPage() {
       setState((prev) => ({
         ...prev,
         error: err instanceof Error ? err.message : "Failed to save image generation settings",
+      }));
+    }
+  };
+
+  const persistSceneMode = async (mode: SceneMode) => {
+    setState((prev) => ({
+      ...prev,
+      sceneMode: mode,
+      error: null,
+    }));
+
+    try {
+      const settings = await readSettings();
+      await saveAdvancedSettings({
+        ...(settings.advancedSettings ?? {}),
+        avatarGenerationEnabled: settings.advancedSettings?.avatarGenerationEnabled ?? true,
+        avatarGenerationModelId: settings.advancedSettings?.avatarGenerationModelId,
+        sceneGenerationEnabled: settings.advancedSettings?.sceneGenerationEnabled ?? true,
+        sceneGenerationMode: mode,
+        sceneGenerationModelId: settings.advancedSettings?.sceneGenerationModelId,
+        sceneWriterModelId: settings.advancedSettings?.sceneWriterModelId,
+      });
+    } catch (err) {
+      console.error("Failed to save scene generation mode:", err);
+      setState((prev) => ({
+        ...prev,
+        error: err instanceof Error ? err.message : "Failed to save scene generation mode",
       }));
     }
   };
@@ -443,6 +492,73 @@ export function ImageGenerationPage() {
               onClick={() => setShowWriterMenu(true)}
             />
           </div>
+
+          {state.sceneEnabled ? (
+            <section className="space-y-3 rounded-xl border border-fg/10 bg-fg/5 px-4 py-4">
+              <div>
+                <h2 className="text-sm font-semibold text-fg">{t("imageGeneration.mode.title")}</h2>
+                <p className="mt-1 text-xs leading-relaxed text-fg/45">
+                  {t("imageGeneration.mode.description")}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                <button
+                  type="button"
+                  onClick={() => void persistSceneMode("auto")}
+                  className={cn(
+                    "rounded-xl border px-4 py-3 text-left transition",
+                    state.sceneMode === "auto"
+                      ? "border-accent/40 bg-accent/10"
+                      : "border-fg/10 bg-surface-el/20 hover:bg-surface-el/30",
+                  )}
+                >
+                  <div className="text-sm font-semibold text-fg">
+                    {t("imageGeneration.mode.auto")}
+                  </div>
+                  <p className="mt-1 text-xs leading-relaxed text-fg/50">
+                    {t("imageGeneration.mode.autoDescription")}
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => void persistSceneMode("askFirst")}
+                  className={cn(
+                    "rounded-xl border px-4 py-3 text-left transition",
+                    state.sceneMode === "askFirst"
+                      ? "border-accent/40 bg-accent/10"
+                      : "border-fg/10 bg-surface-el/20 hover:bg-surface-el/30",
+                  )}
+                >
+                  <div className="text-sm font-semibold text-fg">
+                    {t("imageGeneration.mode.askFirst")}
+                  </div>
+                  <p className="mt-1 text-xs leading-relaxed text-fg/50">
+                    {t("imageGeneration.mode.askFirstDescription")}
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => void persistSceneMode("manual")}
+                  className={cn(
+                    "rounded-xl border px-4 py-3 text-left transition",
+                    state.sceneMode === "manual"
+                      ? "border-accent/40 bg-accent/10"
+                      : "border-fg/10 bg-surface-el/20 hover:bg-surface-el/30",
+                  )}
+                >
+                  <div className="text-sm font-semibold text-fg">
+                    {t("imageGeneration.mode.manual")}
+                  </div>
+                  <p className="mt-1 text-xs leading-relaxed text-fg/50">
+                    {t("imageGeneration.mode.manualDescription")}
+                  </p>
+                </button>
+              </div>
+            </section>
+          ) : null}
         </div>
       </main>
 

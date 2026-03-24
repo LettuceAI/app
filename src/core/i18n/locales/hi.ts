@@ -543,6 +543,9 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
       suggestedPrompt: "सुझाया गया संकेत",
       regeneratePrompt: "पुनः जेनरेट",
       editPrompt: "शीघ्र संपादित करें",
+      reviewTitle: "दृश्य प्रॉम्प्ट की समीक्षा",
+      denyPrompt: "अस्वीकार",
+      acceptPrompt: "स्वीकार",
       generateImage: "छवि उत्पन्न करें",
       updateImage: "छवि अद्यतन करें",
     },
@@ -1836,6 +1839,19 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
       selectAvatarModel: "अवतार मॉडल चुनें",
       selectSceneModel: "दृश्य मॉडल का चयन करें",
       useFirstAvailable: "पहले उपलब्ध मॉडल का उपयोग करें",
+    },
+    mode: {
+      title: "व्यवहार",
+      description: "तय करें कि मॉडल के आउटपुट में मिले दृश्य प्रॉम्प्ट्स को कैसे संभालना है।",
+      auto: "स्वचालित",
+      autoDescription:
+        "जैसे ही मॉडल दृश्य प्रॉम्प्ट दे, दृश्य छवि तुरंत बनाएँ।",
+      askFirst: "पहले पूछें",
+      askFirstDescription:
+        "मिला हुआ दृश्य प्रॉम्प्ट पहले दिखाएँ और चित्र बनाने से पहले आपकी अनुमति का इंतज़ार करें।",
+      manual: "मैनुअल",
+      manualDescription:
+        "मॉडल के उत्तरों से मिलने वाले दृश्य प्रॉम्प्ट्स को अनदेखा करें। केवल वे क्रियाएँ उपयोग करें जिन्हें उपयोगकर्ता खुद शुरू करे।",
     },
     empty: {
       title: "कोई छवि मॉडल नहीं",
