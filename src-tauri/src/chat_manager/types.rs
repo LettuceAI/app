@@ -35,6 +35,87 @@ impl Default for PromptEntryPosition {
     }
 }
 
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum PromptEntryChatMode {
+    Direct,
+    Group,
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum PromptEntryCondition {
+    ChatMode {
+        value: PromptEntryChatMode,
+    },
+    SceneGenerationEnabled {
+        value: bool,
+    },
+    AvatarGenerationEnabled {
+        value: bool,
+    },
+    HasScene {
+        value: bool,
+    },
+    HasSceneDirection {
+        value: bool,
+    },
+    HasPersona {
+        value: bool,
+    },
+    MessageCountAtLeast {
+        value: u32,
+    },
+    ParticipantCountAtLeast {
+        value: u32,
+    },
+    KeywordAny {
+        values: Vec<String>,
+    },
+    KeywordAll {
+        values: Vec<String>,
+    },
+    KeywordNone {
+        values: Vec<String>,
+    },
+    DynamicMemoryEnabled {
+        value: bool,
+    },
+    HasMemorySummary {
+        value: bool,
+    },
+    HasKeyMemories {
+        value: bool,
+    },
+    HasLorebookContent {
+        value: bool,
+    },
+    InputScopeAny {
+        values: Vec<String>,
+    },
+    OutputScopeAny {
+        values: Vec<String>,
+    },
+    ProviderIdAny {
+        values: Vec<String>,
+    },
+    ReasoningEnabled {
+        value: bool,
+    },
+    VisionEnabled {
+        value: bool,
+    },
+    All {
+        conditions: Vec<PromptEntryCondition>,
+    },
+    Any {
+        conditions: Vec<PromptEntryCondition>,
+    },
+    Not {
+        condition: Box<PromptEntryCondition>,
+    },
+}
+
 #[derive(Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct SystemPromptEntry {
@@ -54,6 +135,8 @@ pub struct SystemPromptEntry {
     pub interval_turns: Option<u32>,
     #[serde(default)]
     pub system_prompt: bool,
+    #[serde(default)]
+    pub conditions: Option<PromptEntryCondition>,
 }
 
 #[derive(Deserialize, Serialize, Clone)]

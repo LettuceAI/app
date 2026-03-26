@@ -35,6 +35,9 @@ use crate::chat_manager::memory::dynamic::{
     select_top_cosine_memory_indices, trim_memories_to_max,
 };
 use crate::chat_manager::memory::manual::{has_manual_memories, render_manual_memory_lines};
+use crate::chat_manager::prompting::entry_conditions::{
+    entry_is_active, PromptEntryConditionContext,
+};
 use crate::chat_manager::prompts::{
     self, APP_DYNAMIC_MEMORY_TEMPLATE_ID, APP_DYNAMIC_SUMMARY_TEMPLATE_ID,
 };
@@ -48,8 +51,8 @@ use crate::chat_manager::tooling::{
     parse_tool_calls, ToolCall, ToolChoice, ToolConfig, ToolDefinition,
 };
 use crate::chat_manager::types::{
-    Character, DynamicMemorySettings, MemoryRetrievalStrategy, Model, Persona, PromptEntryPosition,
-    PromptEntryRole, ProviderCredential, Settings, SystemPromptEntry,
+    Character, DynamicMemorySettings, MemoryRetrievalStrategy, Model, Persona, PromptEntryChatMode,
+    PromptEntryPosition, PromptEntryRole, ProviderCredential, Settings, SystemPromptEntry,
 };
 use crate::embedding;
 use crate::storage_manager::db::{now_ms, DbConnection, SwappablePool};
@@ -3860,13 +3863,40 @@ fn resolve_group_used_lorebook_entries(
     used
 }
 
+fn group_scene_generation_enabled(settings: &Settings) -> bool {
+    settings
+        .advanced_settings
+        .as_ref()
+        .and_then(|advanced| advanced.scene_generation_enabled)
+        .unwrap_or(true)
+}
+
+fn group_avatar_generation_enabled(settings: &Settings) -> bool {
+    settings
+        .advanced_settings
+        .as_ref()
+        .and_then(|advanced| advanced.avatar_generation_enabled)
+        .unwrap_or(true)
+}
+
+fn group_model_supports_vision(model: &Model) -> bool {
+    model.input_scopes.iter().any(|scope| {
+        matches!(
+            scope.trim().to_ascii_lowercase().as_str(),
+            "image" | "vision"
+        )
+    })
+}
+
 /// Build group chat system prompt for a specific character
 fn build_group_system_prompt(
     app: &AppHandle,
     character: &Character,
     persona: Option<&Persona>,
     session: &GroupSession,
+    recent_messages: &[GroupMessage],
     other_characters: &[CharacterInfo],
+    model: &Model,
     settings: &Settings,
     retrieved_memories: &[MemoryEmbedding],
     lorebook_text: &str,
@@ -3909,6 +3939,7 @@ fn build_group_system_prompt(
                     conditional_min_messages: None,
                     interval_turns: None,
                     system_prompt: true,
+                    conditions: None,
                 }],
                 false,
             )
@@ -4046,6 +4077,7 @@ fn build_group_system_prompt(
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+            conditions: None,
         }]
     } else {
         template_entries
@@ -4054,10 +4086,47 @@ fn build_group_system_prompt(
     let has_lorebook_placeholder = entries
         .iter()
         .any(|entry| entry.content.contains("{{lorebook}}"));
+    let recent_text = recent_messages
+        .iter()
+        .rev()
+        .filter(|message| !message.content.trim().is_empty())
+        .take(12)
+        .map(|message| message.content.as_str())
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect::<Vec<_>>()
+        .join("\n");
+    let has_scene = is_roleplay && !scene_content.trim().is_empty();
+    let has_scene_direction = is_roleplay && !scene_direction.trim().is_empty();
+    let condition_context = PromptEntryConditionContext {
+        chat_mode: PromptEntryChatMode::Group,
+        scene_generation_enabled: group_scene_generation_enabled(settings),
+        avatar_generation_enabled: group_avatar_generation_enabled(settings),
+        has_scene,
+        has_scene_direction,
+        has_persona: persona.is_some(),
+        message_count: conversation_count(recent_messages),
+        participant_count: other_characters.len() + 1,
+        recent_text: &recent_text,
+        dynamic_memory_enabled: session.memory_type == "dynamic",
+        has_memory_summary: !context_summary_text.trim().is_empty(),
+        has_key_memories: !key_memories_text.trim().is_empty(),
+        has_lorebook_content: !lorebook_text.trim().is_empty(),
+        input_scopes: &model.input_scopes,
+        output_scopes: &model.output_scopes,
+        provider_id: Some(model.provider_id.as_str()),
+        reasoning_enabled: model
+            .advanced_model_settings
+            .as_ref()
+            .and_then(|cfg| cfg.reasoning_enabled)
+            .unwrap_or(false),
+        vision_enabled: group_model_supports_vision(model),
+    };
 
     let mut rendered_entries = Vec::new();
     for entry in entries {
-        if !entry.enabled && !entry.system_prompt {
+        if !entry_is_active(&entry, &condition_context) {
             continue;
         }
         let mut result = entry.content;
@@ -4113,6 +4182,7 @@ fn build_group_system_prompt(
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+            conditions: None,
         });
     }
 
@@ -4189,6 +4259,7 @@ fn condense_entries_into_single_system_message(
         conditional_min_messages: None,
         interval_turns: None,
         system_prompt: true,
+        conditions: None,
     }]
 }
 
@@ -4489,7 +4560,9 @@ async fn generate_character_response(
         &character,
         persona.as_ref(),
         &context.session,
+        &context.recent_messages,
         &context.characters,
+        model,
         settings,
         &retrieved_memories,
         &lorebook_text,

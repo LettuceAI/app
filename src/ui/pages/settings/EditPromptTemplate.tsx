@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import {
   AnimatePresence,
   Reorder,
@@ -22,6 +22,7 @@ import {
   GripVertical,
   Plus,
   Trash2,
+  X,
   Layers,
 } from "lucide-react";
 import { cn, radius, interactive } from "../../design-tokens";
@@ -47,7 +48,12 @@ import {
   getRequiredTemplateVariables,
 } from "../../../core/prompts/service";
 import { listCharacters, listPersonas } from "../../../core/storage";
-import type { Character, Persona, SystemPromptEntry } from "../../../core/storage/schemas";
+import type {
+  Character,
+  Persona,
+  PromptEntryCondition,
+  SystemPromptEntry,
+} from "../../../core/storage/schemas";
 import {
   APP_DYNAMIC_SUMMARY_TEMPLATE_ID,
   APP_DYNAMIC_MEMORY_TEMPLATE_ID,
@@ -342,6 +348,454 @@ const DEFAULT_ENTRY_ROLE: SystemPromptEntry["role"] = "system";
 const DEFAULT_ENTRY_POSITION: SystemPromptEntry["injectionPosition"] = "relative";
 const DEFAULT_CONDITIONAL_MIN_MESSAGES = 6;
 const DEFAULT_INTERVAL_TURNS = 3;
+type ConditionJoin = "and" | "or";
+type SimplePromptEntryCondition = Exclude<
+  PromptEntryCondition,
+  { type: "all" } | { type: "any" } | { type: "not" }
+>;
+type SimplePromptEntryConditionType = SimplePromptEntryCondition["type"];
+type ConditionRow = {
+  condition: SimplePromptEntryCondition;
+  joinWithPrevious: ConditionJoin;
+};
+type ConditionDraft = {
+  include: ConditionRow[];
+  exclude: ConditionRow[];
+};
+type ConditionRowGroup = {
+  join: ConditionJoin | null;
+  rows: ConditionRow[];
+};
+
+const SIMPLE_CONDITION_OPTIONS: Array<{
+  value: SimplePromptEntryConditionType;
+  label: string;
+  kind: "boolean" | "number" | "list" | "chatMode";
+  placeholder?: string;
+}> = [
+  { value: "chatMode", label: "Chat mode", kind: "chatMode" },
+  { value: "sceneGenerationEnabled", label: "Scene generation enabled", kind: "boolean" },
+  { value: "avatarGenerationEnabled", label: "Avatar generation enabled", kind: "boolean" },
+  { value: "hasScene", label: "Has scene", kind: "boolean" },
+  { value: "hasSceneDirection", label: "Has scene direction", kind: "boolean" },
+  { value: "hasPersona", label: "Has persona", kind: "boolean" },
+  { value: "messageCountAtLeast", label: "Message count at least", kind: "number" },
+  {
+    value: "participantCountAtLeast",
+    label: "Participant count at least",
+    kind: "number",
+  },
+  { value: "keywordAny", label: "Keyword any", kind: "list", placeholder: "beach, sunset" },
+  { value: "keywordAll", label: "Keyword all", kind: "list", placeholder: "storm, harbor" },
+  { value: "keywordNone", label: "Keyword none", kind: "list", placeholder: "violence, gore" },
+  { value: "dynamicMemoryEnabled", label: "Dynamic memory enabled", kind: "boolean" },
+  { value: "hasMemorySummary", label: "Has memory summary", kind: "boolean" },
+  { value: "hasKeyMemories", label: "Has key memories", kind: "boolean" },
+  { value: "hasLorebookContent", label: "Has lorebook content", kind: "boolean" },
+  { value: "inputScopeAny", label: "Input scope any", kind: "list", placeholder: "text, image" },
+  {
+    value: "outputScopeAny",
+    label: "Output scope any",
+    kind: "list",
+    placeholder: "text, image",
+  },
+  { value: "providerIdAny", label: "Provider any", kind: "list", placeholder: "openai, ollama" },
+  { value: "reasoningEnabled", label: "Reasoning enabled", kind: "boolean" },
+  { value: "visionEnabled", label: "Vision enabled", kind: "boolean" },
+];
+
+function isSimpleCondition(
+  condition: PromptEntryCondition | null | undefined,
+): condition is SimplePromptEntryCondition {
+  return (
+    !!condition && condition.type !== "all" && condition.type !== "any" && condition.type !== "not"
+  );
+}
+
+function createDefaultCondition(
+  type: SimplePromptEntryConditionType = "chatMode",
+): SimplePromptEntryCondition {
+  switch (type) {
+    case "chatMode":
+      return { type, value: "direct" };
+    case "messageCountAtLeast":
+      return { type, value: 1 };
+    case "participantCountAtLeast":
+      return { type, value: 2 };
+    case "keywordAny":
+    case "keywordAll":
+    case "keywordNone":
+    case "inputScopeAny":
+    case "outputScopeAny":
+    case "providerIdAny":
+      return { type, values: [""] };
+    default:
+      return { type, value: true };
+  }
+}
+
+function normalizeListInput(value: string) {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function logicalTypeForJoin(join: ConditionJoin): "all" | "any" {
+  return join === "and" ? "all" : "any";
+}
+
+function joinForLogicalType(type: "all" | "any"): ConditionJoin {
+  return type === "all" ? "and" : "or";
+}
+
+function decomposePositiveSequence(
+  condition: PromptEntryCondition,
+  joinWithPrevious: ConditionJoin = "and",
+): ConditionRow[] {
+  if (isSimpleCondition(condition)) {
+    return [{ condition, joinWithPrevious }];
+  }
+
+  if (condition.type !== "all" && condition.type !== "any") {
+    return [];
+  }
+
+  const join = joinForLogicalType(condition.type);
+  return condition.conditions.flatMap((child, index) =>
+    decomposePositiveSequence(child, index === 0 ? joinWithPrevious : join),
+  );
+}
+
+function decomposeConditionTree(
+  condition: PromptEntryCondition | null | undefined,
+): ConditionDraft {
+  if (!condition) {
+    return { include: [], exclude: [] };
+  }
+
+  if (isSimpleCondition(condition)) {
+    return { include: [{ condition, joinWithPrevious: "and" }], exclude: [] };
+  }
+
+  if (condition.type === "not") {
+    return { include: [], exclude: decomposePositiveSequence(condition.condition) };
+  }
+
+  if (condition.type === "all") {
+    const include: ConditionRow[] = [];
+    const exclude: ConditionRow[] = [];
+    condition.conditions.forEach((child) => {
+      if (child.type === "not") {
+        exclude.push(...decomposePositiveSequence(child.condition));
+      } else {
+        include.push(...decomposePositiveSequence(child));
+      }
+    });
+    return { include, exclude };
+  }
+
+  return { include: decomposePositiveSequence(condition), exclude: [] };
+}
+
+function groupConditionRows(rows: ConditionRow[]): ConditionRowGroup[] {
+  if (rows.length === 0) {
+    return [];
+  }
+
+  const groups: ConditionRowGroup[] = [{ join: null, rows: [rows[0]] }];
+
+  for (let index = 1; index < rows.length; index += 1) {
+    const row = rows[index];
+    const current = groups[groups.length - 1];
+
+    if (current.join === null || current.join === row.joinWithPrevious) {
+      current.join = row.joinWithPrevious;
+      current.rows.push(row);
+    } else {
+      groups.push({ join: row.joinWithPrevious, rows: [row] });
+    }
+  }
+
+  return groups;
+}
+
+function composeConditionSequence(rows: ConditionRow[]): PromptEntryCondition | null {
+  const activeRows = rows.filter((row) => isSimpleCondition(row.condition));
+  if (activeRows.length === 0) {
+    return null;
+  }
+
+  const groups = groupConditionRows(activeRows);
+  const composeGroup = (group: ConditionRowGroup): PromptEntryCondition => {
+    if (group.rows.length === 1) {
+      return group.rows[0].condition;
+    }
+
+    return {
+      type: logicalTypeForJoin(group.join ?? "and"),
+      conditions: group.rows.map((row) => row.condition),
+    };
+  };
+
+  let expression: PromptEntryCondition = composeGroup(groups[0]);
+  for (let index = 1; index < groups.length; index += 1) {
+    expression = {
+      type: logicalTypeForJoin(groups[index].join ?? "and"),
+      conditions: [expression, composeGroup(groups[index])],
+    };
+  }
+
+  return expression;
+}
+
+function composeConditionTree(draft: ConditionDraft): PromptEntryCondition | null {
+  const include = composeConditionSequence(draft.include);
+  const exclude = composeConditionSequence(draft.exclude);
+
+  if (!include && !exclude) {
+    return null;
+  }
+
+  if (include && !exclude) {
+    return include;
+  }
+
+  if (!include && exclude) {
+    return { type: "not", condition: exclude };
+  }
+
+  return {
+    type: "all",
+    conditions: [
+      include as PromptEntryCondition,
+      { type: "not", condition: exclude as PromptEntryCondition },
+    ],
+  };
+}
+
+function describeSimpleCondition(condition: SimplePromptEntryCondition): string {
+  switch (condition.type) {
+    case "chatMode":
+      return `chat is ${condition.value}`;
+    case "sceneGenerationEnabled":
+      return `scene generation is ${condition.value ? "on" : "off"}`;
+    case "avatarGenerationEnabled":
+      return `avatar generation is ${condition.value ? "on" : "off"}`;
+    case "hasScene":
+      return condition.value ? "scene exists" : "scene missing";
+    case "hasSceneDirection":
+      return condition.value ? "scene has direction" : "scene has no direction";
+    case "hasPersona":
+      return condition.value ? "persona exists" : "persona missing";
+    case "messageCountAtLeast":
+      return `messages >= ${condition.value}`;
+    case "participantCountAtLeast":
+      return `participants >= ${condition.value}`;
+    case "keywordAny":
+      return `any keyword: ${condition.values.join(", ")}`;
+    case "keywordAll":
+      return `all keywords: ${condition.values.join(", ")}`;
+    case "keywordNone":
+      return `no keywords: ${condition.values.join(", ")}`;
+    case "dynamicMemoryEnabled":
+      return `dynamic memory is ${condition.value ? "on" : "off"}`;
+    case "hasMemorySummary":
+      return condition.value ? "memory summary exists" : "memory summary missing";
+    case "hasKeyMemories":
+      return condition.value ? "key memories exist" : "key memories missing";
+    case "hasLorebookContent":
+      return condition.value ? "lorebook content exists" : "lorebook content missing";
+    case "inputScopeAny":
+      return `input scope: ${condition.values.join(", ")}`;
+    case "outputScopeAny":
+      return `output scope: ${condition.values.join(", ")}`;
+    case "providerIdAny":
+      return `provider: ${condition.values.join(", ")}`;
+    case "reasoningEnabled":
+      return `reasoning is ${condition.value ? "on" : "off"}`;
+    case "visionEnabled":
+      return `vision is ${condition.value ? "on" : "off"}`;
+  }
+}
+
+function describeConditionTree(condition: PromptEntryCondition | null | undefined): string {
+  const draft = decomposeConditionTree(condition);
+  const describeRows = (rows: ConditionRow[]) =>
+    rows
+      .map((row, index) => {
+        const label = describeSimpleCondition(row.condition);
+        return index === 0 ? label : `${row.joinWithPrevious.toUpperCase()} ${label}`;
+      })
+      .join(" ");
+
+  const include = describeRows(draft.include);
+  const exclude = describeRows(draft.exclude);
+  if (!include && !exclude) {
+    return "Always active";
+  }
+  if (include && exclude) {
+    return `${include} · EXCLUDE ${exclude}`;
+  }
+  if (exclude) {
+    return `EXCLUDE ${exclude}`;
+  }
+  return include;
+}
+
+function describeConditionSentence(condition: PromptEntryCondition | null | undefined): string {
+  if (!condition) {
+    return "This entry is always active.";
+  }
+
+  const draft = decomposeConditionTree(condition);
+
+  const stripOuterParens = (value: string) => {
+    if (!value.startsWith("(") || !value.endsWith(")")) {
+      return value;
+    }
+
+    let depth = 0;
+    for (let index = 0; index < value.length; index += 1) {
+      const char = value[index];
+      if (char === "(") {
+        depth += 1;
+      } else if (char === ")") {
+        depth -= 1;
+        if (depth === 0 && index < value.length - 1) {
+          return value;
+        }
+      }
+    }
+
+    return value.slice(1, -1);
+  };
+
+  const describeGroupedSequence = (rows: ConditionRow[]) => {
+    if (rows.length === 0) {
+      return "";
+    }
+
+    const groups = groupConditionRows(rows);
+    const describeGroup = (group: ConditionRowGroup) => {
+      const connector = group.join === "or" ? " or " : " and ";
+      const text = group.rows.map((row) => describeSimpleCondition(row.condition)).join(connector);
+      return group.rows.length > 1 ? `(${text})` : text;
+    };
+
+    let expression = describeGroup(groups[0]);
+    for (let index = 1; index < groups.length; index += 1) {
+      const connector = groups[index].join === "or" ? "or" : "and";
+      expression = `(${expression} ${connector} ${describeGroup(groups[index])})`;
+    }
+
+    return stripOuterParens(expression);
+  };
+
+  const include = describeGroupedSequence(draft.include);
+  const exclude = describeGroupedSequence(draft.exclude);
+
+  if (include && exclude) {
+    return `This entry is active when ${include} and not (${exclude}).`;
+  }
+
+  if (exclude) {
+    return `This entry is active unless ${exclude}.`;
+  }
+
+  return `This entry is active when ${include}.`;
+}
+
+function getConditionRowKey(row: ConditionRow): string {
+  return `${getConditionIdentity(row.condition)}::${row.joinWithPrevious}`;
+}
+
+function normalizeConditionValues(values: string[]) {
+  return [...new Set(values.map((value) => value.trim().toLowerCase()).filter(Boolean))].sort();
+}
+
+function getConditionIdentity(condition: SimplePromptEntryCondition): string {
+  switch (condition.type) {
+    case "keywordAny":
+    case "keywordAll":
+    case "keywordNone":
+    case "inputScopeAny":
+    case "outputScopeAny":
+    case "providerIdAny":
+      return `${condition.type}:${normalizeConditionValues(condition.values).join("|")}`;
+    default:
+      return `${condition.type}:${String(condition.value)}`;
+  }
+}
+
+function getScalarConditionBucket(
+  condition: SimplePromptEntryCondition,
+): { type: SimplePromptEntryConditionType; value: string; label: string } | null {
+  switch (condition.type) {
+    case "chatMode":
+      return {
+        type: condition.type,
+        value: condition.value,
+        label: describeSimpleCondition(condition),
+      };
+    case "sceneGenerationEnabled":
+    case "avatarGenerationEnabled":
+    case "hasScene":
+    case "hasSceneDirection":
+    case "hasPersona":
+    case "dynamicMemoryEnabled":
+    case "hasMemorySummary":
+    case "hasKeyMemories":
+    case "hasLorebookContent":
+    case "reasoningEnabled":
+    case "visionEnabled":
+      return {
+        type: condition.type,
+        value: String(condition.value),
+        label: describeSimpleCondition(condition),
+      };
+    default:
+      return null;
+  }
+}
+
+function getConditionWarnings(draft: ConditionDraft): string[] {
+  const warnings = new Set<string>();
+  const includeLabels = new Map<string, string>();
+
+  draft.include.forEach((row) => {
+    includeLabels.set(getConditionIdentity(row.condition), describeSimpleCondition(row.condition));
+  });
+
+  draft.exclude.forEach((row) => {
+    const label = includeLabels.get(getConditionIdentity(row.condition));
+    if (label) {
+      warnings.add(`This entry both requires and excludes "${label}".`);
+    }
+  });
+
+  const scalarBuckets = new Map<SimplePromptEntryConditionType, Map<string, string>>();
+  draft.include.forEach((row) => {
+    const bucket = getScalarConditionBucket(row.condition);
+    if (!bucket) {
+      return;
+    }
+
+    const values = scalarBuckets.get(bucket.type) ?? new Map<string, string>();
+    values.set(bucket.value, bucket.label);
+    scalarBuckets.set(bucket.type, values);
+  });
+
+  scalarBuckets.forEach((values) => {
+    if (values.size > 1) {
+      warnings.add(
+        `This entry requires mutually exclusive conditions: ${[...values.values()].join(" and ")}.`,
+      );
+    }
+  });
+
+  return [...warnings];
+}
 
 const createDefaultEntry = (
   content: string,
@@ -357,6 +811,7 @@ const createDefaultEntry = (
   conditionalMinMessages: null,
   intervalTurns: null,
   systemPrompt: true,
+  conditions: null,
   ...overrides,
 });
 
@@ -376,6 +831,777 @@ function getInjectionModeHint(position: SystemPromptEntry["injectionPosition"]) 
     default:
       return "";
   }
+}
+
+function getEntryRoleLabel(role: SystemPromptEntry["role"]) {
+  return ENTRY_ROLE_OPTIONS.find((option) => option.value === role)?.label ?? role;
+}
+
+function getEntryPositionLabel(position: SystemPromptEntry["injectionPosition"]) {
+  return ENTRY_POSITION_OPTIONS.find((option) => option.value === position)?.label ?? position;
+}
+
+function getEntryBehaviorSummary(entry: SystemPromptEntry) {
+  switch (entry.injectionPosition) {
+    case "conditional":
+      return `After ${entry.conditionalMinMessages ?? DEFAULT_CONDITIONAL_MIN_MESSAGES} messages`;
+    case "interval":
+      return `Every ${entry.intervalTurns ?? DEFAULT_INTERVAL_TURNS} messages`;
+    case "inChat":
+      return "Inline in chat history";
+    case "relative":
+    default:
+      return "Before chat history";
+  }
+}
+
+function getEntryActivationSummary(entry: SystemPromptEntry) {
+  const conditionDraft = decomposeConditionTree(entry.conditions);
+  const conditionCount = conditionDraft.include.length + conditionDraft.exclude.length;
+  if (conditionCount === 0) {
+    return "Always active";
+  }
+  return conditionCount === 1 ? describeConditionTree(entry.conditions) : `${conditionCount} rules`;
+}
+
+function SummaryField({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-[120px]">
+      <p className="text-[10px] font-medium uppercase tracking-wide text-fg/35">{label}</p>
+      <p className="mt-1 text-sm leading-snug text-fg/78">{value}</p>
+    </div>
+  );
+}
+
+function ConditionRuleRow({
+  condition,
+  onChange,
+  onRemove,
+}: {
+  condition: SimplePromptEntryCondition;
+  onChange: (next: SimplePromptEntryCondition) => void;
+  onRemove: () => void;
+}) {
+  const meta =
+    SIMPLE_CONDITION_OPTIONS.find((option) => option.value === condition.type) ??
+    SIMPLE_CONDITION_OPTIONS[0];
+  const [listInput, setListInput] = useState(
+    "values" in condition ? condition.values.join(", ") : "",
+  );
+
+  useEffect(() => {
+    if ("values" in condition) {
+      setListInput(condition.values.join(", "));
+    } else {
+      setListInput("");
+    }
+  }, [condition.type]);
+
+  const controlClasses = cn(
+    "h-8 w-full rounded border border-fg/15 bg-surface-el/50 px-2 text-xs text-fg transition-all",
+    "hover:border-fg/30 focus:border-accent/50 focus:outline-none focus:ring-1 focus:ring-accent/20",
+  );
+
+  return (
+    <div className="group relative flex flex-col gap-2 rounded border border-fg/10 bg-fg/2 p-2 transition-colors hover:border-fg/20 sm:flex-row sm:items-center">
+      <div className="flex-shrink-0 sm:w-[160px]">
+        <select
+          value={condition.type}
+          onChange={(event) =>
+            onChange(createDefaultCondition(event.target.value as SimplePromptEntryConditionType))
+          }
+          className={controlClasses}
+        >
+          {SIMPLE_CONDITION_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="flex flex-1 items-center gap-2">
+        {meta.kind === "chatMode" ? (
+          <select
+            value={condition.type === "chatMode" ? condition.value : "direct"}
+            onChange={(event) =>
+              onChange({
+                type: "chatMode",
+                value: event.target.value as "direct" | "group",
+              })
+            }
+            className={controlClasses}
+          >
+            <option value="direct">Direct</option>
+            <option value="group">Group</option>
+          </select>
+        ) : meta.kind === "boolean" ? (
+          <div className="flex w-full gap-0.5 rounded border border-fg/15 bg-surface-el/50 p-0.5">
+            {(["true", "false"] as const).map((val) => (
+              <button
+                key={val}
+                type="button"
+                onClick={() =>
+                  onChange({
+                    ...condition,
+                    value: val === "true",
+                  } as SimplePromptEntryCondition)
+                }
+                className={cn(
+                  "flex-1 rounded-sm py-1 text-[10px] font-bold uppercase tracking-wider transition-colors",
+                  ("value" in condition ? String(condition.value) : "false") === val
+                    ? "bg-fg text-surface"
+                    : "text-fg/40 hover:bg-fg/5 hover:text-fg/60",
+                )}
+              >
+                {val === "true" ? "True" : "False"}
+              </button>
+            ))}
+          </div>
+        ) : meta.kind === "number" ? (
+          <input
+            type="number"
+            min={condition.type === "messageCountAtLeast" ? 0 : 1}
+            value={"value" in condition ? Number(condition.value) : 1}
+            onChange={(event) =>
+              onChange({
+                ...condition,
+                value: Math.max(
+                  condition.type === "messageCountAtLeast" ? 0 : 1,
+                  Number(event.target.value) || 0,
+                ),
+              } as SimplePromptEntryCondition)
+            }
+            className={controlClasses}
+          />
+        ) : (
+          <input
+            type="text"
+            value={listInput}
+            onChange={(event) => {
+              const nextInput = event.target.value;
+              setListInput(nextInput);
+              onChange({
+                ...condition,
+                values: normalizeListInput(nextInput),
+              } as SimplePromptEntryCondition);
+            }}
+            placeholder={meta.placeholder}
+            className={controlClasses}
+          />
+        )}
+      </div>
+
+      <button
+        type="button"
+        onClick={onRemove}
+        className={cn(
+          "flex h-8 w-8 shrink-0 items-center justify-center rounded border border-fg/10 bg-surface-el/50 text-fg/40 transition-colors",
+          "hover:border-danger/30 hover:bg-danger/5 hover:text-danger",
+        )}
+        title="Remove condition"
+      >
+        <X className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
+function ConditionSequenceItem({
+  showJoin,
+  row,
+  onJoinChange,
+  onChange,
+  onRemove,
+}: {
+  showJoin: boolean;
+  row: ConditionRow;
+  onJoinChange: (next: ConditionJoin) => void;
+  onChange: (next: SimplePromptEntryCondition) => void;
+  onRemove: () => void;
+}) {
+  return (
+    <div className="list-none">
+      <div className="space-y-3">
+        {showJoin ? (
+          <ConditionJoinRow value={row.joinWithPrevious} onChange={onJoinChange} />
+        ) : null}
+        <ConditionRuleRow condition={row.condition} onChange={onChange} onRemove={onRemove} />
+      </div>
+    </div>
+  );
+}
+
+function ConditionJoinRow({
+  value,
+  onChange,
+}: {
+  value: ConditionJoin;
+  onChange: (next: ConditionJoin) => void;
+}) {
+  return (
+    <div className="relative flex items-center justify-center py-1">
+      <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-fg/10" />
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value as ConditionJoin)}
+        className={cn(
+          "relative z-10 flex h-6 items-center rounded-full border border-fg/15 bg-surface-el/80 px-3 text-[10px] font-bold uppercase tracking-wider text-fg/60",
+          "hover:border-fg/30 hover:text-fg/80 focus:outline-none focus:ring-1 focus:ring-fg/20",
+        )}
+      >
+        <option value="and">AND</option>
+        <option value="or">OR</option>
+      </select>
+    </div>
+  );
+}
+
+function PromptEntryConditionsPanel({
+  entry,
+  onUpdate,
+}: {
+  entry: SystemPromptEntry;
+  onUpdate: (updates: Partial<SystemPromptEntry>) => void;
+}) {
+  const draft = useMemo(() => decomposeConditionTree(entry.conditions), [entry.conditions]);
+  const warnings = useMemo(() => getConditionWarnings(draft), [draft]);
+  const includeGroups = useMemo(() => groupConditionRows(draft.include), [draft.include]);
+  const excludeGroups = useMemo(() => groupConditionRows(draft.exclude), [draft.exclude]);
+
+  const commit = (next: ConditionDraft) => {
+    onUpdate({ conditions: composeConditionTree(next) });
+  };
+
+  const addRule = (target: "include" | "exclude") => {
+    const current = draft[target];
+    commit({
+      ...draft,
+      [target]: [
+        ...current,
+        {
+          condition: createDefaultCondition(),
+          joinWithPrevious: "and",
+        },
+      ],
+    });
+  };
+
+  const updateRule = (
+    target: "include" | "exclude",
+    index: number,
+    nextCondition: SimplePromptEntryCondition,
+  ) => {
+    commit({
+      ...draft,
+      [target]: draft[target].map((row: ConditionRow, idx: number) =>
+        idx === index ? { ...row, condition: nextCondition } : row,
+      ),
+    });
+  };
+
+  const updateJoin = (target: "include" | "exclude", index: number, nextJoin: ConditionJoin) => {
+    commit({
+      ...draft,
+      [target]: draft[target].map((row: ConditionRow, idx: number) =>
+        idx === index ? { ...row, joinWithPrevious: nextJoin } : row,
+      ),
+    });
+  };
+
+  const removeRule = (target: "include" | "exclude", index: number) => {
+    commit({
+      ...draft,
+      [target]: draft[target].filter((_row: ConditionRow, idx: number) => idx !== index),
+    });
+  };
+
+  return (
+    <div className="space-y-8">
+      {warnings.length > 0 && (
+        <div className="rounded-lg border border-danger/20 bg-danger/5 px-3.5 py-3">
+          <div className="flex items-start gap-2.5">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-danger/75" />
+            <div className="min-w-0 space-y-1">
+              <p className="text-xs font-medium text-danger/85">
+                Fix contradictory rules before saving.
+              </p>
+              {warnings.map((warning) => (
+                <p key={warning} className="text-xs leading-relaxed text-fg/68">
+                  {warning}
+                </p>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <section className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h4 className="text-sm font-bold text-fg/60">Include Rules</h4>
+          <button
+            type="button"
+            onClick={() => addRule("include")}
+            className="flex items-center gap-1.5 rounded-lg border border-accent/20 bg-accent/5 px-3 py-1.5 text-xs font-bold text-accent transition-all hover:bg-accent/10"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add Rule
+          </button>
+        </div>
+
+        <p className="max-w-[72ch] text-[11px] leading-relaxed text-fg/42">
+          Adjacent rules with the same join are grouped together. Those groups are then evaluated
+          from top to bottom.
+        </p>
+
+        <div className="space-y-3">
+          {draft.include.length > 0 ? (
+            includeGroups.map((group, groupIndex) => {
+              const groupStartIndex = includeGroups
+                .slice(0, groupIndex)
+                .reduce((count, current) => count + current.rows.length, 0);
+
+              return (
+                <div key={`include-group-${entry.id}-${groupIndex}`} className="space-y-3">
+                  {groupIndex > 0 && group.join ? (
+                    <ConditionJoinRow
+                      value={group.join}
+                      onChange={(next) => updateJoin("include", groupStartIndex, next)}
+                    />
+                  ) : null}
+                  <div className="rounded-xl border border-fg/10 bg-fg/3 p-3">
+                    <div className="space-y-3">
+                      {group.rows.map((row: ConditionRow, index: number) => {
+                        const flatIndex = groupStartIndex + index;
+
+                        return (
+                          <ConditionSequenceItem
+                            key={`include-${entry.id}-${getConditionRowKey(row)}`}
+                            showJoin={index > 0}
+                            row={row}
+                            onJoinChange={(next) => updateJoin("include", flatIndex, next)}
+                            onChange={(next) => updateRule("include", flatIndex, next)}
+                            onRemove={() => removeRule("include", flatIndex)}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <div className="rounded-xl border border-dashed border-fg/10 bg-fg/2 py-8 text-center">
+              <p className="text-sm text-fg/30">Entry is active for all messages.</p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h4 className="text-sm font-bold text-fg/60">Exclusions</h4>
+          <button
+            type="button"
+            onClick={() => addRule("exclude")}
+            className="flex items-center gap-1.5 rounded-lg border border-danger/20 bg-danger/5 px-3 py-1.5 text-xs font-bold text-danger/70 transition-all hover:bg-danger/10"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add Exclusion
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          {draft.exclude.length > 0 ? (
+            excludeGroups.map((group, groupIndex) => {
+              const groupStartIndex = excludeGroups
+                .slice(0, groupIndex)
+                .reduce((count, current) => count + current.rows.length, 0);
+
+              return (
+                <div key={`exclude-group-${entry.id}-${groupIndex}`} className="space-y-3">
+                  {groupIndex > 0 && group.join ? (
+                    <ConditionJoinRow
+                      value={group.join}
+                      onChange={(next) => updateJoin("exclude", groupStartIndex, next)}
+                    />
+                  ) : null}
+                  <div className="rounded-xl border border-fg/10 bg-fg/3 p-3">
+                    <div className="space-y-3">
+                      {group.rows.map((row: ConditionRow, index: number) => {
+                        const flatIndex = groupStartIndex + index;
+
+                        return (
+                          <ConditionSequenceItem
+                            key={`exclude-${entry.id}-${getConditionRowKey(row)}`}
+                            showJoin={index > 0}
+                            row={row}
+                            onJoinChange={(next) => updateJoin("exclude", flatIndex, next)}
+                            onChange={(next) => updateRule("exclude", flatIndex, next)}
+                            onRemove={() => removeRule("exclude", flatIndex)}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <div className="rounded-xl border border-dashed border-fg/10 bg-fg/2 py-6 text-center">
+              <p className="text-sm text-fg/30">No exclusions defined.</p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <div className="border-t border-fg/10 pt-4">
+        <div className="flex items-center gap-2">
+          <Code2 className="h-3.5 w-3.5 text-fg/26" />
+          <p className="text-[10px] font-medium uppercase tracking-wide text-fg/30">Evaluates As</p>
+        </div>
+        <p className="mt-2 max-w-[72ch] text-sm leading-relaxed text-fg/58">
+          {describeConditionSentence(entry.conditions)}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function PromptEntryEditorForm({
+  entry,
+  onUpdate,
+  onToggle,
+  onTextareaRef,
+  onTextareaFocus,
+  contentRows = 20,
+}: {
+  entry: SystemPromptEntry;
+  onUpdate: (updates: Partial<SystemPromptEntry>) => void;
+  onToggle?: () => void;
+  onTextareaRef: (id: string, el: HTMLTextAreaElement | null) => void;
+  onTextareaFocus: (id: string) => void;
+  contentRows?: number;
+}) {
+  const toggleId = `entry-editor-toggle-${entry.id}`;
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between gap-3 rounded-lg border border-fg/10 bg-fg/4 px-3 py-2.5">
+        <div>
+          <p className="text-sm font-medium text-fg">Entry State</p>
+          <p className="text-xs text-fg/45">
+            {entry.systemPrompt
+              ? "System prompt entries are always enabled."
+              : "Controls whether this entry can be injected."}
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <input
+            id={toggleId}
+            type="checkbox"
+            checked={entry.enabled || entry.systemPrompt}
+            onChange={() => onToggle?.()}
+            disabled={entry.systemPrompt || !onToggle}
+            className="peer sr-only"
+          />
+          <label
+            htmlFor={toggleId}
+            className={cn(
+              "relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-all duration-200 ease-in-out",
+              entry.enabled || entry.systemPrompt ? "bg-accent" : "bg-fg/20",
+              (entry.systemPrompt || !onToggle) && "cursor-not-allowed opacity-60",
+            )}
+          >
+            <span
+              className={cn(
+                "inline-block h-4 w-4 transform rounded-full bg-fg shadow-sm transition duration-200 ease-in-out",
+                entry.enabled || entry.systemPrompt ? "translate-x-4" : "translate-x-0",
+              )}
+            />
+          </label>
+          <span className="text-xs text-fg/55">
+            {entry.systemPrompt ? "Required" : entry.enabled ? "Enabled" : "Disabled"}
+          </span>
+        </div>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-fg/55">Entry Name</label>
+          <input
+            value={entry.name}
+            onChange={(event) => onUpdate({ name: event.target.value })}
+            className="w-full rounded-lg border border-fg/10 bg-fg/5 px-3 py-2 text-sm text-fg"
+            placeholder="Entry name"
+          />
+          <p className="text-[11px] text-fg/45">Used for organization and quick scanning.</p>
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-fg/55">Role</label>
+          <select
+            value={entry.role}
+            onChange={(event) => onUpdate({ role: event.target.value as any })}
+            className="h-10 w-full rounded-lg border border-fg/10 bg-fg/5 px-3 text-sm text-fg"
+          >
+            {ENTRY_ROLE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <p className="text-[11px] text-fg/45">Which role the model receives for this entry.</p>
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-fg/55">Placement</label>
+        <select
+          value={entry.injectionPosition}
+          onChange={(event) => {
+            const nextPosition = event.target.value as SystemPromptEntry["injectionPosition"];
+            onUpdate({
+              injectionPosition: nextPosition,
+              conditionalMinMessages:
+                nextPosition === "conditional"
+                  ? (entry.conditionalMinMessages ?? DEFAULT_CONDITIONAL_MIN_MESSAGES)
+                  : (entry.conditionalMinMessages ?? null),
+              intervalTurns:
+                nextPosition === "interval"
+                  ? (entry.intervalTurns ?? DEFAULT_INTERVAL_TURNS)
+                  : (entry.intervalTurns ?? null),
+            });
+          }}
+          className="h-10 w-full rounded-lg border border-fg/10 bg-fg/5 px-3 text-sm text-fg"
+        >
+          {ENTRY_POSITION_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <p className="text-[11px] text-fg/45">{getInjectionModeHint(entry.injectionPosition)}</p>
+      </div>
+
+      <div
+        className={cn(
+          "grid gap-4",
+          entry.injectionPosition === "conditional" || entry.injectionPosition === "interval"
+            ? "md:grid-cols-2"
+            : "md:grid-cols-1",
+        )}
+      >
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-fg/55">Insertion Depth</label>
+          <input
+            type="number"
+            min={0}
+            value={entry.injectionDepth}
+            onChange={(event) => onUpdate({ injectionDepth: Number(event.target.value) })}
+            className="h-10 w-full rounded-lg border border-fg/10 bg-fg/5 px-3 text-sm text-fg"
+            placeholder="0"
+          />
+          <p className="text-[11px] text-fg/45">
+            Depth 0 is newest; higher numbers insert earlier.
+          </p>
+        </div>
+
+        {entry.injectionPosition === "conditional" ? (
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-fg/55">Min Messages</label>
+            <input
+              type="number"
+              min={1}
+              value={entry.conditionalMinMessages ?? DEFAULT_CONDITIONAL_MIN_MESSAGES}
+              onChange={(event) =>
+                onUpdate({
+                  conditionalMinMessages: Math.max(1, Number(event.target.value) || 1),
+                })
+              }
+              className="h-10 w-full rounded-lg border border-fg/10 bg-fg/5 px-3 text-sm text-fg"
+            />
+            <p className="text-[11px] text-fg/45">
+              Inject only when at least this many messages are present.
+            </p>
+          </div>
+        ) : entry.injectionPosition === "interval" ? (
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-fg/55">Every N Messages</label>
+            <input
+              type="number"
+              min={1}
+              value={entry.intervalTurns ?? DEFAULT_INTERVAL_TURNS}
+              onChange={(event) =>
+                onUpdate({
+                  intervalTurns: Math.max(1, Number(event.target.value) || 1),
+                })
+              }
+              className="h-10 w-full rounded-lg border border-fg/10 bg-fg/5 px-3 text-sm text-fg"
+            />
+            <p className="text-[11px] text-fg/45">Inject every N context turns.</p>
+          </div>
+        ) : null}
+      </div>
+
+      <PromptEntryConditionsPanel entry={entry} onUpdate={onUpdate} />
+
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-fg/55">Prompt Content</label>
+        <textarea
+          ref={(el) => {
+            onTextareaRef(entry.id, el);
+          }}
+          value={entry.content}
+          onChange={(event) => onUpdate({ content: event.target.value })}
+          onFocus={() => onTextareaFocus(entry.id)}
+          rows={contentRows}
+          className="w-full resize-none rounded-xl border border-fg/10 bg-surface-el/30 px-3.5 py-3 font-mono text-sm leading-relaxed text-fg placeholder-fg/30"
+          placeholder="Write the prompt entry..."
+        />
+      </div>
+    </div>
+  );
+}
+
+function DesktopEntryEditorDrawer({
+  entry,
+  isOpen,
+  onClose,
+  onUpdate,
+  onToggle,
+  onTextareaRef,
+  onTextareaFocus,
+}: {
+  entry: SystemPromptEntry | null;
+  isOpen: boolean;
+  onClose: () => void;
+  onUpdate: (id: string, updates: Partial<SystemPromptEntry>) => void;
+  onToggle: (id: string) => void;
+  onTextareaRef: (id: string, el: HTMLTextAreaElement | null) => void;
+  onTextareaFocus: (id: string) => void;
+}) {
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose]);
+
+  return (
+    <AnimatePresence>
+      {isOpen && entry ? (
+        <>
+          <motion.button
+            type="button"
+            className="fixed inset-0 z-40 hidden bg-black/45 lg:block"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+          />
+          <motion.aside
+            className="fixed inset-y-0 left-0 z-50 hidden w-[min(560px,48vw)] border-r border-fg/10 bg-surface lg:flex lg:flex-col"
+            initial={{ x: "-100%" }}
+            animate={{ x: 0 }}
+            exit={{ x: "-100%" }}
+            transition={{ duration: 0.18, ease: "easeOut" }}
+          >
+            <div className="flex items-center justify-between border-b border-fg/10 px-5 py-4">
+              <div>
+                <h2 className="text-base font-semibold text-fg">Edit Entry</h2>
+                <p className="text-xs text-fg/45">{entry.name || "Prompt Entry"}</p>
+              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-md border border-fg/10 px-3 py-1.5 text-xs font-medium text-fg/65 transition hover:bg-fg/8 hover:text-fg"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-5 py-5">
+              <PromptEntryEditorForm
+                entry={entry}
+                onUpdate={(updates) => onUpdate(entry.id, updates)}
+                onToggle={() => onToggle(entry.id)}
+                onTextareaRef={onTextareaRef}
+                onTextareaFocus={onTextareaFocus}
+                contentRows={20}
+              />
+            </div>
+          </motion.aside>
+        </>
+      ) : null}
+    </AnimatePresence>
+  );
+}
+
+function MobileEntryEditorPage({
+  entry,
+  isOpen,
+  onClose,
+  onUpdate,
+  onToggle,
+  onTextareaRef,
+  onTextareaFocus,
+}: {
+  entry: SystemPromptEntry | null;
+  isOpen: boolean;
+  onClose: () => void;
+  onUpdate: (id: string, updates: Partial<SystemPromptEntry>) => void;
+  onToggle: (id: string) => void;
+  onTextareaRef: (id: string, el: HTMLTextAreaElement | null) => void;
+  onTextareaFocus: (id: string) => void;
+}) {
+  return (
+    <AnimatePresence>
+      {isOpen && entry ? (
+        <motion.div
+          className="fixed inset-0 z-50 flex flex-col bg-surface lg:hidden"
+          style={{ paddingTop: "env(safe-area-inset-top)" }}
+          initial={{ x: "100%" }}
+          animate={{ x: 0 }}
+          exit={{ x: "100%" }}
+          transition={{ duration: 0.18, ease: "easeOut" }}
+        >
+          <div className="flex items-center justify-between border-b border-fg/10 px-4 py-3">
+            <div>
+              <h2 className="text-base font-semibold text-fg">Edit Entry</h2>
+              <p className="text-xs text-fg/45">{entry.name || "Prompt Entry"}</p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-md border border-fg/10 px-3 py-1.5 text-xs font-medium text-fg/65 transition hover:bg-fg/8 hover:text-fg"
+            >
+              Done
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-4 py-4">
+            <PromptEntryEditorForm
+              entry={entry}
+              onUpdate={(updates) => onUpdate(entry.id, updates)}
+              onToggle={() => onToggle(entry.id)}
+              onTextareaRef={onTextareaRef}
+              onTextareaFocus={onTextareaFocus}
+              contentRows={20}
+            />
+          </div>
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
+  );
 }
 
 const entriesToContent = (entries: SystemPromptEntry[]) =>
@@ -398,8 +1624,7 @@ function PromptEntryCard({
   onToggleCollapse,
   collapsed,
   highlighted,
-  onTextareaRef,
-  onTextareaFocus,
+  onOpenEditor,
 }: {
   entry: SystemPromptEntry;
   onUpdate: (id: string, updates: Partial<SystemPromptEntry>) => void;
@@ -408,13 +1633,14 @@ function PromptEntryCard({
   onToggleCollapse: (id: string) => void;
   collapsed: boolean;
   highlighted?: boolean;
-  onTextareaRef: (id: string, el: HTMLTextAreaElement | null) => void;
-  onTextareaFocus: (id: string) => void;
+  onOpenEditor: () => void;
 }) {
   const { t } = useI18n();
   const controls = useDragControls();
   const autoScroll = useDragEdgeAutoScroll();
   const toggleId = `prompt-entry-${entry.id}`;
+  const conditionSummary = getEntryActivationSummary(entry);
+  const contentPreview = entry.content.trim() || "Click to edit this entry.";
 
   return (
     <Reorder.Item
@@ -442,7 +1668,7 @@ function PromptEntryCard({
         autoScroll.stop();
       }}
       className={cn(
-        "rounded-xl border bg-fg/5 p-4 space-y-3 cursor-default",
+        "rounded-xl border bg-fg/5 p-4 space-y-3 cursor-default transition-all",
         highlighted
           ? "border-accent/50 ring-2 ring-accent/30 ring-offset-1 ring-offset-black"
           : "border-fg/10",
@@ -541,114 +1767,43 @@ function PromptEntryCard({
             className="overflow-hidden"
           >
             <div className="space-y-3 pt-0.5">
-              <div className="grid gap-2 md:grid-cols-3">
-                <select
-                  value={entry.role}
-                  onChange={(event) => onUpdate(entry.id, { role: event.target.value as any })}
-                  className="h-9 w-full rounded-lg border border-fg/10 bg-surface-el/30 px-2.5 text-xs text-fg"
-                >
-                  {ENTRY_ROLE_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-
-                <select
-                  value={entry.injectionPosition}
-                  onChange={(event) => {
-                    const nextPosition = event.target
-                      .value as SystemPromptEntry["injectionPosition"];
-                    onUpdate(entry.id, {
-                      injectionPosition: nextPosition,
-                      conditionalMinMessages:
-                        nextPosition === "conditional"
-                          ? (entry.conditionalMinMessages ?? DEFAULT_CONDITIONAL_MIN_MESSAGES)
-                          : (entry.conditionalMinMessages ?? null),
-                      intervalTurns:
-                        nextPosition === "interval"
-                          ? (entry.intervalTurns ?? DEFAULT_INTERVAL_TURNS)
-                          : (entry.intervalTurns ?? null),
-                    });
-                  }}
-                  className="h-9 w-full rounded-lg border border-fg/10 bg-surface-el/30 px-2.5 text-xs text-fg"
-                >
-                  {ENTRY_POSITION_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-
-                {entry.injectionPosition !== "relative" && (
-                  <div className="flex items-center gap-2">
-                    <span className="shrink-0 text-[11px] text-fg/50">Depth</span>
-                    <input
-                      type="number"
-                      min={0}
-                      value={entry.injectionDepth}
-                      onChange={(event) =>
-                        onUpdate(entry.id, { injectionDepth: Number(event.target.value) })
-                      }
-                      className="h-9 w-full rounded-lg border border-fg/10 bg-surface-el/30 px-2.5 text-xs text-fg"
-                      placeholder="0"
-                      title="Insertion Depth"
-                      aria-label="Insertion Depth"
-                    />
-                  </div>
-                )}
+              <div className="rounded-lg border border-fg/10 bg-surface-el/16 px-3.5 py-3">
+                <div className="flex flex-wrap gap-x-6 gap-y-3">
+                  <SummaryField label="Role" value={getEntryRoleLabel(entry.role)} />
+                  <SummaryField
+                    label="Placement"
+                    value={getEntryPositionLabel(entry.injectionPosition)}
+                  />
+                  <SummaryField label="Behavior" value={getEntryBehaviorSummary(entry)} />
+                  <SummaryField label="Activation" value={conditionSummary} />
+                  {entry.injectionDepth > 0 ? (
+                    <SummaryField label="Depth" value={String(entry.injectionDepth)} />
+                  ) : null}
+                </div>
               </div>
+
               <p className="text-[11px] text-fg/50">
                 {getInjectionModeHint(entry.injectionPosition)}
               </p>
 
-              {entry.injectionPosition === "conditional" && (
-                <div className="space-y-1">
-                  <p className="text-[11px] text-fg/50">Min Messages</p>
-                  <input
-                    type="number"
-                    min={1}
-                    value={entry.conditionalMinMessages ?? DEFAULT_CONDITIONAL_MIN_MESSAGES}
-                    onChange={(event) =>
-                      onUpdate(entry.id, {
-                        conditionalMinMessages: Math.max(1, Number(event.target.value) || 1),
-                      })
-                    }
-                    className="h-9 w-full rounded-lg border border-fg/10 bg-surface-el/30 px-2.5 text-xs text-fg"
-                    placeholder="Inject after at least N messages"
-                  />
+              <button
+                type="button"
+                onClick={onOpenEditor}
+                className={cn(
+                  "block w-full rounded-xl border border-fg/10 bg-surface-el/20 p-3 text-left transition-colors",
+                  "hover:border-fg/20 hover:bg-surface-el/30",
+                )}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-[11px] font-medium uppercase tracking-wide text-fg/40">
+                    Prompt Content
+                  </span>
+                  <span className="text-[11px] text-fg/45">Open editor</span>
                 </div>
-              )}
-
-              {entry.injectionPosition === "interval" && (
-                <div className="space-y-1">
-                  <p className="text-[11px] text-fg/50">Every N Messages</p>
-                  <input
-                    type="number"
-                    min={1}
-                    value={entry.intervalTurns ?? DEFAULT_INTERVAL_TURNS}
-                    onChange={(event) =>
-                      onUpdate(entry.id, {
-                        intervalTurns: Math.max(1, Number(event.target.value) || 1),
-                      })
-                    }
-                    className="h-9 w-full rounded-lg border border-fg/10 bg-surface-el/30 px-2.5 text-xs text-fg"
-                    placeholder="Inject every N messages"
-                  />
+                <div className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap rounded-lg border border-fg/10 bg-black/10 px-3.5 py-3 font-mono text-sm leading-relaxed text-fg/82">
+                  {contentPreview}
                 </div>
-              )}
-
-              <textarea
-                ref={(el) => {
-                  onTextareaRef(entry.id, el);
-                }}
-                value={entry.content}
-                onChange={(event) => onUpdate(entry.id, { content: event.target.value })}
-                onFocus={() => onTextareaFocus(entry.id)}
-                rows={6}
-                className="w-full resize-none rounded-xl border border-fg/10 bg-surface-el/30 px-3.5 py-2.5 font-mono text-sm leading-relaxed text-fg placeholder-fg/30"
-                placeholder="Write the prompt entry..."
-              />
+              </button>
             </div>
           </motion.div>
         )}
@@ -671,6 +1826,7 @@ function PromptEntryListItem({
   const { t } = useI18n();
   const controls = useDragControls();
   const autoScroll = useDragEdgeAutoScroll();
+  const conditionSummary = describeConditionTree(entry.conditions);
   const dragTimeoutRef = useRef<number | null>(null);
   const draggingRef = useRef(false);
   const pendingEventRef = useRef<PointerEvent | null>(null);
@@ -819,6 +1975,9 @@ function PromptEntryListItem({
             <p className="text-[11px] text-fg/40 uppercase tracking-wide">
               {entry.role} · {entry.injectionPosition}
             </p>
+            {entry.conditions && (
+              <p className="mt-0.5 text-[11px] text-fg/35 truncate">{conditionSummary}</p>
+            )}
           </div>
         </div>
 
@@ -927,7 +2086,7 @@ function LoadingSkeleton() {
 }
 
 export function EditPromptTemplate() {
-  const { backOrReplace } = useNavigationManager();
+  const { go } = useNavigationManager();
   const { id } = useParams<{ id: string }>();
   const isEditing = !!id;
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -963,6 +2122,7 @@ export function EditPromptTemplate() {
   const [previewExpanded, setPreviewExpanded] = useState(false);
   const [collapsedEntries, setCollapsedEntries] = useState<Record<string, boolean>>({});
   const [mobileEntryEditorId, setMobileEntryEditorId] = useState<string | null>(null);
+  const [desktopEntryEditorId, setDesktopEntryEditorId] = useState<string | null>(null);
 
   // UI state
   const [loading, setLoading] = useState(isEditing);
@@ -1045,6 +2205,16 @@ export function EditPromptTemplate() {
 
   const hasEntryContent = entries.some((entry) => entry.content.trim().length > 0);
   const hasContent = content.trim().length > 0;
+  const conditionValidationErrors = useMemo(
+    () =>
+      entries.flatMap((entry, index) =>
+        getConditionWarnings(decomposeConditionTree(entry.conditions)).map((warning) => {
+          const label = entry.name.trim() || `Entry ${index + 1}`;
+          return `${label}: ${warning}`;
+        }),
+      ),
+    [entries],
+  );
   const serializeEntries = (items: SystemPromptEntry[]) =>
     JSON.stringify(
       items.map((entry) => ({
@@ -1058,6 +2228,7 @@ export function EditPromptTemplate() {
         conditionalMinMessages: entry.conditionalMinMessages ?? null,
         intervalTurns: entry.intervalTurns ?? null,
         systemPrompt: entry.systemPrompt,
+        conditions: entry.conditions ?? null,
       })),
     );
   const isDirty =
@@ -1067,7 +2238,11 @@ export function EditPromptTemplate() {
       content !== initialRef.current.content ||
       serializeEntries(entries) !== initialRef.current.entries ||
       condensePromptEntries !== initialRef.current.condensePromptEntries);
-  const canSave = isDirty && name.trim().length > 0 && (hasEntryContent || hasContent);
+  const canSave =
+    isDirty &&
+    name.trim().length > 0 &&
+    (hasEntryContent || hasContent) &&
+    conditionValidationErrors.length === 0;
 
   // Expose save state to TopNav via window globals
   useEffect(() => {
@@ -1298,6 +2473,9 @@ export function EditPromptTemplate() {
   const selectedMobileEntry = mobileEntryEditorId
     ? (entries.find((entry) => entry.id === mobileEntryEditorId) ?? null)
     : null;
+  const selectedDesktopEntry = desktopEntryEditorId
+    ? (entries.find((entry) => entry.id === desktopEntryEditorId) ?? null)
+    : null;
 
   async function handleSave_internal() {
     const entriesSnapshot = entriesRef.current;
@@ -1313,20 +2491,28 @@ export function EditPromptTemplate() {
       return;
     }
 
+    if (conditionValidationErrors.length > 0) {
+      alert(
+        `Cannot save: Fix contradictory activation rules.\n\n${conditionValidationErrors.join("\n")}`,
+      );
+      return;
+    }
+
     setSaving(true);
     try {
       const contentToSave = usesEntryEditor
         ? entriesToContent(entriesSnapshot)
         : contentSnapshot.trim();
+      let savedTemplate;
       if (isEditing && id) {
-        await updatePromptTemplate(id, {
+        savedTemplate = await updatePromptTemplate(id, {
           name: nameSnapshot,
           content: contentToSave,
           entries: usesEntryEditor ? entriesSnapshot : undefined,
           condensePromptEntries,
         });
       } else {
-        await createPromptTemplate(
+        savedTemplate = await createPromptTemplate(
           nameSnapshot,
           "appWide" as any,
           [],
@@ -1335,7 +2521,31 @@ export function EditPromptTemplate() {
           condensePromptEntries,
         );
       }
-      backOrReplace("/settings/prompts");
+
+      const normalizedEntries =
+        usesEntryEditor && savedTemplate.entries?.length
+          ? ensureSystemEntry(savedTemplate.entries)
+          : entriesSnapshot;
+
+      setName(savedTemplate.name);
+      setContent(savedTemplate.content);
+      if (usesEntryEditor) {
+        setEntries(normalizedEntries);
+        setCollapsedEntries((prev) =>
+          Object.fromEntries(normalizedEntries.map((entry) => [entry.id, prev[entry.id] ?? true])),
+        );
+      }
+
+      initialRef.current = {
+        name: savedTemplate.name,
+        content: savedTemplate.content,
+        entries: serializeEntries(normalizedEntries),
+        condensePromptEntries: Boolean(savedTemplate.condensePromptEntries),
+      };
+
+      if (!isEditing) {
+        go(`/settings/prompts/${savedTemplate.id}`, { replace: true });
+      }
     } catch (error) {
       console.error("Failed to save template:", error);
       alert("Failed to save template: " + String(error));
@@ -1719,8 +2929,31 @@ export function EditPromptTemplate() {
                 </div>
               )}
 
-              {/* Missing Variables Warning */}
+              {/* Validation Warnings */}
               <AnimatePresence>
+                {conditionValidationErrors.length > 0 && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className={cn(radius.lg, "border border-danger/30 bg-danger/10 p-3")}
+                  >
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-danger/80" />
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium text-danger/80">
+                          Contradictory Activation Rules
+                        </p>
+                        {conditionValidationErrors.map((error) => (
+                          <p key={error} className="text-xs text-danger/70">
+                            {error}
+                          </p>
+                        ))}
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+
                 {isAppDefault && missingVariables.length > 0 && (
                   <motion.div
                     initial={{ opacity: 0, height: 0 }}
@@ -1921,12 +3154,7 @@ export function EditPromptTemplate() {
                               onToggleCollapse={handleToggleEntryCollapse}
                               collapsed={collapsedEntries[entry.id] ?? true}
                               highlighted={highlightedEntryId === entry.id}
-                              onTextareaRef={(id, el) => {
-                                entryTextareaRefs.current[id] = el;
-                              }}
-                              onTextareaFocus={(id) => {
-                                activeEntryIdRef.current = id;
-                              }}
+                              onOpenEditor={() => setDesktopEntryEditorId(entry.id)}
                             />
                           ))}
                         </Reorder.Group>
@@ -2262,164 +3490,33 @@ export function EditPromptTemplate() {
         )}
       </BottomMenu>
 
-      {/* Entry Editor Bottom Sheet (Mobile only) */}
-      <BottomMenu
+      <MobileEntryEditorPage
+        entry={selectedMobileEntry}
         isOpen={!!mobileEntryEditorId}
         onClose={() => setMobileEntryEditorId(null)}
-        title="Edit Entry"
-      >
-        {selectedMobileEntry ? (
-          <div className="space-y-3">
-            <div className="grid gap-2">
-              <div className="space-y-1">
-                <input
-                  value={selectedMobileEntry.name}
-                  onChange={(event) =>
-                    handleEntryUpdate(selectedMobileEntry.id, { name: event.target.value })
-                  }
-                  className="w-full rounded-lg border border-fg/10 bg-fg/5 px-3 py-2 text-sm text-fg"
-                  placeholder="Entry name"
-                />
-                <p className="text-[11px] text-fg/50">Name used for organization and preview.</p>
-              </div>
+        onUpdate={handleEntryUpdate}
+        onToggle={handleEntryToggle}
+        onTextareaRef={(id, el) => {
+          entryTextareaRefs.current[id] = el;
+        }}
+        onTextareaFocus={(id) => {
+          activeEntryIdRef.current = id;
+        }}
+      />
 
-              <div className="space-y-1">
-                <select
-                  value={selectedMobileEntry.role}
-                  onChange={(event) =>
-                    handleEntryUpdate(selectedMobileEntry.id, {
-                      role: event.target.value as any,
-                    })
-                  }
-                  className="h-9 w-full rounded-lg border border-fg/10 bg-fg/5 px-2.5 text-xs text-fg"
-                >
-                  {ENTRY_ROLE_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-                <p className="text-[11px] text-fg/50">
-                  Select which role the model receives for this entry.
-                </p>
-              </div>
-
-              <div className="space-y-1">
-                <select
-                  value={selectedMobileEntry.injectionPosition}
-                  onChange={(event) => {
-                    const nextPosition = event.target
-                      .value as SystemPromptEntry["injectionPosition"];
-                    handleEntryUpdate(selectedMobileEntry.id, {
-                      injectionPosition: nextPosition,
-                      conditionalMinMessages:
-                        nextPosition === "conditional"
-                          ? (selectedMobileEntry.conditionalMinMessages ??
-                            DEFAULT_CONDITIONAL_MIN_MESSAGES)
-                          : (selectedMobileEntry.conditionalMinMessages ?? null),
-                      intervalTurns:
-                        nextPosition === "interval"
-                          ? (selectedMobileEntry.intervalTurns ?? DEFAULT_INTERVAL_TURNS)
-                          : (selectedMobileEntry.intervalTurns ?? null),
-                    });
-                  }}
-                  className="h-9 w-full rounded-lg border border-fg/10 bg-fg/5 px-2.5 text-xs text-fg"
-                >
-                  {ENTRY_POSITION_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-                <p className="text-[11px] text-fg/50">
-                  {getInjectionModeHint(selectedMobileEntry.injectionPosition)}
-                </p>
-              </div>
-
-              {selectedMobileEntry.injectionPosition !== "relative" && (
-                <div className="space-y-1">
-                  <p className="text-[11px] text-fg/50">Insertion Depth</p>
-                  <input
-                    type="number"
-                    min={0}
-                    value={selectedMobileEntry.injectionDepth}
-                    onChange={(event) =>
-                      handleEntryUpdate(selectedMobileEntry.id, {
-                        injectionDepth: Number(event.target.value),
-                      })
-                    }
-                    className="h-9 w-full rounded-lg border border-fg/10 bg-fg/5 px-2.5 text-xs text-fg"
-                    placeholder="0 = newest context"
-                  />
-                  <p className="text-[11px] text-fg/50">
-                    Depth 0 is newest; higher numbers insert earlier.
-                  </p>
-                </div>
-              )}
-
-              {selectedMobileEntry.injectionPosition === "conditional" && (
-                <div className="space-y-1">
-                  <p className="text-[11px] text-fg/50">Min Messages</p>
-                  <input
-                    type="number"
-                    min={1}
-                    value={
-                      selectedMobileEntry.conditionalMinMessages ?? DEFAULT_CONDITIONAL_MIN_MESSAGES
-                    }
-                    onChange={(event) =>
-                      handleEntryUpdate(selectedMobileEntry.id, {
-                        conditionalMinMessages: Math.max(1, Number(event.target.value) || 1),
-                      })
-                    }
-                    className="h-9 w-full rounded-lg border border-fg/10 bg-fg/5 px-2.5 text-xs text-fg"
-                    placeholder="Inject after at least N messages"
-                  />
-                  <p className="text-[11px] text-fg/50">
-                    Inject only when at least this many chat messages are in context.
-                  </p>
-                </div>
-              )}
-
-              {selectedMobileEntry.injectionPosition === "interval" && (
-                <div className="space-y-1">
-                  <p className="text-[11px] text-fg/50">Every N Messages</p>
-                  <input
-                    type="number"
-                    min={1}
-                    value={selectedMobileEntry.intervalTurns ?? DEFAULT_INTERVAL_TURNS}
-                    onChange={(event) =>
-                      handleEntryUpdate(selectedMobileEntry.id, {
-                        intervalTurns: Math.max(1, Number(event.target.value) || 1),
-                      })
-                    }
-                    className="h-9 w-full rounded-lg border border-fg/10 bg-fg/5 px-2.5 text-xs text-fg"
-                    placeholder="Inject every N messages"
-                  />
-                  <p className="text-[11px] text-fg/50">Inject every N context turns.</p>
-                </div>
-              )}
-            </div>
-
-            <textarea
-              ref={(el) => {
-                entryTextareaRefs.current[selectedMobileEntry.id] = el;
-              }}
-              value={selectedMobileEntry.content}
-              onChange={(event) =>
-                handleEntryUpdate(selectedMobileEntry.id, { content: event.target.value })
-              }
-              onFocus={() => {
-                activeEntryIdRef.current = selectedMobileEntry.id;
-              }}
-              rows={10}
-              className="w-full resize-none rounded-xl border border-fg/10 bg-surface-el/30 px-3.5 py-2.5 font-mono text-sm leading-relaxed text-fg placeholder-fg/30"
-              placeholder="Write the prompt entry..."
-            />
-          </div>
-        ) : (
-          <p className="text-sm text-fg/60">Select an entry to edit.</p>
-        )}
-      </BottomMenu>
+      <DesktopEntryEditorDrawer
+        entry={selectedDesktopEntry}
+        isOpen={!!desktopEntryEditorId}
+        onClose={() => setDesktopEntryEditorId(null)}
+        onUpdate={handleEntryUpdate}
+        onToggle={handleEntryToggle}
+        onTextareaRef={(id, el) => {
+          entryTextareaRefs.current[id] = el;
+        }}
+        onTextareaFocus={(id) => {
+          activeEntryIdRef.current = id;
+        }}
+      />
     </div>
   );
 }

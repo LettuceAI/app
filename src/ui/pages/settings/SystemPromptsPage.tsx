@@ -213,6 +213,7 @@ function toSystemEntry(
         : null,
     // Imported entries should stay user-editable/deletable.
     systemPrompt: false,
+    conditions: null,
   };
 }
 

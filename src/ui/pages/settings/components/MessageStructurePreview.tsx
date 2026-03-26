@@ -121,6 +121,7 @@ function condenseEntries(entries: SystemPromptEntry[]): SystemPromptEntry[] {
       conditionalMinMessages: null,
       intervalTurns: null,
       systemPrompt: true,
+      conditions: null,
     } satisfies SystemPromptEntry,
   ];
 }
@@ -194,13 +195,15 @@ function assembleStructure(
   return result;
 }
 
-
 const ROLE_CONFIG = {
   system: { accent: "bg-info", text: "text-info/80", badge: "bg-info/15 text-info/80" },
   user: { accent: "bg-accent", text: "text-accent/80", badge: "bg-accent/15 text-accent/80" },
-  assistant: { accent: "bg-secondary", text: "text-secondary/80", badge: "bg-secondary/15 text-secondary/80" },
+  assistant: {
+    accent: "bg-secondary",
+    text: "text-secondary/80",
+    badge: "bg-secondary/15 text-secondary/80",
+  },
 } as const;
-
 
 function PromptEntryMessage({
   message,
@@ -394,11 +397,7 @@ export function MessageStructurePreview({
               msg.isMock ? (
                 <MockMessage key={msg.id} message={msg} index={chatIndex++} />
               ) : (
-                <PromptEntryMessage
-                  key={msg.id}
-                  message={msg}
-                  onMenuOpen={setMenuOpenId}
-                />
+                <PromptEntryMessage key={msg.id} message={msg} onMenuOpen={setMenuOpenId} />
               ),
             );
           })()

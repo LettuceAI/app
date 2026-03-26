@@ -20,6 +20,77 @@ export type PromptEntryRole = z.infer<typeof PromptEntryRoleSchema>;
 export const PromptEntryPositionSchema = z.enum(["relative", "inChat", "conditional", "interval"]);
 export type PromptEntryPosition = z.infer<typeof PromptEntryPositionSchema>;
 
+export const PromptEntryChatModeSchema = z.enum(["direct", "group"]);
+export type PromptEntryChatMode = z.infer<typeof PromptEntryChatModeSchema>;
+
+export type PromptEntryCondition =
+  | { type: "chatMode"; value: PromptEntryChatMode }
+  | { type: "sceneGenerationEnabled"; value: boolean }
+  | { type: "avatarGenerationEnabled"; value: boolean }
+  | { type: "hasScene"; value: boolean }
+  | { type: "hasSceneDirection"; value: boolean }
+  | { type: "hasPersona"; value: boolean }
+  | { type: "messageCountAtLeast"; value: number }
+  | { type: "participantCountAtLeast"; value: number }
+  | { type: "keywordAny"; values: string[] }
+  | { type: "keywordAll"; values: string[] }
+  | { type: "keywordNone"; values: string[] }
+  | { type: "dynamicMemoryEnabled"; value: boolean }
+  | { type: "hasMemorySummary"; value: boolean }
+  | { type: "hasKeyMemories"; value: boolean }
+  | { type: "hasLorebookContent"; value: boolean }
+  | { type: "inputScopeAny"; values: string[] }
+  | { type: "outputScopeAny"; values: string[] }
+  | { type: "providerIdAny"; values: string[] }
+  | { type: "reasoningEnabled"; value: boolean }
+  | { type: "visionEnabled"; value: boolean }
+  | { type: "all"; conditions: PromptEntryCondition[] }
+  | { type: "any"; conditions: PromptEntryCondition[] }
+  | { type: "not"; condition: PromptEntryCondition };
+
+export const PromptEntryConditionSchema: z.ZodType<PromptEntryCondition> = z.lazy(() =>
+  z.discriminatedUnion("type", [
+    z.object({ type: z.literal("chatMode"), value: PromptEntryChatModeSchema }),
+    z.object({ type: z.literal("sceneGenerationEnabled"), value: z.boolean() }),
+    z.object({ type: z.literal("avatarGenerationEnabled"), value: z.boolean() }),
+    z.object({ type: z.literal("hasScene"), value: z.boolean() }),
+    z.object({ type: z.literal("hasSceneDirection"), value: z.boolean() }),
+    z.object({ type: z.literal("hasPersona"), value: z.boolean() }),
+    z.object({ type: z.literal("messageCountAtLeast"), value: z.number().int().min(0) }),
+    z.object({ type: z.literal("participantCountAtLeast"), value: z.number().int().min(1) }),
+    z.object({ type: z.literal("keywordAny"), values: z.array(z.string().trim().min(1)).min(1) }),
+    z.object({ type: z.literal("keywordAll"), values: z.array(z.string().trim().min(1)).min(1) }),
+    z.object({ type: z.literal("keywordNone"), values: z.array(z.string().trim().min(1)).min(1) }),
+    z.object({ type: z.literal("dynamicMemoryEnabled"), value: z.boolean() }),
+    z.object({ type: z.literal("hasMemorySummary"), value: z.boolean() }),
+    z.object({ type: z.literal("hasKeyMemories"), value: z.boolean() }),
+    z.object({ type: z.literal("hasLorebookContent"), value: z.boolean() }),
+    z.object({
+      type: z.literal("inputScopeAny"),
+      values: z.array(z.string().trim().min(1)).min(1),
+    }),
+    z.object({
+      type: z.literal("outputScopeAny"),
+      values: z.array(z.string().trim().min(1)).min(1),
+    }),
+    z.object({
+      type: z.literal("providerIdAny"),
+      values: z.array(z.string().trim().min(1)).min(1),
+    }),
+    z.object({ type: z.literal("reasoningEnabled"), value: z.boolean() }),
+    z.object({ type: z.literal("visionEnabled"), value: z.boolean() }),
+    z.object({
+      type: z.literal("all"),
+      conditions: z.array(PromptEntryConditionSchema).default([]),
+    }),
+    z.object({
+      type: z.literal("any"),
+      conditions: z.array(PromptEntryConditionSchema).default([]),
+    }),
+    z.object({ type: z.literal("not"), condition: PromptEntryConditionSchema }),
+  ]),
+);
+
 export const SystemPromptEntrySchema = z.object({
   id: z.string(),
   name: z.string().min(1),
@@ -31,6 +102,7 @@ export const SystemPromptEntrySchema = z.object({
   conditionalMinMessages: z.number().int().min(1).nullable().optional(),
   intervalTurns: z.number().int().min(1).nullable().optional(),
   systemPrompt: z.boolean().default(false),
+  conditions: PromptEntryConditionSchema.nullable().optional(),
 });
 export type SystemPromptEntry = z.infer<typeof SystemPromptEntrySchema>;
 

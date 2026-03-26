@@ -48,6 +48,7 @@ fn single_entry_from_content(content: &str) -> Vec<SystemPromptEntry> {
         conditional_min_messages: None,
         interval_turns: None,
         system_prompt: true,
+        conditions: None,
     }]
 }
 

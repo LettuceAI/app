@@ -1,13 +1,15 @@
+use super::entry_conditions::{entry_is_active, PromptEntryConditionContext};
 use blake3::Hasher;
 use serde_json::{json, Value};
 use tauri::AppHandle;
 
 use super::lorebook_matcher::{format_lorebook_for_prompt, get_active_lorebook_entries};
 use super::prompts;
+use crate::chat_manager::execution::RequestSettings;
 use crate::chat_manager::memory::manual::{has_manual_memories, render_manual_memory_lines};
 use crate::chat_manager::types::{
-    Character, Model, Persona, PromptEntryPosition, PromptEntryRole, Session, Settings,
-    SystemPromptEntry,
+    Character, Model, Persona, PromptEntryChatMode, PromptEntryPosition, PromptEntryRole, Session,
+    Settings, SystemPromptEntry,
 };
 use crate::storage_manager::db::open_db;
 use crate::storage_manager::lorebook::get_lorebook;
@@ -79,6 +81,7 @@ pub fn default_dynamic_summary_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "summary_inputs".to_string(),
@@ -91,6 +94,7 @@ pub fn default_dynamic_summary_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "summary_job".to_string(),
@@ -103,6 +107,7 @@ pub fn default_dynamic_summary_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "summary_guidelines".to_string(),
@@ -115,6 +120,7 @@ pub fn default_dynamic_summary_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "summary_output".to_string(),
@@ -127,6 +133,7 @@ pub fn default_dynamic_summary_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
     ]
 }
@@ -145,6 +152,7 @@ pub fn default_dynamic_memory_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "memory_budget".to_string(),
@@ -157,6 +165,7 @@ pub fn default_dynamic_memory_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "memory_what".to_string(),
@@ -169,6 +178,7 @@ pub fn default_dynamic_memory_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "memory_rules".to_string(),
@@ -181,6 +191,7 @@ pub fn default_dynamic_memory_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "memory_categories".to_string(),
@@ -193,6 +204,7 @@ pub fn default_dynamic_memory_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "memory_priority".to_string(),
@@ -205,6 +217,7 @@ pub fn default_dynamic_memory_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "memory_tools".to_string(),
@@ -217,6 +230,7 @@ pub fn default_dynamic_memory_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
     ]
 }
@@ -235,6 +249,7 @@ pub fn default_help_me_reply_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "reply_character".to_string(),
@@ -248,6 +263,7 @@ pub fn default_help_me_reply_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "reply_user".to_string(),
@@ -261,6 +277,7 @@ pub fn default_help_me_reply_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "reply_guidelines".to_string(),
@@ -273,6 +290,7 @@ pub fn default_help_me_reply_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "reply_draft".to_string(),
@@ -285,6 +303,7 @@ pub fn default_help_me_reply_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "reply_output".to_string(),
@@ -297,6 +316,7 @@ pub fn default_help_me_reply_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
     ]
 }
@@ -315,6 +335,7 @@ pub fn default_help_me_reply_conversational_entries() -> Vec<SystemPromptEntry> 
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "reply_conv_character".to_string(),
@@ -328,6 +349,7 @@ pub fn default_help_me_reply_conversational_entries() -> Vec<SystemPromptEntry> 
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "reply_conv_user".to_string(),
@@ -341,6 +363,7 @@ pub fn default_help_me_reply_conversational_entries() -> Vec<SystemPromptEntry> 
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "reply_conv_guidelines".to_string(),
@@ -353,6 +376,7 @@ pub fn default_help_me_reply_conversational_entries() -> Vec<SystemPromptEntry> 
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "reply_conv_draft".to_string(),
@@ -365,6 +389,7 @@ pub fn default_help_me_reply_conversational_entries() -> Vec<SystemPromptEntry> 
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "reply_conv_output".to_string(),
@@ -377,6 +402,7 @@ pub fn default_help_me_reply_conversational_entries() -> Vec<SystemPromptEntry> 
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
     ]
 }
@@ -394,6 +420,7 @@ pub fn default_group_chat_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "group_character".to_string(),
@@ -406,6 +433,7 @@ pub fn default_group_chat_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "group_user".to_string(),
@@ -418,6 +446,7 @@ pub fn default_group_chat_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "group_context".to_string(),
@@ -430,6 +459,7 @@ pub fn default_group_chat_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "group_summary".to_string(),
@@ -442,6 +472,7 @@ pub fn default_group_chat_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "group_memories".to_string(),
@@ -454,6 +485,7 @@ pub fn default_group_chat_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "group_format".to_string(),
@@ -466,6 +498,7 @@ pub fn default_group_chat_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "group_guidelines".to_string(),
@@ -478,6 +511,7 @@ pub fn default_group_chat_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "group_rules".to_string(),
@@ -490,6 +524,7 @@ pub fn default_group_chat_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
     ]
 }
@@ -509,6 +544,7 @@ pub fn default_group_chat_roleplay_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "group_rp_character".to_string(),
@@ -521,6 +557,7 @@ pub fn default_group_chat_roleplay_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "group_rp_user".to_string(),
@@ -533,6 +570,7 @@ pub fn default_group_chat_roleplay_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "group_rp_participants".to_string(),
@@ -545,6 +583,7 @@ pub fn default_group_chat_roleplay_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "group_rp_scene".to_string(),
@@ -557,6 +596,7 @@ pub fn default_group_chat_roleplay_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "group_rp_summary".to_string(),
@@ -569,6 +609,7 @@ pub fn default_group_chat_roleplay_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "group_rp_memories".to_string(),
@@ -581,6 +622,7 @@ pub fn default_group_chat_roleplay_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "group_rp_format".to_string(),
@@ -593,6 +635,7 @@ pub fn default_group_chat_roleplay_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "group_rp_guidelines".to_string(),
@@ -605,6 +648,7 @@ pub fn default_group_chat_roleplay_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "group_rp_rules".to_string(),
@@ -617,6 +661,7 @@ pub fn default_group_chat_roleplay_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
     ]
 }
@@ -634,6 +679,7 @@ pub fn default_avatar_generation_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "avatar_gen_context".to_string(),
@@ -648,6 +694,7 @@ pub fn default_avatar_generation_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "avatar_gen_request".to_string(),
@@ -660,6 +707,7 @@ pub fn default_avatar_generation_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "avatar_gen_rules".to_string(),
@@ -672,6 +720,7 @@ pub fn default_avatar_generation_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "avatar_gen_output".to_string(),
@@ -684,6 +733,7 @@ pub fn default_avatar_generation_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
         },
     ]
 }
@@ -701,6 +751,7 @@ pub fn default_avatar_edit_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "avatar_edit_context".to_string(),
@@ -715,6 +766,7 @@ pub fn default_avatar_edit_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "avatar_edit_source".to_string(),
@@ -727,6 +779,7 @@ pub fn default_avatar_edit_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "avatar_edit_request".to_string(),
@@ -739,6 +792,7 @@ pub fn default_avatar_edit_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "avatar_edit_rules".to_string(),
@@ -751,6 +805,7 @@ pub fn default_avatar_edit_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "avatar_edit_output".to_string(),
@@ -763,6 +818,7 @@ pub fn default_avatar_edit_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
         },
     ]
 }
@@ -780,6 +836,7 @@ pub fn default_scene_generation_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "scene_gen_context".to_string(),
@@ -792,6 +849,7 @@ pub fn default_scene_generation_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "scene_gen_character_image".to_string(),
@@ -804,6 +862,7 @@ pub fn default_scene_generation_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "scene_gen_character_reference".to_string(),
@@ -816,6 +875,7 @@ pub fn default_scene_generation_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "scene_gen_persona_image".to_string(),
@@ -828,6 +888,7 @@ pub fn default_scene_generation_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "scene_gen_persona_reference".to_string(),
@@ -840,6 +901,7 @@ pub fn default_scene_generation_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "scene_gen_request".to_string(),
@@ -852,6 +914,7 @@ pub fn default_scene_generation_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "scene_gen_rules".to_string(),
@@ -864,6 +927,7 @@ pub fn default_scene_generation_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "scene_gen_output".to_string(),
@@ -876,6 +940,7 @@ pub fn default_scene_generation_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
         },
     ]
 }
@@ -893,6 +958,7 @@ pub fn default_design_reference_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "design_ref_subject".to_string(),
@@ -905,6 +971,7 @@ pub fn default_design_reference_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "design_ref_avatar_image".to_string(),
@@ -917,6 +984,7 @@ pub fn default_design_reference_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "design_ref_reference_images".to_string(),
@@ -929,6 +997,7 @@ pub fn default_design_reference_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "design_ref_rules".to_string(),
@@ -941,6 +1010,7 @@ pub fn default_design_reference_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "design_ref_output".to_string(),
@@ -953,6 +1023,7 @@ pub fn default_design_reference_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
         },
     ]
 }
@@ -1098,6 +1169,7 @@ pub fn default_modular_prompt_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "entry_scenario".to_string(),
@@ -1111,6 +1183,7 @@ pub fn default_modular_prompt_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "entry_character".to_string(),
@@ -1123,6 +1196,7 @@ pub fn default_modular_prompt_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "entry_persona".to_string(),
@@ -1135,6 +1209,7 @@ pub fn default_modular_prompt_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "entry_world_info".to_string(),
@@ -1148,6 +1223,7 @@ pub fn default_modular_prompt_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "entry_context_summary".to_string(),
@@ -1160,6 +1236,7 @@ pub fn default_modular_prompt_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "entry_key_memories".to_string(),
@@ -1174,6 +1251,7 @@ pub fn default_modular_prompt_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "entry_scene_image_protocol".to_string(),
@@ -1186,6 +1264,7 @@ pub fn default_modular_prompt_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
         },
         SystemPromptEntry {
             id: "entry_instructions".to_string(),
@@ -1198,6 +1277,7 @@ pub fn default_modular_prompt_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
         },
     ]
 }
@@ -1214,6 +1294,7 @@ fn single_entry_from_content(content: &str) -> Vec<SystemPromptEntry> {
         conditional_min_messages: None,
         interval_turns: None,
         system_prompt: true,
+        conditions: None,
     }]
 }
 
@@ -1227,6 +1308,83 @@ fn has_scene_placeholder(content: &str) -> bool {
     content.contains("{{scene}}")
         || content.contains("{{scene_direction}}")
         || content.contains("{{direction}}")
+}
+
+fn count_conversation_messages(session: &Session) -> usize {
+    session
+        .messages
+        .iter()
+        .filter(|message| {
+            matches!(
+                message.role.as_str(),
+                "user" | "assistant" | "scene" | "system"
+            ) && !message.content.trim().is_empty()
+        })
+        .count()
+}
+
+fn recent_message_window_text(session: &Session) -> String {
+    session
+        .messages
+        .iter()
+        .rev()
+        .filter(|message| {
+            matches!(
+                message.role.as_str(),
+                "user" | "assistant" | "scene" | "system"
+            ) && !message.content.trim().is_empty()
+        })
+        .take(10)
+        .map(|message| message.content.as_str())
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn scene_state(character: &Character, session: &Session) -> (bool, bool) {
+    let scene_id_to_use = session
+        .selected_scene_id
+        .as_ref()
+        .or_else(|| character.default_scene_id.as_ref())
+        .or_else(|| {
+            if character.scenes.len() == 1 {
+                character.scenes.first().map(|scene| &scene.id)
+            } else {
+                None
+            }
+        });
+
+    let Some(selected_scene_id) = scene_id_to_use else {
+        return (false, false);
+    };
+
+    let Some(scene) = character
+        .scenes
+        .iter()
+        .find(|scene| &scene.id == selected_scene_id)
+    else {
+        return (false, false);
+    };
+
+    let direction = if let Some(variant_id) = &scene.selected_variant_id {
+        scene
+            .variants
+            .iter()
+            .find(|variant| &variant.id == variant_id)
+            .and_then(|variant| variant.direction.as_deref())
+            .or(scene.direction.as_deref())
+    } else {
+        scene.direction.as_deref()
+    };
+
+    (
+        true,
+        direction
+            .map(|value| !value.trim().is_empty())
+            .unwrap_or(false),
+    )
 }
 
 fn is_dynamic_memory_active(settings: &Settings, character: &Character) -> bool {
@@ -1336,10 +1494,60 @@ pub fn build_system_prompt_entries(
         .iter()
         .any(|msg| msg.role.eq_ignore_ascii_case("scene") && !msg.content.trim().is_empty());
     let skip_scene_placeholder_entries = session.selected_scene_id.is_none() && !has_scene_message;
+    let request_settings = RequestSettings::resolve(session, model, settings);
+    let recent_text = recent_message_window_text(session);
+    let (has_scene, has_scene_direction) = scene_state(character, session);
+    let has_memory_summary = session
+        .memory_summary
+        .as_ref()
+        .map(|summary| !summary.trim().is_empty())
+        .unwrap_or(false);
+    let lorebook_content = get_lorebook_content(app, &character.id, session).unwrap_or_default();
+    let has_lorebook_content = !lorebook_content.trim().is_empty();
+    let has_key_memories = if dynamic_memory_active {
+        !session.memory_embeddings.is_empty()
+    } else {
+        has_manual_memories(&session.memories)
+    };
+    let scene_generation_enabled = settings
+        .advanced_settings
+        .as_ref()
+        .and_then(|advanced| advanced.scene_generation_enabled)
+        .unwrap_or(true);
+    let avatar_generation_enabled = settings
+        .advanced_settings
+        .as_ref()
+        .and_then(|advanced| advanced.avatar_generation_enabled)
+        .unwrap_or(true);
+    let condition_context = PromptEntryConditionContext {
+        chat_mode: PromptEntryChatMode::Direct,
+        scene_generation_enabled,
+        avatar_generation_enabled,
+        has_scene: has_scene || has_scene_message,
+        has_scene_direction,
+        has_persona: persona.is_some(),
+        message_count: count_conversation_messages(session),
+        participant_count: 2,
+        recent_text: &recent_text,
+        dynamic_memory_enabled: dynamic_memory_active,
+        has_memory_summary,
+        has_key_memories,
+        has_lorebook_content,
+        input_scopes: &model.input_scopes,
+        output_scopes: &model.output_scopes,
+        provider_id: Some(model.provider_id.as_str()),
+        reasoning_enabled: request_settings.reasoning_enabled,
+        vision_enabled: model.input_scopes.iter().any(|scope| {
+            matches!(
+                scope.trim().to_ascii_lowercase().as_str(),
+                "image" | "vision"
+            )
+        }),
+    };
 
     let mut rendered_entries: Vec<SystemPromptEntry> = Vec::new();
     for entry in base_entries.iter() {
-        if !entry.enabled && !entry.system_prompt {
+        if !entry_is_active(entry, &condition_context) {
             continue;
         }
         if skip_scene_placeholder_entries && has_scene_placeholder(&entry.content) {
@@ -1369,18 +1577,14 @@ pub fn build_system_prompt_entries(
                     conditional_min_messages: None,
                     interval_turns: None,
                     system_prompt: true,
+                    conditions: None,
                 });
             }
         }
     }
 
     if !has_placeholder(&base_entries, "{{key_memories}}") {
-        let has_memories = if dynamic_memory_active {
-            !session.memory_embeddings.is_empty()
-        } else {
-            has_manual_memories(&session.memories)
-        };
-        if has_memories {
+        if has_key_memories {
             let mut content = String::from("# Key Memories\n");
             content.push_str("Important facts to remember in this conversation:\n");
             if dynamic_memory_active {
@@ -1402,15 +1606,12 @@ pub fn build_system_prompt_entries(
                 conditional_min_messages: None,
                 interval_turns: None,
                 system_prompt: true,
+                conditions: None,
             });
         }
     }
 
     if !has_placeholder(&base_entries, "{{lorebook}}") {
-        let lorebook_content = match get_lorebook_content(app, &character.id, session) {
-            Ok(content) => content,
-            Err(_) => String::new(),
-        };
         if !lorebook_content.trim().is_empty() {
             rendered_entries.push(SystemPromptEntry {
                 id: "entry_lorebook".to_string(),
@@ -1423,6 +1624,7 @@ pub fn build_system_prompt_entries(
                 conditional_min_messages: None,
                 interval_turns: None,
                 system_prompt: true,
+                conditions: None,
             });
         }
     }
@@ -1625,6 +1827,7 @@ fn condense_entries_into_single_system_message(
         conditional_min_messages: None,
         interval_turns: None,
         system_prompt: true,
+        conditions: None,
     }]
 }
 

@@ -6,6 +6,9 @@ use crate::chat_manager::attachments::{cleanup_attachments, persist_attachments}
 use crate::chat_manager::execution::{
     find_model_with_credential, prepare_default_sampling_request, prepare_sampling_request,
 };
+use crate::chat_manager::prompting::entry_conditions::{
+    entry_is_active, PromptEntryConditionContext,
+};
 use crate::chat_manager::prompts;
 use crate::chat_manager::provider_adapter::adapter_for;
 use crate::chat_manager::request::extract_text;
@@ -18,8 +21,8 @@ use crate::chat_manager::turn_builder::{
 };
 use crate::chat_manager::types::{
     Character, ChatGenerateDesignReferenceDescriptionArgs, ChatGenerateSceneImageArgs,
-    ChatGenerateScenePromptArgs, ImageAttachment, Model, Persona, PromptEntryPosition,
-    ProviderCredential, Session, Settings, StoredMessage, SystemPromptEntry,
+    ChatGenerateScenePromptArgs, ImageAttachment, Model, Persona, PromptEntryChatMode,
+    PromptEntryPosition, ProviderCredential, Session, Settings, StoredMessage, SystemPromptEntry,
 };
 use crate::image_generator::types::ImageGenerationRequest;
 use crate::storage_manager::media::{storage_load_avatar, storage_read_image_data};
@@ -127,6 +130,23 @@ fn scene_generation_enabled(settings: &Settings) -> bool {
         .as_ref()
         .and_then(|advanced| advanced.scene_generation_enabled)
         .unwrap_or(true)
+}
+
+fn avatar_generation_enabled(settings: &Settings) -> bool {
+    settings
+        .advanced_settings
+        .as_ref()
+        .and_then(|advanced| advanced.avatar_generation_enabled)
+        .unwrap_or(true)
+}
+
+fn model_supports_vision(model: &Model) -> bool {
+    model.input_scopes.iter().any(|scope| {
+        matches!(
+            scope.trim().to_ascii_lowercase().as_str(),
+            "image" | "vision"
+        )
+    })
 }
 
 fn resolve_avatar_reference_data(
@@ -705,6 +725,7 @@ fn condense_scene_generation_entries(entries: Vec<SystemPromptEntry>) -> Vec<Sys
         conditional_min_messages: None,
         interval_turns: None,
         system_prompt: true,
+        conditions: None,
     }]
 }
 
@@ -754,6 +775,7 @@ fn condense_design_reference_entries(entries: Vec<SystemPromptEntry>) -> Vec<Sys
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+            conditions: None,
         });
     }
     condensed.extend(image_entries);
@@ -778,6 +800,7 @@ fn load_design_reference_prompt_entries(app: &AppHandle) -> (Vec<SystemPromptEnt
                         conditional_min_messages: None,
                         interval_turns: None,
                         system_prompt: true,
+                        conditions: None,
                     }],
                     template.condense_prompt_entries,
                 )
@@ -797,15 +820,50 @@ fn load_design_reference_prompt_entries(app: &AppHandle) -> (Vec<SystemPromptEnt
 
 fn render_design_reference_prompt_entries(
     app: &AppHandle,
+    settings: &Settings,
+    model: &Model,
     subject_name: &str,
     subject_description: Option<&str>,
     current_description: Option<&str>,
 ) -> Vec<SystemPromptEntry> {
     let (template_entries, condense_prompt_entries) = load_design_reference_prompt_entries(app);
     let mut rendered_entries = Vec::new();
+    let recent_text = [
+        subject_name,
+        subject_description.unwrap_or(""),
+        current_description.unwrap_or(""),
+    ]
+    .into_iter()
+    .filter(|value| !value.trim().is_empty())
+    .collect::<Vec<_>>()
+    .join("\n");
+    let condition_context = PromptEntryConditionContext {
+        chat_mode: PromptEntryChatMode::Direct,
+        scene_generation_enabled: scene_generation_enabled(settings),
+        avatar_generation_enabled: avatar_generation_enabled(settings),
+        has_scene: false,
+        has_scene_direction: false,
+        has_persona: false,
+        message_count: 0,
+        participant_count: 1,
+        recent_text: &recent_text,
+        dynamic_memory_enabled: false,
+        has_memory_summary: false,
+        has_key_memories: false,
+        has_lorebook_content: false,
+        input_scopes: &model.input_scopes,
+        output_scopes: &model.output_scopes,
+        provider_id: Some(model.provider_id.as_str()),
+        reasoning_enabled: model
+            .advanced_model_settings
+            .as_ref()
+            .and_then(|cfg| cfg.reasoning_enabled)
+            .unwrap_or(false),
+        vision_enabled: model_supports_vision(model),
+    };
 
     for entry in template_entries {
-        if !entry.enabled && !entry.system_prompt {
+        if !entry_is_active(&entry, &condition_context) {
             continue;
         }
         let rendered = render_design_reference_prompt_content(
@@ -903,6 +961,7 @@ fn load_scene_generation_prompt_entries(app: &AppHandle) -> (Vec<SystemPromptEnt
                         conditional_min_messages: None,
                         interval_turns: None,
                         system_prompt: true,
+                        conditions: None,
                     }],
                     template.condense_prompt_entries,
                 )
@@ -922,15 +981,58 @@ fn load_scene_generation_prompt_entries(app: &AppHandle) -> (Vec<SystemPromptEnt
 
 fn render_scene_generation_prompt_entries(
     app: &AppHandle,
+    settings: &Settings,
+    model: &Model,
+    session: &Session,
     character: &Character,
     persona: Option<&Persona>,
     recent_messages_text: &str,
 ) -> Vec<SystemPromptEntry> {
     let (template_entries, condense_prompt_entries) = load_scene_generation_prompt_entries(app);
     let mut rendered_entries = Vec::new();
+    let has_scene = session.selected_scene_id.is_some() || character.default_scene_id.is_some();
+    let has_scene_direction = if let Some(scene_id) = session
+        .selected_scene_id
+        .as_ref()
+        .or(character.default_scene_id.as_ref())
+    {
+        character
+            .scenes
+            .iter()
+            .find(|scene| &scene.id == scene_id)
+            .and_then(|scene| scene.direction.as_deref())
+            .map(|direction| !direction.trim().is_empty())
+            .unwrap_or(false)
+    } else {
+        false
+    };
+    let condition_context = PromptEntryConditionContext {
+        chat_mode: PromptEntryChatMode::Direct,
+        scene_generation_enabled: scene_generation_enabled(settings),
+        avatar_generation_enabled: avatar_generation_enabled(settings),
+        has_scene,
+        has_scene_direction,
+        has_persona: persona.is_some(),
+        message_count: session.messages.len(),
+        participant_count: 2,
+        recent_text: recent_messages_text,
+        dynamic_memory_enabled: false,
+        has_memory_summary: false,
+        has_key_memories: false,
+        has_lorebook_content: false,
+        input_scopes: &model.input_scopes,
+        output_scopes: &model.output_scopes,
+        provider_id: Some(model.provider_id.as_str()),
+        reasoning_enabled: model
+            .advanced_model_settings
+            .as_ref()
+            .and_then(|cfg| cfg.reasoning_enabled)
+            .unwrap_or(false),
+        vision_enabled: model_supports_vision(model),
+    };
 
     for entry in template_entries {
-        if !entry.enabled && !entry.system_prompt {
+        if !entry_is_active(&entry, &condition_context) {
             continue;
         }
         let rendered = render_scene_generation_prompt_content(
@@ -1210,8 +1312,15 @@ pub async fn chat_generate_scene_prompt(
 
     let recent_messages_text = build_scene_prompt_context_messages(&session, &message_id)?;
     let reference_images = build_scene_reference_images(&app, &character, persona);
-    let prompt_entries =
-        render_scene_generation_prompt_entries(&app, &character, persona, &recent_messages_text);
+    let prompt_entries = render_scene_generation_prompt_entries(
+        &app,
+        settings,
+        model,
+        &session,
+        &character,
+        persona,
+        &recent_messages_text,
+    );
     if prompt_entries.is_empty() {
         return Err("Scene generation prompt template rendered no usable entries".to_string());
     }
@@ -1384,6 +1493,8 @@ pub async fn chat_generate_design_reference_description(
     let streaming_enabled = stream.unwrap_or(true) && adapter_for(credential).supports_stream();
     let prompt_entries = render_design_reference_prompt_entries(
         &app,
+        settings,
+        model,
         subject_name,
         subject_description,
         current_description,

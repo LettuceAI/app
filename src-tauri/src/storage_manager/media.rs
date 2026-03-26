@@ -2,7 +2,6 @@ use base64::{engine::general_purpose, Engine as _};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::time::UNIX_EPOCH;
-#[cfg(not(target_os = "android"))]
 use tauri::Manager;
 
 use super::legacy::storage_root;

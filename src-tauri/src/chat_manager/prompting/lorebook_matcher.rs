@@ -1,7 +1,7 @@
 use crate::storage_manager::db::DbConnection;
 use crate::storage_manager::lorebook::{get_enabled_character_lorebook_entries, LorebookEntry};
 
-fn keyword_matches(keyword: &str, text: &str, case_sensitive: bool) -> bool {
+pub(crate) fn keyword_matches(keyword: &str, text: &str, case_sensitive: bool) -> bool {
     let keyword = keyword.trim();
     if keyword.is_empty() {
         return false;
