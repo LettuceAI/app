@@ -1,6 +1,7 @@
 use crate::chat_manager::prompt_engine;
 use crate::chat_manager::types::{
-    PromptEntryPosition, PromptEntryRole, PromptScope, SystemPromptEntry, SystemPromptTemplate,
+    PromptEntryImageSlot, PromptEntryPayload, PromptEntryPosition, PromptEntryRole, PromptScope,
+    SystemPromptEntry, SystemPromptTemplate,
 };
 use crate::{
     chat_manager::storage::{get_base_prompt, get_base_prompt_entries, PromptType},
@@ -49,6 +50,7 @@ fn single_entry_from_content(content: &str) -> Vec<SystemPromptEntry> {
         interval_turns: None,
         system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
     }]
 }
 
@@ -64,6 +66,41 @@ fn template_entries_to_content(entries: &[SystemPromptEntry]) -> String {
     } else {
         merged
     }
+}
+
+fn prompt_entry_payload_variable(payload: &PromptEntryPayload) -> &'static str {
+    match payload {
+        PromptEntryPayload::ImageSlot {
+            slot: PromptEntryImageSlot::Character,
+        } => "{{image[character]}}",
+        PromptEntryPayload::ImageSlot {
+            slot: PromptEntryImageSlot::Persona,
+        } => "{{image[persona]}}",
+        PromptEntryPayload::ImageSlot {
+            slot: PromptEntryImageSlot::Avatar,
+        } => "{{image[avatar]}}",
+        PromptEntryPayload::ImageSlot {
+            slot: PromptEntryImageSlot::References,
+        } => "{{image[references]}}",
+    }
+}
+
+fn template_entries_to_validation_content(entries: &[SystemPromptEntry]) -> String {
+    entries
+        .iter()
+        .filter(|entry| entry.enabled || entry.system_prompt)
+        .flat_map(|entry| {
+            let mut parts = Vec::new();
+            if !entry.content.trim().is_empty() {
+                parts.push(entry.content.clone());
+            }
+            if let Some(payload) = entry.prompt_entry_payload.as_ref() {
+                parts.push(prompt_entry_payload_variable(payload).to_string());
+            }
+            parts
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
 }
 
 fn maybe_backfill_entries(
@@ -160,6 +197,113 @@ fn backfill_missing_entry_conditions(
                     changed = true;
                 }
             }
+            entry
+        })
+        .collect::<Vec<_>>();
+
+    if !changed {
+        return Ok(());
+    }
+
+    let next_content = template_entries_to_content(&next_entries);
+    let _ = update_template(
+        app,
+        id.to_string(),
+        None,
+        None,
+        None,
+        Some(next_content),
+        Some(next_entries),
+        None,
+    )?;
+
+    Ok(())
+}
+
+fn backfill_missing_entry_payloads(
+    app: &AppHandle,
+    id: &str,
+    defaults: &[SystemPromptEntry],
+) -> Result<(), String> {
+    let template = match get_template(app, id)? {
+        Some(template) => template,
+        None => return Ok(()),
+    };
+    if template.entries.is_empty() {
+        return Ok(());
+    }
+
+    let mut changed = false;
+    let next_entries = template
+        .entries
+        .into_iter()
+        .map(|mut entry| {
+            if entry.prompt_entry_payload.is_none() {
+                if let Some(default_entry) = defaults.iter().find(|candidate| {
+                    candidate.id == entry.id && candidate.prompt_entry_payload.is_some()
+                }) {
+                    entry.prompt_entry_payload = default_entry.prompt_entry_payload.clone();
+                    changed = true;
+                }
+            }
+            entry
+        })
+        .collect::<Vec<_>>();
+
+    if !changed {
+        return Ok(());
+    }
+
+    let next_content = template_entries_to_content(&next_entries);
+    let _ = update_template(
+        app,
+        id.to_string(),
+        None,
+        None,
+        None,
+        Some(next_content),
+        Some(next_entries),
+        None,
+    )?;
+
+    Ok(())
+}
+
+fn backfill_legacy_image_entry_content(
+    app: &AppHandle,
+    id: &str,
+    defaults: &[SystemPromptEntry],
+) -> Result<(), String> {
+    let template = match get_template(app, id)? {
+        Some(template) => template,
+        None => return Ok(()),
+    };
+    if template.entries.is_empty() {
+        return Ok(());
+    }
+
+    let mut changed = false;
+    let next_entries = template
+        .entries
+        .into_iter()
+        .map(|mut entry| {
+            let Some(default_entry) = defaults.iter().find(|candidate| {
+                candidate.id == entry.id && candidate.prompt_entry_payload.is_some()
+            }) else {
+                return entry;
+            };
+
+            let Some(payload) = default_entry.prompt_entry_payload.as_ref() else {
+                return entry;
+            };
+
+            if default_entry.content.trim().is_empty()
+                && entry.content.trim() == prompt_entry_payload_variable(payload)
+            {
+                entry.content.clear();
+                changed = true;
+            }
+
             entry
         })
         .collect::<Vec<_>>();
@@ -488,11 +632,7 @@ pub fn update_template(
         let validation_text = if new_entries.is_empty() {
             new_content.clone()
         } else {
-            new_entries
-                .iter()
-                .map(|entry| entry.content.as_str())
-                .collect::<Vec<_>>()
-                .join("\n")
+            template_entries_to_validation_content(&new_entries)
         };
         if let Err(missing) = validate_required_variables(&id, &validation_text) {
             return Err(format!(
@@ -904,6 +1044,13 @@ pub fn ensure_scene_generation_template(app: &AppHandle) -> Result<(), String> {
             APP_SCENE_GENERATION_TEMPLATE_ID,
             &scene_entries,
         );
+        let _ =
+            backfill_missing_entry_payloads(app, APP_SCENE_GENERATION_TEMPLATE_ID, &scene_entries);
+        let _ = backfill_legacy_image_entry_content(
+            app,
+            APP_SCENE_GENERATION_TEMPLATE_ID,
+            &scene_entries,
+        );
         let _ = migrate_legacy_scene_generation_entry_roles(app);
     }
 
@@ -939,6 +1086,16 @@ pub fn ensure_design_reference_template(app: &AppHandle) -> Result<(), String> {
             design_reference_entries.clone(),
         );
         let _ = backfill_missing_entry_conditions(
+            app,
+            APP_DESIGN_REFERENCE_TEMPLATE_ID,
+            &design_reference_entries,
+        );
+        let _ = backfill_missing_entry_payloads(
+            app,
+            APP_DESIGN_REFERENCE_TEMPLATE_ID,
+            &design_reference_entries,
+        );
+        let _ = backfill_legacy_image_entry_content(
             app,
             APP_DESIGN_REFERENCE_TEMPLATE_ID,
             &design_reference_entries,

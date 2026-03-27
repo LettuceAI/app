@@ -8,8 +8,8 @@ use super::prompts;
 use crate::chat_manager::execution::RequestSettings;
 use crate::chat_manager::memory::manual::{has_manual_memories, render_manual_memory_lines};
 use crate::chat_manager::types::{
-    Character, Model, Persona, PromptEntryChatMode, PromptEntryCondition, PromptEntryPosition,
-    PromptEntryRole, Session, Settings, SystemPromptEntry,
+    Character, Model, Persona, PromptEntryChatMode, PromptEntryCondition, PromptEntryImageSlot,
+    PromptEntryPayload, PromptEntryPosition, PromptEntryRole, Session, Settings, SystemPromptEntry,
 };
 use crate::storage_manager::db::open_db;
 use crate::storage_manager::lorebook::get_lorebook;
@@ -82,6 +82,7 @@ pub fn default_dynamic_summary_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "summary_inputs".to_string(),
@@ -95,6 +96,7 @@ pub fn default_dynamic_summary_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "summary_job".to_string(),
@@ -108,6 +110,7 @@ pub fn default_dynamic_summary_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "summary_guidelines".to_string(),
@@ -121,6 +124,7 @@ pub fn default_dynamic_summary_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "summary_output".to_string(),
@@ -134,6 +138,7 @@ pub fn default_dynamic_summary_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
     ]
 }
@@ -153,6 +158,7 @@ pub fn default_dynamic_memory_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "memory_budget".to_string(),
@@ -166,6 +172,7 @@ pub fn default_dynamic_memory_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "memory_what".to_string(),
@@ -179,6 +186,7 @@ pub fn default_dynamic_memory_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "memory_rules".to_string(),
@@ -192,6 +200,7 @@ pub fn default_dynamic_memory_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "memory_categories".to_string(),
@@ -205,6 +214,7 @@ pub fn default_dynamic_memory_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "memory_priority".to_string(),
@@ -218,6 +228,7 @@ pub fn default_dynamic_memory_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "memory_tools".to_string(),
@@ -231,6 +242,7 @@ pub fn default_dynamic_memory_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
     ]
 }
@@ -250,6 +262,7 @@ pub fn default_help_me_reply_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "reply_character".to_string(),
@@ -264,6 +277,7 @@ pub fn default_help_me_reply_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "reply_user".to_string(),
@@ -278,6 +292,7 @@ pub fn default_help_me_reply_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "reply_guidelines".to_string(),
@@ -291,6 +306,7 @@ pub fn default_help_me_reply_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "reply_draft".to_string(),
@@ -304,6 +320,7 @@ pub fn default_help_me_reply_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "reply_output".to_string(),
@@ -317,6 +334,7 @@ pub fn default_help_me_reply_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
     ]
 }
@@ -336,6 +354,7 @@ pub fn default_help_me_reply_conversational_entries() -> Vec<SystemPromptEntry> 
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "reply_conv_character".to_string(),
@@ -350,6 +369,7 @@ pub fn default_help_me_reply_conversational_entries() -> Vec<SystemPromptEntry> 
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "reply_conv_user".to_string(),
@@ -364,6 +384,7 @@ pub fn default_help_me_reply_conversational_entries() -> Vec<SystemPromptEntry> 
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "reply_conv_guidelines".to_string(),
@@ -377,6 +398,7 @@ pub fn default_help_me_reply_conversational_entries() -> Vec<SystemPromptEntry> 
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "reply_conv_draft".to_string(),
@@ -390,6 +412,7 @@ pub fn default_help_me_reply_conversational_entries() -> Vec<SystemPromptEntry> 
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "reply_conv_output".to_string(),
@@ -403,6 +426,7 @@ pub fn default_help_me_reply_conversational_entries() -> Vec<SystemPromptEntry> 
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
     ]
 }
@@ -421,6 +445,7 @@ pub fn default_group_chat_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "group_character".to_string(),
@@ -434,6 +459,7 @@ pub fn default_group_chat_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "group_user".to_string(),
@@ -447,6 +473,7 @@ pub fn default_group_chat_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "group_context".to_string(),
@@ -460,6 +487,7 @@ pub fn default_group_chat_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "group_summary".to_string(),
@@ -473,6 +501,7 @@ pub fn default_group_chat_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "group_memories".to_string(),
@@ -486,6 +515,7 @@ pub fn default_group_chat_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "group_format".to_string(),
@@ -499,6 +529,7 @@ pub fn default_group_chat_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "group_guidelines".to_string(),
@@ -512,6 +543,7 @@ pub fn default_group_chat_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "group_rules".to_string(),
@@ -525,6 +557,7 @@ pub fn default_group_chat_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
     ]
 }
@@ -545,6 +578,7 @@ pub fn default_group_chat_roleplay_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "group_rp_character".to_string(),
@@ -558,6 +592,7 @@ pub fn default_group_chat_roleplay_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "group_rp_user".to_string(),
@@ -571,6 +606,7 @@ pub fn default_group_chat_roleplay_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "group_rp_participants".to_string(),
@@ -584,6 +620,7 @@ pub fn default_group_chat_roleplay_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "group_rp_scene".to_string(),
@@ -597,6 +634,7 @@ pub fn default_group_chat_roleplay_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "group_rp_summary".to_string(),
@@ -610,6 +648,7 @@ pub fn default_group_chat_roleplay_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "group_rp_memories".to_string(),
@@ -623,6 +662,7 @@ pub fn default_group_chat_roleplay_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "group_rp_format".to_string(),
@@ -636,6 +676,7 @@ pub fn default_group_chat_roleplay_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "group_rp_guidelines".to_string(),
@@ -649,6 +690,7 @@ pub fn default_group_chat_roleplay_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "group_rp_rules".to_string(),
@@ -662,6 +704,7 @@ pub fn default_group_chat_roleplay_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
     ]
 }
@@ -680,6 +723,7 @@ pub fn default_avatar_generation_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "avatar_gen_context".to_string(),
@@ -695,6 +739,7 @@ pub fn default_avatar_generation_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: false,
             conditions: Some(PromptEntryCondition::HasSubjectDescription { value: true }),
+            prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "avatar_gen_request".to_string(),
@@ -708,6 +753,7 @@ pub fn default_avatar_generation_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: false,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "avatar_gen_rules".to_string(),
@@ -721,6 +767,7 @@ pub fn default_avatar_generation_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: false,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "avatar_gen_output".to_string(),
@@ -734,6 +781,7 @@ pub fn default_avatar_generation_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: false,
         conditions: None,
+        prompt_entry_payload: None,
         },
     ]
 }
@@ -752,6 +800,7 @@ pub fn default_avatar_edit_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "avatar_edit_context".to_string(),
@@ -767,6 +816,7 @@ pub fn default_avatar_edit_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: false,
             conditions: Some(PromptEntryCondition::HasSubjectDescription { value: true }),
+            prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "avatar_edit_source".to_string(),
@@ -780,6 +830,7 @@ pub fn default_avatar_edit_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: false,
             conditions: Some(PromptEntryCondition::HasCurrentDescription { value: true }),
+            prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "avatar_edit_request".to_string(),
@@ -793,6 +844,7 @@ pub fn default_avatar_edit_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: false,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "avatar_edit_rules".to_string(),
@@ -806,6 +858,7 @@ pub fn default_avatar_edit_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: false,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "avatar_edit_output".to_string(),
@@ -819,6 +872,7 @@ pub fn default_avatar_edit_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: false,
         conditions: None,
+        prompt_entry_payload: None,
         },
     ]
 }
@@ -837,6 +891,7 @@ pub fn default_scene_generation_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "scene_gen_context".to_string(),
@@ -850,12 +905,13 @@ pub fn default_scene_generation_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: false,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "scene_gen_character_image".to_string(),
             name: "Character Reference Image".to_string(),
             role: PromptEntryRole::User,
-            content: "{{image[character]}}".to_string(),
+            content: String::new(),
             enabled: true,
             injection_position: PromptEntryPosition::InChat,
             injection_depth: 0,
@@ -863,6 +919,9 @@ pub fn default_scene_generation_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: false,
             conditions: Some(PromptEntryCondition::HasCharacterReferenceImages { value: true }),
+            prompt_entry_payload: Some(PromptEntryPayload::ImageSlot {
+                slot: PromptEntryImageSlot::Character,
+            }),
         },
         SystemPromptEntry {
             id: "scene_gen_character_reference".to_string(),
@@ -876,12 +935,13 @@ pub fn default_scene_generation_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: false,
             conditions: Some(PromptEntryCondition::HasCharacterReferenceText { value: true }),
+            prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "scene_gen_persona_image".to_string(),
             name: "Persona Reference Image".to_string(),
             role: PromptEntryRole::User,
-            content: "{{image[persona]}}".to_string(),
+            content: String::new(),
             enabled: true,
             injection_position: PromptEntryPosition::InChat,
             injection_depth: 0,
@@ -889,6 +949,9 @@ pub fn default_scene_generation_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: false,
             conditions: Some(PromptEntryCondition::HasPersonaReferenceImages { value: true }),
+            prompt_entry_payload: Some(PromptEntryPayload::ImageSlot {
+                slot: PromptEntryImageSlot::Persona,
+            }),
         },
         SystemPromptEntry {
             id: "scene_gen_persona_reference".to_string(),
@@ -902,6 +965,7 @@ pub fn default_scene_generation_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: false,
             conditions: Some(PromptEntryCondition::HasPersonaReferenceText { value: true }),
+            prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "scene_gen_request".to_string(),
@@ -915,6 +979,7 @@ pub fn default_scene_generation_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: false,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "scene_gen_rules".to_string(),
@@ -928,6 +993,7 @@ pub fn default_scene_generation_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: false,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "scene_gen_output".to_string(),
@@ -941,6 +1007,7 @@ pub fn default_scene_generation_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: false,
         conditions: None,
+        prompt_entry_payload: None,
         },
     ]
 }
@@ -959,6 +1026,7 @@ pub fn default_design_reference_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "design_ref_subject".to_string(),
@@ -977,32 +1045,39 @@ pub fn default_design_reference_entries() -> Vec<SystemPromptEntry> {
                     PromptEntryCondition::HasCurrentDescription { value: true },
                 ],
             }),
+            prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "design_ref_avatar_image".to_string(),
             name: "Avatar Image".to_string(),
             role: PromptEntryRole::User,
-            content: "{{image[avatar]}}".to_string(),
+            content: String::new(),
             enabled: true,
             injection_position: PromptEntryPosition::InChat,
             injection_depth: 0,
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
-        conditions: None,
+            conditions: None,
+            prompt_entry_payload: Some(PromptEntryPayload::ImageSlot {
+                slot: PromptEntryImageSlot::Avatar,
+            }),
         },
         SystemPromptEntry {
             id: "design_ref_reference_images".to_string(),
             name: "Reference Images".to_string(),
             role: PromptEntryRole::User,
-            content: "{{image[references]}}".to_string(),
+            content: String::new(),
             enabled: true,
             injection_position: PromptEntryPosition::InChat,
             injection_depth: 0,
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
-        conditions: None,
+            conditions: None,
+            prompt_entry_payload: Some(PromptEntryPayload::ImageSlot {
+                slot: PromptEntryImageSlot::References,
+            }),
         },
         SystemPromptEntry {
             id: "design_ref_rules".to_string(),
@@ -1016,6 +1091,7 @@ pub fn default_design_reference_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: false,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "design_ref_output".to_string(),
@@ -1029,6 +1105,7 @@ pub fn default_design_reference_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: false,
         conditions: None,
+        prompt_entry_payload: None,
         },
     ]
 }
@@ -1175,6 +1252,7 @@ pub fn default_modular_prompt_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "entry_scenario".to_string(),
@@ -1189,6 +1267,7 @@ pub fn default_modular_prompt_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: false,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "entry_character".to_string(),
@@ -1202,6 +1281,7 @@ pub fn default_modular_prompt_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: false,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "entry_persona".to_string(),
@@ -1215,6 +1295,7 @@ pub fn default_modular_prompt_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: false,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "entry_world_info".to_string(),
@@ -1229,6 +1310,7 @@ pub fn default_modular_prompt_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: false,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "entry_context_summary".to_string(),
@@ -1242,6 +1324,7 @@ pub fn default_modular_prompt_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: false,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "entry_key_memories".to_string(),
@@ -1257,6 +1340,7 @@ pub fn default_modular_prompt_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: false,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "entry_scene_image_protocol".to_string(),
@@ -1270,6 +1354,7 @@ pub fn default_modular_prompt_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: false,
         conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "entry_instructions".to_string(),
@@ -1283,6 +1368,7 @@ pub fn default_modular_prompt_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: false,
         conditions: None,
+        prompt_entry_payload: None,
         },
     ]
 }
@@ -1300,6 +1386,7 @@ fn single_entry_from_content(content: &str) -> Vec<SystemPromptEntry> {
         interval_turns: None,
         system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
     }]
 }
 
@@ -1589,6 +1676,7 @@ pub fn build_system_prompt_entries(
                     interval_turns: None,
                     system_prompt: true,
                     conditions: None,
+                    prompt_entry_payload: None,
                 });
             }
         }
@@ -1618,6 +1706,7 @@ pub fn build_system_prompt_entries(
                 interval_turns: None,
                 system_prompt: true,
                 conditions: None,
+                prompt_entry_payload: None,
             });
         }
     }
@@ -1636,6 +1725,7 @@ pub fn build_system_prompt_entries(
                 interval_turns: None,
                 system_prompt: true,
                 conditions: None,
+                prompt_entry_payload: None,
             });
         }
     }
@@ -1839,6 +1929,7 @@ fn condense_entries_into_single_system_message(
         interval_turns: None,
         system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
     }]
 }
 

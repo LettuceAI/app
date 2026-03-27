@@ -87,6 +87,10 @@ type Variable = {
   desc: string;
 };
 
+type PromptEntryImageSlot = "character" | "persona" | "avatar" | "references";
+type PromptEntryKind = "text" | "image";
+type ImageCapablePromptType = Exclude<PromptType, null>;
+
 const VARIABLES_BY_TYPE: Record<string, Variable[]> = {
   system: [
     { var: "{{char.name}}", label: "Character Name", desc: "The character's display name" },
@@ -231,6 +235,27 @@ const VARIABLES_BY_TYPE: Record<string, Variable[]> = {
     { var: "{{context_summary}}", label: "Context Summary", desc: "Dynamic conversation summary" },
     { var: "{{key_memories}}", label: "Key Memories", desc: "List of relevant memories" },
   ],
+};
+
+const IMAGE_ENTRY_SLOT_LABELS: Record<PromptEntryImageSlot, string> = {
+  character: "Character reference",
+  persona: "Persona reference",
+  avatar: "Avatar image",
+  references: "Reference images",
+};
+
+const IMAGE_ENTRY_SLOT_TOKENS: Record<PromptEntryImageSlot, string> = {
+  character: "{{image[character]}}",
+  persona: "{{image[persona]}}",
+  avatar: "{{image[avatar]}}",
+  references: "{{image[references]}}",
+};
+
+const IMAGE_ENTRY_SLOT_OPTIONS_BY_PROMPT_TYPE: Partial<
+  Record<ImageCapablePromptType, PromptEntryImageSlot[]>
+> = {
+  scene_generation: ["character", "persona"],
+  design_reference: ["avatar", "references"],
 };
 
 const ENTRY_ROLE_OPTIONS = [
@@ -858,11 +883,60 @@ const createDefaultEntry = (
   intervalTurns: null,
   systemPrompt: true,
   conditions: null,
+  promptEntryPayload: null,
   ...overrides,
 });
 
 const createExtraEntry = (overrides?: Partial<SystemPromptEntry>) =>
   createDefaultEntry("", { name: "Prompt Entry", systemPrompt: false, ...overrides });
+
+function getPromptEntryKind(entry: SystemPromptEntry): PromptEntryKind {
+  return entry.promptEntryPayload?.type === "imageSlot" ? "image" : "text";
+}
+
+function getPromptEntryImageSlot(entry: SystemPromptEntry): PromptEntryImageSlot | null {
+  if (entry.promptEntryPayload?.type !== "imageSlot") {
+    return null;
+  }
+  return entry.promptEntryPayload.slot;
+}
+
+function getAllowedImageEntrySlots(
+  promptType: PromptType,
+  currentSlot?: PromptEntryImageSlot | null,
+): PromptEntryImageSlot[] {
+  const base = promptType ? (IMAGE_ENTRY_SLOT_OPTIONS_BY_PROMPT_TYPE[promptType] ?? []) : [];
+  if (currentSlot && !base.includes(currentSlot)) {
+    return [...base, currentSlot];
+  }
+  return base;
+}
+
+function entryHasEditableContent(entry: SystemPromptEntry) {
+  return entry.content.trim().length > 0 || getPromptEntryKind(entry) === "image";
+}
+
+function getEntryKindSummary(entry: SystemPromptEntry) {
+  const slot = getPromptEntryImageSlot(entry);
+  if (!slot) {
+    return "Text";
+  }
+  return `Image · ${IMAGE_ENTRY_SLOT_LABELS[slot]}`;
+}
+
+function getEntryPreviewText(entry: SystemPromptEntry) {
+  const trimmed = entry.content.trim();
+  if (trimmed) {
+    return trimmed;
+  }
+
+  const slot = getPromptEntryImageSlot(entry);
+  if (slot) {
+    return `${IMAGE_ENTRY_SLOT_LABELS[slot]} attachment`;
+  }
+
+  return "Click to edit this entry.";
+}
 
 function getInjectionModeHint(position: SystemPromptEntry["injectionPosition"]) {
   switch (position) {
@@ -1316,6 +1390,7 @@ function PromptEntryConditionsPanel({
 
 function PromptEntryEditorForm({
   entry,
+  promptType,
   onUpdate,
   onToggle,
   onTextareaRef,
@@ -1323,6 +1398,7 @@ function PromptEntryEditorForm({
   contentRows = 20,
 }: {
   entry: SystemPromptEntry;
+  promptType: PromptType;
   onUpdate: (updates: Partial<SystemPromptEntry>) => void;
   onToggle?: () => void;
   onTextareaRef: (id: string, el: HTMLTextAreaElement | null) => void;
@@ -1330,6 +1406,29 @@ function PromptEntryEditorForm({
   contentRows?: number;
 }) {
   const toggleId = `entry-editor-toggle-${entry.id}`;
+  const entryKind = getPromptEntryKind(entry);
+  const currentSlot = getPromptEntryImageSlot(entry);
+  const imageSlotOptions = getAllowedImageEntrySlots(promptType, currentSlot);
+  const supportsImageEntries = imageSlotOptions.length > 0 || entryKind === "image";
+  const canSelectImageKind = supportsImageEntries && (!entry.systemPrompt || entryKind === "image");
+  const selectedImageSlot = currentSlot ?? imageSlotOptions[0] ?? "character";
+  const roleValue = entryKind === "image" ? "user" : entry.role;
+  const roleDescription =
+    entryKind === "image"
+      ? "Image attachment entries are always sent as user content."
+      : "Which role the model receives for this entry.";
+  const contentLabel = entryKind === "image" ? "Attachment Note" : "Prompt Content";
+  const contentHint =
+    entryKind === "image"
+      ? "Optional text sent alongside the attached image slot. Leave blank if the image alone is enough."
+      : "Write the prompt entry exactly as it should be sent.";
+  const contentPlaceholder =
+    entryKind === "image"
+      ? "Optional note for this image attachment..."
+      : "Write the prompt entry...";
+  const showsLegacyImageToken = Object.values(IMAGE_ENTRY_SLOT_TOKENS).includes(
+    entry.content.trim(),
+  );
 
   return (
     <div className="space-y-5">
@@ -1385,11 +1484,105 @@ function PromptEntryEditorForm({
         </div>
 
         <div className="space-y-1.5">
+          <label className="text-xs font-medium text-fg/55">Entry Kind</label>
+          <select
+            value={entryKind}
+            onChange={(event) => {
+              const nextKind = event.target.value as PromptEntryKind;
+              if (nextKind === "image") {
+                const nextSlot = imageSlotOptions[0] ?? "character";
+                onUpdate({
+                  promptEntryPayload: {
+                    type: "imageSlot",
+                    slot: nextSlot,
+                  },
+                  role: "user",
+                  injectionPosition:
+                    entry.injectionPosition === "relative" ? "inChat" : entry.injectionPosition,
+                  content:
+                    entry.content.trim().length > 0 &&
+                    !Object.values(IMAGE_ENTRY_SLOT_TOKENS).includes(entry.content.trim())
+                      ? entry.content
+                      : "",
+                });
+                return;
+              }
+
+              onUpdate({
+                promptEntryPayload: null,
+                content: Object.values(IMAGE_ENTRY_SLOT_TOKENS).includes(entry.content.trim())
+                  ? ""
+                  : entry.content,
+              });
+            }}
+            className="h-10 w-full rounded-lg border border-fg/10 bg-fg/5 px-3 text-sm text-fg"
+          >
+            <option value="text">Text</option>
+            {canSelectImageKind ? <option value="image">Image attachment</option> : null}
+          </select>
+          <p className="text-[11px] text-fg/45">
+            {entryKind === "image"
+              ? "Attach a runtime image slot instead of relying on raw {{image[...]}} tokens."
+              : canSelectImageKind
+                ? "Standard text content. Switch to image attachment for reference-image entries."
+                : "Standard text content for this prompt type."}
+          </p>
+        </div>
+      </div>
+
+      {entryKind === "image" ? (
+        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-fg/55">Attachment Slot</label>
+            <select
+              value={selectedImageSlot}
+              onChange={(event) => {
+                const nextSlot = event.target.value as PromptEntryImageSlot;
+                onUpdate({
+                  promptEntryPayload: {
+                    type: "imageSlot",
+                    slot: nextSlot,
+                  },
+                  role: "user",
+                  content:
+                    entry.content.trim().length === 0 ||
+                    Object.values(IMAGE_ENTRY_SLOT_TOKENS).includes(entry.content.trim())
+                      ? ""
+                      : entry.content,
+                });
+              }}
+              className="h-10 w-full rounded-lg border border-fg/10 bg-fg/5 px-3 text-sm text-fg"
+            >
+              {imageSlotOptions.map((slot) => (
+                <option key={slot} value={slot}>
+                  {IMAGE_ENTRY_SLOT_LABELS[slot]}
+                </option>
+              ))}
+            </select>
+            <p className="text-[11px] text-fg/45">
+              Picks which runtime image source this entry attaches.
+            </p>
+          </div>
+
+          <div className="rounded-lg border border-fg/10 bg-fg/4 px-3 py-2.5">
+            <p className="text-[10px] font-medium uppercase tracking-wide text-fg/35">
+              Attachment Behavior
+            </p>
+            <p className="mt-1.5 text-sm leading-relaxed text-fg/72">
+              Sends the selected image slot as user content. Any note below is sent with it.
+            </p>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="space-y-1.5">
           <label className="text-xs font-medium text-fg/55">Role</label>
           <select
-            value={entry.role}
+            value={roleValue}
             onChange={(event) => onUpdate({ role: event.target.value as any })}
-            className="h-10 w-full rounded-lg border border-fg/10 bg-fg/5 px-3 text-sm text-fg"
+            disabled={entryKind === "image"}
+            className="h-10 w-full rounded-lg border border-fg/10 bg-fg/5 px-3 text-sm text-fg disabled:cursor-not-allowed disabled:opacity-60"
           >
             {ENTRY_ROLE_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
@@ -1397,37 +1590,37 @@ function PromptEntryEditorForm({
               </option>
             ))}
           </select>
-          <p className="text-[11px] text-fg/45">Which role the model receives for this entry.</p>
+          <p className="text-[11px] text-fg/45">{roleDescription}</p>
         </div>
-      </div>
 
-      <div className="space-y-1.5">
-        <label className="text-xs font-medium text-fg/55">Placement</label>
-        <select
-          value={entry.injectionPosition}
-          onChange={(event) => {
-            const nextPosition = event.target.value as SystemPromptEntry["injectionPosition"];
-            onUpdate({
-              injectionPosition: nextPosition,
-              conditionalMinMessages:
-                nextPosition === "conditional"
-                  ? (entry.conditionalMinMessages ?? DEFAULT_CONDITIONAL_MIN_MESSAGES)
-                  : (entry.conditionalMinMessages ?? null),
-              intervalTurns:
-                nextPosition === "interval"
-                  ? (entry.intervalTurns ?? DEFAULT_INTERVAL_TURNS)
-                  : (entry.intervalTurns ?? null),
-            });
-          }}
-          className="h-10 w-full rounded-lg border border-fg/10 bg-fg/5 px-3 text-sm text-fg"
-        >
-          {ENTRY_POSITION_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-        <p className="text-[11px] text-fg/45">{getInjectionModeHint(entry.injectionPosition)}</p>
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-fg/55">Placement</label>
+          <select
+            value={entry.injectionPosition}
+            onChange={(event) => {
+              const nextPosition = event.target.value as SystemPromptEntry["injectionPosition"];
+              onUpdate({
+                injectionPosition: nextPosition,
+                conditionalMinMessages:
+                  nextPosition === "conditional"
+                    ? (entry.conditionalMinMessages ?? DEFAULT_CONDITIONAL_MIN_MESSAGES)
+                    : (entry.conditionalMinMessages ?? null),
+                intervalTurns:
+                  nextPosition === "interval"
+                    ? (entry.intervalTurns ?? DEFAULT_INTERVAL_TURNS)
+                    : (entry.intervalTurns ?? null),
+              });
+            }}
+            className="h-10 w-full rounded-lg border border-fg/10 bg-fg/5 px-3 text-sm text-fg"
+          >
+            {ENTRY_POSITION_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <p className="text-[11px] text-fg/45">{getInjectionModeHint(entry.injectionPosition)}</p>
+        </div>
       </div>
 
       <div
@@ -1493,7 +1686,7 @@ function PromptEntryEditorForm({
       <PromptEntryConditionsPanel entry={entry} onUpdate={onUpdate} />
 
       <div className="space-y-1.5">
-        <label className="text-xs font-medium text-fg/55">Prompt Content</label>
+        <label className="text-xs font-medium text-fg/55">{contentLabel}</label>
         <textarea
           ref={(el) => {
             onTextareaRef(entry.id, el);
@@ -1503,8 +1696,14 @@ function PromptEntryEditorForm({
           onFocus={() => onTextareaFocus(entry.id)}
           rows={contentRows}
           className="w-full resize-none rounded-xl border border-fg/10 bg-surface-el/30 px-3.5 py-3 font-mono text-sm leading-relaxed text-fg placeholder-fg/30"
-          placeholder="Write the prompt entry..."
+          placeholder={contentPlaceholder}
         />
+        <p className="text-[11px] text-fg/45">{contentHint}</p>
+        {entryKind === "image" && showsLegacyImageToken ? (
+          <p className="text-[11px] text-fg/38">
+            Legacy token detected. It is no longer required once this entry has an image attachment.
+          </p>
+        ) : null}
       </div>
     </div>
   );
@@ -1512,6 +1711,7 @@ function PromptEntryEditorForm({
 
 function DesktopEntryEditorDrawer({
   entry,
+  promptType,
   isOpen,
   onClose,
   onUpdate,
@@ -1520,6 +1720,7 @@ function DesktopEntryEditorDrawer({
   onTextareaFocus,
 }: {
   entry: SystemPromptEntry | null;
+  promptType: PromptType;
   isOpen: boolean;
   onClose: () => void;
   onUpdate: (id: string, updates: Partial<SystemPromptEntry>) => void;
@@ -1578,6 +1779,7 @@ function DesktopEntryEditorDrawer({
             <div className="flex-1 overflow-y-auto px-5 py-5">
               <PromptEntryEditorForm
                 entry={entry}
+                promptType={promptType}
                 onUpdate={(updates) => onUpdate(entry.id, updates)}
                 onToggle={() => onToggle(entry.id)}
                 onTextareaRef={onTextareaRef}
@@ -1594,6 +1796,7 @@ function DesktopEntryEditorDrawer({
 
 function MobileEntryEditorPage({
   entry,
+  promptType,
   isOpen,
   onClose,
   onUpdate,
@@ -1602,6 +1805,7 @@ function MobileEntryEditorPage({
   onTextareaFocus,
 }: {
   entry: SystemPromptEntry | null;
+  promptType: PromptType;
   isOpen: boolean;
   onClose: () => void;
   onUpdate: (id: string, updates: Partial<SystemPromptEntry>) => void;
@@ -1637,6 +1841,7 @@ function MobileEntryEditorPage({
           <div className="flex-1 overflow-y-auto px-4 py-4">
             <PromptEntryEditorForm
               entry={entry}
+              promptType={promptType}
               onUpdate={(updates) => onUpdate(entry.id, updates)}
               onToggle={() => onToggle(entry.id)}
               onTextareaRef={onTextareaRef}
@@ -1655,6 +1860,25 @@ const entriesToContent = (entries: SystemPromptEntry[]) =>
     .map((entry) => entry.content.trim())
     .filter(Boolean)
     .join("\n\n");
+
+function entriesToValidationSource(entries: SystemPromptEntry[]) {
+  return entries
+    .flatMap((entry) => {
+      const parts: string[] = [];
+      const trimmed = entry.content.trim();
+      if (trimmed) {
+        parts.push(trimmed);
+      }
+
+      const slot = getPromptEntryImageSlot(entry);
+      if (slot) {
+        parts.push(IMAGE_ENTRY_SLOT_TOKENS[slot]);
+      }
+
+      return parts;
+    })
+    .join("\n\n");
+}
 
 const ensureSystemEntry = (entries: SystemPromptEntry[]) => {
   if (entries.length === 0) return [createDefaultEntry("")];
@@ -1686,7 +1910,8 @@ function PromptEntryCard({
   const autoScroll = useDragEdgeAutoScroll();
   const toggleId = `prompt-entry-${entry.id}`;
   const conditionSummary = getEntryActivationSummary(entry);
-  const contentPreview = entry.content.trim() || "Click to edit this entry.";
+  const contentPreview = getEntryPreviewText(entry);
+  const isImageEntry = getPromptEntryKind(entry) === "image";
 
   return (
     <Reorder.Item
@@ -1815,7 +2040,13 @@ function PromptEntryCard({
             <div className="space-y-3 pt-0.5">
               <div className="rounded-lg border border-fg/10 bg-surface-el/16 px-3.5 py-3">
                 <div className="flex flex-wrap gap-x-6 gap-y-3">
-                  <SummaryField label="Role" value={getEntryRoleLabel(entry.role)} />
+                  <SummaryField
+                    label="Role"
+                    value={
+                      getEntryKindSummary(entry) === "Text" ? getEntryRoleLabel(entry.role) : "User"
+                    }
+                  />
+                  <SummaryField label="Kind" value={getEntryKindSummary(entry)} />
                   <SummaryField
                     label="Placement"
                     value={getEntryPositionLabel(entry.injectionPosition)}
@@ -1832,24 +2063,47 @@ function PromptEntryCard({
                 {getInjectionModeHint(entry.injectionPosition)}
               </p>
 
-              <button
-                type="button"
-                onClick={onOpenEditor}
-                className={cn(
-                  "block w-full rounded-xl border border-fg/10 bg-surface-el/20 p-3 text-left transition-colors",
-                  "hover:border-fg/20 hover:bg-surface-el/30",
-                )}
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-[11px] font-medium uppercase tracking-wide text-fg/40">
-                    Prompt Content
-                  </span>
-                  <span className="text-[11px] text-fg/45">Open editor</span>
+              {isImageEntry ? (
+                <div className="flex items-center justify-between gap-3 rounded-xl border border-fg/10 bg-surface-el/20 px-3.5 py-3">
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-medium uppercase tracking-wide text-fg/40">
+                      Prompt Content
+                    </p>
+                    <p className="mt-1 truncate text-sm text-fg/72">
+                      {entry.content.trim() || "No note added."}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onOpenEditor}
+                    className={cn(
+                      "shrink-0 rounded-md border border-fg/10 px-2.5 py-1.5 text-xs font-medium text-fg/62 transition-colors",
+                      "hover:border-fg/20 hover:bg-surface-el/30 hover:text-fg",
+                    )}
+                  >
+                    Edit
+                  </button>
                 </div>
-                <div className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap rounded-lg border border-fg/10 bg-black/10 px-3.5 py-3 font-mono text-sm leading-relaxed text-fg/82">
-                  {contentPreview}
-                </div>
-              </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={onOpenEditor}
+                  className={cn(
+                    "block w-full rounded-xl border border-fg/10 bg-surface-el/20 p-3 text-left transition-colors",
+                    "hover:border-fg/20 hover:bg-surface-el/30",
+                  )}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-[11px] font-medium uppercase tracking-wide text-fg/40">
+                      Prompt Content
+                    </span>
+                    <span className="text-[11px] text-fg/45">Open editor</span>
+                  </div>
+                  <div className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap rounded-lg border border-fg/10 bg-black/10 px-3.5 py-3 font-mono text-sm leading-relaxed text-fg/82">
+                    {contentPreview}
+                  </div>
+                </button>
+              )}
             </div>
           </motion.div>
         )}
@@ -2019,7 +2273,7 @@ function PromptEntryListItem({
           <div className="min-w-0">
             <p className="text-sm font-medium text-fg truncate">{entry.name}</p>
             <p className="text-[11px] text-fg/40 uppercase tracking-wide">
-              {entry.role} · {entry.injectionPosition}
+              {getEntryKindSummary(entry)} · {entry.injectionPosition}
             </p>
             {entry.conditions && (
               <p className="mt-0.5 text-[11px] text-fg/35 truncate">{conditionSummary}</p>
@@ -2249,7 +2503,7 @@ export function EditPromptTemplate() {
   const charCountColor =
     charCount > 8000 ? "text-danger/80" : charCount > 5000 ? "text-warning/80" : "text-fg/40";
 
-  const hasEntryContent = entries.some((entry) => entry.content.trim().length > 0);
+  const hasEntryContent = entries.some((entry) => entryHasEditableContent(entry));
   const hasContent = content.trim().length > 0;
   const conditionValidationErrors = useMemo(
     () =>
@@ -2275,6 +2529,7 @@ export function EditPromptTemplate() {
         intervalTurns: entry.intervalTurns ?? null,
         systemPrompt: entry.systemPrompt,
         conditions: entry.conditions ?? null,
+        promptEntryPayload: entry.promptEntryPayload ?? null,
       })),
     );
   const isDirty =
@@ -2353,7 +2608,7 @@ export function EditPromptTemplate() {
 
   useEffect(() => {
     if (isAppDefault && requiredVariables.length > 0) {
-      const source = usesEntryEditor ? entriesToContent(entries) : content;
+      const source = usesEntryEditor ? entriesToValidationSource(entries) : content;
       const missing = requiredVariables.filter((v) => !source.includes(v));
       setMissingVariables(missing);
     }
@@ -2527,13 +2782,21 @@ export function EditPromptTemplate() {
     const entriesSnapshot = entriesRef.current;
     const nameSnapshot = nameRef.current.trim();
     const contentSnapshot = contentRef.current;
+    const validationSource = usesEntryEditor
+      ? entriesToValidationSource(entriesSnapshot)
+      : contentSnapshot;
     const hasContent = usesEntryEditor
-      ? entriesSnapshot.some((entry) => entry.content.trim().length > 0)
+      ? entriesSnapshot.some((entry) => entryHasEditableContent(entry))
       : contentSnapshot.trim().length > 0;
     if (!nameSnapshot || !hasContent) return;
 
-    if (isAppDefault && id && missingVariables.length > 0) {
-      alert(`Cannot save: Missing required variables: ${missingVariables.join(", ")}`);
+    const currentMissingVariables =
+      isAppDefault && requiredVariables.length > 0
+        ? requiredVariables.filter((variable) => !validationSource.includes(variable))
+        : [];
+
+    if (isAppDefault && id && currentMissingVariables.length > 0) {
+      alert(`Cannot save: Missing required variables: ${currentMissingVariables.join(", ")}`);
       return;
     }
 
@@ -2900,10 +3163,10 @@ export function EditPromptTemplate() {
                 {entriesToShow.map((entry) => (
                   <div key={entry.id} className="space-y-1">
                     <div className="text-[11px] uppercase tracking-wide text-fg/40">
-                      {entry.role} · {entry.name}
+                      {getEntryKindSummary(entry)} · {entry.name}
                     </div>
                     <pre className="whitespace-pre-wrap text-xs leading-relaxed text-fg/80 font-mono">
-                      {entry.content || "No content"}
+                      {entry.content || getEntryPreviewText(entry)}
                     </pre>
                   </div>
                 ))}
@@ -3538,6 +3801,7 @@ export function EditPromptTemplate() {
 
       <MobileEntryEditorPage
         entry={selectedMobileEntry}
+        promptType={promptType}
         isOpen={!!mobileEntryEditorId}
         onClose={() => setMobileEntryEditorId(null)}
         onUpdate={handleEntryUpdate}
@@ -3552,6 +3816,7 @@ export function EditPromptTemplate() {
 
       <DesktopEntryEditorDrawer
         entry={selectedDesktopEntry}
+        promptType={promptType}
         isOpen={!!desktopEntryEditorId}
         onClose={() => setDesktopEntryEditorId(null)}
         onUpdate={handleEntryUpdate}

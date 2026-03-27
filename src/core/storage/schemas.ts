@@ -115,6 +115,13 @@ export const SystemPromptEntrySchema = z.object({
   intervalTurns: z.number().int().min(1).nullable().optional(),
   systemPrompt: z.boolean().default(false),
   conditions: PromptEntryConditionSchema.nullable().optional(),
+  promptEntryPayload: z
+    .object({
+      type: z.literal("imageSlot"),
+      slot: z.enum(["character", "persona", "avatar", "references"]),
+    })
+    .nullable()
+    .optional(),
 });
 export type SystemPromptEntry = z.infer<typeof SystemPromptEntrySchema>;
 

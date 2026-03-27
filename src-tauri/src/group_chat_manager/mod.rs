@@ -3940,6 +3940,7 @@ fn build_group_system_prompt(
                     interval_turns: None,
                     system_prompt: true,
                     conditions: None,
+                    prompt_entry_payload: None,
                 }],
                 false,
             )
@@ -4078,6 +4079,7 @@ fn build_group_system_prompt(
             interval_turns: None,
             system_prompt: true,
             conditions: None,
+            prompt_entry_payload: None,
         }]
     } else {
         template_entries
@@ -4189,6 +4191,7 @@ fn build_group_system_prompt(
             interval_turns: None,
             system_prompt: true,
             conditions: None,
+            prompt_entry_payload: None,
         });
     }
 
@@ -4266,6 +4269,7 @@ fn condense_entries_into_single_system_message(
         interval_turns: None,
         system_prompt: true,
         conditions: None,
+        prompt_entry_payload: None,
     }]
 }
 

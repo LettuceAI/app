@@ -76,6 +76,14 @@ type ExternalPromptEntry = {
   interval_turns?: number;
   forbid_overrides?: boolean;
   enabled?: boolean;
+  prompt_entry_payload?: {
+    type?: string;
+    slot?: string;
+  };
+  promptEntryPayload?: {
+    type?: string;
+    slot?: string;
+  };
 };
 
 type ExternalPromptExport = {
@@ -147,6 +155,12 @@ function entryToExternal(entry: SystemPromptEntry): ExternalPromptEntry {
     interval_turns: entry.intervalTurns ?? undefined,
     forbid_overrides: false,
     enabled: entry.enabled,
+    prompt_entry_payload: entry.promptEntryPayload
+      ? {
+          type: entry.promptEntryPayload.type,
+          slot: entry.promptEntryPayload.slot,
+        }
+      : undefined,
   };
 }
 
@@ -214,6 +228,20 @@ function toSystemEntry(
     // Imported entries should stay user-editable/deletable.
     systemPrompt: false,
     conditions: null,
+    promptEntryPayload:
+      (input.prompt_entry_payload?.type ?? input.promptEntryPayload?.type) === "imageSlot" &&
+      ["character", "persona", "avatar", "references"].includes(
+        input.prompt_entry_payload?.slot ?? input.promptEntryPayload?.slot ?? "",
+      )
+        ? {
+            type: "imageSlot",
+            slot: (input.prompt_entry_payload?.slot ?? input.promptEntryPayload?.slot) as
+              | "character"
+              | "persona"
+              | "avatar"
+              | "references",
+          }
+        : null,
   };
 }
 

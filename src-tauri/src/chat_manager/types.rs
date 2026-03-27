@@ -35,6 +35,21 @@ impl Default for PromptEntryPosition {
     }
 }
 
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum PromptEntryImageSlot {
+    Character,
+    Persona,
+    Avatar,
+    References,
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum PromptEntryPayload {
+    ImageSlot { slot: PromptEntryImageSlot },
+}
+
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum PromptEntryChatMode {
@@ -155,6 +170,8 @@ pub struct SystemPromptEntry {
     pub system_prompt: bool,
     #[serde(default)]
     pub conditions: Option<PromptEntryCondition>,
+    #[serde(default)]
+    pub prompt_entry_payload: Option<PromptEntryPayload>,
 }
 
 #[derive(Deserialize, Serialize, Clone)]

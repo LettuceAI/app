@@ -23,6 +23,31 @@ interface PreviewMessage {
   injectionInfo?: string;
 }
 
+type PromptEntryImageSlot = "character" | "persona" | "avatar" | "references";
+
+const IMAGE_SLOT_LABELS: Record<PromptEntryImageSlot, string> = {
+  character: "Character reference image",
+  persona: "Persona reference image",
+  avatar: "Avatar image",
+  references: "Reference images",
+};
+
+function entryHasPreviewContent(entry: SystemPromptEntry) {
+  return entry.content.trim() !== "" || entry.promptEntryPayload?.type === "imageSlot";
+}
+
+function getPreviewEntryContent(entry: SystemPromptEntry) {
+  if (entry.content.trim() !== "") {
+    return entry.content;
+  }
+
+  if (entry.promptEntryPayload?.type === "imageSlot") {
+    return `[Image attachment: ${IMAGE_SLOT_LABELS[entry.promptEntryPayload.slot]}]`;
+  }
+
+  return "";
+}
+
 function partitionEntries(
   entries: SystemPromptEntry[],
 ): [SystemPromptEntry[], SystemPromptEntry[]] {
@@ -30,7 +55,7 @@ function partitionEntries(
   const inChat: SystemPromptEntry[] = [];
   for (const entry of entries) {
     if (!entry.enabled && !entry.systemPrompt) continue;
-    if (entry.content.trim() === "") continue;
+    if (!entryHasPreviewContent(entry)) continue;
     switch (entry.injectionPosition) {
       case "relative":
         relative.push(entry);
@@ -75,7 +100,7 @@ function insertInChatEntries(
   const inserts: { pos: number; idx: number; entry: SystemPromptEntry }[] = [];
   entries.forEach((entry, idx) => {
     if (!shouldInsert(entry, turnCount)) return;
-    if (entry.content.trim() === "") return;
+    if (!entryHasPreviewContent(entry)) return;
     const pos = Math.max(0, baseLen - entry.injectionDepth);
     inserts.push({ pos, idx, entry });
   });
@@ -87,9 +112,9 @@ function insertInChatEntries(
     const insertAt = Math.min(pos + offset, result.length);
     result.splice(insertAt, 0, {
       id: `injected-${entry.id}`,
-      role: entry.role,
+      role: entry.promptEntryPayload?.type === "imageSlot" ? "user" : entry.role,
       label: entry.name,
-      content: entry.content,
+      content: getPreviewEntryContent(entry),
       isMock: false,
       entryId: entry.id,
       injectionInfo: formatInjectionInfo(entry),
@@ -102,15 +127,19 @@ function insertInChatEntries(
 
 function condenseEntries(entries: SystemPromptEntry[]): SystemPromptEntry[] {
   const merged = entries
-    .filter((e) => e.enabled || e.systemPrompt)
+    .filter((e) => (e.enabled || e.systemPrompt) && e.content.trim() !== "")
     .map((e) => e.content.trim())
     .filter(Boolean)
     .join("\n\n");
 
-  if (!merged.trim()) return [];
+  const imageEntries = entries.filter(
+    (entry) =>
+      (entry.enabled || entry.systemPrompt) && entry.promptEntryPayload?.type === "imageSlot",
+  );
 
-  return [
-    {
+  const condensed: SystemPromptEntry[] = [];
+  if (merged.trim()) {
+    condensed.push({
       id: "entry_condensed_system",
       name: "Condensed System Prompt",
       role: "system",
@@ -122,8 +151,12 @@ function condenseEntries(entries: SystemPromptEntry[]): SystemPromptEntry[] {
       intervalTurns: null,
       systemPrompt: true,
       conditions: null,
-    } satisfies SystemPromptEntry,
-  ];
+      promptEntryPayload: null,
+    } satisfies SystemPromptEntry);
+  }
+
+  condensed.push(...imageEntries);
+  return condensed;
 }
 
 function formatInjectionInfo(entry: SystemPromptEntry): string {
@@ -176,12 +209,12 @@ function assembleStructure(
   const result: PreviewMessage[] = [];
 
   for (const entry of relativeEntries) {
-    if (entry.content.trim() === "") continue;
+    if (!entryHasPreviewContent(entry)) continue;
     result.push({
       id: `relative-${entry.id}`,
-      role: entry.role,
+      role: entry.promptEntryPayload?.type === "imageSlot" ? "user" : entry.role,
       label: entry.name,
-      content: entry.content,
+      content: getPreviewEntryContent(entry),
       isMock: false,
       entryId: entry.id,
       injectionInfo: "relative",
