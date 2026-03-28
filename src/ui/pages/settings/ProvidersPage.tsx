@@ -87,6 +87,7 @@ export function ProvidersPage() {
   const showBaseUrl = !!editorProvider && (isLocalProvider || isCustomProvider || isEngineProvider);
   const customConfig = (editorProvider?.config ?? {}) as Record<string, any>;
   const customFetchModelsEnabled = customConfig.fetchModelsEnabled === true;
+  const providerStreamingEnabled = customConfig.streamingEnabled !== false;
   const customAuthMode = (customConfig.authMode ?? "header") as
     | "bearer"
     | "header"
@@ -101,6 +102,8 @@ export function ProvidersPage() {
       ? selectedCapability.requiredAuthHeaders.length > 0
       : true;
   const showApiKeyInput = providerRequiresApiKey && !isEngineProvider;
+  const showOfficialProviderStreamingToggle =
+    !!editorProvider && !isCustomProvider && selectedCapability?.supportsStream === true;
   const visibleCapabilities = isMobile
     ? capabilities.filter((provider) => provider.id !== "llamacpp")
     : capabilities;
@@ -384,6 +387,46 @@ export function ProvidersPage() {
                       placeholder="Bearer token for auth"
                       className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fgplaceholder-fg/40 focus:border-fg/30 focus:outline-none"
                     />
+                  </div>
+                )}
+                {showOfficialProviderStreamingToggle && (
+                  <div className="rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-fg/80">Streaming</p>
+                        <p className="text-[11px] text-fg/45">
+                          Stream responses for this provider when a feature allows it
+                        </p>
+                      </div>
+                      <div className="flex items-center">
+                        <input
+                          id="providerStreamingEnabled"
+                          type="checkbox"
+                          checked={providerStreamingEnabled}
+                          onChange={(e) =>
+                            updateEditorProvider({
+                              config: {
+                                ...editorProvider.config,
+                                streamingEnabled: e.target.checked,
+                              },
+                            })
+                          }
+                          className="peer sr-only"
+                        />
+                        <label
+                          htmlFor="providerStreamingEnabled"
+                          className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-all duration-200 ease-in-out ${
+                            providerStreamingEnabled ? "bg-accent" : "bg-fg/20"
+                          }`}
+                        >
+                          <span
+                            className={`inline-block h-5 w-5 transform rounded-full bg-fg shadow ring-0 transition duration-200 ease-in-out ${
+                              providerStreamingEnabled ? "translate-x-5" : "translate-x-0"
+                            }`}
+                          />
+                        </label>
+                      </div>
+                    </div>
                   </div>
                 )}
                 {isCustomProvider && (

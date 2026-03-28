@@ -1655,7 +1655,8 @@ pub async fn chat_generate_design_reference_description(
     }
 
     let system_role = adapter_for(credential).system_role().into_owned();
-    let streaming_enabled = stream.unwrap_or(true) && adapter_for(credential).supports_stream();
+    let streaming_enabled =
+        super::request_builder::effective_streaming_enabled(credential, stream.unwrap_or(true));
     let prompt_entries = render_design_reference_prompt_entries(
         &app,
         settings,
@@ -1747,8 +1748,8 @@ pub async fn chat_generate_design_reference_description(
         query: None,
         body: Some(built.body),
         timeout_ms: Some(crate::transport::DEFAULT_REQUEST_TIMEOUT_MS),
-        stream: Some(streaming_enabled),
-        request_id: request_id.clone(),
+        stream: Some(built.stream),
+        request_id: built.request_id.clone(),
         provider_id: Some(credential.provider_id.clone()),
     };
 

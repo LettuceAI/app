@@ -15,6 +15,21 @@ pub struct BuiltRequest {
     pub request_id: Option<String>,
 }
 
+pub fn provider_streaming_enabled(credential: &ProviderCredential) -> bool {
+    credential
+        .config
+        .as_ref()
+        .and_then(|config| config.get("streamingEnabled"))
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+}
+
+pub fn effective_streaming_enabled(credential: &ProviderCredential, should_stream: bool) -> bool {
+    should_stream
+        && adapter_for(credential).supports_stream()
+        && provider_streaming_enabled(credential)
+}
+
 /// Build a provider-specific chat API request (endpoint, headers, body).
 /// This function accepts messages normalized into OpenAI-style
 /// role/content objects and adapts them for each provider.
@@ -42,7 +57,7 @@ pub fn build_chat_request(
     let base_url = provider_base_url(credential);
 
     let adapter = adapter_for(credential);
-    let effective_stream = should_stream && adapter.supports_stream();
+    let effective_stream = effective_streaming_enabled(credential, should_stream);
     let url = adapter.build_url(&base_url, model_name, api_key, effective_stream);
     let headers = adapter.headers(api_key, credential.headers.as_ref());
 
@@ -54,7 +69,7 @@ pub fn build_chat_request(
         top_p,
         max_tokens,
         context_length,
-        should_stream,
+        effective_stream,
         frequency_penalty,
         presence_penalty,
         top_k,
@@ -75,7 +90,7 @@ pub fn build_chat_request(
         headers,
         body,
         stream: effective_stream,
-        request_id,
+        request_id: if effective_stream { request_id } else { None },
     }
 }
 

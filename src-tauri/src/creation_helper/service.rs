@@ -9,7 +9,7 @@ use super::types::*;
 use crate::abort_manager::AbortRegistry;
 use crate::api::{api_request, ApiRequest, ApiResponse};
 use crate::chat_manager::request as chat_request;
-use crate::chat_manager::request_builder::build_chat_request;
+use crate::chat_manager::request_builder::{build_chat_request, effective_streaming_enabled};
 use crate::chat_manager::sse::accumulate_tool_calls_from_sse;
 use crate::chat_manager::tooling::{parse_tool_calls, ToolChoice, ToolConfig};
 use crate::image_generator::commands::generate_image;
@@ -1322,11 +1322,7 @@ async fn send_creation_api_request(
             20480,
             None,
             streaming_enabled,
-            if streaming_enabled {
-                Some(stream_request_id.to_string())
-            } else {
-                None
-            },
+            Some(stream_request_id.to_string()),
             None,
             None,
             None,
@@ -1350,12 +1346,8 @@ async fn send_creation_api_request(
             query: None,
             body: Some(built.body),
             timeout_ms: Some(crate::transport::DEFAULT_REQUEST_TIMEOUT_MS),
-            stream: Some(streaming_enabled),
-            request_id: if streaming_enabled {
-                Some(stream_request_id.to_string())
-            } else {
-                None
-            },
+            stream: Some(built.stream),
+            request_id: built.request_id.clone(),
             provider_id: Some(provider_id.to_string()),
         };
 
@@ -2548,9 +2540,14 @@ async fn process_assistant_turn(
         api_key: Some(api_key.to_string()),
         base_url: base_url.map(|s| s.to_string()),
         default_model: None,
-        headers: None,
-        config: None,
+        headers: credential
+            .get("headers")
+            .cloned()
+            .and_then(|value| serde_json::from_value(value).ok()),
+        config: credential.get("config").cloned(),
     };
+
+    let streaming_enabled = effective_streaming_enabled(&cred, streaming_enabled);
 
     log_info(
         &app,
@@ -2932,11 +2929,7 @@ async fn process_assistant_turn(
             20480,
             None,
             streaming_enabled,
-            if streaming_enabled {
-                Some(stream_request_id.clone())
-            } else {
-                None
-            },
+            Some(stream_request_id.clone()),
             None,
             None,
             None,
@@ -2954,12 +2947,8 @@ async fn process_assistant_turn(
             query: None,
             body: Some(finalize_built.body),
             timeout_ms: Some(crate::transport::DEFAULT_REQUEST_TIMEOUT_MS),
-            stream: Some(streaming_enabled),
-            request_id: if streaming_enabled {
-                Some(stream_request_id.clone())
-            } else {
-                None
-            },
+            stream: Some(finalize_built.stream),
+            request_id: finalize_built.request_id.clone(),
             provider_id: Some(provider_id.to_string()),
         };
 
