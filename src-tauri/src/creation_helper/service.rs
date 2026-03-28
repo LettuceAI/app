@@ -1349,7 +1349,7 @@ async fn send_creation_api_request(
             headers: Some(built.headers),
             query: None,
             body: Some(built.body),
-            timeout_ms: Some(120_000),
+            timeout_ms: Some(crate::transport::DEFAULT_REQUEST_TIMEOUT_MS),
             stream: Some(streaming_enabled),
             request_id: if streaming_enabled {
                 Some(stream_request_id.to_string())
@@ -2953,7 +2953,7 @@ async fn process_assistant_turn(
             headers: Some(finalize_built.headers),
             query: None,
             body: Some(finalize_built.body),
-            timeout_ms: Some(120_000),
+            timeout_ms: Some(crate::transport::DEFAULT_REQUEST_TIMEOUT_MS),
             stream: Some(streaming_enabled),
             request_id: if streaming_enabled {
                 Some(stream_request_id.clone())

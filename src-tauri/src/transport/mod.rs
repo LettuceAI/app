@@ -7,10 +7,16 @@ use crate::chat_manager::types::NormalizedEvent;
 use crate::error::AppError;
 use crate::utils::{emit_debug, log_warn};
 
-pub fn build_client(timeout_ms: Option<u64>) -> Result<reqwest::Client, AppError> {
+pub const DEFAULT_REQUEST_TIMEOUT_MS: u64 = 30 * 60 * 1000;
+
+pub fn build_client(timeout_ms: Option<u64>, stream: bool) -> Result<reqwest::Client, AppError> {
     let mut builder = reqwest::Client::builder();
-    if let Some(ms) = timeout_ms {
-        builder = builder.timeout(Duration::from_millis(ms));
+    let normalized_timeout_ms = timeout_ms
+        .unwrap_or(DEFAULT_REQUEST_TIMEOUT_MS)
+        .min(DEFAULT_REQUEST_TIMEOUT_MS);
+    if let Some(ms) = (!stream).then_some(normalized_timeout_ms) {
+        let timeout = Duration::from_millis(ms);
+        builder = builder.timeout(timeout);
     }
     builder.build().map_err(AppError::from)
 }

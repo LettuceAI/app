@@ -261,7 +261,7 @@ pub async fn chat_generate_user_reply(
         headers: Some(built.headers),
         query: None,
         body: Some(built.body),
-        timeout_ms: Some(60_000),
+        timeout_ms: Some(crate::transport::DEFAULT_REQUEST_TIMEOUT_MS),
         stream: Some(streaming_enabled),
         request_id: request_id.clone(),
         provider_id: Some(credential.provider_id.clone()),

@@ -1,6 +1,7 @@
 use futures_util::StreamExt;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde_json::Value;
+use std::time::Duration;
 
 use crate::{
     abort_manager::AbortRegistry,
@@ -13,7 +14,7 @@ use crate::{
     serde_utils::{
         json_value_to_string, parse_body_to_value, sanitize_header_value, summarize_json,
     },
-    transport::emit_normalized,
+    transport::{emit_normalized, DEFAULT_REQUEST_TIMEOUT_MS},
     utils::{log_error, log_info, log_warn},
 };
 
@@ -212,6 +213,11 @@ pub(crate) async fn handle_streaming_response(
     let mut text_emitted = false;
     let mut decoder = sse::SseDecoder::new();
     let mut aborted = false;
+    let idle_timeout_ms = req
+        .timeout_ms
+        .unwrap_or(DEFAULT_REQUEST_TIMEOUT_MS)
+        .min(DEFAULT_REQUEST_TIMEOUT_MS);
+    let idle_timeout = Duration::from_millis(idle_timeout_ms);
 
     // Content filter: check if enabled and create streaming context
     let content_filter_active = {
@@ -223,8 +229,9 @@ pub(crate) async fn handle_streaming_response(
     let mut stream_filter_ctx = StreamFilterContext::new();
 
     loop {
+        let next_chunk = async { tokio::time::timeout(idle_timeout, body_stream.next()).await };
+
         tokio::select! {
-            // Check for abort signal
             _ = &mut abort_rx => {
                 log_warn(
                     app,
@@ -234,13 +241,12 @@ pub(crate) async fn handle_streaming_response(
                 aborted = true;
                 break;
             }
-            chunk_result = body_stream.next() => {
+            chunk_result = next_chunk => {
                 match chunk_result {
-                    Some(Ok(chunk)) => {
+                    Ok(Some(Ok(chunk))) => {
                         let text = String::from_utf8_lossy(&chunk).to_string();
                         let mut content_blocked = false;
                         for event in decoder.feed(&text, req.provider_id.as_deref()) {
-                            // Content filter: check deltas before emitting
                             if content_filter_active {
                                 if let NormalizedEvent::Delta { text: ref delta_text } = event {
                                     use tauri::Manager;
@@ -270,7 +276,6 @@ pub(crate) async fn handle_streaming_response(
                             emit_normalized(app, &request_id, event);
                         }
                         if content_blocked {
-                            // Unregister and return error to abort the command
                             use tauri::Manager;
                             let registry = app.state::<AbortRegistry>();
                             registry.unregister(&request_id);
@@ -278,21 +283,37 @@ pub(crate) async fn handle_streaming_response(
                         }
                         collected.extend_from_slice(&chunk);
                     }
-                    Some(Err(e)) => {
+                    Ok(Some(Err(e))) => {
                         log_error(
                             app,
                             "api_request",
                             format!("[api_request] stream error: {}", e),
                         );
-                        // Unregister before returning error
                         use tauri::Manager;
                         let registry = app.state::<AbortRegistry>();
                         registry.unregister(&request_id);
                         return Err(e.to_string());
                     }
-                    None => {
-                        // Stream complete
+                    Ok(None) => {
                         break;
+                    }
+                    Err(_) => {
+                        log_error(
+                            app,
+                            "api_request",
+                            format!(
+                                "[api_request] stream idle timeout after {}ms: {}",
+                                idle_timeout_ms,
+                                url_for_log
+                            ),
+                        );
+                        use tauri::Manager;
+                        let registry = app.state::<AbortRegistry>();
+                        registry.unregister(&request_id);
+                        return Err(format!(
+                            "Streaming response timed out after {}ms of inactivity",
+                            idle_timeout_ms
+                        ));
                     }
                 }
             }

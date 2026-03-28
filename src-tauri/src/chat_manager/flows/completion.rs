@@ -511,7 +511,7 @@ impl CompletionFlow {
                 headers: Some(built.headers),
                 query: None,
                 body: Some(built.body),
-                timeout_ms: Some(900_000),
+                timeout_ms: Some(crate::transport::DEFAULT_REQUEST_TIMEOUT_MS),
                 stream: Some(built.stream),
                 request_id: built.request_id.clone(),
                 provider_id: Some(attempt_credential.provider_id.clone()),

@@ -53,14 +53,6 @@ pub async fn api_request(app: tauri::AppHandle, req: ApiRequest) -> Result<ApiRe
         return llama_cpp::handle_local_request(app, req).await;
     }
 
-    let client = match transport::build_client(req.timeout_ms) {
-        Ok(c) => c,
-        Err(e) => {
-            log_error(&app, "api_request", format!("client build error: {}", e));
-            return Err(e.to_string());
-        }
-    };
-
     let method_str = req.method.clone().unwrap_or_else(|| "POST".to_string());
     let url_for_log = req.url.clone();
     let method = match Method::from_bytes(method_str.as_bytes()) {
@@ -87,6 +79,17 @@ pub async fn api_request(app: tauri::AppHandle, req: ApiRequest) -> Result<ApiRe
         .map(|query| query.keys().cloned().collect::<Vec<String>>());
     let body_preview = req.body.as_ref().map(crate::serde_utils::summarize_json);
 
+    let stream = req.stream.unwrap_or(false);
+    let request_id = req.request_id.clone();
+
+    let client = match transport::build_client(req.timeout_ms, stream) {
+        Ok(c) => c,
+        Err(e) => {
+            log_error(&app, "api_request", format!("client build error: {}", e));
+            return Err(e.to_string());
+        }
+    };
+
     let mut request_builder = client.request(method.clone(), &req.url);
 
     log_info(
@@ -98,9 +101,6 @@ pub async fn api_request(app: tauri::AppHandle, req: ApiRequest) -> Result<ApiRe
     request_builder = apply_query_params(&app, request_builder, &req);
     request_builder = apply_headers(&app, request_builder, &req);
     request_builder = apply_body(&app, request_builder, &req);
-
-    let stream = req.stream.unwrap_or(false);
-    let request_id = req.request_id.clone();
 
     log_info(
         &app,
