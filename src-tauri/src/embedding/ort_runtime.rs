@@ -19,6 +19,20 @@ fn macos_primary_dylib_name() -> String {
     format!("libonnxruntime.{}.dylib", ORT_VERSION)
 }
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn leaked_macos_primary_dylib_name() -> &'static str {
+    Box::leak(macos_primary_dylib_name().into_boxed_str())
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn macos_archive_name(target_arch: &str) -> Option<&'static str> {
+    match target_arch {
+        "aarch64" => Some("arm64"),
+        "x86_64" => Some("x86_64"),
+        _ => None,
+    }
+}
+
 pub(super) async fn ensure_ort_init(app: &AppHandle) -> Result<(), String> {
     if ORT_INITIALIZED.load(Ordering::Acquire) {
         return Ok(());
@@ -169,8 +183,8 @@ async fn resolve_or_download_onnxruntime(app: &AppHandle) -> Result<PathBuf, Str
     fs::create_dir_all(&ort_dir)
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 
-    let download_info = ort_download_info()?;
-    let dest_path = ort_dir.join(download_info.lib_name);
+    let download_infos = ort_download_info_candidates()?;
+    let dest_path = ort_dir.join(download_infos[0].lib_name);
     if is_nonempty_file(&dest_path) {
         if cfg!(target_os = "windows") {
             let shared = ort_dir.join("onnxruntime_providers_shared.dll");
@@ -188,31 +202,67 @@ async fn resolve_or_download_onnxruntime(app: &AppHandle) -> Result<PathBuf, Str
     }
 
     let client = reqwest::Client::new();
-    let response = client
-        .get(&download_info.archive_url)
-        .send()
-        .await
-        .map_err(|e| {
-            crate::utils::err_msg(
+    let mut last_error = None;
+
+    for download_info in &download_infos {
+        let response = match client.get(&download_info.archive_url).send().await {
+            Ok(response) => response,
+            Err(e) => {
+                let err = crate::utils::err_msg(
+                    module_path!(),
+                    line!(),
+                    format!(
+                        "Failed to download ONNX Runtime archive {}: {}",
+                        download_info.archive_url, e
+                    ),
+                );
+                crate::utils::log_warn(app, "embedding_debug", err.clone());
+                last_error = Some(err);
+                continue;
+            }
+        };
+        if !response.status().is_success() {
+            let err = crate::utils::err_msg(
                 module_path!(),
                 line!(),
-                format!("Failed to download ONNX Runtime: {}", e),
-            )
-        })?;
-    if !response.status().is_success() {
-        return Err(crate::utils::err_msg(
-            module_path!(),
-            line!(),
-            format!("Failed to download ONNX Runtime: {}", response.status()),
-        ));
+                format!(
+                    "Failed to download ONNX Runtime archive {}: HTTP {}",
+                    download_info.archive_url,
+                    response.status()
+                ),
+            );
+            crate::utils::log_warn(app, "embedding_debug", err.clone());
+            last_error = Some(err);
+            continue;
+        }
+
+        let bytes = response
+            .bytes()
+            .await
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+
+        match extract_onnxruntime_archive(download_info, &bytes, &dest_path, &ort_dir) {
+            Ok(()) => {
+                last_error = None;
+                break;
+            }
+            Err(err) => {
+                crate::utils::log_warn(
+                    app,
+                    "embedding_debug",
+                    format!(
+                        "Failed to extract ONNX Runtime archive {}: {}",
+                        download_info.archive_url, err
+                    ),
+                );
+                last_error = Some(err);
+            }
+        }
     }
 
-    let bytes = response
-        .bytes()
-        .await
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-
-    extract_onnxruntime_archive(&download_info, &bytes, &dest_path, &ort_dir)?;
+    if let Some(err) = last_error {
+        return Err(err);
+    }
 
     if !is_nonempty_file(&dest_path) {
         return Err(crate::utils::err_msg(
@@ -263,10 +313,10 @@ struct OrtDownloadInfo {
 }
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
-fn ort_download_info() -> Result<OrtDownloadInfo, String> {
+fn ort_download_info_candidates() -> Result<Vec<OrtDownloadInfo>, String> {
     let (os, arch) = (std::env::consts::OS, std::env::consts::ARCH);
     match (os, arch) {
-        ("windows", "x86_64") => Ok(OrtDownloadInfo {
+        ("windows", "x86_64") => Ok(vec![OrtDownloadInfo {
             archive_url: format!(
                 "https://github.com/microsoft/onnxruntime/releases/download/v{0}/onnxruntime-win-x64-{0}.zip",
                 ORT_VERSION
@@ -274,8 +324,8 @@ fn ort_download_info() -> Result<OrtDownloadInfo, String> {
             lib_path_in_archive: format!("onnxruntime-win-x64-{}/lib/onnxruntime.dll", ORT_VERSION),
             lib_name: "onnxruntime.dll",
             lib_dir_in_archive: Some(format!("onnxruntime-win-x64-{}/lib/", ORT_VERSION)),
-        }),
-        ("linux", "x86_64") => Ok(OrtDownloadInfo {
+        }]),
+        ("linux", "x86_64") => Ok(vec![OrtDownloadInfo {
             archive_url: format!(
                 "https://github.com/microsoft/onnxruntime/releases/download/v{0}/onnxruntime-linux-x64-{0}.tgz",
                 ORT_VERSION
@@ -286,33 +336,46 @@ fn ort_download_info() -> Result<OrtDownloadInfo, String> {
             ),
             lib_name: "libonnxruntime.so",
             lib_dir_in_archive: None,
-        }),
-        ("macos", "aarch64") => Ok(OrtDownloadInfo {
-            archive_url: format!(
-                "https://github.com/microsoft/onnxruntime/releases/download/v{0}/onnxruntime-osx-universal2-{0}.tgz",
-                ORT_VERSION
-            ),
-            lib_path_in_archive: format!(
-                "onnxruntime-osx-universal2-{}/lib/{}",
-                ORT_VERSION,
-                macos_primary_dylib_name()
-            ),
-            lib_name: Box::leak(macos_primary_dylib_name().into_boxed_str()),
-            lib_dir_in_archive: Some(format!("onnxruntime-osx-universal2-{}/lib/", ORT_VERSION)),
-        }),
-        ("macos", "x86_64") => Ok(OrtDownloadInfo {
-            archive_url: format!(
-                "https://github.com/microsoft/onnxruntime/releases/download/v{0}/onnxruntime-osx-universal2-{0}.tgz",
-                ORT_VERSION
-            ),
-            lib_path_in_archive: format!(
-                "onnxruntime-osx-universal2-{}/lib/{}",
-                ORT_VERSION,
-                macos_primary_dylib_name()
-            ),
-            lib_name: Box::leak(macos_primary_dylib_name().into_boxed_str()),
-            lib_dir_in_archive: Some(format!("onnxruntime-osx-universal2-{}/lib/", ORT_VERSION)),
-        }),
+        }]),
+        ("macos", "aarch64") | ("macos", "x86_64") => {
+            let mut candidates = Vec::new();
+
+            if let Some(archive_name) = macos_archive_name(arch) {
+                candidates.push(OrtDownloadInfo {
+                    archive_url: format!(
+                        "https://github.com/microsoft/onnxruntime/releases/download/v{0}/onnxruntime-osx-{1}-{0}.tgz",
+                        ORT_VERSION, archive_name
+                    ),
+                    lib_path_in_archive: format!(
+                        "onnxruntime-osx-{}-{}/lib/{}",
+                        archive_name,
+                        ORT_VERSION,
+                        macos_primary_dylib_name()
+                    ),
+                    lib_name: leaked_macos_primary_dylib_name(),
+                    lib_dir_in_archive: Some(format!(
+                        "onnxruntime-osx-{}-{}/lib/",
+                        archive_name, ORT_VERSION
+                    )),
+                });
+            }
+
+            candidates.push(OrtDownloadInfo {
+                archive_url: format!(
+                    "https://github.com/microsoft/onnxruntime/releases/download/v{0}/onnxruntime-osx-universal2-{0}.tgz",
+                    ORT_VERSION
+                ),
+                lib_path_in_archive: format!(
+                    "onnxruntime-osx-universal2-{}/lib/{}",
+                    ORT_VERSION,
+                    macos_primary_dylib_name()
+                ),
+                lib_name: leaked_macos_primary_dylib_name(),
+                lib_dir_in_archive: Some(format!("onnxruntime-osx-universal2-{}/lib/", ORT_VERSION)),
+            });
+
+            Ok(candidates)
+        }
         _ => Err(crate::utils::err_msg(
             module_path!(),
             line!(),

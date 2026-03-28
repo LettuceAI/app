@@ -11,6 +11,38 @@ fn macos_primary_dylib_name() -> String {
     format!("libonnxruntime.{}.dylib", ORT_VERSION)
 }
 
+fn macos_archive_name(target_arch: &str) -> Option<&'static str> {
+    match target_arch {
+        "arm64" => Some("arm64"),
+        "x86_64" => Some("x86_64"),
+        _ => None,
+    }
+}
+
+fn macos_archive_candidates(target_arch: &str) -> Vec<(String, String)> {
+    let mut candidates = Vec::new();
+
+    if let Some(archive_name) = macos_archive_name(target_arch) {
+        candidates.push((
+            format!(
+                "https://github.com/microsoft/onnxruntime/releases/download/v{0}/onnxruntime-osx-{1}-{0}.tgz",
+                ORT_VERSION, archive_name
+            ),
+            format!("onnxruntime-osx-{}-{}/lib/", archive_name, ORT_VERSION),
+        ));
+    }
+
+    candidates.push((
+        format!(
+            "https://github.com/microsoft/onnxruntime/releases/download/v{0}/onnxruntime-osx-universal2-{0}.tgz",
+            ORT_VERSION
+        ),
+        format!("onnxruntime-osx-universal2-{}/lib/", ORT_VERSION),
+    ));
+
+    candidates
+}
+
 fn main() {
     println!("cargo:rerun-if-env-changed=ORT_LIB_LOCATION");
 
@@ -286,19 +318,68 @@ fn setup_macos_libs() -> anyhow::Result<()> {
         }
     }
 
-    let archive_url = format!(
-        "https://github.com/microsoft/onnxruntime/releases/download/v{0}/onnxruntime-osx-universal2-{0}.tgz",
-        ORT_VERSION
-    );
-    let lib_dir_in_archive = format!("onnxruntime-osx-universal2-{}/lib/", ORT_VERSION);
+    let mut last_error: Option<anyhow::Error> = None;
+    for (archive_url, lib_dir_in_archive) in macos_archive_candidates(expected_arch) {
+        println!(
+            "cargo:warning=Downloading ONNX Runtime macOS v{} (target {}, archive {})...",
+            ORT_VERSION, expected_arch, archive_url
+        );
 
-    println!(
-        "cargo:warning=Downloading ONNX Runtime macOS v{} (universal2, target {})...",
-        ORT_VERSION, expected_arch
-    );
-    let response = reqwest::blocking::get(&archive_url)?.bytes()?;
-    extract_tgz_dylibs_from_dir(&response, &lib_dir_in_archive, &resource_dir)?;
-    validate_macos_ort_dylibs(&resource_dir, expected_arch, false)?;
+        let response = match reqwest::blocking::get(&archive_url) {
+            Ok(response) => response,
+            Err(err) => {
+                println!(
+                    "cargo:warning=Failed to fetch macOS ONNX Runtime archive '{}': {}",
+                    archive_url, err
+                );
+                last_error = Some(err.into());
+                continue;
+            }
+        };
+
+        if !response.status().is_success() {
+            let status = response.status();
+            println!(
+                "cargo:warning=macOS ONNX Runtime archive '{}' returned HTTP {}",
+                archive_url, status
+            );
+            last_error = Some(anyhow::anyhow!(
+                "macOS ONNX Runtime archive '{}' returned HTTP {}",
+                archive_url,
+                status
+            ));
+            continue;
+        }
+
+        let response = response.bytes()?;
+        if let Err(err) = extract_tgz_dylibs_from_dir(&response, &lib_dir_in_archive, &resource_dir)
+        {
+            println!(
+                "cargo:warning=Failed to extract macOS ONNX Runtime archive '{}': {}",
+                archive_url, err
+            );
+            last_error = Some(err);
+            continue;
+        }
+
+        match validate_macos_ort_dylibs(&resource_dir, expected_arch, false) {
+            Ok(()) => {
+                last_error = None;
+                break;
+            }
+            Err(err) => {
+                println!(
+                    "cargo:warning=Downloaded macOS ONNX Runtime archive '{}' is invalid for target arch '{}': {}",
+                    archive_url, expected_arch, err
+                );
+                last_error = Some(err);
+            }
+        }
+    }
+
+    if let Some(err) = last_error {
+        return Err(err);
+    }
     if !shared_path.exists() {
         println!(
             "cargo:warning=Downloaded macOS ONNX Runtime does not include libonnxruntime_providers_shared.dylib; embeddings may rely on runtime-fetched providers."
