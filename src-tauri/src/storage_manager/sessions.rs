@@ -3,6 +3,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::{Map as JsonMap, Value as JsonValue};
 use std::collections::HashMap;
+use tauri::Manager;
 use uuid;
 
 use super::db::{now_ms, open_db};
@@ -10,6 +11,7 @@ use crate::chat_manager::types::{
     AdvancedModelSettings, ImageAttachment, MemoryEmbedding, MessageVariant, Session,
     StoredMessage, UsageSummary,
 };
+use crate::dynamic_memory_run_manager::DynamicMemoryRunManager;
 use crate::embedding;
 use crate::utils::{log_error, log_info, log_warn};
 
@@ -1236,6 +1238,41 @@ fn read_session(conn: &rusqlite::Connection, id: &str) -> Result<Option<JsonValu
     Ok(Some(session))
 }
 
+fn reconcile_stale_dynamic_memory_session_state(
+    app: &tauri::AppHandle,
+    conn: &rusqlite::Connection,
+    session_id: &str,
+    session: &mut JsonValue,
+) -> Result<(), String> {
+    let is_processing = session
+        .get("memoryStatus")
+        .and_then(|value| value.as_str())
+        .map(|value| value == "processing")
+        .unwrap_or(false);
+    if !is_processing {
+        return Ok(());
+    }
+
+    let run_manager = app.state::<DynamicMemoryRunManager>().inner().clone();
+    let run_key = format!("chat:{}", session_id);
+    if run_manager.is_run_active(&run_key) {
+        return Ok(());
+    }
+
+    conn.execute(
+        "UPDATE sessions SET memory_status = 'idle', memory_error = NULL, updated_at = ?1 WHERE id = ?2",
+        params![now_ms() as i64, session_id],
+    )
+    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+
+    if let Some(map) = session.as_object_mut() {
+        map.insert("memoryStatus".into(), JsonValue::String("idle".into()));
+        map.insert("memoryError".into(), JsonValue::Null);
+    }
+
+    Ok(())
+}
+
 fn fetch_messages_page(
     conn: &rusqlite::Connection,
     session_id: &str,
@@ -1517,7 +1554,12 @@ pub fn sessions_list_previews(
 #[tauri::command]
 pub fn session_get(app: tauri::AppHandle, id: String) -> Result<Option<String>, String> {
     let conn = open_db(&app)?;
-    let v = read_session(&conn, &id)?;
+    let v = read_session(&conn, &id)?
+        .map(|mut value| {
+            reconcile_stale_dynamic_memory_session_state(&app, &conn, &id, &mut value)?;
+            Ok::<_, String>(value)
+        })
+        .transpose()?;
     Ok(match v {
         Some(json) => Some(
             serde_json::to_string(&json)
@@ -1530,7 +1572,12 @@ pub fn session_get(app: tauri::AppHandle, id: String) -> Result<Option<String>, 
 #[tauri::command]
 pub fn session_get_meta(app: tauri::AppHandle, id: String) -> Result<Option<String>, String> {
     let conn = open_db(&app)?;
-    let v = read_session_meta(&conn, &id)?;
+    let v = read_session_meta(&conn, &id)?
+        .map(|mut value| {
+            reconcile_stale_dynamic_memory_session_state(&app, &conn, &id, &mut value)?;
+            Ok::<_, String>(value)
+        })
+        .transpose()?;
     Ok(match v {
         Some(json) => Some(
             serde_json::to_string(&json)
@@ -1574,6 +1621,11 @@ where
 {
     let conn = open_db(app)?;
     read_session_meta(&conn, id)?
+        .map(|mut value| {
+            reconcile_stale_dynamic_memory_session_state(app, &conn, id, &mut value)?;
+            Ok::<_, String>(value)
+        })
+        .transpose()?
         .map(|value| {
             serde_json::from_value(value)
                 .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))

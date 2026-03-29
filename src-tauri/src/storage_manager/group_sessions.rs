@@ -1,9 +1,10 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 use uuid::Uuid;
 
 use super::db::{now_ms, SwappablePool};
+use crate::dynamic_memory_run_manager::DynamicMemoryRunManager;
 use crate::storage_manager::lorebook::Lorebook;
 use crate::utils::{log_info, log_info_global};
 
@@ -402,6 +403,32 @@ fn read_group_session(conn: &Connection, id: &str) -> Result<Option<GroupSession
     } else {
         Ok(None)
     }
+}
+
+fn reconcile_stale_group_dynamic_memory_state(
+    app: &tauri::AppHandle,
+    conn: &Connection,
+    session: &mut GroupSession,
+) -> Result<(), String> {
+    if session.memory_status != "processing" {
+        return Ok(());
+    }
+
+    let run_manager = app.state::<DynamicMemoryRunManager>().inner().clone();
+    let run_key = format!("group:{}", session.id);
+    if run_manager.is_run_active(&run_key) {
+        return Ok(());
+    }
+
+    conn.execute(
+        "UPDATE group_sessions SET memory_status = 'idle', memory_error = NULL, updated_at = ?1 WHERE id = ?2",
+        params![now_ms() as i64, session.id],
+    )
+    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+
+    session.memory_status = "idle".to_string();
+    session.memory_error = None;
+    Ok(())
 }
 
 fn read_group_participation(
@@ -1472,12 +1499,19 @@ pub fn group_session_create(
 }
 
 #[tauri::command]
-pub fn group_session_get(id: String, pool: State<'_, SwappablePool>) -> Result<String, String> {
+pub fn group_session_get(
+    app: AppHandle,
+    id: String,
+    pool: State<'_, SwappablePool>,
+) -> Result<String, String> {
     let conn = pool.get_connection()?;
 
     match read_group_session(&conn, &id)? {
-        Some(session) => serde_json::to_string(&session)
-            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e)),
+        Some(mut session) => {
+            reconcile_stale_group_dynamic_memory_state(&app, &conn, &mut session)?;
+            serde_json::to_string(&session)
+                .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
+        }
         None => Ok("null".to_string()),
     }
 }
@@ -1497,6 +1531,7 @@ pub fn group_session_lorebooks_list(
 
 #[tauri::command]
 pub fn group_session_lorebooks_set(
+    app: AppHandle,
     session_id: String,
     lorebook_ids_json: String,
     pool: State<'_, SwappablePool>,
@@ -1512,11 +1547,12 @@ pub fn group_session_lorebooks_set(
         params![lorebook_ids_json, now, session_id],
     )
     .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-    group_session_get(session_id, pool)
+    group_session_get(app, session_id, pool)
 }
 
 #[tauri::command]
 pub fn group_session_update_disable_character_lorebooks(
+    app: AppHandle,
     session_id: String,
     disable_character_lorebooks: bool,
     pool: State<'_, SwappablePool>,
@@ -1528,7 +1564,7 @@ pub fn group_session_update_disable_character_lorebooks(
         params![disable_character_lorebooks as i64, now, session_id],
     )
     .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-    group_session_get(session_id, pool)
+    group_session_get(app, session_id, pool)
 }
 
 #[tauri::command]
