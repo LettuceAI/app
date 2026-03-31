@@ -81,7 +81,7 @@ export function SearchPage() {
   };
 
   const openPersona = (persona: Persona) => {
-    navigate(`/settings/personas/${persona.id}/edit`);
+    navigate(`/personas/${persona.id}/edit`);
   };
 
   const hasQuery = searchQuery.trim().length > 0;

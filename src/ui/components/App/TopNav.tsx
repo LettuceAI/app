@@ -82,6 +82,10 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
         titleKey: "common.nav.helpMeReply",
       },
       {
+        match: (p) => p.startsWith("/personas/") && p.endsWith("/edit"),
+        titleKey: "common.nav.editPersona",
+      },
+      {
         match: (p) => p.startsWith("/settings/personas/") && p.endsWith("/edit"),
         titleKey: "common.nav.editPersona",
       },
@@ -141,6 +145,7 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
     if (onBackOverride) return true;
     if (basePath.startsWith("/settings/") || basePath === "/settings") return true;
     if (basePath.startsWith("/create/")) return true;
+    if (basePath.startsWith("/personas/") && basePath.endsWith("/edit")) return true;
     if (basePath.startsWith("/library/")) return true;
     if (basePath.startsWith("/library/lorebooks")) return true;
     if (basePath === "/group-chats/new") return true;
@@ -242,6 +247,7 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
     )
       return "characters";
     if (
+      (basePath.startsWith("/personas/") && basePath.endsWith("/edit")) ||
       basePath === "/settings/personas" ||
       (basePath.startsWith("/settings/personas/") && basePath.endsWith("/edit"))
     )
@@ -256,7 +262,10 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
   const showHelpButton = useMemo(() => docsKeyForPath !== null, [docsKeyForPath]);
 
   const isCenteredTitle = useMemo(() => {
-    return basePath.startsWith("/settings");
+    return (
+      basePath.startsWith("/settings") ||
+      (basePath.startsWith("/personas/") && basePath.endsWith("/edit"))
+    );
   }, [basePath]);
 
   const isCharacterEdit = useMemo(
@@ -264,7 +273,9 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
     [basePath],
   );
   const isPersonaEdit = useMemo(
-    () => /^\/settings\/personas\/[^/]+\/edit$/.test(basePath),
+    () =>
+      /^\/settings\/personas\/[^/]+\/edit$/.test(basePath) ||
+      /^\/personas\/[^/]+\/edit$/.test(basePath),
     [basePath],
   );
   const isModelEdit = useMemo(

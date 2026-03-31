@@ -54,9 +54,7 @@ const EmptyState = ({ onCreate }: { onCreate: () => void }) => {
     <div className="flex h-64 flex-col items-center justify-center">
       <User className="mb-3 h-12 w-12 text-fg/20" />
       <h3 className="mb-1 text-lg font-medium text-fg">{t("personas.empty.title")}</h3>
-      <p className="mb-4 text-center text-sm text-fg/50">
-        {t("personas.empty.description")}
-      </p>
+      <p className="mb-4 text-center text-sm text-fg/50">{t("personas.empty.description")}</p>
       <button
         onClick={onCreate}
         className="rounded-full border border-accent/40 bg-accent/20 px-6 py-2 text-sm font-medium text-accent/90 transition hover:bg-accent/30"
@@ -81,7 +79,7 @@ export function PersonasPage() {
   const [exporting, setExporting] = useState(false);
 
   const handleEditPersona = (persona: Persona) => {
-    navigate(`/settings/personas/${persona.id}/edit`);
+    navigate(`/personas/${persona.id}/edit`);
   };
 
   const handleExport = async () => {
@@ -191,7 +189,9 @@ export function PersonasPage() {
               <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-fg/10 bg-fg/10">
                 <Edit2 className="h-4 w-4 text-fg/70" />
               </div>
-              <span className="text-sm font-medium text-fg">{t("personas.actions.editPersona")}</span>
+              <span className="text-sm font-medium text-fg">
+                {t("personas.actions.editPersona")}
+              </span>
             </button>
 
             <button
@@ -201,15 +201,15 @@ export function PersonasPage() {
               <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-fg/10 bg-fg/10">
                 <Star
                   className={`h-4 w-4 ${
-                    selectedPersona.isDefault
-                      ? "fill-accent text-accent"
-                      : "text-fg/70"
+                    selectedPersona.isDefault ? "fill-accent text-accent" : "text-fg/70"
                   }`}
                 />
               </div>
               <div className="flex-1">
                 <span className="text-sm font-medium text-fg">
-                  {selectedPersona.isDefault ? t("personas.actions.unsetAsDefault") : t("personas.actions.setAsDefault")}
+                  {selectedPersona.isDefault
+                    ? t("personas.actions.unsetAsDefault")
+                    : t("personas.actions.setAsDefault")}
                 </span>
                 <p className="text-xs text-fg/50">
                   {selectedPersona.isDefault
@@ -245,7 +245,9 @@ export function PersonasPage() {
               <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-danger/30 bg-danger/20">
                 <Trash2 className="h-4 w-4 text-danger" />
               </div>
-              <span className="text-sm font-medium text-danger/80">{t("personas.actions.deletePersona")}</span>
+              <span className="text-sm font-medium text-danger/80">
+                {t("personas.actions.deletePersona")}
+              </span>
             </button>
           </div>
         )}

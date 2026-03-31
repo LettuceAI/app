@@ -1260,7 +1260,7 @@ function ChatSettingsContent({ character }: { character: Character }) {
             <button
               onClick={() => {
                 if (selectedPersonaForActions) {
-                  navigate(`/settings/personas/${selectedPersonaForActions.id}/edit`);
+                  navigate(`/personas/${selectedPersonaForActions.id}/edit`);
                 }
                 setShowPersonaActions(false);
               }}

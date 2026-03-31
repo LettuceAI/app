@@ -81,7 +81,7 @@ export function usePersonaFormController(personaId: string | undefined) {
 
   const loadPersona = useCallback(async () => {
     if (!personaId) {
-      navigate("/personas");
+      navigate("/library?view=personas", { replace: true });
       return;
     }
 
@@ -89,7 +89,7 @@ export function usePersonaFormController(personaId: string | undefined) {
     try {
       const persona = await getPersona(personaId);
       if (!persona) {
-        navigate("/personas");
+        navigate("/library?view=personas", { replace: true });
         return;
       }
 

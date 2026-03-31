@@ -9,6 +9,8 @@ import { useLocation, useNavigate } from "react-router-dom";
 export const Routes = {
   chat: "/chat",
   chatRoot: "/",
+  library: "/library",
+  libraryPersonas: "/library?view=personas",
   chatHistory: (characterId: string) => `/chat/${characterId}/history`,
   chatSettings: (characterId: string) => `/chat/${characterId}/settings`,
   chatSettingsSession: (characterId: string, sessionId?: string | null) => {
@@ -63,6 +65,8 @@ export const Routes = {
   settingsModelsInstalled: "/settings/models/installed",
   settingsModel: (modelId: string) => `/settings/models/${modelId}`,
   settingsImageGeneration: "/settings/image-generation",
+  createPersona: "/create/persona",
+  personaEdit: (personaId: string) => `/personas/${personaId}/edit`,
   characterLorebook: (characterId: string) => `/settings/characters/${characterId}/lorebook`,
   sync: "/settings/sync",
   // Group Chat routes
@@ -175,8 +179,9 @@ export const BACK_MAPPINGS: BackMapping[] = [
   { match: (p) => p.startsWith("/settings/changelog"), target: Routes.settings },
   { match: (p) => p.startsWith("/settings/developer"), target: Routes.settings },
   { match: (p) => p.startsWith("/settings/reset"), target: Routes.settings },
-  { match: (p) => p.startsWith("/settings/personas/"), target: "/settings/personas" },
-  { match: (p) => p.startsWith("/settings/personas"), target: Routes.settings },
+  { match: (p) => /^\/personas\/[^/]+\/edit$/.test(p), target: Routes.libraryPersonas },
+  { match: (p) => p.startsWith("/settings/personas/"), target: Routes.libraryPersonas },
+  { match: (p) => p.startsWith("/settings/personas"), target: Routes.libraryPersonas },
   { match: (p) => p.includes("/lorebook"), target: "/settings/characters" },
   { match: (p) => p.startsWith("/settings/characters"), target: Routes.settings },
   { match: (p) => p.startsWith("/settings"), target: Routes.chat },

@@ -1,4 +1,12 @@
-import { BrowserRouter, Route, Routes, useLocation, Navigate } from "react-router-dom";
+import {
+  BrowserRouter,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+  Navigate,
+  useParams,
+} from "react-router-dom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { Toaster } from "sonner";
@@ -54,7 +62,7 @@ import {
   LorebookEditor,
   CreationHelperPage,
 } from "./ui/pages/characters";
-import { CreatePersonaPage, PersonasPage, EditPersonaPage } from "./ui/pages/personas";
+import { CreatePersonaPage, EditPersonaPage } from "./ui/pages/personas";
 import ChatTemplateListPage from "./ui/pages/characters/ChatTemplateListPage";
 import ChatTemplateEditorPage from "./ui/pages/characters/ChatTemplateEditorPage";
 import { SearchPage } from "./ui/pages/search";
@@ -120,6 +128,7 @@ const LLAMA_MODEL_LOAD_STATUS_LOADING = 0;
 const LLAMA_MODEL_LOAD_STATUS_RETRYING = 1;
 const LLAMA_MODEL_LOAD_STATUS_LOADED = 2;
 const LLAMA_MODEL_LOAD_STATUS_FAILED = 3;
+const PERSONA_LIBRARY_ROUTE = "/library?view=personas";
 
 function resolveLlamaModelLoadCopy(stage?: number | null) {
   switch (stage) {
@@ -144,6 +153,14 @@ function resolveLlamaModelLoadCopy(stage?: number | null) {
         subtitle: "Preparing model runtime",
       };
   }
+}
+
+function LegacyPersonaEditRedirect() {
+  const { personaId } = useParams();
+
+  return (
+    <Navigate to={personaId ? `/personas/${personaId}/edit` : PERSONA_LIBRARY_ROUTE} replace />
+  );
 }
 
 function App() {
@@ -517,6 +534,7 @@ function AppUpdateNotifier() {
 
 function AppContent() {
   const location = useLocation();
+  const navigate = useNavigate();
   console.log("AppContent render:", location.pathname, location.key);
   const mainRef = useRef<HTMLDivElement | null>(null);
   const platform = useMemo(() => getPlatform(), []);
@@ -541,6 +559,10 @@ function AppContent() {
   );
   const isCreateRoute = useMemo(
     () => location.pathname.startsWith("/create/"),
+    [location.pathname],
+  );
+  const isPersonaEditRoute = useMemo(
+    () => /^\/personas\/[^/]+\/edit$/.test(location.pathname),
     [location.pathname],
   );
 
@@ -575,6 +597,7 @@ function AppContent() {
     !isOnboardingRoute &&
     !isChatDetailRoute &&
     !isCreateRoute &&
+    !isPersonaEditRoute &&
     !isSearchRoute &&
     !isAvatarLibraryPickerRoute &&
     !isLorebookEditorRoute &&
@@ -838,6 +861,11 @@ function AppContent() {
         {showTopNav && (
           <TopNav
             currentPath={location.pathname + location.search}
+            onBackOverride={
+              isPersonaEditRoute
+                ? () => navigate(PERSONA_LIBRARY_ROUTE, { replace: true })
+                : undefined
+            }
             titleOverride={
               isAvatarLibraryPickerRoute
                 ? "Select from library"
@@ -861,11 +889,13 @@ function AppContent() {
                     ? "overflow-hidden px-0 pt-0 pb-0"
                     : isLorebookEditorRoute
                       ? "overflow-hidden px-0 pt-0 pb-0"
-                      : isTemplateEditorRoute
+                      : isPersonaEditRoute
                         ? "overflow-hidden px-0 pt-0 pb-0"
-                        : isDiscoveryRoute
+                        : isTemplateEditorRoute
                           ? "overflow-hidden px-0 pt-0 pb-0"
-                          : `overflow-y-auto px-4 pt-4 ${showBottomNav ? "pb-[calc(96px+env(safe-area-inset-bottom))]" : "pb-6"}`
+                          : isDiscoveryRoute
+                            ? "overflow-hidden px-0 pt-0 pb-0"
+                            : `overflow-y-auto px-4 pt-4 ${showBottomNav ? "pb-[calc(96px+env(safe-area-inset-bottom))]" : "pb-6"}`
           }`}
         >
           {voidActive && (
@@ -1014,9 +1044,16 @@ function AppContent() {
                 element={<ChatTemplateEditorPage />}
               />
               <Route path="/create/persona" element={<CreatePersonaPage />} />
-              <Route path="/personas" element={<PersonasPage />} />
-              <Route path="/settings/personas" element={<PersonasPage />} />
-              <Route path="/settings/personas/:personaId/edit" element={<EditPersonaPage />} />
+              <Route path="/personas" element={<Navigate to={PERSONA_LIBRARY_ROUTE} replace />} />
+              <Route path="/personas/:personaId/edit" element={<EditPersonaPage />} />
+              <Route
+                path="/settings/personas"
+                element={<Navigate to={PERSONA_LIBRARY_ROUTE} replace />}
+              />
+              <Route
+                path="/settings/personas/:personaId/edit"
+                element={<LegacyPersonaEditRedirect />}
+              />
               <Route path="/group-chats" element={<GroupChatsListPage />} />
               <Route path="/group-chats/history" element={<GroupChatHistoryPage />} />
               <Route path="/group-chats/new" element={<GroupChatCreatePage />} />

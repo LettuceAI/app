@@ -179,7 +179,7 @@ export function LibraryPage() {
       if (selectedItem.itemType === "character") {
         navigate(`/settings/characters/${selectedItem.id}/edit`);
       } else if (selectedItem.itemType === "persona") {
-        navigate(`/settings/personas/${selectedItem.id}/edit`);
+        navigate(`/personas/${selectedItem.id}/edit`);
       } else {
         navigate(`/library/lorebooks/${selectedItem.id}`);
       }
@@ -401,7 +401,7 @@ export function LibraryPage() {
             {filter !== "Lorebooks" && (
               <button
                 onClick={() =>
-                  navigate(filter === "Personas" ? "/personas/create" : "/characters/create")
+                  navigate(filter === "Personas" ? "/create/persona" : "/characters/create")
                 }
                 className="flex items-center gap-2 rounded-xl border border-accent/40 bg-accent/20 px-5 py-2.5 text-sm font-medium text-accent/70 transition active:scale-95 active:bg-accent/30"
               >
