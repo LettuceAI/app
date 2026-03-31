@@ -54,10 +54,13 @@ fn main() {
         }
         "ios" => {
             println!("cargo:warning=Detected iOS build.");
-            if env::var("ORT_LIB_LOCATION").is_err() {
-                println!(
-                    "cargo:warning=ORT_LIB_LOCATION is not set. iOS builds require a CoreML-enabled ONNX Runtime library location."
-                );
+            match env::var("ORT_LIB_LOCATION") {
+                Ok(path) if !path.trim().is_empty() => {
+                    println!("cargo:warning=Using iOS ONNX Runtime from {}", path);
+                }
+                _ => println!(
+                    "cargo:warning=ORT_LIB_LOCATION is not set. Xcode builds should invoke scripts/run-tauri-ios-xcode-onnxruntime.sh before cargo. Direct cargo iOS builds should set ORT_LIB_LOCATION to an extracted ONNX Runtime slice directory."
+                ),
             }
         }
         "macos" => {

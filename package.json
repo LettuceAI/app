@@ -23,6 +23,9 @@
     "tauri:ios:init": "tauri ios init",
     "tauri:ios:dev": "tauri ios dev",
     "tauri:ios:build": "tauri ios build",
+    "tauri:ios:prepare-onnxruntime": "node scripts/install-onnxruntime-ios.mjs ios-arm64 && node scripts/install-onnxruntime-ios.mjs ios-arm64_x86_64-simulator",
+    "tauri:ios:dev:ready": "node scripts/install-onnxruntime-ios.mjs ios-arm64 && node scripts/install-onnxruntime-ios.mjs ios-arm64_x86_64-simulator && tauri ios dev",
+    "tauri:ios:build:ready": "node scripts/install-onnxruntime-ios.mjs ios-arm64 && node scripts/install-onnxruntime-ios.mjs ios-arm64_x86_64-simulator && tauri ios build",
     "check": "(tsc --noEmit && cd src-tauri && cargo check) && echo 'All checks successful.' || echo 'Check failed.'"
   },
   "dependencies": {
