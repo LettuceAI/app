@@ -427,7 +427,10 @@ impl RequestSettings {
                 reasoning_effort.as_deref(),
             ),
             reasoning_effort,
-            prompt_caching_enabled: model.advanced_model_settings.as_ref().and_then(|s| s.prompt_caching_enabled),
+            prompt_caching_enabled: model
+                .advanced_model_settings
+                .as_ref()
+                .and_then(|s| s.prompt_caching_enabled),
         }
     }
 
@@ -439,6 +442,7 @@ impl RequestSettings {
         top_k: Option<u32>,
         frequency_penalty: Option<f64>,
         presence_penalty: Option<f64>,
+        prompt_caching_enabled: Option<bool>,
     ) -> Self {
         Self {
             temperature: Some(temperature),
@@ -451,7 +455,7 @@ impl RequestSettings {
             reasoning_enabled: false,
             reasoning_effort: None,
             reasoning_budget: None,
-            prompt_caching_enabled: None,
+            prompt_caching_enabled,
         }
     }
 }
@@ -471,7 +475,9 @@ pub(crate) fn build_provider_extra_fields(
             extra.extend(llama_extra);
         }
     } else if provider_id == "ollama" {
-        if let Some(ollama_extra) = build_ollama_extra_fields(session, model, settings, request_settings) {
+        if let Some(ollama_extra) =
+            build_ollama_extra_fields(session, model, settings, request_settings)
+        {
             extra.extend(ollama_extra);
         }
     }

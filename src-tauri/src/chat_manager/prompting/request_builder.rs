@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use serde_json::{json, Value};
+use std::collections::HashMap;
 
 use super::request::provider_base_url;
 use crate::chat_manager::provider_adapter::adapter_for;
@@ -49,23 +49,33 @@ fn apply_cache_control(content: &mut Value, cache_control: &Value) {
     }
 }
 
-fn needs_explicit_cache_markers(model_name: &str, credential: &ProviderCredential) -> bool {
-    let model_lower = model_name.to_lowercase();
-    let provider = credential
-        .config
-        .as_ref()
-        .and_then(|c| c.get("provider"))
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .to_lowercase();
+fn supports_explicit_prompt_caching(credential: &ProviderCredential) -> bool {
+    matches!(
+        credential.provider_id.as_str(),
+        "anthropic" | "custom-anthropic" | "openrouter"
+    )
+}
 
-    model_lower.contains("claude")
-        || model_lower.contains("anthropic")
-        || provider.contains("anthropic")
-        || provider.contains("bedrock")
-        || provider.contains("vertex")
-        || provider == "google"
-        || model_lower.contains("gemini")
+fn apply_cache_control_to_system_message(
+    body_obj: &mut serde_json::Map<String, Value>,
+    cache_control: &Value,
+) {
+    if let Some(system) = body_obj.get_mut("system") {
+        apply_cache_control(system, cache_control);
+        return;
+    }
+
+    if let Some(messages) = body_obj.get_mut("messages").and_then(|m| m.as_array_mut()) {
+        for msg in messages.iter_mut() {
+            let role = msg.get("role").and_then(|r| r.as_str());
+            if role == Some("system") || role == Some("developer") {
+                if let Some(content) = msg.get_mut("content") {
+                    apply_cache_control(content, cache_control);
+                }
+                break;
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -120,7 +130,7 @@ pub fn build_chat_request(
         reasoning_budget,
     );
 
-    if prompt_caching_enabled && needs_explicit_cache_markers(model_name, credential) {
+    if prompt_caching_enabled && supports_explicit_prompt_caching(credential) {
         // Extract TTL safely using the updated camelCase key
         let ttl_val = extra_body_fields
             .as_ref()
@@ -136,9 +146,7 @@ pub fn build_chat_request(
 
         if let Some(body_obj) = body.as_object_mut() {
             // 1. System prompt
-            if let Some(system) = body_obj.get_mut("system") {
-                apply_cache_control(system, &cache_control);
-            }
+            apply_cache_control_to_system_message(body_obj, &cache_control);
 
             // 2. Tool definitions
             if let Some(tools) = body_obj.get_mut("tools") {
@@ -170,9 +178,9 @@ pub fn build_chat_request(
             if key == "promptCachingTtl" {
                 continue;
             }
-            // [CRITICAL FIX] Protect Provider Sticky Routing
-            // If caching is enabled, we must prevent manual `provider.order` arrays from breaking OpenRouter's ability to stick to the cached node.
-            if prompt_caching_enabled && key == "provider" {
+            // OpenRouter sticky routing only applies to OpenRouter payloads.
+            if prompt_caching_enabled && credential.provider_id == "openrouter" && key == "provider"
+            {
                 if let Some(provider_obj) = value.as_object_mut() {
                     provider_obj.remove("order");
                     if provider_obj.is_empty() {

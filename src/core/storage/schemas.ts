@@ -604,8 +604,6 @@ export const PROVIDER_PARAMETER_SUPPORT = {
       reasoningEnabled: true,
       reasoningEffort: true,
       reasoningBudgetTokens: true,
-      promptCachingEnabled: true,
-      promptCachingTtl: true,
       llamaGpuLayers: false,
       llamaThreads: false,
       llamaThreadsBatch: false,
@@ -906,8 +904,6 @@ export const PROVIDER_PARAMETER_SUPPORT = {
       reasoningEnabled: true,
       reasoningEffort: true,
       reasoningBudgetTokens: true,
-      promptCachingEnabled: true,
-      promptCachingTtl: true,
       llamaGpuLayers: false,
       llamaThreads: false,
       llamaThreadsBatch: false,
@@ -957,8 +953,6 @@ export const PROVIDER_PARAMETER_SUPPORT = {
       reasoningEnabled: false, // R1 auto-reasons, no control
       reasoningEffort: false,
       reasoningBudgetTokens: false,
-      promptCachingEnabled: true,
-      promptCachingTtl: true,
       llamaGpuLayers: false,
       llamaThreads: false,
       llamaThreadsBatch: false,
@@ -1057,8 +1051,6 @@ export const PROVIDER_PARAMETER_SUPPORT = {
       reasoningEnabled: true,
       reasoningEffort: true,
       reasoningBudgetTokens: true,
-      promptCachingEnabled: true,
-      promptCachingTtl: true,
       llamaGpuLayers: false,
       llamaThreads: false,
       llamaThreadsBatch: false,
@@ -1206,8 +1198,6 @@ export const PROVIDER_PARAMETER_SUPPORT = {
       reasoningEnabled: true,
       reasoningEffort: false,
       reasoningBudgetTokens: true,
-      promptCachingEnabled: true,
-      promptCachingTtl: true,
       llamaGpuLayers: false,
       llamaThreads: false,
       llamaThreadsBatch: false,
@@ -1649,6 +1639,8 @@ export const PROVIDER_PARAMETER_SUPPORT = {
       reasoningEnabled: true,
       reasoningEffort: false,
       reasoningBudgetTokens: true,
+      promptCachingEnabled: true,
+      promptCachingTtl: true,
       llamaGpuLayers: false,
       llamaThreads: false,
       llamaThreadsBatch: false,
@@ -1761,7 +1753,7 @@ export function getProviderCachingSupport(providerId: string): CachingSupport {
     (providerId === "z.ai" ? PROVIDER_PARAMETER_SUPPORT.zai : null);
 
   if (!provider) return "none";
-  
+
   // Cast to check if it exists in the support matrix
   const isSupported = (provider.supportedParameters as any).promptCachingEnabled;
   return isSupported ? "supported" : "none";

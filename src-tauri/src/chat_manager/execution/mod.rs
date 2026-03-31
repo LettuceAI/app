@@ -623,6 +623,7 @@ pub(crate) fn prepare_sampling_request(
         top_k,
         frequency_penalty,
         presence_penalty,
+        model_request_settings.prompt_caching_enabled,
     );
     let extra_body_fields =
         build_provider_extra_fields(provider_id, session, model, settings, &request_settings);
