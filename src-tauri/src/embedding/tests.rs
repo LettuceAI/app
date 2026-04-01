@@ -1,6 +1,7 @@
 use super::*;
 use crate::utils::{log_error, log_info};
 use ort::session::{builder::GraphOptimizationLevel, Session};
+use std::fs;
 use tauri::Emitter;
 use tokenizers::Tokenizer;
 use tokio::time::{timeout, Duration};
@@ -135,6 +136,13 @@ pub async fn run_embedding_test(app: AppHandle) -> Result<TestResult, String> {
 
         log_info(&app_for_test, "embedding_test", "ort initialized");
 
+        let model_bytes = fs::read(&model_path).map_err(|e| {
+            crate::utils::err_msg(
+                module_path!(),
+                line!(),
+                format!("Failed to read {} model {}: {}", version_label, model_path.display(), e),
+            )
+        })?;
         let mut session = Session::builder()
             .map_err(|e| {
                 crate::utils::err_msg(
@@ -151,7 +159,7 @@ pub async fn run_embedding_test(app: AppHandle) -> Result<TestResult, String> {
                     format!("Failed to set optimization level: {}", e),
                 )
             })?
-            .commit_from_file(&model_path)
+            .commit_from_memory(&model_bytes)
             .map_err(|e| {
                 crate::utils::err_msg(
                     module_path!(),

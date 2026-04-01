@@ -350,7 +350,14 @@ fn create_runtime(
     #[cfg(not(any(target_os = "ios", target_os = "macos")))]
     let session_builder = create_base_session_builder()?;
 
-    let session = session_builder.commit_from_file(model_path).map_err(|e| {
+    let model_bytes = fs::read(model_path).map_err(|e| {
+        crate::utils::err_msg(
+            module_path!(),
+            line!(),
+            format!("Failed to read model file {}: {}", model_path.display(), e),
+        )
+    })?;
+    let session = session_builder.commit_from_memory(&model_bytes).map_err(|e| {
         crate::utils::err_msg(
             module_path!(),
             line!(),
@@ -571,6 +578,13 @@ pub async fn initialize_embedding_model(app: AppHandle) -> Result<(), String> {
         return Ok(());
     }
 
+    let model_bytes = fs::read(&model_path).map_err(|e| {
+        crate::utils::err_msg(
+            module_path!(),
+            line!(),
+            format!("Failed to read {} model {}: {}", version_label, model_path.display(), e),
+        )
+    })?;
     let _session = Session::builder()
         .map_err(|e| {
             crate::utils::err_msg(
@@ -587,7 +601,7 @@ pub async fn initialize_embedding_model(app: AppHandle) -> Result<(), String> {
                 format!("Failed to set optimization level: {}", e),
             )
         })?
-        .commit_from_file(&model_path)
+        .commit_from_memory(&model_bytes)
         .map_err(|e| {
             crate::utils::err_msg(
                 module_path!(),
