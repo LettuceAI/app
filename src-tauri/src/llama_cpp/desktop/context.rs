@@ -250,6 +250,14 @@ fn ram_budget_for_context(model: &LlamaModel, available_memory_bytes: u64) -> u6
     available_memory_bytes.saturating_sub(model.size().saturating_add(reserve))
 }
 
+fn cpu_fallback_headroom_bytes(base_budget: u64, available_memory_bytes: u64) -> u64 {
+    let availability_headroom = (available_memory_bytes / 10).max(256 * 1024 * 1024);
+    let budget_headroom = (base_budget / 4).max(128 * 1024 * 1024);
+    availability_headroom
+        .min(base_budget)
+        .max(budget_headroom.min(base_budget))
+}
+
 pub(super) fn compute_recommended_context(
     model: &LlamaModel,
     available_memory_bytes: Option<u64>,
@@ -299,8 +307,7 @@ pub(super) fn compute_cpu_fallback_limits(
         .min(max_context_length)
         .max(1);
 
-    let normal_reserve = default_memory_reserve_bytes(available_memory_bytes);
-    let extra_cpu_headroom = model.size().max(normal_reserve);
+    let extra_cpu_headroom = cpu_fallback_headroom_bytes(base_budget, available_memory_bytes);
     let safe_budget = base_budget.saturating_sub(extra_cpu_headroom);
     let safe_context = (safe_budget / kv_bytes_per_token)
         .min(u64::from(requested_or_base_context))
@@ -314,6 +321,31 @@ pub(super) fn compute_cpu_fallback_limits(
         .min(u64::from(requested_batch_size)) as u32;
 
     Some((safe_context, safe_batch.max(1)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cpu_fallback_headroom_bytes;
+
+    #[test]
+    fn cpu_fallback_headroom_does_not_exceed_budget() {
+        let budget = 3_u64 * 1024 * 1024 * 1024;
+        let available = 12_u64 * 1024 * 1024 * 1024;
+        let headroom = cpu_fallback_headroom_bytes(budget, available);
+
+        assert!(headroom > 0);
+        assert!(headroom < budget);
+    }
+
+    #[test]
+    fn cpu_fallback_headroom_keeps_small_budget_usable() {
+        let budget = 700_u64 * 1024 * 1024;
+        let available = 8_u64 * 1024 * 1024 * 1024;
+        let headroom = cpu_fallback_headroom_bytes(budget, available);
+
+        assert!(headroom < budget);
+        assert!(budget - headroom >= 128_u64 * 1024 * 1024);
+    }
 }
 
 pub(crate) async fn llamacpp_context_info(
