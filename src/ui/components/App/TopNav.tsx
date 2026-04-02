@@ -82,6 +82,10 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
       match: (path: string) => boolean;
       titleKey: TranslationKey;
     }> = [
+      { match: (p) => p === "/discover", titleKey: "common.bottomNav.discover" },
+      { match: (p) => p === "/discover/search", titleKey: "common.bottomNav.discover" },
+      { match: (p) => p.startsWith("/discover/browse"), titleKey: "common.bottomNav.discover" },
+      { match: (p) => p.startsWith("/discover/card/"), titleKey: "common.bottomNav.discover" },
       { match: (p) => p === "/settings/providers", titleKey: "common.nav.providers" },
       { match: (p) => p.includes("view=advanced"), titleKey: "common.nav.responseStyle" },
       { match: (p) => p === "/settings/models/installed", titleKey: "hfBrowser.libraryTitle" },
@@ -188,6 +192,7 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
     if (basePath.startsWith("/library/")) return true;
     if (basePath.startsWith("/library/lorebooks")) return true;
     if (basePath === "/group-chats/new") return true;
+    if (basePath.startsWith("/discover/")) return true;
     return false;
   }, [basePath, onBackOverride]);
 

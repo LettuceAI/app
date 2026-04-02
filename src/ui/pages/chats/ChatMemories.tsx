@@ -54,6 +54,7 @@ import {
   components,
 } from "../../design-tokens";
 import { Routes, useNavigationManager } from "../../navigation";
+import { WindowControlButtons, useDragRegionProps, hasCustomWindowControls } from "../../components/App/TopNav";
 import { BottomMenu, MenuSection } from "../../components/BottomMenu";
 import { useI18n } from "../../../core/i18n/context";
 
@@ -769,6 +770,7 @@ function ToolLog({ events }: { events: MemoryToolEvent[] }) {
 export function ChatMemoriesPage() {
   const { t } = useI18n();
   const { go, backOrReplace } = useNavigationManager();
+  const dragRegionProps = useDragRegionProps();
   const { characterId } = useParams();
   const [searchParams] = useSearchParams();
   const sessionId = searchParams.get("sessionId");
@@ -1264,36 +1266,40 @@ export function ChatMemoriesPage() {
       {/* Header */}
       <header
         className={cn(
-          "z-20 shrink-0 border-b border-white/10 px-3 lg:px-8",
+          "z-20 shrink-0 border-b border-white/10 pl-3 lg:pl-8",
+          hasCustomWindowControls ? "pr-0" : "pr-3 lg:pr-8",
           colors.glass.strong,
         )}
         style={{
           paddingTop: "calc(env(safe-area-inset-top) + 12px)",
           paddingBottom: "12px",
         }}
+        {...dragRegionProps}
       >
-        <div className="flex h-10 items-center">
-          <button
-            onClick={() =>
-              backOrReplace(characterId ? Routes.chatSession(characterId, sessionId) : Routes.chat)
-            }
-            className={cn(
-              "flex shrink-0 items-center justify-center -ml-2 px-[0.6em] py-[0.3em]",
-              colors.text.primary,
-              interactive.transition.fast,
-              "hover:text-white/80",
-            )}
-            aria-label={t("common.buttons.goBack")}
-          >
-            <ArrowLeft size={18} strokeWidth={2.5} />
-          </button>
-          <div className="min-w-0 flex-1 text-left">
-            <p className={cn("truncate text-xl font-bold", colors.text.primary)}>
-              {t("groupChats.memories.tabMemories")}
-            </p>
-            <p className={cn("mt-0.5 truncate text-xs", colors.text.tertiary)}>{character.name}</p>
+        <div className="flex h-10 items-center justify-between" {...dragRegionProps}>
+          <div className="flex items-center min-w-0">
+            <button
+              onClick={() =>
+                backOrReplace(characterId ? Routes.chatSession(characterId, sessionId) : Routes.chat)
+              }
+              className={cn(
+                "flex shrink-0 items-center justify-center -ml-2 px-[0.6em] py-[0.3em]",
+                colors.text.primary,
+                interactive.transition.fast,
+                "hover:text-white/80",
+              )}
+              aria-label={t("common.buttons.goBack")}
+            >
+              <ArrowLeft size={18} strokeWidth={2.5} />
+            </button>
+            <div className="min-w-0 text-left">
+              <p className={cn("truncate text-xl font-bold", colors.text.primary)}>
+                {t("groupChats.memories.tabMemories")}
+              </p>
+              <p className={cn("mt-0.5 truncate text-xs", colors.text.tertiary)}>{character.name}</p>
+            </div>
           </div>
-          <div className="ml-auto flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             {isDynamic && session.memoryStatus === "processing" && (
               <div
                 className={cn(
@@ -1309,6 +1315,7 @@ export function ChatMemoriesPage() {
                 {t("groupChats.memories.processing")}
               </div>
             )}
+            <WindowControlButtons />
           </div>
         </div>
 

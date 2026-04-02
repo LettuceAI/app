@@ -8,7 +8,6 @@ import {
   useParams,
 } from "react-router-dom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { motion } from "framer-motion";
 import { Toaster } from "sonner";
 
 import { WelcomePage, OnboardingPage } from "./ui/pages/onboarding";
@@ -557,6 +556,10 @@ function AppContent() {
     () => location.pathname.startsWith("/discover"),
     [location.pathname],
   );
+  const isDiscoverySubRoute = useMemo(
+    () => location.pathname.startsWith("/discover/"),
+    [location.pathname],
+  );
   const isCreateRoute = useMemo(
     () => location.pathname.startsWith("/create/"),
     [location.pathname],
@@ -590,8 +593,7 @@ function AppContent() {
     !isChatDetailRoute &&
     !isCreateRoute &&
     !isSearchRoute &&
-    !isLorebookEditorRoute &&
-    !isDiscoveryRoute;
+    !isLorebookEditorRoute;
   const showBottomNav =
     !isSettingRoute &&
     !isOnboardingRoute &&
@@ -601,7 +603,7 @@ function AppContent() {
     !isSearchRoute &&
     !isAvatarLibraryPickerRoute &&
     !isLorebookEditorRoute &&
-    !isDiscoveryRoute;
+    !isDiscoverySubRoute;
 
   const [showCreateMenu, setShowCreateMenu] = useState(false);
   const { isVisible: showCreateTooltip, dismissTooltip: dismissCreateTooltip } =
@@ -858,7 +860,7 @@ function AppContent() {
           isChatDetailRoute ? "max-w-full h-screen" : "max-w-md lg:max-w-none min-h-screen"
         } flex-col ${showBottomNav ? "pb-[calc(72px+env(safe-area-inset-bottom))]" : "pb-0"}`}
       >
-        {!showTopNav && !isChatDetailRoute && <WindowControls />}
+        {!showTopNav && !isChatDetailRoute && !isSearchRoute && <WindowControls />}
         {showTopNav && (
           <TopNav
             currentPath={location.pathname + location.search}

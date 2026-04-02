@@ -1,12 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
-import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowLeft, TrendingUp, Flame, Clock, AlertCircle, ArrowUpDown, Check } from "lucide-react";
-import { cn, typography, interactive } from "../../design-tokens";
-import { useDragRegionProps } from "../../components/App/TopNav";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { TrendingUp, Flame, Clock, AlertCircle, ArrowUpDown, Check } from "lucide-react";
+import { cn, interactive } from "../../design-tokens";
 import { useI18n } from "../../../core/i18n/context";
 import { DiscoveryCard, DiscoveryGridSkeleton } from "./components";
-import { resolveBackTarget, Routes, useNavigationManager } from "../../navigation";
+import { useNavigationManager } from "../../navigation";
 import {
   fetchDiscoveryCards,
   type DiscoveryCard as DiscoveryCardType,
@@ -30,9 +29,7 @@ interface SortOptionItem {
 
 export function DiscoveryBrowsePage() {
   const navigate = useNavigate();
-  const location = useLocation();
-  const { go, backOrReplace } = useNavigationManager();
-  const dragRegionProps = useDragRegionProps();
+  const { } = useNavigationManager();
   const { t } = useI18n();
 
   const SECTION_CONFIGS: Record<CardType, SectionConfig> = {
@@ -109,16 +106,6 @@ export function DiscoveryBrowsePage() {
     [navigate],
   );
 
-  const handleBack = useCallback(() => {
-    const currentPath = location.pathname + location.search;
-    const target = resolveBackTarget(currentPath);
-    if (target) {
-      go(target, { replace: true });
-      return;
-    }
-    backOrReplace(Routes.discover);
-  }, [location.pathname, location.search, go, backOrReplace]);
-
   const handleSortChange = (newSort: SortOption) => {
     setSortBy(newSort);
     setShowSortMenu(false);
@@ -128,42 +115,18 @@ export function DiscoveryBrowsePage() {
 
   return (
     <div className="flex h-full flex-col bg-surface">
-      {/* Header - matches TopNav style */}
-      <header
-        className="sticky top-0 z-30 border-b border-fg/10 bg-surface-el/80 backdrop-blur-md"
+      {/* Main content */}
+      <main
+        className="flex-1 overflow-y-auto"
         style={{
-          paddingTop: "calc(env(safe-area-inset-top) + 12px)",
-          paddingBottom: "12px",
+          paddingBottom: "calc(env(safe-area-inset-bottom) + 24px)",
         }}
-        {...dragRegionProps}
       >
-        <div className="mx-auto flex w-full max-w-md items-center justify-between px-4 lg:max-w-none lg:px-8">
-          <div className="flex items-center gap-2">
-            {/* Back button */}
-            <button
-              onClick={handleBack}
-              className={cn(
-                "flex shrink-0 items-center justify-center rounded-full p-2",
-                "text-fg/70 hover:bg-fg/10 hover:text-fg",
-                interactive.transition.fast,
-                interactive.active.scale,
-              )}
-              aria-label={t("common.buttons.goBack")}
-            >
-              <ArrowLeft size={20} strokeWidth={2.5} />
-            </button>
-
-            <motion.h1
-              initial={{ opacity: 0, y: 5 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, ease: "easeOut" }}
-              className={cn(typography.h1.size, "font-bold tracking-tight text-fg")}
-            >
-              {config.title}
-            </motion.h1>
+        {/* Toolbar */}
+        <div className="flex items-center justify-between px-4 py-3 lg:px-8">
+          <div className="text-xs text-fg/50">
+            {!loading && cards.length > 0 && `${cards.length} ${t("discovery.resultsUnit")}`}
           </div>
-
-          {/* Sort button */}
           <button
             onClick={() => setShowSortMenu(true)}
             className={cn(
@@ -178,21 +141,6 @@ export function DiscoveryBrowsePage() {
           </button>
         </div>
 
-        {/* Results count */}
-        {!loading && cards.length > 0 && (
-          <div className="mx-auto mt-3 max-w-md px-4 lg:max-w-none lg:px-8">
-            <p className="text-xs text-fg/50">{cards.length} {t("discovery.resultsUnit")}</p>
-          </div>
-        )}
-      </header>
-
-      {/* Main content */}
-      <main
-        className="flex-1 overflow-y-auto"
-        style={{
-          paddingBottom: "calc(env(safe-area-inset-bottom) + 24px)",
-        }}
-      >
         {/* Error state */}
         {error && (
           <motion.div

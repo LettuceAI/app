@@ -2,6 +2,7 @@ import { useState, useCallback, useRef } from "react";
 import { ArrowLeft, Loader2, X, Search } from "lucide-react";
 import { useNavigate, useSearchParams, useParams } from "react-router-dom";
 import { components, colors, interactive, radius, cn } from "../../design-tokens";
+import { WindowControlButtons, useDragRegionProps, hasCustomWindowControls } from "../../components/App/TopNav";
 import { storageBridge } from "../../../core/storage/files";
 import { Routes, useNavigationManager } from "../../navigation";
 import { useI18n } from "../../../core/i18n/context";
@@ -17,6 +18,7 @@ export function SearchMessagesPage() {
     const navigate = useNavigate();
     const { characterId } = useParams<{ characterId: string }>();
     const { backOrReplace } = useNavigationManager();
+    const dragRegionProps = useDragRegionProps();
     const { t } = useI18n();
     const [searchParams] = useSearchParams();
     const sessionId = searchParams.get("sessionId");
@@ -80,9 +82,10 @@ export function SearchMessagesPage() {
         <div className={cn("flex h-screen flex-col", colors.surface.base, colors.text.primary)}>
             {/* Header */}
             <div className={cn(
-                "flex items-center gap-3 border-b px-3 pb-3 pt-[calc(env(safe-area-inset-top)+12px)] sticky top-0 z-20",
+                "flex items-center gap-3 border-b pl-3 pb-3 pt-[calc(env(safe-area-inset-top)+12px)] shrink-0 z-20",
+                hasCustomWindowControls ? "pr-0" : "pr-3",
                 colors.glass.strong
-            )}>
+            )} {...dragRegionProps}>
                 <button
                     onClick={() => backOrReplace(characterId ? Routes.chatSession(characterId, sessionId) : Routes.chat)}
                     className={cn(
@@ -126,6 +129,7 @@ export function SearchMessagesPage() {
                         </button>
                     )}
                 </div>
+                <WindowControlButtons />
             </div>
 
             {/* Results */}

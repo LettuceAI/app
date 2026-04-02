@@ -52,6 +52,7 @@ import {
   sanitizeAdvancedModelSettings,
 } from "../../components/AdvancedModelSettingsForm";
 import { typography, radius, spacing, interactive, cn, colors } from "../../design-tokens";
+import { WindowControlButtons, useDragRegionProps, hasCustomWindowControls } from "../../components/App/TopNav";
 import { Routes, useNavigationManager } from "../../navigation";
 import { PersonaSelector } from "../group-chats/components/settings";
 import { storageBridge } from "../../../core/storage/files";
@@ -271,6 +272,7 @@ function ChatSettingsContent({ character }: { character: Character }) {
   const { backOrReplace } = useNavigationManager();
   const { t } = useI18n();
   const { characterId } = useParams();
+  const dragRegionProps = useDragRegionProps();
   const [models, setModels] = useState<Model[]>([]);
   const [globalDefaultModelId, setGlobalDefaultModelId] = useState<string | null>(null);
   const [currentCharacter, setCurrentCharacter] = useState<Character>(character);
@@ -776,26 +778,31 @@ function ChatSettingsContent({ character }: { character: Character }) {
       {/* Header */}
       <header
         className={cn(
-          "z-20 shrink-0 border-b border-fg/10 px-3 lg:px-8",
+          "z-20 shrink-0 border-b border-fg/10 pl-3 lg:pl-8",
+          hasCustomWindowControls ? "pr-0" : "pr-3 lg:pr-8",
           !backgroundImageData ? "bg-surface" : "",
         )}
         style={{
           paddingTop: "calc(env(safe-area-inset-top) + 12px)",
           paddingBottom: "12px",
         }}
+        {...dragRegionProps}
       >
-        <div className="flex h-10 items-center">
-          <button
-            onClick={handleBack}
-            className="flex shrink-0 items-center justify-center -ml-2 px-[0.6em] py-[0.3em] text-fg transition hover:text-fg/80"
-            aria-label="Back to chat"
-          >
-            <ArrowLeft size={18} strokeWidth={2.5} />
-          </button>
-          <div className="min-w-0 flex-1 text-left">
-            <p className="truncate text-xl font-bold text-fg/90">Chat Settings</p>
-            <p className="mt-0.5 truncate text-xs text-fg/50">Manage conversation preferences</p>
+        <div className="flex h-10 items-center justify-between" {...dragRegionProps}>
+          <div className="flex items-center min-w-0">
+            <button
+              onClick={handleBack}
+              className="flex shrink-0 items-center justify-center -ml-2 px-[0.6em] py-[0.3em] text-fg transition hover:text-fg/80"
+              aria-label="Back to chat"
+            >
+              <ArrowLeft size={18} strokeWidth={2.5} />
+            </button>
+            <div className="min-w-0 text-left">
+              <p className="truncate text-xl font-bold text-fg/90">Chat Settings</p>
+              <p className="mt-0.5 truncate text-xs text-fg/50">Manage conversation preferences</p>
+            </div>
           </div>
+          <WindowControlButtons />
         </div>
       </header>
 

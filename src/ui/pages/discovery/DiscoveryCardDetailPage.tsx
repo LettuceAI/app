@@ -6,7 +6,6 @@ import {
   Download,
   Eye,
   MessageCircle,
-  Share2,
   Loader2,
   AlertCircle,
   Shield,
@@ -20,7 +19,6 @@ import {
   Play,
 } from "lucide-react";
 import { cn, typography, interactive } from "../../design-tokens";
-import { useDragRegionProps } from "../../components/App/TopNav";
 import { useI18n } from "../../../core/i18n/context";
 import { DiscoveryDetailSkeleton } from "./components";
 import {
@@ -66,7 +64,6 @@ export function DiscoveryCardDetailPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { go, backOrReplace } = useNavigationManager();
-  const dragRegionProps = useDragRegionProps();
   const { t } = useI18n();
   const { path } = useParams<{ path: string }>();
 
@@ -161,32 +158,6 @@ export function DiscoveryCardDetailPage() {
     backOrReplace(Routes.discover);
   }, [location.pathname, location.search, location.state, go, backOrReplace]);
 
-  const handleShare = async () => {
-    if (!cardData?.card) return;
-
-    // Properly encode the path for URL - encodeURIComponent handles spaces and special chars
-    const encodedPath = cardData.card.path
-      .split("/")
-      .map((segment) => encodeURIComponent(segment))
-      .join("/");
-    const shareUrl = `https://character-tavern.com/card/${encodedPath}`;
-
-    try {
-      if (navigator.share) {
-        await navigator.share({
-          title: cardData.card.name,
-          text: cardData.card.tagline || `Check out ${cardData.card.name}!`,
-          url: shareUrl,
-        });
-      } else {
-        await navigator.clipboard.writeText(shareUrl);
-        // Could add toast notification here
-      }
-    } catch (err) {
-      console.error("Share failed:", err);
-    }
-  };
-
   const handleDownload = async () => {
     if (!cardData?.card || downloading) return;
 
@@ -241,66 +212,12 @@ export function DiscoveryCardDetailPage() {
   const fallbackGradient = `linear-gradient(135deg, hsl(${gradientHue}, 60%, 15%) 0%, hsl(${(gradientHue + 60) % 360}, 50%, 10%) 100%)`;
 
   if (loading) {
-    return (
-      <div className="flex h-full flex-col bg-surface">
-        <header
-          className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-fg/10 bg-surface-el/80 px-4 backdrop-blur-md"
-          style={{
-            paddingTop: "calc(env(safe-area-inset-top) + 12px)",
-            paddingBottom: "12px",
-          }}
-          {...dragRegionProps}
-        >
-          <div className="flex items-center gap-3">
-            <button
-              onClick={handleBack}
-              className={cn(
-                "flex items-center justify-center rounded-full p-2",
-                "text-fg/70 hover:bg-fg/10 hover:text-fg",
-                interactive.transition.fast,
-                interactive.active.scale,
-              )}
-            >
-              <ArrowLeft size={20} strokeWidth={2.5} />
-            </button>
-            <div className="h-5 w-32 rounded bg-fg/10" />
-          </div>
-
-        </header>
-        <DiscoveryDetailSkeleton />
-      </div>
-    );
+    return <DiscoveryDetailSkeleton />;
   }
 
   if (error || !card) {
     return (
-      <div className="flex h-full flex-col bg-surface">
-        <header
-          className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-fg/10 bg-surface-el/80 px-4 backdrop-blur-md"
-          style={{
-            paddingTop: "calc(env(safe-area-inset-top) + 12px)",
-            paddingBottom: "12px",
-          }}
-          {...dragRegionProps}
-        >
-          <div className="flex items-center gap-3">
-            <button
-              onClick={handleBack}
-              className={cn(
-                "flex items-center justify-center rounded-full p-2",
-                "text-fg/70 hover:bg-fg/10 hover:text-fg",
-                interactive.transition.fast,
-                interactive.active.scale,
-              )}
-            >
-              <ArrowLeft size={20} strokeWidth={2.5} />
-            </button>
-            <h1 className={cn(typography.h1.size, "font-bold text-fg")}>{t("discovery.detail.errorTitle")}</h1>
-          </div>
-
-        </header>
-
-        <div className="flex flex-1 flex-col items-center justify-center px-6">
+      <div className="flex flex-1 flex-col items-center justify-center px-6">
           <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-danger/30 bg-danger/10">
             <AlertCircle className="h-8 w-8 text-danger" />
           </div>
@@ -313,7 +230,6 @@ export function DiscoveryCardDetailPage() {
             {t("common.buttons.goBack")}
           </button>
         </div>
-      </div>
     );
   }
 
@@ -322,44 +238,6 @@ export function DiscoveryCardDetailPage() {
 
   return (
     <div className="flex h-full flex-col bg-surface">
-      {/* Header - floats over image with safe area */}
-      <header
-        className="absolute left-0 right-0 top-0 z-50 flex items-center justify-between px-4"
-        style={{
-          paddingTop: "calc(env(safe-area-inset-top) + 12px)",
-        }}
-        {...dragRegionProps}
-      >
-        <button
-          onClick={handleBack}
-          className={cn(
-            "flex h-10 w-10 items-center justify-center rounded-full",
-            "border border-fg/20 bg-surface-el/40 text-fg backdrop-blur-xl",
-            "transition-all hover:bg-surface-el/60",
-            interactive.active.scale,
-          )}
-          aria-label={t("common.buttons.goBack")}
-        >
-          <ArrowLeft size={20} strokeWidth={2.5} />
-        </button>
-
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleShare}
-            className={cn(
-              "flex h-10 w-10 items-center justify-center rounded-full",
-              "border border-fg/20 bg-surface-el/40 text-fg backdrop-blur-xl",
-              "transition-all hover:bg-surface-el/60",
-              interactive.active.scale,
-            )}
-            aria-label={t("discovery.detail.share")}
-          >
-            <Share2 size={20} strokeWidth={2.5} />
-          </button>
-
-        </div>
-      </header>
-
       {/* Main scrollable content */}
       <main
         className="flex-1 overflow-y-auto"
