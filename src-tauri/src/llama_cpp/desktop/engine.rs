@@ -209,6 +209,30 @@ pub(super) fn using_rocm_backend() -> bool {
 }
 
 static ENGINE: OnceLock<Mutex<LlamaState>> = OnceLock::new();
+static SHARED_BACKEND: OnceLock<Arc<LlamaBackend>> = OnceLock::new();
+
+pub(super) fn shared_backend() -> Result<Arc<LlamaBackend>, String> {
+    if let Some(backend) = SHARED_BACKEND.get() {
+        return Ok(backend.clone());
+    }
+
+    let backend = Arc::new(LlamaBackend::init().map_err(|e| {
+        crate::utils::err_msg(
+            module_path!(),
+            line!(),
+            format!("Failed to initialize llama backend: {e}"),
+        )
+    })?);
+
+    let _ = SHARED_BACKEND.set(backend.clone());
+    SHARED_BACKEND.get().cloned().ok_or_else(|| {
+        crate::utils::err_msg(
+            module_path!(),
+            line!(),
+            "Failed to cache shared llama backend",
+        )
+    })
+}
 
 pub(super) fn load_engine(
     app: Option<&AppHandle>,
@@ -238,13 +262,7 @@ pub(super) fn load_engine(
         .map_err(|_| "llama.cpp engine lock poisoned".to_string())?;
 
     if guard.backend.is_none() {
-        guard.backend = Some(Arc::new(LlamaBackend::init().map_err(|e| {
-            crate::utils::err_msg(
-                module_path!(),
-                line!(),
-                format!("Failed to initialize llama backend: {e}"),
-            )
-        })?));
+        guard.backend = Some(shared_backend()?);
     }
 
     let supports_gpu = guard
