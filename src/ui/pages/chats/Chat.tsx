@@ -413,8 +413,6 @@ export function ChatConversationPage() {
   const isGenerating = sending || regeneratingMessageId !== null;
   const lastMessageContentLength = messages[messages.length - 1]?.content.length ?? 0;
 
-  const unloadProviderIdRef = useRef<string | null>(null);
-
   useEffect(() => {
     const checkModelCapabilities = async () => {
       if (!character) {
@@ -434,35 +432,6 @@ export function ChatConversationPage() {
     };
     checkModelCapabilities();
   }, [character]);
-
-  useEffect(() => {
-    let active = true;
-    unloadProviderIdRef.current = null;
-    if (!character) {
-      return () => {
-        active = false;
-      };
-    }
-
-    (async () => {
-      try {
-        const settings = await readSettings();
-        if (!active) return;
-        const effectiveModelId = character.defaultModelId || settings.defaultModelId;
-        const currentModel = settings.models.find((m: Model) => m.id === effectiveModelId);
-        unloadProviderIdRef.current = currentModel?.providerId ?? null;
-      } catch (err) {
-        console.error("Failed to resolve model provider for unload:", err);
-      }
-    })();
-
-    return () => {
-      active = false;
-      if (unloadProviderIdRef.current === "llamacpp") {
-        void invoke("llamacpp_unload");
-      }
-    };
-  }, [character?.id]);
 
   const swapOverlayStyle = useMemo<CSSProperties>(() => {
     const tintRgb = isBackgroundLight ? "22, 101, 52" : "16, 185, 129";

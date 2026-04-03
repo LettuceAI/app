@@ -61,8 +61,8 @@ mod desktop {
         is_likely_context_oom_error,
     };
     use engine::{
-        emit_model_load_complete, emit_model_load_failed, emit_model_load_finalizing, load_engine,
-        using_rocm_backend,
+        consume_kqv_fallback_toast, emit_model_load_complete, emit_model_load_failed,
+        emit_model_load_finalizing, load_engine, using_rocm_backend,
     };
     use offload::{context_bucket_upper, merge_cached_candidate_layers, plan_smart_gpu_offload};
     use prompt::{
@@ -139,6 +139,10 @@ mod desktop {
                 );
             }
         }
+    }
+
+    fn is_aborted_request_error(message: &str) -> bool {
+        message.to_ascii_lowercase().contains("aborted")
     }
 
     fn parse_flash_attention_policy(body: &Value) -> Option<llama_flash_attn_type> {
@@ -1445,14 +1449,26 @@ mod desktop {
             let context_fallback_activated =
                 (ctx_size, n_batch) != (requested_ctx_size, initial_batch);
             if kqv_fallback_activated {
-                let _ = app.emit(
-                    "app://toast",
-                    json!({
-                        "variant": "warning",
-                        "title": "KV cache moved to RAM",
-                        "description": "Requested context did not fit with GPU KV offload. Continued with RAM-backed KV cache."
-                    }),
-                );
+                match consume_kqv_fallback_toast(&app, model_path) {
+                    Ok(true) => {
+                        let _ = app.emit(
+                            "app://toast",
+                            json!({
+                                "variant": "warning",
+                                "title": "KV cache moved to RAM",
+                                "description": "Requested context did not fit with GPU KV offload. Continued with RAM-backed KV cache."
+                            }),
+                        );
+                    }
+                    Ok(false) => {}
+                    Err(err) => {
+                        log_warn(
+                            &app,
+                            "llama_cpp",
+                            format!("failed to dedupe KQV fallback toast: {}", err),
+                        );
+                    }
+                }
             }
             let applied_template_source = built_prompt.applied_template_source.clone();
             let applied_template_text = built_prompt.applied_template_text.clone();
@@ -2099,7 +2115,10 @@ mod desktop {
         }
 
         if let Err(err) = result {
-            let failure_status = if runtime_report
+            let request_was_aborted = is_aborted_request_error(&err);
+            let failure_status = if request_was_aborted {
+                "aborted"
+            } else if runtime_report
                 .get("gpuLoadFallbackActivated")
                 .and_then(|value| value.as_bool())
                 .unwrap_or(false)
@@ -2121,20 +2140,28 @@ mod desktop {
                 "completionTokens",
                 json!(completion_tokens),
             );
-            log_error(&app, "llama_cpp", format!("local inference error: {}", err));
-            persist_runtime_report(&app, model_path, Some(&runtime_report));
-            emit_model_load_failed(
-                &app,
-                request_id.as_deref(),
-                model_path,
-                runtime_report
-                    .get("backendPathUsed")
-                    .and_then(|value| value.as_str()),
-                runtime_report
-                    .get("gpuLoadFallbackActivated")
-                    .and_then(|value| value.as_bool())
-                    .unwrap_or(false),
-            );
+            if request_was_aborted {
+                log_info(
+                    &app,
+                    "llama_cpp",
+                    format!("local inference aborted: {}", err),
+                );
+            } else {
+                log_error(&app, "llama_cpp", format!("local inference error: {}", err));
+                persist_runtime_report(&app, model_path, Some(&runtime_report));
+                emit_model_load_failed(
+                    &app,
+                    request_id.as_deref(),
+                    model_path,
+                    runtime_report
+                        .get("backendPathUsed")
+                        .and_then(|value| value.as_str()),
+                    runtime_report
+                        .get("gpuLoadFallbackActivated")
+                        .and_then(|value| value.as_bool())
+                        .unwrap_or(false),
+                );
+            }
             if stream {
                 if let Some(ref id) = request_id {
                     let envelope = ErrorEnvelope {

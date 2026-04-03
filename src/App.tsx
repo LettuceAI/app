@@ -129,6 +129,30 @@ const LLAMA_MODEL_LOAD_STATUS_LOADED = 2;
 const LLAMA_MODEL_LOAD_STATUS_FAILED = 3;
 const PERSONA_LIBRARY_ROUTE = "/library?view=personas";
 
+function shouldKeepLlamaLoaded(pathname: string) {
+  if (pathname.startsWith("/chat/")) {
+    return true;
+  }
+
+  if (pathname.startsWith("/engine-chat/")) {
+    return true;
+  }
+
+  if (pathname.startsWith("/group-chats/groups/")) {
+    return false;
+  }
+
+  if (
+    pathname === "/group-chats" ||
+    pathname === "/group-chats/history" ||
+    pathname === "/group-chats/new"
+  ) {
+    return false;
+  }
+
+  return /^\/group-chats\/[^/]+(?:\/.*)?$/.test(pathname);
+}
+
 function resolveLlamaModelLoadCopy(stage?: number | null) {
   switch (stage) {
     case 0:
@@ -541,6 +565,7 @@ function AppContent() {
   const navigate = useNavigate();
   console.log("AppContent render:", location.pathname, location.key);
   const mainRef = useRef<HTMLDivElement | null>(null);
+  const previousLlamaKeepAliveRouteRef = useRef(shouldKeepLlamaLoaded(location.pathname));
   const platform = useMemo(() => getPlatform(), []);
   const isChatRoute = location.pathname === "/chat" || location.pathname === "/";
   // Group chat detail: /group-chats/:id, /group-chats/:id/settings, /group-chats/new (NOT /group-chats list)
@@ -647,6 +672,20 @@ function AppContent() {
       // Ignore monitor update failures; Android monitor is best-effort metadata.
     });
   }, [location.pathname, location.search, platform.os]);
+
+  useEffect(() => {
+    const previousShouldKeepLoaded = previousLlamaKeepAliveRouteRef.current;
+    const nextShouldKeepLoaded = shouldKeepLlamaLoaded(location.pathname);
+    previousLlamaKeepAliveRouteRef.current = nextShouldKeepLoaded;
+
+    if (!previousShouldKeepLoaded || nextShouldKeepLoaded) {
+      return;
+    }
+
+    invoke("llamacpp_unload").catch((error) => {
+      console.error("Failed to unload llama.cpp after leaving chat routes:", error);
+    });
+  }, [location.pathname]);
 
   useEffect(() => {
     const urlParams = new URLSearchParams(location.search);
