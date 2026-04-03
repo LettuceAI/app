@@ -1,8 +1,7 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { RotateCcw, Save, Info, FolderOpen, Loader } from "lucide-react";
+import { ArrowLeft, RotateCcw, Save, Info, Loader } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
 import { WindowControlButtons, useDragRegionProps } from "../../../components/App/TopNav";
 import { cn } from "../../../design-tokens";
 import type { AdvancedModelSettings } from "../../../../core/storage/schemas";
@@ -139,16 +138,6 @@ export function SessionAdvancedSettings({
     };
   }, [isOpen, isLlama, modelPath, draft.llamaOffloadKqv, draft.llamaKvType, draft.llamaGpuLayers]);
 
-  const browseMmproj = useCallback(async () => {
-    const selected = await open({
-      multiple: false,
-      filters: [{ name: "GGUF", extensions: ["gguf"] }],
-    });
-    if (selected) {
-      update({ llamaMmprojPath: selected as string });
-    }
-  }, []);
-
   useEffect(() => {
     if (!isOpen) return;
     const handler = (e: KeyboardEvent) => {
@@ -187,9 +176,19 @@ export function SessionAdvancedSettings({
             className="flex shrink-0 items-center justify-between border-b border-fg/10 px-4 py-3"
             {...dragRegionProps}
           >
-            <div>
-              <h2 className="text-base font-semibold text-fg">Session Parameters</h2>
-              <p className="text-xs text-fg/45">Override model defaults for this conversation</p>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-full border border-fg/10 p-2 text-fg/60 transition hover:bg-fg/10 hover:text-fg"
+                aria-label="Go back"
+              >
+                <ArrowLeft size={16} />
+              </button>
+              <div>
+                <h2 className="text-base font-semibold text-fg">Session Parameters</h2>
+                <p className="text-xs text-fg/45">Override model defaults for this conversation</p>
+              </div>
             </div>
             <div className="flex items-center gap-2">
               <button
@@ -678,128 +677,6 @@ export function SessionAdvancedSettings({
                               Loading context info...
                             </div>
                           )}
-
-                          {/* Templates & Paths */}
-                          <div className="rounded-xl border border-fg/8 bg-fg/[0.02] p-4">
-                            <h3 className="mb-5 text-[11px] font-bold uppercase tracking-wider text-fg/40">
-                              Templates & Paths
-                            </h3>
-                            <div className="space-y-5">
-                              <div className="space-y-2">
-                                <label className="text-[13px] font-medium text-fg/80">
-                                  Template Override
-                                </label>
-                                <p className="text-[11px] text-fg/40 leading-relaxed">
-                                  Jinja template or internal name.
-                                </p>
-                                <textarea
-                                  value={draft.llamaChatTemplateOverride ?? ""}
-                                  onChange={(e) =>
-                                    update({ llamaChatTemplateOverride: e.target.value || null })
-                                  }
-                                  rows={2}
-                                  placeholder="Prefer embedded GGUF template"
-                                  className="w-full resize-none rounded-lg border border-fg/10 bg-fg/5 px-3 py-2 font-mono text-[12px] text-fg placeholder-fg/30 transition focus:border-fg/20 focus:outline-none"
-                                  spellCheck={false}
-                                />
-                              </div>
-
-                              <div className="space-y-2">
-                                <div className="flex items-center justify-between">
-                                  <div>
-                                    <label className="text-[13px] font-medium text-fg/80">
-                                      MMProj Path
-                                    </label>
-                                    <p className="text-[11px] text-fg/40 leading-relaxed">
-                                      Multimodal projector GGUF for vision.
-                                    </p>
-                                  </div>
-                                  <button
-                                    type="button"
-                                    onClick={browseMmproj}
-                                    className="inline-flex items-center gap-1.5 rounded-md border border-fg/10 bg-fg/5 px-2.5 py-1.5 text-[11px] font-medium text-fg/60 transition hover:bg-fg/10 hover:text-fg"
-                                  >
-                                    <FolderOpen className="h-3 w-3" />
-                                    Browse
-                                  </button>
-                                </div>
-                                <input
-                                  type="text"
-                                  value={draft.llamaMmprojPath ?? ""}
-                                  onChange={(e) =>
-                                    update({ llamaMmprojPath: e.target.value || null })
-                                  }
-                                  placeholder="/path/to/mmproj.gguf"
-                                  className="w-full rounded-lg border border-fg/10 bg-fg/5 px-3 py-2 text-sm text-fg placeholder-fg/30 transition focus:border-fg/20 focus:outline-none"
-                                  spellCheck={false}
-                                />
-                              </div>
-
-                              <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-                                <div className="space-y-2">
-                                  <label className="text-[13px] font-medium text-fg/80">
-                                    Template Preset
-                                  </label>
-                                  <p className="text-[11px] text-fg/40 leading-relaxed">
-                                    Fallback if GGUF has no template.
-                                  </p>
-                                  <select
-                                    value={draft.llamaChatTemplatePreset ?? "auto"}
-                                    onChange={(e) =>
-                                      update({
-                                        llamaChatTemplatePreset:
-                                          e.target.value === "auto" ? null : e.target.value,
-                                      })
-                                    }
-                                    className="w-full rounded-lg border border-fg/10 bg-fg/5 px-3 py-2 text-sm text-fg transition focus:border-fg/20 focus:outline-none"
-                                  >
-                                    <option value="auto">Auto (prefer embedded)</option>
-                                    <option value="chatml">ChatML</option>
-                                    <option value="llama2">Llama 2</option>
-                                    <option value="llama3">Llama 3</option>
-                                    <option value="mistral">Mistral</option>
-                                    <option value="gemma">Gemma</option>
-                                    <option value="phi3">Phi-3</option>
-                                    <option value="command-r">Command R</option>
-                                    <option value="deepseek">DeepSeek</option>
-                                    <option value="zephyr">Zephyr</option>
-                                    <option value="vicuna">Vicuna</option>
-                                    <option value="alpaca">Alpaca</option>
-                                  </select>
-                                </div>
-
-                                <div className="space-y-2">
-                                  <label className="text-[13px] font-medium text-fg/80">
-                                    Raw Completion Fallback
-                                  </label>
-                                  <p className="text-[11px] text-fg/40 leading-relaxed">
-                                    For raw-tuned models only.
-                                  </p>
-                                  <select
-                                    value={
-                                      draft.llamaRawCompletionFallback == null
-                                        ? "default"
-                                        : draft.llamaRawCompletionFallback
-                                          ? "enabled"
-                                          : "disabled"
-                                    }
-                                    onChange={(e) => {
-                                      const val = e.target.value;
-                                      update({
-                                        llamaRawCompletionFallback:
-                                          val === "default" ? null : val === "enabled",
-                                      });
-                                    }}
-                                    className="w-full rounded-lg border border-fg/10 bg-fg/5 px-3 py-2 text-sm text-fg transition focus:border-fg/20 focus:outline-none"
-                                  >
-                                    <option value="default">Default (disabled)</option>
-                                    <option value="enabled">Enabled</option>
-                                    <option value="disabled">Disabled</option>
-                                  </select>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
                         </div>
                       )}
                     </>
