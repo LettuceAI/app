@@ -473,9 +473,29 @@ export function EditModelPage() {
       ["Recommended context", formatRuntimeNumber(llamaRuntimeReport.recommendedContext)],
       ["Initial context", formatRuntimeNumber(llamaRuntimeReport.initialContextCandidate)],
       ["Actual context", formatRuntimeNumber(llamaRuntimeReport.actualContextUsed)],
+      ["Requested GPU layers", formatRuntimeNumber(llamaRuntimeReport.requestedGpuLayers)],
+      ["Actual GPU layers", formatRuntimeNumber(llamaRuntimeReport.actualGpuLayersUsed)],
       ["Requested batch", formatRuntimeNumber(llamaRuntimeReport.requestedBatchLimit)],
       ["Initial batch", formatRuntimeNumber(llamaRuntimeReport.initialBatchCandidate)],
       ["Actual batch", formatRuntimeNumber(llamaRuntimeReport.actualBatchUsed)],
+      [
+        "Smart offload fallback",
+        llamaRuntimeReport.smartGpuLayerFallbackActivated == null
+          ? null
+          : llamaRuntimeReport.smartGpuLayerFallbackActivated
+            ? "Active"
+            : "Not needed",
+      ],
+      [
+        "Smart offload estimate",
+        formatRuntimeNumber(llamaRuntimeReport.smartOffloadEstimatedGpuLayers),
+      ],
+      [
+        "Smart offload candidates",
+        llamaRuntimeReport.smartOffloadCandidateLayers?.length
+          ? llamaRuntimeReport.smartOffloadCandidateLayers.join(", ")
+          : null,
+      ],
       ["KV cache", llamaRuntimeReport.actualKvTypeUsed ?? null],
       ["KQV offload", llamaRuntimeReport.actualOffloadKqvMode ?? null],
       ["Flash attention", llamaRuntimeReport.flashAttentionPolicy ?? null],

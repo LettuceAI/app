@@ -36,6 +36,7 @@ mod desktop {
     use super::*;
     pub(super) mod context;
     pub(super) mod engine;
+    pub(super) mod offload;
     mod prompt;
     mod sampler;
 
@@ -63,6 +64,7 @@ mod desktop {
         emit_model_load_complete, emit_model_load_failed, emit_model_load_finalizing, load_engine,
         using_rocm_backend,
     };
+    use offload::plan_smart_gpu_offload;
     use prompt::{
         add_bos_label, build_prompt, inject_media_markers, model_tokenizer_add_bos_label,
         model_tokenizer_adds_bos, prompt_add_bos_reason, prompt_mode_label, resolve_prompt_add_bos,
@@ -755,16 +757,107 @@ mod desktop {
             "modelPath": model_path,
             "requestedContext": requested_context,
             "requestedBatchLimit": requested_batch_limit,
+            "requestedGpuLayers": llama_gpu_layers,
             "targetNewTokens": max_tokens,
         });
 
         let result = (|| -> Result<(), String> {
+            let resolved_offload_kqv = if llama_offload_kqv.is_some() {
+                llama_offload_kqv
+            } else if using_rocm_backend() {
+                Some(false)
+            } else {
+                None
+            };
+            let resolved_flash_attention_policy = if let Some(policy) = llama_flash_attention_policy
+            {
+                policy
+            } else if using_rocm_backend() {
+                LLAMA_FLASH_ATTN_TYPE_DISABLED
+            } else {
+                LLAMA_FLASH_ATTN_TYPE_AUTO
+            };
+            let available_memory_bytes = get_available_memory_bytes();
+            let available_vram_bytes = get_available_vram_bytes();
+            let mut effective_gpu_layers = llama_gpu_layers;
+            let mut smart_gpu_layer_candidates: Option<Vec<u32>> = None;
+
+            if llama_gpu_layers.is_none() && !llama_strict_mode {
+                let smart_offload_plan = plan_smart_gpu_offload(
+                    model_path,
+                    available_memory_bytes,
+                    available_vram_bytes,
+                    requested_context,
+                    resolved_offload_kqv,
+                    llama_kv_type_raw.as_deref(),
+                    resolved_flash_attention_policy,
+                )?;
+                effective_gpu_layers = smart_offload_plan.candidate_gpu_layers.first().copied();
+                smart_gpu_layer_candidates = Some(smart_offload_plan.candidate_gpu_layers.clone());
+                update_runtime_report_field(
+                    &mut runtime_report,
+                    "smartOffloadPlannedContext",
+                    json!(smart_offload_plan.planned_context),
+                );
+                update_runtime_report_field(
+                    &mut runtime_report,
+                    "smartOffloadRecommendedContext",
+                    json!(smart_offload_plan.recommended_context),
+                );
+                update_runtime_report_field(
+                    &mut runtime_report,
+                    "smartOffloadEstimatedGpuLayers",
+                    json!(smart_offload_plan.estimated_gpu_layers),
+                );
+                update_runtime_report_field(
+                    &mut runtime_report,
+                    "smartOffloadCandidateLayers",
+                    json!(smart_offload_plan.candidate_gpu_layers.clone()),
+                );
+                update_runtime_report_field(
+                    &mut runtime_report,
+                    "smartOffloadKqvVramReserved",
+                    json!(smart_offload_plan.kqv_vram_reserved),
+                );
+                update_runtime_report_field(
+                    &mut runtime_report,
+                    "smartOffloadEstimatedKvBytes",
+                    json!(smart_offload_plan.estimated_kv_bytes),
+                );
+                update_runtime_report_field(
+                    &mut runtime_report,
+                    "smartOffloadRuntimeReserveBytes",
+                    json!(smart_offload_plan.estimated_runtime_reserve_bytes),
+                );
+                update_runtime_report_field(
+                    &mut runtime_report,
+                    "smartOffloadEffectiveVramBudgetBytes",
+                    json!(smart_offload_plan.effective_vram_budget_bytes),
+                );
+                log_info(
+                    &app,
+                    "llama_cpp",
+                    format!(
+                        "smart gpu offload plan: total_layers={} planned_ctx={} estimated_gpu_layers={} candidates={:?} reserve_kqv_vram={} kv_bytes={} runtime_reserve_bytes={} effective_vram_budget_bytes={}",
+                        smart_offload_plan.total_layers,
+                        smart_offload_plan.planned_context,
+                        smart_offload_plan.estimated_gpu_layers,
+                        smart_offload_plan.candidate_gpu_layers,
+                        smart_offload_plan.kqv_vram_reserved,
+                        smart_offload_plan.estimated_kv_bytes,
+                        smart_offload_plan.estimated_runtime_reserve_bytes,
+                        smart_offload_plan.effective_vram_budget_bytes,
+                    ),
+                );
+            }
+
             log_info(&app, "llama_cpp", "loading llama.cpp engine/model");
             let engine = load_engine(
                 Some(&app),
                 request_id.as_deref(),
                 model_path,
-                llama_gpu_layers,
+                effective_gpu_layers,
+                smart_gpu_layer_candidates.as_deref(),
                 llama_strict_mode,
                 llama_mmproj_path.as_deref(),
             )?;
@@ -789,11 +882,10 @@ mod desktop {
             }
             let use_vision = vision_requested && mtmd_ctx.is_some();
             let max_ctx = model.n_ctx_train().max(1);
-            let available_memory_bytes = get_available_memory_bytes();
-            let available_vram_bytes = get_available_vram_bytes();
             let backend_path_used = engine.backend_path_used.as_deref().unwrap_or("unknown");
             let gpu_load_fallback_activated = engine.gpu_load_fallback_activated;
             let gpu_load_fallback_reason = engine.gpu_load_fallback_reason.clone();
+            let actual_gpu_layers_used = engine.actual_gpu_layers_used;
             let recommended_ctx = compute_recommended_context(
                 model,
                 available_memory_bytes,
@@ -838,6 +930,16 @@ mod desktop {
                 &mut runtime_report,
                 "supportsGpuOffload",
                 json!(engine.supports_gpu_offload),
+            );
+            update_runtime_report_field(
+                &mut runtime_report,
+                "actualGpuLayersUsed",
+                json!(actual_gpu_layers_used),
+            );
+            update_runtime_report_field(
+                &mut runtime_report,
+                "smartGpuLayerFallbackActivated",
+                json!(engine.smart_gpu_layer_fallback_activated),
             );
             update_runtime_report_field(
                 &mut runtime_report,
@@ -1071,23 +1173,6 @@ mod desktop {
                 ));
             }
 
-            let resolved_offload_kqv = if llama_offload_kqv.is_some() {
-                llama_offload_kqv
-            } else if using_rocm_backend() {
-                // ROCm/HIP builds can be more stable with KQV on CPU by default on some AMD stacks.
-                Some(false)
-            } else {
-                None
-            };
-            let resolved_flash_attention_policy = if let Some(policy) = llama_flash_attention_policy
-            {
-                policy
-            } else if using_rocm_backend() {
-                // Conservative ROCm default to avoid driver/device crashes on some AMD stacks.
-                LLAMA_FLASH_ATTN_TYPE_DISABLED
-            } else {
-                LLAMA_FLASH_ATTN_TYPE_AUTO
-            };
             let requested_ctx_size = ctx_size;
             let initial_batch = ctx_size.min(llama_batch_size).max(1);
             let mut resolved_ctx_size = ctx_size;
@@ -1138,7 +1223,7 @@ mod desktop {
                         "creating context attempt: ctx={} batch={} gpu_layers={:?} offload_kqv={:?} flash_attention_policy={:?}",
                         attempt_ctx,
                         attempt_batch,
-                        llama_gpu_layers,
+                        actual_gpu_layers_used,
                         resolved_offload_kqv,
                         resolved_flash_attention_policy
                     ),
@@ -1243,6 +1328,8 @@ mod desktop {
                     "requestedBatchLimit": llama_batch_size,
                     "initialBatchCandidate": initial_batch,
                     "actualNBatchUsed": n_batch,
+                    "requestedGpuLayers": llama_gpu_layers,
+                    "actualGpuLayersUsed": actual_gpu_layers_used,
                     "actualKvTypeUsed": kv_type_label(llama_kv_type_raw.as_deref()),
                     "actualOffloadKqvMode": offload_kqv_mode_label(resolved_offload_kqv),
                     "flashAttentionPolicy": flash_attention_policy_label(resolved_flash_attention_policy),
@@ -1251,6 +1338,7 @@ mod desktop {
                     "supportsGpuOffload": supports_gpu_offload,
                     "strictModeEnabled": llama_strict_mode,
                     "gpuLoadFallbackActivated": gpu_load_fallback_activated,
+                    "smartGpuLayerFallbackActivated": engine.smart_gpu_layer_fallback_activated,
                     "contextFallbackActivated": context_fallback_activated,
                     "mmprojPath": llama_mmproj_path,
                     "visionRequested": vision_requested,
@@ -1294,7 +1382,7 @@ mod desktop {
                 &app,
                 "llama_cpp",
                 format!(
-                    "llama runtime resolved: prompt_mode={} template_source={} fallback_prompt={} bos={} ctx={} n_batch={} kv_type={} offload_kqv={} backend_path={} flash_attention={} context_fallback={}",
+                    "llama runtime resolved: prompt_mode={} template_source={} fallback_prompt={} bos={} ctx={} n_batch={} gpu_layers={:?} kv_type={} offload_kqv={} backend_path={} flash_attention={} smart_gpu_fallback={} context_fallback={}",
                     prompt_mode_label(built_prompt.prompt_mode),
                     built_prompt
                         .applied_template_source
@@ -1304,10 +1392,12 @@ mod desktop {
                     add_bos_label(prompt_add_bos),
                     ctx_size,
                     n_batch,
+                    actual_gpu_layers_used,
                     kv_type_label(llama_kv_type_raw.as_deref()),
                     offload_kqv_mode_label(resolved_offload_kqv),
                     backend_path_used,
                     flash_attention_policy_label(resolved_flash_attention_policy),
+                    engine.smart_gpu_layer_fallback_activated,
                     context_fallback_activated,
                 ),
             );
