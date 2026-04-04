@@ -37,6 +37,7 @@ pub(super) struct LlamaState {
     pub(super) supports_gpu_offload: bool,
     pub(super) mtmd_ctx: Option<Arc<MtmdContext>>,
     pub(super) mmproj_path: Option<String>,
+    pub(super) kqv_fallback_toast_shown: bool,
 }
 
 const LLAMA_MODEL_LOAD_PROGRESS_EVENT: &str = "llama-model-load-progress";
@@ -323,6 +324,7 @@ pub(super) fn load_engine(
             supports_gpu_offload: false,
             mtmd_ctx: None,
             mmproj_path: None,
+            kqv_fallback_toast_shown: false,
         })
     });
 
@@ -379,8 +381,8 @@ pub(super) fn load_engine(
             );
         }
     }
-    let requested_gpu_layers_key = if let Some(candidates) = auto_gpu_layer_candidates {
-        format!("smart:{candidates:?}")
+    let requested_gpu_layers_key = if auto_gpu_layer_candidates.is_some() {
+        "smart:auto".to_string()
     } else {
         requested_gpu_layers
             .map(|v| v.to_string())
@@ -393,12 +395,27 @@ pub(super) fn load_engine(
     let should_reload = guard.model.is_none()
         || guard.model_path.as_deref() != Some(model_path)
         || guard.model_params_key.as_deref() != Some(&model_params_key);
+    if !should_reload {
+        if let Some(app) = app {
+            log_info(
+                app,
+                "llama_cpp",
+                format!(
+                    "Reusing loaded llama.cpp model: model_path={} actual_gpu_layers_used={:?} backend_path={}",
+                    model_path,
+                    guard.actual_gpu_layers_used,
+                    guard.backend_path_used.as_deref().unwrap_or("unknown"),
+                ),
+            );
+        }
+    }
     if should_reload {
         let mut backend_path_used = "cpu".to_string();
         let mut actual_gpu_layers_used = None;
         let mut gpu_load_fallback_activated = false;
         let mut gpu_load_fallback_reason = None;
         let mut smart_gpu_layer_fallback_activated = false;
+        guard.kqv_fallback_toast_shown = false;
 
         let model = if supports_gpu && requested_gpu_layers != Some(0) {
             if let Some(candidates) = auto_gpu_layer_candidates.filter(|value| !value.is_empty()) {
@@ -791,6 +808,7 @@ pub(crate) fn unload_engine(app: &AppHandle) -> Result<(), String> {
             supports_gpu_offload: false,
             mtmd_ctx: None,
             mmproj_path: None,
+            kqv_fallback_toast_shown: false,
         })
     });
 
@@ -809,8 +827,48 @@ pub(crate) fn unload_engine(app: &AppHandle) -> Result<(), String> {
         guard.smart_gpu_layer_fallback_activated = false;
         guard.mtmd_ctx = None;
         guard.mmproj_path = None;
+        guard.kqv_fallback_toast_shown = false;
         log_info(app, "llama_cpp", "unloaded llama.cpp model");
     }
 
     Ok(())
+}
+
+pub(crate) fn consume_kqv_fallback_toast(
+    _app: &AppHandle,
+    model_path: &str,
+) -> Result<bool, String> {
+    let engine = ENGINE.get_or_init(|| {
+        Mutex::new(LlamaState {
+            backend: None,
+            model_path: None,
+            model_params_key: None,
+            model: None,
+            backend_path_used: None,
+            actual_gpu_layers_used: None,
+            gpu_load_fallback_activated: false,
+            gpu_load_fallback_reason: None,
+            smart_gpu_layer_fallback_activated: false,
+            compiled_gpu_backends: Vec::new(),
+            supports_gpu_offload: false,
+            mtmd_ctx: None,
+            mmproj_path: None,
+            kqv_fallback_toast_shown: false,
+        })
+    });
+
+    let mut guard = engine
+        .lock()
+        .map_err(|_| "llama.cpp engine lock poisoned".to_string())?;
+
+    if guard.model_path.as_deref() != Some(model_path) {
+        return Ok(true);
+    }
+
+    if guard.kqv_fallback_toast_shown {
+        return Ok(false);
+    }
+
+    guard.kqv_fallback_toast_shown = true;
+    Ok(true)
 }
