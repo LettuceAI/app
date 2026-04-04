@@ -7,8 +7,7 @@ use llama_cpp_sys_2::{
     ggml_backend_dev_count, ggml_backend_dev_get, ggml_backend_dev_memory, ggml_backend_dev_type,
     GGML_BACKEND_DEVICE_TYPE_ACCEL, GGML_BACKEND_DEVICE_TYPE_GPU, GGML_BACKEND_DEVICE_TYPE_IGPU,
 };
-#[cfg(target_os = "windows")]
-use windows::core::Interface;
+
 #[cfg(target_os = "windows")]
 use windows::core::Interface;
 #[cfg(target_os = "windows")]
