@@ -895,6 +895,25 @@ export async function saveAdvancedSettings(settings: Settings["advancedSettings"
   broadcastSettingsUpdated();
 }
 
+export interface HostApiStatus {
+  running: boolean;
+  bindAddress?: string | null;
+  port?: number | null;
+  baseUrl?: string | null;
+}
+
+export async function getHostApiStatus(): Promise<HostApiStatus> {
+  return storageBridge.hostApiGetStatus();
+}
+
+export async function startHostApi(): Promise<HostApiStatus> {
+  return storageBridge.hostApiStart();
+}
+
+export async function stopHostApi(): Promise<HostApiStatus> {
+  return storageBridge.hostApiStop();
+}
+
 export async function getSession(id: string): Promise<Session | null> {
   const data = await storageBridge.sessionGet(id);
   return data ? SessionSchema.parse(data) : null;

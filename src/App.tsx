@@ -38,6 +38,7 @@ import { ChangelogPage } from "./ui/pages/settings/ChangelogPage";
 import { AdvancedPage } from "./ui/pages/settings/AdvancedPage";
 import { CreationHelperPage as AICreationHelperPage } from "./ui/pages/settings/CreationHelperPage";
 import { HelpMeReplyPage } from "./ui/pages/settings/HelpMeReplyPage";
+import { HostApiPage } from "./ui/pages/settings/HostApiPage";
 import { VoicesPage } from "./ui/pages/settings/VoicesPage";
 import { DynamicMemoryPage } from "./ui/pages/settings/DynamicMemoryPage";
 import { EmbeddingDownloadPage } from "./ui/pages/settings/EmbeddingDownloadPage";
@@ -1033,6 +1034,7 @@ function AppContent() {
               <Route path="/settings/advanced/memory" element={<DynamicMemoryPage />} />
               <Route path="/settings/advanced/creation-helper" element={<AICreationHelperPage />} />
               <Route path="/settings/advanced/help-me-reply" element={<HelpMeReplyPage />} />
+              <Route path="/settings/advanced/host-api" element={<HostApiPage />} />
               <Route path="/settings/embedding-download" element={<EmbeddingDownloadPage />} />
               <Route path="/settings/embedding-test" element={<EmbeddingTestPage />} />
               <Route path="/settings/changelog" element={<ChangelogPage />} />

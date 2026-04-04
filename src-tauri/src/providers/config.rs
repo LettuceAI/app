@@ -85,6 +85,7 @@ fn get_all_provider_configs_internal() -> Vec<ProviderConfig> {
             "IntenseRP Next (Local)",
             "http://127.0.0.1:7777/v1",
         ),
+        ("lettuce-host", "Lettuce Host", ""),
         ("lettuce-engine", "Lettuce Engine", ""),
         ("custom", "Custom (OpenAI-format)", ""),
         ("custom-anthropic", "Custom (Anthropic-format)", ""),

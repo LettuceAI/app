@@ -51,7 +51,8 @@ export function ProviderConfigForm({
   const navigate = useNavigate();
   const isCustomProvider = ["custom", "custom-anthropic"].includes(selectedProviderId);
   const isLocalProvider = ["ollama", "lmstudio", "intenserp"].includes(selectedProviderId);
-  const showBaseUrl = isCustomProvider || isLocalProvider;
+  const isHostProvider = selectedProviderId === "lettuce-host";
+  const showBaseUrl = isCustomProvider || isLocalProvider || isHostProvider;
 
   return (
     <div className="space-y-4">
@@ -105,16 +106,20 @@ export function ProviderConfigForm({
             placeholder={
               selectedProviderId === "intenserp"
                 ? "http://127.0.0.1:7777/v1"
-                : isLocalProvider
-                  ? "http://localhost:11434"
-                  : "https://api.provider.com"
+                : isHostProvider
+                  ? "http://192.168.1.10:3333"
+                  : isLocalProvider
+                    ? "http://localhost:11434"
+                    : "https://api.provider.com"
             }
             className="w-full min-h-11 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-white placeholder-white/40 transition-colors focus:border-white/30 focus:outline-none"
           />
           <p className="text-[11px] text-gray-500">
             {isLocalProvider
               ? "Your local server address with port"
-              : "Override the default endpoint if needed"}
+              : isHostProvider
+                ? "Enter the desktop host URL shown by your host device"
+                : "Override the default endpoint if needed"}
           </p>
         </div>
       )}

@@ -150,7 +150,9 @@ export function ProviderSetupPage() {
   const selectedProvider = visibleCapabilities.find((p) => p.id === selectedProviderId);
   const isCustomProvider = ["custom", "custom-anthropic"].includes(selectedProviderId);
   const isLocalProvider = ["ollama", "lmstudio", "intenserp"].includes(selectedProviderId);
-  const showBaseUrl = Boolean(selectedProvider) && (isCustomProvider || isLocalProvider);
+  const isHostProvider = selectedProviderId === "lettuce-host";
+  const showBaseUrl =
+    Boolean(selectedProvider) && (isCustomProvider || isLocalProvider || isHostProvider);
 
   const configFormContent = (
     <div className="space-y-4">
@@ -210,16 +212,20 @@ export function ProviderSetupPage() {
             placeholder={
               selectedProviderId === "intenserp"
                 ? "http://127.0.0.1:7777/v1"
-                : isLocalProvider
-                  ? "http://localhost:11434"
-                  : "https://api.provider.com"
+                : isHostProvider
+                  ? "http://192.168.1.10:3333"
+                  : isLocalProvider
+                    ? "http://localhost:11434"
+                    : "https://api.provider.com"
             }
             className="w-full min-h-11 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-white placeholder-white/40 transition-colors focus:border-white/30 focus:outline-none"
           />
           <p className="text-[11px] text-gray-500">
             {isLocalProvider
               ? "Your local server address with port"
-              : "Override the default endpoint if needed"}
+              : isHostProvider
+                ? "Enter the desktop host URL shown by your host device"
+                : "Override the default endpoint if needed"}
           </p>
         </div>
       )}
@@ -423,6 +429,8 @@ function getProviderDescription(providerId: string): string {
       return "OpenAI-compatible inference for top open-source models";
     case "openai":
       return "GPT-5, GPT-4.1, and GPT-4o models for expressive RP";
+    case "lettuce-host":
+      return "Connect to your own desktop Lettuce Host over LAN with OpenAI-style API";
     case "anthropic":
       return "Claude 4.5 Sonnet & Haiku for deep, emotional dialogue";
     case "nanogpt":
@@ -458,6 +466,8 @@ function getProviderDescriptionShort(providerId: string): string {
       return "Open-source model inference";
     case "openai":
       return "GPT-5, GPT-4o, GPT-4.1";
+    case "lettuce-host":
+      return "Your own LAN host";
     case "anthropic":
       return "Claude 4.5 Sonnet & Haiku";
     case "nanogpt":

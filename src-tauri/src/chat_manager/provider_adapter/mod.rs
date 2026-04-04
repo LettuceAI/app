@@ -255,6 +255,7 @@ pub fn adapter_for(credential: &ProviderCredential) -> Box<dyn ProviderAdapter +
         "qwen" => Box::new(qwen::QwenAdapter),
         "stability" => Box::new(stability::StabilityAdapter),
         "openrouter" => Box::new(openai::OpenRouterAdapter),
+        "lettuce-host" => Box::new(openai::OpenAIAdapter),
         "lettuce-engine" => Box::new(lettuce_engine::LettuceEngineAdapter),
         _ => Box::new(openai::OpenAIAdapter),
     }

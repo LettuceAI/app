@@ -344,6 +344,14 @@ export const PROVIDER_REASONING_CAPABILITIES: Record<string, ReasoningCapability
       { value: "high", label: "High", description: "Maximum reasoning depth" },
     ],
   },
+  "lettuce-host": {
+    type: "effort",
+    options: [
+      { value: "low", label: "Low", description: "Quick responses with less reasoning" },
+      { value: "medium", label: "Medium", description: "Balanced reasoning depth" },
+      { value: "high", label: "High", description: "Maximum reasoning depth" },
+    ],
+  },
   chutes: {
     type: "effort",
     options: [
@@ -1598,6 +1606,55 @@ export const PROVIDER_PARAMETER_SUPPORT = {
       ollamaStop: false,
     },
   },
+  "lettuce-host": {
+    providerId: "lettuce-host",
+    displayName: "Lettuce Host",
+    reasoningSupport: "effort" as ReasoningSupport,
+    supportedParameters: {
+      temperature: true,
+      topP: true,
+      maxOutputTokens: true,
+      contextLength: false,
+      frequencyPenalty: true,
+      presencePenalty: true,
+      topK: true,
+      reasoningEnabled: true,
+      reasoningEffort: true,
+      reasoningBudgetTokens: true,
+      llamaGpuLayers: false,
+      llamaThreads: false,
+      llamaThreadsBatch: false,
+      llamaSeed: false,
+      llamaRopeFreqBase: false,
+      llamaRopeFreqScale: false,
+      llamaOffloadKqv: false,
+      llamaBatchSize: false,
+      llamaKvType: false,
+      llamaFlashAttention: false,
+      llamaChatTemplateOverride: false,
+      llamaMmprojPath: false,
+      llamaChatTemplatePreset: false,
+      llamaRawCompletionFallback: false,
+      llamaSamplerProfile: false,
+      llamaMinP: false,
+      llamaTypicalP: false,
+      ollamaNumCtx: false,
+      ollamaNumPredict: false,
+      ollamaNumKeep: false,
+      ollamaNumBatch: false,
+      ollamaNumGpu: false,
+      ollamaNumThread: false,
+      ollamaTfsZ: false,
+      ollamaTypicalP: false,
+      ollamaMinP: false,
+      ollamaMirostat: false,
+      ollamaMirostatTau: false,
+      ollamaMirostatEta: false,
+      ollamaRepeatPenalty: false,
+      ollamaSeed: false,
+      ollamaStop: false,
+    },
+  },
   nvidia: {
     providerId: "nvidia",
     displayName: "NVIDIA NIM",
@@ -2190,6 +2247,23 @@ export const AppStateSchema = z.object({
 });
 export type AppState = z.infer<typeof AppStateSchema>;
 
+export const HostApiExposedModelSchema = z.object({
+  id: z.string().min(1),
+  modelId: z.string().uuid(),
+  enabled: z.boolean().default(true),
+  label: z.string().optional(),
+});
+export type HostApiExposedModel = z.infer<typeof HostApiExposedModelSchema>;
+
+export const HostApiSettingsSchema = z.object({
+  enabled: z.boolean().default(false),
+  bindAddress: z.string().default("0.0.0.0"),
+  port: z.number().int().min(1).max(65535).default(3333),
+  token: z.string().default(""),
+  exposedModels: z.array(HostApiExposedModelSchema).default([]),
+});
+export type HostApiSettings = z.infer<typeof HostApiSettingsSchema>;
+
 export const AccessibilitySoundSchema = z.object({
   enabled: z.boolean().default(false),
   volume: z.number().min(0).max(1).default(0.6),
@@ -2345,6 +2419,7 @@ export const SettingsSchema = z.object({
       embeddingMaxTokens: z.number().optional(), // 1024, 2048, or 4096
       embeddingModelVersion: z.enum(["v2", "v3"]).optional(),
       embeddingKeepModelLoaded: z.boolean().optional(),
+      hostApi: HostApiSettingsSchema.optional(),
       dynamicMemory: DynamicMemorySettingsSchema.optional(),
       groupDynamicMemory: DynamicMemorySettingsSchema.optional(),
       accessibility: AccessibilitySettingsSchema.optional(),
@@ -2373,6 +2448,13 @@ export function createDefaultSettings(): Settings {
       sceneGenerationMode: "auto",
       appUpdateChecksEnabled: true,
       developerModeEnabled: false,
+      hostApi: {
+        enabled: false,
+        bindAddress: "0.0.0.0",
+        port: 3333,
+        token: "",
+        exposedModels: [],
+      },
       accessibility: createDefaultAccessibilitySettings(),
     },
     promptTemplateId: null,

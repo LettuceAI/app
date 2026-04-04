@@ -168,7 +168,7 @@ export function useProvidersPageController(): ControllerReturn {
       const requiresVerification =
         !isLocalProvider &&
         !isEngineProvider &&
-        ["openai", "anthropic", "openrouter", "groq", "mistral"].includes(
+        ["openai", "anthropic", "openrouter", "groq", "mistral", "lettuce-host"].includes(
           editorProvider.providerId,
         );
       const trimmedKey = apiKey.trim();
@@ -231,9 +231,13 @@ export function useProvidersPageController(): ControllerReturn {
         return;
       }
 
-      const requiresBaseUrl = ["ollama", "lmstudio", "intenserp", "automatic1111"].includes(
-        editorProvider.providerId,
-      );
+      const requiresBaseUrl = [
+        "ollama",
+        "lmstudio",
+        "intenserp",
+        "automatic1111",
+        "lettuce-host",
+      ].includes(editorProvider.providerId);
       if (requiresBaseUrl && !editorProvider.baseUrl?.trim()) {
         dispatch({
           type: "set_validation_error",

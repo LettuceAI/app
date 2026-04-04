@@ -169,6 +169,7 @@ fn default_settings() -> Settings {
             group_dynamic_memory: None,
             manual_mode_context_window: None,
             embedding_max_tokens: None,
+            host_api: None,
             accessibility: Some(AccessibilitySettings {
                 send: AccessibilitySoundSettings {
                     enabled: false,

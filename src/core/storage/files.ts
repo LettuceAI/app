@@ -62,6 +62,27 @@ export const storageBridge = {
     invoke("settings_set_advanced", {
       advancedJson: advanced == null ? "null" : JSON.stringify(advanced),
     }) as Promise<void>,
+  hostApiGetStatus: () =>
+    invoke<{
+      running: boolean;
+      bindAddress?: string | null;
+      port?: number | null;
+      baseUrl?: string | null;
+    }>("host_api_get_status"),
+  hostApiStart: () =>
+    invoke<{
+      running: boolean;
+      bindAddress?: string | null;
+      port?: number | null;
+      baseUrl?: string | null;
+    }>("host_api_start"),
+  hostApiStop: () =>
+    invoke<{
+      running: boolean;
+      bindAddress?: string | null;
+      port?: number | null;
+      baseUrl?: string | null;
+    }>("host_api_stop"),
   abortRequest: (requestId: string) => invoke("abort_request", { requestId }) as Promise<void>,
 
   // Embedding model download

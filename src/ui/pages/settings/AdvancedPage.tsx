@@ -13,11 +13,13 @@ import {
   DollarSign,
   AlertTriangle,
   Loader2,
+  Network,
 } from "lucide-react";
 import {
   readSettings,
   saveAdvancedSettings,
   checkEmbeddingModel,
+  getHostApiStatus,
 } from "../../../core/storage/repo";
 import { invoke } from "@tauri-apps/api/core";
 import type { Settings } from "../../../core/storage/schemas";
@@ -322,6 +324,8 @@ export function AdvancedPage() {
   const [dynamicMemoryEnabled, setDynamicMemoryEnabled] = useState(false);
   const [helpMeReplyEnabled, setHelpMeReplyEnabled] = useState(true);
   const [manualWindow, setManualWindow] = useState<number | null>(50);
+  const [hostApiEnabled, setHostApiEnabled] = useState(false);
+  const [hostApiRunning, setHostApiRunning] = useState(false);
 
   // Usage recalculation state
   const [showRecalculateWarning, setShowRecalculateWarning] = useState(false);
@@ -353,12 +357,20 @@ export function AdvancedPage() {
         setDynamicMemoryEnabled(settings.advancedSettings?.dynamicMemory?.enabled ?? false);
         setHelpMeReplyEnabled(settings.advancedSettings?.helpMeReplyEnabled ?? true);
         setManualWindow(settings.advancedSettings?.manualModeContextWindow ?? 50);
+        setHostApiEnabled(settings.advancedSettings?.hostApi?.enabled ?? false);
 
         // Get OpenRouter API key for recalculation
         const openRouterCred = settings.providerCredentials?.find(
           (c) => c.providerId === "openrouter",
         );
         setOpenRouterApiKey(openRouterCred?.apiKey ?? "");
+
+        try {
+          const status = await getHostApiStatus();
+          setHostApiRunning(status.running);
+        } catch {
+          // ignore
+        }
 
         setIsLoading(false);
       } catch (err) {
@@ -486,6 +498,29 @@ export function AdvancedPage() {
     } catch (err) {
       console.error("Failed to save help me reply setting:", err);
       setHelpMeReplyEnabled(!newValue);
+    }
+  };
+
+  const handleToggleHostApi = async () => {
+    const newValue = !hostApiEnabled;
+    setHostApiEnabled(newValue);
+    try {
+      const settings = await readSettings();
+      const advanced = getAdvancedSettings(settings);
+      if (!advanced.hostApi) {
+        advanced.hostApi = {
+          enabled: false,
+          bindAddress: "0.0.0.0",
+          port: 3333,
+          token: "",
+          exposedModels: [],
+        };
+      }
+      advanced.hostApi.enabled = newValue;
+      await saveAdvancedSettings(advanced);
+    } catch (err) {
+      console.error("Failed to save host API setting:", err);
+      setHostApiEnabled(!newValue);
     }
   };
 
@@ -660,6 +695,20 @@ export function AdvancedPage() {
               </div>
             </div>
           </div>
+        </SettingsSection>
+
+        {/* Network Section */}
+        <SettingsSection title="Network" icon={<Network size={12} />}>
+          <FeatureCard
+            title="LAN Host API"
+            description="Expose models via OpenAI-compatible API on your local network"
+            detailText={hostApiRunning ? "Server is currently running" : undefined}
+            icon={<Network className="h-4 w-4" />}
+            enabled={hostApiEnabled}
+            onToggle={handleToggleHostApi}
+            onNavigate={() => navigate("/settings/advanced/host-api")}
+            colorScheme="blue"
+          />
         </SettingsSection>
 
         {/* Info Card */}

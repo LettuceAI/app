@@ -78,13 +78,15 @@ export function ProvidersPage() {
   };
 
   const isEngineProvider = !!editorProvider && editorProvider.providerId === "lettuce-engine";
+  const isHostProvider = !!editorProvider && editorProvider.providerId === "lettuce-host";
   const isLocalProvider =
     !!editorProvider &&
     ["ollama", "lmstudio", "intenserp", "automatic1111"].includes(editorProvider.providerId);
   const isCustomProvider =
     !!editorProvider &&
     (editorProvider.providerId === "custom" || editorProvider.providerId === "custom-anthropic");
-  const showBaseUrl = !!editorProvider && (isLocalProvider || isCustomProvider || isEngineProvider);
+  const showBaseUrl =
+    !!editorProvider && (isLocalProvider || isCustomProvider || isEngineProvider || isHostProvider);
   const customConfig = (editorProvider?.config ?? {}) as Record<string, any>;
   const customFetchModelsEnabled = customConfig.fetchModelsEnabled === true;
   const providerStreamingEnabled = customConfig.streamingEnabled !== false;
@@ -362,11 +364,13 @@ export function ProvidersPage() {
                       placeholder={
                         isEngineProvider
                           ? "http://localhost:8000"
-                          : editorProvider.providerId === "intenserp"
-                            ? "http://127.0.0.1:7777/v1"
-                            : isLocalProvider
-                              ? "http://localhost:11434"
-                              : "https://api.provider.com"
+                          : isHostProvider
+                            ? "http://192.168.1.10:3333"
+                            : editorProvider.providerId === "intenserp"
+                              ? "http://127.0.0.1:7777/v1"
+                              : isLocalProvider
+                                ? "http://localhost:11434"
+                                : "https://api.provider.com"
                       }
                       className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fgplaceholder-fg/40 focus:border-fg/30 focus:outline-none"
                     />

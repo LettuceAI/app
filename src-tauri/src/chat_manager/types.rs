@@ -309,7 +309,47 @@ pub struct AdvancedSettings {
     #[serde(default)]
     pub embedding_max_tokens: Option<u32>,
     #[serde(default)]
+    pub host_api: Option<HostApiSettings>,
+    #[serde(default)]
     pub accessibility: Option<AccessibilitySettings>,
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct HostApiSettings {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_host_api_bind_address")]
+    pub bind_address: String,
+    #[serde(default = "default_host_api_port")]
+    pub port: u16,
+    #[serde(default)]
+    pub token: String,
+    #[serde(default)]
+    pub exposed_models: Vec<HostApiExposedModel>,
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct HostApiExposedModel {
+    pub id: String,
+    pub model_id: String,
+    #[serde(default = "default_host_api_exposed_model_enabled")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub label: Option<String>,
+}
+
+fn default_host_api_bind_address() -> String {
+    "0.0.0.0".to_string()
+}
+
+fn default_host_api_port() -> u16 {
+    3333
+}
+
+fn default_host_api_exposed_model_enabled() -> bool {
+    true
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug)]

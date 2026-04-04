@@ -46,6 +46,8 @@ keyring = "2"
 zeroize = "1"
 tauri-plugin-aptabase = { git = "https://github.com/MegalithOfficial/tauri-plugin-aptabase" }
 reqwest = { version = "0.11", default-features = false, features = ["json", "stream", "multipart", "rustls-tls"] }
+axum = { version = "0.8", features = ["json"] }
+tower-http = { version = "0.6", features = ["cors"] }
 futures-util = "0.3"
 chacha20poly1305 = { version = "0.10", default-features = false, features = ["std"] }
 rand = "0.8"

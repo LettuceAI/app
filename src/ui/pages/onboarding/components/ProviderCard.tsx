@@ -103,6 +103,8 @@ function getProviderDescription(providerId: string): string {
       return "OpenAI-compatible inference for top open-source models";
     case "openai":
       return "GPT-5, GPT-4.1, and GPT-4o models for expressive RP";
+    case "lettuce-host":
+      return "Connect to your own desktop Lettuce Host over LAN with OpenAI-style API";
     case "anthropic":
       return "Claude 4.5 Sonnet & Haiku for deep, emotional dialogue";
     case "nanogpt":
@@ -140,6 +142,8 @@ function getProviderDescriptionShort(providerId: string): string {
       return "Open-source model inference";
     case "openai":
       return "GPT-5, GPT-4o, GPT-4.1";
+    case "lettuce-host":
+      return "Your own LAN host";
     case "anthropic":
       return "Claude 4.5 Sonnet & Haiku";
     case "nanogpt":

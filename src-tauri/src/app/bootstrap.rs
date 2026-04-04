@@ -4,8 +4,8 @@ use std::time::Duration;
 use tauri::Manager;
 
 use crate::{
-    abort_manager, chat_manager, content_filter, dynamic_memory_run_manager, logger, migrations,
-    storage_manager, sync, usage, utils,
+    abort_manager, chat_manager, content_filter, dynamic_memory_run_manager, host_api, logger,
+    migrations, storage_manager, sync, usage, utils,
 };
 
 use super::runtime::configure_onnxruntime_dylib;
@@ -68,6 +68,7 @@ fn manage_core_state(app: &mut tauri::App) -> Arc<usage::app_activity::AppActive
     app.manage(app_usage_service.clone());
 
     app.manage(sync::manager::SyncManagerState::new());
+    app.manage(host_api::HostApiManager::default());
 
     app_usage_service
 }
@@ -246,6 +247,10 @@ pub(crate) fn setup_app(
     start_usage_flush_task(app.handle(), app_usage_service);
     configure_runtime_state(app, aptabase_plugin_enabled);
     run_bootstrap_tasks(app.handle());
+    let app_handle = app.handle().clone();
+    tauri::async_runtime::spawn(async move {
+        host_api::maybe_start_from_settings(&app_handle).await;
+    });
 
     Ok(())
 }

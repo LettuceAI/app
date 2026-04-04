@@ -9,6 +9,7 @@ mod embedding;
 mod engine;
 mod group_chat_manager;
 mod hf_browser;
+mod host_api;
 mod image_generator;
 mod infra;
 mod llama_cpp;

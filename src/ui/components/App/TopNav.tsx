@@ -139,6 +139,10 @@ export function TopNav({
         titleKey: "common.nav.helpMeReply",
       },
       {
+        match: (p) => p === "/settings/advanced/host-api",
+        titleKey: "common.nav.hostApi",
+      },
+      {
         match: (p) => p.startsWith("/personas/") && p.endsWith("/edit"),
         titleKey: "common.nav.editPersona",
       },

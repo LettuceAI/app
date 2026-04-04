@@ -76,8 +76,12 @@ export function useProviderController(): ControllerReturn {
 
   const handleTestConnection = useCallback(async () => {
     const isLocalProvider = ["ollama", "lmstudio", "intenserp"].includes(selectedProviderId || "");
+    const requiresBaseUrl = selectedProviderId === "lettuce-host";
     const skipValidationProvider = ["chutes"].includes(selectedProviderId || "");
     if (!selectedProviderId || isLocalProvider || skipValidationProvider || !apiKey.trim()) {
+      return;
+    }
+    if (requiresBaseUrl && !baseUrl.trim()) {
       return;
     }
 
@@ -87,7 +91,7 @@ export function useProviderController(): ControllerReturn {
     try {
       const trimmedKey = apiKey.trim();
 
-      if (trimmedKey.length < 10) {
+      if (selectedProviderId !== "lettuce-host" && trimmedKey.length < 10) {
         throw new Error("API key seems too short");
       }
 
@@ -132,7 +136,7 @@ export function useProviderController(): ControllerReturn {
 
   const handleSaveProvider = useCallback(async () => {
     const isLocalProvider = ["ollama", "lmstudio", "intenserp"].includes(selectedProviderId || "");
-    const isServerLocalProvider = ["ollama", "lmstudio", "intenserp"].includes(
+    const requiresBaseUrl = ["ollama", "lmstudio", "intenserp", "lettuce-host"].includes(
       selectedProviderId || "",
     );
     if (!selectedProviderId || !label.trim() || (!isLocalProvider && !apiKey.trim())) {
@@ -146,16 +150,19 @@ export function useProviderController(): ControllerReturn {
       const credentialId = crypto.randomUUID();
       const trimmedKey = apiKey.trim();
 
-      const requiresVerification = ["openai", "anthropic", "openrouter"].includes(
+      const requiresVerification = ["openai", "anthropic", "openrouter", "lettuce-host"].includes(
         selectedProviderId,
       );
 
-      if (isServerLocalProvider && !baseUrl?.trim()) {
+      if (requiresBaseUrl && !baseUrl?.trim()) {
         dispatch({
           type: "set_test_result",
           payload: {
             success: false,
-            message: "Base URL is required (e.g., http://localhost:11434)",
+            message:
+              selectedProviderId === "lettuce-host"
+                ? "Host URL is required (e.g., http://192.168.1.10:3333)"
+                : "Base URL is required (e.g., http://localhost:11434)",
           },
         });
         return;
@@ -231,20 +238,27 @@ export function useProviderController(): ControllerReturn {
 
   const canTest = useMemo(() => {
     const isLocalProvider = ["ollama", "lmstudio", "intenserp"].includes(selectedProviderId || "");
+    const requiresBaseUrl = selectedProviderId === "lettuce-host";
     const skipValidationProvider = ["chutes"].includes(selectedProviderId || "");
     return Boolean(
-      selectedProviderId && !isLocalProvider && !skipValidationProvider && apiKey.trim().length > 0,
+      selectedProviderId &&
+      !isLocalProvider &&
+      !skipValidationProvider &&
+      (!requiresBaseUrl || baseUrl.trim().length > 0) &&
+      apiKey.trim().length > 0,
     );
-  }, [apiKey, selectedProviderId]);
+  }, [apiKey, baseUrl, selectedProviderId]);
 
   const canSave = useMemo(() => {
     const isLocalProvider = ["ollama", "lmstudio", "intenserp"].includes(selectedProviderId || "");
+    const requiresBaseUrl = selectedProviderId === "lettuce-host";
     return Boolean(
       selectedProviderId &&
       label.trim().length > 0 &&
-      (isLocalProvider || apiKey.trim().length > 0),
+      (isLocalProvider || apiKey.trim().length > 0) &&
+      (!requiresBaseUrl || baseUrl.trim().length > 0),
     );
-  }, [apiKey, label, selectedProviderId]);
+  }, [apiKey, baseUrl, label, selectedProviderId]);
 
   const goToWelcome = useCallback(() => {
     navigate("/welcome");
