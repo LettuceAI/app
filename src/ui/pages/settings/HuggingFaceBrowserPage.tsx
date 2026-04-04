@@ -1338,6 +1338,10 @@ export function HuggingFaceBrowserPage() {
       mmprojPath: null,
     };
 
+    // Register the install before queueing downloads so a fast mmproj completion
+    // can still be linked back to the eventual base model install.
+    pendingRecommendedInstallsRef.current.set(installId, install);
+
     if (selectedMmproj) {
       install.mmprojQueueId = await queueTrackedDownload({
         source: "recommended",
@@ -1350,6 +1354,7 @@ export function HuggingFaceBrowserPage() {
         role: "mmproj",
       });
       if (!install.mmprojQueueId) {
+        pendingRecommendedInstallsRef.current.delete(installId);
         return;
       }
     }
@@ -1365,6 +1370,7 @@ export function HuggingFaceBrowserPage() {
       role: "model",
     });
     if (!install.modelQueueId) {
+      pendingRecommendedInstallsRef.current.delete(installId);
       if (install.mmprojQueueId) {
         toast.error(
           "Download partially queued",
@@ -1373,8 +1379,6 @@ export function HuggingFaceBrowserPage() {
       }
       return;
     }
-
-    pendingRecommendedInstallsRef.current.set(installId, install);
   }, [
     mmprojFilesWithSize,
     modelInfo,
