@@ -152,6 +152,45 @@ pub struct QueuedDownload {
     pub speed_bytes_per_sec: u64,
     pub error: Option<String>,
     pub result_path: Option<String>,
+    pub create_model_when_finished: bool,
+    pub mmproj_file: MmprojFileLink,
+    pub install_id: Option<String>,
+    pub display_name: Option<String>,
+    pub context_length: Option<u64>,
+    pub kv_type: Option<String>,
+    pub download_role: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum MmprojFileLink {
+    Filename(String),
+    Disabled(bool),
+}
+
+impl Default for MmprojFileLink {
+    fn default() -> Self {
+        Self::Disabled(false)
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct QueueDownloadMetadata {
+    #[serde(default)]
+    pub create_model_when_finished: bool,
+    #[serde(default)]
+    pub mmproj_file: MmprojFileLink,
+    #[serde(default)]
+    pub install_id: Option<String>,
+    #[serde(default)]
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub context_length: Option<u64>,
+    #[serde(default)]
+    pub kv_type: Option<String>,
+    #[serde(default)]
+    pub download_role: Option<String>,
 }
 
 struct DownloadQueueState {
@@ -1472,8 +1511,10 @@ pub async fn hf_queue_download(
     app: AppHandle,
     model_id: String,
     filename: String,
+    metadata: Option<QueueDownloadMetadata>,
 ) -> Result<String, String> {
     let queue_id = uuid::Uuid::new_v4().to_string();
+    let metadata = metadata.unwrap_or_default();
 
     {
         let mut state = HF_DOWNLOAD_QUEUE.lock().await;
@@ -1487,6 +1528,13 @@ pub async fn hf_queue_download(
             speed_bytes_per_sec: 0,
             error: None,
             result_path: None,
+            create_model_when_finished: metadata.create_model_when_finished,
+            mmproj_file: metadata.mmproj_file,
+            install_id: metadata.install_id,
+            display_name: metadata.display_name,
+            context_length: metadata.context_length,
+            kv_type: metadata.kv_type,
+            download_role: metadata.download_role,
         });
         emit_queue(&app, &state.queue);
     }
