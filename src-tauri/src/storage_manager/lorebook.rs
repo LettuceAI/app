@@ -305,7 +305,7 @@ pub fn list_character_lorebooks(
     let mut stmt = conn
         .prepare(
             r#"
-            SELECT l.id, l.name, l.avatar_path, l.created_at, l.updated_at
+            SELECT l.id, l.name, l.avatar_path, l.keyword_detection_mode, l.created_at, l.updated_at
             FROM character_lorebooks cl
             JOIN lorebooks l ON l.id = cl.lorebook_id
             WHERE cl.character_id = ?1 AND cl.enabled = 1
