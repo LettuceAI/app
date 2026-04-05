@@ -27,6 +27,7 @@ import { useAvatar } from "../../hooks/useAvatar";
 import { AvatarImage } from "../../components/AvatarImage";
 import { useGroupSettingsController } from "./hooks/useGroupSettingsController";
 import { CharacterAvatar, PersonaSelector, QuickChip, SectionHeader } from "./components/settings";
+import { Switch } from "../../components/Switch";
 
 export function GroupSettingsPage() {
   const { t } = useI18n();
@@ -498,14 +499,10 @@ export function GroupSettingsPage() {
               value={`${group.lorebookIds?.length ?? 0} attached`}
               onClick={() => navigate(Routes.groupLorebook(group.id))}
             />
-            <button
-              onClick={() =>
-                void handleSetDisableCharacterLorebooks(!group.disableCharacterLorebooks)
-              }
+            <div
               className={cn(
                 "mt-2 flex w-full items-center justify-between rounded-xl border border-fg/10 bg-surface-el/85 p-3 text-left",
                 interactive.transition.default,
-                "hover:border-fg/20",
               )}
             >
               <div>
@@ -514,20 +511,11 @@ export function GroupSettingsPage() {
                   New sessions will use only group-level lorebooks when this is on.
                 </div>
               </div>
-              <span
-                className={cn(
-                  "relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-all",
-                  group.disableCharacterLorebooks ? "bg-accent" : "bg-fg/20",
-                )}
-              >
-                <span
-                  className={cn(
-                    "inline-block h-5 w-5 rounded-full bg-fg shadow transition",
-                    group.disableCharacterLorebooks ? "translate-x-5" : "translate-x-0",
-                  )}
-                />
-              </span>
-            </button>
+              <Switch
+                checked={!!group.disableCharacterLorebooks}
+                onChange={(next) => void handleSetDisableCharacterLorebooks(next)}
+              />
+            </div>
           </section>
 
           {/* Characters Section */}

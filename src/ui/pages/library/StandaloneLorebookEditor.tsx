@@ -34,6 +34,7 @@ import { BottomMenu, LorebookExportMenu, MenuButton } from "../../components";
 import { confirmBottomMenu } from "../../components/ConfirmBottomMenu";
 import { TopNav } from "../../components/App";
 import { LorebookAvatar } from "../../components/LorebookAvatar";
+import { Switch } from "../../components/Switch";
 import { useI18n } from "../../../core/i18n/context";
 import { toast } from "../../components/toast";
 import type { LorebookExportFormat } from "../../components/LorebookExportMenu";
@@ -186,23 +187,10 @@ function EntryEditorMenu({
                 {t("characters.lorebook.includeInPrompts")}
               </p>
             </div>
-            <label
-              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-all duration-200 ${
-                draft.enabled ? "bg-accent shadow-lg shadow-accent/30" : "bg-fg/20"
-              }`}
-            >
-              <input
-                type="checkbox"
-                checked={draft.enabled}
-                onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })}
-                className="sr-only"
-              />
-              <span
-                className={`inline-block h-5 w-5 transform rounded-full bg-fg shadow ring-0 transition duration-200 ${
-                  draft.enabled ? "translate-x-5" : "translate-x-0"
-                }`}
-              />
-            </label>
+            <Switch
+              checked={draft.enabled}
+              onChange={(next) => setDraft({ ...draft, enabled: next })}
+            />
           </div>
 
           <div className="flex items-start justify-between gap-4 rounded-xl border border-fg/10 bg-surface-el/90 p-3 flex-1">
@@ -214,23 +202,10 @@ function EntryEditorMenu({
                 {t("characters.lorebook.noKeywordsNeeded")}
               </p>
             </div>
-            <label
-              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-all duration-200 ${
-                draft.alwaysActive ? "bg-info shadow-lg shadow-blue-500/30" : "bg-fg/20"
-              }`}
-            >
-              <input
-                type="checkbox"
-                checked={draft.alwaysActive}
-                onChange={(e) => setDraft({ ...draft, alwaysActive: e.target.checked })}
-                className="sr-only"
-              />
-              <span
-                className={`inline-block h-5 w-5 transform rounded-full bg-fg shadow ring-0 transition duration-200 ${
-                  draft.alwaysActive ? "translate-x-5" : "translate-x-0"
-                }`}
-              />
-            </label>
+            <Switch
+              checked={draft.alwaysActive}
+              onChange={(next) => setDraft({ ...draft, alwaysActive: next })}
+            />
           </div>
         </div>
 

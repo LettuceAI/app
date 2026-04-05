@@ -28,6 +28,7 @@ import { EmbeddingDownloadPrompt } from "../../components/EmbeddingDownloadPromp
 import { BottomMenu } from "../../components/BottomMenu";
 import { openDocs, DOCS } from "../../../core/utils/docs";
 import { useI18n } from "../../../core/i18n/context";
+import { Switch } from "../../components/Switch";
 
 type DocsKey = keyof typeof DOCS;
 
@@ -236,37 +237,13 @@ function FeatureCard({
             </div>
 
             <div className="flex shrink-0 items-center gap-2">
-              <input
-                id={toggleId}
-                type="checkbox"
-                checked={enabled}
-                onChange={(e) => {
-                  e.stopPropagation();
-                  onToggle();
-                }}
-                onClick={(e) => e.stopPropagation()}
-                className="peer sr-only"
-              />
-              <label
-                htmlFor={toggleId}
-                onClick={(e) => e.stopPropagation()}
-                className={cn(
-                  "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full",
-                  "border-2 border-transparent transition-all duration-200 ease-in-out",
-                  "focus:outline-none focus:ring-2 focus:ring-fg/20",
-                  style.toggleBg,
-                  enabled && "shadow-md",
-                  style.toggleShadow,
-                )}
-              >
-                <span
-                  className={cn(
-                    "inline-block h-4 w-4 transform rounded-full bg-fg shadow-sm",
-                    "ring-0 transition duration-200 ease-in-out",
-                    enabled ? "translate-x-4" : "translate-x-0",
-                  )}
+              <span onClick={(e) => e.stopPropagation()}>
+                <Switch
+                  id={toggleId}
+                  checked={enabled}
+                  onChange={() => onToggle()}
                 />
-              </label>
+              </span>
               <ChevronRight
                 className={cn(
                   "h-4 w-4 shrink-0 text-fg/25 transition-colors",

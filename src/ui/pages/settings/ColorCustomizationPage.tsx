@@ -13,6 +13,7 @@ import type { CustomColorPreset, CustomColors } from "../../../core/storage/sche
 import { cn, interactive, radius } from "../../design-tokens";
 import { toast } from "../../components/toast";
 import { useI18n } from "../../../core/i18n/context";
+import { Switch } from "../../components/Switch";
 
 const SETTINGS_CARD_OPACITY_DEFAULT = 5;
 
@@ -1439,9 +1440,7 @@ export function ColorCustomizationPage() {
               <span className="text-xs" style={{ color: "var(--color-app-text-muted)" }}>
                 Sample toggle
               </span>
-              <div className="relative inline-flex h-6 w-11 rounded-full bg-accent">
-                <span className="inline-block h-5 w-5 translate-x-5 transform rounded-full bg-fg transition" />
-              </div>
+              <Switch checked={true} onChange={() => {}} />
             </div>
           </div>
         </div>

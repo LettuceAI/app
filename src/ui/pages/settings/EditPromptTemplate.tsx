@@ -30,6 +30,7 @@ import { MessageStructurePreview } from "./components/MessageStructurePreview";
 import { BottomMenu } from "../../components";
 import { confirmBottomMenu } from "../../components/ConfirmBottomMenu";
 import { useI18n } from "../../../core/i18n/context";
+import { Switch } from "../../components/Switch";
 import { useNavigationManager } from "../../navigation";
 import {
   createPromptTemplate,
@@ -1456,29 +1457,12 @@ function PromptEntryEditorForm({
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <input
+          <Switch
             id={toggleId}
-            type="checkbox"
             checked={entry.enabled || entry.systemPrompt}
             onChange={() => onToggle?.()}
             disabled={entry.systemPrompt || !onToggle}
-            className="peer sr-only"
           />
-          <label
-            htmlFor={toggleId}
-            className={cn(
-              "relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-all duration-200 ease-in-out",
-              entry.enabled || entry.systemPrompt ? "bg-accent" : "bg-fg/20",
-              (entry.systemPrompt || !onToggle) && "cursor-not-allowed opacity-60",
-            )}
-          >
-            <span
-              className={cn(
-                "inline-block h-4 w-4 transform rounded-full bg-fg shadow-sm transition duration-200 ease-in-out",
-                entry.enabled || entry.systemPrompt ? "translate-x-4" : "translate-x-0",
-              )}
-            />
-          </label>
           <span className="text-xs text-fg/55">
             {entry.systemPrompt ? "Required" : entry.enabled ? "Enabled" : "Disabled"}
           </span>
@@ -1992,35 +1976,17 @@ function PromptEntryCard({
 
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-3">
-            <input
-              id={toggleId}
-              type="checkbox"
-              checked={entry.enabled || entry.systemPrompt}
-              onChange={() => onToggle(entry.id)}
+            <span
               onClick={(event) => event.stopPropagation()}
-              disabled={entry.systemPrompt}
-              className="peer sr-only"
-            />
-            <label
-              htmlFor={toggleId}
-              onClick={(event) => event.stopPropagation()}
-              className={cn(
-                "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full",
-                "border-2 border-transparent transition-all duration-200 ease-in-out",
-                "focus:outline-none focus:ring-2 focus:ring-fg/20",
-                entry.enabled || entry.systemPrompt ? "bg-accent" : "bg-fg/20",
-                entry.systemPrompt && "cursor-not-allowed opacity-60",
-              )}
               title={entry.systemPrompt ? "System prompt entries are always enabled" : "Toggle"}
             >
-              <span
-                className={cn(
-                  "inline-block h-4 w-4 transform rounded-full bg-fg shadow-sm",
-                  "ring-0 transition duration-200 ease-in-out",
-                  entry.enabled || entry.systemPrompt ? "translate-x-4" : "translate-x-0",
-                )}
+              <Switch
+                id={toggleId}
+                checked={entry.enabled || entry.systemPrompt}
+                onChange={() => onToggle(entry.id)}
+                disabled={entry.systemPrompt}
               />
-            </label>
+            </span>
             <span className="text-xs text-fg/50">
               {entry.systemPrompt ? "Required" : entry.enabled ? "Enabled" : "Disabled"}
             </span>
@@ -2297,34 +2263,17 @@ function PromptEntryListItem({
 
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-2">
-            <input
-              id={toggleId}
-              type="checkbox"
-              checked={entry.enabled || entry.systemPrompt}
-              onChange={() => onToggle(entry.id)}
+            <span
               onClick={(event) => event.stopPropagation()}
-              disabled={entry.systemPrompt}
-              className="peer sr-only"
-            />
-            <label
-              htmlFor={toggleId}
-              onClick={(event) => event.stopPropagation()}
-              className={cn(
-                "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full",
-                "border-2 border-transparent transition-all duration-200 ease-in-out",
-                entry.enabled || entry.systemPrompt ? "bg-accent" : "bg-fg/20",
-                entry.systemPrompt && "cursor-not-allowed opacity-60",
-              )}
               title={entry.systemPrompt ? "System prompt entries are always enabled" : "Toggle"}
             >
-              <span
-                className={cn(
-                  "inline-block h-4 w-4 transform rounded-full bg-fg shadow-sm",
-                  "ring-0 transition duration-200 ease-in-out",
-                  entry.enabled || entry.systemPrompt ? "translate-x-4" : "translate-x-0",
-                )}
+              <Switch
+                id={toggleId}
+                checked={entry.enabled || entry.systemPrompt}
+                onChange={() => onToggle(entry.id)}
+                disabled={entry.systemPrompt}
               />
-            </label>
+            </span>
           </div>
 
           <button
@@ -3367,29 +3316,11 @@ export function EditPromptTemplate() {
                   )}
                   {usesEntryEditor && (
                     <div className="flex items-center gap-3 rounded-lg border border-fg/10 bg-surface-el/20 px-2.5 py-1.5">
-                      <input
+                      <Switch
                         id="condense-prompt-entries"
-                        type="checkbox"
                         checked={condensePromptEntries}
-                        onChange={() => setCondensePromptEntries((prev) => !prev)}
-                        className="peer sr-only"
+                        onChange={(next) => setCondensePromptEntries(next)}
                       />
-                      <label
-                        htmlFor="condense-prompt-entries"
-                        className={cn(
-                          "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full",
-                          "border-2 border-transparent transition-all duration-200 ease-in-out",
-                          condensePromptEntries ? "bg-accent" : "bg-fg/20",
-                        )}
-                      >
-                        <span
-                          className={cn(
-                            "inline-block h-4 w-4 transform rounded-full bg-fg shadow-sm",
-                            "ring-0 transition duration-200 ease-in-out",
-                            condensePromptEntries ? "translate-x-4" : "translate-x-0",
-                          )}
-                        />
-                      </label>
                       <span className="text-xs text-fg/70">Send entries as one system message</span>
                     </div>
                   )}

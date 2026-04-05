@@ -28,6 +28,7 @@ import { Routes, useNavigationManager } from "../../navigation";
 import { useGroupChatSettingsController } from "./hooks/useGroupChatSettingsController";
 import { useGroupChatLayoutContext } from "./GroupChatLayout";
 import { SectionHeader, CharacterAvatar, QuickChip, PersonaSelector } from "./components/settings";
+import { Switch } from "../../components/Switch";
 import { processBackgroundImage } from "../../../core/utils/image";
 import { storageBridge } from "../../../core/storage/files";
 import { useAvatar } from "../../hooks/useAvatar";
@@ -687,14 +688,10 @@ export function GroupChatSettingsPage() {
               value={`${session.lorebookIds?.length ?? 0} attached`}
               onClick={() => navigate(Routes.groupChatLorebook(session.id))}
             />
-            <button
-              onClick={() =>
-                void handleSetDisableCharacterLorebooks(!session.disableCharacterLorebooks)
-              }
+            <div
               className={cn(
                 "mt-2 flex w-full items-center justify-between rounded-xl border border-fg/10 bg-surface-el/85 p-3 text-left",
                 interactive.transition.default,
-                "hover:border-fg/20",
               )}
             >
               <div>
@@ -703,20 +700,11 @@ export function GroupChatSettingsPage() {
                   Group replies will use only the lorebooks attached to this session.
                 </div>
               </div>
-              <span
-                className={cn(
-                  "relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-all",
-                  session.disableCharacterLorebooks ? "bg-accent" : "bg-fg/20",
-                )}
-              >
-                <span
-                  className={cn(
-                    "inline-block h-5 w-5 rounded-full bg-fg shadow transition",
-                    session.disableCharacterLorebooks ? "translate-x-5" : "translate-x-0",
-                  )}
-                />
-              </span>
-            </button>
+              <Switch
+                checked={!!session.disableCharacterLorebooks}
+                onChange={(next) => void handleSetDisableCharacterLorebooks(next)}
+              />
+            </div>
           </section>
 
           {/* Characters Section */}

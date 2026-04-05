@@ -3,6 +3,7 @@ import { Bookmark, Camera, X, Upload, Loader2, CheckCircle } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion";
 import { PersonaFormState, PersonaFormAction } from "../hooks/createPersonaReducer";
 import { AvatarPicker } from "../../../components/AvatarPicker";
+import { Switch } from "../../../components/Switch";
 import { DesignReferenceEditor } from "../../../components/DesignReferenceEditor";
 import { typography, radius, spacing, interactive, cn } from "../../../design-tokens";
 import type { AvatarCrop } from "../../../../core/storage/schemas";
@@ -196,13 +197,11 @@ export function CreatePersonaForm({
 
           {/* Default Option */}
           <div className={spacing.field}>
-            <button
-              onClick={() => dispatch({ type: "set_default", value: !isDefault })}
+            <div
               className={cn(
                 "flex w-full items-center justify-between border border-fg/10 bg-surface-el/20 px-4 py-3 backdrop-blur-xl",
                 radius.md,
                 interactive.transition.default,
-                "hover:border-fg/25 hover:bg-fg/5 active:scale-[0.99]",
               )}
             >
               <div className="flex items-center gap-3">
@@ -221,24 +220,11 @@ export function CreatePersonaForm({
                 </div>
               </div>
 
-              <div className="relative">
-                <div
-                  className={cn(
-                    "h-6 w-11 transition-colors",
-                    radius.full,
-                    isDefault ? "bg-accent/40" : "bg-fg/20",
-                  )}
-                >
-                  <div
-                    className={cn(
-                      "absolute top-0.5 h-5 w-5 transition-transform",
-                      radius.full,
-                      isDefault ? "translate-x-5 bg-accent" : "translate-x-0.5 bg-fg",
-                    )}
-                  />
-                </div>
-              </div>
-            </button>
+              <Switch
+                checked={isDefault}
+                onChange={(next) => dispatch({ type: "set_default", value: next })}
+              />
+            </div>
           </div>
         </div>
 

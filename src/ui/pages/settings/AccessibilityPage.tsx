@@ -12,6 +12,7 @@ import { playAccessibilitySound } from "../../../core/utils/accessibilityAudio";
 import { cn, radius, colors, interactive } from "../../design-tokens";
 import { useI18n } from "../../../core/i18n/context";
 import { LocaleSelector } from "../../components/LocaleSelector";
+import { Switch } from "../../components/Switch";
 
 const SOUND_KEYS = ["send", "success", "failure"] as const;
 
@@ -183,31 +184,13 @@ export function AccessibilityPage() {
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center">
-                      <input
-                        id={`accessibility-${key}-enabled`}
-                        type="checkbox"
-                        checked={sound.enabled}
-                        onChange={() =>
-                          updateSound(key, (current) => ({ ...current, enabled: !current.enabled }))
-                        }
-                        className="peer sr-only"
-                      />
-                      <label
-                        htmlFor={`accessibility-${key}-enabled`}
-                        className={cn(
-                          "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-all duration-200 ease-in-out",
-                          sound.enabled ? "bg-accent" : "bg-fg/20",
-                        )}
-                      >
-                        <span
-                          className={cn(
-                            "inline-block h-5 w-5 transform rounded-full bg-fg transition duration-200 ease-in-out",
-                            sound.enabled ? "translate-x-5" : "translate-x-0",
-                          )}
-                        />
-                      </label>
-                    </div>
+                    <Switch
+                      id={`accessibility-${key}-enabled`}
+                      checked={sound.enabled}
+                      onChange={(next) =>
+                        updateSound(key, (current) => ({ ...current, enabled: next }))
+                      }
+                    />
                   </div>
 
                   <div className="mt-3 flex items-center gap-3">
@@ -279,29 +262,11 @@ export function AccessibilityPage() {
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center">
-                    <input
-                      id="accessibility-haptics-enabled"
-                      type="checkbox"
-                      checked={accessibility.haptics}
-                      onChange={() => updateHaptics(!accessibility.haptics)}
-                      className="peer sr-only"
-                    />
-                    <label
-                      htmlFor="accessibility-haptics-enabled"
-                      className={cn(
-                        "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-all duration-200 ease-in-out",
-                        accessibility.haptics ? "bg-accent" : "bg-fg/20",
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          "inline-block h-5 w-5 transform rounded-full bg-fg transition duration-200 ease-in-out",
-                          accessibility.haptics ? "translate-x-5" : "translate-x-0",
-                        )}
-                      />
-                    </label>
-                  </div>
+                  <Switch
+                    id="accessibility-haptics-enabled"
+                    checked={accessibility.haptics}
+                    onChange={updateHaptics}
+                  />
                 </div>
 
                 {accessibility.haptics && (

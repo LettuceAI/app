@@ -38,6 +38,7 @@ import { ModelSelectionBottomMenu } from "../../components/ModelSelectionBottomM
 import { SessionAdvancedSettings } from "./components/SessionAdvancedSettings";
 import { ProviderParameterSupportInfo } from "../../components/ProviderParameterSupportInfo";
 import { AvatarImage } from "../../components/AvatarImage";
+import { Switch } from "../../components/Switch";
 import { useAvatar } from "../../hooks/useAvatar";
 import { useChatLayoutContext } from "./ChatLayout";
 import {
@@ -992,28 +993,12 @@ export function ChatSettingsContent({
                       : "Open a chat session first"}
                   </p>
                 </div>
-                <div className="flex items-center">
-                  <input
-                    id="session-voice-autoplay"
-                    type="checkbox"
-                    checked={effectiveVoiceAutoplay}
-                    onChange={handleToggleSessionVoiceAutoplay}
-                    disabled={!currentSession}
-                    className="peer sr-only"
-                  />
-                  <label
-                    htmlFor="session-voice-autoplay"
-                    className={`relative inline-flex h-6 w-11 shrink-0 rounded-full transition-all ${
-                      effectiveVoiceAutoplay ? "bg-emerald-500" : "bg-white/20"
-                    } ${currentSession ? "cursor-pointer" : "cursor-not-allowed"}`}
-                  >
-                    <span
-                      className={`inline-block h-5 w-5 mt-0.5 transform rounded-full bg-white transition ${
-                        effectiveVoiceAutoplay ? "translate-x-5" : "translate-x-0.5"
-                      }`}
-                    />
-                  </label>
-                </div>
+                <Switch
+                  id="session-voice-autoplay"
+                  checked={effectiveVoiceAutoplay}
+                  onChange={() => handleToggleSessionVoiceAutoplay()}
+                  disabled={!currentSession}
+                />
               </div>
               {currentSession && currentSession.voiceAutoplay != null && (
                 <button

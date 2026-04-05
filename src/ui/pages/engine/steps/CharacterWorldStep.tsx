@@ -1,6 +1,7 @@
 import type { TimeBehaviors, BaselineEmotions } from "../../../../core/engine/types";
 import { TagInput } from "../components/TagInput";
 import { CollapsibleSection } from "../components/CollapsibleSection";
+import { Switch } from "../../../components/Switch";
 
 type Props = {
   knowledgeDomains: string[];
@@ -87,18 +88,10 @@ export function CharacterWorldStep({
           <p className="text-sm font-medium text-white/80">Research Enabled</p>
           <p className="text-[11px] text-white/45">Allow background knowledge gathering</p>
         </div>
-        <button
-          onClick={() => onFieldChange("researchEnabled", !researchEnabled)}
-          className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-all ${
-            researchEnabled ? "bg-emerald-500" : "bg-white/20"
-          }`}
-        >
-          <span
-            className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition ${
-              researchEnabled ? "translate-x-5" : "translate-x-0"
-            }`}
-          />
-        </button>
+        <Switch
+          checked={researchEnabled}
+          onChange={(next) => onFieldChange("researchEnabled", next)}
+        />
       </div>
 
       {/* Physical */}

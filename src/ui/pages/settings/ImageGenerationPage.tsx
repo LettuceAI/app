@@ -12,6 +12,7 @@ import type { Model } from "../../../core/storage/schemas";
 import { useI18n } from "../../../core/i18n/context";
 import { getProviderIcon } from "../../../core/utils/providerIcons";
 import { cn, spacing, typography } from "../../design-tokens";
+import { Switch } from "../../components/Switch";
 
 interface ImageGenerationState {
   loading: boolean;
@@ -194,35 +195,11 @@ function SelectorCard({
               {hasToggle ? (
                 <div className="flex items-center gap-2 pt-0.5">
                   <span className="text-[11px] font-medium text-fg/50">{stateLabel}</span>
-                  <input
+                  <Switch
                     id={toggleId}
-                    type="checkbox"
                     checked={enabled}
-                    onChange={(event) => {
-                      event.stopPropagation();
-                      onToggle();
-                    }}
-                    onClick={(event) => event.stopPropagation()}
-                    className="peer sr-only"
+                    onChange={() => onToggle()}
                   />
-                  <label
-                    htmlFor={toggleId}
-                    onClick={(event) => event.stopPropagation()}
-                    className={cn(
-                      "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full",
-                      "border-2 border-transparent transition-all duration-200 ease-in-out",
-                      "focus:outline-none focus:ring-2 focus:ring-fg/20",
-                      enabled ? "bg-emerald-500 shadow-sm shadow-emerald-500/20" : "bg-fg/20",
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        "inline-block h-4 w-4 transform rounded-full bg-fg shadow-sm",
-                        "ring-0 transition duration-200 ease-in-out",
-                        enabled ? "translate-x-4" : "translate-x-0",
-                      )}
-                    />
-                  </label>
                 </div>
               ) : null}
             </div>

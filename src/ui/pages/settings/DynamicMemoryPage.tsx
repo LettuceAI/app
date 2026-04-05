@@ -30,6 +30,7 @@ import { confirmBottomMenu } from "../../components/ConfirmBottomMenu";
 import { ModelSelectionBottomMenu } from "../../components/ModelSelectionBottomMenu";
 import { getProviderIcon } from "../../../core/utils/providerIcons";
 import { useI18n } from "../../../core/i18n/context";
+import { Switch } from "../../components/Switch";
 
 const DYNAMIC_MEMORY_LLAMA_OVERWRITE_ORDER = [
   "penalties",
@@ -648,27 +649,16 @@ export function DynamicMemoryPage() {
                           {t("dynamicMemory.page.contextEnrichmentDescription")}
                         </div>
                       </div>
-                      <label className="relative inline-flex items-center cursor-pointer shrink-0">
-                        <input
-                          type="checkbox"
-                          checked={currentSettings.contextEnrichmentEnabled}
-                          onChange={(e) => {
-                            if (activeTab === "direct") {
-                              handleDirectSettingChange(
-                                "contextEnrichmentEnabled",
-                                e.target.checked,
-                              );
-                            } else {
-                              handleGroupSettingChange(
-                                "contextEnrichmentEnabled",
-                                e.target.checked,
-                              );
-                            }
-                          }}
-                          className="sr-only peer"
-                        />
-                        <div className="w-11 h-6 bg-fg/10 rounded-full peer peer-checked:bg-info transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-fg after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5"></div>
-                      </label>
+                      <Switch
+                        checked={currentSettings.contextEnrichmentEnabled}
+                        onChange={(next) => {
+                          if (activeTab === "direct") {
+                            handleDirectSettingChange("contextEnrichmentEnabled", next);
+                          } else {
+                            handleGroupSettingChange("contextEnrichmentEnabled", next);
+                          }
+                        }}
+                      />
                     </div>
                   </div>
                 )}
@@ -950,17 +940,10 @@ export function DynamicMemoryPage() {
                             summarisation model&apos;s saved sampler configuration.
                           </div>
                         </div>
-                        <label className="relative inline-flex items-center cursor-pointer shrink-0">
-                          <input
-                            type="checkbox"
-                            checked={dynamicMemoryLlamaSamplerOverwriteEnabled}
-                            onChange={(e) =>
-                              handleDynamicMemoryLlamaSamplerOverwriteChange(e.target.checked)
-                            }
-                            className="sr-only peer"
-                          />
-                          <div className="h-6 w-11 rounded-full border border-fg/10 bg-fg/10 transition-colors peer-checked:border-info/40 peer-checked:bg-info after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow-[0_1px_4px_rgba(0,0,0,0.24)] after:transition-transform after:content-[''] peer-checked:after:translate-x-5"></div>
-                        </label>
+                        <Switch
+                          checked={dynamicMemoryLlamaSamplerOverwriteEnabled}
+                          onChange={handleDynamicMemoryLlamaSamplerOverwriteChange}
+                        />
                       </div>
 
                       {dynamicMemoryLlamaSamplerOverwriteEnabled && (
@@ -1121,15 +1104,10 @@ export function DynamicMemoryPage() {
                             {t("dynamicMemory.page.keepModelLoadedDescription")}
                           </div>
                         </div>
-                        <label className="relative inline-flex items-center cursor-pointer shrink-0">
-                          <input
-                            type="checkbox"
-                            checked={embeddingKeepModelLoaded}
-                            onChange={(e) => handleEmbeddingKeepModelLoadedChange(e.target.checked)}
-                            className="sr-only peer"
-                          />
-                          <div className="h-6 w-11 rounded-full border border-fg/10 bg-fg/10 transition-colors peer-checked:border-info/40 peer-checked:bg-info after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow-[0_1px_4px_rgba(0,0,0,0.24)] after:transition-transform after:content-[''] peer-checked:after:translate-x-5"></div>
-                        </label>
+                        <Switch
+                          checked={embeddingKeepModelLoaded}
+                          onChange={handleEmbeddingKeepModelLoadedChange}
+                        />
                       </div>
                     </div>
                   )}

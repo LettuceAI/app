@@ -72,6 +72,7 @@ import { getProviderIcon } from "../../../core/utils/providerIcons";
 import { cn } from "../../design-tokens";
 import { openDocs } from "../../../core/utils/docs";
 import { useI18n } from "../../../core/i18n/context";
+import { Switch } from "../../components/Switch";
 import { getPlatform } from "../../../core/utils/platform";
 
 type DownloadedGgufModel = {
@@ -1934,31 +1935,15 @@ export function EditModelPage() {
                               filterModels={false}
                               rightAction={
                                 isOpenRouterProvider ? (
-                                  <label className="flex items-center gap-2">
+                                  <span className="flex items-center gap-2">
                                     <span className="text-[13px] text-fg/70 whitespace-nowrap">
                                       only free models
                                     </span>
-                                    <span className="relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200">
-                                      <input
-                                        type="checkbox"
-                                        checked={showOnlyFreeModels}
-                                        onChange={(e) => setShowOnlyFreeModels(e.target.checked)}
-                                        className="sr-only"
-                                      />
-                                      <span
-                                        className={cn(
-                                          "inline-block h-full w-full rounded-full transition-colors duration-200",
-                                          showOnlyFreeModels ? "bg-accent" : "bg-fg/10",
-                                        )}
-                                      />
-                                      <span
-                                        className={cn(
-                                          "absolute h-3.5 w-3.5 transform rounded-full bg-fg transition-transform duration-200",
-                                          showOnlyFreeModels ? "translate-x-4.5" : "translate-x-1",
-                                        )}
-                                      />
-                                    </span>
-                                  </label>
+                                    <Switch
+                                      checked={showOnlyFreeModels}
+                                      onChange={setShowOnlyFreeModels}
+                                    />
+                                  </span>
                                 ) : null
                               }
                               renderModelIcon={() => getProviderIcon(editorModel.providerId)}
@@ -3825,36 +3810,14 @@ export function EditModelPage() {
                                             ? "On"
                                             : "Off"}
                                         </span>
-                                        <input
+                                        <Switch
                                           id="llama-strict-mode"
-                                          type="checkbox"
                                           checked={modelAdvancedDraft.llamaStrictMode === true}
-                                          onChange={(e) =>
-                                            handleLlamaStrictModeChange(
-                                              e.target.checked ? true : null,
-                                            )
+                                          onChange={(next) =>
+                                            handleLlamaStrictModeChange(next ? true : null)
                                           }
-                                          className="peer sr-only"
-                                        />
-                                        <label
-                                          htmlFor="llama-strict-mode"
-                                          className={cn(
-                                            "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full transition-all",
-                                            modelAdvancedDraft.llamaStrictMode === true
-                                              ? "bg-danger/80"
-                                              : "bg-fg/18",
-                                          )}
                                           aria-label="Toggle llama strict mode"
-                                        >
-                                          <span
-                                            className={cn(
-                                              "mt-0.5 inline-block h-5 w-5 rounded-full bg-white transition",
-                                              modelAdvancedDraft.llamaStrictMode === true
-                                                ? "translate-x-5"
-                                                : "translate-x-0.5",
-                                            )}
-                                          />
-                                        </label>
+                                        />
                                       </div>
                                     </div>
                                   </div>
@@ -4367,32 +4330,10 @@ export function EditModelPage() {
                                   </button>
                                 </div>
                                 {!isAutoReasoning && (
-                                  <label className="relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200">
-                                    <input
-                                      type="checkbox"
-                                      checked={modelAdvancedDraft.reasoningEnabled || false}
-                                      onChange={(e) =>
-                                        handleReasoningEnabledChange(e.target.checked)
-                                      }
-                                      className="sr-only"
-                                    />
-                                    <span
-                                      className={cn(
-                                        "inline-block h-full w-full rounded-full transition-colors duration-200",
-                                        modelAdvancedDraft.reasoningEnabled
-                                          ? "bg-warning"
-                                          : "bg-fg/10",
-                                      )}
-                                    />
-                                    <span
-                                      className={cn(
-                                        "absolute h-3.5 w-3.5 transform rounded-full bg-fg transition-transform duration-200",
-                                        modelAdvancedDraft.reasoningEnabled
-                                          ? "translate-x-4.5"
-                                          : "translate-x-1",
-                                      )}
-                                    />
-                                  </label>
+                                  <Switch
+                                    checked={modelAdvancedDraft.reasoningEnabled || false}
+                                    onChange={handleReasoningEnabledChange}
+                                  />
                                 )}
                               </div>
 
@@ -4496,32 +4437,10 @@ export function EditModelPage() {
                                   </div>
                                 </div>
 
-                                <label className="relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200">
-                                  <input
-                                    type="checkbox"
-                                    checked={modelAdvancedDraft.promptCachingEnabled || false}
-                                    onChange={(e) =>
-                                      handlePromptCachingEnabledChange(e.target.checked)
-                                    }
-                                    className="sr-only"
-                                  />
-                                  <span
-                                    className={cn(
-                                      "inline-block h-full w-full rounded-full transition-colors duration-200",
-                                      modelAdvancedDraft.promptCachingEnabled
-                                        ? "bg-accent"
-                                        : "bg-fg/10",
-                                    )}
-                                  />
-                                  <span
-                                    className={cn(
-                                      "absolute h-3.5 w-3.5 transform rounded-full bg-fg transition-transform duration-200",
-                                      modelAdvancedDraft.promptCachingEnabled
-                                        ? "translate-x-4.5"
-                                        : "translate-x-1",
-                                    )}
-                                  />
-                                </label>
+                                <Switch
+                                  checked={modelAdvancedDraft.promptCachingEnabled || false}
+                                  onChange={handlePromptCachingEnabledChange}
+                                />
                               </div>
 
                               {modelAdvancedDraft.promptCachingEnabled && (

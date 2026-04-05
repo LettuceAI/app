@@ -25,6 +25,7 @@ import { motion, AnimatePresence } from "framer-motion";
 
 import { cn, typography, interactive } from "../../design-tokens";
 import { useI18n } from "../../../core/i18n/context";
+import { Switch } from "../../components/Switch";
 import { HfReadmeRenderer } from "./components/HfReadmeRenderer";
 import { InlineDownloadCards } from "./components/DownloadQueueBar";
 import {
@@ -2162,33 +2163,11 @@ export function HuggingFaceBrowserPage() {
                                               <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-fg/35">
                                                 {recImageSupport ? "On" : "Off"}
                                               </span>
-                                              <input
+                                              <Switch
                                                 id="hf-image-support-toggle"
-                                                type="checkbox"
                                                 checked={recImageSupport}
-                                                onChange={(e) =>
-                                                  setRecImageSupport(e.target.checked)
-                                                }
-                                                className="peer sr-only"
+                                                onChange={setRecImageSupport}
                                               />
-                                              <label
-                                                htmlFor="hf-image-support-toggle"
-                                                className={cn(
-                                                  "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-all duration-200 ease-in-out",
-                                                  recImageSupport
-                                                    ? "bg-emerald-500 shadow-sm shadow-emerald-500/20"
-                                                    : "bg-fg/20",
-                                                )}
-                                              >
-                                                <span
-                                                  className={cn(
-                                                    "inline-block h-4 w-4 rounded-full bg-fg shadow-sm transition duration-200 ease-in-out",
-                                                    recImageSupport
-                                                      ? "translate-x-4"
-                                                      : "translate-x-0",
-                                                  )}
-                                                />
-                                              </label>
                                             </div>
                                           </div>
 

@@ -33,6 +33,7 @@ import { BottomMenu, MenuButton, MenuButtonGroup, MenuSection } from "../../comp
 import { ModelSelectionBottomMenu } from "../../components/ModelSelectionBottomMenu";
 import { BackgroundPositionModal } from "../../components/BackgroundPositionModal";
 import { CharacterExportMenu } from "../../components/CharacterExportMenu";
+import { Switch } from "../../components/Switch";
 import { cn, radius, colors, interactive, spacing, typography } from "../../design-tokens";
 import { getProviderIcon } from "../../../core/utils/providerIcons";
 import { useI18n } from "../../../core/i18n/context";
@@ -418,7 +419,7 @@ export function EditCharacterPage() {
                 <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
                   {/* Avatar Gradient Toggle */}
                   <div className="space-y-3">
-                    <label className="flex cursor-pointer items-center justify-between rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3 transition hover:bg-surface-el/30">
+                    <div className="flex items-center justify-between rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3 transition hover:bg-surface-el/30">
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
                           <Sparkles className="h-4 w-4 text-accent" />
@@ -428,17 +429,13 @@ export function EditCharacterPage() {
                           Generate colorful gradients from avatar colors
                         </p>
                       </div>
-                      <div className="relative ml-3">
-                        <input
-                          type="checkbox"
+                      <div className="ml-3">
+                        <Switch
                           checked={!disableAvatarGradient}
-                          onChange={(e) => setFields({ disableAvatarGradient: !e.target.checked })}
-                          className="peer sr-only"
+                          onChange={(next) => setFields({ disableAvatarGradient: !next })}
                         />
-                        <div className="h-6 w-11 rounded-full bg-fg/20 transition peer-checked:bg-accent/80"></div>
-                        <div className="absolute left-1 top-1 h-4 w-4 rounded-full bg-fg transition peer-checked:translate-x-5"></div>
                       </div>
-                    </label>
+                    </div>
                     <AnimatePresence initial={false}>
                       {customGradientEnabled && !disableAvatarGradient && (
                         <motion.div
@@ -472,12 +469,11 @@ export function EditCharacterPage() {
                             Override auto-detected colors with your own
                           </p>
                         </div>
-                        <label className="relative ml-3 cursor-pointer">
-                          <input
-                            type="checkbox"
+                        <div className="ml-3">
+                          <Switch
                             checked={customGradientEnabled}
-                            onChange={(e) => {
-                              if (e.target.checked) {
+                            onChange={(next) => {
+                              if (next) {
                                 const colors =
                                   customGradientColors.length > 0
                                     ? customGradientColors
@@ -490,11 +486,8 @@ export function EditCharacterPage() {
                                 setFields({ customGradientEnabled: false });
                               }
                             }}
-                            className="peer sr-only"
                           />
-                          <div className="h-6 w-11 rounded-full bg-fg/20 transition peer-checked:bg-secondary/80"></div>
-                          <div className="absolute left-1 top-1 h-4 w-4 rounded-full bg-fg transition peer-checked:translate-x-5"></div>
-                        </label>
+                        </div>
                       </div>
 
                       {customGradientEnabled && (
@@ -1374,28 +1367,12 @@ export function EditCharacterPage() {
                           : "Select a voice first"}
                       </p>
                     </div>
-                    <div className="flex items-center">
-                      <input
-                        id="character-voice-autoplay"
-                        type="checkbox"
-                        checked={voiceAutoplay}
-                        onChange={() => setFields({ voiceAutoplay: !voiceAutoplay })}
-                        disabled={!voiceConfig}
-                        className="peer sr-only"
-                      />
-                      <label
-                        htmlFor="character-voice-autoplay"
-                        className={`relative inline-flex h-6 w-11 shrink-0 rounded-full transition-all ${
-                          voiceAutoplay ? "bg-accent" : "bg-fg/20"
-                        } ${voiceConfig ? "cursor-pointer" : "cursor-not-allowed"}`}
-                      >
-                        <span
-                          className={`mt-0.5 inline-block h-5 w-5 transform rounded-full bg-fg transition ${
-                            voiceAutoplay ? "translate-x-5" : "translate-x-0.5"
-                          }`}
-                        />
-                      </label>
-                    </div>
+                    <Switch
+                      id="character-voice-autoplay"
+                      checked={voiceAutoplay}
+                      onChange={(next) => setFields({ voiceAutoplay: next })}
+                      disabled={!voiceConfig}
+                    />
                   </div>
                 </div>
 

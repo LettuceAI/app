@@ -6,6 +6,7 @@ import { WindowControlButtons, useDragRegionProps } from "../../../components/Ap
 import { cn } from "../../../design-tokens";
 import type { AdvancedModelSettings } from "../../../../core/storage/schemas";
 import { LlamaSamplerOrderEditor } from "../../../components/LlamaSamplerOrderEditor";
+import { Switch } from "../../../components/Switch";
 import {
   ADVANCED_TEMPERATURE_RANGE,
   ADVANCED_TOP_P_RANGE,
@@ -243,21 +244,7 @@ export function SessionAdvancedSettings({
                         Customize parameters just for this conversation
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => onOverrideEnabledChange(!overrideEnabled)}
-                      className={cn(
-                        "relative inline-flex h-6 w-11 shrink-0 rounded-full transition-all",
-                        overrideEnabled ? "bg-accent" : "bg-fg/20",
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          "inline-block h-5 w-5 mt-0.5 transform rounded-full bg-white transition",
-                          overrideEnabled ? "translate-x-5" : "translate-x-0.5",
-                        )}
-                      />
-                    </button>
+                    <Switch checked={overrideEnabled} onChange={onOverrideEnabledChange} />
                   </div>
 
                   {overrideEnabled && (
