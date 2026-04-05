@@ -11,6 +11,7 @@ import {
   generateImage,
   resolveGeneratedImageUrl,
   resolveImageGenerationOptions,
+  resolveSceneGenerationOptions,
   resolveProviderCredential,
   type ImageGenerationRequest,
 } from "../../../../core/image-generation";
@@ -250,6 +251,7 @@ export function useChatEnhancementsController({ context }: UseChatEnhancementsCo
       if (!state.session || !state.character) return;
       let sceneGenerationEnabled = sceneGenerationEnabledRef.current;
       let sceneGenerationMode = sceneGenerationModeRef.current;
+      let sceneGenerationAvailable = false;
       try {
         const settings = await readSettings();
         sceneGenerationEnabled = settings.advancedSettings?.sceneGenerationEnabled ?? true;
@@ -259,6 +261,10 @@ export function useChatEnhancementsController({ context }: UseChatEnhancementsCo
             : settings.advancedSettings?.sceneGenerationMode === "askFirst"
               ? "askFirst"
               : "auto";
+        const sceneOptions = resolveSceneGenerationOptions(settings);
+        sceneGenerationAvailable = Boolean(
+          sceneOptions.enabled && sceneOptions.defaultModel && sceneOptions.defaultProvider,
+        );
         sceneGenerationEnabledRef.current = sceneGenerationEnabled;
         sceneGenerationModeRef.current = sceneGenerationMode;
       } catch {
@@ -279,7 +285,7 @@ export function useChatEnhancementsController({ context }: UseChatEnhancementsCo
 
       const { cleanContent, directives } = parseImageDirectives(currentMessage.content);
       const scenePrompt =
-        sceneGenerationEnabled && sceneGenerationMode !== "manual"
+        sceneGenerationEnabled && sceneGenerationAvailable && sceneGenerationMode !== "manual"
           ? (options?.scenePrompt?.trim() ?? "")
           : "";
       const shouldAskForSceneApproval = Boolean(scenePrompt) && sceneGenerationMode === "askFirst";
