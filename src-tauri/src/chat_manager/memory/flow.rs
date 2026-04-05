@@ -1446,6 +1446,7 @@ async fn send_dynamic_memory_request(
     tool_config: Option<&ToolConfig>,
     request_id: Option<&str>,
 ) -> Result<ApiResponse, String> {
+    let extra_body_fields = sanitize_dynamic_memory_extra_body_fields(extra_body_fields);
     let built = request_builder::build_chat_request(
         provider_cred,
         api_key,
@@ -1541,6 +1542,22 @@ async fn send_dynamic_memory_request(
     }
 
     Ok(first_response)
+}
+
+fn sanitize_dynamic_memory_extra_body_fields(
+    extra_body_fields: Option<HashMap<String, Value>>,
+) -> Option<HashMap<String, Value>> {
+    let mut extra = extra_body_fields?;
+    for key in [
+        "llamaSamplerProfile",
+        "llamaSamplerOrder",
+        "llamaMinP",
+        "llamaTypicalP",
+    ] {
+        extra.remove(key);
+    }
+
+    if extra.is_empty() { None } else { Some(extra) }
 }
 
 async fn run_memory_tool_update(
@@ -1924,6 +1941,14 @@ async fn run_memory_tool_update(
                                 "reason": reason,
                                 "timestamp": now_millis().unwrap_or_default(),
                             }));
+                            log_info(
+                                app,
+                                "dynamic_memory",
+                                format!(
+                                    "Queued memory for category repair: text=\"{}\" pinned={}",
+                                    text, is_pinned
+                                ),
+                            );
                             untagged_candidates.push((text, is_pinned));
                             continue;
                         }
@@ -2073,10 +2098,35 @@ async fn run_memory_tool_update(
             .filter(|text| seen.insert(text.clone()))
             .collect();
 
+        log_info(
+            app,
+            "dynamic_memory",
+            format!(
+                "Running memory category repair for {} candidate(s)",
+                candidate_texts.len()
+            ),
+        );
+
         match run_memory_tag_repair(app, provider_cred, model, api_key, &candidate_texts).await {
             Ok(repaired) => {
+                log_info(
+                    app,
+                    "dynamic_memory",
+                    format!(
+                        "Memory category repair returned {} mapped candidate(s)",
+                        repaired.len()
+                    ),
+                );
                 for (text, is_pinned) in untagged_candidates {
                     let Some(category) = repaired.get(&text).cloned() else {
+                        log_warn(
+                            app,
+                            "dynamic_memory",
+                            format!(
+                                "Memory category repair returned no category for text=\"{}\"",
+                                text
+                            ),
+                        );
                         continue;
                     };
 
@@ -2086,7 +2136,11 @@ async fn run_memory_tool_update(
                             actions_log.push(json!({
                                 "name": "create_memory",
                                 "repaired": true,
-                                "text": text,
+                                "arguments": {
+                                    "text": text,
+                                    "category": category,
+                                    "important": is_pinned,
+                                },
                                 "skipped": true,
                                 "reason": reason,
                                 "timestamp": now_millis().unwrap_or_default(),
@@ -2117,7 +2171,11 @@ async fn run_memory_tool_update(
                             actions_log.push(json!({
                                 "name": "create_memory",
                                 "repaired": true,
-                                "text": text,
+                                "arguments": {
+                                    "text": text,
+                                    "category": category,
+                                    "important": is_pinned,
+                                },
                                 "skipped": true,
                                 "reason": "duplicate (cosine > 0.85)",
                                 "timestamp": now_millis().unwrap_or_default(),
@@ -2144,12 +2202,23 @@ async fn run_memory_tool_update(
                     actions_log.push(json!({
                         "name": "create_memory",
                         "repaired": true,
-                        "text": text,
-                        "category": category,
+                        "arguments": {
+                            "text": text,
+                            "category": category,
+                            "important": is_pinned,
+                        },
                         "memoryId": mem_id,
                         "timestamp": now_millis().unwrap_or_default(),
                         "updatedMemories": format_memories_with_ids(session),
                     }));
+                    log_info(
+                        app,
+                        "dynamic_memory",
+                        format!(
+                            "Created repaired memory {} category={} pinned={}",
+                            mem_id, category, is_pinned
+                        ),
+                    );
                 }
             }
             Err(err) => {

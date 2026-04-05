@@ -1170,6 +1170,20 @@ mod desktop {
                             .unwrap_or("unknown")
                     ),
                 );
+                if let Some(diagnostics) = built_prompt.tool_template_diagnostics.as_deref() {
+                    log_warn(
+                        &app,
+                        "llama_cpp",
+                        format!(
+                            "llama native tool-call template heuristic warning: source={} {}",
+                            built_prompt
+                                .applied_template_source
+                                .as_deref()
+                                .unwrap_or("unknown"),
+                            diagnostics
+                        ),
+                    );
+                }
             }
             let model_default_add_bos = model_tokenizer_adds_bos(model);
             let prompt_add_bos = resolve_prompt_add_bos(model, built_prompt.prompt_mode);

@@ -25,6 +25,7 @@ pub(super) struct BuiltPrompt {
     pub(super) prompt_mode: PromptMode,
     pub(super) chat_template_result: Option<llama_cpp_2::model::ChatTemplateResult>,
     pub(super) additional_stop_sequences: Vec<String>,
+    pub(super) tool_template_diagnostics: Option<String>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -201,6 +202,60 @@ fn template_appears_tool_aware(template: &str) -> bool {
     .any(|marker| template.contains(marker))
 }
 
+fn summarize_tool_template_detection(template: &str) -> String {
+    let markers = [
+        "<tool_call>",
+        "<tool_calls>",
+        "</tool_calls>",
+        "<tool_response>",
+        "<tools>",
+        "</tools>",
+        "<available_tools>",
+        "<function=",
+        "<parameters>",
+        "<parameter=",
+        "<arg_key>",
+        "<arg_value>",
+        "<|tool_call_start|>",
+        "<|tool_calls_section_begin|>",
+        "<|tool_list_start|>",
+        "<|tools_prefix|>",
+        "<｜tool▁calls▁begin｜>",
+        "tool_declare",
+        "# Tools",
+    ];
+
+    let matched = markers
+        .iter()
+        .copied()
+        .filter(|marker| template.contains(marker))
+        .collect::<Vec<_>>();
+    let preview = template
+        .chars()
+        .take(220)
+        .collect::<String>()
+        .replace('\n', "\\n");
+
+    if matched.is_empty() {
+        format!(
+            "tool-template heuristic found no known markers; template_preview=\"{}\"",
+            preview
+        )
+    } else {
+        format!(
+            "tool-template heuristic matched markers=[{}] template_preview=\"{}\"",
+            matched.join(", "),
+            preview
+        )
+    }
+}
+
+fn oaicompat_result_supports_native_tool_calls(
+    result: &llama_cpp_2::model::ChatTemplateResult,
+) -> bool {
+    result.parse_tool_calls || result.parser.is_some() || result.grammar.is_some()
+}
+
 fn normalize_tool_choice_for_llama(
     tools: &mut Vec<Value>,
     tool_choice: Option<&Value>,
@@ -264,13 +319,8 @@ fn build_oaicompat_prompt(
     tool_choice: Option<&Value>,
     options: &OpenAICompatPromptOptions,
 ) -> Result<BuiltPrompt, String> {
-    if !template_appears_tool_aware(&resolved_template.template_text) {
-        return Err(crate::utils::err_msg(
-            module_path!(),
-            line!(),
-            "Resolved llama.cpp chat template does not appear to support native tool calling. Use a GGUF or override template with explicit tool-call sections.",
-        ));
-    }
+    let tool_template_diagnostics = (!template_appears_tool_aware(&resolved_template.template_text))
+        .then(|| summarize_tool_template_detection(&resolved_template.template_text));
 
     let messages_json = serde_json::to_string(messages).map_err(|e| {
         crate::utils::err_msg(
@@ -326,9 +376,32 @@ fn build_oaicompat_prompt(
             crate::utils::err_msg(
                 module_path!(),
                 line!(),
-                format!("Failed to apply llama.cpp OpenAI-compatible chat template: {e}"),
+                format!(
+                    "Failed to apply llama.cpp OpenAI-compatible chat template: {e}{}",
+                    tool_template_diagnostics
+                        .as_ref()
+                        .map(|diag| format!(" ({diag})"))
+                        .unwrap_or_default()
+                ),
             )
         })?;
+
+    if parse_tool_calls && !oaicompat_result_supports_native_tool_calls(&chat_template_result) {
+        return Err(crate::utils::err_msg(
+            module_path!(),
+            line!(),
+            format!(
+                "Resolved llama.cpp oaicompat template did not expose native tool-call parsing metadata (parse_tool_calls={}, parser_present={}, grammar_present={}){}",
+                chat_template_result.parse_tool_calls,
+                chat_template_result.parser.is_some(),
+                chat_template_result.grammar.is_some(),
+                tool_template_diagnostics
+                    .as_ref()
+                    .map(|diag| format!(" ({diag})"))
+                    .unwrap_or_default()
+            ),
+        ));
+    }
 
     Ok(BuiltPrompt {
         prompt: chat_template_result.prompt.clone(),
@@ -342,6 +415,7 @@ fn build_oaicompat_prompt(
         prompt_mode: PromptMode::OpenAICompatChat,
         additional_stop_sequences: chat_template_result.additional_stops.clone(),
         chat_template_result: Some(chat_template_result),
+        tool_template_diagnostics,
     })
 }
 
@@ -394,6 +468,7 @@ fn build_plain_templated_prompt(
                         prompt_mode: PromptMode::TemplatedChat,
                         chat_template_result: None,
                         additional_stop_sequences: Vec::new(),
+                        tool_template_diagnostics: None,
                     });
                 }
                 Err(legacy_err) => {
@@ -422,6 +497,7 @@ fn build_plain_templated_prompt(
         prompt_mode: PromptMode::TemplatedChat,
         chat_template_result: None,
         additional_stop_sequences: chat_template_result.additional_stops.clone(),
+        tool_template_diagnostics: None,
     })
 }
 
@@ -557,6 +633,7 @@ pub(super) fn build_prompt(
                         prompt_mode: PromptMode::RawCompletion,
                         chat_template_result: None,
                         additional_stop_sequences: Vec::new(),
+                        tool_template_diagnostics: None,
                     });
                 }
                 return Err(err);
@@ -599,6 +676,7 @@ pub(super) fn build_prompt(
                     prompt_mode: PromptMode::RawCompletion,
                     chat_template_result: None,
                     additional_stop_sequences: Vec::new(),
+                    tool_template_diagnostics: None,
                 })
             } else {
                 Err(err)

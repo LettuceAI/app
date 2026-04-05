@@ -89,9 +89,12 @@ function ActionCard({ action }: { action: NonNullable<MemoryToolEvent["actions"]
   };
   const Icon = style.icon;
   const args = action.arguments as Record<string, unknown> | undefined;
-  const memoryText = args?.text as string | undefined;
-  const category = args?.category as string | undefined;
-  const important = args?.important as boolean | undefined;
+  const rawAction = action as Record<string, unknown>;
+  const memoryText = (args?.text as string | undefined) ?? (rawAction.text as string | undefined);
+  const category =
+    (args?.category as string | undefined) ?? (rawAction.category as string | undefined);
+  const important =
+    (args?.important as boolean | undefined) ?? (rawAction.important as boolean | undefined);
   const confidence = args?.confidence as number | undefined;
   const id = args?.id as string | undefined;
 
