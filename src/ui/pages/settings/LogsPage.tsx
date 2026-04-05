@@ -10,6 +10,7 @@ import {
   Loader2,
   FileCode,
   Clipboard,
+  Copy,
   Sparkles,
   ArrowDownToLine,
   ArrowUpToLine,
@@ -482,6 +483,24 @@ function VirtualizedLogViewer({
     }
   }, [filename, lines]);
 
+  const handleCopyLines = useCallback(async (indices: Set<number>) => {
+    const sorted = Array.from(indices).sort((a, b) => a - b);
+    const text = sorted
+      .map((idx) => lines[idx])
+      .filter((line): line is string => line !== undefined)
+      .join("\n");
+    if (!text) {
+      setContextMenu(null);
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (err) {
+      logger.error("Failed to copy log lines", err);
+    }
+    setContextMenu(null);
+  }, [lines]);
+
   const clearIsolation = useCallback(() => setIsolatedLines(null), []);
 
   const virtualizer = useVirtualizer({
@@ -892,6 +911,19 @@ function VirtualizedLogViewer({
             className="fixed z-50 rounded-lg border border-fg/15 bg-surface shadow-xl py-1 min-w-44"
             style={{ left: contextMenu.x, top: contextMenu.y }}
           >
+            <button
+              onClick={() => void handleCopyLines(contextMenu.lineIndices)}
+              className={cn(
+                "w-full px-3 py-1.5 text-left flex items-center gap-2",
+                typography.caption.size,
+                "text-fg/70 hover:bg-fg/10",
+                interactive.transition.default,
+              )}
+            >
+              <Copy className="w-3.5 h-3.5 text-fg/50" />
+              Copy {contextMenu.lineIndices.size > 1 ? `${contextMenu.lineIndices.size} lines` : "this line"}
+            </button>
+            <div className="border-t border-fg/10 my-1" />
             {!isolatedLines ? (
               <button
                 onClick={() => handleIsolate(contextMenu.lineIndices)}
