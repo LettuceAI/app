@@ -82,21 +82,76 @@ function rememberSettings(settings: Settings): Settings {
   return settings;
 }
 
-function normalizeProviderCredentialIds(input: unknown): { next: unknown; changed: boolean } {
+function updateCachedSettings(mutator: (draft: Settings) => void): void {
+  if (!lastKnownGoodSettings) return;
+  const draft = cloneSettingsSnapshot(lastKnownGoodSettings);
+  mutator(draft);
+  lastKnownGoodSettings = draft;
+}
+
+function cloneSerializable<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function repairSettingsReferentialIntegrity(input: unknown): { next: unknown; changed: boolean } {
   if (!input || typeof input !== "object") {
     return { next: input, changed: false };
   }
 
   const root = JSON.parse(JSON.stringify(input)) as any;
-  const models = Array.isArray(root?.models) ? root.models : null;
-  if (!models) {
-    return { next: input, changed: false };
+  let changed = false;
+  const providerCredentials = Array.isArray(root?.providerCredentials)
+    ? root.providerCredentials
+    : [];
+  const providerCredentialIdMap = new Map<string, string>();
+
+  for (const credential of providerCredentials) {
+    if (!credential || typeof credential !== "object") continue;
+    const id = credential.id;
+    if (typeof id === "string" && id.length > 0 && !UUID_RE.test(id)) {
+      const nextId = uuidv4();
+      providerCredentialIdMap.set(id, nextId);
+      credential.id = nextId;
+      changed = true;
+    }
   }
 
-  let changed = false;
+  const defaultProviderCredentialId = root?.defaultProviderCredentialId;
+  if (typeof defaultProviderCredentialId === "string" && defaultProviderCredentialId.length > 0) {
+    const mappedId = providerCredentialIdMap.get(defaultProviderCredentialId);
+    if (mappedId) {
+      root.defaultProviderCredentialId = mappedId;
+      changed = true;
+    } else if (!UUID_RE.test(defaultProviderCredentialId)) {
+      root.defaultProviderCredentialId = null;
+      changed = true;
+    }
+  }
+
+  const defaultModelId = root?.defaultModelId;
+  if (
+    typeof defaultModelId === "string" &&
+    defaultModelId.length > 0 &&
+    !UUID_RE.test(defaultModelId)
+  ) {
+    root.defaultModelId = null;
+    changed = true;
+  }
+
+  const models = Array.isArray(root?.models) ? root.models : [];
   for (const model of models) {
     if (!model || typeof model !== "object") continue;
     const providerCredentialId = model.providerCredentialId;
+    if (
+      typeof providerCredentialId === "string" &&
+      providerCredentialId.length > 0 &&
+      providerCredentialIdMap.has(providerCredentialId)
+    ) {
+      model.providerCredentialId = providerCredentialIdMap.get(providerCredentialId);
+      changed = true;
+      continue;
+    }
+
     if (
       typeof providerCredentialId === "string" &&
       providerCredentialId.length > 0 &&
@@ -505,7 +560,7 @@ export async function readSettings(): Promise<Settings> {
     return rememberSettings(settings);
   }
 
-  const repaired = normalizeProviderCredentialIds(data);
+  const repaired = repairSettingsReferentialIntegrity(data);
   const repairedParsed = SettingsSchema.safeParse(repaired.next);
   if (repaired.changed && repairedParsed.success) {
     await writeSettings(repairedParsed.data, true);
@@ -533,16 +588,25 @@ export async function writeSettings(s: Settings, suppressBroadcast = false): Pro
 // Granular update functions
 export async function setDefaultProvider(id: string | null): Promise<void> {
   await storageBridge.settingsSetDefaultProvider(id);
+  updateCachedSettings((settings) => {
+    settings.defaultProviderCredentialId = id;
+  });
   broadcastSettingsUpdated();
 }
 
 export async function setDefaultModel(id: string | null): Promise<void> {
   await storageBridge.settingsSetDefaultModel(id);
+  updateCachedSettings((settings) => {
+    settings.defaultModelId = id;
+  });
   broadcastSettingsUpdated();
 }
 
 export async function setAppState(state: AppState): Promise<void> {
   await storageBridge.settingsSetAppState(state);
+  updateCachedSettings((settings) => {
+    settings.appState = cloneSerializable(state);
+  });
   broadcastSettingsUpdated();
 }
 
@@ -572,6 +636,14 @@ export async function addOrUpdateProviderCredential(
     id: cred.id ?? uuidv4(),
     ...cred,
   });
+  updateCachedSettings((settings) => {
+    const index = settings.providerCredentials.findIndex((provider) => provider.id === entity.id);
+    if (index >= 0) {
+      settings.providerCredentials[index] = cloneSerializable(entity);
+      return;
+    }
+    settings.providerCredentials.push(cloneSerializable(entity));
+  });
   // Ensure a default provider is set if missing
   const current = await readSettings();
   if (!current.defaultProviderCredentialId) {
@@ -583,6 +655,9 @@ export async function addOrUpdateProviderCredential(
 
 export async function removeProviderCredential(id: string): Promise<void> {
   await storageBridge.providerDelete(id);
+  updateCachedSettings((settings) => {
+    settings.providerCredentials = settings.providerCredentials.filter((provider) => provider.id !== id);
+  });
   const current = await readSettings();
   if (current.defaultProviderCredentialId === id) {
     const nextDefault = current.providerCredentials.find((c) => c.id !== id)?.id ?? null;
@@ -595,20 +670,15 @@ export async function addOrUpdateModel(
   model: Omit<Model, "id" | "createdAt"> & { id?: string },
 ): Promise<Model> {
   const entity: Model = await storageBridge.modelUpsert({ id: model.id ?? uuidv4(), ...model });
-  const current = await readSettings();
-  if (entity.providerId === "llamacpp") {
-    const hasLocalProvider = current.providerCredentials.some(
-      (cred) => cred.providerId === "llamacpp",
-    );
-    if (!hasLocalProvider) {
-      await addOrUpdateProviderCredential({
-        id: uuidv4(),
-        providerId: "llamacpp",
-        label: "llama.cpp (Local)",
-        apiKey: "",
-      });
+  updateCachedSettings((settings) => {
+    const index = settings.models.findIndex((existingModel) => existingModel.id === entity.id);
+    if (index >= 0) {
+      settings.models[index] = cloneSerializable(entity);
+      return;
     }
-  }
+    settings.models.push(cloneSerializable(entity));
+  });
+  const current = await readSettings();
   if (!current.defaultModelId) {
     await setDefaultModel(entity.id);
   }
@@ -618,6 +688,9 @@ export async function addOrUpdateModel(
 
 export async function removeModel(id: string): Promise<void> {
   await storageBridge.modelDelete(id);
+  updateCachedSettings((settings) => {
+    settings.models = settings.models.filter((model) => model.id !== id);
+  });
   const current = await readSettings();
   if (current.defaultModelId === id) {
     const nextDefault = current.models.find((m) => m.id !== id)?.id ?? null;
@@ -899,6 +972,9 @@ export async function listSessionPreviews(
 
 export async function saveAdvancedSettings(settings: Settings["advancedSettings"]): Promise<void> {
   await storageBridge.settingsSetAdvanced(settings);
+  updateCachedSettings((current) => {
+    current.advancedSettings = settings ? cloneSerializable(settings) : settings;
+  });
   setDeveloperModeOverride(settings?.developerModeEnabled === true);
   broadcastSettingsUpdated();
 }

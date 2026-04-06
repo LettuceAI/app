@@ -1104,6 +1104,13 @@ export function useModelEditorController(): ControllerReturn {
     dispatch({ type: "set_error", payload: null });
   }, [dispatch]);
 
+  const getProviderCredentialIdForSave = useCallback((providerCred: ProviderCredential) => {
+    if (providerCred.providerId === "llamacpp") {
+      return null;
+    }
+    return providerCred.id;
+  }, []);
+
   const doSave = useCallback(
     async (): Promise<boolean> => {
       const { editorModel, providers, modelAdvancedDraft } = state;
@@ -1172,10 +1179,11 @@ export function useModelEditorController(): ControllerReturn {
       dispatch({ type: "set_saving", payload: true });
       try {
         const hardCappedScopes = getHardCappedScopes(providerCred.providerId);
+        const providerCredentialId = getProviderCredentialIdForSave(providerCred);
         const savedModel = {
           ...editorModel,
           providerId: providerCred.providerId,
-          providerCredentialId: providerCred.id,
+          providerCredentialId,
           providerLabel: providerCred.label,
           ...hardCappedScopes,
           advancedModelSettings: sanitizeAdvancedModelSettings(modelAdvancedDraft),
@@ -1200,7 +1208,7 @@ export function useModelEditorController(): ControllerReturn {
         dispatch({ type: "set_saving", payload: false });
       }
     },
-    [dispatch, state],
+    [dispatch, getProviderCredentialIdForSave, state],
   );
 
   const handleSave = useCallback(async () => {
@@ -1350,10 +1358,11 @@ export function useModelEditorController(): ControllerReturn {
     dispatch({ type: "set_error", payload: null });
     try {
       const hardCappedScopes = getHardCappedScopes(providerCred.providerId);
+      const providerCredentialId = getProviderCredentialIdForSave(providerCred);
       await addOrUpdateModel({
         ...editorModel,
         providerId: providerCred.providerId,
-        providerCredentialId: providerCred.id,
+        providerCredentialId,
         providerLabel: providerCred.label,
         ...hardCappedScopes,
         advancedModelSettings: nextDraft,
@@ -1362,7 +1371,7 @@ export function useModelEditorController(): ControllerReturn {
         type: "update_editor_model",
         payload: {
           providerId: providerCred.providerId,
-          providerCredentialId: providerCred.id,
+          providerCredentialId,
           providerLabel: providerCred.label,
           ...hardCappedScopes,
           advancedModelSettings: nextDraft,
@@ -1373,7 +1382,7 @@ export function useModelEditorController(): ControllerReturn {
         editorModel: cloneSnapshot({
           ...editorModel,
           providerId: providerCred.providerId,
-          providerCredentialId: providerCred.id,
+          providerCredentialId,
           providerLabel: providerCred.label,
           ...hardCappedScopes,
           advancedModelSettings: nextDraft,
@@ -1391,7 +1400,7 @@ export function useModelEditorController(): ControllerReturn {
     } finally {
       dispatch({ type: "set_saving", payload: false });
     }
-  }, [state]);
+  }, [getProviderCredentialIdForSave, state]);
 
   return {
     state,

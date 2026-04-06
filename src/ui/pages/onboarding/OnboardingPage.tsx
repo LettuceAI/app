@@ -9,10 +9,7 @@ import { cn, typography } from "../../design-tokens";
 import { getPlatform } from "../../../core/utils/platform";
 import { useState, useCallback, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import {
-  checkEmbeddingModel,
-  addOrUpdateProviderCredential,
-} from "../../../core/storage/repo";
+import { checkEmbeddingModel } from "../../../core/storage/repo";
 import { setProviderSetupCompleted } from "../../../core/storage/appState";
 import { useI18n } from "../../../core/i18n/context";
 
@@ -55,27 +52,15 @@ export function OnboardingPage() {
   const stepNumber =
     state.step === OnboardingStep.Provider ? 1 : state.step === OnboardingStep.Model ? 2 : 3;
 
-  const ensureLlamaCppProvider = useCallback(async () => {
-    const credential = {
-      id: "llamacpp-onboarding",
-      providerId: "llamacpp",
-      label: "Local (llama.cpp)",
-      apiKey: undefined,
-      baseUrl: undefined,
-    };
-    await addOrUpdateProviderCredential(credential);
-    await setProviderSetupCompleted(true);
-  }, []);
-
   const handleBrowseModelLibrary = useCallback(async () => {
-    await ensureLlamaCppProvider();
+    await setProviderSetupCompleted(true);
     navigate("/settings/models/browse?returnTo=/onboarding/memory");
-  }, [ensureLlamaCppProvider, navigate]);
+  }, [navigate]);
 
   const handleUseOwnGguf = useCallback(async () => {
-    await ensureLlamaCppProvider();
+    await setProviderSetupCompleted(true);
     navigate("/settings/models/new?provider=llamacpp&returnTo=/onboarding/memory");
-  }, [ensureLlamaCppProvider, navigate]);
+  }, [navigate]);
 
   // Handle finish - checks for embedding model if dynamic is selected
   const handleFinish = useCallback(async () => {

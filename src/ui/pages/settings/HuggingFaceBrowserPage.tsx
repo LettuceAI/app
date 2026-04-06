@@ -34,7 +34,12 @@ import {
 } from "../../../core/downloads/DownloadQueueContext";
 import { BottomMenu, MenuLabel, MenuDivider } from "../../components/BottomMenu";
 import { toast } from "../../components/toast";
-import { addOrUpdateModel, readSettingsCached } from "../../../core/storage/repo";
+import {
+  addOrUpdateModel,
+  readSettings,
+  readSettingsCached,
+  SETTINGS_UPDATED_EVENT,
+} from "../../../core/storage/repo";
 import { createDefaultAdvancedModelSettings } from "../../../core/storage/schemas";
 
 interface HfSearchResult {
@@ -823,19 +828,33 @@ export function HuggingFaceBrowserPage() {
   const returnTo = searchParams.get("returnTo");
   const { queue, dismissItem, hasItems: hasDownloads } = useDownloadQueue();
 
-  // Track whether at least one local model exists (for "Continue Setup" gating)
-  const [hadLocalModelOnMount] = useState(() => {
+  const [hasPersistedLocalModel, setHasPersistedLocalModel] = useState(() => {
     const cached = readSettingsCached();
     return cached ? cached.models.some((m) => m.providerId === "llamacpp") : false;
   });
   const hasCompletedDownload = queue.some(
     (item) => item.status === "complete" && item.createModelWhenFinished,
   );
-  const hasLocalModel = hadLocalModelOnMount || hasCompletedDownload;
+  const hasLocalModel = hasPersistedLocalModel || hasCompletedDownload;
 
   const [avatars, setAvatars] = useState<Record<string, string>>({});
 
   const [defaultedToSearch, setDefaultedToSearch] = useState(false);
+
+  useEffect(() => {
+    const syncLocalModelState = async () => {
+      const settings = await readSettings();
+      setHasPersistedLocalModel(settings.models.some((model) => model.providerId === "llamacpp"));
+    };
+
+    void syncLocalModelState();
+
+    const handler = () => {
+      void syncLocalModelState();
+    };
+    window.addEventListener(SETTINGS_UPDATED_EVENT, handler);
+    return () => window.removeEventListener(SETTINGS_UPDATED_EVENT, handler);
+  }, []);
 
   // Helper to preserve returnTo across param changes
   const preserveParams = useCallback(
@@ -1337,6 +1356,7 @@ export function HuggingFaceBrowserPage() {
             ? `${displayName} added with image support, ${contextLength.toLocaleString()} ctx, and ${kvType.toUpperCase()} KV cache.`
             : `${displayName} added with ${contextLength.toLocaleString()} ctx and ${kvType.toUpperCase()} KV cache.`,
         );
+        setHasPersistedLocalModel(true);
 
         await dismissItem(modelItem.id);
         if (mmprojItem) {
@@ -1424,11 +1444,22 @@ export function HuggingFaceBrowserPage() {
   ]);
 
   const queueFilesDownload = useCallback(
-    async (filename: string) => {
+    async (file: HfModelFile) => {
       if (!modelInfo) return;
-      await queueTrackedDownload(modelInfo.modelId, filename, null);
+
+      const shouldCreateModel = Boolean(returnTo) && !file.isMmproj;
+      const metadata = shouldCreateModel
+        ? {
+            createModelWhenFinished: true,
+            installId: crypto.randomUUID(),
+            displayName: extractFileDisplayName(file.filename) || extractModelShortName(modelInfo.modelId),
+            downloadRole: "model" as const,
+          }
+        : null;
+
+      await queueTrackedDownload(modelInfo.modelId, file.filename, metadata);
     },
-    [modelInfo, queueTrackedDownload],
+    [modelInfo, queueTrackedDownload, returnTo],
   );
 
   useEffect(() => {
@@ -2472,7 +2503,7 @@ export function HuggingFaceBrowserPage() {
                                     </span>
                                   </div>
                                   <button
-                                    onClick={() => void queueFilesDownload(file.filename)}
+                                    onClick={() => void queueFilesDownload(file)}
                                     className={cn(
                                       "mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-accent/30 bg-accent/15 py-1.5 text-[11px] font-semibold text-accent",
                                       interactive.transition.default,
@@ -2480,7 +2511,9 @@ export function HuggingFaceBrowserPage() {
                                     )}
                                   >
                                     <Download size={12} />
-                                    {t("hfBrowser.download")}
+                                    {returnTo && !file.isMmproj
+                                      ? "Download and Use"
+                                      : t("hfBrowser.download")}
                                   </button>
                                 </div>
                               );

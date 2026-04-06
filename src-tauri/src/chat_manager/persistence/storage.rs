@@ -1,3 +1,4 @@
+use std::sync::OnceLock;
 use tauri::AppHandle;
 
 use crate::storage_manager::{
@@ -258,6 +259,20 @@ pub fn resolve_credential_for_model<'a>(
     settings: &'a Settings,
     model: &Model,
 ) -> Option<&'a ProviderCredential> {
+    if model.provider_id.eq_ignore_ascii_case("llamacpp") {
+        static LLAMA_CPP_CREDENTIAL: OnceLock<ProviderCredential> = OnceLock::new();
+        return Some(LLAMA_CPP_CREDENTIAL.get_or_init(|| ProviderCredential {
+            id: "builtin-llamacpp".to_string(),
+            provider_id: "llamacpp".to_string(),
+            label: "llama.cpp (Local)".to_string(),
+            api_key: Some(String::new()),
+            base_url: None,
+            default_model: None,
+            headers: None,
+            config: None,
+        }));
+    }
+
     if let Some(model_cred_id) = model.provider_credential_id.as_ref() {
         if let Some(explicit_match) = settings
             .provider_credentials
