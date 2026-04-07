@@ -52,6 +52,10 @@ docs/sync-old-architecture.svg
 src-tauri/target-check/
 .vscode/
 .qlty/
-.github/
 .vs/
 src-tauri/onnxruntime/
+.vs/
+.vscode/**/*
+.qlty/
+/.vscode
+/.vscode/extensions.json
