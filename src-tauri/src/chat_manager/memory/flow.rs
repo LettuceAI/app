@@ -52,6 +52,29 @@ const ALLOWED_MEMORY_CATEGORIES: &[&str] = &[
     "other",
 ];
 const HARD_DELETE_CONFIDENCE_THRESHOLD: f32 = 0.7;
+
+fn response_preview(provider_id: &str, value: &Value) -> String {
+    if let Some(text) = extract_text(value, Some(provider_id)).filter(|text| !text.trim().is_empty())
+    {
+        text
+    } else {
+        value.to_string()
+    }
+}
+
+fn log_text_parse_failure(app: &AppHandle, phase: &str, text: &str, err: &str) {
+    log_warn(
+        app,
+        "dynamic_memory",
+        format!(
+            "{} parse failed: {} | model response preview: {}",
+            phase,
+            err,
+            text
+        ),
+    );
+}
+
 fn max_hard_deletes_per_cycle(initial_count: usize, ratio: f32) -> usize {
     if initial_count == 0 {
         return 0;
@@ -1686,7 +1709,10 @@ async fn run_memory_tool_update(
                     .ok_or_else(|| {
                         "memory fallback returned neither tool calls nor text output".to_string()
                     })?;
-                parse_memory_operations_from_text(&text)?
+                parse_memory_operations_from_text(&text).map_err(|err| {
+                    log_text_parse_failure(app, "memory fallback", &text, &err);
+                    err
+                })?
             } else {
                 let tool_calls = parse_tool_calls(&provider_cred.provider_id, api_response.data());
                 if !tool_calls.is_empty() {
@@ -1695,7 +1721,10 @@ async fn run_memory_tool_update(
                     log_warn(
                         app,
                         "dynamic_memory",
-                        "memory tool request returned no tool usage; retrying with JSON fallback",
+                        format!(
+                            "memory tool request returned no tool usage; retrying with JSON fallback | response preview: {}",
+                            response_preview(&provider_cred.provider_id, api_response.data())
+                        ),
                     );
                     if cancel_token.is_some_and(|token| token.is_cancelled()) {
                         return Err("Request was cancelled by user".to_string());
@@ -1751,7 +1780,10 @@ async fn run_memory_tool_update(
                             "memory fallback returned neither tool calls nor text output"
                                 .to_string()
                         })?;
-                    parse_memory_operations_from_text(&text)?
+                    parse_memory_operations_from_text(&text).map_err(|err| {
+                        log_text_parse_failure(app, "memory fallback", &text, &err);
+                        err
+                    })?
                 }
             }
         }
@@ -1817,7 +1849,10 @@ async fn run_memory_tool_update(
                 .ok_or_else(|| {
                     "memory fallback returned neither tool calls nor text output".to_string()
                 })?;
-            parse_memory_operations_from_text(&text)?
+            parse_memory_operations_from_text(&text).map_err(|err| {
+                log_text_parse_failure(app, "memory fallback", &text, &err);
+                err
+            })?
         }
     };
 
@@ -2738,6 +2773,14 @@ async fn summarize_messages(
                     } else {
                         ""
                     };
+                    log_warn(
+                        app,
+                        "dynamic_memory",
+                        format!(
+                            "summary tool response preview: {}",
+                            response_preview(&provider_cred.provider_id, api_response.data())
+                        ),
+                    );
                     format!(
                         "model returned no tool call and no valid text{}. Provider={}, model={}",
                         legacy_hint, provider_cred.provider_id, model.name

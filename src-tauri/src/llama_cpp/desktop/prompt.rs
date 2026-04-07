@@ -52,26 +52,32 @@ pub(super) fn token_piece_bytes(
     model: &LlamaModel,
     token: llama_cpp_2::token::LlamaToken,
 ) -> Result<Vec<u8>, String> {
-    match model.token_to_piece_bytes(token, 8, false, None) {
+    fn decode_with_special_mode(
+        model: &LlamaModel,
+        token: llama_cpp_2::token::LlamaToken,
+        special: bool,
+    ) -> Result<Vec<u8>, TokenToStringError> {
+        match model.token_to_piece_bytes(token, 8, special, None) {
+            Ok(bytes) => Ok(bytes),
+            Err(TokenToStringError::InsufficientBufferSpace(needed)) => {
+                let required =
+                    usize::try_from(-needed).map_err(|_| TokenToStringError::InsufficientBufferSpace(needed))?;
+                model.token_to_piece_bytes(token, required, special, None)
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    match decode_with_special_mode(model, token, false) {
         Ok(bytes) => Ok(bytes),
-        Err(TokenToStringError::InsufficientBufferSpace(needed)) => {
-            let required = usize::try_from(-needed).map_err(|_| {
+        Err(TokenToStringError::UnknownTokenType) => decode_with_special_mode(model, token, true)
+            .map_err(|e| {
                 crate::utils::err_msg(
                     module_path!(),
                     line!(),
-                    format!("Invalid llama token buffer size hint: {needed}"),
+                    format!("Failed to decode token bytes: {e}"),
                 )
-            })?;
-            model
-                .token_to_piece_bytes(token, required, false, None)
-                .map_err(|e| {
-                    crate::utils::err_msg(
-                        module_path!(),
-                        line!(),
-                        format!("Failed to decode token bytes: {e}"),
-                    )
-                })
-        }
+            }),
         Err(e) => Err(crate::utils::err_msg(
             module_path!(),
             line!(),
@@ -176,56 +182,40 @@ fn message_requires_openai_compat(message: &Value) -> bool {
     false
 }
 
+const TOOL_TEMPLATE_MARKERS: &[&str] = &[
+    "<tool_call>",
+    "<tool_calls>",
+    "</tool_calls>",
+    "<tool_response>",
+    "<tools>",
+    "</tools>",
+    "<available_tools>",
+    "<function=",
+    "<parameters>",
+    "<parameter=",
+    "<arg_key>",
+    "<arg_value>",
+    "<|tool_call>",
+    "<tool_call|>",
+    "<|tool_response>",
+    "<tool_response|>",
+    "<|tool_call_start|>",
+    "<|tool_calls_section_begin|>",
+    "<|tool_list_start|>",
+    "<|tools_prefix|>",
+    "<｜tool▁calls▁begin｜>",
+    "tool_declare",
+    "# Tools",
+];
+
 fn template_appears_tool_aware(template: &str) -> bool {
-    [
-        "<tool_call>",
-        "<tool_calls>",
-        "</tool_calls>",
-        "<tool_response>",
-        "<tools>",
-        "</tools>",
-        "<available_tools>",
-        "<function=",
-        "<parameters>",
-        "<parameter=",
-        "<arg_key>",
-        "<arg_value>",
-        "<|tool_call_start|>",
-        "<|tool_calls_section_begin|>",
-        "<|tool_list_start|>",
-        "<|tools_prefix|>",
-        "<｜tool▁calls▁begin｜>",
-        "tool_declare",
-        "# Tools",
-    ]
-    .iter()
-    .any(|marker| template.contains(marker))
+    TOOL_TEMPLATE_MARKERS
+        .iter()
+        .any(|marker| template.contains(marker))
 }
 
 fn summarize_tool_template_detection(template: &str) -> String {
-    let markers = [
-        "<tool_call>",
-        "<tool_calls>",
-        "</tool_calls>",
-        "<tool_response>",
-        "<tools>",
-        "</tools>",
-        "<available_tools>",
-        "<function=",
-        "<parameters>",
-        "<parameter=",
-        "<arg_key>",
-        "<arg_value>",
-        "<|tool_call_start|>",
-        "<|tool_calls_section_begin|>",
-        "<|tool_list_start|>",
-        "<|tools_prefix|>",
-        "<｜tool▁calls▁begin｜>",
-        "tool_declare",
-        "# Tools",
-    ];
-
-    let matched = markers
+    let matched = TOOL_TEMPLATE_MARKERS
         .iter()
         .copied()
         .filter(|marker| template.contains(marker))
@@ -682,6 +672,18 @@ pub(super) fn build_prompt(
                 Err(err)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::template_appears_tool_aware;
+
+    #[test]
+    fn detects_gemma_style_tool_markers() {
+        assert!(template_appears_tool_aware(
+            "{% if tools %}<|tool_call>{{ tools }}<tool_call|>{% endif %}"
+        ));
     }
 }
 

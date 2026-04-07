@@ -224,7 +224,12 @@ fn sanitize_message(component: &str, message: &str) -> String {
     }
     msg = redact_param_value(&msg, "key");
 
-    if component != "api_request" && component != "image_generator" && msg.len() > MAX_LOG_CHARS {
+    if component != "api_request"
+        && component != "image_generator"
+        && component != "llama_cpp"
+        && component != "dynamic_memory"
+        && msg.len() > MAX_LOG_CHARS
+    {
         let truncated = msg.chars().take(MAX_LOG_CHARS).collect::<String>();
         msg = format!("{}... <truncated>", truncated);
     }

@@ -1,4 +1,5 @@
-use quick_xml::events::{BytesStart, Event};
+use quick_xml::escape::{resolve_xml_entity, unescape};
+use quick_xml::events::{BytesRef, BytesStart, Event};
 use quick_xml::Reader;
 use serde_json::{Map, Value};
 use std::collections::HashMap;
@@ -37,28 +38,10 @@ fn normalize_structured_fallback_text(raw: &str) -> String {
     trimmed.to_string()
 }
 
-fn extract_xml_snippet<'a>(raw: &'a str, root_tags: &[&str]) -> Option<&'a str> {
-    for root in root_tags {
-        let start_marker = format!("<{}", root);
-        let end_marker = format!("</{}>", root);
-        if let Some(start_idx) = raw.find(&start_marker) {
-            if let Some(rel_end_idx) = raw[start_idx..].find(&end_marker) {
-                let end_idx = start_idx + rel_end_idx + end_marker.len();
-                return Some(&raw[start_idx..end_idx]);
-            }
-            if let Some(rel_end_idx) = raw[start_idx..].find("/>") {
-                let end_idx = start_idx + rel_end_idx + 2;
-                return Some(&raw[start_idx..end_idx]);
-            }
-        }
-    }
-    None
-}
-
 fn attr_value(element: &BytesStart<'_>, key: &[u8]) -> Option<String> {
     for attr in element.attributes().flatten() {
         if attr.key.as_ref() == key {
-            return Some(String::from_utf8_lossy(attr.value.as_ref()).into_owned());
+            return attr.unescape_value().ok().map(|value| value.into_owned());
         }
     }
     None
@@ -89,13 +72,72 @@ fn insert_number_attr(args: &mut Map<String, Value>, key: &str, value: Option<St
     }
 }
 
+fn decode_xml_text(raw: &[u8]) -> Result<String, String> {
+    let text = String::from_utf8_lossy(raw);
+    unescape(&text)
+        .map(|cow| cow.into_owned())
+        .map_err(|err| format!("fallback XML text decode error: {}", err))
+}
+
+fn decode_xml_general_ref(raw: BytesRef<'_>) -> Result<String, String> {
+    if let Ok(Some(ch)) = raw.resolve_char_ref() {
+        return Ok(ch.to_string());
+    }
+
+    let content = raw
+        .xml_content()
+        .map_err(|err| format!("fallback XML reference decode error: {}", err))?;
+    if let Some(entity) = resolve_xml_entity(&content) {
+        Ok(entity.to_string())
+    } else {
+        Ok(format!("&{};", content))
+    }
+}
+
+fn append_json_string_field(args: &mut Map<String, Value>, key: &str, fragment: &str) {
+    if fragment.is_empty() {
+        return;
+    }
+
+    match args.get_mut(key) {
+        Some(Value::String(existing)) => existing.push_str(fragment),
+        _ => {
+            args.insert(key.to_string(), Value::String(fragment.to_string()));
+        }
+    }
+}
+
+fn append_optional_string(slot: &mut Option<String>, fragment: &str) {
+    if fragment.is_empty() {
+        return;
+    }
+
+    match slot {
+        Some(existing) => existing.push_str(fragment),
+        None => *slot = Some(fragment.to_string()),
+    }
+}
+
+fn trim_json_string_fields(args: &mut Map<String, Value>) {
+    args.retain(|_, value| match value {
+        Value::String(text) => {
+            *text = text.trim().to_string();
+            !text.is_empty()
+        }
+        _ => true,
+    });
+}
+
+fn trimmed_option_string(slot: &mut Option<String>) -> Option<String> {
+    slot.take()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
 fn parse_memory_operations_from_xml(raw: &str) -> Result<Vec<ToolCall>, String> {
     let normalized = normalize_structured_fallback_text(raw);
-    let snippet = extract_xml_snippet(&normalized, OPERATION_ROOT_TAGS)
-        .ok_or_else(|| "fallback response did not contain valid XML".to_string())?;
-
-    let mut reader = Reader::from_str(snippet);
-    reader.config_mut().trim_text(true);
+    let mut reader = Reader::from_str(&normalized);
+    reader.config_mut().trim_text(false);
 
     let mut buf = Vec::new();
     let mut root_seen = false;
@@ -185,18 +227,20 @@ fn parse_memory_operations_from_xml(raw: &str) -> Result<Vec<ToolCall>, String> 
             }
             Ok(Event::Text(event)) => {
                 if let (Some(field), Some(_)) = (current_field.as_deref(), current_op_name.as_ref()) {
-                    let text = String::from_utf8_lossy(event.as_ref()).trim().to_string();
-                    if !text.is_empty() {
-                        current_args.insert(field.to_string(), Value::String(text));
-                    }
+                    let text = decode_xml_text(event.as_ref())?;
+                    append_json_string_field(&mut current_args, field, &text);
                 }
             }
             Ok(Event::CData(event)) => {
                 if let (Some(field), Some(_)) = (current_field.as_deref(), current_op_name.as_ref()) {
-                    let text = String::from_utf8_lossy(event.as_ref()).trim().to_string();
-                    if !text.is_empty() {
-                        current_args.insert(field.to_string(), Value::String(text));
-                    }
+                    let text = String::from_utf8_lossy(event.as_ref());
+                    append_json_string_field(&mut current_args, field, &text);
+                }
+            }
+            Ok(Event::GeneralRef(event)) => {
+                if let (Some(field), Some(_)) = (current_field.as_deref(), current_op_name.as_ref()) {
+                    let text = decode_xml_general_ref(event)?;
+                    append_json_string_field(&mut current_args, field, &text);
                 }
             }
             Ok(Event::End(event)) => {
@@ -206,6 +250,7 @@ fn parse_memory_operations_from_xml(raw: &str) -> Result<Vec<ToolCall>, String> 
                 } else if current_op_name.as_deref() == Some(tag.as_str())
                     || (tag == "operation" && current_op_name.is_some())
                 {
+                    trim_json_string_fields(&mut current_args);
                     op_index += 1;
                     calls.push(ToolCall {
                         id: format!("xml_op_{}", op_index),
@@ -236,11 +281,8 @@ fn parse_memory_tag_repairs_from_xml(
     allowed_categories: &[&str],
 ) -> Result<HashMap<String, String>, String> {
     let normalized = normalize_structured_fallback_text(raw);
-    let snippet = extract_xml_snippet(&normalized, REPAIR_ROOT_TAGS)
-        .ok_or_else(|| "fallback response did not contain valid XML".to_string())?;
-
-    let mut reader = Reader::from_str(snippet);
-    reader.config_mut().trim_text(true);
+    let mut reader = Reader::from_str(&normalized);
+    reader.config_mut().trim_text(false);
 
     let mut buf = Vec::new();
     let mut root_seen = false;
@@ -280,25 +322,31 @@ fn parse_memory_tag_repairs_from_xml(
             }
             Ok(Event::Text(event)) => {
                 if let Some(field) = current_field.as_deref() {
-                    let text = String::from_utf8_lossy(event.as_ref()).trim().to_string();
-                    if !text.is_empty() {
-                        match field {
-                            "text" => current_text = Some(text),
-                            "category" => current_category = Some(text),
-                            _ => {}
-                        }
+                    let text = decode_xml_text(event.as_ref())?;
+                    match field {
+                        "text" => append_optional_string(&mut current_text, &text),
+                        "category" => append_optional_string(&mut current_category, &text),
+                        _ => {}
                     }
                 }
             }
             Ok(Event::CData(event)) => {
                 if let Some(field) = current_field.as_deref() {
-                    let text = String::from_utf8_lossy(event.as_ref()).trim().to_string();
-                    if !text.is_empty() {
-                        match field {
-                            "text" => current_text = Some(text),
-                            "category" => current_category = Some(text),
-                            _ => {}
-                        }
+                    let text = String::from_utf8_lossy(event.as_ref());
+                    match field {
+                        "text" => append_optional_string(&mut current_text, &text),
+                        "category" => append_optional_string(&mut current_category, &text),
+                        _ => {}
+                    }
+                }
+            }
+            Ok(Event::GeneralRef(event)) => {
+                if let Some(field) = current_field.as_deref() {
+                    let text = decode_xml_general_ref(event)?;
+                    match field {
+                        "text" => append_optional_string(&mut current_text, &text),
+                        "category" => append_optional_string(&mut current_category, &text),
+                        _ => {}
                     }
                 }
             }
@@ -308,7 +356,10 @@ fn parse_memory_tag_repairs_from_xml(
                     current_field = None;
                 } else if tag == "item" {
                     in_item = false;
-                    if let (Some(text), Some(category)) = (current_text.take(), current_category.take()) {
+                    if let (Some(text), Some(category)) = (
+                        trimmed_option_string(&mut current_text),
+                        trimmed_option_string(&mut current_category),
+                    ) {
                         if allowed_categories.contains(&category.as_str()) {
                             repaired.insert(text, category);
                         }
@@ -338,4 +389,65 @@ pub fn parse_memory_tag_repairs_from_text(
     allowed_categories: &[&str],
 ) -> Result<HashMap<String, String>, String> {
     parse_memory_tag_repairs_from_xml(raw, allowed_categories)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_memory_operations_from_text, parse_memory_tag_repairs_from_text};
+    use serde_json::json;
+
+    #[test]
+    fn parses_operations_with_wrapper_text_and_entities() {
+        let raw = r#"Here you go:
+```xml
+<memory_ops>
+  <create_memory important="true">
+    <text>Sam &amp; Elias reconciled</text>
+    <category>relationship</category>
+  </create_memory>
+  <done summary="all set" />
+</memory_ops>
+```"#;
+
+        let calls = parse_memory_operations_from_text(raw).expect("should parse xml");
+
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].name, "create_memory");
+        assert_eq!(
+            calls[0].arguments,
+            json!({
+                "important": true,
+                "text": "Sam & Elias reconciled",
+                "category": "relationship"
+            })
+        );
+        assert_eq!(calls[1].name, "done");
+        assert_eq!(calls[1].arguments, json!({ "summary": "all set" }));
+    }
+
+    #[test]
+    fn parses_repairs_with_prose_around_xml() {
+        let raw = r#"I fixed the categories.
+<memory_repairs>
+  <item>
+    <text>Likes tea</text>
+    <category>preference</category>
+  </item>
+</memory_repairs>"#;
+
+        let repaired = parse_memory_tag_repairs_from_text(raw, &["preference", "other"])
+            .expect("should parse repairs");
+
+        assert_eq!(repaired.get("Likes tea"), Some(&"preference".to_string()));
+    }
+
+    #[test]
+    fn parses_attribute_entities() {
+        let raw = r#"<memory_ops><done summary="Sam &amp; Elias synced" /></memory_ops>"#;
+
+        let calls = parse_memory_operations_from_text(raw).expect("should parse xml");
+
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].arguments, json!({ "summary": "Sam & Elias synced" }));
+    }
 }
