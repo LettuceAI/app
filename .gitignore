@@ -54,3 +54,4 @@ src-tauri/target-check/
 .qlty/
 .github/
 .vs/
+src-tauri/onnxruntime/
