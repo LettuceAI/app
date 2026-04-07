@@ -2,19 +2,163 @@ use std::collections::HashMap;
 
 use serde_json::{json, Value};
 
-use super::{ProviderAdapter, ModelInfo};
+use super::{ModelInfo, ProviderAdapter};
 use crate::chat_manager::tooling::ToolConfig;
+
+// ---------------------------------------------------------------------------
+// Shared helpers — called by both PollinationsTextAdapter and
+// PollinationsImageAdapter so neither delegates to the other.
+// ---------------------------------------------------------------------------
+
+pub(crate) fn extract_base_url(base_url: &str) -> String {
+    let mut clean = base_url.trim_end_matches('/');
+    if let Some(stripped) = clean.strip_suffix("/v1") {
+        clean = stripped.trim_end_matches('/');
+    }
+    if let Ok(url) = reqwest::Url::parse(clean) {
+        if let Some(host) = url.host_str() {
+            let port = url.port().map(|p| format!(":{}", p)).unwrap_or_default();
+            return format!("{}://{}{}", url.scheme(), host, port);
+        }
+    }
+    clean.to_string()
+}
+
+fn pollinations_required_auth_headers() -> &'static [&'static str] {
+    &["Authorization"]
+}
+
+fn pollinations_default_headers_template() -> HashMap<String, String> {
+    let mut out = HashMap::new();
+    out.insert("Content-Type".into(), "application/json".into());
+    out.insert("Authorization".into(), "Bearer <apiKey>".into());
+    out.insert("Accept".into(), "text/event-stream".into());
+    out
+}
+
+fn pollinations_headers(
+    api_key: &str,
+    extra: Option<&HashMap<String, String>>,
+) -> HashMap<String, String> {
+    let mut out = HashMap::new();
+    out.insert("Content-Type".into(), "application/json".into());
+    out.insert("Authorization".into(), format!("Bearer {}", api_key));
+    out.insert("Accept".into(), "text/event-stream".into());
+    out.entry("User-Agent".into())
+        .or_insert_with(|| "LettuceAI/0.1".into());
+    if let Some(extra) = extra {
+        for (k, v) in extra.iter() {
+            out.insert(k.clone(), v.clone());
+        }
+    }
+    out
+}
+
+/// Parse a Pollinations **text** model list response.
+// Example: 
+// {
+//   "object": "list",
+//   "data": [
+//     {
+//       "id": "openai",
+//       "object": "model",
+//       "created": 1700000000,
+//       "owned_by": "pollinations"},
+//     {"id": "claude",
+//       "object": "model",
+//       "created": 1700000000,
+//       "owned_by": "pollinations"}]}
+//--------------------------------------------------//
+// {"type": "object",
+//   "properties": {"object": {"type": "string", "const": "list"},
+//     "data": {"type": "array",
+//       "items": {"type": "object",
+//        "properties": {"id": {"type": "string"},
+//           "object": {"type": "string", "const": "model"},
+//           "created": {"type": "number"},
+//           "input_modalities": {"type": "array", "items": {"type": "string"}},
+//           "output_modalities": {"type": "array", "items": {"type": "string"}},
+//           "supported_endpoints": {"type": "array", "items": {"type": "string"}},
+//           "tools": {"type": "boolean"},
+//           "reasoning": {"type": "boolean"},
+//           "context_length": {"type": "number"}},
+//         "required": ["id", "object", "created"],
+//         "description": "OpenAI-compatible model object with capability metadata"}}},
+//   "required": ["object", "data"],
+//   "description": "OpenAI-compatible list of available models."}
+//---------------------------------------------------//
+fn parse_text_models(response: &Value) -> Vec<ModelInfo> {
+    let mut models = Vec::new();
+    let Some(data) = response.get("data").and_then(|d| d.as_array()) else {
+        return models;
+    };
+    for item in data {
+        let Some(id) = item.get("id").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let description_opt = item
+            .get("description")
+            .and_then(|d| d.as_str())
+            .map(|s| s.to_string());
+        models.push(ModelInfo {
+            id: id.to_string(),
+            display_name: description_opt.clone(),
+            description: description_opt,
+            context_length: item.get("context_length").and_then(|c| c.as_u64()),
+            input_price: None,
+            output_price: None,
+        });
+    }
+    models
+}
+
+/// Parse a Pollinations **image** model list response.
+// Example:
+// [{"name": "flux", "aliases": [],
+//     "pricing": {"currency": "pollen", "completionImageTokens": "0.001"},
+//     "description": "Flux Schnell - Fast high-quality image generation",
+//     "input_modalities": ["text"], "output_modalities": ["image"]},
+//   {"name": "zimage", "aliases": ["z-image", "z-image-turbo"],
+//     "pricing": {"currency": "pollen", "completionImageTokens": "0.002"},
+//     "description": "Z-Image Turbo - Fast 6B Flux with 2x upscaling",
+//     "input_modalities": ["text"],
+//     "output_modalities": ["image"]}
+//------------------------------------------------------------------//
+
+fn parse_image_models(response: &Value) -> Vec<ModelInfo> {
+    let mut models = Vec::new();
+    let Some(data) = response.as_array() else {
+        return models;
+    };
+    for item in data {
+        let Some(name) = item.get("name").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let description_opt = item
+            .get("description")
+            .and_then(|d| d.as_str())
+            .map(|s| s.to_string());
+        models.push(ModelInfo {
+            id: name.to_string(),
+            display_name: description_opt.clone(),
+            description: description_opt,
+            context_length: None,
+            input_price: None,
+            output_price: None,
+        });
+    }
+    models
+}
+
+// ---------------------------------------------------------------------------
+// PollinationsTextAdapter
+// ---------------------------------------------------------------------------
 
 pub struct PollinationsTextAdapter;
 
 impl ProviderAdapter for PollinationsTextAdapter {
     fn endpoint(&self, base_url: &str) -> String {
-        let trimmed = base_url.trim_end_matches('/');
-        if trimmed.ends_with("/v1") {
-            format!("{}/chat/completions", trimmed)
-        } else {
-            format!("{}/v1/chat/completions", trimmed)
-        }
+        format!("{}/v1/chat/completions", extract_base_url(base_url))
     }
 
     fn system_role(&self) -> std::borrow::Cow<'static, str> {
@@ -22,15 +166,11 @@ impl ProviderAdapter for PollinationsTextAdapter {
     }
 
     fn required_auth_headers(&self) -> &'static [&'static str] {
-        &["Authorization"]
+        pollinations_required_auth_headers()
     }
 
     fn default_headers_template(&self) -> HashMap<String, String> {
-        let mut out = HashMap::new();
-        out.insert("Content-Type".into(), "application/json".into());
-        out.insert("Authorization".into(), "Bearer <apiKey>".into());
-        out.insert("Accept".into(), "text/event-stream".into());
-        out
+        pollinations_default_headers_template()
     }
 
     fn headers(
@@ -38,18 +178,7 @@ impl ProviderAdapter for PollinationsTextAdapter {
         api_key: &str,
         extra: Option<&HashMap<String, String>>,
     ) -> HashMap<String, String> {
-        let mut out: HashMap<String, String> = HashMap::new();
-        out.insert("Content-Type".into(), "application/json".into());
-        out.insert("Authorization".into(), format!("Bearer {}", api_key));
-        out.insert("Accept".into(), "text/event-stream".into());
-        out.entry("User-Agent".into())
-            .or_insert_with(|| "LettuceAI/0.1".into());
-        if let Some(extra) = extra {
-            for (k, v) in extra.iter() {
-                out.insert(k.clone(), v.clone());
-            }
-        }
-        out
+        pollinations_headers(api_key, extra)
     }
 
     fn body(
@@ -90,63 +219,40 @@ impl ProviderAdapter for PollinationsTextAdapter {
     }
 
     fn list_models_endpoint(&self, base_url: &str) -> String {
-        let base = base_url.trim_end_matches('/');
-        format!("{}/v1/models", base) // Pollinations standard endpoint for models
+        format!("{}/v1/models", extract_base_url(base_url))
     }
 
     fn parse_models_list(&self, response: Value) -> Vec<ModelInfo> {
-        let mut models = Vec::new();
-
-        // Support both direct array AND { data: [...] } OpenAI format
-        let arr = if let Some(arr) = response.as_array() {
-            Some(arr)
-        } else {
-            response.get("data").and_then(|d| d.as_array())
-        };
-
-        if let Some(data) = arr {
-            for item in data {
-                let id_opt = item.get("id").and_then(|id| id.as_str());
-                let name_opt = item.get("name").and_then(|n| n.as_str());
-                let description_opt = item.get("description").and_then(|d| d.as_str()).map(|s| s.to_string());
-                
-                let actual_id = id_opt.or(name_opt);
-                
-                if let Some(id) = actual_id {
-                    // Try to extract pricing info if provided
-                    
-                    models.push(ModelInfo {
-                        id: id.to_string(),
-                        display_name: description_opt.clone().or_else(|| name_opt.map(|s| s.to_string())),
-                        description: description_opt,
-                        context_length: item.get("context_length").and_then(|c| c.as_u64()),
-                        input_price: None,
-                        output_price: None,
-                    });
-                }
-            }
-        }
-        models
+        parse_text_models(&response)
     }
 }
+
+// ---------------------------------------------------------------------------
+// PollinationsImageAdapter
+// ---------------------------------------------------------------------------
 
 pub struct PollinationsImageAdapter;
 
 impl ProviderAdapter for PollinationsImageAdapter {
-    fn endpoint(&self, base_url: &str) -> String {
-        PollinationsTextAdapter.endpoint(base_url)
+    fn endpoint(&self, _base_url: &str) -> String {
+        // This adapter in chat_manager is only used for list_models_endpoint.
+        // Real image generation routing happens in the image_generator module.
+        String::new()
     }
 
     fn system_role(&self) -> std::borrow::Cow<'static, str> {
-        PollinationsTextAdapter.system_role()
+        "system".into()
     }
 
     fn required_auth_headers(&self) -> &'static [&'static str] {
-        PollinationsTextAdapter.required_auth_headers()
+        pollinations_required_auth_headers()
     }
 
     fn default_headers_template(&self) -> HashMap<String, String> {
-        PollinationsTextAdapter.default_headers_template()
+        let mut out = HashMap::new();
+        out.insert("Content-Type".into(), "application/json".into());
+        out.insert("Authorization".into(), "Bearer <apiKey>".into());
+        out
     }
 
     fn headers(
@@ -154,7 +260,17 @@ impl ProviderAdapter for PollinationsImageAdapter {
         api_key: &str,
         extra: Option<&HashMap<String, String>>,
     ) -> HashMap<String, String> {
-        PollinationsTextAdapter.headers(api_key, extra)
+        let mut out = HashMap::new();
+        out.insert("Content-Type".into(), "application/json".into());
+        out.insert("Authorization".into(), format!("Bearer {}", api_key));
+        out.entry("User-Agent".into())
+            .or_insert_with(|| "LettuceAI/0.1".into());
+        if let Some(extra) = extra {
+            for (k, v) in extra.iter() {
+                out.insert(k.clone(), v.clone());
+            }
+        }
+        out
     }
 
     fn body(
@@ -179,11 +295,11 @@ impl ProviderAdapter for PollinationsImageAdapter {
     }
 
     fn list_models_endpoint(&self, base_url: &str) -> String {
-        let base = base_url.trim_end_matches('/');
-        format!("{}/image/models", base)
+        format!("{}/image/models", extract_base_url(base_url))
     }
 
     fn parse_models_list(&self, response: Value) -> Vec<ModelInfo> {
-        PollinationsTextAdapter.parse_models_list(response)
+        parse_image_models(&response)
     }
 }
+

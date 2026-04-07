@@ -14,6 +14,7 @@ pub mod stability;
 pub mod xai;
 
 pub enum ImageRequestPayload {
+    None,
     Json(Value),
     Multipart(Form),
 }
@@ -37,6 +38,12 @@ pub trait ImageProviderAdapter: Send + Sync {
 
     fn payload(&self, request: &ImageGenerationRequest) -> Result<ImageRequestPayload, String>;
     fn parse_response(&self, response: Value) -> Result<Vec<ImageResponseData>, String>;
+
+    /// Return `true` when the provider sends the image as raw bytes rather than a
+    /// JSON envelope. Defaults to `false` so existing adapters are unaffected.
+    fn expects_binary_response(&self) -> bool {
+        false
+    }
 
     #[allow(dead_code)]
     fn supports_stream(&self) -> bool {

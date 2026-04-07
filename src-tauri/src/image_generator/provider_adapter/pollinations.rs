@@ -1,5 +1,4 @@
-use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::collections::HashMap;
 
 use super::{parse_size_dimensions, ImageProviderAdapter, ImageRequestPayload, ImageResponseData};
@@ -7,17 +6,39 @@ use crate::image_generator::types::ImageGenerationRequest;
 
 pub struct PollinationsAdapter;
 
-#[derive(Deserialize)]
-struct PollinationsImageResponse {
-    data: Vec<PollinationsImageData>,
-}
+impl PollinationsAdapter {
+    fn resolve_size(request: &ImageGenerationRequest) -> (u32, u32) {
+        let advanced = request.advanced_model_settings.as_ref();
+        let size_override = request
+            .size
+            .as_deref()
+            .or_else(|| advanced.and_then(|s| s.sd_size.as_deref()));
+        parse_size_dimensions(size_override, 1024, 1024)
+    }
 
-#[derive(Deserialize)]
-struct PollinationsImageData {
-    #[serde(default)]
-    url: Option<String>,
-    #[serde(default)]
-    b64_json: Option<String>,
+    fn extract_negative_prompt(request: &ImageGenerationRequest) -> Option<String> {
+        request
+            .advanced_model_settings
+            .as_ref()
+            .and_then(|s| s.sd_negative_prompt.as_ref())
+            .map(|v| v.trim())
+            .filter(|v| !v.is_empty())
+            .map(|s| s.to_string())
+    }
+
+    fn extract_base_url(base_url: &str) -> String {
+        let mut clean = base_url.trim_end_matches('/');
+        if let Some(stripped) = clean.strip_suffix("/v1") {
+            clean = stripped.trim_end_matches('/');
+        }
+        if let Ok(url) = reqwest::Url::parse(clean) {
+            if let Some(host) = url.host_str() {
+                let port = url.port().map(|p| format!(":{}", p)).unwrap_or_default();
+                return format!("{}://{}{}", url.scheme(), host, port);
+            }
+        }
+        clean.to_string()
+    }
 }
 
 impl ImageProviderAdapter for PollinationsAdapter {
@@ -26,37 +47,25 @@ impl ImageProviderAdapter for PollinationsAdapter {
     }
 
     fn endpoint(&self, base_url: &str, request: &ImageGenerationRequest) -> String {
-        let trimmed = base_url.trim_end_matches('/');
+        let base = Self::extract_base_url(base_url);
         let prompt_encoded = urlencoding::encode(&request.prompt);
         let model = &request.model;
-        
-        let advanced = request.advanced_model_settings.as_ref();
-        let size_override = request
-            .size
-            .as_deref()
-            .or_else(|| advanced.and_then(|settings| settings.sd_size.as_deref()));
-            
-        let (width, height) = parse_size_dimensions(size_override, 1024, 1024);
-        
-        // Quality can be optional depending on your implementation
+        let (width, height) = Self::resolve_size(request);
         let quality = request.quality.as_deref().unwrap_or("medium");
 
-        let mut url = format!("{}/image/{}?model={}&width={}&height={}&quality={}", trimmed, prompt_encoded, model, width, height, quality);
+        // Here is how you do the "OR" fallback safely in Rust!
+        let negative = Self::extract_negative_prompt(request)
+            .unwrap_or_else(|| "worst quality, blurry, watermark, text".to_string());
+            
+        let neg_encoded = urlencoding::encode(&negative);
 
-        if let Some(negative_prompt) = advanced
-            .and_then(|settings| settings.sd_negative_prompt.as_ref())
-            .map(|value| value.trim())
-            .filter(|value| !value.is_empty())
-        {
-            let negative_encoded = urlencoding::encode(negative_prompt);
-            url.push_str(&format!("&negative_prompt={}", negative_encoded));
-        }
-
-        url
+        format!(
+            "{base}/image/{prompt_encoded}?model={model}&width={width}&height={height}&quality={quality}&negative_prompt={neg_encoded}"
+        )
     }
 
     fn required_auth_headers(&self) -> &'static [&'static str] {
-        &[]
+        &["Authorization"]
     }
 
     fn headers(
@@ -66,7 +75,7 @@ impl ImageProviderAdapter for PollinationsAdapter {
     ) -> HashMap<String, String> {
         let mut headers = HashMap::new();
         headers.insert("Authorization".into(), format!("Bearer {}", api_key));
-        headers.insert("Content-Type".into(), "application/json".into());
+        headers.insert("Accept".into(), "image/jpeg, image/png".into());
 
         if let Some(extra) = extra {
             for (k, v) in extra.iter() {
@@ -78,34 +87,17 @@ impl ImageProviderAdapter for PollinationsAdapter {
     }
 
     fn payload(&self, _request: &ImageGenerationRequest) -> Result<ImageRequestPayload, String> {
-        Ok(ImageRequestPayload::Json(json!({})))
+        Ok(ImageRequestPayload::None)
     }
 
-    fn parse_response(&self, response: Value) -> Result<Vec<ImageResponseData>, String> {
-        // Handle specific Pollinations API error responses
-        if let Some(error) = response.get("error").and_then(|e| e.as_object()) {
-            let message = error.get("message").and_then(|m| m.as_str()).unwrap_or("Unknown error");
-            let code = error.get("code").and_then(|c| c.as_str()).unwrap_or("ERROR");
-            return Err(format!("Pollinations API error ({}): {}", code, message));
-        }
+    fn expects_binary_response(&self) -> bool {
+        true
+    }
 
-        let pollinations_response: PollinationsImageResponse =
-            serde_json::from_value(response).map_err(|e| {
-                crate::utils::err_msg(
-                    module_path!(),
-                    line!(),
-                    format!("Failed to parse response from Pollinations: {}", e),
-                )
-            })?;
-
-        Ok(pollinations_response
-            .data
-            .into_iter()
-            .map(|img| ImageResponseData {
-                url: img.url,
-                b64_json: img.b64_json,
-                text: None,
-            })
-            .collect())
+    fn parse_response(&self, _response: Value) -> Result<Vec<ImageResponseData>, String> {
+        // Pollinations image generation returns raw bytes, not a JSON envelope.
+        // parse_response is only called in the JSON branch of commands.rs, which
+        // is bypassed for this adapter via expects_binary_response() == true.
+        Err("PollinationsAdapter: unexpected JSON response path".to_string())
     }
 }

@@ -144,13 +144,8 @@ pub async fn generate_image(
             req_builder = req_builder.header(key, value);
         }
         req_builder = match payload {
-            ImageRequestPayload::Json(body) => {
-                if body == serde_json::Value::Null || body.as_object().map_or(false, |m| m.is_empty()) {
-                    req_builder
-                } else {
-                    req_builder.json(&body)
-                }
-            },
+            ImageRequestPayload::None => req_builder,
+            ImageRequestPayload::Json(body) => req_builder.json(&body),
             ImageRequestPayload::Multipart(form) => req_builder.multipart(form),
         };
 
@@ -171,15 +166,14 @@ pub async fn generate_image(
             ));
         }
 
-        let content_type = response
-            .headers()
-            .get("content-type")
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("")
-            .to_string();
-
         let image_data: Vec<ImageResponseData>;
-        if content_type.starts_with("image/") {
+        if adapter.expects_binary_response() {
+            let content_type = response
+                .headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("image/png")
+                .to_string();
             let bytes = response
                 .bytes()
                 .await
