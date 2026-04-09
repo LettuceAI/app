@@ -197,7 +197,7 @@ pub fn build_chat_request(
         headers,
         body,
         stream: effective_stream,
-        request_id: if effective_stream { request_id } else { None },
+        request_id,
     }
 }
 

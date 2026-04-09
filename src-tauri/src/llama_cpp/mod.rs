@@ -146,6 +146,25 @@ mod desktop {
         message.to_ascii_lowercase().contains("aborted")
     }
 
+    fn check_abort_signal(
+        abort_rx: Option<&mut tokio::sync::oneshot::Receiver<()>>,
+    ) -> Result<(), String> {
+        if let Some(rx) = abort_rx {
+            match rx.try_recv() {
+                Ok(()) => {
+                    return Err(crate::utils::err_msg(
+                        module_path!(),
+                        line!(),
+                        "llama.cpp request aborted by user",
+                    ));
+                }
+                Err(TryRecvError::Closed) | Err(TryRecvError::Empty) => {}
+            }
+        }
+
+        Ok(())
+    }
+
     fn parse_flash_attention_policy(body: &Value) -> Option<llama_flash_attn_type> {
         let from_string = body
             .get("llamaFlashAttentionPolicy")
@@ -796,6 +815,7 @@ mod desktop {
         });
 
         let result = (|| -> Result<(), String> {
+            check_abort_signal(abort_rx.as_mut())?;
             let resolved_offload_kqv = if llama_offload_kqv.is_some() {
                 llama_offload_kqv
             } else if using_rocm_backend() {
@@ -1680,6 +1700,7 @@ mod desktop {
             );
 
             failure_stage = "prompt_evaluation";
+            check_abort_signal(abort_rx.as_mut())?;
             let batch_size = n_batch as usize;
             let mut batch = LlamaBatch::new(batch_size, 1);
             let mut global_pos: i32 = 0;
@@ -1688,6 +1709,7 @@ mod desktop {
                     let tokens_len = tokens.len();
                     let mut chunk_start = 0usize;
                     while chunk_start < tokens_len {
+                        check_abort_signal(abort_rx.as_mut())?;
                         let chunk_end = (chunk_start + batch_size).min(tokens_len);
                         batch.clear();
                         for (offset, token) in
@@ -1713,12 +1735,14 @@ mod desktop {
                                 format!("llama_decode failed during prompt evaluation: {e}"),
                             )
                         })?;
+                        check_abort_signal(abort_rx.as_mut())?;
                         global_pos += (chunk_end - chunk_start) as i32;
                         chunk_start = chunk_end;
                     }
                     batch.n_tokens().saturating_sub(1)
                 }
                 PreparedPrompt::Vision(chunks) => {
+                    check_abort_signal(abort_rx.as_mut())?;
                     let mtmd_ctx = mtmd_ctx.ok_or_else(|| {
                         crate::utils::err_msg(
                             module_path!(),
@@ -1735,6 +1759,7 @@ mod desktop {
                                 format!("llama.cpp multimodal prompt evaluation failed: {}", e),
                             )
                         })?;
+                    check_abort_signal(abort_rx.as_mut())?;
                     -1
                 }
             };
@@ -1769,6 +1794,7 @@ mod desktop {
                 presence_penalty,
                 seed: llama_seed,
             };
+            check_abort_signal(abort_rx.as_mut())?;
             let built_sampler = build_sampler(
                 model,
                 &sampler_config,
@@ -1841,18 +1867,7 @@ mod desktop {
             let mut sample_index = prompt_last_logits_index;
             failure_stage = "generation";
             while n_cur < target_len {
-                if let Some(rx) = abort_rx.as_mut() {
-                    match rx.try_recv() {
-                        Ok(()) => {
-                            return Err(crate::utils::err_msg(
-                                module_path!(),
-                                line!(),
-                                "llama.cpp request aborted by user",
-                            ));
-                        }
-                        Err(TryRecvError::Closed) | Err(TryRecvError::Empty) => {}
-                    }
-                }
+                check_abort_signal(abort_rx.as_mut())?;
 
                 let token = sample_generated_token(&mut sampler, &ctx, sample_index);
 

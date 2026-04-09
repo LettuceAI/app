@@ -1396,7 +1396,11 @@ async fn send_dynamic_memory_request(
     extra_body_fields: Option<HashMap<String, Value>>,
     tool_config: Option<&ToolConfig>,
     request_id: Option<&str>,
+    cancel_token: Option<&DynamicMemoryCancellationToken>,
 ) -> Result<ApiResponse, String> {
+    if cancel_token.is_some_and(|token| token.is_cancelled()) {
+        return Err("Request was cancelled by user".to_string());
+    }
     let extra_body_fields = sanitize_dynamic_memory_extra_body_fields(
         extra_body_fields,
         overwrite_llama_sampler_config,
@@ -1438,6 +1442,10 @@ async fn send_dynamic_memory_request(
 
     let first_response = api_request(app.clone(), api_request_payload).await?;
 
+    if cancel_token.is_some_and(|token| token.is_cancelled()) {
+        return Err("Request was cancelled by user".to_string());
+    }
+
     if !first_response.ok {
         let fallback = format!("Provider returned status {}", first_response.status);
         let err_message = extract_error_message(first_response.data()).unwrap_or(fallback);
@@ -1446,6 +1454,9 @@ async fn send_dynamic_memory_request(
             if !matches!(cfg.choice, Some(ToolChoice::Auto))
                 && tool_choice_requires_auto(&err_message)
             {
+                if cancel_token.is_some_and(|token| token.is_cancelled()) {
+                    return Err("Request was cancelled by user".to_string());
+                }
                 log_warn(
                     app,
                     "dynamic_memory",
@@ -1638,6 +1649,7 @@ async fn run_memory_tool_update(
         extra_body_fields.clone(),
         Some(&tool_config),
         request_id,
+        cancel_token,
     )
     .await
     {
@@ -1689,6 +1701,7 @@ async fn run_memory_tool_update(
                     extra_body_fields,
                     None,
                     request_id,
+                    cancel_token,
                 )
                 .await?;
 
@@ -1760,6 +1773,7 @@ async fn run_memory_tool_update(
                         extra_body_fields,
                         None,
                         request_id,
+                        cancel_token,
                     )
                     .await?;
 
@@ -1830,6 +1844,7 @@ async fn run_memory_tool_update(
                 extra_body_fields,
                 None,
                 request_id,
+                cancel_token,
             )
             .await?;
 
@@ -2462,6 +2477,7 @@ async fn run_memory_tag_repair(
         None,
         Some(&build_memory_tag_repair_tool_config()),
         None,
+        None,
     )
     .await
     {
@@ -2521,6 +2537,7 @@ async fn run_memory_tag_repair(
             api_key,
             &fallback_messages,
             512,
+            None,
             None,
             None,
             None,
@@ -2752,6 +2769,7 @@ async fn summarize_messages(
         extra_body_fields.clone(),
         Some(&summarization_tool_config()),
         request_id,
+        cancel_token,
     )
     .await;
 
@@ -2834,7 +2852,12 @@ async fn summarize_messages(
                 }
             }
         }
-        Err(err) => err,
+        Err(err) => {
+            if is_cancelled_request_error(&err) {
+                return Err(err);
+            }
+            err
+        }
     };
 
     log_warn(
@@ -2868,6 +2891,7 @@ async fn summarize_messages(
         extra_body_fields,
         None,
         request_id,
+        cancel_token,
     )
     .await?;
 
