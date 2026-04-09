@@ -278,6 +278,8 @@ pub struct AdvancedSettings {
     #[serde(default)]
     pub summarisation_model_id: Option<String>,
     #[serde(default)]
+    pub dynamic_memory_structured_fallback_format: Option<DynamicMemoryStructuredFallbackFormat>,
+    #[serde(default)]
     pub dynamic_memory_llama_sampler_overwrite_enabled: Option<bool>,
     #[serde(default)]
     pub avatar_generation_enabled: Option<bool>,
@@ -318,6 +320,13 @@ pub struct AdvancedSettings {
     pub host_api: Option<HostApiSettings>,
     #[serde(default)]
     pub accessibility: Option<AccessibilitySettings>,
+}
+
+#[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum DynamicMemoryStructuredFallbackFormat {
+    Json,
+    Xml,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug)]

@@ -21,7 +21,12 @@ import {
   getEmbeddingModelInfo,
 } from "../../../core/storage/repo";
 import { storageBridge } from "../../../core/storage/files";
-import type { DynamicMemorySettings, Model, Settings } from "../../../core/storage/schemas";
+import type {
+  DynamicMemorySettings,
+  DynamicMemoryStructuredFallbackFormat,
+  Model,
+  Settings,
+} from "../../../core/storage/schemas";
 import { cn, typography, interactive } from "../../design-tokens";
 import { useNavigate } from "react-router-dom";
 import { EmbeddingUpgradePrompt } from "../../components/EmbeddingUpgradePrompt";
@@ -133,11 +138,15 @@ const ensureAdvancedSettings = (settings: Settings): NonNullable<Settings["advan
   const advanced = settings.advancedSettings ?? {
     creationHelperEnabled: false,
     helpMeReplyEnabled: true,
+    dynamicMemoryStructuredFallbackFormat: "xml",
     dynamicMemoryLlamaSamplerOverwriteEnabled: true,
     dynamicMemory: { ...DEFAULT_DYNAMIC_MEMORY_SETTINGS },
   };
   if (advanced.helpMeReplyEnabled === undefined) {
     advanced.helpMeReplyEnabled = true;
+  }
+  if (advanced.dynamicMemoryStructuredFallbackFormat === undefined) {
+    advanced.dynamicMemoryStructuredFallbackFormat = "xml";
   }
   if (!advanced.dynamicMemory) {
     advanced.dynamicMemory = { ...DEFAULT_DYNAMIC_MEMORY_SETTINGS };
@@ -209,6 +218,8 @@ export function DynamicMemoryPage() {
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
   const [defaultModelId, setDefaultModelId] = useState<string | null>(null);
   const [showModelMenu, setShowModelMenu] = useState(false);
+  const [structuredFallbackFormat, setStructuredFallbackFormat] =
+    useState<DynamicMemoryStructuredFallbackFormat>("xml");
   const [dynamicMemoryLlamaSamplerOverwriteEnabled, setDynamicMemoryLlamaSamplerOverwriteEnabled] =
     useState(true);
 
@@ -240,6 +251,9 @@ export function DynamicMemoryPage() {
           defaultModelIdValue && summarisationModelValue === defaultModelIdValue
             ? null
             : summarisationModelValue,
+        );
+        setStructuredFallbackFormat(
+          settings.advancedSettings?.dynamicMemoryStructuredFallbackFormat ?? "xml",
         );
         setDynamicMemoryLlamaSamplerOverwriteEnabled(
           settings.advancedSettings?.dynamicMemoryLlamaSamplerOverwriteEnabled ?? true,
@@ -365,6 +379,15 @@ export function DynamicMemoryPage() {
     await updateAdvancedSettings((advanced) => {
       advanced.dynamicMemoryLlamaSamplerOverwriteEnabled = enabled;
     }, "Failed to save dynamic memory llama sampler overwrite setting:");
+  };
+
+  const handleStructuredFallbackFormatChange = async (
+    format: DynamicMemoryStructuredFallbackFormat,
+  ) => {
+    setStructuredFallbackFormat(format);
+    await updateAdvancedSettings((advanced) => {
+      advanced.dynamicMemoryStructuredFallbackFormat = format;
+    }, "Failed to save dynamic memory structured fallback format:");
   };
 
   const handleEmbeddingMaxTokensChange = async (val: number) => {
@@ -969,6 +992,36 @@ export function DynamicMemoryPage() {
                   <p className="text-xs text-fg/50">
                     {t("dynamicMemory.page.summarisationModelDescription")}
                   </p>
+
+                  <div className="rounded-xl border border-fg/10 bg-fg/5 px-4 py-3 space-y-3">
+                    <div>
+                      <div className="text-sm font-medium text-fg">Structured Fallback Format</div>
+                      <div className="mt-1 text-[11px] leading-relaxed text-fg/45">
+                        Used when tool calling fails during dynamic memory updates and the model is
+                        asked to return structured output directly.
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {(["xml", "json"] as const).map((format) => (
+                        <button
+                          key={format}
+                          onClick={() => handleStructuredFallbackFormatChange(format)}
+                          className={cn(
+                            "rounded-lg border px-3 py-2 text-xs font-medium uppercase transition-colors",
+                            structuredFallbackFormat === format
+                              ? "border-info/50 bg-info/20 text-info"
+                              : "border-fg/10 bg-fg/5 text-fg/60 hover:border-fg/20",
+                          )}
+                        >
+                          {format}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[11px] text-fg/45">
+                      XML is the default. JSON can be useful for models that follow JSON-only
+                      instructions more reliably than XML.
+                    </p>
+                  </div>
 
                   {isLocalLlamaSummaryModel && (
                     <div className="rounded-xl border border-fg/10 bg-fg/5 px-4 py-3 space-y-3">

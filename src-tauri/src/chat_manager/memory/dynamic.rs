@@ -5,7 +5,9 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::chat_manager::types::{DynamicMemorySettings, MemoryRetrievalStrategy, Settings};
+use crate::chat_manager::types::{
+    DynamicMemorySettings, DynamicMemoryStructuredFallbackFormat, MemoryRetrievalStrategy, Settings,
+};
 
 // ============================================================================
 // Shared Memory Entry Trait
@@ -130,6 +132,8 @@ pub const FALLBACK_RETRIEVAL_STRATEGY: MemoryRetrievalStrategy = MemoryRetrieval
 pub const FALLBACK_HOT_MEMORY_TOKEN_BUDGET: u32 = 2000;
 pub const FALLBACK_DECAY_RATE: f32 = 0.08;
 pub const FALLBACK_COLD_THRESHOLD: f32 = 0.3;
+pub const FALLBACK_STRUCTURED_FALLBACK_FORMAT: DynamicMemoryStructuredFallbackFormat =
+    DynamicMemoryStructuredFallbackFormat::Xml;
 pub const MEMORY_ID_SPACE: u64 = 1_000_000;
 
 // ============================================================================
@@ -235,6 +239,16 @@ pub fn context_enrichment_enabled(settings: &Settings) -> bool {
         .and_then(|a| a.dynamic_memory.as_ref())
         .map(|dm| dm.context_enrichment_enabled)
         .unwrap_or(true) // Default to enabled
+}
+
+pub fn dynamic_memory_structured_fallback_format(
+    settings: &Settings,
+) -> DynamicMemoryStructuredFallbackFormat {
+    settings
+        .advanced_settings
+        .as_ref()
+        .and_then(|a| a.dynamic_memory_structured_fallback_format)
+        .unwrap_or(FALLBACK_STRUCTURED_FALLBACK_FORMAT)
 }
 
 /// Resolve the effective dynamic memory settings, applying optional overrides.

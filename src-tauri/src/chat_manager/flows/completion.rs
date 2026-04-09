@@ -39,7 +39,9 @@ use crate::chat_manager::types::{
     ChatCompletionArgs, ChatTurnResult, ImageAttachment, StoredMessage,
 };
 use crate::usage::tracking::UsageOperationType;
-use crate::utils::{emit_debug, emit_error_event, emit_info, log_error, log_info, log_warn, now_millis};
+use crate::utils::{
+    emit_debug, emit_error_event, emit_info, log_error, log_info, log_warn, now_millis,
+};
 
 pub struct CompletionFlow {
     app: AppHandle,
@@ -644,7 +646,10 @@ impl CompletionFlow {
             log_error(
                 &app,
                 "chat_completion",
-                format!("empty response from provider: has_reasoning={}", has_reasoning),
+                format!(
+                    "empty response from provider: has_reasoning={}",
+                    has_reasoning
+                ),
             );
             return Err(error_detail.to_string());
         }

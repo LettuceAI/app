@@ -237,11 +237,7 @@ impl LogManager {
 
     /// Search a log file for lines containing the query (case-insensitive).
     /// Returns the 0-based line indices of all matching lines.
-    pub fn search_log_file(
-        &self,
-        filename: &str,
-        query: &str,
-    ) -> Result<LogSearchResult, String> {
+    pub fn search_log_file(&self, filename: &str, query: &str) -> Result<LogSearchResult, String> {
         let path = self.log_dir.join(filename);
 
         if !path.exists() || !path.is_file() {

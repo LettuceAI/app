@@ -118,6 +118,7 @@ impl ProviderAdapter for GoogleGeminiAdapter {
     ) -> Value {
         let mut contents: Vec<Value> = Vec::new();
         let mut tool_call_name_by_id: HashMap<String, String> = HashMap::new();
+        let mut system_instruction_chunks: Vec<String> = Vec::new();
 
         for msg in messages_for_api {
             if let Some(raw_content) = msg.get("gemini_content") {
@@ -137,6 +138,12 @@ impl ProviderAdapter for GoogleGeminiAdapter {
 
             let role = msg.get("role").and_then(|v| v.as_str()).unwrap_or("user");
             if role == "system" || role == "developer" {
+                if let Some(content) = extract_text_content(msg.get("content")) {
+                    let trimmed = content.trim();
+                    if !trimmed.is_empty() {
+                        system_instruction_chunks.push(trimmed.to_string());
+                    }
+                }
                 continue;
             }
 
@@ -168,14 +175,19 @@ impl ProviderAdapter for GoogleGeminiAdapter {
                             .unwrap_or_else(|| Value::Object(Map::new()));
 
                         if !id.is_empty() {
-                            tool_call_name_by_id.insert(id, name.clone());
+                            tool_call_name_by_id.insert(id.clone(), name.clone());
+                        }
+
+                        let mut function_call = json!({
+                            "name": name,
+                            "args": args
+                        });
+                        if !id.is_empty() {
+                            function_call["id"] = Value::String(id);
                         }
 
                         parts.push(json!({
-                            "functionCall": {
-                                "name": name,
-                                "args": args
-                            }
+                            "functionCall": function_call
                         }));
                     }
 
@@ -208,13 +220,18 @@ impl ProviderAdapter for GoogleGeminiAdapter {
                     other => json!({ "result": other }),
                 };
 
+                let mut function_response = json!({
+                    "name": tool_name,
+                    "response": response
+                });
+                if !tool_call_id.is_empty() {
+                    function_response["id"] = Value::String(tool_call_id.to_string());
+                }
+
                 contents.push(json!({
                     "role": "user",
                     "parts": [{
-                        "functionResponse": {
-                            "name": tool_name,
-                            "response": response
-                        }
+                        "functionResponse": function_response
                     }]
                 }));
                 continue;
@@ -294,7 +311,17 @@ impl ProviderAdapter for GoogleGeminiAdapter {
             "generationConfig": serde_json::to_value(generation_config).unwrap_or_else(|_| json!({}))
         });
 
-        if let Some(system) = system_prompt.filter(|s| !s.trim().is_empty()) {
+        if let Some(system) = system_prompt
+            .into_iter()
+            .chain(system_instruction_chunks.into_iter())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .reduce(|mut combined, chunk| {
+                combined.push_str("\n\n");
+                combined.push_str(&chunk);
+                combined
+            })
+        {
             body["systemInstruction"] = json!({
                 "parts": [{ "text": system }]
             });
@@ -303,7 +330,7 @@ impl ProviderAdapter for GoogleGeminiAdapter {
             body["tools"] = Value::Array(tools);
         }
         if let Some(cfg) = gemini_tool_config {
-            body["tool_config"] = cfg;
+            body["toolConfig"] = cfg;
         }
 
         if let Some(gen_config) = body.get("generationConfig") {
@@ -357,5 +384,169 @@ fn parse_jsonish_value(value: &Value) -> Value {
             serde_json::from_str::<Value>(raw).unwrap_or_else(|_| Value::String(raw.clone()))
         }
         other => other.clone(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::GoogleGeminiAdapter;
+    use crate::chat_manager::provider_adapter::ProviderAdapter;
+    use crate::chat_manager::tooling::{ToolChoice, ToolConfig, ToolDefinition};
+    use serde_json::json;
+
+    #[test]
+    fn moves_system_and_developer_messages_into_system_instruction() {
+        let adapter = GoogleGeminiAdapter;
+        let body = adapter.body(
+            "gemini-2.5-flash",
+            &vec![
+                json!({ "role": "system", "content": "You are a terse assistant." }),
+                json!({ "role": "developer", "content": "Stay in character." }),
+                json!({ "role": "user", "content": "Say hello." }),
+            ],
+            None,
+            Some(0.2),
+            None,
+            256,
+            None,
+            true,
+            None,
+            None,
+            None,
+            None,
+            false,
+            None,
+            None,
+        );
+
+        assert_eq!(
+            body.get("systemInstruction"),
+            Some(&json!({
+                "parts": [{
+                    "text": "You are a terse assistant.\n\nStay in character."
+                }]
+            }))
+        );
+        assert_eq!(
+            body.get("contents"),
+            Some(&json!([
+                {
+                    "role": "user",
+                    "parts": [{ "text": "Say hello." }]
+                }
+            ]))
+        );
+    }
+
+    #[test]
+    fn includes_tool_call_ids_and_tool_config() {
+        let adapter = GoogleGeminiAdapter;
+        let tool_config = ToolConfig {
+            tools: vec![ToolDefinition {
+                name: "lookup_weather".to_string(),
+                description: Some("Get weather".to_string()),
+                parameters: json!({
+                    "type": "object",
+                    "properties": {
+                        "city": { "type": "string" }
+                    },
+                    "required": ["city"]
+                }),
+            }],
+            choice: Some(ToolChoice::Tool {
+                name: "lookup_weather".to_string(),
+            }),
+        };
+
+        let body = adapter.body(
+            "gemini-2.5-flash",
+            &vec![
+                json!({
+                    "role": "assistant",
+                    "tool_calls": [{
+                        "id": "call_123",
+                        "function": {
+                            "name": "lookup_weather",
+                            "arguments": "{\"city\":\"Istanbul\"}"
+                        }
+                    }]
+                }),
+                json!({
+                    "role": "tool",
+                    "tool_call_id": "call_123",
+                    "content": "{\"temperature\":18}"
+                }),
+            ],
+            Some("Use tools when needed.".to_string()),
+            None,
+            None,
+            256,
+            None,
+            true,
+            None,
+            None,
+            None,
+            Some(&tool_config),
+            false,
+            None,
+            None,
+        );
+
+        assert_eq!(
+            body.get("toolConfig"),
+            Some(&json!({
+                "functionCallingConfig": {
+                    "mode": "ANY",
+                    "allowedFunctionNames": ["lookup_weather"]
+                }
+            }))
+        );
+        assert_eq!(
+            body.get("tools"),
+            Some(&json!([{
+                "functionDeclarations": [{
+                    "name": "lookup_weather",
+                    "description": "Get weather",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "city": { "type": "string" }
+                        },
+                        "required": ["city"]
+                    }
+                }]
+            }]))
+        );
+
+        let contents = body
+            .get("contents")
+            .and_then(|value| value.as_array())
+            .expect("contents");
+        assert_eq!(
+            contents[0],
+            json!({
+                "role": "model",
+                "parts": [{
+                    "functionCall": {
+                        "id": "call_123",
+                        "name": "lookup_weather",
+                        "args": { "city": "Istanbul" }
+                    }
+                }]
+            })
+        );
+        assert_eq!(
+            contents[1],
+            json!({
+                "role": "user",
+                "parts": [{
+                    "functionResponse": {
+                        "id": "call_123",
+                        "name": "lookup_weather",
+                        "response": { "temperature": 18 }
+                    }
+                }]
+            })
+        );
     }
 }

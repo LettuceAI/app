@@ -149,7 +149,7 @@ pub fn anthropic_tool_choice(choice: Option<&ToolChoice>) -> Option<Value> {
     }
 }
 
-/// Gemini needs a wrapped `tools` list plus a `tool_config.function_calling_config`.
+/// Gemini needs a wrapped `tools` list plus a `toolConfig.functionCallingConfig`.
 pub fn gemini_tools(cfg: &ToolConfig) -> Option<Vec<Value>> {
     if !has_tools(cfg) {
         return None;
@@ -170,25 +170,25 @@ pub fn gemini_tools(cfg: &ToolConfig) -> Option<Vec<Value>> {
     if declarations.is_empty() {
         None
     } else {
-        Some(vec![json!({ "function_declarations": declarations })])
+        Some(vec![json!({ "functionDeclarations": declarations })])
     }
 }
 
 pub fn gemini_tool_config(choice: Option<&ToolChoice>) -> Option<Value> {
     match choice {
         None | Some(ToolChoice::Auto) => Some(json!({
-            "function_calling_config": { "mode": "AUTO" }
+            "functionCallingConfig": { "mode": "AUTO" }
         })),
         Some(ToolChoice::None) => Some(json!({
-            "function_calling_config": { "mode": "NONE" }
+            "functionCallingConfig": { "mode": "NONE" }
         })),
         Some(ToolChoice::Required) | Some(ToolChoice::Any) => Some(json!({
-            "function_calling_config": { "mode": "ANY" }
+            "functionCallingConfig": { "mode": "ANY" }
         })),
         Some(ToolChoice::Tool { name }) => Some(json!({
-            "function_calling_config": {
+            "functionCallingConfig": {
                 "mode": "ANY",
-                "allowed_function_names": [name]
+                "allowedFunctionNames": [name]
             }
         })),
     }
@@ -298,6 +298,39 @@ pub fn parse_tool_calls(provider_id: &str, payload: &Value) -> Vec<ToolCall> {
     calls
 }
 
+fn extract_openai_legacy_function_call(node: &Value, out: &mut Vec<ToolCall>) {
+    let Some(function_call) = node
+        .get("function_call")
+        .or_else(|| node.get("functionCall"))
+    else {
+        return;
+    };
+
+    let Some(name) = function_call.get("name").and_then(|v| v.as_str()) else {
+        return;
+    };
+
+    let (arguments, raw_arguments) = match function_call.get("arguments") {
+        Some(Value::String(raw)) => arguments_value_from_str(raw),
+        Some(other) => (other.clone(), None),
+        None => (Value::Null, None),
+    };
+    let id = function_call
+        .get("id")
+        .or_else(|| function_call.get("call_id"))
+        .or_else(|| function_call.get("callId"))
+        .and_then(|v| v.as_str())
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| format!("function_call_{}", out.len() + 1));
+
+    out.push(ToolCall {
+        id,
+        name: name.to_string(),
+        arguments,
+        raw_arguments,
+    });
+}
+
 fn extract_openai_calls(node: &Value, out: &mut Vec<ToolCall>) {
     if let Some(tool_calls) = node.get("tool_calls").and_then(|v| v.as_array()) {
         for raw_call in tool_calls {
@@ -323,6 +356,8 @@ fn extract_openai_calls(node: &Value, out: &mut Vec<ToolCall>) {
         }
     }
 
+    extract_openai_legacy_function_call(node, out);
+
     if let Some(message) = node.get("message") {
         extract_openai_calls(message, out);
     }
@@ -334,7 +369,9 @@ fn extract_openai_calls(node: &Value, out: &mut Vec<ToolCall>) {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_tool_calls;
+    use super::{
+        gemini_tool_config, gemini_tools, parse_tool_calls, ToolChoice, ToolConfig, ToolDefinition,
+    };
     use serde_json::json;
 
     #[test]
@@ -388,5 +425,104 @@ mod tests {
         assert_eq!(calls[0].id, "call_1");
         assert_eq!(calls[0].name, "add_two_numbers");
         assert_eq!(calls[0].arguments, json!({ "a": 3, "b": 1 }));
+    }
+
+    #[test]
+    fn parses_openai_legacy_function_call_from_message() {
+        let payload = json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": null,
+                    "function_call": {
+                        "name": "write_summary",
+                        "arguments": "{\"summary\":\"short recap\"}"
+                    }
+                }
+            }]
+        });
+
+        let calls = parse_tool_calls("openai", &payload);
+
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name, "write_summary");
+        assert_eq!(calls[0].arguments, json!({ "summary": "short recap" }));
+        assert_eq!(
+            calls[0].raw_arguments.as_deref(),
+            Some("{\"summary\":\"short recap\"}")
+        );
+    }
+
+    #[test]
+    fn parses_openai_legacy_function_call_camel_case() {
+        let payload = json!({
+            "message": {
+                "role": "assistant",
+                "functionCall": {
+                    "name": "create_memory",
+                    "arguments": {
+                        "text": "Likes tea",
+                        "category": "preference"
+                    }
+                }
+            }
+        });
+
+        let calls = parse_tool_calls("local", &payload);
+
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name, "create_memory");
+        assert_eq!(
+            calls[0].arguments,
+            json!({ "text": "Likes tea", "category": "preference" })
+        );
+    }
+
+    #[test]
+    fn gemini_tools_use_camel_case_fields() {
+        let cfg = ToolConfig {
+            tools: vec![ToolDefinition {
+                name: "lookup_weather".to_string(),
+                description: Some("Get current weather".to_string()),
+                parameters: json!({
+                    "type": "object",
+                    "properties": {
+                        "city": { "type": "string" }
+                    }
+                }),
+            }],
+            choice: Some(ToolChoice::Tool {
+                name: "lookup_weather".to_string(),
+            }),
+        };
+
+        let tools = gemini_tools(&cfg).expect("gemini tools");
+        assert_eq!(
+            tools,
+            vec![json!([{
+                "functionDeclarations": [{
+                    "name": "lookup_weather",
+                    "description": "Get current weather",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "city": { "type": "string" }
+                        }
+                    }
+                }]
+            }])[0]
+                .clone()]
+        );
+
+        let tool_config = gemini_tool_config(cfg.choice.as_ref()).expect("gemini tool config");
+        assert_eq!(
+            tool_config,
+            json!({
+                "functionCallingConfig": {
+                    "mode": "ANY",
+                    "allowedFunctionNames": ["lookup_weather"]
+                }
+            })
+        );
     }
 }

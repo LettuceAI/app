@@ -2130,8 +2130,32 @@ mod desktop {
                 if !final_tool_calls.is_empty() && finish_reason != "length" {
                     finish_reason = "tool_calls";
                 }
+                crate::utils::emit_debug(
+                    &app,
+                    "llama_response",
+                    json!({
+                        "requestId": request_id,
+                        "modelPath": model_path,
+                        "structured": true,
+                        "rawOutput": output,
+                        "parsedMessage": message,
+                        "toolCallCount": final_tool_calls.len(),
+                        "finishReason": finish_reason,
+                    }),
+                );
                 message
             } else {
+                crate::utils::emit_debug(
+                    &app,
+                    "llama_response",
+                    json!({
+                        "requestId": request_id,
+                        "modelPath": model_path,
+                        "structured": false,
+                        "rawOutput": output,
+                        "finishReason": finish_reason,
+                    }),
+                );
                 json!({ "role": "assistant", "content": output })
             };
 
@@ -2237,6 +2261,24 @@ mod desktop {
                 );
             } else {
                 log_error(&app, "llama_cpp", format!("local inference error: {}", err));
+                if !output.is_empty() {
+                    log_warn(
+                        &app,
+                        "llama_cpp",
+                        format!("local inference partial output: {}", output),
+                    );
+                    crate::utils::emit_debug(
+                        &app,
+                        "llama_response_error",
+                        json!({
+                            "requestId": request_id,
+                            "modelPath": model_path,
+                            "failureStage": failure_stage,
+                            "error": err,
+                            "partialOutput": output,
+                        }),
+                    );
+                }
                 persist_runtime_report(&app, model_path, Some(&runtime_report));
                 emit_model_load_failed(
                     &app,

@@ -26,7 +26,7 @@
     "tauri:ios:prepare-onnxruntime": "node scripts/install-onnxruntime-ios.mjs ios-arm64 && node scripts/install-onnxruntime-ios.mjs ios-arm64_x86_64-simulator",
     "tauri:ios:dev:ready": "node scripts/install-onnxruntime-ios.mjs ios-arm64 && node scripts/install-onnxruntime-ios.mjs ios-arm64_x86_64-simulator && tauri ios dev",
     "tauri:ios:build:ready": "node scripts/install-onnxruntime-ios.mjs ios-arm64 && node scripts/install-onnxruntime-ios.mjs ios-arm64_x86_64-simulator && tauri ios build",
-    "check": "(tsc --noEmit && cd src-tauri && cargo check) && echo 'All checks successful.' || echo 'Check failed.'"
+    "check": "tsc --noEmit && cd src-tauri && cargo check && echo 'All checks successful.'"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.2.2",

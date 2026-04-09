@@ -296,10 +296,7 @@ pub fn kick_openrouter_deferred_refreshes(app: AppHandle, api_key: String) {
                         log_warn(
                             &app,
                             "cost_calculator",
-                            format!(
-                                "deferred pricing refresh failed for {}: {}",
-                                model_id, err
-                            ),
+                            format!("deferred pricing refresh failed for {}: {}", model_id, err),
                         );
                         if is_retryable_deferred_error(&err) {
                             let _ = schedule_openrouter_endpoints_refresh(&app, &model_id, &err);

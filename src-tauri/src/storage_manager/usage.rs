@@ -1,6 +1,7 @@
 use rusqlite::OptionalExtension;
 use std::fs;
 use std::time::Duration;
+use tauri::Manager;
 
 use super::db::{db_path, open_db};
 use super::legacy::storage_root;
@@ -68,14 +69,25 @@ pub async fn storage_reset_database(app: tauri::AppHandle) -> Result<(), String>
         let _ = conn.execute_batch("VACUUM;");
     }
 
-    // Delete storage directories (images, avatars, attachments)
+    // Delete managed media directories.
+    // Session attachments live under `sessions/`, and generated images can also
+    // be stored outside the storage root in the app data directory.
     let storage = storage_root(&app)?;
-    let dirs_to_clear = ["images", "avatars", "attachments"];
+    let dirs_to_clear = ["images", "avatars", "attachments", "sessions"];
     for dir_name in dirs_to_clear {
         let dir_path = storage.join(dir_name);
         if dir_path.exists() {
             let _ = fs::remove_dir_all(&dir_path);
         }
+    }
+
+    let generated_images_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
+        .join("generated_images");
+    if generated_images_dir.exists() {
+        let _ = fs::remove_dir_all(&generated_images_dir);
     }
 
     // Delete embedding model files

@@ -203,7 +203,10 @@ fn resolve_design_reference_images(app: &AppHandle, image_ids: &[String]) -> Vec
         .collect()
 }
 
-fn resolve_chat_background_image(app: &AppHandle, background_image_path: Option<&str>) -> Vec<String> {
+fn resolve_chat_background_image(
+    app: &AppHandle,
+    background_image_path: Option<&str>,
+) -> Vec<String> {
     let Some(image_id) = background_image_path
         .map(str::trim)
         .filter(|value| !value.is_empty())
@@ -819,8 +822,14 @@ fn render_scene_generation_prompt_content(
     prompt = prompt.replace("{{scene_request}}", &scene_request);
     prompt = prompt.replace("{{reference[character]}}", &character_reference_text);
     prompt = prompt.replace("{{reference[persona]}}", &persona_reference_text);
-    prompt = prompt.replace("{{reference[chatBackground]}}", &chat_background_reference_text);
-    prompt = prompt.replace("{{reference[chat_background]}}", &chat_background_reference_text);
+    prompt = prompt.replace(
+        "{{reference[chatBackground]}}",
+        &chat_background_reference_text,
+    );
+    prompt = prompt.replace(
+        "{{reference[chat_background]}}",
+        &chat_background_reference_text,
+    );
 
     condense_prompt_whitespace(prompt)
 }

@@ -2836,7 +2836,10 @@ fn migrate_v49_to_v50(app: &AppHandle) -> Result<(), String> {
     }
 
     if !has_background_image_path {
-        let _ = conn.execute("ALTER TABLE sessions ADD COLUMN background_image_path TEXT", []);
+        let _ = conn.execute(
+            "ALTER TABLE sessions ADD COLUMN background_image_path TEXT",
+            [],
+        );
     }
 
     Ok(())

@@ -14,8 +14,8 @@ use crate::storage_manager::{
 use crate::chat_manager::prompt_engine;
 use crate::chat_manager::types::{
     AccessibilitySettings, AccessibilitySoundSettings, AdvancedModelSettings, AdvancedSettings,
-    Character, Model, Persona, ProviderCredential, Session, Settings, StoredMessage,
-    SystemPromptEntry,
+    Character, DynamicMemoryStructuredFallbackFormat, Model, Persona, ProviderCredential, Session,
+    Settings, StoredMessage, SystemPromptEntry,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -153,6 +153,9 @@ fn default_settings() -> Settings {
         advanced_model_settings: AdvancedModelSettings::default(),
         advanced_settings: Some(AdvancedSettings {
             summarisation_model_id: None,
+            dynamic_memory_structured_fallback_format: Some(
+                DynamicMemoryStructuredFallbackFormat::Xml,
+            ),
             dynamic_memory_llama_sampler_overwrite_enabled: Some(true),
             avatar_generation_enabled: Some(true),
             avatar_generation_model_id: None,
