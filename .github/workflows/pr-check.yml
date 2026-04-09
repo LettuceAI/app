@@ -96,6 +96,7 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Setup Android NDK
+        id: setup-ndk
         uses: nttld/setup-ndk@v1
         with:
           ndk-version: ${{ env.NDK_VERSION }}
@@ -126,8 +127,41 @@ jobs:
       - name: Add Android Rust target
         run: rustup target add aarch64-linux-android
 
+      - name: Configure Android OpenSSL toolchain
+        run: |
+          NDK="${{ steps.setup-ndk.outputs.ndk-path }}"
+          TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+
+          echo "Using NDK at $NDK"
+          echo "Using toolchain bin at $TOOLCHAIN"
+
+          echo "$TOOLCHAIN" >> "$GITHUB_PATH"
+
+          sudo ln -sf "$TOOLCHAIN/aarch64-linux-android21-clang" /usr/local/bin/aarch64-linux-android-clang
+          sudo ln -sf "$TOOLCHAIN/aarch64-linux-android21-clang++" /usr/local/bin/aarch64-linux-android-clang++
+          sudo ln -sf "$TOOLCHAIN/llvm-ar" /usr/local/bin/aarch64-linux-android-ar
+          sudo ln -sf "$TOOLCHAIN/llvm-ranlib" /usr/local/bin/aarch64-linux-android-ranlib
+
+          {
+            echo "ANDROID_NDK_HOME=$NDK"
+            echo "ANDROID_NDK_ROOT=$NDK"
+            echo "NDK_HOME=$NDK"
+            echo "CC_aarch64_linux_android=$TOOLCHAIN/aarch64-linux-android21-clang"
+            echo "CXX_aarch64_linux_android=$TOOLCHAIN/aarch64-linux-android21-clang++"
+            echo "AR_aarch64_linux_android=$TOOLCHAIN/llvm-ar"
+            echo "RANLIB_aarch64_linux_android=$TOOLCHAIN/llvm-ranlib"
+            echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$TOOLCHAIN/aarch64-linux-android21-clang"
+          } >> "$GITHUB_ENV"
+
       - name: Run Android Rust check
         working-directory: src-tauri
+        env:
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
+          ANDROID_HOME: ${{ env.ANDROID_SDK_ROOT }}
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
+          NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          RUST_BACKTRACE: 1
         run: cargo check --target aarch64-linux-android
 
   macos:
