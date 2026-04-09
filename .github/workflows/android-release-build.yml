@@ -230,6 +230,20 @@ jobs:
           ndk-version: ${{ env.NDK_VERSION }}
           link-to-sdk: true
 
+      - name: Free runner disk space before Android build
+        run: |
+          echo "Disk usage before cleanup:"
+          df -h
+
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android/sdk/system-images || true
+          sudo rm -rf /opt/ghc || true
+          sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+          sudo docker system prune -af || true
+
+          echo "Disk usage after cleanup:"
+          df -h
+
       - name: Install build dependencies
         run: |
           sudo apt-get update
@@ -317,6 +331,19 @@ jobs:
           fi
           BUILD_ARGS+=(--apk)
           bun run tauri "${BUILD_ARGS[@]}"
+
+          echo "Disk usage after Android build:"
+          df -h
+
+          rm -rf src-tauri/target
+          find src-tauri/gen/android/app/build -mindepth 1 -maxdepth 1 \
+            ! -name outputs \
+            ! -name kotlin \
+            -exec rm -rf {} +
+          rm -rf src-tauri/gen/android/.gradle/caches/build-cache-* || true
+
+          echo "Disk usage after pruning build intermediates:"
+          df -h
 
       - name: Ensure signed APK output
         env:
