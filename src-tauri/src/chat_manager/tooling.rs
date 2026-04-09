@@ -298,6 +298,213 @@ pub fn parse_tool_calls(provider_id: &str, payload: &Value) -> Vec<ToolCall> {
     calls
 }
 
+pub fn parse_tool_calls_from_text(raw: &str) -> Vec<ToolCall> {
+    let mut calls = Vec::new();
+    let normalized = raw.trim();
+
+    for (open_tag, close_tag) in [
+        ("<tool_call>", "</tool_call>"),
+        ("<tool_calls>", "</tool_calls>"),
+        ("<function_call>", "</function_call>"),
+        ("<function_calls>", "</function_calls>"),
+    ] {
+        let mut cursor = 0usize;
+        while let Some(start_rel) = normalized[cursor..].find(open_tag) {
+            let start = cursor + start_rel + open_tag.len();
+            let Some(end_rel) = normalized[start..].find(close_tag) else {
+                break;
+            };
+            let end = start + end_rel;
+            let block = normalized[start..end].trim();
+            parse_tool_call_block_into(block, &mut calls);
+            cursor = end + close_tag.len();
+        }
+    }
+
+    if calls.is_empty() {
+        parse_tool_call_block_into(normalized, &mut calls);
+    }
+
+    calls
+}
+
+pub fn strip_tool_call_blocks(raw: &str) -> String {
+    let mut out = raw.to_string();
+
+    for (open_tag, close_tag) in [
+        ("<tool_call>", "</tool_call>"),
+        ("<tool_calls>", "</tool_calls>"),
+        ("<function_call>", "</function_call>"),
+        ("<function_calls>", "</function_calls>"),
+    ] {
+        out = strip_tagged_blocks(&out, open_tag, close_tag);
+    }
+
+    out = strip_inline_function_blocks(&out);
+
+    out.replace("<|im_start|>assistant", "")
+        .replace("<|im_end|>", "")
+        .trim()
+        .to_string()
+}
+
+fn strip_tagged_blocks(raw: &str, open_tag: &str, close_tag: &str) -> String {
+    let mut out = String::new();
+    let mut cursor = 0usize;
+
+    while let Some(start_rel) = raw[cursor..].find(open_tag) {
+        let start = cursor + start_rel;
+        out.push_str(&raw[cursor..start]);
+
+        let block_start = start + open_tag.len();
+        let Some(end_rel) = raw[block_start..].find(close_tag) else {
+            cursor = start;
+            break;
+        };
+        cursor = block_start + end_rel + close_tag.len();
+    }
+
+    out.push_str(&raw[cursor..]);
+    out
+}
+
+fn strip_inline_function_blocks(raw: &str) -> String {
+    let mut out = String::new();
+    let mut cursor = 0usize;
+    let open_tag = "<function=";
+    let close_tag = "</function>";
+
+    while let Some(start_rel) = raw[cursor..].find(open_tag) {
+        let start = cursor + start_rel;
+        out.push_str(&raw[cursor..start]);
+
+        let block_start = start + open_tag.len();
+        let Some(end_rel) = raw[block_start..].find(close_tag) else {
+            cursor = start;
+            break;
+        };
+        cursor = block_start + end_rel + close_tag.len();
+    }
+
+    out.push_str(&raw[cursor..]);
+    out
+}
+
+fn parse_tool_call_block_into(block: &str, out: &mut Vec<ToolCall>) {
+    if block.is_empty() {
+        return;
+    }
+
+    if let Ok(value) = serde_json::from_str::<Value>(block) {
+        extract_tool_calls_from_json_value(&value, out);
+        if !out.is_empty() {
+            return;
+        }
+    }
+
+    if let Some(call) = parse_tool_call_block_function_tag(block, out.len() + 1) {
+        out.push(call);
+    }
+}
+
+fn parse_tool_call_block_function_tag(block: &str, index: usize) -> Option<ToolCall> {
+    let prefix = "<function=";
+    let suffix = "</function>";
+    let trimmed = block.trim();
+    let rest = trimmed.strip_prefix(prefix)?;
+    let name_end = rest.find('>')?;
+    let name = rest[..name_end].trim().trim_matches('"').trim_matches('\'');
+    if name.is_empty() {
+        return None;
+    }
+    let inner = rest[name_end + 1..]
+        .strip_suffix(suffix)
+        .unwrap_or("")
+        .trim();
+    let (arguments, raw_arguments) = if inner.is_empty() {
+        (Value::Object(Default::default()), None)
+    } else if let Ok(value) = serde_json::from_str::<Value>(inner) {
+        (value, Some(inner.to_string()))
+    } else {
+        (Value::String(inner.to_string()), Some(inner.to_string()))
+    };
+
+    Some(ToolCall {
+        id: format!("text_tool_call_{}", index),
+        name: name.to_string(),
+        arguments,
+        raw_arguments,
+    })
+}
+
+fn extract_tool_calls_from_json_value(value: &Value, out: &mut Vec<ToolCall>) {
+    match value {
+        Value::Array(items) => {
+            for item in items {
+                extract_tool_calls_from_json_value(item, out);
+            }
+        }
+        Value::Object(map) => {
+            if let Some(tool_calls) = map
+                .get("tool_calls")
+                .or_else(|| map.get("toolCalls"))
+                .or_else(|| map.get("calls"))
+                .and_then(|v| v.as_array())
+            {
+                for item in tool_calls {
+                    extract_tool_calls_from_json_value(item, out);
+                }
+                return;
+            }
+
+            if let Some(function_call) = map
+                .get("function_call")
+                .or_else(|| map.get("functionCall"))
+            {
+                extract_tool_calls_from_json_value(function_call, out);
+                return;
+            }
+
+            if let Some(call) = parse_json_tool_call_object(value, out.len() + 1) {
+                out.push(call);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn parse_json_tool_call_object(value: &Value, index: usize) -> Option<ToolCall> {
+    let function = value.get("function").unwrap_or(value);
+    let name = function
+        .get("name")
+        .or_else(|| value.get("name"))
+        .and_then(|v| v.as_str())?;
+    let arguments_node = function
+        .get("arguments")
+        .or_else(|| function.get("args"))
+        .or_else(|| value.get("arguments"))
+        .or_else(|| value.get("args"));
+    let (arguments, raw_arguments) = match arguments_node {
+        Some(Value::String(raw)) => arguments_value_from_str(raw),
+        Some(other) => (other.clone(), None),
+        None => (Value::Object(Default::default()), None),
+    };
+    let id = value
+        .get("id")
+        .or_else(|| value.get("call_id"))
+        .or_else(|| value.get("callId"))
+        .and_then(|v| v.as_str())
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| format!("text_tool_call_{}", index));
+
+    Some(ToolCall {
+        id,
+        name: name.to_string(),
+        arguments,
+        raw_arguments,
+    })
+}
+
 fn extract_openai_legacy_function_call(node: &Value, out: &mut Vec<ToolCall>) {
     let Some(function_call) = node
         .get("function_call")
@@ -370,7 +577,8 @@ fn extract_openai_calls(node: &Value, out: &mut Vec<ToolCall>) {
 #[cfg(test)]
 mod tests {
     use super::{
-        gemini_tool_config, gemini_tools, parse_tool_calls, ToolChoice, ToolConfig, ToolDefinition,
+        gemini_tool_config, gemini_tools, parse_tool_calls, parse_tool_calls_from_text,
+        strip_tool_call_blocks, ToolChoice, ToolConfig, ToolDefinition,
     };
     use serde_json::json;
 
@@ -524,5 +732,70 @@ mod tests {
                 }
             })
         );
+    }
+
+    #[test]
+    fn parses_tool_calls_from_xml_wrapped_json_blocks() {
+        let raw = r#"<|im_start|>assistant
+<tool_call>
+{"name": "write_summary", "arguments": {"summary": "short recap"}}
+</tool_call>"#;
+
+        let calls = parse_tool_calls_from_text(raw);
+
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name, "write_summary");
+        assert_eq!(calls[0].arguments, json!({ "summary": "short recap" }));
+    }
+
+    #[test]
+    fn strips_tool_call_blocks_from_text_output() {
+        let raw = r#"<|im_start|>assistant
+Before
+<tool_call>
+{"name":"create_memory","arguments":{"text":"Likes tea"}}
+</tool_call>
+After<|im_end|>"#;
+
+        assert_eq!(strip_tool_call_blocks(raw), "Before\n\nAfter");
+    }
+
+    #[test]
+    fn parses_tool_calls_from_plural_wrapper() {
+        let raw = r#"<tool_calls>
+[
+  {"name":"create_memory","arguments":{"text":"Likes tea","category":"preference"}},
+  {"function":{"name":"pin_memory","arguments":{"id":"abc"}}}
+]
+</tool_calls>"#;
+
+        let calls = parse_tool_calls_from_text(raw);
+
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].name, "create_memory");
+        assert_eq!(calls[1].name, "pin_memory");
+    }
+
+    #[test]
+    fn parses_tool_calls_from_json_tool_calls_object() {
+        let raw = r#"{"tool_calls":[{"id":"call_1","function":{"name":"write_summary","arguments":"{\"summary\":\"done\"}"}}]}"#;
+
+        let calls = parse_tool_calls_from_text(raw);
+
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].id, "call_1");
+        assert_eq!(calls[0].name, "write_summary");
+        assert_eq!(calls[0].arguments, json!({ "summary": "done" }));
+    }
+
+    #[test]
+    fn parses_standalone_function_tag_calls() {
+        let raw = r#"<function=create_memory>{"text":"Likes tea","category":"preference"}</function>"#;
+
+        let calls = parse_tool_calls_from_text(raw);
+
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name, "create_memory");
+        assert_eq!(calls[0].arguments, json!({ "text": "Likes tea", "category": "preference" }));
     }
 }

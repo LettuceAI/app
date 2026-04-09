@@ -19,7 +19,7 @@ use crate::chat_manager::provider_adapter::{
 #[cfg(not(mobile))]
 use crate::chat_manager::thinking::{normalize_thinking_content, ThinkingTagStreamParser};
 #[cfg(not(mobile))]
-use crate::chat_manager::tooling::{parse_tool_calls, ToolCall};
+use crate::chat_manager::tooling::{parse_tool_calls, parse_tool_calls_from_text, strip_tool_call_blocks, ToolCall};
 #[cfg(not(mobile))]
 use crate::chat_manager::types::{ErrorEnvelope, NormalizedEvent, UsageSummary};
 #[cfg(not(mobile))]
@@ -513,6 +513,34 @@ mod desktop {
                 .entry("role".to_string())
                 .or_insert_with(|| Value::String("assistant".to_string()));
         }
+    }
+
+    fn recover_message_from_raw_tool_output(output: &str) -> Option<Value> {
+        let tool_calls = parse_tool_calls_from_text(output);
+        if tool_calls.is_empty() {
+            return None;
+        }
+
+        let content = strip_tool_call_blocks(output);
+        let tool_calls_value = tool_calls
+            .iter()
+            .map(|call| {
+                json!({
+                    "id": call.id,
+                    "type": "function",
+                    "function": {
+                        "name": call.name,
+                        "arguments": call.raw_arguments.clone().unwrap_or_else(|| call.arguments.to_string()),
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+
+        Some(json!({
+            "role": "assistant",
+            "content": content,
+            "tool_calls": tool_calls_value,
+        }))
     }
 
     fn decode_mtmd_bitmap(
@@ -2106,27 +2134,38 @@ mod desktop {
                 built_prompt.chat_template_result.as_ref()
             {
                 let is_partial = finish_reason == "length";
-                let parsed_message = template_result
-                    .parse_response_oaicompat(&output, is_partial)
-                    .map_err(|e| {
-                        structured_output_failure(
-                            &app,
-                            request_id.as_ref(),
-                            model_path,
-                            tool_choice,
-                            &openai_compat_options,
-                            &built_prompt,
-                            "structured_response_parse",
-                            e,
-                        )
-                    })?;
-                let mut message: Value = serde_json::from_str(&parsed_message).map_err(|e| {
-                    crate::utils::err_msg(
-                        module_path!(),
-                        line!(),
-                        format!("Failed to deserialize llama.cpp structured message: {e}"),
-                    )
-                })?;
+                let mut message: Value = if let Some(recovered) =
+                    recover_message_from_raw_tool_output(&output)
+                {
+                    log_info(
+                        &app,
+                        "llama_cpp",
+                        "using app-level raw tool-call recovery for final llama response",
+                    );
+                    recovered
+                } else {
+                    match template_result.parse_response_oaicompat(&output, is_partial) {
+                        Ok(parsed_message) => serde_json::from_str(&parsed_message).map_err(|e| {
+                            crate::utils::err_msg(
+                                module_path!(),
+                                line!(),
+                                format!("Failed to deserialize llama.cpp structured message: {e}"),
+                            )
+                        })?,
+                        Err(native_err) => {
+                            return Err(structured_output_failure(
+                                &app,
+                                request_id.as_ref(),
+                                model_path,
+                                tool_choice,
+                                &openai_compat_options,
+                                &built_prompt,
+                                "structured_response_parse",
+                                native_err,
+                            ));
+                        }
+                    }
+                };
                 ensure_assistant_role(&mut message);
 
                 let full_text = extract_text_content(message.get("content")).unwrap_or_default();
