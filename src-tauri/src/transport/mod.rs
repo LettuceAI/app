@@ -7,10 +7,16 @@ use crate::chat_manager::types::NormalizedEvent;
 use crate::error::AppError;
 use crate::utils::log_warn;
 
-pub fn build_client(timeout_ms: Option<u64>) -> Result<reqwest::Client, AppError> {
+pub const DEFAULT_REQUEST_TIMEOUT_MS: u64 = 30 * 60 * 1000;
+
+pub fn build_client(timeout_ms: Option<u64>, stream: bool) -> Result<reqwest::Client, AppError> {
     let mut builder = reqwest::Client::builder();
-    if let Some(ms) = timeout_ms {
-        builder = builder.timeout(Duration::from_millis(ms));
+    let normalized_timeout_ms = timeout_ms
+        .unwrap_or(DEFAULT_REQUEST_TIMEOUT_MS)
+        .min(DEFAULT_REQUEST_TIMEOUT_MS);
+    if let Some(ms) = (!stream).then_some(normalized_timeout_ms) {
+        let timeout = Duration::from_millis(ms);
+        builder = builder.timeout(timeout);
     }
     builder.build().map_err(AppError::from)
 }
@@ -67,6 +73,7 @@ pub async fn send_with_retries(
     scope: &str,
     builder: reqwest::RequestBuilder,
     max_retries: u32,
+    request_id: Option<&str>,
 ) -> Result<reqwest::Response, AppError> {
     let base = match builder.try_clone() {
         Some(b) => b,
@@ -121,6 +128,21 @@ pub async fn send_with_retries(
                             allowed_retries
                         ),
                     );
+                    if let Some(request_id) = request_id {
+                        crate::utils::emit_warn_event(
+                            app,
+                            "transport_retry",
+                            json!({
+                                "requestId": request_id,
+                                "scope": scope,
+                                "attempt": attempt,
+                                "maxRetries": allowed_retries,
+                                "status": status.as_u16(),
+                                "reason": if is_rate_limited { "rate_limited" } else { "server_error" },
+                                "delayMs": delay,
+                            }),
+                        );
+                    }
                     sleep(Duration::from_millis(delay)).await;
                 } else {
                     return Ok(resp);
@@ -138,6 +160,21 @@ pub async fn send_with_retries(
                             err, delay, attempt, max_retries
                         ),
                     );
+                    if let Some(request_id) = request_id {
+                        crate::utils::emit_warn_event(
+                            app,
+                            "transport_retry",
+                            json!({
+                                "requestId": request_id,
+                                "scope": scope,
+                                "attempt": attempt,
+                                "maxRetries": max_retries,
+                                "reason": if err.is_timeout() { "timeout" } else { "request_error" },
+                                "error": err.to_string(),
+                                "delayMs": delay,
+                            }),
+                        );
+                    }
                     sleep(Duration::from_millis(delay)).await;
                 } else {
                     return Err(AppError::from(err));

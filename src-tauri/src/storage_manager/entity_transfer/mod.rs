@@ -3,6 +3,7 @@ use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map as JsonMap, Value as JsonValue};
 use std::fs;
+use std::io::Read;
 use unified_entity_card::{
     assert_uec, convert_uec_v1_to_v2, create_character_uec, create_persona_uec, downgrade_uec, Uec,
     UecKind, SCHEMA_VERSION, SCHEMA_VERSION_V2,
@@ -13,6 +14,7 @@ use tauri::Manager;
 
 use super::db::{now_ms, open_db};
 use super::legacy::storage_root;
+use super::media::storage_write_image_bytes;
 use crate::storage_manager::internal_read_settings;
 use crate::utils::log_info;
 
@@ -763,6 +765,188 @@ fn looks_like_uec(value: &JsonValue) -> bool {
         .and_then(|name| name.as_str())
         == Some("UEC")
         || value.get("kind").and_then(|kind| kind.as_str()).is_some()
+}
+
+fn decode_base64_json_candidate(candidate: &str) -> Option<String> {
+    let engines = [
+        &general_purpose::STANDARD,
+        &general_purpose::STANDARD_NO_PAD,
+        &general_purpose::URL_SAFE,
+        &general_purpose::URL_SAFE_NO_PAD,
+    ];
+
+    for engine in engines {
+        let decoded = match engine.decode(candidate) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        let text = match String::from_utf8(decoded) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        if serde_json::from_str::<JsonValue>(&text).is_ok() {
+            return Some(text);
+        }
+    }
+
+    None
+}
+
+fn try_parse_character_json(candidate: &str) -> Option<String> {
+    let trimmed = candidate.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    if serde_json::from_str::<JsonValue>(trimmed).is_ok() {
+        return Some(trimmed.to_string());
+    }
+
+    decode_base64_json_candidate(trimmed)
+}
+
+fn decode_png_text_chunk(chunk_type: &str, chunk: &[u8]) -> Option<(String, String)> {
+    match chunk_type {
+        "tEXt" => {
+            let separator_index = chunk.iter().position(|byte| *byte == 0)?;
+            if separator_index == 0 {
+                return None;
+            }
+
+            let keyword = String::from_utf8(chunk[..separator_index].to_vec()).ok()?;
+            let text = String::from_utf8(chunk[separator_index + 1..].to_vec()).ok()?;
+            Some((keyword, text))
+        }
+        "zTXt" => {
+            let separator_index = chunk.iter().position(|byte| *byte == 0)?;
+            if separator_index == 0 || separator_index + 2 > chunk.len() {
+                return None;
+            }
+
+            let keyword = String::from_utf8(chunk[..separator_index].to_vec()).ok()?;
+            let compression_method = chunk[separator_index + 1];
+            if compression_method != 0 {
+                return None;
+            }
+
+            let mut decoder = flate2::read::ZlibDecoder::new(&chunk[separator_index + 2..]);
+            let mut text = String::new();
+            decoder.read_to_string(&mut text).ok()?;
+            Some((keyword, text))
+        }
+        "iTXt" => {
+            let mut cursor = 0usize;
+            let next_null = |cursor: &mut usize| -> Option<usize> {
+                let relative = chunk.get(*cursor..)?.iter().position(|byte| *byte == 0)?;
+                let index = *cursor + relative;
+                *cursor = index + 1;
+                Some(index)
+            };
+
+            let keyword_end = next_null(&mut cursor)?;
+            if keyword_end == 0 || cursor + 1 >= chunk.len() {
+                return None;
+            }
+
+            let keyword = String::from_utf8(chunk[..keyword_end].to_vec()).ok()?;
+            let compression_flag = chunk[cursor];
+            let compression_method = chunk[cursor + 1];
+            cursor += 2;
+
+            next_null(&mut cursor)?;
+            next_null(&mut cursor)?;
+
+            let text_bytes = chunk.get(cursor..)?;
+            if compression_flag == 1 {
+                if compression_method != 0 {
+                    return None;
+                }
+
+                let mut decoder = flate2::read::ZlibDecoder::new(text_bytes);
+                let mut text = String::new();
+                decoder.read_to_string(&mut text).ok()?;
+                return Some((keyword, text));
+            }
+
+            let text = String::from_utf8(text_bytes.to_vec()).ok()?;
+            Some((keyword, text))
+        }
+        _ => None,
+    }
+}
+
+fn extract_character_json_from_png_bytes(data: &[u8]) -> Result<String, String> {
+    const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
+    if data.len() < PNG_SIGNATURE.len() || &data[..PNG_SIGNATURE.len()] != PNG_SIGNATURE {
+        return Err("Invalid PNG file".to_string());
+    }
+
+    let mut candidates: Vec<(String, String)> = Vec::new();
+    let mut offset = PNG_SIGNATURE.len();
+
+    while offset + 12 <= data.len() {
+        let length = u32::from_be_bytes([
+            data[offset],
+            data[offset + 1],
+            data[offset + 2],
+            data[offset + 3],
+        ]) as usize;
+        offset += 4;
+
+        if offset + 8 > data.len() || offset + length + 8 > data.len() {
+            return Err("Corrupted PNG metadata".to_string());
+        }
+
+        let chunk_type = std::str::from_utf8(&data[offset..offset + 4])
+            .map_err(|_| "Corrupted PNG metadata".to_string())?;
+        offset += 4;
+
+        let chunk = &data[offset..offset + length];
+        offset += length;
+        offset += 4; // Skip CRC.
+
+        if chunk_type == "IEND" {
+            break;
+        }
+
+        if matches!(chunk_type, "tEXt" | "zTXt" | "iTXt") {
+            if let Some((keyword, text)) = decode_png_text_chunk(chunk_type, chunk) {
+                candidates.push((keyword, text));
+            }
+        }
+    }
+
+    for preferred in ["ccv3", "chara", "ccv2"] {
+        for (keyword, text) in &candidates {
+            if keyword.eq_ignore_ascii_case(preferred) {
+                if let Some(parsed) = try_parse_character_json(text) {
+                    return Ok(parsed);
+                }
+            }
+        }
+    }
+
+    for (_, text) in &candidates {
+        if let Some(parsed) = try_parse_character_json(text) {
+            return Ok(parsed);
+        }
+    }
+
+    Err("PNG does not contain a supported character card payload".to_string())
+}
+
+fn decode_character_import_file_bytes(filename: &str, data: &[u8]) -> Result<String, String> {
+    if filename.to_ascii_lowercase().ends_with(".png") {
+        return extract_character_json_from_png_bytes(data);
+    }
+
+    String::from_utf8(data.to_vec()).map_err(|e| {
+        crate::utils::err_msg(
+            module_path!(),
+            line!(),
+            format!("Invalid UTF-8 import file: {}", e),
+        )
+    })
 }
 
 fn detect_character_format(value: &JsonValue) -> Option<CharacterFileFormat> {
@@ -1801,7 +1985,6 @@ pub fn character_import(app: tauri::AppHandle, import_json: String) -> Result<St
         format!("Successfully imported character: {}", new_character_id),
     );
 
-    // Return the new character as JSON
     let conn2 = open_db(&app)?;
     read_imported_character(&conn2, &new_character_id)
 }
@@ -1818,6 +2001,13 @@ pub fn character_import_preview(import_json: String) -> Result<String, String> {
     })?;
     let (package, format) = parse_character_import_payload(&raw_value)?;
 
+    build_character_import_preview(package, format)
+}
+
+fn build_character_import_preview(
+    package: CharacterExportPackage,
+    format: CharacterFileFormat,
+) -> Result<String, String> {
     if package.version > 1 {
         return Err(format!(
             "Unsupported export version: {}. Please update your app.",
@@ -1869,6 +2059,31 @@ pub fn character_import_preview(import_json: String) -> Result<String, String> {
 
     serde_json::to_string(&preview)
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
+}
+
+#[tauri::command]
+pub fn character_import_preview_from_bytes(
+    app: tauri::AppHandle,
+    filename: String,
+    data: Vec<u8>,
+) -> Result<String, String> {
+    let import_json = decode_character_import_file_bytes(&filename, &data)?;
+    let raw_value: JsonValue = serde_json::from_str(&import_json).map_err(|e| {
+        crate::utils::err_msg(
+            module_path!(),
+            line!(),
+            format!("Invalid import data: {}", e),
+        )
+    })?;
+    let (mut package, format) = parse_character_import_payload(&raw_value)?;
+
+    if filename.to_ascii_lowercase().ends_with(".png") {
+        let image_id = format!("import-preview-{}", uuid::Uuid::new_v4());
+        storage_write_image_bytes(&app, &image_id, &data)?;
+        package.avatar_data = Some(image_id);
+    }
+
+    build_character_import_preview(package, format)
 }
 
 /// Convert a legacy export package to a UEC file (no import performed)

@@ -5,3 +5,4 @@ export { MessageActionsBottomSheet } from "./MessageActionsBottomSheet";
 export { LoadingSpinner } from "./LoadingSpinner";
 export { EmptyState } from "./EmptyState";
 export { MarkdownRenderer } from "./MarkdownRenderer";
+export { ChatSettingsDrawer } from "./ChatSettingsDrawer";

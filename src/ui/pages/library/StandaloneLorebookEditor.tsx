@@ -34,6 +34,7 @@ import { BottomMenu, LorebookExportMenu, MenuButton } from "../../components";
 import { confirmBottomMenu } from "../../components/ConfirmBottomMenu";
 import { TopNav } from "../../components/App";
 import { LorebookAvatar } from "../../components/LorebookAvatar";
+import { Switch } from "../../components/Switch";
 import { useI18n } from "../../../core/i18n/context";
 import { toast } from "../../components/toast";
 import type { LorebookExportFormat } from "../../components/LorebookExportMenu";
@@ -186,23 +187,10 @@ function EntryEditorMenu({
                 {t("characters.lorebook.includeInPrompts")}
               </p>
             </div>
-            <label
-              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-all duration-200 ${
-                draft.enabled ? "bg-accent shadow-lg shadow-accent/30" : "bg-fg/20"
-              }`}
-            >
-              <input
-                type="checkbox"
-                checked={draft.enabled}
-                onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })}
-                className="sr-only"
-              />
-              <span
-                className={`inline-block h-5 w-5 transform rounded-full bg-fg shadow ring-0 transition duration-200 ${
-                  draft.enabled ? "translate-x-5" : "translate-x-0"
-                }`}
-              />
-            </label>
+            <Switch
+              checked={draft.enabled}
+              onChange={(next) => setDraft({ ...draft, enabled: next })}
+            />
           </div>
 
           <div className="flex items-start justify-between gap-4 rounded-xl border border-fg/10 bg-surface-el/90 p-3 flex-1">
@@ -214,23 +202,10 @@ function EntryEditorMenu({
                 {t("characters.lorebook.noKeywordsNeeded")}
               </p>
             </div>
-            <label
-              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-all duration-200 ${
-                draft.alwaysActive ? "bg-info shadow-lg shadow-blue-500/30" : "bg-fg/20"
-              }`}
-            >
-              <input
-                type="checkbox"
-                checked={draft.alwaysActive}
-                onChange={(e) => setDraft({ ...draft, alwaysActive: e.target.checked })}
-                className="sr-only"
-              />
-              <span
-                className={`inline-block h-5 w-5 transform rounded-full bg-fg shadow ring-0 transition duration-200 ${
-                  draft.alwaysActive ? "translate-x-5" : "translate-x-0"
-                }`}
-              />
-            </label>
+            <Switch
+              checked={draft.alwaysActive}
+              onChange={(next) => setDraft({ ...draft, alwaysActive: next })}
+            />
           </div>
         </div>
 
@@ -486,6 +461,8 @@ export function StandaloneLorebookEditor() {
   const [showRenameMenu, setShowRenameMenu] = useState(false);
   const [newName, setNewName] = useState("");
   const [avatarDraftPath, setAvatarDraftPath] = useState<string | null>(null);
+  const [keywordDetectionModeDraft, setKeywordDetectionModeDraft] =
+    useState<Lorebook["keywordDetectionMode"]>("recentMessageWindow");
   const [isCreatingEntry, setIsCreatingEntry] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
@@ -505,6 +482,7 @@ export function StandaloneLorebookEditor() {
       ]);
       const lb = allLorebooks.find((l) => l.id === lorebookId) ?? null;
       setLorebook(lb);
+      setKeywordDetectionModeDraft(lb?.keywordDetectionMode ?? "recentMessageWindow");
       setEntries(ent);
     } catch (error) {
       console.error("Failed to load lorebook:", error);
@@ -614,7 +592,12 @@ export function StandaloneLorebookEditor() {
         nextAvatarPath = avatarDraftPath;
       }
 
-      const updated = { ...lorebook, name: newName.trim(), avatarPath: nextAvatarPath };
+      const updated = {
+        ...lorebook,
+        name: newName.trim(),
+        avatarPath: nextAvatarPath,
+        keywordDetectionMode: keywordDetectionModeDraft,
+      };
       const saved = await saveLorebook(updated);
       if (lorebook.avatarPath && lorebook.avatarPath !== saved.avatarPath) {
         await deleteImageRef(lorebook.avatarPath);
@@ -623,6 +606,7 @@ export function StandaloneLorebookEditor() {
       setShowRenameMenu(false);
       setNewName("");
       setAvatarDraftPath(saved.avatarPath ?? null);
+      setKeywordDetectionModeDraft(saved.keywordDetectionMode);
     } catch (error) {
       if (replacementAvatarPath) {
         await deleteImageRef(replacementAvatarPath);
@@ -740,6 +724,7 @@ export function StandaloneLorebookEditor() {
               onClick={() => {
                 setNewName(lorebook.name);
                 setAvatarDraftPath(lorebook.avatarPath ?? null);
+                setKeywordDetectionModeDraft(lorebook.keywordDetectionMode);
                 setShowRenameMenu(true);
               }}
               className="flex items-center px-[0.6em] py-[0.3em] justify-center rounded-full text-fg/70 hover:text-fg hover:bg-fg/10 transition"
@@ -918,6 +903,7 @@ export function StandaloneLorebookEditor() {
             setShowRenameMenu(false);
             setNewName("");
             setAvatarDraftPath(lorebook.avatarPath ?? null);
+            setKeywordDetectionModeDraft(lorebook.keywordDetectionMode);
           }}
           title={t("library.actions.renameLorebook")}
         >
@@ -972,12 +958,54 @@ export function StandaloneLorebookEditor() {
               />
             </div>
 
+            <div className="space-y-2">
+              <label className="text-[11px] font-medium text-fg/70">
+                {t("characters.lorebook.keywordDetectionMode")}
+              </label>
+              <div className="grid gap-2">
+                <button
+                  type="button"
+                  onClick={() => setKeywordDetectionModeDraft("recentMessageWindow")}
+                  className={`rounded-xl border px-3 py-3 text-left transition ${
+                    keywordDetectionModeDraft === "recentMessageWindow"
+                      ? "border-accent/45 bg-accent/15 text-fg"
+                      : "border-fg/10 bg-fg/5 text-fg/75 hover:border-fg/20 hover:bg-fg/10"
+                  }`}
+                >
+                  <div className="text-sm font-medium">
+                    {t("characters.lorebook.keywordDetectionRecentWindow")}
+                  </div>
+                  <div className="mt-1 text-xs text-fg/55">
+                    {t("characters.lorebook.keywordDetectionRecentWindowDesc")}
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setKeywordDetectionModeDraft("latestUserMessage")}
+                  className={`rounded-xl border px-3 py-3 text-left transition ${
+                    keywordDetectionModeDraft === "latestUserMessage"
+                      ? "border-accent/45 bg-accent/15 text-fg"
+                      : "border-fg/10 bg-fg/5 text-fg/75 hover:border-fg/20 hover:bg-fg/10"
+                  }`}
+                >
+                  <div className="text-sm font-medium">
+                    {t("characters.lorebook.keywordDetectionLatestUser")}
+                  </div>
+                  <div className="mt-1 text-xs text-fg/55">
+                    {t("characters.lorebook.keywordDetectionLatestUserDesc")}
+                  </div>
+                </button>
+              </div>
+            </div>
+
             <button
               onClick={handleRename}
               disabled={
                 !newName.trim() ||
                 (newName.trim() === lorebook.name &&
-                  (avatarDraftPath ?? "") === (lorebook.avatarPath ?? ""))
+                  (avatarDraftPath ?? "") === (lorebook.avatarPath ?? "") &&
+                  keywordDetectionModeDraft === lorebook.keywordDetectionMode)
               }
               className="w-full rounded-xl border border-accent/40 bg-accent/20 px-4 py-3.5 text-sm font-semibold text-accent/70 transition hover:bg-accent/30 disabled:opacity-50 disabled:cursor-not-allowed"
             >

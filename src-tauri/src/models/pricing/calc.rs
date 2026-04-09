@@ -68,14 +68,17 @@ pub fn calculate_openrouter_request_cost(
     let reasoning_tokens = input.reasoning_tokens.min(input.completion_tokens);
     let visible_completion_tokens = input.completion_tokens.saturating_sub(reasoning_tokens);
 
-    let prompt_cost = (regular_prompt_tokens as f64 * prompt_price_per_token)
-        + (cached_prompt_tokens as f64 * cache_read_price_per_token)
-        + (cache_write_tokens as f64 * cache_write_price_per_token);
+    let prompt_base_cost = regular_prompt_tokens as f64 * prompt_price_per_token;
+    let cache_read_cost = cached_prompt_tokens as f64 * cache_read_price_per_token;
+    let cache_write_cost = cache_write_tokens as f64 * cache_write_price_per_token;
+    let prompt_cost = prompt_base_cost + cache_read_cost + cache_write_cost;
 
-    let mut completion_cost = (visible_completion_tokens as f64 * completion_price_per_token)
-        + (reasoning_tokens as f64 * reasoning_price_per_token)
-        + request_price
-        + (input.web_search_requests as f64 * web_search_price);
+    let completion_base_cost = visible_completion_tokens as f64 * completion_price_per_token;
+    let reasoning_cost = reasoning_tokens as f64 * reasoning_price_per_token;
+    let request_cost = request_price;
+    let web_search_cost = input.web_search_requests as f64 * web_search_price;
+    let mut completion_cost =
+        completion_base_cost + reasoning_cost + request_cost + web_search_cost;
 
     let mut total_cost = prompt_cost + completion_cost;
 
@@ -94,9 +97,22 @@ pub fn calculate_openrouter_request_cost(
         prompt_tokens: input.prompt_tokens,
         completion_tokens: input.completion_tokens,
         total_tokens: input.prompt_tokens + input.completion_tokens,
+        regular_prompt_tokens,
+        cached_prompt_tokens,
+        cache_write_tokens,
+        reasoning_tokens,
+        web_search_requests: input.web_search_requests,
         prompt_cost,
+        prompt_base_cost,
+        cache_read_cost,
+        cache_write_cost,
         completion_cost,
+        completion_base_cost,
+        reasoning_cost,
+        request_cost,
+        web_search_cost,
         total_cost,
+        authoritative_total_cost: input.authoritative_total_cost,
     })
 }
 

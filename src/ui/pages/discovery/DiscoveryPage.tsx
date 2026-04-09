@@ -2,18 +2,16 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Search,
-  ArrowLeft,
   TrendingUp,
   Flame,
   Clock,
   RefreshCw,
   AlertCircle,
   Sparkles,
-  Settings,
 } from "lucide-react";
-import { cn, typography, interactive } from "../../design-tokens";
+import { cn } from "../../design-tokens";
 import { useI18n } from "../../../core/i18n/context";
-import { Routes, useNavigationManager } from "../../navigation";
+import { useNavigationManager } from "../../navigation";
 import { DiscoveryCard, DiscoverySection, DiscoverySectionSkeleton } from "./components";
 import {
   fetchDiscoverySections,
@@ -31,7 +29,7 @@ interface TabItem {
 
 export function DiscoveryPage() {
   const navigate = useNavigate();
-  const { backOrReplace } = useNavigationManager();
+  const { } = useNavigationManager();
   const { t } = useI18n();
 
   const TABS: TabItem[] = [
@@ -45,7 +43,7 @@ export function DiscoveryPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>("all");
-  const [refreshing, setRefreshing] = useState(false);
+  const [, setRefreshing] = useState(false);
 
   const loadSections = useCallback(async (isRefresh = false) => {
     try {
@@ -91,14 +89,6 @@ export function DiscoveryPage() {
     navigate("/discover/search");
   };
 
-  const handleBack = () => {
-    backOrReplace(Routes.chat);
-  };
-
-  const handleRefresh = () => {
-    loadSections(true);
-  };
-
   // Get cards for the current tab
   const getDisplayCards = (): DiscoveryCardType[] => {
     if (!sections) return [];
@@ -120,78 +110,6 @@ export function DiscoveryPage() {
 
   return (
     <div className="flex h-full flex-col bg-surface">
-      {/* Header - matches TopNav style */}
-      <header
-        className="sticky top-0 z-30 border-b border-fg/10 bg-surface-el/80 backdrop-blur-md"
-        style={{
-          paddingTop: "calc(env(safe-area-inset-top) + 12px)",
-          paddingBottom: "12px",
-        }}
-      >
-        <div className="mx-auto flex w-full max-w-md items-center justify-between px-4 lg:max-w-none lg:px-8">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleBack}
-              className={cn(
-                "flex shrink-0 items-center justify-center rounded-full p-2",
-                "text-fg/70 hover:bg-fg/10 hover:text-fg",
-                interactive.transition.fast,
-                interactive.active.scale,
-              )}
-              aria-label={t("common.buttons.goBack")}
-            >
-              <ArrowLeft size={20} strokeWidth={2.5} />
-            </button>
-            <h1 className={cn(typography.h1.size, "font-bold tracking-tight text-fg")}>
-              {t("common.bottomNav.discover")}
-            </h1>
-          </div>
-
-          <div className="flex items-center gap-1">
-            <button
-              onClick={handleRefresh}
-              disabled={refreshing}
-              className={cn(
-                "flex items-center justify-center rounded-full p-2",
-                "text-fg/70 hover:bg-fg/10 hover:text-fg",
-                interactive.transition.fast,
-                interactive.active.scale,
-                refreshing && "animate-spin",
-              )}
-              aria-label={t("common.buttons.refresh")}
-            >
-              <RefreshCw size={20} strokeWidth={2.5} />
-            </button>
-
-            <button
-              onClick={handleSearchClick}
-              className={cn(
-                "flex items-center justify-center rounded-full p-2",
-                "text-fg/70 hover:bg-fg/10 hover:text-fg",
-                interactive.transition.fast,
-                interactive.active.scale,
-              )}
-              aria-label={t("common.buttons.search")}
-            >
-              <Search size={20} strokeWidth={2.5} />
-            </button>
-
-            <button
-              onClick={() => navigate("/settings")}
-              className={cn(
-                "flex items-center justify-center rounded-full p-2",
-                "text-fg/70 hover:bg-fg/10 hover:text-fg",
-                interactive.transition.fast,
-                interactive.active.scale,
-              )}
-              aria-label={t("common.nav.settings")}
-            >
-              <Settings size={20} strokeWidth={2.5} />
-            </button>
-          </div>
-        </div>
-      </header>
-
       {/* Main content with bottom padding for safe area */}
       <main
         className="flex-1 overflow-y-auto"

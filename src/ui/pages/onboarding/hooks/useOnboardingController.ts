@@ -204,6 +204,7 @@ export function useOnboardingController(): OnboardingController {
     const isLocalProvider = ["ollama", "lmstudio", "intenserp"].includes(
       state.selectedProviderId || "",
     );
+    const requiresBaseUrl = state.selectedProviderId === "lettuce-host";
     const skipValidationProvider = ["chutes"].includes(state.selectedProviderId || "");
     if (
       !state.selectedProviderId ||
@@ -213,13 +214,16 @@ export function useOnboardingController(): OnboardingController {
     ) {
       return;
     }
+    if (requiresBaseUrl && !state.baseUrl.trim()) {
+      return;
+    }
 
     dispatch({ type: "SET_TESTING", payload: true });
     dispatch({ type: "SET_TEST_RESULT", payload: null });
 
     try {
       const trimmedKey = state.apiKey.trim();
-      if (trimmedKey.length < 10) {
+      if (state.selectedProviderId !== "lettuce-host" && trimmedKey.length < 10) {
         throw new Error("API key seems too short");
       }
 
@@ -271,15 +275,24 @@ export function useOnboardingController(): OnboardingController {
       const credentialId = crypto.randomUUID();
       const trimmedKey = apiKey.trim();
       const requiresVerification =
-        !isLocalProvider && ["openai", "anthropic", "openrouter"].includes(selectedProviderId);
+        !isLocalProvider &&
+        ["openai", "anthropic", "openrouter", "gemini", "lettuce-host"].includes(
+          selectedProviderId,
+        );
 
       // Local providers require base URL
-      if (["ollama", "lmstudio", "intenserp"].includes(selectedProviderId) && !baseUrl?.trim()) {
+      if (
+        ["ollama", "lmstudio", "intenserp", "lettuce-host"].includes(selectedProviderId) &&
+        !baseUrl?.trim()
+      ) {
         dispatch({
           type: "SET_TEST_RESULT",
           payload: {
             success: false,
-            message: "Base URL is required (e.g., http://localhost:11434)",
+            message:
+              selectedProviderId === "lettuce-host"
+                ? "Host URL is required (e.g., http://192.168.1.10:3333)"
+                : "Base URL is required (e.g., http://localhost:11434)",
           },
         });
         return;
@@ -469,14 +482,16 @@ export function useOnboardingController(): OnboardingController {
     const isLocalProvider = ["ollama", "lmstudio", "intenserp"].includes(
       state.selectedProviderId || "",
     );
+    const requiresBaseUrl = state.selectedProviderId === "lettuce-host";
     const skipValidationProvider = ["chutes"].includes(state.selectedProviderId || "");
     return Boolean(
       state.selectedProviderId &&
       !isLocalProvider &&
       !skipValidationProvider &&
+      (!requiresBaseUrl || state.baseUrl.trim().length > 0) &&
       state.apiKey.trim().length > 0,
     );
-  }, [state.selectedProviderId, state.apiKey]);
+  }, [state.selectedProviderId, state.apiKey, state.baseUrl]);
 
   const canSaveProvider = useMemo(() => {
     const isLocalProvider = [
@@ -486,12 +501,14 @@ export function useOnboardingController(): OnboardingController {
       "lmstudio",
       "intenserp",
     ].includes(state.selectedProviderId || "");
+    const requiresBaseUrl = state.selectedProviderId === "lettuce-host";
     return Boolean(
       state.selectedProviderId &&
       state.providerLabel.trim().length > 0 &&
-      (isLocalProvider || state.apiKey.trim().length > 0),
+      (isLocalProvider || state.apiKey.trim().length > 0) &&
+      (!requiresBaseUrl || state.baseUrl.trim().length > 0),
     );
-  }, [state.selectedProviderId, state.apiKey, state.providerLabel]);
+  }, [state.selectedProviderId, state.apiKey, state.baseUrl, state.providerLabel]);
 
   const canSaveModel = useMemo(() => {
     return Boolean(

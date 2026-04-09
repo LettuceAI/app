@@ -23,6 +23,7 @@ import {
 } from "../../../core/storage";
 import { storageBridge } from "../../../core/storage/files";
 import { typography, radius, cn, colors, interactive } from "../../design-tokens";
+import { WindowControlButtons, useDragRegionProps, hasCustomWindowControls } from "../../components/App/TopNav";
 import { BottomMenu, MenuButton, MenuButtonGroup, MenuDivider } from "../../components";
 import { Routes, useNavigationManager } from "../../navigation";
 import { useI18n } from "../../../core/i18n/context";
@@ -41,6 +42,7 @@ export function ChatHistoryPage() {
   const location = useLocation();
   const { go, backOrReplace } = useNavigationManager();
   const { t } = useI18n();
+  const dragRegionProps = useDragRegionProps();
   const formatTimeAgo = useFormatTimeAgo();
   const [character, setCharacter] = useState<Character | null>(null);
   const [sessions, setSessions] = useState<SessionPreview[]>([]);
@@ -252,15 +254,16 @@ export function ChatHistoryPage() {
   }
 
   return (
-    <div className={cn("flex min-h-screen flex-col", colors.surface.base, colors.text.primary)}>
+    <div className={cn("flex h-full flex-col", colors.surface.base, colors.text.primary)}>
       <header
-        className={cn("sticky top-0 z-20 shrink-0 border-b border-fg/10 bg-surface px-4 pb-3")}
+        className={cn("z-20 shrink-0 border-b border-fg/10 bg-surface pl-4 pb-3", hasCustomWindowControls ? "pr-0" : "pr-4")}
         style={{
           paddingTop: "calc(env(safe-area-inset-top) + 12px)",
         }}
+        {...dragRegionProps}
       >
-        <div className="flex items-center gap-3">
-          <div className="flex min-w-0 flex-1 items-center">
+        <div className="flex items-center justify-between gap-3" {...dragRegionProps}>
+          <div className="flex min-w-0 items-center">
             <button
               onClick={() =>
                 backOrReplace(
@@ -277,7 +280,7 @@ export function ChatHistoryPage() {
             >
               <ArrowLeft size={18} strokeWidth={2.5} />
             </button>
-            <div className="min-w-0 flex-1 text-left">
+            <div className="min-w-0 text-left">
               <p className="truncate text-xl font-bold text-fg/90">{t("chats.chatHistory")}</p>
               <p className="mt-0.5 truncate text-xs text-fg/50">
                 {character
@@ -286,6 +289,7 @@ export function ChatHistoryPage() {
               </p>
             </div>
           </div>
+          <WindowControlButtons />
         </div>
       </header>
 

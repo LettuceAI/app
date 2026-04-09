@@ -6,6 +6,7 @@ import { useEngineSettingsConfigController } from "./hooks/useEngineConfigContro
 import { readSettings } from "../../../core/storage/repo";
 import type { ProviderCredential } from "../../../core/storage/schemas";
 import { useI18n } from "../../../core/i18n/context";
+import { Switch } from "../../components/Switch";
 
 export function EngineSettingsConfigPage() {
   const { credentialId } = useParams<{ credentialId: string }>();
@@ -137,18 +138,7 @@ function ToggleField({
         <p className="text-sm text-white/80">{label}</p>
         {description && <p className="text-[11px] text-white/40">{description}</p>}
       </div>
-      <button
-        onClick={() => onChange(!value)}
-        className={`relative h-6 w-11 shrink-0 rounded-full transition ${
-          value ? "bg-emerald-500/40" : "bg-white/10"
-        }`}
-      >
-        <span
-          className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-            value ? "translate-x-5" : "translate-x-0"
-          }`}
-        />
-      </button>
+      <Switch checked={value} onChange={onChange} />
     </div>
   );
 }

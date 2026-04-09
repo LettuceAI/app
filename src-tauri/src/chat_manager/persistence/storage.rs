@@ -1,3 +1,4 @@
+use std::sync::OnceLock;
 use tauri::AppHandle;
 
 use crate::storage_manager::{
@@ -13,13 +14,14 @@ use crate::storage_manager::{
 use crate::chat_manager::prompt_engine;
 use crate::chat_manager::types::{
     AccessibilitySettings, AccessibilitySoundSettings, AdvancedModelSettings, AdvancedSettings,
-    Character, Model, Persona, ProviderCredential, Session, Settings, StoredMessage,
-    SystemPromptEntry,
+    Character, DynamicMemoryStructuredFallbackFormat, Model, Persona, ProviderCredential, Session,
+    Settings, StoredMessage, SystemPromptEntry,
 };
 
 #[derive(Debug, Clone, Copy)]
 pub enum PromptType {
     SystemPrompt,
+    LocalRoleplayPrompt,
     DynamicMemoryPrompt,
     DynamicSummaryPrompt,
     HelpMeReplyPrompt,
@@ -29,11 +31,13 @@ pub enum PromptType {
     AvatarGenerationPrompt,
     AvatarEditPrompt,
     SceneGenerationPrompt,
+    DesignReferencePrompt,
 }
 
 pub fn get_base_prompt(prompt_type: PromptType) -> String {
     match prompt_type {
         PromptType::SystemPrompt => prompt_engine::default_system_prompt_template(),
+        PromptType::LocalRoleplayPrompt => prompt_engine::default_local_roleplay_prompt(),
         PromptType::DynamicMemoryPrompt => prompt_engine::default_dynamic_memory_prompt(),
         PromptType::DynamicSummaryPrompt => prompt_engine::default_dynamic_summary_prompt(),
         PromptType::HelpMeReplyPrompt => prompt_engine::default_help_me_reply_prompt(),
@@ -47,12 +51,14 @@ pub fn get_base_prompt(prompt_type: PromptType) -> String {
         PromptType::AvatarGenerationPrompt => prompt_engine::default_avatar_generation_prompt(),
         PromptType::AvatarEditPrompt => prompt_engine::default_avatar_edit_prompt(),
         PromptType::SceneGenerationPrompt => prompt_engine::default_scene_generation_prompt(),
+        PromptType::DesignReferencePrompt => prompt_engine::default_design_reference_prompt(),
     }
 }
 
 pub fn get_base_prompt_entries(prompt_type: PromptType) -> Vec<SystemPromptEntry> {
     match prompt_type {
         PromptType::SystemPrompt => prompt_engine::default_modular_prompt_entries(),
+        PromptType::LocalRoleplayPrompt => prompt_engine::default_local_roleplay_entries(),
         PromptType::DynamicMemoryPrompt => prompt_engine::default_dynamic_memory_entries(),
         PromptType::DynamicSummaryPrompt => prompt_engine::default_dynamic_summary_entries(),
         PromptType::HelpMeReplyPrompt => prompt_engine::default_help_me_reply_entries(),
@@ -64,6 +70,7 @@ pub fn get_base_prompt_entries(prompt_type: PromptType) -> Vec<SystemPromptEntry
         PromptType::AvatarGenerationPrompt => prompt_engine::default_avatar_generation_entries(),
         PromptType::AvatarEditPrompt => prompt_engine::default_avatar_edit_entries(),
         PromptType::SceneGenerationPrompt => prompt_engine::default_scene_generation_entries(),
+        PromptType::DesignReferencePrompt => prompt_engine::default_design_reference_entries(),
     }
 }
 
@@ -146,10 +153,16 @@ fn default_settings() -> Settings {
         advanced_model_settings: AdvancedModelSettings::default(),
         advanced_settings: Some(AdvancedSettings {
             summarisation_model_id: None,
+            dynamic_memory_structured_fallback_format: Some(
+                DynamicMemoryStructuredFallbackFormat::Xml,
+            ),
+            dynamic_memory_llama_sampler_overwrite_enabled: Some(true),
             avatar_generation_enabled: Some(true),
             avatar_generation_model_id: None,
             scene_generation_enabled: Some(true),
+            scene_generation_mode: Some("auto".to_string()),
             scene_generation_model_id: None,
+            scene_writer_model_id: None,
             creation_helper_enabled: None,
             creation_helper_model_id: None,
             help_me_reply_enabled: None,
@@ -161,6 +174,7 @@ fn default_settings() -> Settings {
             group_dynamic_memory: None,
             manual_mode_context_window: None,
             embedding_max_tokens: None,
+            host_api: None,
             accessibility: Some(AccessibilitySettings {
                 send: AccessibilitySoundSettings {
                     enabled: false,
@@ -248,6 +262,20 @@ pub fn resolve_credential_for_model<'a>(
     settings: &'a Settings,
     model: &Model,
 ) -> Option<&'a ProviderCredential> {
+    if model.provider_id.eq_ignore_ascii_case("llamacpp") {
+        static LLAMA_CPP_CREDENTIAL: OnceLock<ProviderCredential> = OnceLock::new();
+        return Some(LLAMA_CPP_CREDENTIAL.get_or_init(|| ProviderCredential {
+            id: "builtin-llamacpp".to_string(),
+            provider_id: "llamacpp".to_string(),
+            label: "llama.cpp (Local)".to_string(),
+            api_key: Some(String::new()),
+            base_url: None,
+            default_model: None,
+            headers: None,
+            config: None,
+        }));
+    }
+
     if let Some(model_cred_id) = model.provider_credential_id.as_ref() {
         if let Some(explicit_match) = settings
             .provider_credentials

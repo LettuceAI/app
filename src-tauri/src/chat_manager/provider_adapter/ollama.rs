@@ -95,6 +95,11 @@ impl ProviderAdapter for OllamaAdapter {
             if let Some(choice) = tool_choice {
                 map.insert("tool_choice".to_string(), choice);
             }
+            if let Some(effort) = reasoning_effort {
+                map.insert("think".to_string(), Value::String(effort));
+            } else if reasoning_enabled {
+                map.insert("think".to_string(), Value::Bool(true));
+            }
         }
 
         let _ = (
@@ -104,8 +109,6 @@ impl ProviderAdapter for OllamaAdapter {
             context_length,
             frequency_penalty,
             presence_penalty,
-            reasoning_enabled,
-            reasoning_effort,
             reasoning_budget,
         );
 

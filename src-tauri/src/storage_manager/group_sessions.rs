@@ -1,9 +1,10 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 use uuid::Uuid;
 
 use super::db::{now_ms, SwappablePool};
+use crate::dynamic_memory_run_manager::DynamicMemoryRunManager;
 use crate::storage_manager::lorebook::Lorebook;
 use crate::utils::{log_info, log_info_global};
 
@@ -126,6 +127,8 @@ pub struct GroupSession {
     /// Last dynamic memory error if any
     #[serde(default)]
     pub memory_error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory_progress_step: Option<i32>,
     /// Speaker selection method: "llm", "heuristic", or "round_robin"
     #[serde(default = "default_speaker_selection_method")]
     pub speaker_selection_method: String,
@@ -258,7 +261,7 @@ fn read_group_session(conn: &Connection, id: &str) -> Result<Option<GroupSession
             "SELECT id, group_character_id, name, character_ids, muted_character_ids, persona_id, created_at, updated_at,
                     memories, memory_embeddings, memory_summary, memory_summary_token_count, archived, memory_tool_events,
                     chat_type, starting_scene, background_image_path, lorebook_ids, disable_character_lorebooks,
-                    speaker_selection_method, memory_type, memory_status, memory_error
+                    speaker_selection_method, memory_type, memory_status, memory_error, memory_progress_step
              FROM group_sessions WHERE id = ?1",
         )
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
@@ -361,6 +364,9 @@ fn read_group_session(conn: &Connection, id: &str) -> Result<Option<GroupSession
         let memory_error: Option<String> = row
             .get(22)
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        let memory_progress_step: Option<i32> = row
+            .get(23)
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 
         Ok(Some(GroupSession {
             id: row
@@ -396,12 +402,39 @@ fn read_group_session(conn: &Connection, id: &str) -> Result<Option<GroupSession
             memory_tool_events,
             memory_status,
             memory_error,
+            memory_progress_step,
             speaker_selection_method,
             memory_type,
         }))
     } else {
         Ok(None)
     }
+}
+
+fn reconcile_stale_group_dynamic_memory_state(
+    app: &tauri::AppHandle,
+    conn: &Connection,
+    session: &mut GroupSession,
+) -> Result<(), String> {
+    if session.memory_status != "processing" {
+        return Ok(());
+    }
+
+    let run_manager = app.state::<DynamicMemoryRunManager>().inner().clone();
+    let run_key = format!("group:{}", session.id);
+    if run_manager.is_run_active(&run_key) {
+        return Ok(());
+    }
+
+    conn.execute(
+        "UPDATE group_sessions SET memory_status = 'idle', memory_error = NULL, updated_at = ?1 WHERE id = ?2",
+        params![now_ms() as i64, session.id],
+    )
+    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+
+    session.memory_status = "idle".to_string();
+    session.memory_error = None;
+    Ok(())
 }
 
 fn read_group_participation(
@@ -722,15 +755,19 @@ fn load_lorebooks_for_ids(
     for lorebook_id in lorebook_ids {
         if let Some(lorebook) = conn
             .query_row(
-                "SELECT id, name, avatar_path, created_at, updated_at FROM lorebooks WHERE id = ?1",
+                "SELECT id, name, avatar_path, keyword_detection_mode, created_at, updated_at FROM lorebooks WHERE id = ?1",
                 params![lorebook_id],
                 |row| {
                     Ok(Lorebook {
                         id: row.get(0)?,
                         name: row.get(1)?,
                         avatar_path: row.get(2)?,
-                        created_at: row.get(3)?,
-                        updated_at: row.get(4)?,
+                        keyword_detection_mode:
+                            crate::storage_manager::lorebook::LorebookKeywordDetectionMode::from_db_value(
+                                row.get(3)?,
+                            ),
+                        created_at: row.get(4)?,
+                        updated_at: row.get(5)?,
                     })
                 },
             )
@@ -1463,6 +1500,7 @@ pub fn group_session_create(
         memory_tool_events: Vec::new(),
         memory_status: "idle".to_string(),
         memory_error: None,
+        memory_progress_step: None,
         speaker_selection_method: selection_method,
         memory_type: "manual".to_string(),
     };
@@ -1472,12 +1510,19 @@ pub fn group_session_create(
 }
 
 #[tauri::command]
-pub fn group_session_get(id: String, pool: State<'_, SwappablePool>) -> Result<String, String> {
+pub fn group_session_get(
+    app: AppHandle,
+    id: String,
+    pool: State<'_, SwappablePool>,
+) -> Result<String, String> {
     let conn = pool.get_connection()?;
 
     match read_group_session(&conn, &id)? {
-        Some(session) => serde_json::to_string(&session)
-            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e)),
+        Some(mut session) => {
+            reconcile_stale_group_dynamic_memory_state(&app, &conn, &mut session)?;
+            serde_json::to_string(&session)
+                .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
+        }
         None => Ok("null".to_string()),
     }
 }
@@ -1497,6 +1542,7 @@ pub fn group_session_lorebooks_list(
 
 #[tauri::command]
 pub fn group_session_lorebooks_set(
+    app: AppHandle,
     session_id: String,
     lorebook_ids_json: String,
     pool: State<'_, SwappablePool>,
@@ -1512,11 +1558,12 @@ pub fn group_session_lorebooks_set(
         params![lorebook_ids_json, now, session_id],
     )
     .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-    group_session_get(session_id, pool)
+    group_session_get(app, session_id, pool)
 }
 
 #[tauri::command]
 pub fn group_session_update_disable_character_lorebooks(
+    app: AppHandle,
     session_id: String,
     disable_character_lorebooks: bool,
     pool: State<'_, SwappablePool>,
@@ -1528,7 +1575,7 @@ pub fn group_session_update_disable_character_lorebooks(
         params![disable_character_lorebooks as i64, now, session_id],
     )
     .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-    group_session_get(session_id, pool)
+    group_session_get(app, session_id, pool)
 }
 
 #[tauri::command]
@@ -2342,6 +2389,7 @@ pub fn group_session_update_memories_internal(
     memory_tool_events: &[serde_json::Value],
     memory_status: Option<&str>,
     memory_error: Option<&str>,
+    memory_progress_step: Option<i32>,
 ) -> Result<(), String> {
     let now = now_ms();
     let memories_json = serde_json::to_string(memories)
@@ -2352,7 +2400,7 @@ pub fn group_session_update_memories_internal(
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 
     conn.execute(
-        "UPDATE group_sessions SET memories = ?1, memory_embeddings = ?2, memory_summary = ?3, memory_summary_token_count = ?4, memory_tool_events = ?5, memory_status = ?6, memory_error = ?7, updated_at = ?8 WHERE id = ?9",
+        "UPDATE group_sessions SET memories = ?1, memory_embeddings = ?2, memory_summary = ?3, memory_summary_token_count = ?4, memory_tool_events = ?5, memory_status = ?6, memory_error = ?7, memory_progress_step = ?8, updated_at = ?9 WHERE id = ?10",
         params![
             memories_json,
             memory_embeddings_json,
@@ -2361,6 +2409,7 @@ pub fn group_session_update_memories_internal(
             memory_tool_events_json,
             memory_status.unwrap_or("idle"),
             memory_error,
+            memory_progress_step,
             now,
             session_id
         ],

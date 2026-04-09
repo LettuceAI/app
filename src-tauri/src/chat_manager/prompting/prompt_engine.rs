@@ -1,13 +1,15 @@
+use super::entry_conditions::{entry_is_active, PromptEntryConditionContext};
 use blake3::Hasher;
 use serde_json::{json, Value};
 use tauri::AppHandle;
 
 use super::lorebook_matcher::{format_lorebook_for_prompt, get_active_lorebook_entries};
 use super::prompts;
+use crate::chat_manager::execution::RequestSettings;
 use crate::chat_manager::memory::manual::{has_manual_memories, render_manual_memory_lines};
 use crate::chat_manager::types::{
-    Character, Model, Persona, PromptEntryPosition, PromptEntryRole, Session, Settings,
-    SystemPromptEntry,
+    Character, Model, Persona, PromptEntryChatMode, PromptEntryCondition, PromptEntryImageSlot,
+    PromptEntryPayload, PromptEntryPosition, PromptEntryRole, Session, Settings, SystemPromptEntry,
 };
 use crate::storage_manager::db::open_db;
 use crate::storage_manager::lorebook::get_lorebook;
@@ -15,6 +17,10 @@ use crate::utils;
 
 pub fn default_system_prompt_template() -> String {
     join_entries(&default_modular_prompt_entries())
+}
+
+pub fn default_local_roleplay_prompt() -> String {
+    join_entries(&default_local_roleplay_entries())
 }
 
 pub fn default_dynamic_summary_prompt() -> String {
@@ -53,6 +59,10 @@ pub fn default_scene_generation_prompt() -> String {
     join_entries(&default_scene_generation_entries())
 }
 
+pub fn default_design_reference_prompt() -> String {
+    join_entries(&default_design_reference_entries())
+}
+
 fn join_entries(entries: &[SystemPromptEntry]) -> String {
     entries
         .iter()
@@ -75,6 +85,8 @@ pub fn default_dynamic_summary_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "summary_inputs".to_string(),
@@ -87,6 +99,8 @@ pub fn default_dynamic_summary_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "summary_job".to_string(),
@@ -99,6 +113,8 @@ pub fn default_dynamic_summary_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "summary_guidelines".to_string(),
@@ -111,6 +127,8 @@ pub fn default_dynamic_summary_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "summary_output".to_string(),
@@ -123,6 +141,8 @@ pub fn default_dynamic_summary_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
     ]
 }
@@ -141,6 +161,8 @@ pub fn default_dynamic_memory_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "memory_budget".to_string(),
@@ -153,6 +175,8 @@ pub fn default_dynamic_memory_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "memory_what".to_string(),
@@ -165,18 +189,22 @@ pub fn default_dynamic_memory_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "memory_rules".to_string(),
             name: "Rules".to_string(),
             role: PromptEntryRole::System,
-            content: "Rules:\n- Each memory must be atomic: exactly one durable fact per entry.\n- Write memories as plain factual statements, not dialogue or narration.\n- Prefer explicit names, roles, and outcomes over vague pronouns.\n- Only store what was explicitly stated or clearly shown in the transcript.\n- Do not store transient phrasing, stylistic descriptions, erotic detail, gore detail, or generic chat filler.\n- Avoid duplicates by checking whether the same fact already exists in other words.\n- If a new fact supersedes an old fact, delete or replace the old one.\n- Respect the {{max_entries}} limit.\n- When deleting, use the 6-digit memory ID shown in brackets when available.".to_string(),
+            content: "Rules:\n- Each memory must be atomic: exactly one durable fact per entry.\n- Write memories as plain factual statements, not dialogue or narration.\n- Prefer explicit names, roles, and outcomes over vague pronouns.\n- Only store what was explicitly stated or clearly shown in the transcript.\n- Do not store transient phrasing, stylistic descriptions, erotic detail, gore detail, or generic chat filler.\n- Avoid duplicates by checking whether the same fact already exists in other words.\n- If a new fact supersedes an old fact, create the replacement first, then delete or demote the old one.\n- Before deleting multiple related memories, preserve their durable facts by consolidating them into fewer high-value entries.\n- Respect the {{max_entries}} limit.\n- When deleting, use the 6-digit memory ID shown in brackets when available.".to_string(),
             enabled: true,
             injection_position: PromptEntryPosition::Relative,
             injection_depth: 0,
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "memory_categories".to_string(),
@@ -189,6 +217,8 @@ pub fn default_dynamic_memory_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "memory_priority".to_string(),
@@ -201,18 +231,22 @@ pub fn default_dynamic_memory_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "memory_tools".to_string(),
             name: "Tool Usage".to_string(),
             role: PromptEntryRole::System,
-            content: "Tool usage:\n- Use `create_memory` only for durable facts worth recalling later. Supply `text` and `category`; add `important: true` only when pinning is justified.\n- Use `delete_memory` for duplicates, contradictions, stale assumptions, or obsolete context.\n- Use `pin_memory` only for identity-defining or continuity-critical memories.\n- Use `unpin_memory` when a previously critical fact no longer needs permanent priority.\n- If nothing should change, call `done` with no extra narration.\n- Output no natural language outside tool calls.".to_string(),
+            content: "Tool usage:\n- Use `create_memory` only for durable facts worth recalling later. Supply `text` and `category`; add `important: true` only when pinning is justified.\n- Use `delete_memory` for duplicates, contradictions, stale assumptions, or obsolete context.\n- When deleting multiple overlapping memories, first create the merged replacement memories that preserve the important facts.\n- Use `pin_memory` only for identity-defining or continuity-critical memories.\n- Use `unpin_memory` when a previously critical fact no longer needs permanent priority.\n- If nothing should change, call `done` with no extra narration.\n- Output no natural language outside tool calls.".to_string(),
             enabled: true,
             injection_position: PromptEntryPosition::Relative,
             injection_depth: 0,
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
     ]
 }
@@ -231,6 +265,8 @@ pub fn default_help_me_reply_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "reply_character".to_string(),
@@ -244,6 +280,8 @@ pub fn default_help_me_reply_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "reply_user".to_string(),
@@ -257,6 +295,8 @@ pub fn default_help_me_reply_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "reply_guidelines".to_string(),
@@ -269,6 +309,8 @@ pub fn default_help_me_reply_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "reply_draft".to_string(),
@@ -281,6 +323,8 @@ pub fn default_help_me_reply_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "reply_output".to_string(),
@@ -293,6 +337,8 @@ pub fn default_help_me_reply_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
     ]
 }
@@ -311,6 +357,8 @@ pub fn default_help_me_reply_conversational_entries() -> Vec<SystemPromptEntry> 
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "reply_conv_character".to_string(),
@@ -324,6 +372,8 @@ pub fn default_help_me_reply_conversational_entries() -> Vec<SystemPromptEntry> 
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "reply_conv_user".to_string(),
@@ -337,6 +387,8 @@ pub fn default_help_me_reply_conversational_entries() -> Vec<SystemPromptEntry> 
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "reply_conv_guidelines".to_string(),
@@ -349,6 +401,8 @@ pub fn default_help_me_reply_conversational_entries() -> Vec<SystemPromptEntry> 
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "reply_conv_draft".to_string(),
@@ -361,6 +415,8 @@ pub fn default_help_me_reply_conversational_entries() -> Vec<SystemPromptEntry> 
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "reply_conv_output".to_string(),
@@ -373,6 +429,8 @@ pub fn default_help_me_reply_conversational_entries() -> Vec<SystemPromptEntry> 
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
     ]
 }
@@ -390,6 +448,8 @@ pub fn default_group_chat_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "group_character".to_string(),
@@ -402,6 +462,8 @@ pub fn default_group_chat_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "group_user".to_string(),
@@ -414,6 +476,8 @@ pub fn default_group_chat_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "group_context".to_string(),
@@ -426,6 +490,8 @@ pub fn default_group_chat_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "group_summary".to_string(),
@@ -438,6 +504,8 @@ pub fn default_group_chat_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "group_memories".to_string(),
@@ -450,6 +518,8 @@ pub fn default_group_chat_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "group_format".to_string(),
@@ -462,6 +532,8 @@ pub fn default_group_chat_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "group_guidelines".to_string(),
@@ -474,6 +546,8 @@ pub fn default_group_chat_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "group_rules".to_string(),
@@ -486,6 +560,8 @@ pub fn default_group_chat_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
     ]
 }
@@ -505,6 +581,8 @@ pub fn default_group_chat_roleplay_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "group_rp_character".to_string(),
@@ -517,6 +595,8 @@ pub fn default_group_chat_roleplay_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "group_rp_user".to_string(),
@@ -529,6 +609,8 @@ pub fn default_group_chat_roleplay_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "group_rp_participants".to_string(),
@@ -541,6 +623,8 @@ pub fn default_group_chat_roleplay_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "group_rp_scene".to_string(),
@@ -553,6 +637,8 @@ pub fn default_group_chat_roleplay_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "group_rp_summary".to_string(),
@@ -565,6 +651,8 @@ pub fn default_group_chat_roleplay_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "group_rp_memories".to_string(),
@@ -577,6 +665,8 @@ pub fn default_group_chat_roleplay_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "group_rp_format".to_string(),
@@ -589,6 +679,8 @@ pub fn default_group_chat_roleplay_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "group_rp_guidelines".to_string(),
@@ -601,6 +693,8 @@ pub fn default_group_chat_roleplay_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "group_rp_rules".to_string(),
@@ -613,6 +707,8 @@ pub fn default_group_chat_roleplay_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
     ]
 }
@@ -623,13 +719,15 @@ pub fn default_avatar_generation_entries() -> Vec<SystemPromptEntry> {
             id: "avatar_gen_task".to_string(),
             name: "Task".to_string(),
             role: PromptEntryRole::System,
-            content: "You write a single high-quality image generation prompt for a character avatar. Your job is to turn the request into a clear visual prompt that preserves identity and produces a strong profile image.".to_string(),
+            content: "Generate a character avatar image directly from the provided request. Preserve identity-defining traits and create a strong profile-friendly result.".to_string(),
             enabled: true,
             injection_position: PromptEntryPosition::Relative,
             injection_depth: 0,
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "avatar_gen_context".to_string(),
@@ -644,6 +742,8 @@ pub fn default_avatar_generation_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+            conditions: Some(PromptEntryCondition::HasSubjectDescription { value: true }),
+            prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "avatar_gen_request".to_string(),
@@ -656,30 +756,36 @@ pub fn default_avatar_generation_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "avatar_gen_rules".to_string(),
             name: "Prompt Rules".to_string(),
             role: PromptEntryRole::System,
-            content: "Write one polished prompt for an image model.\n- Prioritize face, hair, clothing, expression, pose, and overall vibe.\n- Keep the subject centered and suitable for an avatar or profile image.\n- Preserve identity-defining traits from the context.\n- Do not add text, logos, watermarks, frames, UI, or split panels unless explicitly requested.\n- Do not explain your reasoning.".to_string(),
+            content: "Generate the image directly.\n- Prioritize face, hair, clothing, expression, pose, and overall vibe.\n- Keep the subject centered and suitable for an avatar or profile image.\n- Preserve identity-defining traits from the context.\n- Do not add text, logos, watermarks, frames, UI, or split panels unless explicitly requested.\n- Do not rewrite the request into a prompt.\n- Do not explain your reasoning.".to_string(),
             enabled: true,
             injection_position: PromptEntryPosition::Relative,
             injection_depth: 0,
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "avatar_gen_output".to_string(),
             name: "Output".to_string(),
             role: PromptEntryRole::System,
-            content: "Output only the final image prompt text.".to_string(),
+            content: "Return only the generated image.".to_string(),
             enabled: true,
             injection_position: PromptEntryPosition::Relative,
             injection_depth: 0,
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
+        prompt_entry_payload: None,
         },
     ]
 }
@@ -690,13 +796,15 @@ pub fn default_avatar_edit_entries() -> Vec<SystemPromptEntry> {
             id: "avatar_edit_task".to_string(),
             name: "Task".to_string(),
             role: PromptEntryRole::System,
-            content: "You revise an existing avatar image prompt. The source image will be provided to you separately. Use that image and the edit request to produce one updated prompt for the next generation.".to_string(),
+            content: "Edit the provided avatar image directly. The source image will be provided separately; use it as the source of truth and apply only the requested changes.".to_string(),
             enabled: true,
             injection_position: PromptEntryPosition::Relative,
             injection_depth: 0,
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "avatar_edit_context".to_string(),
@@ -711,6 +819,8 @@ pub fn default_avatar_edit_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+            conditions: Some(PromptEntryCondition::HasSubjectDescription { value: true }),
+            prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "avatar_edit_source".to_string(),
@@ -723,6 +833,8 @@ pub fn default_avatar_edit_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+            conditions: Some(PromptEntryCondition::HasCurrentDescription { value: true }),
+            prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "avatar_edit_request".to_string(),
@@ -735,30 +847,36 @@ pub fn default_avatar_edit_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "avatar_edit_rules".to_string(),
             name: "Revision Rules".to_string(),
             role: PromptEntryRole::System,
-            content: "Use the actual source image as the truth for current appearance. Preserve everything that should stay the same and change only what the edit request asks for.\n- Keep the character recognizable.\n- If the old prompt conflicts with the source image, trust the source image.\n- Do not restate unchanged details more than needed.\n- Do not explain what you changed.".to_string(),
+            content: "Use the actual source image as the truth for current appearance. Preserve everything that should stay the same and change only what the edit request asks for.\n- Keep the character recognizable.\n- If the old prompt conflicts with the source image, trust the source image.\n- Do not rewrite the request into a prompt.\n- Do not explain what you changed.".to_string(),
             enabled: true,
             injection_position: PromptEntryPosition::Relative,
             injection_depth: 0,
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "avatar_edit_output".to_string(),
             name: "Output".to_string(),
             role: PromptEntryRole::System,
-            content: "Output only the revised image prompt text.".to_string(),
+            content: "Return only the edited image.".to_string(),
             enabled: true,
             injection_position: PromptEntryPosition::Relative,
             injection_depth: 0,
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
+        prompt_entry_payload: None,
         },
     ]
 }
@@ -769,13 +887,15 @@ pub fn default_scene_generation_entries() -> Vec<SystemPromptEntry> {
             id: "scene_gen_task".to_string(),
             name: "Task".to_string(),
             role: PromptEntryRole::System,
-            content: "You write a single high-quality image generation prompt for a roleplay scene. Your job is to convert the current conversation context and scene request into one clear visual prompt for an image model.".to_string(),
+            content: "Generate a scene image directly from the current conversation context and scene request. Preserve character identity, scene intent, and visual continuity.".to_string(),
             enabled: true,
             injection_position: PromptEntryPosition::Relative,
             injection_depth: 0,
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "scene_gen_context".to_string(),
@@ -788,18 +908,24 @@ pub fn default_scene_generation_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "scene_gen_character_image".to_string(),
             name: "Character Reference Image".to_string(),
             role: PromptEntryRole::User,
-            content: "{{image[character]}}".to_string(),
+            content: String::new(),
             enabled: true,
             injection_position: PromptEntryPosition::InChat,
             injection_depth: 0,
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+            conditions: Some(PromptEntryCondition::HasCharacterReferenceImages { value: true }),
+            prompt_entry_payload: Some(PromptEntryPayload::ImageSlot {
+                slot: PromptEntryImageSlot::Character,
+            }),
         },
         SystemPromptEntry {
             id: "scene_gen_character_reference".to_string(),
@@ -812,18 +938,40 @@ pub fn default_scene_generation_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+            conditions: Some(PromptEntryCondition::HasCharacterReferenceText { value: true }),
+            prompt_entry_payload: None,
         },
         SystemPromptEntry {
-            id: "scene_gen_persona_image".to_string(),
-            name: "Persona Reference Image".to_string(),
+            id: "scene_gen_chat_background".to_string(),
+            name: "Chat Background Reference".to_string(),
             role: PromptEntryRole::User,
-            content: "{{image[persona]}}".to_string(),
+            content: "# Chat Background Reference\nUse the attached chat background image as the environmental and backdrop reference when it fits the current moment. Preserve major location cues, palette, lighting mood, architecture, and large environmental features from it unless the recent messages clearly establish a different setting.".to_string(),
             enabled: true,
             injection_position: PromptEntryPosition::InChat,
             injection_depth: 0,
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+            conditions: Some(PromptEntryCondition::HasChatBackground { value: true }),
+            prompt_entry_payload: Some(PromptEntryPayload::ImageSlot {
+                slot: PromptEntryImageSlot::ChatBackground,
+            }),
+        },
+        SystemPromptEntry {
+            id: "scene_gen_persona_image".to_string(),
+            name: "Persona Reference Image".to_string(),
+            role: PromptEntryRole::User,
+            content: String::new(),
+            enabled: true,
+            injection_position: PromptEntryPosition::InChat,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: false,
+            conditions: Some(PromptEntryCondition::HasPersonaReferenceImages { value: true }),
+            prompt_entry_payload: Some(PromptEntryPayload::ImageSlot {
+                slot: PromptEntryImageSlot::Persona,
+            }),
         },
         SystemPromptEntry {
             id: "scene_gen_persona_reference".to_string(),
@@ -836,6 +984,8 @@ pub fn default_scene_generation_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+            conditions: Some(PromptEntryCondition::HasPersonaReferenceText { value: true }),
+            prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "scene_gen_request".to_string(),
@@ -848,30 +998,134 @@ pub fn default_scene_generation_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "scene_gen_rules".to_string(),
             name: "Prompt Rules".to_string(),
             role: PromptEntryRole::System,
-            content: "Write one polished scene prompt for an image model.\n- Focus on who is present, what is happening, where the scene is set, mood, lighting, composition, camera framing, and key visual details.\n- Preserve identity-defining details from the conversation context.\n- Keep character and persona identities separate.\n- Do not swap, merge, or borrow features between them.\n- Prefer concrete visual details over abstract interpretation.\n- Do not add text, logos, watermarks, UI, split panels, or dialogue bubbles unless explicitly requested.\n- Do not explain your reasoning.".to_string(),
+            content: "Generate the image directly.\n- Focus on who is present, what is happening, where the scene is set, mood, lighting, composition, camera framing, and key visual details.\n- Preserve identity-defining details from the conversation context.\n- Keep character and persona identities separate.\n- Do not swap, merge, or borrow features between them.\n- Prefer concrete visual details over abstract interpretation.\n- Do not add text, logos, watermarks, UI, split panels, or dialogue bubbles unless explicitly requested.\n- Do not rewrite the request into a prompt.\n- Do not explain your reasoning.".to_string(),
             enabled: true,
             injection_position: PromptEntryPosition::Relative,
             injection_depth: 0,
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "scene_gen_output".to_string(),
             name: "Output".to_string(),
             role: PromptEntryRole::System,
-            content: "Output only the final image prompt text.".to_string(),
+            content: "Return only the generated image.".to_string(),
             enabled: true,
             injection_position: PromptEntryPosition::Relative,
             injection_depth: 0,
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
+        prompt_entry_payload: None,
+        },
+    ]
+}
+
+pub fn default_design_reference_entries() -> Vec<SystemPromptEntry> {
+    vec![
+        SystemPromptEntry {
+            id: "design_ref_task".to_string(),
+            name: "Task".to_string(),
+            role: PromptEntryRole::System,
+            content: "You are a character design documentarian.\nAnalyze these reference images and write a design preference text for this character. The text will be used to brief concept artists and image generators.".to_string(),
+            enabled: true,
+            injection_position: PromptEntryPosition::Relative,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
+        },
+        SystemPromptEntry {
+            id: "design_ref_subject".to_string(),
+            name: "Subject Context".to_string(),
+            role: PromptEntryRole::User,
+            content: "# Subject\n{{subject_name}}\n\n# Subject Context\n{{subject_description}}\n\n# Current Notes To Refine\n{{current_description}}".to_string(),
+            enabled: true,
+            injection_position: PromptEntryPosition::InChat,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: false,
+            conditions: Some(PromptEntryCondition::Any {
+                conditions: vec![
+                    PromptEntryCondition::HasSubjectDescription { value: true },
+                    PromptEntryCondition::HasCurrentDescription { value: true },
+                ],
+            }),
+            prompt_entry_payload: None,
+        },
+        SystemPromptEntry {
+            id: "design_ref_avatar_image".to_string(),
+            name: "Avatar Image".to_string(),
+            role: PromptEntryRole::User,
+            content: String::new(),
+            enabled: true,
+            injection_position: PromptEntryPosition::InChat,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: false,
+            conditions: None,
+            prompt_entry_payload: Some(PromptEntryPayload::ImageSlot {
+                slot: PromptEntryImageSlot::Avatar,
+            }),
+        },
+        SystemPromptEntry {
+            id: "design_ref_reference_images".to_string(),
+            name: "Reference Images".to_string(),
+            role: PromptEntryRole::User,
+            content: String::new(),
+            enabled: true,
+            injection_position: PromptEntryPosition::InChat,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: false,
+            conditions: None,
+            prompt_entry_payload: Some(PromptEntryPayload::ImageSlot {
+                slot: PromptEntryImageSlot::References,
+            }),
+        },
+        SystemPromptEntry {
+            id: "design_ref_rules".to_string(),
+            name: "Rules".to_string(),
+            role: PromptEntryRole::System,
+            content: "Follow this structure in flowing prose:\n1. Overall physique and physical presence\n2. Face coverage - what's hidden, what's visible, and with what\n3. The impression the visible features and posture convey\n4. Clothing and accessories: palette, materials, layering\n5. Silhouette feel - use contrast framing (\"X rather than Y\")\n6. Non-negotiables: what must always be preserved\n\nRules:\n- Be specific with colors (say \"charcoal\" not just \"dark\")\n- Describe materials and texture when visible (leather, cloth, metal, worn vs. clean)\n- Describe what the design is NOT, not just what it is\n- Subject context may include roleplay text, biography, or other non-visual writing. Use only explicit visual facts from the image and text, and ignore everything else\n- Do not quote or paraphrase dialogue, catchphrases, slogans, internal thoughts, scene narration, or backstory lines\n- Tone: directive, written for an artist, no dramatic language\n- Length: 5-7 sentences".to_string(),
+            enabled: true,
+            injection_position: PromptEntryPosition::Relative,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: false,
+        conditions: None,
+        prompt_entry_payload: None,
+        },
+        SystemPromptEntry {
+            id: "design_ref_output".to_string(),
+            name: "Output".to_string(),
+            role: PromptEntryRole::System,
+            content: "Output only the final design reference text. Do not use headers, markdown, lists, or explanations.".to_string(),
+            enabled: true,
+            injection_position: PromptEntryPosition::Relative,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: false,
+        conditions: None,
+        prompt_entry_payload: None,
         },
     ]
 }
@@ -885,7 +1139,7 @@ fn get_lorebook_content(
 ) -> Result<String, String> {
     let conn = open_db(app)?;
 
-    // Get last 10 messages for keyword matching context
+    // Default lorebook keyword matching scans the recent 10-message window.
     let recent_messages: Vec<String> = session
         .messages
         .iter()
@@ -894,6 +1148,12 @@ fn get_lorebook_content(
         .rev()
         .map(|msg| msg.content.clone())
         .collect();
+    let latest_user_message = session
+        .messages
+        .iter()
+        .rev()
+        .find(|msg| msg.role == "user" && !msg.content.trim().is_empty())
+        .map(|msg| msg.content.as_str());
 
     utils::log_info(
         app,
@@ -905,7 +1165,8 @@ fn get_lorebook_content(
         ),
     );
 
-    let active_entries = get_active_lorebook_entries(&conn, character_id, &recent_messages)?;
+    let active_entries =
+        get_active_lorebook_entries(&conn, character_id, &recent_messages, latest_user_message)?;
 
     if active_entries.is_empty() {
         utils::log_info(
@@ -959,8 +1220,19 @@ pub fn resolve_used_lorebook_entries(
         .rev()
         .map(|msg| msg.content.clone())
         .collect();
+    let latest_user_message = session
+        .messages
+        .iter()
+        .rev()
+        .find(|msg| msg.role == "user" && !msg.content.trim().is_empty())
+        .map(|msg| msg.content.as_str());
 
-    let active_entries = match get_active_lorebook_entries(&conn, character_id, &recent_messages) {
+    let active_entries = match get_active_lorebook_entries(
+        &conn,
+        character_id,
+        &recent_messages,
+        latest_user_message,
+    ) {
         Ok(entries) => entries,
         Err(_) => return Vec::new(),
     };
@@ -1003,6 +1275,123 @@ pub fn resolve_used_lorebook_entries(
     used
 }
 
+pub fn default_local_roleplay_entries() -> Vec<SystemPromptEntry> {
+    vec![
+        SystemPromptEntry {
+            id: "local_rp_identity".to_string(),
+            name: "Identity".to_string(),
+            role: PromptEntryRole::System,
+            content: "You are {{char.name}}.\n\nYou are engaged in an iterative storytelling experience using a roleplay chat format.".to_string(),
+            enabled: true,
+            injection_position: PromptEntryPosition::Relative,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: true,
+            conditions: None,
+            prompt_entry_payload: None,
+        },
+        SystemPromptEntry {
+            id: "local_rp_character".to_string(),
+            name: "Character".to_string(),
+            role: PromptEntryRole::System,
+            content: "Character:\n{{char.desc}}".to_string(),
+            enabled: true,
+            injection_position: PromptEntryPosition::Relative,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: false,
+            conditions: None,
+            prompt_entry_payload: None,
+        },
+        SystemPromptEntry {
+            id: "local_rp_persona".to_string(),
+            name: "Other Participant".to_string(),
+            role: PromptEntryRole::System,
+            content: "Other participant:\nName: {{persona.name}}\n{{persona.desc}}".to_string(),
+            enabled: true,
+            injection_position: PromptEntryPosition::Relative,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: false,
+            conditions: None,
+            prompt_entry_payload: None,
+        },
+        SystemPromptEntry {
+            id: "local_rp_scene".to_string(),
+            name: "Scene".to_string(),
+            role: PromptEntryRole::System,
+            content: "Scene:\n{{scene}}\n\nScene direction:\n{{scene_direction}}".to_string(),
+            enabled: true,
+            injection_position: PromptEntryPosition::Relative,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: false,
+            conditions: None,
+            prompt_entry_payload: None,
+        },
+        SystemPromptEntry {
+            id: "local_rp_summary".to_string(),
+            name: "Context Summary".to_string(),
+            role: PromptEntryRole::System,
+            content: "Context summary:\n{{context_summary}}".to_string(),
+            enabled: true,
+            injection_position: PromptEntryPosition::Relative,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: false,
+            conditions: None,
+            prompt_entry_payload: None,
+        },
+        SystemPromptEntry {
+            id: "local_rp_memories".to_string(),
+            name: "Relevant Memories".to_string(),
+            role: PromptEntryRole::System,
+            content: "Relevant memories:\n{{key_memories}}".to_string(),
+            enabled: true,
+            injection_position: PromptEntryPosition::Relative,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: false,
+            conditions: None,
+            prompt_entry_payload: None,
+        },
+        SystemPromptEntry {
+            id: "local_rp_lore".to_string(),
+            name: "Relevant Lore".to_string(),
+            role: PromptEntryRole::System,
+            content: "Relevant lore:\n{{lorebook}}".to_string(),
+            enabled: true,
+            injection_position: PromptEntryPosition::Relative,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: false,
+            conditions: None,
+            prompt_entry_payload: None,
+        },
+        SystemPromptEntry {
+            id: "local_rp_rules".to_string(),
+            name: "Roleplay Rules".to_string(),
+            role: PromptEntryRole::System,
+            content: "ROLEPLAY RULES\n- Chat exclusively as {{char.name}}. Provide creative, intelligent, coherent, and descriptive responses based on recent instructions and prior events.\n- Never write dialogue, actions, thoughts, feelings, or decisions for {{persona.name}}.\n- Describe {{char.name}}'s sensory perceptions in vivid detail and include subtle physical details about {{char.name}} when relevant.\n- Use subtle physical cues to hint at {{char.name}}'s mental state and occasionally include brief snippets of {{char.name}}'s internal thoughts.\n- When writing {{char.name}}'s internal thoughts, enclose them in asterisks like this, and write them in first person.\n- Adopt a crisp and minimalist prose style. Keep your writing clear, specific, and concise.\n- Focus on the current moment and {{char.name}}'s immediate responses.\n- Move the roleplay forward by one natural step at a time.\n- Pay careful attention to past events in the chat to maintain continuity and coherence.\n\nSTYLE RULES\n- Stay in character as {{char.name}} at all times.\n- Do not speak as {{persona.name}}.\n- Do not use assistant-like phrasing, explanations, or meta commentary.\n- Output only {{char.name}}'s next reply.\n\n{{content_rules}}".to_string(),
+            enabled: true,
+            injection_position: PromptEntryPosition::Relative,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: false,
+            conditions: None,
+            prompt_entry_payload: None,
+        },
+    ]
+}
+
 pub fn default_modular_prompt_entries() -> Vec<SystemPromptEntry> {
     vec![
         SystemPromptEntry {
@@ -1017,6 +1406,8 @@ pub fn default_modular_prompt_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "entry_scenario".to_string(),
@@ -1030,6 +1421,8 @@ pub fn default_modular_prompt_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "entry_character".to_string(),
@@ -1042,6 +1435,8 @@ pub fn default_modular_prompt_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "entry_persona".to_string(),
@@ -1054,6 +1449,8 @@ pub fn default_modular_prompt_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "entry_world_info".to_string(),
@@ -1067,6 +1464,8 @@ pub fn default_modular_prompt_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "entry_context_summary".to_string(),
@@ -1079,6 +1478,8 @@ pub fn default_modular_prompt_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "entry_key_memories".to_string(),
@@ -1093,6 +1494,8 @@ pub fn default_modular_prompt_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "entry_scene_image_protocol".to_string(),
@@ -1105,6 +1508,8 @@ pub fn default_modular_prompt_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
+        prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "entry_instructions".to_string(),
@@ -1117,6 +1522,8 @@ pub fn default_modular_prompt_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
+        conditions: None,
+        prompt_entry_payload: None,
         },
     ]
 }
@@ -1133,6 +1540,8 @@ fn single_entry_from_content(content: &str) -> Vec<SystemPromptEntry> {
         conditional_min_messages: None,
         interval_turns: None,
         system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
     }]
 }
 
@@ -1146,6 +1555,83 @@ fn has_scene_placeholder(content: &str) -> bool {
     content.contains("{{scene}}")
         || content.contains("{{scene_direction}}")
         || content.contains("{{direction}}")
+}
+
+fn count_conversation_messages(session: &Session) -> usize {
+    session
+        .messages
+        .iter()
+        .filter(|message| {
+            matches!(
+                message.role.as_str(),
+                "user" | "assistant" | "scene" | "system"
+            ) && !message.content.trim().is_empty()
+        })
+        .count()
+}
+
+fn recent_message_window_text(session: &Session) -> String {
+    session
+        .messages
+        .iter()
+        .rev()
+        .filter(|message| {
+            matches!(
+                message.role.as_str(),
+                "user" | "assistant" | "scene" | "system"
+            ) && !message.content.trim().is_empty()
+        })
+        .take(10)
+        .map(|message| message.content.as_str())
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn scene_state(character: &Character, session: &Session) -> (bool, bool) {
+    let scene_id_to_use = session
+        .selected_scene_id
+        .as_ref()
+        .or_else(|| character.default_scene_id.as_ref())
+        .or_else(|| {
+            if character.scenes.len() == 1 {
+                character.scenes.first().map(|scene| &scene.id)
+            } else {
+                None
+            }
+        });
+
+    let Some(selected_scene_id) = scene_id_to_use else {
+        return (false, false);
+    };
+
+    let Some(scene) = character
+        .scenes
+        .iter()
+        .find(|scene| &scene.id == selected_scene_id)
+    else {
+        return (false, false);
+    };
+
+    let direction = if let Some(variant_id) = &scene.selected_variant_id {
+        scene
+            .variants
+            .iter()
+            .find(|variant| &variant.id == variant_id)
+            .and_then(|variant| variant.direction.as_deref())
+            .or(scene.direction.as_deref())
+    } else {
+        scene.direction.as_deref()
+    };
+
+    (
+        true,
+        direction
+            .map(|value| !value.trim().is_empty())
+            .unwrap_or(false),
+    )
 }
 
 fn is_dynamic_memory_active(settings: &Settings, character: &Character) -> bool {
@@ -1255,10 +1741,67 @@ pub fn build_system_prompt_entries(
         .iter()
         .any(|msg| msg.role.eq_ignore_ascii_case("scene") && !msg.content.trim().is_empty());
     let skip_scene_placeholder_entries = session.selected_scene_id.is_none() && !has_scene_message;
+    let request_settings = RequestSettings::resolve(session, model, settings);
+    let recent_text = recent_message_window_text(session);
+    let (has_scene, has_scene_direction) = scene_state(character, session);
+    let has_memory_summary = session
+        .memory_summary
+        .as_ref()
+        .map(|summary| !summary.trim().is_empty())
+        .unwrap_or(false);
+    let lorebook_content = get_lorebook_content(app, &character.id, session).unwrap_or_default();
+    let has_lorebook_content = !lorebook_content.trim().is_empty();
+    let has_key_memories = if dynamic_memory_active {
+        !session.memory_embeddings.is_empty()
+    } else {
+        has_manual_memories(&session.memories)
+    };
+    let scene_generation_enabled = settings
+        .advanced_settings
+        .as_ref()
+        .and_then(|advanced| advanced.scene_generation_enabled)
+        .unwrap_or(true);
+    let avatar_generation_enabled = settings
+        .advanced_settings
+        .as_ref()
+        .and_then(|advanced| advanced.avatar_generation_enabled)
+        .unwrap_or(true);
+    let condition_context = PromptEntryConditionContext {
+        chat_mode: PromptEntryChatMode::Direct,
+        scene_generation_enabled,
+        avatar_generation_enabled,
+        has_scene: has_scene || has_scene_message,
+        has_scene_direction,
+        has_persona: persona.is_some(),
+        message_count: count_conversation_messages(session),
+        participant_count: 2,
+        recent_text: &recent_text,
+        dynamic_memory_enabled: dynamic_memory_active,
+        has_memory_summary,
+        has_key_memories,
+        has_lorebook_content,
+        has_subject_description: false,
+        has_current_description: false,
+        has_character_reference_images: false,
+        has_chat_background: false,
+        has_persona_reference_images: false,
+        has_character_reference_text: false,
+        has_persona_reference_text: false,
+        input_scopes: &model.input_scopes,
+        output_scopes: &model.output_scopes,
+        provider_id: Some(model.provider_id.as_str()),
+        reasoning_enabled: request_settings.reasoning_enabled,
+        vision_enabled: model.input_scopes.iter().any(|scope| {
+            matches!(
+                scope.trim().to_ascii_lowercase().as_str(),
+                "image" | "vision"
+            )
+        }),
+    };
 
     let mut rendered_entries: Vec<SystemPromptEntry> = Vec::new();
     for entry in base_entries.iter() {
-        if !entry.enabled && !entry.system_prompt {
+        if !entry_is_active(entry, &condition_context) {
             continue;
         }
         if skip_scene_placeholder_entries && has_scene_placeholder(&entry.content) {
@@ -1288,18 +1831,15 @@ pub fn build_system_prompt_entries(
                     conditional_min_messages: None,
                     interval_turns: None,
                     system_prompt: true,
+                    conditions: None,
+                    prompt_entry_payload: None,
                 });
             }
         }
     }
 
     if !has_placeholder(&base_entries, "{{key_memories}}") {
-        let has_memories = if dynamic_memory_active {
-            !session.memory_embeddings.is_empty()
-        } else {
-            has_manual_memories(&session.memories)
-        };
-        if has_memories {
+        if has_key_memories {
             let mut content = String::from("# Key Memories\n");
             content.push_str("Important facts to remember in this conversation:\n");
             if dynamic_memory_active {
@@ -1321,15 +1861,13 @@ pub fn build_system_prompt_entries(
                 conditional_min_messages: None,
                 interval_turns: None,
                 system_prompt: true,
+                conditions: None,
+                prompt_entry_payload: None,
             });
         }
     }
 
     if !has_placeholder(&base_entries, "{{lorebook}}") {
-        let lorebook_content = match get_lorebook_content(app, &character.id, session) {
-            Ok(content) => content,
-            Err(_) => String::new(),
-        };
         if !lorebook_content.trim().is_empty() {
             rendered_entries.push(SystemPromptEntry {
                 id: "entry_lorebook".to_string(),
@@ -1342,6 +1880,8 @@ pub fn build_system_prompt_entries(
                 conditional_min_messages: None,
                 interval_turns: None,
                 system_prompt: true,
+                conditions: None,
+                prompt_entry_payload: None,
             });
         }
     }
@@ -1406,7 +1946,7 @@ pub fn build_system_prompt_entries(
 
     let combined_hash = hasher.finalize().to_hex().to_string();
 
-    utils::emit_debug(
+    utils::emit_info(
         app,
         "system_prompt_built",
         json!({
@@ -1544,6 +2084,8 @@ fn condense_entries_into_single_system_message(
         conditional_min_messages: None,
         interval_turns: None,
         system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
     }]
 }
 
@@ -1925,6 +2467,7 @@ mod tests {
             id: "s1".into(),
             character_id: "c1".into(),
             title: "t".into(),
+            background_image_path: None,
             system_prompt: None,
             selected_scene_id: None,
             prompt_template_id: None,
@@ -1943,6 +2486,7 @@ mod tests {
             memory_embeddings: vec![],
             memory_status: None,
             memory_error: None,
+            memory_progress_step: None,
         }
     }
 

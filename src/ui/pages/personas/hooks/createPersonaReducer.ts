@@ -179,7 +179,7 @@ export function useCreatePersonaController() {
         dispatch({ type: "set_error", value: null });
 
         alert("Persona imported successfully! Opening it for review.");
-        navigate(`/settings/personas/${importedPersona.id}/edit`);
+        navigate(`/personas/${importedPersona.id}/edit`);
       } catch (err: any) {
         console.error("Failed to import persona:", err);
         alert(err?.message || "Failed to import persona");
@@ -241,7 +241,7 @@ export function useCreatePersonaController() {
         isDefault: state.isDefault,
       });
 
-      navigate("/chat");
+      navigate("/library?view=personas", { replace: true });
     } catch (e: any) {
       dispatch({ type: "set_error", value: e?.message || "Failed to save persona" });
     } finally {

@@ -1,6 +1,7 @@
 use crate::chat_manager::prompt_engine;
 use crate::chat_manager::types::{
-    PromptEntryPosition, PromptEntryRole, PromptScope, SystemPromptEntry, SystemPromptTemplate,
+    PromptEntryImageSlot, PromptEntryPayload, PromptEntryPosition, PromptEntryRole, PromptScope,
+    SystemPromptEntry, SystemPromptTemplate,
 };
 use crate::{
     chat_manager::storage::{get_base_prompt, get_base_prompt_entries, PromptType},
@@ -11,6 +12,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::AppHandle;
 
 pub const APP_DEFAULT_TEMPLATE_ID: &str = "prompt_app_default";
+pub const APP_LOCAL_ROLEPLAY_TEMPLATE_ID: &str = "prompt_app_local_roleplay";
 pub const APP_DYNAMIC_SUMMARY_TEMPLATE_ID: &str = "prompt_app_dynamic_summary";
 pub const APP_DYNAMIC_MEMORY_TEMPLATE_ID: &str = "prompt_app_dynamic_memory";
 pub const APP_HELP_ME_REPLY_TEMPLATE_ID: &str = "prompt_app_help_me_reply";
@@ -21,7 +23,9 @@ pub const APP_GROUP_CHAT_ROLEPLAY_TEMPLATE_ID: &str = "prompt_app_group_chat_rol
 pub const APP_AVATAR_GENERATION_TEMPLATE_ID: &str = "prompt_app_avatar_generation";
 pub const APP_AVATAR_EDIT_TEMPLATE_ID: &str = "prompt_app_avatar_edit";
 pub const APP_SCENE_GENERATION_TEMPLATE_ID: &str = "prompt_app_scene_generation";
+pub const APP_DESIGN_REFERENCE_TEMPLATE_ID: &str = "prompt_app_design_reference";
 const APP_DEFAULT_TEMPLATE_NAME: &str = "App Default";
+const APP_LOCAL_ROLEPLAY_TEMPLATE_NAME: &str = "Local RP Default";
 const APP_DYNAMIC_SUMMARY_TEMPLATE_NAME: &str = "Dynamic Memory: Summarizer";
 const APP_DYNAMIC_MEMORY_TEMPLATE_NAME: &str = "Dynamic Memory: Memory Manager";
 const APP_HELP_ME_REPLY_TEMPLATE_NAME: &str = "Reply Helper";
@@ -29,6 +33,10 @@ const APP_HELP_ME_REPLY_CONVERSATIONAL_TEMPLATE_NAME: &str = "Reply Helper (Conv
 const APP_AVATAR_GENERATION_TEMPLATE_NAME: &str = "Avatar Generation";
 const APP_AVATAR_EDIT_TEMPLATE_NAME: &str = "Avatar Image Edit";
 const APP_SCENE_GENERATION_TEMPLATE_NAME: &str = "Scene Generation";
+const APP_DESIGN_REFERENCE_TEMPLATE_NAME: &str = "Design Reference Writer";
+const LEGACY_AVATAR_GENERATION_PROMPT_V1: &str = "You write a single high-quality image generation prompt for a character avatar. Your job is to turn the request into a clear visual prompt that preserves identity and produces a strong profile image.\n\n# Avatar Subject\nName: {{avatar_subject_name}}\n{{avatar_subject_description}}\n\n# Avatar Request\n{{avatar_request}}\n\nWrite one polished prompt for an image model.\n- Prioritize face, hair, clothing, expression, pose, and overall vibe.\n- Keep the subject centered and suitable for an avatar or profile image.\n- Preserve identity-defining traits from the context.\n- Do not add text, logos, watermarks, frames, UI, or split panels unless explicitly requested.\n- Do not explain your reasoning.\n\nOutput only the final image prompt text.";
+const LEGACY_AVATAR_EDIT_PROMPT_V1: &str = "You revise an existing avatar image prompt. The source image will be provided to you separately. Use that image and the edit request to produce one updated prompt for the next generation.\n\n# Avatar Subject\nName: {{avatar_subject_name}}\n{{avatar_subject_description}}\n\n# Current Avatar Prompt\n{{current_avatar_prompt}}\n\n# Edit Request\n{{edit_request}}\n\nUse the actual source image as the truth for current appearance. Preserve everything that should stay the same and change only what the edit request asks for.\n- Keep the character recognizable.\n- If the old prompt conflicts with the source image, trust the source image.\n- Do not restate unchanged details more than needed.\n- Do not explain what you changed.\n\nOutput only the revised image prompt text.";
+const LEGACY_SCENE_GENERATION_PROMPT_V1: &str = "You write a single high-quality image generation prompt for a roleplay scene. Your job is to convert the current conversation context and scene request into one clear visual prompt for an image model.\n\n# Scene Context\nCharacter: {{char.name}}\n{{char.desc}}\n\nPersona: {{persona.name}}\n{{persona.desc}}\n\nRecent Messages:\n{{recent_messages}}\n\n# Scene Request\n{{scene_request}}\n\nWrite one polished scene prompt for an image model.\n- Focus on who is present, what is happening, where the scene is set, mood, lighting, composition, camera framing, and key visual details.\n- Preserve identity-defining details from the conversation context.\n- Keep character and persona identities separate.\n- Do not swap, merge, or borrow features between them.\n- Prefer concrete visual details over abstract interpretation.\n- Do not add text, logos, watermarks, UI, split panels, or dialogue bubbles unless explicitly requested.\n- Do not explain your reasoning.\n\nOutput only the final image prompt text.";
 
 fn supports_entry_prompts(_id: &str) -> bool {
     true
@@ -46,6 +54,8 @@ fn single_entry_from_content(content: &str) -> Vec<SystemPromptEntry> {
         conditional_min_messages: None,
         interval_turns: None,
         system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
     }]
 }
 
@@ -61,6 +71,75 @@ fn template_entries_to_content(entries: &[SystemPromptEntry]) -> String {
     } else {
         merged
     }
+}
+
+fn prompt_entry_payload_variable(payload: &PromptEntryPayload) -> &'static str {
+    match payload {
+        PromptEntryPayload::ImageSlot {
+            slot: PromptEntryImageSlot::Character,
+        } => "{{image[character]}}",
+        PromptEntryPayload::ImageSlot {
+            slot: PromptEntryImageSlot::Persona,
+        } => "{{image[persona]}}",
+        PromptEntryPayload::ImageSlot {
+            slot: PromptEntryImageSlot::ChatBackground,
+        } => "{{image[chatBackground]}}",
+        PromptEntryPayload::ImageSlot {
+            slot: PromptEntryImageSlot::Avatar,
+        } => "{{image[avatar]}}",
+        PromptEntryPayload::ImageSlot {
+            slot: PromptEntryImageSlot::References,
+        } => "{{image[references]}}",
+    }
+}
+
+fn template_entries_to_validation_content(entries: &[SystemPromptEntry]) -> String {
+    entries
+        .iter()
+        .filter(|entry| entry.enabled || entry.system_prompt)
+        .flat_map(|entry| {
+            let mut parts = Vec::new();
+            if !entry.content.trim().is_empty() {
+                parts.push(entry.content.clone());
+            }
+            if let Some(payload) = entry.prompt_entry_payload.as_ref() {
+                parts.push(prompt_entry_payload_variable(payload).to_string());
+            }
+            parts
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+fn maybe_migrate_legacy_template_content(
+    app: &AppHandle,
+    id: &str,
+    legacy_content: &str,
+    prompt_type: PromptType,
+) -> Result<(), String> {
+    let Some(template) = get_template(app, id)? else {
+        return Ok(());
+    };
+
+    if template.content.trim() != legacy_content.trim() {
+        return Ok(());
+    }
+
+    let next_content = get_base_prompt(prompt_type);
+    let next_entries = get_base_prompt_entries(prompt_type);
+
+    let _ = update_template(
+        app,
+        id.to_string(),
+        None,
+        None,
+        None,
+        Some(next_content),
+        Some(next_entries),
+        None,
+    )?;
+
+    Ok(())
 }
 
 fn maybe_backfill_entries(
@@ -130,6 +209,163 @@ fn append_missing_entry(
     Ok(())
 }
 
+fn backfill_missing_entry_conditions(
+    app: &AppHandle,
+    id: &str,
+    defaults: &[SystemPromptEntry],
+) -> Result<(), String> {
+    let template = match get_template(app, id)? {
+        Some(template) => template,
+        None => return Ok(()),
+    };
+    if template.entries.is_empty() {
+        return Ok(());
+    }
+
+    let mut changed = false;
+    let next_entries = template
+        .entries
+        .into_iter()
+        .map(|mut entry| {
+            if entry.conditions.is_none() {
+                if let Some(default_entry) = defaults
+                    .iter()
+                    .find(|candidate| candidate.id == entry.id && candidate.conditions.is_some())
+                {
+                    entry.conditions = default_entry.conditions.clone();
+                    changed = true;
+                }
+            }
+            entry
+        })
+        .collect::<Vec<_>>();
+
+    if !changed {
+        return Ok(());
+    }
+
+    let next_content = template_entries_to_content(&next_entries);
+    let _ = update_template(
+        app,
+        id.to_string(),
+        None,
+        None,
+        None,
+        Some(next_content),
+        Some(next_entries),
+        None,
+    )?;
+
+    Ok(())
+}
+
+fn backfill_missing_entry_payloads(
+    app: &AppHandle,
+    id: &str,
+    defaults: &[SystemPromptEntry],
+) -> Result<(), String> {
+    let template = match get_template(app, id)? {
+        Some(template) => template,
+        None => return Ok(()),
+    };
+    if template.entries.is_empty() {
+        return Ok(());
+    }
+
+    let mut changed = false;
+    let next_entries = template
+        .entries
+        .into_iter()
+        .map(|mut entry| {
+            if entry.prompt_entry_payload.is_none() {
+                if let Some(default_entry) = defaults.iter().find(|candidate| {
+                    candidate.id == entry.id && candidate.prompt_entry_payload.is_some()
+                }) {
+                    entry.prompt_entry_payload = default_entry.prompt_entry_payload.clone();
+                    changed = true;
+                }
+            }
+            entry
+        })
+        .collect::<Vec<_>>();
+
+    if !changed {
+        return Ok(());
+    }
+
+    let next_content = template_entries_to_content(&next_entries);
+    let _ = update_template(
+        app,
+        id.to_string(),
+        None,
+        None,
+        None,
+        Some(next_content),
+        Some(next_entries),
+        None,
+    )?;
+
+    Ok(())
+}
+
+fn backfill_legacy_image_entry_content(
+    app: &AppHandle,
+    id: &str,
+    defaults: &[SystemPromptEntry],
+) -> Result<(), String> {
+    let template = match get_template(app, id)? {
+        Some(template) => template,
+        None => return Ok(()),
+    };
+    if template.entries.is_empty() {
+        return Ok(());
+    }
+
+    let mut changed = false;
+    let next_entries = template
+        .entries
+        .into_iter()
+        .map(|mut entry| {
+            let Some(default_entry) = defaults.iter().find(|candidate| {
+                candidate.id == entry.id && candidate.prompt_entry_payload.is_some()
+            }) else {
+                return entry;
+            };
+
+            let Some(payload) = default_entry.prompt_entry_payload.as_ref() else {
+                return entry;
+            };
+
+            if default_entry.content.trim().is_empty()
+                && entry.content.trim() == prompt_entry_payload_variable(payload)
+            {
+                entry.content.clear();
+                changed = true;
+            }
+
+            entry
+        })
+        .collect::<Vec<_>>();
+
+    if !changed {
+        return Ok(());
+    }
+
+    let next_content = template_entries_to_content(&next_entries);
+    let _ = update_template(
+        app,
+        id.to_string(),
+        None,
+        None,
+        None,
+        Some(next_content),
+        Some(next_entries),
+        None,
+    )?;
+
+    Ok(())
+}
+
 fn migrate_legacy_scene_generation_entry_roles(app: &AppHandle) -> Result<(), String> {
     let Some(template) = get_template(app, APP_SCENE_GENERATION_TEMPLATE_ID)? else {
         return Ok(());
@@ -145,6 +381,7 @@ fn migrate_legacy_scene_generation_entry_roles(app: &AppHandle) -> Result<(), St
             entry.id.as_str(),
             "scene_gen_context"
                 | "scene_gen_character_image"
+                | "scene_gen_chat_background"
                 | "scene_gen_persona_image"
                 | "scene_gen_request"
         );
@@ -191,6 +428,16 @@ pub fn get_required_variables(template_id: &str) -> Vec<String> {
             "{{context_summary}}".to_string(),
             "{{key_memories}}".to_string(),
         ],
+        APP_LOCAL_ROLEPLAY_TEMPLATE_ID => vec![
+            "{{scene}}".to_string(),
+            "{{scene_direction}}".to_string(),
+            "{{char.name}}".to_string(),
+            "{{char.desc}}".to_string(),
+            "{{persona.name}}".to_string(),
+            "{{persona.desc}}".to_string(),
+            "{{context_summary}}".to_string(),
+            "{{key_memories}}".to_string(),
+        ],
         APP_DYNAMIC_SUMMARY_TEMPLATE_ID => vec!["{{prev_summary}}".to_string()],
         APP_DYNAMIC_MEMORY_TEMPLATE_ID => vec!["{{max_entries}}".to_string()],
         APP_HELP_ME_REPLY_TEMPLATE_ID => vec![
@@ -233,6 +480,10 @@ pub fn get_required_variables(template_id: &str) -> Vec<String> {
         APP_SCENE_GENERATION_TEMPLATE_ID => vec![
             "{{recent_messages}}".to_string(),
             "{{scene_request}}".to_string(),
+        ],
+        APP_DESIGN_REFERENCE_TEMPLATE_ID => vec![
+            "{{subject_name}}".to_string(),
+            "{{image[avatar]}}".to_string(),
         ],
         _ => vec![],
     }
@@ -334,6 +585,7 @@ pub fn load_templates(app: &AppHandle) -> Result<Vec<SystemPromptTemplate>, Stri
     if out.is_empty() {
         // Guarantee existence of App Default template even if setup call was skipped
         let _ = ensure_app_default_template(app)?;
+        let _ = ensure_local_roleplay_template(app)?;
         // Reload
         let mut stmt2 = conn
             .prepare(
@@ -431,11 +683,7 @@ pub fn update_template(
         let validation_text = if new_entries.is_empty() {
             new_content.clone()
         } else {
-            new_entries
-                .iter()
-                .map(|entry| entry.content.as_str())
-                .collect::<Vec<_>>()
-                .join("\n")
+            template_entries_to_validation_content(&new_entries)
         };
         if let Err(missing) = validate_required_variables(&id, &validation_text) {
             return Err(format!(
@@ -544,6 +792,37 @@ pub fn ensure_app_default_template(app: &AppHandle) -> Result<String, String> {
     Ok(APP_DEFAULT_TEMPLATE_ID.to_string())
 }
 
+pub fn ensure_local_roleplay_template(app: &AppHandle) -> Result<String, String> {
+    if let Some(existing) = get_template(app, APP_LOCAL_ROLEPLAY_TEMPLATE_ID)? {
+        let _ = maybe_backfill_entries(
+            app,
+            APP_LOCAL_ROLEPLAY_TEMPLATE_ID,
+            PromptType::LocalRoleplayPrompt,
+            prompt_engine::default_local_roleplay_entries(),
+        );
+        return Ok(existing.id);
+    }
+
+    let conn = open_db(app)?;
+    let now = now();
+    let content = get_base_prompt(PromptType::LocalRoleplayPrompt);
+    let entries_json = serde_json::to_string(&prompt_engine::default_local_roleplay_entries())
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    conn.execute(
+        "INSERT OR IGNORE INTO prompt_templates (id, name, scope, target_ids, content, entries, created_at, updated_at) VALUES (?1, ?2, ?3, '[]', ?4, ?5, ?6, ?6)",
+        params![
+            APP_LOCAL_ROLEPLAY_TEMPLATE_ID,
+            APP_LOCAL_ROLEPLAY_TEMPLATE_NAME,
+            scope_to_str(&PromptScope::AppWide),
+            content,
+            entries_json,
+            now
+        ],
+    )
+    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    Ok(APP_LOCAL_ROLEPLAY_TEMPLATE_ID.to_string())
+}
+
 pub fn ensure_dynamic_memory_templates(app: &AppHandle) -> Result<(), String> {
     let conn = open_db(app)?;
     let now = now();
@@ -607,6 +886,7 @@ pub fn ensure_dynamic_memory_templates(app: &AppHandle) -> Result<(), String> {
 
 pub fn is_app_default_template(id: &str) -> bool {
     id == APP_DEFAULT_TEMPLATE_ID
+        || id == APP_LOCAL_ROLEPLAY_TEMPLATE_ID
         || id == APP_DYNAMIC_SUMMARY_TEMPLATE_ID
         || id == APP_DYNAMIC_MEMORY_TEMPLATE_ID
         || id == APP_HELP_ME_REPLY_TEMPLATE_ID
@@ -614,6 +894,7 @@ pub fn is_app_default_template(id: &str) -> bool {
         || id == APP_AVATAR_GENERATION_TEMPLATE_ID
         || id == APP_AVATAR_EDIT_TEMPLATE_ID
         || id == APP_SCENE_GENERATION_TEMPLATE_ID
+        || id == APP_DESIGN_REFERENCE_TEMPLATE_ID
 }
 
 pub fn reset_app_default_template(app: &AppHandle) -> Result<SystemPromptTemplate, String> {
@@ -626,6 +907,20 @@ pub fn reset_app_default_template(app: &AppHandle) -> Result<SystemPromptTemplat
         None,
         Some(content.clone()),
         Some(prompt_engine::default_modular_prompt_entries()),
+        None,
+    )
+}
+
+pub fn reset_local_roleplay_template(app: &AppHandle) -> Result<SystemPromptTemplate, String> {
+    let content = get_base_prompt(PromptType::LocalRoleplayPrompt);
+    update_template(
+        app,
+        APP_LOCAL_ROLEPLAY_TEMPLATE_ID.to_string(),
+        None,
+        None,
+        None,
+        Some(content.clone()),
+        Some(prompt_engine::default_local_roleplay_entries()),
         None,
     )
 }
@@ -723,11 +1018,12 @@ pub fn ensure_help_me_reply_template(app: &AppHandle) -> Result<(), String> {
 pub fn ensure_avatar_image_templates(app: &AppHandle) -> Result<(), String> {
     let conn = open_db(app)?;
     let now = now();
+    let avatar_generation_entries = get_base_prompt_entries(PromptType::AvatarGenerationPrompt);
+    let avatar_edit_entries = get_base_prompt_entries(PromptType::AvatarEditPrompt);
 
     if get_template(app, APP_AVATAR_GENERATION_TEMPLATE_ID)?.is_none() {
         let content = get_base_prompt(PromptType::AvatarGenerationPrompt);
-        let entries = get_base_prompt_entries(PromptType::AvatarGenerationPrompt);
-        let entries_json = serde_json::to_string(&entries)
+        let entries_json = serde_json::to_string(&avatar_generation_entries)
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
         conn.execute(
             "INSERT OR IGNORE INTO prompt_templates (id, name, scope, target_ids, content, entries, created_at, updated_at) VALUES (?1, ?2, ?3, '[]', ?4, ?5, ?6, ?6)",
@@ -742,18 +1038,28 @@ pub fn ensure_avatar_image_templates(app: &AppHandle) -> Result<(), String> {
         )
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     } else {
+        let _ = maybe_migrate_legacy_template_content(
+            app,
+            APP_AVATAR_GENERATION_TEMPLATE_ID,
+            LEGACY_AVATAR_GENERATION_PROMPT_V1,
+            PromptType::AvatarGenerationPrompt,
+        );
         let _ = maybe_backfill_entries(
             app,
             APP_AVATAR_GENERATION_TEMPLATE_ID,
             PromptType::AvatarGenerationPrompt,
-            get_base_prompt_entries(PromptType::AvatarGenerationPrompt),
+            avatar_generation_entries.clone(),
+        );
+        let _ = backfill_missing_entry_conditions(
+            app,
+            APP_AVATAR_GENERATION_TEMPLATE_ID,
+            &avatar_generation_entries,
         );
     }
 
     if get_template(app, APP_AVATAR_EDIT_TEMPLATE_ID)?.is_none() {
         let content = get_base_prompt(PromptType::AvatarEditPrompt);
-        let entries = get_base_prompt_entries(PromptType::AvatarEditPrompt);
-        let entries_json = serde_json::to_string(&entries)
+        let entries_json = serde_json::to_string(&avatar_edit_entries)
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
         conn.execute(
             "INSERT OR IGNORE INTO prompt_templates (id, name, scope, target_ids, content, entries, created_at, updated_at) VALUES (?1, ?2, ?3, '[]', ?4, ?5, ?6, ?6)",
@@ -768,11 +1074,22 @@ pub fn ensure_avatar_image_templates(app: &AppHandle) -> Result<(), String> {
         )
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     } else {
+        let _ = maybe_migrate_legacy_template_content(
+            app,
+            APP_AVATAR_EDIT_TEMPLATE_ID,
+            LEGACY_AVATAR_EDIT_PROMPT_V1,
+            PromptType::AvatarEditPrompt,
+        );
         let _ = maybe_backfill_entries(
             app,
             APP_AVATAR_EDIT_TEMPLATE_ID,
             PromptType::AvatarEditPrompt,
-            get_base_prompt_entries(PromptType::AvatarEditPrompt),
+            avatar_edit_entries.clone(),
+        );
+        let _ = backfill_missing_entry_conditions(
+            app,
+            APP_AVATAR_EDIT_TEMPLATE_ID,
+            &avatar_edit_entries,
         );
     }
 
@@ -782,11 +1099,11 @@ pub fn ensure_avatar_image_templates(app: &AppHandle) -> Result<(), String> {
 pub fn ensure_scene_generation_template(app: &AppHandle) -> Result<(), String> {
     let conn = open_db(app)?;
     let now = now();
+    let scene_entries = get_base_prompt_entries(PromptType::SceneGenerationPrompt);
 
     if get_template(app, APP_SCENE_GENERATION_TEMPLATE_ID)?.is_none() {
         let content = get_base_prompt(PromptType::SceneGenerationPrompt);
-        let entries = get_base_prompt_entries(PromptType::SceneGenerationPrompt);
-        let entries_json = serde_json::to_string(&entries)
+        let entries_json = serde_json::to_string(&scene_entries)
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
         conn.execute(
             "INSERT OR IGNORE INTO prompt_templates (id, name, scope, target_ids, content, entries, created_at, updated_at) VALUES (?1, ?2, ?3, '[]', ?4, ?5, ?6, ?6)",
@@ -801,13 +1118,18 @@ pub fn ensure_scene_generation_template(app: &AppHandle) -> Result<(), String> {
         )
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     } else {
+        let _ = maybe_migrate_legacy_template_content(
+            app,
+            APP_SCENE_GENERATION_TEMPLATE_ID,
+            LEGACY_SCENE_GENERATION_PROMPT_V1,
+            PromptType::SceneGenerationPrompt,
+        );
         let _ = maybe_backfill_entries(
             app,
             APP_SCENE_GENERATION_TEMPLATE_ID,
             PromptType::SceneGenerationPrompt,
-            get_base_prompt_entries(PromptType::SceneGenerationPrompt),
+            scene_entries.clone(),
         );
-        let scene_entries = get_base_prompt_entries(PromptType::SceneGenerationPrompt);
         if let Some(entry) = scene_entries
             .iter()
             .find(|entry| entry.id == "scene_gen_character_reference")
@@ -832,7 +1154,79 @@ pub fn ensure_scene_generation_template(app: &AppHandle) -> Result<(), String> {
                 entry,
             );
         }
+        if let Some(entry) = scene_entries
+            .iter()
+            .find(|entry| entry.id == "scene_gen_chat_background")
+            .cloned()
+        {
+            let _ = append_missing_entry(
+                app,
+                APP_SCENE_GENERATION_TEMPLATE_ID,
+                "scene_gen_chat_background",
+                entry,
+            );
+        }
+        let _ = backfill_missing_entry_conditions(
+            app,
+            APP_SCENE_GENERATION_TEMPLATE_ID,
+            &scene_entries,
+        );
+        let _ =
+            backfill_missing_entry_payloads(app, APP_SCENE_GENERATION_TEMPLATE_ID, &scene_entries);
+        let _ = backfill_legacy_image_entry_content(
+            app,
+            APP_SCENE_GENERATION_TEMPLATE_ID,
+            &scene_entries,
+        );
         let _ = migrate_legacy_scene_generation_entry_roles(app);
+    }
+
+    Ok(())
+}
+
+pub fn ensure_design_reference_template(app: &AppHandle) -> Result<(), String> {
+    let conn = open_db(app)?;
+    let now = now();
+    let design_reference_entries = get_base_prompt_entries(PromptType::DesignReferencePrompt);
+
+    if get_template(app, APP_DESIGN_REFERENCE_TEMPLATE_ID)?.is_none() {
+        let content = get_base_prompt(PromptType::DesignReferencePrompt);
+        let entries_json = serde_json::to_string(&design_reference_entries)
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        conn.execute(
+            "INSERT OR IGNORE INTO prompt_templates (id, name, scope, target_ids, content, entries, created_at, updated_at) VALUES (?1, ?2, ?3, '[]', ?4, ?5, ?6, ?6)",
+            params![
+                APP_DESIGN_REFERENCE_TEMPLATE_ID,
+                APP_DESIGN_REFERENCE_TEMPLATE_NAME,
+                scope_to_str(&PromptScope::AppWide),
+                content,
+                entries_json,
+                now
+            ],
+        )
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    } else {
+        let _ = maybe_backfill_entries(
+            app,
+            APP_DESIGN_REFERENCE_TEMPLATE_ID,
+            PromptType::DesignReferencePrompt,
+            design_reference_entries.clone(),
+        );
+        let _ = backfill_missing_entry_conditions(
+            app,
+            APP_DESIGN_REFERENCE_TEMPLATE_ID,
+            &design_reference_entries,
+        );
+        let _ = backfill_missing_entry_payloads(
+            app,
+            APP_DESIGN_REFERENCE_TEMPLATE_ID,
+            &design_reference_entries,
+        );
+        let _ = backfill_legacy_image_entry_content(
+            app,
+            APP_DESIGN_REFERENCE_TEMPLATE_ID,
+            &design_reference_entries,
+        );
     }
 
     Ok(())
@@ -906,6 +1300,21 @@ pub fn reset_scene_generation_template(app: &AppHandle) -> Result<SystemPromptTe
     update_template(
         app,
         APP_SCENE_GENERATION_TEMPLATE_ID.to_string(),
+        None,
+        None,
+        None,
+        Some(content.clone()),
+        Some(entries),
+        None,
+    )
+}
+
+pub fn reset_design_reference_template(app: &AppHandle) -> Result<SystemPromptTemplate, String> {
+    let content = get_base_prompt(PromptType::DesignReferencePrompt);
+    let entries = get_base_prompt_entries(PromptType::DesignReferencePrompt);
+    update_template(
+        app,
+        APP_DESIGN_REFERENCE_TEMPLATE_ID.to_string(),
         None,
         None,
         None,

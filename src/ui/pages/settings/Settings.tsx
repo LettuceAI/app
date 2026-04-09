@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import {
   ChevronRight,
   Cpu,
@@ -7,7 +7,6 @@ import {
   Shield,
   RotateCcw,
   BookOpen,
-  Github,
   BarChart3,
   FileText,
   Wrench,
@@ -21,12 +20,11 @@ import {
   HelpCircle,
   ArrowLeftRight,
   Image,
+  Info,
 } from "lucide-react";
 import { typography, radius, spacing, interactive, cn } from "../../design-tokens";
 import { useSettingsSummary } from "./hooks/useSettingsSummary";
 import { isDevelopmentMode } from "../../../core/utils/env";
-import { invoke } from "@tauri-apps/api/core";
-import { DISCORD_SERVER_LINK, GITHUB_REPO_LINK } from "../../../core/utils/links";
 import { useNavigationManager } from "../../navigation";
 import { useI18n } from "../../../core/i18n/context";
 
@@ -127,31 +125,6 @@ export function SettingsPage() {
   const {
     state: { providers, models, characterCount, isLoading },
   } = useSettingsSummary();
-  const [version, setVersion] = useState<string>("loading...");
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadVersion = async () => {
-      try {
-        const appversion = await invoke<string>("get_app_version");
-        if (!cancelled) {
-          setVersion(appversion);
-        }
-      } catch (error) {
-        console.error("Failed to get app version:", error);
-        if (!cancelled) {
-          setVersion("unknown");
-        }
-      }
-    };
-
-    loadVersion();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const providerCount = providers.length;
   const modelCount = models.length;
@@ -256,20 +229,28 @@ export function SettingsPage() {
         onClick: () => navigate("/settings/advanced"),
       },
       {
-        key: "logs",
-        icon: <FileCode />,
-        title: t("settings.items.logs.title"),
-        subtitle: t("settings.items.logs.subtitle"),
+        key: "about",
+        icon: <Info />,
+        title: t("settings.items.about.title"),
+        subtitle: t("settings.items.about.subtitle"),
         tone: "support" as const,
-        onClick: () => navigate("/settings/logs"),
+        onClick: () => navigate("/settings/about"),
       },
       {
-        key: "guide",
-        icon: <BookOpen />,
-        title: t("settings.items.guide.title"),
-        subtitle: t("settings.items.guide.subtitle"),
+        key: "changelog",
+        icon: <ScrollText />,
+        title: t("settings.items.changelog.title"),
+        subtitle: t("settings.items.changelog.subtitle"),
         tone: "support" as const,
-        onClick: () => navigate("/welcome"),
+        onClick: async () => {
+          try {
+            const { openUrl } = await import("@tauri-apps/plugin-opener");
+            await openUrl("https://www.lettuceai.app/changelog");
+          } catch (error) {
+            console.error("Failed to open URL:", error);
+            window.open("https://www.lettuceai.app/changelog", "_blank");
+          }
+        },
       },
       {
         key: "docs",
@@ -288,56 +269,20 @@ export function SettingsPage() {
         },
       },
       {
-        key: "github",
-        icon: <Github />,
-        title: t("settings.items.github.title"),
-        subtitle: t("settings.items.github.subtitle", { version }),
+        key: "logs",
+        icon: <FileCode />,
+        title: t("settings.items.logs.title"),
+        subtitle: t("settings.items.logs.subtitle"),
         tone: "support" as const,
-        onClick: async () => {
-          try {
-            const { openUrl } = await import("@tauri-apps/plugin-opener");
-            await openUrl(`${GITHUB_REPO_LINK}/issues`);
-          } catch (error) {
-            console.error("Failed to open URL:", error);
-            window.open(`${GITHUB_REPO_LINK}/issues`, "_blank");
-          }
-        },
+        onClick: () => navigate("/settings/logs"),
       },
       {
-        key: "discord",
-        icon: (
-          <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-            <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515a.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0a12.64 12.64 0 0 0-.617-1.25a.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057a19.9 19.9 0 0 0 5.993 3.03a.078.078 0 0 0 .084-.028a14.09 14.09 0 0 0 1.226-1.994a.076.076 0 0 0-.041-.106a13.107 13.107 0 0 1-1.872-.892a.077.077 0 0 1-.008-.128a10.2 10.2 0 0 0 .372-.292a.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127a12.299 12.299 0 0 1-1.873.892a.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028a19.839 19.839 0 0 0 6.002-3.03a.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419c0-1.333.956-2.419 2.157-2.419c1.21 0 2.176 1.096 2.157 2.42c0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419c0-1.333.955-2.419 2.157-2.419c1.21 0 2.176 1.096 2.157 2.42c0 1.333-.946 2.418-2.157 2.418z" />
-          </svg>
-        ),
-        title: t("settings.items.discord.title"),
-        subtitle: t("settings.items.discord.subtitle"),
+        key: "guide",
+        icon: <BookOpen />,
+        title: t("settings.items.guide.title"),
+        subtitle: t("settings.items.guide.subtitle"),
         tone: "support" as const,
-        onClick: async () => {
-          try {
-            const { openUrl } = await import("@tauri-apps/plugin-opener");
-            await openUrl(DISCORD_SERVER_LINK);
-          } catch (error) {
-            console.error("Failed to open URL:", error);
-            window.open(DISCORD_SERVER_LINK, "_blank");
-          }
-        },
-      },
-      {
-        key: "changelog",
-        icon: <ScrollText />,
-        title: t("settings.items.changelog.title"),
-        subtitle: t("settings.items.changelog.subtitle"),
-        tone: "support" as const,
-        onClick: async () => {
-          try {
-            const { openUrl } = await import("@tauri-apps/plugin-opener");
-            await openUrl("https://www.lettuceai.app/changelog");
-          } catch (error) {
-            console.error("Failed to open URL:", error);
-            window.open("https://www.lettuceai.app/changelog", "_blank");
-          }
-        },
+        onClick: () => navigate("/welcome"),
       },
       {
         key: "reset",
@@ -360,7 +305,7 @@ export function SettingsPage() {
           ]
         : []),
     ],
-    [providerCount, modelCount, characterCount, navigate, t, version],
+    [providerCount, modelCount, characterCount, navigate, t, toModelsList],
   );
 
   return (
@@ -508,9 +453,7 @@ export function SettingsPage() {
           </h2>
           <div className={spacing.field}>
             {items
-              .filter((i) =>
-                ["guide", "docs", "changelog", "logs", "github", "discord"].includes(i.key),
-              )
+              .filter((i) => ["about", "changelog", "docs", "logs", "guide"].includes(i.key))
               .map((item) => (
                 <Row
                   key={item.key}

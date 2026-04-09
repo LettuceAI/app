@@ -62,7 +62,7 @@ pub(crate) fn handle_run_event(handler: &tauri::AppHandle, event: tauri::RunEven
     }
 }
 
-pub(crate) fn configure_onnxruntime_dylib(app: &tauri::AppHandle) {
+pub(crate) fn configure_onnxruntime_dylib(_app: &tauri::AppHandle) {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         use tauri::path::BaseDirectory;
@@ -72,7 +72,7 @@ pub(crate) fn configure_onnxruntime_dylib(app: &tauri::AppHandle) {
             if !value.trim().is_empty() {
                 let _ = ort::util::preload_dylib(&value);
                 utils::log_info(
-                    app,
+                    _app,
                     "embedding_debug",
                     format!("ORT_DYLIB_PATH already set to {}", value),
                 );
@@ -85,7 +85,7 @@ pub(crate) fn configure_onnxruntime_dylib(app: &tauri::AppHandle) {
                 std::env::set_var("ORT_DYLIB_PATH", value);
                 let _ = ort::util::preload_dylib(value);
                 utils::log_info(
-                    app,
+                    _app,
                     "embedding_debug",
                     format!("Set ORT_DYLIB_PATH from compile-time env: {}", value),
                 );
@@ -113,7 +113,7 @@ pub(crate) fn configure_onnxruntime_dylib(app: &tauri::AppHandle) {
             ]
         };
         let resolved_path = candidates.into_iter().find_map(|candidate| {
-            app.path()
+            _app.path()
                 .resolve(candidate, BaseDirectory::Resource)
                 .ok()
                 .filter(|path| path.exists())
@@ -125,13 +125,13 @@ pub(crate) fn configure_onnxruntime_dylib(app: &tauri::AppHandle) {
                     std::env::set_var("ORT_DYLIB_PATH", &path);
                     let _ = ort::util::preload_dylib(&path);
                     utils::log_info(
-                        app,
+                        _app,
                         "embedding_debug",
                         format!("Set ORT_DYLIB_PATH={}", path.display()),
                     );
                 } else {
                     utils::log_warn(
-                        app,
+                        _app,
                         "embedding_debug",
                         format!("ONNX Runtime library not found at {}", path.display()),
                     );
@@ -139,7 +139,7 @@ pub(crate) fn configure_onnxruntime_dylib(app: &tauri::AppHandle) {
             }
             None => {
                 utils::log_warn(
-                    app,
+                    _app,
                     "embedding_debug",
                     "Failed to resolve ONNX Runtime resource path in bundled resources",
                 );

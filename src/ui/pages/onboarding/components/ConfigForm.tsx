@@ -1,11 +1,12 @@
-import { AlertCircle, Loader, RefreshCw, ChevronDown, Search, Check } from "lucide-react";
+import { AlertCircle, Loader, RefreshCw, ChevronDown } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { TestResult } from "../hooks/onboardingReducer";
 import type { ProviderCredential } from "../../../../core/storage/schemas";
-import { BottomMenu, MenuButton, MenuSection } from "../../../components/BottomMenu";
 import { getProviderIcon } from "../../../../core/utils/providerIcons";
+import { ModelSelectionBottomMenu } from "../../../components/ModelSelectionBottomMenu";
+import { Switch } from "../../../components/Switch";
 import { useI18n } from "../../../../core/i18n/context";
 
 interface ProviderConfigFormProps {
@@ -51,7 +52,8 @@ export function ProviderConfigForm({
   const navigate = useNavigate();
   const isCustomProvider = ["custom", "custom-anthropic"].includes(selectedProviderId);
   const isLocalProvider = ["ollama", "lmstudio", "intenserp"].includes(selectedProviderId);
-  const showBaseUrl = isCustomProvider || isLocalProvider;
+  const isHostProvider = selectedProviderId === "lettuce-host";
+  const showBaseUrl = isCustomProvider || isLocalProvider || isHostProvider;
 
   return (
     <div className="space-y-4">
@@ -105,16 +107,20 @@ export function ProviderConfigForm({
             placeholder={
               selectedProviderId === "intenserp"
                 ? "http://127.0.0.1:7777/v1"
-                : isLocalProvider
-                  ? "http://localhost:11434"
-                  : "https://api.provider.com"
+                : isHostProvider
+                  ? "http://192.168.1.10:3333"
+                  : isLocalProvider
+                    ? "http://localhost:11434"
+                    : "https://api.provider.com"
             }
             className="w-full min-h-11 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-white placeholder-white/40 transition-colors focus:border-white/30 focus:outline-none"
           />
           <p className="text-[11px] text-gray-500">
             {isLocalProvider
               ? "Your local server address with port"
-              : "Override the default endpoint if needed"}
+              : isHostProvider
+                ? "Enter the desktop host URL shown by your host device"
+                : "Override the default endpoint if needed"}
           </p>
         </div>
       )}
@@ -163,27 +169,11 @@ export function ProviderConfigForm({
           </div>
           <div className="flex items-center justify-between pt-1">
             <span className="text-xs font-medium text-white/70">Supports Streaming</span>
-            <div className="flex items-center">
-              <input
-                id="supportsStream-onboarding"
-                type="checkbox"
-                checked={config?.supportsStream ?? true}
-                onChange={(e) => onConfigChange({ ...config, supportsStream: e.target.checked })}
-                className="peer sr-only"
-              />
-              <label
-                htmlFor="supportsStream-onboarding"
-                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-all duration-200 ease-in-out ${
-                  (config?.supportsStream ?? true) ? "bg-emerald-500" : "bg-white/20"
-                }`}
-              >
-                <span
-                  className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                    (config?.supportsStream ?? true) ? "translate-x-5" : "translate-x-0"
-                  }`}
-                />
-              </label>
-            </div>
+            <Switch
+              id="supportsStream-onboarding"
+              checked={config?.supportsStream ?? true}
+              onChange={(next) => onConfigChange({ ...config, supportsStream: next })}
+            />
           </div>
           {selectedProviderId === "custom" && (
             <div className="space-y-2">
@@ -216,29 +206,11 @@ export function ProviderConfigForm({
           )}
           <div className="flex items-center justify-between pt-1">
             <span className="text-xs font-medium text-white/70">Merge Same-role Messages</span>
-            <div className="flex items-center">
-              <input
-                id="mergeSameRoleMessages-onboarding"
-                type="checkbox"
-                checked={config?.mergeSameRoleMessages ?? true}
-                onChange={(e) =>
-                  onConfigChange({ ...config, mergeSameRoleMessages: e.target.checked })
-                }
-                className="peer sr-only"
-              />
-              <label
-                htmlFor="mergeSameRoleMessages-onboarding"
-                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-all duration-200 ease-in-out ${
-                  (config?.mergeSameRoleMessages ?? true) ? "bg-emerald-500" : "bg-white/20"
-                }`}
-              >
-                <span
-                  className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                    (config?.mergeSameRoleMessages ?? true) ? "translate-x-5" : "translate-x-0"
-                  }`}
-                />
-              </label>
-            </div>
+            <Switch
+              id="mergeSameRoleMessages-onboarding"
+              checked={config?.mergeSameRoleMessages ?? true}
+              onChange={(next) => onConfigChange({ ...config, mergeSameRoleMessages: next })}
+            />
           </div>
         </>
       )}
@@ -324,24 +296,11 @@ export function ModelConfigForm({
   const [fetchingModels, setFetchingModels] = useState(false);
   const [isManualInput, setIsManualInput] = useState(false);
   const [showModelSelector, setShowModelSelector] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
 
   const isLocalModel = selectedCredential.providerId === "llamacpp";
   const modelFetchEnabled = !["llamacpp", "intenserp"].includes(selectedCredential.providerId);
   const modelIdLabel = isLocalModel ? "Model Path (GGUF)" : "Model ID";
   const modelIdPlaceholder = isLocalModel ? "/path/to/model.gguf" : "e.g. gpt-4o";
-
-  const filteredModels = useMemo(() => {
-    if (!searchQuery) return fetchedModels;
-    const q = searchQuery.toLowerCase();
-    return fetchedModels.filter((m) => {
-      return (
-        m.id.toLowerCase().includes(q) ||
-        (m.displayName && m.displayName.toLowerCase().includes(q)) ||
-        (m.description && m.description.toLowerCase().includes(q))
-      );
-    });
-  }, [fetchedModels, searchQuery]);
 
   const fetchModels = async () => {
     if (!modelFetchEnabled) {
@@ -379,7 +338,6 @@ export function ModelConfigForm({
   useEffect(() => {
     setFetchedModels([]);
     setIsManualInput(!modelFetchEnabled);
-    setSearchQuery("");
     if (modelFetchEnabled) {
       void fetchModels();
     }
@@ -444,48 +402,28 @@ export function ModelConfigForm({
               <ChevronDown className="h-4 w-4 text-white/40" />
             </button>
 
-            <BottomMenu
+            <ModelSelectionBottomMenu
               isOpen={showModelSelector}
               onClose={() => setShowModelSelector(false)}
               title="Select Model"
-            >
-              <div className="px-4 pb-2 sticky top-0 z-10 bg-[#0f1014]">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
-                  <input
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search models..."
-                    className="w-full rounded-xl border border-white/10 bg-white/5 py-2.5 pl-9 pr-4 text-sm text-white placeholder-white/40 focus:border-white/20 focus:outline-none"
-                    autoFocus
-                  />
+              models={fetchedModels as any}
+              selectedModelIds={modelName ? [modelName] : []}
+              searchPlaceholder="Search models..."
+              theme="dark"
+              tone="emerald"
+              renderModelIcon={() => getProviderIcon(selectedCredential.providerId)}
+              renderModelTitle={(model: any) => model.displayName || model.id}
+              renderModelDescription={(model: any) => model.description || model.id}
+              renderEmptyState={(query) => (
+                <div className="py-12 text-center text-sm text-white/40">
+                  No models found matching "{query}"
                 </div>
-              </div>
-              <MenuSection>
-                {filteredModels.length > 0 ? (
-                  filteredModels.map((m) => {
-                    const isSelected = m.id === modelName;
-                    return (
-                      <MenuButton
-                        key={m.id}
-                        icon={getProviderIcon(selectedCredential.providerId)}
-                        title={m.displayName || m.id}
-                        description={m.description || m.id}
-                        color="from-emerald-500 to-emerald-600"
-                        rightElement={
-                          isSelected ? <Check className="h-4 w-4 text-emerald-400" /> : undefined
-                        }
-                        onClick={() => handleSelectModel(m.id, m.displayName)}
-                      />
-                    );
-                  })
-                ) : (
-                  <div className="py-12 text-center text-sm text-white/40">
-                    No models found matching "{searchQuery}"
-                  </div>
-                )}
-              </MenuSection>
-            </BottomMenu>
+              )}
+              onSelectModel={(modelId) => {
+                const model = fetchedModels.find((item) => item.id === modelId);
+                handleSelectModel(modelId, model?.displayName);
+              }}
+            />
           </>
         ) : (
           <>

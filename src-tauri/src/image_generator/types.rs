@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::chat_manager::types::AdvancedModelSettings;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImageGenerationRequest {
@@ -7,6 +9,8 @@ pub struct ImageGenerationRequest {
     pub model: String,
     pub provider_id: String,
     pub credential_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub advanced_model_settings: Option<AdvancedModelSettings>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub input_images: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]

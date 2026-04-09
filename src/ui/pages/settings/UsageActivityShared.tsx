@@ -169,15 +169,22 @@ export function UsageRequestDetailSheet({
   isOpen: boolean;
   onClose: () => void;
 }) {
-  const cachedPromptTokens = parseMetadataNumber(
-    request?.metadata,
-    "openrouter_cached_prompt_tokens",
-  );
-  const cacheWriteTokens = parseMetadataNumber(request?.metadata, "openrouter_cache_write_tokens");
-  const webSearchRequests = parseMetadataNumber(
-    request?.metadata,
-    "openrouter_web_search_requests",
-  );
+  const cachedPromptTokens =
+    request?.cachedPromptTokens ??
+    parseMetadataNumber(request?.metadata, "cached_prompt_tokens") ??
+    parseMetadataNumber(request?.metadata, "openrouter_cached_prompt_tokens");
+  const cacheWriteTokens =
+    request?.cacheWriteTokens ??
+    parseMetadataNumber(request?.metadata, "cache_write_tokens") ??
+    parseMetadataNumber(request?.metadata, "openrouter_cache_write_tokens");
+  const webSearchRequests =
+    request?.webSearchRequests ??
+    parseMetadataNumber(request?.metadata, "web_search_requests") ??
+    parseMetadataNumber(request?.metadata, "openrouter_web_search_requests");
+  const apiCost =
+    request?.apiCost ??
+    parseMetadataNumber(request?.metadata, "api_cost") ??
+    parseMetadataNumber(request?.metadata, "openrouter_api_cost");
 
   return (
     <BottomMenu
@@ -261,6 +268,48 @@ export function UsageRequestDetailSheet({
               />
               <DetailStat label="Total" value={formatCurrency(request.cost?.totalCost || 0)} />
             </div>
+            {(request.cost?.cacheReadCost ||
+              request.cost?.cacheWriteCost ||
+              request.cost?.reasoningCost ||
+              request.cost?.requestCost ||
+              request.cost?.webSearchCost ||
+              apiCost !== null) && (
+              <div className="grid grid-cols-2 gap-2.5">
+                {(request.cost?.cacheReadCost ?? 0) > 0 && (
+                  <DetailStat
+                    label="Cache Read"
+                    value={formatCurrency(request.cost?.cacheReadCost || 0)}
+                  />
+                )}
+                {(request.cost?.cacheWriteCost ?? 0) > 0 && (
+                  <DetailStat
+                    label="Cache Write"
+                    value={formatCurrency(request.cost?.cacheWriteCost || 0)}
+                  />
+                )}
+                {(request.cost?.reasoningCost ?? 0) > 0 && (
+                  <DetailStat
+                    label="Reasoning"
+                    value={formatCurrency(request.cost?.reasoningCost || 0)}
+                  />
+                )}
+                {(request.cost?.requestCost ?? 0) > 0 && (
+                  <DetailStat
+                    label="Request Fee"
+                    value={formatCurrency(request.cost?.requestCost || 0)}
+                  />
+                )}
+                {(request.cost?.webSearchCost ?? 0) > 0 && (
+                  <DetailStat
+                    label="Web Search"
+                    value={formatCurrency(request.cost?.webSearchCost || 0)}
+                  />
+                )}
+                {apiCost !== null && (
+                  <DetailStat label="Provider Total" value={formatCurrency(apiCost)} />
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}

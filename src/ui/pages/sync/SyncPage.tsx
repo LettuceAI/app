@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ComponentType, type SVGProps } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import QRCode from "react-qr-code";
+import QRCodeImport from "react-qr-code";
 import {
   Smartphone,
   Monitor,
@@ -26,6 +26,30 @@ import {
 import { interactive, radius, cn } from "../../design-tokens";
 import { BottomMenu, MenuButton } from "../../components/BottomMenu";
 import { useI18n } from "../../../core/i18n/context";
+
+type QRCodeComponentProps = SVGProps<SVGSVGElement> & {
+  value: string;
+  size?: number;
+  bgColor?: string;
+  fgColor?: string;
+  level?: "L" | "M" | "H" | "Q";
+  title?: string;
+};
+
+const QRCodeComponent =
+  (
+    QRCodeImport as unknown as {
+      default?: ComponentType<QRCodeComponentProps>;
+      QRCode?: ComponentType<QRCodeComponentProps>;
+    }
+  ).default ??
+  (
+    QRCodeImport as unknown as {
+      default?: ComponentType<QRCodeComponentProps>;
+      QRCode?: ComponentType<QRCodeComponentProps>;
+    }
+  ).QRCode ??
+  (QRCodeImport as unknown as ComponentType<QRCodeComponentProps>);
 
 type SyncStatus =
   | { status: "Idle" }
@@ -643,7 +667,7 @@ export function SyncPage() {
                 ) : (
                   <>
                     <div className="bg-white p-3 rounded-xl mb-6 shadow-2xl">
-                      <QRCode
+                      <QRCodeComponent
                         value={JSON.stringify({
                           ip: (status as any).details?.ip || localIp,
                           port: (status as any).details?.port || 8000,

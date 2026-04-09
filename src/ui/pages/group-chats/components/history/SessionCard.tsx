@@ -100,8 +100,8 @@ export function SessionCard({
                 key={char.id}
                 className={cn(
                   "absolute h-8 w-8 overflow-hidden rounded-full",
-                  "border-2 border-[#0c0d13]",
-                  "bg-linear-to-br from-white/10 to-white/5",
+                  "border-2 border-surface",
+                  "bg-linear-to-br from-fg/8 to-fg/4",
                 )}
                 style={{
                   left: `${index * 10}px`,
@@ -115,7 +115,7 @@ export function SessionCard({
               <div
                 className={cn(
                   "absolute h-8 w-8 overflow-hidden rounded-full",
-                  "border-2 border-[#0c0d13]",
+                  "border-2 border-surface",
                   "bg-fg/10",
                   "flex items-center justify-center",
                 )}

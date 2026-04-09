@@ -35,6 +35,124 @@ impl Default for PromptEntryPosition {
     }
 }
 
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum PromptEntryImageSlot {
+    Character,
+    Persona,
+    ChatBackground,
+    Avatar,
+    References,
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum PromptEntryPayload {
+    ImageSlot { slot: PromptEntryImageSlot },
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum PromptEntryChatMode {
+    Direct,
+    Group,
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum PromptEntryCondition {
+    ChatMode {
+        value: PromptEntryChatMode,
+    },
+    SceneGenerationEnabled {
+        value: bool,
+    },
+    AvatarGenerationEnabled {
+        value: bool,
+    },
+    HasScene {
+        value: bool,
+    },
+    HasSceneDirection {
+        value: bool,
+    },
+    HasPersona {
+        value: bool,
+    },
+    MessageCountAtLeast {
+        value: u32,
+    },
+    ParticipantCountAtLeast {
+        value: u32,
+    },
+    KeywordAny {
+        values: Vec<String>,
+    },
+    KeywordAll {
+        values: Vec<String>,
+    },
+    KeywordNone {
+        values: Vec<String>,
+    },
+    DynamicMemoryEnabled {
+        value: bool,
+    },
+    HasMemorySummary {
+        value: bool,
+    },
+    HasKeyMemories {
+        value: bool,
+    },
+    HasLorebookContent {
+        value: bool,
+    },
+    HasSubjectDescription {
+        value: bool,
+    },
+    HasCurrentDescription {
+        value: bool,
+    },
+    HasCharacterReferenceImages {
+        value: bool,
+    },
+    HasChatBackground {
+        value: bool,
+    },
+    HasPersonaReferenceImages {
+        value: bool,
+    },
+    HasCharacterReferenceText {
+        value: bool,
+    },
+    HasPersonaReferenceText {
+        value: bool,
+    },
+    InputScopeAny {
+        values: Vec<String>,
+    },
+    OutputScopeAny {
+        values: Vec<String>,
+    },
+    ProviderIdAny {
+        values: Vec<String>,
+    },
+    ReasoningEnabled {
+        value: bool,
+    },
+    VisionEnabled {
+        value: bool,
+    },
+    All {
+        conditions: Vec<PromptEntryCondition>,
+    },
+    Any {
+        conditions: Vec<PromptEntryCondition>,
+    },
+    Not {
+        condition: Box<PromptEntryCondition>,
+    },
+}
+
 #[derive(Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct SystemPromptEntry {
@@ -54,6 +172,10 @@ pub struct SystemPromptEntry {
     pub interval_turns: Option<u32>,
     #[serde(default)]
     pub system_prompt: bool,
+    #[serde(default)]
+    pub conditions: Option<PromptEntryCondition>,
+    #[serde(default)]
+    pub prompt_entry_payload: Option<PromptEntryPayload>,
 }
 
 #[derive(Deserialize, Serialize, Clone)]
@@ -156,13 +278,21 @@ pub struct AdvancedSettings {
     #[serde(default)]
     pub summarisation_model_id: Option<String>,
     #[serde(default)]
+    pub dynamic_memory_structured_fallback_format: Option<DynamicMemoryStructuredFallbackFormat>,
+    #[serde(default)]
+    pub dynamic_memory_llama_sampler_overwrite_enabled: Option<bool>,
+    #[serde(default)]
     pub avatar_generation_enabled: Option<bool>,
     #[serde(default)]
     pub avatar_generation_model_id: Option<String>,
     #[serde(default)]
     pub scene_generation_enabled: Option<bool>,
     #[serde(default)]
+    pub scene_generation_mode: Option<String>,
+    #[serde(default)]
     pub scene_generation_model_id: Option<String>,
+    #[serde(default)]
+    pub scene_writer_model_id: Option<String>,
     #[serde(default)]
     pub creation_helper_enabled: Option<bool>,
     #[serde(default)]
@@ -187,7 +317,54 @@ pub struct AdvancedSettings {
     #[serde(default)]
     pub embedding_max_tokens: Option<u32>,
     #[serde(default)]
+    pub host_api: Option<HostApiSettings>,
+    #[serde(default)]
     pub accessibility: Option<AccessibilitySettings>,
+}
+
+#[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum DynamicMemoryStructuredFallbackFormat {
+    Json,
+    Xml,
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct HostApiSettings {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_host_api_bind_address")]
+    pub bind_address: String,
+    #[serde(default = "default_host_api_port")]
+    pub port: u16,
+    #[serde(default)]
+    pub token: String,
+    #[serde(default)]
+    pub exposed_models: Vec<HostApiExposedModel>,
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct HostApiExposedModel {
+    pub id: String,
+    pub model_id: String,
+    #[serde(default = "default_host_api_exposed_model_enabled")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub label: Option<String>,
+}
+
+fn default_host_api_bind_address() -> String {
+    "0.0.0.0".to_string()
+}
+
+fn default_host_api_port() -> u16 {
+    3333
+}
+
+fn default_host_api_exposed_model_enabled() -> bool {
+    true
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
@@ -234,6 +411,12 @@ pub struct DynamicMemorySettings {
     /// Score below which memories are demoted to cold (0.2-0.4 recommended)
     #[serde(default = "default_cold_threshold")]
     pub cold_threshold: f32,
+    /// Default delete confidence when the model omits it. Lower values prefer soft-delete.
+    #[serde(default = "default_delete_confidence")]
+    pub delete_confidence_default: f32,
+    /// Maximum fraction of the starting hot set that can be hard-deleted in one cycle.
+    #[serde(default = "default_max_hard_delete_ratio_per_cycle")]
+    pub max_hard_delete_ratio_per_cycle: f32,
     /// v2 exclusive: Use last 2 messages for better memory retrieval
     #[serde(default = "default_context_enrichment")]
     pub context_enrichment_enabled: bool,
@@ -263,11 +446,19 @@ fn default_cold_threshold() -> f32 {
     0.4 // Memories below this score are demoted to cold
 }
 
+fn default_delete_confidence() -> f32 {
+    0.5 // Omitted confidence should prefer cold storage over hard delete
+}
+
+fn default_max_hard_delete_ratio_per_cycle() -> f32 {
+    0.5 // At most half of the hot set can be hard-deleted per cycle
+}
+
 fn default_context_enrichment() -> bool {
     true // v2 exclusive: Use last 2 messages for better retrieval
 }
 
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct AdvancedModelSettings {
     pub temperature: Option<f64>,
@@ -277,6 +468,20 @@ pub struct AdvancedModelSettings {
     pub frequency_penalty: Option<f64>,
     pub presence_penalty: Option<f64>,
     pub top_k: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sd_steps: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sd_cfg_scale: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sd_sampler: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sd_seed: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sd_negative_prompt: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sd_denoising_strength: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sd_size: Option<String>,
     pub llama_gpu_layers: Option<u32>,
     pub llama_threads: Option<u32>,
     pub llama_threads_batch: Option<u32>,
@@ -297,11 +502,17 @@ pub struct AdvancedModelSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub llama_raw_completion_fallback: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub llama_strict_mode: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub llama_sampler_profile: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub llama_sampler_order: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub llama_min_p: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub llama_typical_p: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub llama_last_runtime_report: Option<serde_json::Value>,
     pub ollama_num_ctx: Option<u32>,
     pub ollama_num_predict: Option<u32>,
     pub ollama_num_keep: Option<u32>,
@@ -324,6 +535,10 @@ pub struct AdvancedModelSettings {
     pub reasoning_effort: Option<String>, // "low", "medium", "high"
     #[serde(default)]
     pub reasoning_budget_tokens: Option<u32>,
+    // Caching settings
+    #[serde(default)]
+    pub prompt_caching_enabled: Option<bool>,
+    pub prompt_caching_ttl: Option<String>,
 }
 
 impl Default for AdvancedModelSettings {
@@ -336,6 +551,13 @@ impl Default for AdvancedModelSettings {
             frequency_penalty: None,
             presence_penalty: None,
             top_k: None,
+            sd_steps: None,
+            sd_cfg_scale: None,
+            sd_sampler: None,
+            sd_seed: None,
+            sd_negative_prompt: None,
+            sd_denoising_strength: None,
+            sd_size: None,
             llama_gpu_layers: None,
             llama_threads: None,
             llama_threads_batch: None,
@@ -350,9 +572,12 @@ impl Default for AdvancedModelSettings {
             llama_mmproj_path: None,
             llama_chat_template_preset: None,
             llama_raw_completion_fallback: None,
+            llama_strict_mode: None,
             llama_sampler_profile: None,
+            llama_sampler_order: None,
             llama_min_p: None,
             llama_typical_p: None,
+            llama_last_runtime_report: None,
             ollama_num_ctx: None,
             ollama_num_predict: None,
             ollama_num_keep: None,
@@ -371,6 +596,8 @@ impl Default for AdvancedModelSettings {
             reasoning_enabled: None,
             reasoning_effort: None,
             reasoning_budget_tokens: None,
+            prompt_caching_enabled: Some(false),
+            prompt_caching_ttl: Some("5min".to_string()),
         }
     }
 }
@@ -505,6 +732,8 @@ pub struct Session {
     pub id: String,
     pub character_id: String,
     pub title: String,
+    #[serde(default)]
+    pub background_image_path: Option<String>,
     /// DEPRECATED: System prompts are now always rebuilt dynamically
     #[serde(default, skip_serializing)]
     #[allow(dead_code)]
@@ -535,6 +764,8 @@ pub struct Session {
     pub memory_status: Option<String>,
     #[serde(default)]
     pub memory_error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory_progress_step: Option<u32>,
     #[serde(default)]
     pub messages: Vec<StoredMessage>,
     #[serde(default)]
@@ -740,6 +971,25 @@ pub struct ChatGenerateScenePromptArgs {
     pub session_id: String,
     #[serde(alias = "messageId")]
     pub message_id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatGenerateDesignReferenceDescriptionArgs {
+    #[serde(alias = "subjectName")]
+    pub subject_name: Option<String>,
+    #[serde(alias = "subjectDescription")]
+    pub subject_description: Option<String>,
+    #[serde(alias = "currentDescription")]
+    pub current_description: Option<String>,
+    #[serde(alias = "avatarImage")]
+    pub avatar_image: Option<String>,
+    #[serde(default, alias = "referenceImages")]
+    pub reference_images: Vec<String>,
+    #[serde(alias = "requestId")]
+    pub request_id: Option<String>,
+    #[serde(default)]
+    pub stream: Option<bool>,
 }
 
 #[derive(Serialize)]

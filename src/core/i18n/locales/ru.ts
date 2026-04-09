@@ -22,6 +22,7 @@ export const ruMessages: DeepPartialMessageTree<LocaleMessages> = {
       convertFiles: "Конвертация файлов",
       usageAnalytics: "Аналитика использования",
       changelog: "Журнал изменений",
+      about: "О приложении",
       createSystemPrompt: "Создать системный промпт",
       editSystemPrompt: "Редактировать системный промпт",
       systemPrompts: "Системные промпты",
@@ -58,6 +59,7 @@ export const ruMessages: DeepPartialMessageTree<LocaleMessages> = {
       embeddingDownload: "Загрузка Embedding",
       embeddingTest: "Тест Embedding",
       editModel: "Редактировать модель",
+      messageDebug: "Отладка сообщений",
     },
     bottomNav: {
       chats: "Чаты",
@@ -145,6 +147,10 @@ export const ruMessages: DeepPartialMessageTree<LocaleMessages> = {
     items: {
       providers: { title: "Провайдеры", subtitle: "Подключение к AI-сервисам" },
       models: { title: "Модели", subtitle: "Настройка AI-моделей" },
+      imageGeneration: {
+        title: "Генерация изображений",
+        subtitle: "Генерируйте и тестируйте изображения",
+      },
       voices: { title: "Голоса", subtitle: "Голоса для озвучивания" },
       accessibility: { title: "Доступность", subtitle: "Звуки и вибрация" },
       prompts: { title: "Системные промпты", subtitle: "Настройка личности AI" },
@@ -159,6 +165,7 @@ export const ruMessages: DeepPartialMessageTree<LocaleMessages> = {
       docs: { title: "Документация", subtitle: "Справочники" },
       github: { title: "Сообщить о проблеме", subtitle: "Баги и отзывы • v{{version}}" },
       discord: { title: "Discord", subtitle: "Сообщество и помощь" },
+      about: { title: "О приложении", subtitle: "Версия, обновления и ссылки" },
       changelog: { title: "Журнал изменений", subtitle: "Что нового" },
       reset: { title: "Сброс", subtitle: "Удалить всё" },
       developer: { title: "Инструменты разработчика", subtitle: "Отладка и тестирование" },
@@ -218,6 +225,64 @@ export const ruMessages: DeepPartialMessageTree<LocaleMessages> = {
     save: "Сохранить",
   },
 
+  updates: {
+    available: {
+      title: "Доступна новая версия",
+      description: "Доступна v{{latestVersion}}. У вас установлена v{{currentVersion}}.",
+      actions: {
+        view: "Открыть релиз",
+      },
+    },
+  },
+
+  about: {
+    kicker: "Информация о приложении",
+    appName: "LettuceAI",
+    description: "Сведения о версии, проверка обновлений и полезные ссылки.",
+    info: {
+      version: "Версия",
+      channel: "Канал",
+      platform: "Платформа",
+    },
+    buildChannel: {
+      dev: "Сборка для разработки",
+      release: "Стабильный релиз",
+    },
+    update: {
+      sectionTitle: "Обновления",
+      title: "Обновления приложения",
+      description:
+        "Проверьте новые релизы вручную или отключите автоматическую проверку при запуске.",
+      autoChecks: "Автоматическая проверка обновлений",
+      autoChecksDescription:
+        "Если включено, LettuceAI проверяет новые версии при открытии приложения.",
+      checkNow: "Проверить обновления",
+      checking: "Проверка обновлений...",
+      upToDateTitle: "У вас актуальная версия",
+      upToDateDescription: "Сейчас для этого устройства нет более новой версии.",
+      failedTitle: "Не удалось проверить обновления",
+      failedDescription: "Сейчас не удалось проверить обновления. Попробуйте ещё раз чуть позже.",
+    },
+    links: {
+      sectionTitle: "Ссылки",
+      website: "Сайт",
+      websiteDescription: "Страница загрузки и информация о релизах",
+      github: "GitHub",
+      githubDescription: "Исходный код, issues и разработка",
+      discord: "Discord",
+      discordDescription: "Сервер сообщества и поддержка",
+      reddit: "Reddit",
+      redditDescription: "Обсуждения сообщества, отзывы и обновления",
+    },
+    developerMode: {
+      enable: "Включить режим разработчика",
+      enabled: "Режим разработчика включён",
+    },
+    errors: {
+      saveTitle: "Не удалось сохранить настройку",
+      saveDescription: "Настройка проверки обновлений не была изменена.",
+    },
+  },
   components: {
     tooltip: {
       dismissHint: "Нажмите где-угодно, чтобы закрыть",
@@ -235,6 +300,14 @@ export const ruMessages: DeepPartialMessageTree<LocaleMessages> = {
       chooseImage: "Выбрать изображение",
       chooseImageDesc: "Выбрать с устройства",
     },
+    avatarCurrentEdit: {
+      title: "Редактировать текущий",
+      reposition: "Переместить",
+      repositionDesc: "Переместить или обрезать текущий аватар",
+      editWithAI: "Редактировать с помощью ИИ",
+      editWithAIDesc: "Открыть редактирование AI для текущего аватара",
+      noImageModels: "Нет доступных моделей изображений",
+    },
     avatarGeneration: {
       modelsLoadError: "Не удалось загрузить модели генерации изображений",
       title: "Генерация аватара",
@@ -244,6 +317,19 @@ export const ruMessages: DeepPartialMessageTree<LocaleMessages> = {
       describe: "Опишите ваш аватар",
       describePlaceholder: "Дружелюбная аниме-девушка с яркими волосами, тепло улыбающаяся...",
       inProgress: "Генерация аватара...",
+      editingInProgress: "Применение редактирования аватара...",
+      previousVariant: "Предыдущий вариант",
+      nextVariant: "Следующий вариант",
+      variantCounter: "{{current}} / {{total}}",
+      editRequest: "Редактировать запрос",
+      editRequestPlaceholder: "Сделайте волосы темнее, добавьте очки, оставьте лицо таким же...",
+      applyEdit: "Применить Редактировать",
+      editImageLoadError: "Не удалось подготовить сгенерированный аватар для редактирования.",
+      aiAssistant: "ИИ-помощник",
+      backToResults: "Вернуться к подсказке",
+      magicInTheWorks: "Магия в действии...",
+      refine: "Уточнить",
+      apply: "Применять",
       alt: "Сгенерированный аватар",
       regenerate: "Перегенерировать",
       useThis: "Использовать это",
@@ -273,6 +359,9 @@ export const ruMessages: DeepPartialMessageTree<LocaleMessages> = {
       searchPlaceholder: "Поиск моделей...",
       noResults: "Модели не найдены",
       noResultsHint: "Попробуйте другой поисковый запрос",
+    },
+    localeSelector: {
+      title: "Выберите язык",
     },
     promptTemplate: {
       nameContentRequired: "Необходимо указать имя и содержание",
@@ -502,6 +591,29 @@ export const ruMessages: DeepPartialMessageTree<LocaleMessages> = {
     swapPlacesOn: "Поменять местами (вкл.)",
     uploadImage: "Загрузить изображение",
     helpMeReply: "Помоги ответить",
+    sceneImage: {
+      modeTitle: "Изображение сцены",
+      modeDescription: "Выберите, писать ли сцену подсказку или позволить ИИ сначала ее набросать.",
+      writePrompt: "Напишите подсказку",
+      writePromptDesc:
+        "Введите точную подсказку изображения сцены, которую вы хотите использовать.",
+      askAi: "Спросите ИИ",
+      askAiDesc: "Пусть текущая модель чата нарисует подсказку сцены с выбранного момента.",
+      generateTitle: "Создать изображение сцены",
+      regenerateTitle: "Восстановить изображение сцены",
+      aiTitle: "Подсказка сцены AI",
+      promptLabel: "ПОДПИСКА СЦЕНЫ",
+      promptPlaceholder:
+        "Опишите сцену, персонажей, настроение, освещение, кадр камеры и важные детали...",
+      suggestedPrompt: "Предлагаемая подсказка",
+      regeneratePrompt: "Регенерировать",
+      editPrompt: "Изменить приглашение",
+      reviewTitle: "Проверить промпт сцены",
+      denyPrompt: "Отклонить",
+      acceptPrompt: "Принять",
+      generateImage: "Создать изображение",
+      updateImage: "Обновить изображение",
+    },
     useMyTextAsBase: "Использовать мой текст как основу",
     writeNewReply: "Написать что-то новое",
     suggestedReply: "Предложенный ответ",
@@ -636,8 +748,11 @@ export const ruMessages: DeepPartialMessageTree<LocaleMessages> = {
       branchFromHere: "Ответвить отсюда",
       branchToGroupChat: "Ответвить в групповой чат",
       branchToCharacter: "Ответвить к персонажу",
+      generateSceneImage: "Создать изображение сцены",
+      regenerateSceneImage: "Восстановить изображение сцены",
       chatAppearance: "Оформление чата",
       delete: "Удалить",
+      debug: "Отладка",
       unpinToDelete: "Открепите, чтобы удалить",
       editPlaceholder: "Отредактируйте сообщение...",
       memoriesUsed: "{{count}} воспоминаний использовано",
@@ -926,7 +1041,8 @@ export const ruMessages: DeepPartialMessageTree<LocaleMessages> = {
       minTwoRequired: "Минимум 2 персонажа",
       removeCharacter: "Удалить персонажа",
       groupMinCharacters: "Группа требует минимум 2 персонажей",
-      mutedCharactersNote: "Отключённые персонажи пропускаются при автоматическом выборе говорящего, но могут отвечать через явное `@упоминание`.",
+      mutedCharactersNote:
+        "Отключённые персонажи пропускаются при автоматическом выборе говорящего, но могут отвечать через явное `@упоминание`.",
       addCharacterTitle: "Добавить персонажа",
       allCharactersInGroup: "Все персонажи уже в этой группе.",
       removeCharacterTitle: "Удалить персонажа?",
@@ -969,7 +1085,8 @@ export const ruMessages: DeepPartialMessageTree<LocaleMessages> = {
       minTwoRequired: "Минимум 2 персонажа",
       removeCharacter: "Удалить персонажа",
       groupMinCharacters: "Групповой чат требует минимум 2 персонажей",
-      mutedCharactersNote: "Отключённые персонажи пропускаются при автоматическом выборе говорящего, но могут отвечать через явное `@упоминание`.",
+      mutedCharactersNote:
+        "Отключённые персонажи пропускаются при автоматическом выборе говорящего, но могут отвечать через явное `@упоминание`.",
       data: "Данные",
       dataSubtitle: "Экспорт или импорт разговоров",
       export: "Экспорт",
@@ -997,7 +1114,8 @@ export const ruMessages: DeepPartialMessageTree<LocaleMessages> = {
       withoutMessages: "Без сообщений",
       withoutMessagesDesc: "Клонировать только настройки (персонажи, начальная сцена)",
       branchWithCharacterTitle: "Ветвление с персонажем",
-      branchWithCharacterDesc: "Выберите персонажа для продолжения в формате 1-на-1. Все сообщения из этой группы будут конвертированы.",
+      branchWithCharacterDesc:
+        "Выберите персонажа для продолжения в формате 1-на-1. Все сообщения из этой группы будут конвертированы.",
       continueWith: "Продолжить разговор с {{name}}",
       exportChatPackageTitle: "Экспорт пакета чата",
       includeCharacterSnapshots: "Включить снапшоты персонажей",
@@ -1570,6 +1688,7 @@ export const ruMessages: DeepPartialMessageTree<LocaleMessages> = {
       plainTextHex: "Plain Text Color",
       italicTextHex: "Italic Text Color",
       quotedTextHex: "Цвет блочной цитаты",
+      inlineCodeTextHex: "Цвет встроенного кода",
     },
     backgroundTransparency: {
       label: "Фон и прозрачность",
@@ -1787,11 +1906,47 @@ export const ruMessages: DeepPartialMessageTree<LocaleMessages> = {
       size: "РАЗМЕР",
       quality: "КАЧЕСТВО",
       style: "СТИЛЬ",
+      searchModels: "Поиск моделей...",
+      selectAvatarModel: "Выберите модель аватара",
+      selectSceneModel: "Выберите модель сцены",
+      selectWriterModel: "Выбрать модель сценариста сцен",
+      useFirstAvailable: "Использовать первую доступную модель",
+      useFirstCompatible: "Использовать первую совместимую модель сценариста",
+    },
+    mode: {
+      title: "Режим",
+      description: "Выберите, как обрабатывать промпты сцены, найденные в ответе модели.",
+      auto: "Автоматически",
+      autoDescription:
+        "Сразу генерировать изображение сцены, когда модель предлагает промпт сцены.",
+      askFirst: "Сначала спросить",
+      askFirstDescription:
+        "Показывать найденный промпт сцены и ждать вашего подтверждения перед генерацией изображения.",
+      manual: "Вручную",
+      manualDescription:
+        "Игнорировать промпты сцены из ответов модели. Использовать только действия, запущенные пользователем вручную.",
     },
     empty: {
       title: "Нет моделей изображений",
       description:
         "Добавьте модель генерации изображений на странице Моделей, чтобы начать генерацию.",
+    },
+    sections: {
+      avatar: {
+        title: "Генерация аватара",
+        description:
+          "Модель по умолчанию, используемая при создании аватаров из средства выбора аватаров или связанных потоков изображений профиля.",
+      },
+      scene: {
+        title: "Генерация сцены",
+        description:
+          "Зарезервированная модель для изображений сцен, созданных на основе контекста разговора или подсказок сцены.",
+      },
+      writer: {
+        title: "Сценарист сцен",
+        description:
+          "Зарезервированная мультимодальная текстовая модель для составления промптов сцен и описаний визуальных референсов на основе контекста чата, аватаров и референсных изображений.",
+      },
     },
   },
 
@@ -1808,6 +1963,7 @@ export const ruMessages: DeepPartialMessageTree<LocaleMessages> = {
       testDataGenerators: "Генераторы тестовых данных",
       storageMaintenance: "Обслуживание хранилища",
       usageTracking: "Отслеживание использования",
+      crashTesting: "Краш-тестирование",
       environmentInfo: "Информация о среде",
     },
     testData: {
@@ -1830,6 +1986,13 @@ export const ruMessages: DeepPartialMessageTree<LocaleMessages> = {
       recalculateAll: "Пересчитать все расходы",
       recalculateAllDesc:
         "Повторно получает цены и пересчитывает стоимость для всех записей OpenRouter",
+    },
+    crashTesting: {
+      forceCrash: "Сбой приложения сейчас",
+      forceCrashDesc:
+        "Немедленно завершает собственный процесс приложения для проверки обнаружения сбоев.",
+      forceCrashConfirm:
+        "Это немедленно приведет к сбою приложения для проверки детектора сбоев. Продолжать?",
     },
     environmentInfo: {
       mode: "Режим",
@@ -2322,6 +2485,45 @@ export const ruMessages: DeepPartialMessageTree<LocaleMessages> = {
       deleteLorebook: "Удалить лорбук",
       importLorebook: "Импорт лорбука",
     },
+    imageLibrary: {
+      filters: {
+        all: "Все",
+        backgrounds: "Фоны",
+        avatars: "Аватары",
+        attachments: "Вложения",
+        other: "Другое",
+      },
+      searchPlaceholder: "Поиск по имени файла, пути, id сессии или id сущности",
+      empty: {
+        title: "Для этого вида нет подходящих изображений",
+        description:
+          "Попробуйте другой фильтр или поисковый запрос. Библиотека показывает только изображения, уже сохранённые в локальном хранилище приложения.",
+      },
+      actions: {
+        sort: "Сортировать",
+        useThis: "Использовать",
+        using: "Используется...",
+        copyPath: "Копировать путь",
+        saving: "Сохранение...",
+        download: "Скачать",
+        delete: "Удалить изображение",
+        deleting: "Удаление...",
+      },
+      active: "Активно",
+      messages: {
+        loadFailed: "Не удалось загрузить библиотеку изображений",
+        saved: "Изображение сохранено",
+        downloadFailed: "Ошибка загрузки",
+        useFailed: "Не удалось использовать это изображение",
+        deleted: "Изображение удалено",
+        deleteFailed: "Не удалось удалить изображение",
+      },
+      deleteConfirm: {
+        title: "Удалить изображение?",
+        message:
+          'Вы уверены, что хотите удалить "{{filename}}"? Это может сломать аватары, фоны чата или вложения сообщений, которые всё ещё используют его.',
+      },
+    },
     deleteConfirm: {
       title: "Удалить {{itemType}}?",
       message: "Вы уверены, что хотите удалить",
@@ -2473,6 +2675,8 @@ export const ruMessages: DeepPartialMessageTree<LocaleMessages> = {
     status: {
       connecting: "Подключение...",
       connected: "Подключено",
+      waitingConfirmation: "Ожидание подтверждения",
+      waitingConfirmationDesc: "Подтвердите подключение на главном устройстве, чтобы продолжить.",
       syncing: "Синхронизация...",
       transferringData: "Передача данных",
       syncInProgress: "Синхронизация в процессе",

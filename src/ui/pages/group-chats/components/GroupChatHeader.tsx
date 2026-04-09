@@ -6,6 +6,7 @@ import { useI18n } from "../../../../core/i18n/context";
 import type { GroupSession, Character } from "../../../../core/storage/schemas";
 import { AvatarImage } from "../../../components/AvatarImage";
 import { cn } from "../../../design-tokens";
+import { useDragRegionProps } from "../../../components/App/TopNav";
 import { useAvatar } from "../../../hooks/useAvatar";
 import { isRenderableImageUrl } from "../../../../core/utils/image";
 
@@ -29,6 +30,7 @@ export function GroupChatHeader({
   headerOverlayClassName?: string;
 }) {
   const { t } = useI18n();
+  const dragRegionProps = useDragRegionProps();
   const [memoryBusy, setMemoryBusy] = useState(false);
   const [memoryError, setMemoryError] = useState<string | null>(null);
 
@@ -101,18 +103,19 @@ export function GroupChatHeader({
   return (
     <header
       className={cn(
-        "z-20 shrink-0 border-b border-white/10 px-3 lg:px-8",
+        "z-20 shrink-0 border-b border-fg/10 px-3 lg:px-8",
         hasBackgroundImage ? headerOverlayClassName || "bg-surface/40" : "bg-surface",
       )}
       style={{
         paddingTop: "calc(env(safe-area-inset-top) + 12px)",
         paddingBottom: "12px",
       }}
+      {...dragRegionProps}
     >
-      <div className="flex items-center h-10">
+      <div className="flex items-center h-10" {...dragRegionProps}>
         <button
           onClick={onBack}
-          className="flex px-[0.6em] py-[0.3em] shrink-0 items-center justify-center -ml-2 text-white transition hover:text-white/80"
+          className="flex px-[0.6em] py-[0.3em] shrink-0 items-center justify-center -ml-2 text-fg transition hover:text-fg/80"
           aria-label={t("groupChats.header.back")}
         >
           <ArrowLeft size={18} strokeWidth={2.5} />
@@ -120,7 +123,7 @@ export function GroupChatHeader({
 
         <button
           onClick={onSettings}
-          className="min-w-0 flex-1 truncate text-left text-xl font-bold text-white/90 transition-opacity hover:opacity-80"
+          className="min-w-0 flex-1 truncate text-left text-xl font-bold text-fg/90 transition-opacity hover:opacity-80"
           aria-label={t("groupChats.header.settings")}
         >
           <span className="block truncate">{session.name}</span>
@@ -130,7 +133,7 @@ export function GroupChatHeader({
           {/* Memory Button */}
           <button
             onClick={onMemories}
-            className="relative flex px-[0.6em] py-[0.3em] h-10 w-10 items-center justify-center text-white/80 transition hover:text-white"
+            className="relative flex h-10 w-10 items-center justify-center px-[0.6em] py-[0.3em] text-fg/75 transition hover:text-fg"
             aria-label={t("groupChats.header.memories")}
           >
             {effectiveMemoryBusy ? (
@@ -149,7 +152,7 @@ export function GroupChatHeader({
 
           <button
             onClick={onLorebooks}
-            className="flex items-center px-[0.6em] py-[0.3em] justify-center text-white/80 transition hover:text-white"
+            className="flex items-center justify-center px-[0.6em] py-[0.3em] text-fg/75 transition hover:text-fg"
             aria-label={t("chats.header.manageLorebooks")}
           >
             <BookOpen size={18} strokeWidth={2.5} />
@@ -158,7 +161,7 @@ export function GroupChatHeader({
           {/* Stacked character avatars */}
           <button
             onClick={onSettings}
-            className="relative shrink-0 overflow-hidden rounded-full ring-1 ring-white/20 transition hover:ring-white/40"
+            className="relative shrink-0 overflow-hidden rounded-full ring-1 ring-fg/15 transition hover:ring-fg/25"
             style={{
               minWidth: "36px",
               minHeight: "36px",
@@ -182,7 +185,7 @@ export function GroupChatHeader({
                     "flex h-8 w-8 items-center justify-center rounded-full",
                     "bg-linear-to-br from-secondary/30 to-info/80/30",
                     "text-[10px] font-semibold text-fg shadow-lg",
-                    "ring-1 ring-white/20",
+                    "ring-1 ring-fg/15",
                   )}
                   style={{ marginLeft: "-8px", zIndex: 0 }}
                 >
@@ -191,6 +194,7 @@ export function GroupChatHeader({
               )}
             </div>
           </button>
+
         </div>
       </div>
     </header>
@@ -216,8 +220,8 @@ function CharacterMiniAvatar({
     <div
       className={cn(
         "h-8 w-8 rounded-full overflow-hidden",
-        "bg-linear-to-br from-white/10 to-white/5",
-        "shadow-lg ring-1 ring-white/20",
+        "bg-linear-to-br from-fg/8 to-fg/4",
+        "shadow-lg ring-1 ring-fg/15",
         "transition-transform",
       )}
       style={{

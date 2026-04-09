@@ -18,8 +18,21 @@ pub fn is_dynamic_memory_active(settings: &Settings, session_character: &Charact
 
 pub fn append_image_directive_instructions(
     system_prompt_entries: Vec<SystemPromptEntry>,
-    _settings: &Settings,
+    settings: &Settings,
 ) -> Vec<SystemPromptEntry> {
+    let scene_generation_enabled = settings
+        .advanced_settings
+        .as_ref()
+        .and_then(|advanced| advanced.scene_generation_enabled)
+        .unwrap_or(true);
+
+    if !scene_generation_enabled {
+        return system_prompt_entries
+            .into_iter()
+            .filter(|entry| entry.id != "entry_scene_image_protocol")
+            .collect();
+    }
+
     system_prompt_entries
 }
 

@@ -2,10 +2,11 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { motion } from "framer-motion";
-import { Copy, Download, Image as ImageIcon, Loader2 } from "lucide-react";
+import { Copy, Download, Image as ImageIcon, Loader2, Trash2 } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import {
+  deleteImageLibraryItem,
   downloadImageLibraryItem,
   listImageLibraryItems,
   listReferencedBackgroundImagePaths,
@@ -13,8 +14,10 @@ import {
 } from "../../../core/storage/repo";
 import { BottomMenu } from "../../components";
 import { cn } from "../../design-tokens";
+import { confirmBottomMenu } from "../../components/ConfirmBottomMenu";
 import { toast } from "../../components/toast";
 import { isRenderableImageUrl } from "../../../core/utils/image";
+import { useI18n } from "../../../core/i18n/context";
 import {
   buildAvatarLibrarySelectionKey,
   buildBackgroundLibrarySelectionKey,
@@ -158,11 +161,13 @@ const ImageLibraryGrid = memo(function ImageLibraryGrid({
   backgroundIds,
   scrollContainerRef,
   onSelect,
+  columnCountOverride,
 }: {
   items: ImageLibraryItem[];
   backgroundIds: Set<string>;
   scrollContainerRef: RefObject<HTMLElement | null>;
   onSelect: (item: ImageLibraryItem) => void;
+  columnCountOverride?: number;
 }) {
   const [viewportWidth, setViewportWidth] = useState(0);
   const [gridWidth, setGridWidth] = useState(0);
@@ -193,11 +198,12 @@ const ImageLibraryGrid = memo(function ImageLibraryGrid({
   }, [items.length]);
 
   const columnCount = useMemo(() => {
+    if (columnCountOverride && columnCountOverride > 0) return columnCountOverride;
     if (viewportWidth >= 1536) return 6;
     if (viewportWidth >= 1280) return 5;
     if (viewportWidth >= 1024) return 4;
     return 2;
-  }, [viewportWidth]);
+  }, [columnCountOverride, viewportWidth]);
 
   const itemSize = useMemo(() => {
     const safeGridWidth = gridWidth || Math.max(0, window.innerWidth - 32);
@@ -260,22 +266,36 @@ export function ImageLibraryPanel({
   embedded: _embedded = false,
   mode = "default",
   onUseItem,
+  fixedFilter,
+  hideFilterTabs = false,
+  columnCountOverride,
 }: {
   scrollContainerRef: RefObject<HTMLElement | null>;
   embedded?: boolean;
   mode?: "default" | "picker";
   onUseItem?: (item: ImageLibraryItem) => Promise<void> | void;
+  fixedFilter?: FilterOption;
+  hideFilterTabs?: boolean;
+  columnCountOverride?: number;
 }) {
+  const { t } = useI18n();
   const [items, setItems] = useState<ImageLibraryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<FilterOption>("All");
+  const [filter, setFilter] = useState<FilterOption>(fixedFilter ?? "All");
   const [sort, setSort] = useState<SortOption>("Newest");
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [selectedItem, setSelectedItem] = useState<ImageLibraryItem | null>(null);
   const [backgroundIds, setBackgroundIds] = useState<Set<string>>(new Set());
   const [downloadingItemId, setDownloadingItemId] = useState<string | null>(null);
   const [usingItemId, setUsingItemId] = useState<string | null>(null);
+  const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (fixedFilter) {
+      setFilter(fixedFilter);
+    }
+  }, [fixedFilter]);
 
   useEffect(() => {
     const load = async () => {
@@ -296,14 +316,14 @@ export function ImageLibraryPanel({
         setBackgroundIds(nextBackgroundIds);
       } catch (error) {
         console.error("Failed to load image library:", error);
-        toast.error("Failed to load image library");
+        toast.error(t("library.imageLibrary.messages.loadFailed"));
       } finally {
         setLoading(false);
       }
     };
 
     void load();
-  }, []);
+  }, [t]);
 
   const counts = useMemo(
     () => ({
@@ -338,10 +358,13 @@ export function ImageLibraryPanel({
     try {
       setDownloadingItemId(item.id);
       const savedPath = await downloadImageLibraryItem(item);
-      toast.success("Image saved", savedPath);
+      toast.success(t("library.imageLibrary.messages.saved"), savedPath);
     } catch (error) {
       console.error("Failed to download image:", error);
-      toast.error("Download failed", error instanceof Error ? error.message : String(error));
+      toast.error(
+        t("library.imageLibrary.messages.downloadFailed"),
+        error instanceof Error ? error.message : String(error),
+      );
     } finally {
       setDownloadingItemId((current) => (current === item.id ? null : current));
     }
@@ -356,51 +379,114 @@ export function ImageLibraryPanel({
       } catch (error) {
         console.error("Failed to use image library item:", error);
         toast.error(
-          "Could not use this image",
+          t("library.imageLibrary.messages.useFailed"),
           error instanceof Error ? error.message : String(error),
         );
       } finally {
         setUsingItemId((current) => (current === item.id ? null : current));
       }
     },
-    [onUseItem],
+    [onUseItem, t],
+  );
+
+  const handleDeleteItem = useCallback(
+    async (item: ImageLibraryItem) => {
+      const confirmed = await confirmBottomMenu({
+        title: t("library.imageLibrary.deleteConfirm.title"),
+        message: t("library.imageLibrary.deleteConfirm.message", { filename: item.filename }),
+        confirmLabel: t("library.imageLibrary.actions.delete"),
+        cancelLabel: t("common.buttons.cancel"),
+        destructive: true,
+      });
+      if (!confirmed) return;
+
+      try {
+        setDeletingItemId(item.id);
+        await deleteImageLibraryItem(item);
+        setItems((current) => current.filter((entry) => entry.id !== item.id));
+        setSelectedItem((current) => (current?.id === item.id ? null : current));
+
+        const storedId = getStoredImageId(item);
+        if (storedId) {
+          setBackgroundIds((current) => {
+            if (!current.has(storedId)) return current;
+            const next = new Set(current);
+            next.delete(storedId);
+            return next;
+          });
+        }
+
+        toast.success(t("library.imageLibrary.messages.deleted"), item.filename);
+      } catch (error) {
+        console.error("Failed to delete image library item:", error);
+        toast.error(
+          t("library.imageLibrary.messages.deleteFailed"),
+          error instanceof Error ? error.message : String(error),
+        );
+      } finally {
+        setDeletingItemId((current) => (current === item.id ? null : current));
+      }
+    },
+    [t],
   );
 
   return (
     <>
       <div className="mb-4 space-y-3">
-        <div className="flex items-center gap-2 overflow-x-auto pb-1">
-          {[
-            { key: "All" as const, label: "All", count: counts.all },
-            { key: "Backgrounds" as const, label: "Backgrounds", count: counts.backgrounds },
-            { key: "Avatars" as const, label: "Avatars", count: counts.avatars },
-            { key: "Attachments" as const, label: "Attachments", count: counts.attachments },
-            { key: "Other" as const, label: "Other", count: counts.other },
-          ].map((option) => (
-            <button
-              key={option.key}
-              type="button"
-              onClick={() => setFilter(option.key)}
-              className={cn(
-                "flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-sm transition",
-                filter === option.key
-                  ? "border-fg/15 bg-fg/10 text-fg"
-                  : "border-fg/10 bg-surface-el/20 text-fg/65 hover:bg-fg/5 hover:text-fg",
-              )}
-            >
-              <span className="font-medium">{option.label}</span>
-              <span className="rounded-md bg-fg/8 px-1.5 py-0.5 text-[11px] text-fg/55">
-                {option.count}
-              </span>
-            </button>
-          ))}
-        </div>
+        {!hideFilterTabs && (
+          <div className="flex items-center gap-2 overflow-x-auto pb-1">
+            {[
+              {
+                key: "All" as const,
+                label: t("library.imageLibrary.filters.all"),
+                count: counts.all,
+              },
+              {
+                key: "Backgrounds" as const,
+                label: t("library.imageLibrary.filters.backgrounds"),
+                count: counts.backgrounds,
+              },
+              {
+                key: "Avatars" as const,
+                label: t("library.imageLibrary.filters.avatars"),
+                count: counts.avatars,
+              },
+              {
+                key: "Attachments" as const,
+                label: t("library.imageLibrary.filters.attachments"),
+                count: counts.attachments,
+              },
+              {
+                key: "Other" as const,
+                label: t("library.imageLibrary.filters.other"),
+                count: counts.other,
+              },
+            ].map((option) => (
+              <button
+                key={option.key}
+                type="button"
+                onClick={() => setFilter(option.key)}
+                className={cn(
+                  "flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-sm transition",
+                  filter === option.key
+                    ? "border-fg/15 bg-fg/10 text-fg"
+                    : "border-fg/10 bg-surface-el/20 text-fg/65 hover:bg-fg/5 hover:text-fg",
+                )}
+              >
+                <span className="font-medium">{option.label}</span>
+                <span className="rounded-md bg-fg/8 px-1.5 py-0.5 text-[11px] text-fg/55">
+                  {option.count}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="flex items-center gap-3">
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search by filename, path, session id, or entity id"
+            placeholder={t("library.imageLibrary.searchPlaceholder")}
             className="min-w-0 flex-1 rounded-xl border border-fg/10 bg-surface-el/20 px-3 py-3 text-sm text-fg outline-none transition focus:border-fg/25"
           />
           <button
@@ -408,7 +494,7 @@ export function ImageLibraryPanel({
             onClick={() => setShowSortMenu(true)}
             className="shrink-0 rounded-xl border border-fg/10 bg-surface-el/20 px-3 py-3 text-sm font-medium text-fg/70 transition hover:bg-fg/5 hover:text-fg"
           >
-            Sort
+            {t("library.imageLibrary.actions.sort")}
           </button>
         </div>
       </div>
@@ -431,10 +517,9 @@ export function ImageLibraryPanel({
           <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-fg/10 bg-fg/[0.04]">
             <ImageIcon className="h-7 w-7 text-fg/35" />
           </div>
-          <h2 className="text-lg font-semibold text-fg">No images match this view</h2>
+          <h2 className="text-lg font-semibold text-fg">{t("library.imageLibrary.empty.title")}</h2>
           <p className="mt-2 max-w-md text-sm text-fg/55">
-            Try a different filter or search term. The library only lists images already stored in
-            the app&apos;s local storage.
+            {t("library.imageLibrary.empty.description")}
           </p>
         </motion.div>
       ) : (
@@ -443,10 +528,15 @@ export function ImageLibraryPanel({
           backgroundIds={backgroundIds}
           scrollContainerRef={scrollContainerRef}
           onSelect={setSelectedItem}
+          columnCountOverride={columnCountOverride}
         />
       )}
 
-      <BottomMenu isOpen={showSortMenu} onClose={() => setShowSortMenu(false)} title="Sort">
+      <BottomMenu
+        isOpen={showSortMenu}
+        onClose={() => setShowSortMenu(false)}
+        title={t("library.imageLibrary.actions.sort")}
+      >
         <div className="space-y-5">
           <div>
             <div className="space-y-2">
@@ -467,7 +557,9 @@ export function ImageLibraryPanel({
                 >
                   <span>{option}</span>
                   {sort === option && (
-                    <span className="text-xs font-medium text-accent">Active</span>
+                    <span className="text-xs font-medium text-accent">
+                      {t("library.imageLibrary.active")}
+                    </span>
                   )}
                 </button>
               ))}
@@ -506,7 +598,9 @@ export function ImageLibraryPanel({
                 {usingItemId === selectedItem.id ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : null}
-                {usingItemId === selectedItem.id ? "Using..." : "Use this"}
+                {usingItemId === selectedItem.id
+                  ? t("library.imageLibrary.actions.using")
+                  : t("library.imageLibrary.actions.useThis")}
               </button>
             ) : (
               <>
@@ -619,7 +713,7 @@ export function ImageLibraryPanel({
                     className="flex items-center justify-center gap-2 rounded-xl border border-fg/10 bg-fg/[0.04] px-4 py-3 text-sm font-medium text-fg/75 transition hover:bg-fg/[0.08] hover:text-fg"
                   >
                     <Copy className="h-4 w-4" />
-                    Copy path
+                    {t("library.imageLibrary.actions.copyPath")}
                   </button>
                   <button
                     type="button"
@@ -637,9 +731,32 @@ export function ImageLibraryPanel({
                     ) : (
                       <Download className="h-4 w-4" />
                     )}
-                    {downloadingItemId === selectedItem.id ? "Saving..." : "Download"}
+                    {downloadingItemId === selectedItem.id
+                      ? t("library.imageLibrary.actions.saving")
+                      : t("library.imageLibrary.actions.download")}
                   </button>
                 </div>
+
+                <button
+                  type="button"
+                  onClick={() => void handleDeleteItem(selectedItem)}
+                  disabled={deletingItemId === selectedItem.id}
+                  className={cn(
+                    "flex w-full items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-medium transition",
+                    deletingItemId === selectedItem.id
+                      ? "cursor-wait border-red-500/15 bg-red-500/8 text-red-200/65"
+                      : "border-red-500/20 bg-red-500/10 text-red-200 hover:bg-red-500/16",
+                  )}
+                >
+                  {deletingItemId === selectedItem.id ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-4 w-4" />
+                  )}
+                  {deletingItemId === selectedItem.id
+                    ? t("library.imageLibrary.actions.deleting")
+                    : t("library.imageLibrary.actions.delete")}
+                </button>
               </>
             )}
           </div>

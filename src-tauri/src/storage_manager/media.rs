@@ -1,6 +1,6 @@
 use base64::{engine::general_purpose, Engine as _};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 use std::time::UNIX_EPOCH;
 use tauri::Manager;
 
@@ -10,6 +10,91 @@ use crate::utils::{log_debug, log_info};
 pub struct StoredImageInfo {
     pub file_path: String,
     pub mime_type: String,
+}
+
+fn validate_simple_id<'a>(value: &'a str, field: &str) -> Result<&'a str, String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err(crate::utils::err_msg(
+            module_path!(),
+            line!(),
+            format!("{field} cannot be empty"),
+        ));
+    }
+
+    if !trimmed
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_'))
+    {
+        return Err(crate::utils::err_msg(
+            module_path!(),
+            line!(),
+            format!("Invalid {field}: {}", value),
+        ));
+    }
+
+    Ok(trimmed)
+}
+
+fn validate_single_component<'a>(
+    value: &'a str,
+    field: &str,
+    allow_dots: bool,
+) -> Result<&'a str, String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err(crate::utils::err_msg(
+            module_path!(),
+            line!(),
+            format!("{field} cannot be empty"),
+        ));
+    }
+
+    let path = Path::new(trimmed);
+    if path.is_absolute() || path.components().count() != 1 {
+        return Err(crate::utils::err_msg(
+            module_path!(),
+            line!(),
+            format!("Invalid {field}: {}", value),
+        ));
+    }
+
+    match path.components().next() {
+        Some(Component::Normal(_)) => {}
+        _ => {
+            return Err(crate::utils::err_msg(
+                module_path!(),
+                line!(),
+                format!("Invalid {field}: {}", value),
+            ))
+        }
+    }
+
+    if !trimmed.chars().all(|ch| {
+        ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_') || (allow_dots && ch == '.')
+    }) {
+        return Err(crate::utils::err_msg(
+            module_path!(),
+            line!(),
+            format!("Invalid {field}: {}", value),
+        ));
+    }
+
+    Ok(trimmed)
+}
+
+fn validate_avatar_filename<'a>(filename: &'a str) -> Result<&'a str, String> {
+    let filename = validate_single_component(filename, "avatar filename", true)?;
+    let path = PathBuf::from(filename);
+    if !is_supported_image_file(&path) {
+        return Err(crate::utils::err_msg(
+            module_path!(),
+            line!(),
+            format!("Unsupported avatar filename: {}", filename),
+        ));
+    }
+
+    Ok(filename)
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -212,11 +297,103 @@ fn images_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     Ok(images_dir)
 }
 
-fn downloads_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    #[cfg(target_os = "android")]
-    let download_dir = PathBuf::from("/storage/emulated/0/Download");
+fn managed_media_roots(app: &tauri::AppHandle) -> Result<Vec<PathBuf>, String> {
+    let mut roots = vec![storage_root(app)?];
+    roots.push(
+        app.path()
+            .app_data_dir()
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
+            .join("generated_images"),
+    );
+    Ok(roots)
+}
 
-    #[cfg(not(target_os = "android"))]
+fn resolve_managed_media_source_path(
+    app: &tauri::AppHandle,
+    file_path: &str,
+) -> Result<PathBuf, String> {
+    let source_path = PathBuf::from(file_path);
+    if !source_path.exists() {
+        return Err(crate::utils::err_msg(
+            module_path!(),
+            line!(),
+            format!("Image file not found: {}", file_path),
+        ));
+    }
+
+    let canonical_source = fs::canonicalize(&source_path)
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    for root in managed_media_roots(app)? {
+        if root.exists() {
+            let canonical_root = fs::canonicalize(&root)
+                .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+            if canonical_source.starts_with(&canonical_root) {
+                return Ok(canonical_source);
+            }
+        }
+    }
+
+    Err(crate::utils::err_msg(
+        module_path!(),
+        line!(),
+        format!("Refusing to access unmanaged file path: {}", file_path),
+    ))
+}
+
+fn is_safe_library_storage_path(storage_path: &str) -> bool {
+    let path = PathBuf::from(storage_path);
+    if path.is_absolute() {
+        return false;
+    }
+
+    let mut components = path.components();
+    let Some(Component::Normal(first)) = components.next() else {
+        return false;
+    };
+
+    let bucket = first.to_string_lossy();
+    if !matches!(bucket.as_ref(), "images" | "avatars" | "sessions") {
+        return false;
+    }
+
+    path.components()
+        .all(|component| matches!(component, Component::Normal(_)))
+}
+
+fn prune_empty_parent_dirs(mut current: PathBuf, root: &PathBuf) {
+    while current.starts_with(root) && current != *root {
+        let is_empty = fs::read_dir(&current)
+            .ok()
+            .and_then(|mut entries| entries.next())
+            .is_none();
+
+        if !is_empty {
+            break;
+        }
+
+        if fs::remove_dir(&current).is_err() {
+            break;
+        }
+
+        let Some(parent) = current.parent() else {
+            break;
+        };
+        current = parent.to_path_buf();
+    }
+}
+
+#[cfg(target_os = "android")]
+fn downloads_dir(_app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let download_dir = PathBuf::from("/storage/emulated/0/Download");
+    if !download_dir.exists() {
+        fs::create_dir_all(&download_dir)
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    }
+    Ok(download_dir)
+}
+
+#[cfg(not(target_os = "android"))]
+fn downloads_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let download_dir = app.path().download_dir().map_err(|e| {
         crate::utils::err_msg(
             module_path!(),
@@ -249,6 +426,7 @@ pub fn storage_write_image_bytes(
     image_id: &str,
     bytes: &[u8],
 ) -> Result<StoredImageInfo, String> {
+    let image_id = validate_simple_id(image_id, "image ID")?;
     let images_dir = images_dir(app)?;
     let extension = image_extension_from_bytes(bytes);
     let image_path = images_dir.join(format!("{}.{}", image_id, extension));
@@ -271,6 +449,7 @@ pub fn storage_write_image_data(
 }
 
 pub fn storage_read_image_data(app: &tauri::AppHandle, image_id: &str) -> Result<String, String> {
+    let image_id = validate_simple_id(image_id, "image ID")?;
     let images_dir = images_dir(app)?;
     if let Some((image_path, mime_type)) = find_image_path(&images_dir, image_id) {
         let bytes = fs::read(&image_path)
@@ -320,14 +499,7 @@ pub fn storage_download_image_to_downloads(
     file_path: String,
     filename: Option<String>,
 ) -> Result<String, String> {
-    let source_path = PathBuf::from(&file_path);
-    if !source_path.exists() {
-        return Err(crate::utils::err_msg(
-            module_path!(),
-            line!(),
-            format!("Image file not found: {}", file_path),
-        ));
-    }
+    let source_path = resolve_managed_media_source_path(&app, &file_path)?;
 
     let resolved_filename = filename
         .and_then(|value| {
@@ -351,6 +523,8 @@ pub fn storage_download_image_to_downloads(
                 "Unable to resolve filename for image download".to_string(),
             )
         })?;
+    let resolved_filename =
+        validate_single_component(&resolved_filename, "download filename", true)?.to_string();
 
     let target_path = downloads_dir(&app)?.join(&resolved_filename);
     log_info(
@@ -384,8 +558,9 @@ pub fn storage_download_image_to_downloads(
 
 #[tauri::command]
 pub fn storage_get_image_path(app: tauri::AppHandle, image_id: String) -> Result<String, String> {
+    let image_id = validate_simple_id(&image_id, "image ID")?;
     let images_dir = images_dir(&app)?;
-    if let Some((image_path, _)) = find_image_path(&images_dir, &image_id) {
+    if let Some((image_path, _)) = find_image_path(&images_dir, image_id) {
         return Ok(image_path.to_string_lossy().to_string());
     }
 
@@ -398,6 +573,7 @@ pub fn storage_get_image_path(app: tauri::AppHandle, image_id: String) -> Result
 
 #[tauri::command]
 pub fn storage_delete_image(app: tauri::AppHandle, image_id: String) -> Result<(), String> {
+    let image_id = validate_simple_id(&image_id, "image ID")?;
     let images_dir = images_dir(&app)?;
     for ext in &["jpg", "jpeg", "png", "gif", "webp", "img"] {
         let image_path = images_dir.join(format!("{}.{}", image_id, ext));
@@ -406,6 +582,44 @@ pub fn storage_delete_image(app: tauri::AppHandle, image_id: String) -> Result<(
                 .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
         }
     }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn storage_delete_image_library_item(
+    app: tauri::AppHandle,
+    storage_path: String,
+) -> Result<(), String> {
+    if !is_safe_library_storage_path(&storage_path) {
+        return Err(crate::utils::err_msg(
+            module_path!(),
+            line!(),
+            format!("Unsafe image library path: {}", storage_path),
+        ));
+    }
+
+    let root = storage_root(&app)?;
+    let full_path = root.join(&storage_path);
+
+    if !full_path.exists() {
+        return Ok(());
+    }
+
+    if !is_supported_image_file(&full_path) {
+        return Err(crate::utils::err_msg(
+            module_path!(),
+            line!(),
+            format!("Unsupported image library file: {}", storage_path),
+        ));
+    }
+
+    fs::remove_file(&full_path)
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+
+    if let Some(parent) = full_path.parent() {
+        prune_empty_parent_dirs(parent.to_path_buf(), &root);
+    }
+
     Ok(())
 }
 
@@ -421,6 +635,7 @@ pub fn storage_save_avatar(
     base64_data: String,
     round_base64_data: Option<String>,
 ) -> Result<String, String> {
+    let entity_id = validate_simple_id(&entity_id, "entity ID")?;
     let data = if let Some(comma_idx) = base64_data.find(',') {
         &base64_data[comma_idx + 1..]
     } else {
@@ -433,7 +648,7 @@ pub fn storage_save_avatar(
             format!("Failed to decode base64: {}", e),
         )
     })?;
-    let avatars_dir = storage_root(&app)?.join("avatars").join(&entity_id);
+    let avatars_dir = storage_root(&app)?.join("avatars").join(entity_id);
     fs::create_dir_all(&avatars_dir)
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     let base_webp_bytes = match image::load_from_memory(&bytes) {
@@ -515,10 +730,12 @@ pub fn storage_load_avatar(
     entity_id: String,
     filename: String,
 ) -> Result<String, String> {
+    let entity_id = validate_simple_id(&entity_id, "entity ID")?;
+    let filename = validate_avatar_filename(&filename)?;
     let avatar_path = storage_root(&app)?
         .join("avatars")
-        .join(&entity_id)
-        .join(&filename);
+        .join(entity_id)
+        .join(filename);
     if !avatar_path.exists() {
         return Err(crate::utils::err_msg(
             module_path!(),
@@ -549,10 +766,12 @@ pub fn storage_get_avatar_path(
     entity_id: String,
     filename: String,
 ) -> Result<String, String> {
+    let entity_id = validate_simple_id(&entity_id, "entity ID")?;
+    let filename = validate_avatar_filename(&filename)?;
     let avatar_path = storage_root(&app)?
         .join("avatars")
-        .join(&entity_id)
-        .join(&filename);
+        .join(entity_id)
+        .join(filename);
     if !avatar_path.exists() {
         return Err(crate::utils::err_msg(
             module_path!(),
@@ -569,10 +788,12 @@ pub fn storage_delete_avatar(
     entity_id: String,
     filename: String,
 ) -> Result<(), String> {
+    let entity_id = validate_simple_id(&entity_id, "entity ID")?;
+    let filename = validate_avatar_filename(&filename)?;
     let avatar_path = storage_root(&app)?
         .join("avatars")
-        .join(&entity_id)
-        .join(&filename);
+        .join(entity_id)
+        .join(filename);
     if avatar_path.exists() {
         fs::remove_file(&avatar_path)
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
@@ -602,7 +823,8 @@ pub fn generate_avatar_gradient(
     entity_id: String,
     _filename: String,
 ) -> Result<AvatarGradient, String> {
-    let avatars_dir = storage_root(&app)?.join("avatars").join(&entity_id);
+    let entity_id = validate_simple_id(&entity_id, "entity ID")?;
+    let avatars_dir = storage_root(&app)?.join("avatars").join(entity_id);
     let base_path = avatars_dir.join("avatar_base.webp");
     let legacy_path = avatars_dir.join("avatar.webp");
     let avatar_path = if base_path.exists() {
@@ -783,6 +1005,33 @@ fn calculate_text_colors(colors: &[GradientColor]) -> (String, String) {
         ("#111827".into(), "#374151".into())
     } else {
         ("#F9FAFB".into(), "#D1D5DB".into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{validate_avatar_filename, validate_simple_id, validate_single_component};
+
+    #[test]
+    fn validate_simple_id_rejects_traversal() {
+        assert!(validate_simple_id("../escape", "id").is_err());
+        assert!(validate_simple_id("nested/path", "id").is_err());
+        assert!(validate_simple_id("", "id").is_err());
+    }
+
+    #[test]
+    fn validate_avatar_filename_requires_single_supported_file() {
+        assert!(validate_avatar_filename("avatar_base.webp").is_ok());
+        assert!(validate_avatar_filename("../avatar_base.webp").is_err());
+        assert!(validate_avatar_filename("nested/avatar_base.webp").is_err());
+        assert!(validate_avatar_filename("avatar_base.txt").is_err());
+    }
+
+    #[test]
+    fn validate_single_component_rejects_path_segments() {
+        assert!(validate_single_component("../../x", "file", true).is_err());
+        assert!(validate_single_component("/tmp/x", "file", true).is_err());
+        assert!(validate_single_component("ok-name.png", "file", true).is_ok());
     }
 }
 

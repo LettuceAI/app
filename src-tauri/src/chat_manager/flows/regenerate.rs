@@ -37,7 +37,9 @@ use crate::chat_manager::types::{
     ChatRegenerateArgs, ImageAttachment, RegenerateResult, StoredMessage,
 };
 use crate::usage::tracking::UsageOperationType;
-use crate::utils::{emit_debug, log_info, log_warn, now_millis};
+use crate::utils::{
+    emit_debug, emit_error_event, emit_info, emit_warn_event, log_info, log_warn, now_millis,
+};
 
 pub struct RegenerateFlow {
     app: AppHandle,
@@ -433,18 +435,38 @@ impl RegenerateFlow {
                 request_settings.reasoning_enabled,
                 request_settings.reasoning_effort.clone(),
                 request_settings.reasoning_budget,
+                request_settings.prompt_caching_enabled.unwrap_or(false),
                 extra_body_fields,
             );
 
-            emit_debug(
+            let request_started_at = now_millis().unwrap_or_default();
+
+            emit_info(
                 &app,
                 "regenerate_request",
                 json!({
+                    "operation": "regenerate",
                     "sessionId": session.id,
                     "messageId": message_id,
+                    "providerId": attempt_credential.provider_id,
                     "requestId": request_id,
                     "endpoint": built.url,
                     "model": attempt_model.name,
+                    "stream": should_stream,
+                    "requestStartedAt": request_started_at,
+                    "requestBody": &built.body,
+                    "requestSettings": {
+                        "temperature": request_settings.temperature,
+                        "topP": request_settings.top_p,
+                        "maxTokens": request_settings.max_tokens,
+                        "contextLength": request_settings.context_length,
+                        "frequencyPenalty": request_settings.frequency_penalty,
+                        "presencePenalty": request_settings.presence_penalty,
+                        "topK": request_settings.top_k,
+                        "reasoningEnabled": request_settings.reasoning_enabled,
+                        "reasoningEffort": request_settings.reasoning_effort,
+                        "reasoningBudget": request_settings.reasoning_budget,
+                    },
                     "fallbackAttempt": is_fallback_attempt,
                 }),
             );
@@ -455,7 +477,7 @@ impl RegenerateFlow {
                 headers: Some(built.headers),
                 query: None,
                 body: Some(built.body),
-                timeout_ms: Some(900_000),
+                timeout_ms: Some(crate::transport::DEFAULT_REQUEST_TIMEOUT_MS),
                 stream: Some(built.stream),
                 request_id: built.request_id.clone(),
                 provider_id: Some(attempt_credential.provider_id.clone()),
@@ -473,13 +495,18 @@ impl RegenerateFlow {
                 }
             };
 
-            emit_debug(
+            emit_info(
                 &app,
                 "regenerate_response",
                 json!({
+                    "operation": "regenerate",
+                    "sessionId": session.id,
+                    "messageId": message_id,
+                    "requestId": request_id,
                     "status": api_response.status,
                     "ok": api_response.ok,
                     "model": attempt_model.name,
+                    "elapsedMs": now_millis().unwrap_or_default().saturating_sub(request_started_at),
                 }),
             );
 
@@ -488,10 +515,14 @@ impl RegenerateFlow {
                 let err_message =
                     extract_error_message(api_response.data()).unwrap_or(fallback.clone());
                 let failed_usage = extract_usage(api_response.data());
-                emit_debug(
+                emit_error_event(
                     &app,
                     "regenerate_provider_error",
                     json!({
+                        "operation": "regenerate",
+                        "sessionId": session.id,
+                        "messageId": message_id,
+                        "requestId": request_id,
                         "status": api_response.status,
                         "message": err_message,
                         "usage": failed_usage,
@@ -558,9 +589,6 @@ impl RegenerateFlow {
             extract_reasoning(api_response.data(), Some(&selected_credential.provider_id));
 
         if text.trim().is_empty() && images_from_sse.is_empty() {
-            let preview =
-                serde_json::to_string(api_response.data()).unwrap_or_else(|_| "<non-json>".into());
-
             let has_reasoning = reasoning.as_ref().is_some_and(|r| !r.trim().is_empty());
             let error_detail = if has_reasoning {
                 "Model completed reasoning but generated no response text. This may indicate the model ran out of tokens or encountered an issue during generation."
@@ -568,10 +596,10 @@ impl RegenerateFlow {
                 "Empty response from provider"
             };
 
-            emit_debug(
+            emit_warn_event(
                 &app,
                 "regenerate_empty_response",
-                json!({ "preview": preview, "hasReasoning": has_reasoning }),
+                json!({ "hasReasoning": has_reasoning, "requestId": request_id }),
             );
             return Err(error_detail.to_string());
         }
@@ -677,6 +705,7 @@ impl RegenerateFlow {
             json!({
                 "sessionId": session.id,
                 "messageId": message_id,
+                "requestId": request_id,
                 "variantId": assistant_clone
                     .selected_variant_id
                     .clone()

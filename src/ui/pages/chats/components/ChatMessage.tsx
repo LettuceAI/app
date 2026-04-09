@@ -182,9 +182,9 @@ const MessageActions = React.memo(function MessageActions({
         className={cn(
           "flex items-center px-[0.6em] py-[0.3em] justify-center",
           radius.full,
-          "border border-white/15 bg-white/10 text-white",
+          "border border-fg/15 bg-surface-el/80 text-fg/85",
           interactive.transition.fast,
-          "hover:border-white/30 hover:bg-white/20 hover:scale-105",
+          "hover:border-fg/30 hover:bg-fg/12 hover:text-fg hover:scale-105",
           interactive.active.scale,
           "disabled:cursor-not-allowed disabled:opacity-80 disabled:hover:scale-100",
         )}
@@ -614,12 +614,14 @@ function ChatMessageInner({
                 chatAppearance?.messageTextColorHex ||
                 chatAppearance?.plainTextColorHex ||
                 chatAppearance?.italicTextColorHex ||
-                chatAppearance?.quotedTextColorHex
+                chatAppearance?.quotedTextColorHex ||
+                chatAppearance?.inlineCodeTextColorHex
                   ? {
                       texts: chatAppearance.messageTextColorHex ?? chatAppearance.plainTextColorHex,
                       plain: chatAppearance.plainTextColorHex,
                       italic: chatAppearance.italicTextColorHex,
                       quoted: chatAppearance.quotedTextColorHex,
+                      code: chatAppearance.inlineCodeTextColorHex,
                     }
                   : undefined
               }

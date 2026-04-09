@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useReducer } from "react";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
 
-import { readSettings, listCharacters, listPersonas } from "../../../../core/storage/repo";
+import { readSettings, readSettingsCached, listCharacters, listPersonas } from "../../../../core/storage/repo";
 import type { Model, ProviderCredential } from "../../../../core/storage/schemas";
 
 type SettingsSummaryState = {
@@ -50,8 +50,22 @@ function reducer(state: SettingsSummaryState, action: Action): SettingsSummarySt
   }
 }
 
+function getInitialSummaryState(): SettingsSummaryState {
+  const cached = readSettingsCached();
+  if (cached) {
+    return {
+      providers: cached.providerCredentials,
+      models: cached.models,
+      characterCount: 0,
+      personaCount: 0,
+      isLoading: true,
+    };
+  }
+  return initialState;
+}
+
 export function useSettingsSummary() {
-  const [state, dispatch] = useReducer(reducer, initialState);
+  const [state, dispatch] = useReducer(reducer, undefined, getInitialSummaryState);
 
   const reload = useCallback(async () => {
     dispatch({ type: "set_loading", payload: true });

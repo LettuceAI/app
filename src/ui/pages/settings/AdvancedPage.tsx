@@ -13,11 +13,13 @@ import {
   DollarSign,
   AlertTriangle,
   Loader2,
+  Network,
 } from "lucide-react";
 import {
   readSettings,
   saveAdvancedSettings,
   checkEmbeddingModel,
+  getHostApiStatus,
 } from "../../../core/storage/repo";
 import { invoke } from "@tauri-apps/api/core";
 import type { Settings } from "../../../core/storage/schemas";
@@ -26,6 +28,7 @@ import { EmbeddingDownloadPrompt } from "../../components/EmbeddingDownloadPromp
 import { BottomMenu } from "../../components/BottomMenu";
 import { openDocs, DOCS } from "../../../core/utils/docs";
 import { useI18n } from "../../../core/i18n/context";
+import { Switch } from "../../components/Switch";
 
 type DocsKey = keyof typeof DOCS;
 
@@ -234,37 +237,13 @@ function FeatureCard({
             </div>
 
             <div className="flex shrink-0 items-center gap-2">
-              <input
-                id={toggleId}
-                type="checkbox"
-                checked={enabled}
-                onChange={(e) => {
-                  e.stopPropagation();
-                  onToggle();
-                }}
-                onClick={(e) => e.stopPropagation()}
-                className="peer sr-only"
-              />
-              <label
-                htmlFor={toggleId}
-                onClick={(e) => e.stopPropagation()}
-                className={cn(
-                  "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full",
-                  "border-2 border-transparent transition-all duration-200 ease-in-out",
-                  "focus:outline-none focus:ring-2 focus:ring-fg/20",
-                  style.toggleBg,
-                  enabled && "shadow-md",
-                  style.toggleShadow,
-                )}
-              >
-                <span
-                  className={cn(
-                    "inline-block h-4 w-4 transform rounded-full bg-fg shadow-sm",
-                    "ring-0 transition duration-200 ease-in-out",
-                    enabled ? "translate-x-4" : "translate-x-0",
-                  )}
+              <span onClick={(e) => e.stopPropagation()}>
+                <Switch
+                  id={toggleId}
+                  checked={enabled}
+                  onChange={() => onToggle()}
                 />
-              </label>
+              </span>
               <ChevronRight
                 className={cn(
                   "h-4 w-4 shrink-0 text-fg/25 transition-colors",
@@ -322,6 +301,8 @@ export function AdvancedPage() {
   const [dynamicMemoryEnabled, setDynamicMemoryEnabled] = useState(false);
   const [helpMeReplyEnabled, setHelpMeReplyEnabled] = useState(true);
   const [manualWindow, setManualWindow] = useState<number | null>(50);
+  const [hostApiEnabled, setHostApiEnabled] = useState(false);
+  const [hostApiRunning, setHostApiRunning] = useState(false);
 
   // Usage recalculation state
   const [showRecalculateWarning, setShowRecalculateWarning] = useState(false);
@@ -353,12 +334,20 @@ export function AdvancedPage() {
         setDynamicMemoryEnabled(settings.advancedSettings?.dynamicMemory?.enabled ?? false);
         setHelpMeReplyEnabled(settings.advancedSettings?.helpMeReplyEnabled ?? true);
         setManualWindow(settings.advancedSettings?.manualModeContextWindow ?? 50);
+        setHostApiEnabled(settings.advancedSettings?.hostApi?.enabled ?? false);
 
         // Get OpenRouter API key for recalculation
         const openRouterCred = settings.providerCredentials?.find(
           (c) => c.providerId === "openrouter",
         );
         setOpenRouterApiKey(openRouterCred?.apiKey ?? "");
+
+        try {
+          const status = await getHostApiStatus();
+          setHostApiRunning(status.running);
+        } catch {
+          // ignore
+        }
 
         setIsLoading(false);
       } catch (err) {
@@ -422,6 +411,8 @@ export function AdvancedPage() {
           hotMemoryTokenBudget: 2000,
           decayRate: 0.08,
           coldThreshold: 0.3,
+          deleteConfidenceDefault: 0.5,
+          maxHardDeleteRatioPerCycle: 0.5,
           contextEnrichmentEnabled: true,
         };
       }
@@ -430,7 +421,9 @@ export function AdvancedPage() {
         advanced.summarisationModelId = settings.defaultModelId;
       }
 
-      advanced.dynamicMemory.enabled = newValue;
+      if (advanced.dynamicMemory) {
+        advanced.dynamicMemory.enabled = newValue;
+      }
       await saveAdvancedSettings(advanced);
     } catch (err) {
       console.error("Failed to save dynamic memory setting:", err);
@@ -486,6 +479,29 @@ export function AdvancedPage() {
     } catch (err) {
       console.error("Failed to save help me reply setting:", err);
       setHelpMeReplyEnabled(!newValue);
+    }
+  };
+
+  const handleToggleHostApi = async () => {
+    const newValue = !hostApiEnabled;
+    setHostApiEnabled(newValue);
+    try {
+      const settings = await readSettings();
+      const advanced = getAdvancedSettings(settings);
+      if (!advanced.hostApi) {
+        advanced.hostApi = {
+          enabled: false,
+          bindAddress: "0.0.0.0",
+          port: 3333,
+          token: "",
+          exposedModels: [],
+        };
+      }
+      advanced.hostApi.enabled = newValue;
+      await saveAdvancedSettings(advanced);
+    } catch (err) {
+      console.error("Failed to save host API setting:", err);
+      setHostApiEnabled(!newValue);
     }
   };
 
@@ -660,6 +676,20 @@ export function AdvancedPage() {
               </div>
             </div>
           </div>
+        </SettingsSection>
+
+        {/* Network Section */}
+        <SettingsSection title="Network" icon={<Network size={12} />}>
+          <FeatureCard
+            title="API Server"
+            description="Expose models via an OpenAI-compatible API server"
+            detailText={hostApiRunning ? "Server is currently running" : undefined}
+            icon={<Network className="h-4 w-4" />}
+            enabled={hostApiEnabled}
+            onToggle={handleToggleHostApi}
+            onNavigate={() => navigate("/settings/advanced/host-api")}
+            colorScheme="blue"
+          />
         </SettingsSection>
 
         {/* Info Card */}

@@ -37,6 +37,29 @@ function getPrefixedEntityId(type: EntityType, id: string): string {
   return `${type}-${id}`;
 }
 
+async function toDataUrlIfNeeded(imageData: string): Promise<string> {
+  if (!imageData || imageData.startsWith("data:")) {
+    return imageData;
+  }
+
+  if (!isRenderableImageUrl(imageData)) {
+    return imageData;
+  }
+
+  const response = await fetch(imageData);
+  if (!response.ok) {
+    throw new Error(`Failed to load image asset (${response.status})`);
+  }
+
+  const blob = await response.blob();
+  return await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(new Error("Failed to convert image asset to data URL"));
+    reader.readAsDataURL(blob);
+  });
+}
+
 /**
  * Saves an avatar image for a character or persona
  * Copies the image to avatars/<type>-<id>/ directory and converts to WebP
@@ -60,11 +83,15 @@ export async function saveAvatar(
   try {
     const prefixedId = getPrefixedEntityId(type, entityId);
     console.log("[saveAvatar] Saving avatar for entity:", prefixedId);
+    const normalizedImageData = await toDataUrlIfNeeded(imageData);
+    const normalizedRoundImageData = roundImageData
+      ? await toDataUrlIfNeeded(roundImageData)
+      : null;
 
     const result = await invoke<string>("storage_save_avatar", {
       entityId: prefixedId,
-      base64Data: imageData,
-      roundBase64Data: roundImageData ?? null,
+      base64Data: normalizedImageData,
+      roundBase64Data: normalizedRoundImageData,
     });
 
     // Clear the gradient cache for this entity since avatar changed

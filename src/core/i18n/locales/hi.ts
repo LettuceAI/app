@@ -22,6 +22,7 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
       convertFiles: "फ़ाइलें कनवर्ट करें",
       usageAnalytics: "उपयोग विश्लेषण",
       changelog: "परिवर्तन लॉग",
+      about: "परिचय",
       createSystemPrompt: "सिस्टम प्रॉम्प्ट बनाएँ",
       editSystemPrompt: "सिस्टम प्रॉम्प्ट संपादित करें",
       systemPrompts: "सिस्टम प्रॉम्प्ट",
@@ -58,6 +59,7 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
       embeddingDownload: "एम्बेडिंग डाउनलोड",
       embeddingTest: "एम्बेडिंग परीक्षण",
       editModel: "मॉडल संपादित करें",
+      messageDebug: "संदेश डीबग",
     },
     bottomNav: {
       chats: "चैट्स",
@@ -145,6 +147,7 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
     items: {
       providers: { title: "प्रदाता", subtitle: "AI सेवाओं से जुड़ें" },
       models: { title: "मॉडल", subtitle: "AI मॉडल कॉन्फ़िगर करें" },
+      imageGeneration: { title: "छवि निर्माण", subtitle: "छवियां बनाएं और परीक्षण करें" },
       voices: { title: "आवाज़ें", subtitle: "टेक्स्ट-टू-स्पीच आवाज़ें" },
       accessibility: { title: "सुलभता", subtitle: "ध्वनि संकेत और हैप्टिक्स" },
       prompts: { title: "सिस्टम प्रॉम्प्ट", subtitle: "AI व्यक्तित्व आकार दें" },
@@ -159,6 +162,7 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
       docs: { title: "दस्तावेज़ीकरण", subtitle: "गाइड और संदर्भ" },
       github: { title: "समस्या रिपोर्ट करें", subtitle: "बग और फ़ीडबैक • v{{version}}" },
       discord: { title: "Discord में शामिल हों", subtitle: "समुदाय और सहायता" },
+      about: { title: "परिचय", subtitle: "संस्करण, अपडेट और लिंक" },
       changelog: { title: "परिवर्तन लॉग", subtitle: "नया क्या है" },
       reset: { title: "रीसेट", subtitle: "सब कुछ मिटाएँ" },
       developer: { title: "डेवलपर टूल्स", subtitle: "डीबग और परीक्षण" },
@@ -218,6 +222,62 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
     save: "सेव करें",
   },
 
+  updates: {
+    available: {
+      title: "नया संस्करण उपलब्ध है",
+      description: "v{{latestVersion}} उपलब्ध है। आप v{{currentVersion}} पर हैं।",
+      actions: {
+        view: "रिलीज़ देखें",
+      },
+    },
+  },
+
+  about: {
+    kicker: "ऐप जानकारी",
+    appName: "LettuceAI",
+    description: "संस्करण विवरण, अपडेट जांच और उपयोगी लिंक।",
+    info: {
+      version: "संस्करण",
+      channel: "चैनल",
+      platform: "प्लेटफ़ॉर्म",
+    },
+    buildChannel: {
+      dev: "डेवलपमेंट बिल्ड",
+      release: "स्थिर रिलीज़",
+    },
+    update: {
+      sectionTitle: "अपडेट",
+      title: "ऐप अपडेट",
+      description: "नए रिलीज़ को मैन्युअल रूप से जांचें या स्टार्टअप पर स्वचालित जांच बंद करें।",
+      autoChecks: "स्वचालित अपडेट जांच",
+      autoChecksDescription: "सक्षम होने पर, LettuceAI ऐप खुलते समय नए संस्करण जांचता है।",
+      checkNow: "अपडेट जांचें",
+      checking: "अपडेट जांचे जा रहे हैं...",
+      upToDateTitle: "आप नवीनतम संस्करण पर हैं",
+      upToDateDescription: "इस डिवाइस के लिए अभी कोई नया रिलीज़ उपलब्ध नहीं है।",
+      failedTitle: "अपडेट जांच विफल रही",
+      failedDescription: "अभी अपडेट जांचे नहीं जा सके। थोड़ी देर बाद फिर कोशिश करें।",
+    },
+    links: {
+      sectionTitle: "लिंक",
+      website: "वेबसाइट",
+      websiteDescription: "डाउनलोड पेज और रिलीज़ जानकारी",
+      github: "GitHub",
+      githubDescription: "सोर्स कोड, इश्यू और विकास",
+      discord: "Discord",
+      discordDescription: "समुदाय सर्वर और सहायता",
+      reddit: "Reddit",
+      redditDescription: "समुदाय चर्चाएं, फीडबैक और अपडेट",
+    },
+    developerMode: {
+      enable: "डेवलपर मोड सक्षम करें",
+      enabled: "डेवलपर मोड सक्षम है",
+    },
+    errors: {
+      saveTitle: "पसंद सहेजी नहीं जा सकी",
+      saveDescription: "आपकी अपडेट-जांच पसंद नहीं बदली गई।",
+    },
+  },
   components: {
     tooltip: {
       dismissHint: "खारिज करने के लिए कहीं भी टैप करें",
@@ -235,6 +295,14 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
       chooseImage: "छवि चुनें",
       chooseImageDesc: "अपने डिवाइस से चुनें",
     },
+    avatarCurrentEdit: {
+      title: "वर्तमान संपादित करें",
+      reposition: "स्थान बदलने",
+      repositionDesc: "वर्तमान अवतार को स्थानांतरित करें या क्रॉप करें",
+      editWithAI: "एआई के साथ संपादित करें",
+      editWithAIDesc: "वर्तमान अवतार के लिए AI संपादन खोलें",
+      noImageModels: "कोई छवि मॉडल उपलब्ध नहीं है",
+    },
     avatarGeneration: {
       modelsLoadError: "छवि जनरेशन मॉडल लोड करने में विफल",
       title: "अवतार जनरेट करें",
@@ -244,6 +312,19 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
       describe: "अपना अवतार वर्णन करें",
       describePlaceholder: "रंगीन बालों वाली एक मिलनसार एनीमे लड़की, गर्मजोशी से मुस्कुराती हुई...",
       inProgress: "अवतार जनरेट हो रहा है...",
+      editingInProgress: "अवतार संपादन लागू किया जा रहा है...",
+      previousVariant: "पिछला संस्करण",
+      nextVariant: "अगला संस्करण",
+      variantCounter: "{{current}} / {{total}}",
+      editRequest: "अनुरोध संपादित करें",
+      editRequestPlaceholder: "बाल काले करो, चश्मा लगाओ, चेहरा वैसा ही रखो...",
+      applyEdit: "संपादन लागू करें",
+      editImageLoadError: "संपादन के लिए जनरेट किया गया अवतार तैयार करने में विफल",
+      aiAssistant: "एआई सहायक",
+      backToResults: "प्रॉम्प्ट पर वापस जाएँ",
+      magicInTheWorks: "कार्यों में जादू...",
+      refine: "परिष्कृत",
+      apply: "आवेदन करना",
       alt: "जनरेट किया गया अवतार",
       regenerate: "पुनः जनरेट करें",
       useThis: "इसे उपयोग करें",
@@ -273,6 +354,9 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
       searchPlaceholder: "मॉडल खोजें...",
       noResults: "कोई मॉडल नहीं मिला",
       noResultsHint: "कोई भिन्न खोज शब्द आज़माएँ",
+    },
+    localeSelector: {
+      title: "भाषा चुने",
     },
     promptTemplate: {
       nameContentRequired: "नाम और सामग्री आवश्यक हैं",
@@ -501,6 +585,29 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
     swapPlacesOn: "स्थान बदलें (चालू)",
     uploadImage: "छवि अपलोड करें",
     helpMeReply: "जवाब देने में मदद करें",
+    sceneImage: {
+      modeTitle: "दृश्य छवि",
+      modeDescription:
+        "चुनें कि क्या दृश्य संकेत स्वयं लिखना है या पहले एआई को इसका मसौदा तैयार करने देना है।",
+      writePrompt: "शीघ्र लिखें",
+      writePromptDesc: "सटीक दृश्य छवि संकेत टाइप करें जिसका आप उपयोग करना चाहते हैं।",
+      askAi: "एआई से पूछें",
+      askAiDesc: "वर्तमान चैट मॉडल को चयनित क्षण से एक दृश्य संकेत का मसौदा तैयार करने दें।",
+      generateTitle: "दृश्य छवि उत्पन्न करें",
+      regenerateTitle: "दृश्य छवि पुन: उत्पन्न करें",
+      aiTitle: "एआई सीन प्रॉम्प्ट",
+      promptLabel: "दृश्य संकेत",
+      promptPlaceholder:
+        "दृश्य, पात्रों, मनोदशा, प्रकाश व्यवस्था, कैमरा फ्रेमिंग और महत्वपूर्ण विवरणों का वर्णन करें...",
+      suggestedPrompt: "सुझाया गया संकेत",
+      regeneratePrompt: "पुनः जेनरेट",
+      editPrompt: "शीघ्र संपादित करें",
+      reviewTitle: "दृश्य प्रॉम्प्ट की समीक्षा",
+      denyPrompt: "अस्वीकार",
+      acceptPrompt: "स्वीकार",
+      generateImage: "छवि उत्पन्न करें",
+      updateImage: "छवि अद्यतन करें",
+    },
     useMyTextAsBase: "मेरे टेक्स्ट को आधार के रूप में उपयोग करें",
     writeNewReply: "कुछ नया लिखें",
     suggestedReply: "सुझाया गया जवाब",
@@ -635,8 +742,11 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
       branchFromHere: "यहाँ से शाखा बनाएँ",
       branchToGroupChat: "ग्रुप चैट में शाखा बनाएँ",
       branchToCharacter: "कैरेक्टर में शाखा बनाएँ",
+      generateSceneImage: "दृश्य छवि उत्पन्न करें",
+      regenerateSceneImage: "दृश्य छवि पुन: उत्पन्न करें",
       chatAppearance: "चैट दिखावट",
       delete: "हटाएँ",
+      debug: "डीबग",
       unpinToDelete: "हटाने के लिए अनपिन करें",
       editPlaceholder: "अपना संदेश संपादित करें...",
       memoriesUsed: "{{count}} यादें उपयोग की गईं",
@@ -902,7 +1012,8 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
       scoreBased: "अंक-आधारित",
       roundRobin: "बारी-बारी",
       takeTurns: "बारी लें",
-      llmDesc: "बोलने वाले को चुनने के लिए आपके डिफ़ॉल्ट मॉडल का उपयोग करता है (टोकन खर्च होते हैं)",
+      llmDesc:
+        "बोलने वाले को चुनने के लिए आपके डिफ़ॉल्ट मॉडल का उपयोग करता है (टोकन खर्च होते हैं)",
       heuristicDesc: "भागीदारी संतुलन और संदर्भ संकेतों का उपयोग करता है (मुफ़्त)",
       roundRobinDesc: "पात्र क्रम में बारी-बारी बोलते हैं (मुफ़्त)",
       memoryMode: "मेमोरी मोड",
@@ -924,7 +1035,8 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
       minTwoRequired: "कम से कम 2 पात्र आवश्यक",
       removeCharacter: "पात्र हटाएँ",
       groupMinCharacters: "एक समूह में कम से कम 2 पात्र आवश्यक हैं",
-      mutedCharactersNote: "म्यूट किए गए पात्रों को स्वचालित वक्ता चयन द्वारा छोड़ दिया जाता है, लेकिन वे स्पष्ट `@उल्लेख` के माध्यम से जवाब दे सकते हैं।",
+      mutedCharactersNote:
+        "म्यूट किए गए पात्रों को स्वचालित वक्ता चयन द्वारा छोड़ दिया जाता है, लेकिन वे स्पष्ट `@उल्लेख` के माध्यम से जवाब दे सकते हैं।",
       addCharacterTitle: "पात्र जोड़ें",
       allCharactersInGroup: "सभी पात्र पहले से इस समूह में हैं।",
       removeCharacterTitle: "पात्र हटाएँ?",
@@ -955,7 +1067,8 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
       scoreBased: "अंक-आधारित",
       roundRobin: "बारी-बारी",
       takeTurns: "बारी लें",
-      llmDesc: "बोलने वाले को चुनने के लिए आपके डिफ़ॉल्ट मॉडल का उपयोग करता है (टोकन खर्च होते हैं)",
+      llmDesc:
+        "बोलने वाले को चुनने के लिए आपके डिफ़ॉल्ट मॉडल का उपयोग करता है (टोकन खर्च होते हैं)",
       heuristicDesc: "भागीदारी संतुलन और संदर्भ संकेतों का उपयोग करता है (मुफ़्त)",
       roundRobinDesc: "पात्र क्रम में बारी-बारी बोलते हैं (मुफ़्त)",
       characters: "पात्र",
@@ -967,7 +1080,8 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
       minTwoRequired: "कम से कम 2 पात्र आवश्यक",
       removeCharacter: "पात्र हटाएँ",
       groupMinCharacters: "एक समूह चैट में कम से कम 2 पात्र आवश्यक हैं",
-      mutedCharactersNote: "म्यूट किए गए पात्रों को स्वचालित वक्ता चयन द्वारा छोड़ दिया जाता है, लेकिन वे स्पष्ट `@उल्लेख` के माध्यम से जवाब दे सकते हैं।",
+      mutedCharactersNote:
+        "म्यूट किए गए पात्रों को स्वचालित वक्ता चयन द्वारा छोड़ दिया जाता है, लेकिन वे स्पष्ट `@उल्लेख` के माध्यम से जवाब दे सकते हैं।",
       data: "डेटा",
       dataSubtitle: "वार्तालाप निर्यात या आयात करें",
       export: "निर्यात",
@@ -995,7 +1109,8 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
       withoutMessages: "संदेशों के बिना",
       withoutMessagesDesc: "केवल सेटअप क्लोन करें (पात्र, आरंभिक दृश्य)",
       branchWithCharacterTitle: "पात्र के साथ शाखा बनाएँ",
-      branchWithCharacterDesc: "1-से-1 वार्तालाप के रूप में जारी रखने के लिए एक पात्र चुनें। इस समूह के सभी संदेश परिवर्तित किए जाएँगे।",
+      branchWithCharacterDesc:
+        "1-से-1 वार्तालाप के रूप में जारी रखने के लिए एक पात्र चुनें। इस समूह के सभी संदेश परिवर्तित किए जाएँगे।",
       continueWith: "{{name}} के साथ वार्तालाप जारी रखें",
       exportChatPackageTitle: "चैट पैकेज निर्यात करें",
       includeCharacterSnapshots: "पात्र स्नैपशॉट शामिल करें",
@@ -1395,7 +1510,8 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
       nameHint: "अपने पर्सोना को एक वर्णनात्मक नाम दें",
       nicknameLabel: "उपनाम (वैकल्पिक)",
       nicknamePlaceholder: "जैसे, वर्क वैरिएंट, आरपीजी मोड...",
-      nicknameHint: "आपकी लाइब्रेरी में इस व्यक्तित्व के वेरिएंट के बीच अंतर करने के लिए एक निजी उपनाम",
+      nicknameHint:
+        "आपकी लाइब्रेरी में इस व्यक्तित्व के वेरिएंट के बीच अंतर करने के लिए एक निजी उपनाम",
       descriptionLabel: "विवरण",
       descriptionPlaceholder:
         "वर्णन करें कि AI आपको कैसे संबोधित करे, आपकी प्राथमिकताएँ, पृष्ठभूमि, या संवाद शैली...",
@@ -1569,6 +1685,7 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
       plainTextHex: "Plain Text Color",
       italicTextHex: "Italic Text Color",
       quotedTextHex: "ब्लॉक उद्धरण रंग",
+      inlineCodeTextHex: "इनलाइन कोड रंग",
     },
     backgroundTransparency: {
       label: "पृष्ठभूमि और पारदर्शिता",
@@ -1784,10 +1901,45 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
       size: "आकार",
       quality: "गुणवत्ता",
       style: "शैली",
+      searchModels: "मॉडल खोजें...",
+      selectAvatarModel: "अवतार मॉडल चुनें",
+      selectSceneModel: "दृश्य मॉडल का चयन करें",
+      selectWriterModel: "सीन राइटर मॉडल चुनें",
+      useFirstAvailable: "पहले उपलब्ध मॉडल का उपयोग करें",
+      useFirstCompatible: "पहला संगत राइटर मॉडल उपयोग करें",
+    },
+    mode: {
+      title: "व्यवहार",
+      description: "तय करें कि मॉडल के आउटपुट में मिले दृश्य प्रॉम्प्ट्स को कैसे संभालना है।",
+      auto: "स्वचालित",
+      autoDescription: "जैसे ही मॉडल दृश्य प्रॉम्प्ट दे, दृश्य छवि तुरंत बनाएँ।",
+      askFirst: "पहले पूछें",
+      askFirstDescription:
+        "मिला हुआ दृश्य प्रॉम्प्ट पहले दिखाएँ और चित्र बनाने से पहले आपकी अनुमति का इंतज़ार करें।",
+      manual: "मैनुअल",
+      manualDescription:
+        "मॉडल के उत्तरों से मिलने वाले दृश्य प्रॉम्प्ट्स को अनदेखा करें। केवल वे क्रियाएँ उपयोग करें जिन्हें उपयोगकर्ता खुद शुरू करे।",
     },
     empty: {
       title: "कोई छवि मॉडल नहीं",
       description: "छवि जनरेट करना शुरू करने के लिए मॉडल पेज से एक छवि जनरेशन मॉडल जोड़ें।",
+    },
+    sections: {
+      avatar: {
+        title: "अवतार पीढ़ी",
+        description:
+          "अवतार पिकर या संबंधित प्रोफ़ाइल छवि प्रवाह से अवतार उत्पन्न करते समय डिफ़ॉल्ट मॉडल का उपयोग किया जाता है।",
+      },
+      scene: {
+        title: "दृश्य निर्माण",
+        description:
+          "वार्तालाप संदर्भ या दृश्य संकेतों से उत्पन्न दृश्य छवियों के लिए आरक्षित मॉडल।",
+      },
+      writer: {
+        title: "सीन राइटर",
+        description:
+          "चैट संदर्भ, अवतार और संदर्भ चित्रों से सीन प्रॉम्प्ट और डिज़ाइन रेफरेंस विवरण तैयार करने के लिए आरक्षित मल्टीमॉडल टेक्स्ट मॉडल।",
+      },
     },
   },
 
@@ -1804,6 +1956,7 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
       testDataGenerators: "परीक्षण डेटा जनरेटर",
       storageMaintenance: "स्टोरेज रखरखाव",
       usageTracking: "उपयोग ट्रैकिंग",
+      crashTesting: "क्रैश परीक्षण",
       environmentInfo: "पर्यावरण जानकारी",
     },
     testData: {
@@ -1826,6 +1979,13 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
       recalculateAll: "सभी उपयोग लागतें पुनर्गणना करें",
       recalculateAllDesc:
         "सभी OpenRouter उपयोग रिकॉर्ड के लिए मूल्य निर्धारण फिर से लाता है और लागत पुनर्गणना करता है",
+    },
+    crashTesting: {
+      forceCrash: "अभी क्रैश ऐप",
+      forceCrashDesc:
+        "क्रैश डिटेक्शन का परीक्षण करने के लिए मूल ऐप प्रक्रिया को तुरंत समाप्त कर देता है",
+      forceCrashConfirm:
+        "यह क्रैश डिटेक्टर का परीक्षण करने के लिए ऐप को तुरंत क्रैश कर देगा। जारी रखना?",
     },
     environmentInfo: {
       mode: "मोड",
@@ -2318,6 +2478,45 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
       deleteLorebook: "लोरबुक हटाएँ",
       importLorebook: "लोरबुक आयात करें",
     },
+    imageLibrary: {
+      filters: {
+        all: "सभी",
+        backgrounds: "बैकग्राउंड",
+        avatars: "अवतार",
+        attachments: "अटैचमेंट",
+        other: "अन्य",
+      },
+      searchPlaceholder: "फ़ाइलनाम, पथ, सत्र आईडी या एंटिटी आईडी से खोजें",
+      empty: {
+        title: "इस दृश्य के लिए कोई चित्र नहीं मिला",
+        description:
+          "कोई दूसरा फ़िल्टर या खोज शब्द आज़माएँ। लाइब्रेरी केवल वे चित्र दिखाती है जो ऐप के स्थानीय संग्रहण में पहले से सहेजे गए हैं।",
+      },
+      actions: {
+        sort: "क्रमबद्ध करें",
+        useThis: "इसे उपयोग करें",
+        using: "उपयोग हो रहा है...",
+        copyPath: "पथ कॉपी करें",
+        saving: "सहेजा जा रहा है...",
+        download: "डाउनलोड",
+        delete: "चित्र हटाएँ",
+        deleting: "हटाया जा रहा है...",
+      },
+      active: "सक्रिय",
+      messages: {
+        loadFailed: "इमेज लाइब्रेरी लोड नहीं हो सकी",
+        saved: "चित्र सहेज लिया गया",
+        downloadFailed: "डाउनलोड विफल हुआ",
+        useFailed: "इस चित्र का उपयोग नहीं किया जा सका",
+        deleted: "चित्र हटा दिया गया",
+        deleteFailed: "चित्र हटाया नहीं जा सका",
+      },
+      deleteConfirm: {
+        title: "चित्र हटाएँ?",
+        message:
+          'क्या आप वाकई "{{filename}}" हटाना चाहते हैं? इससे वे अवतार, चैट बैकग्राउंड या संदेश अटैचमेंट टूट सकते हैं जो अभी भी इसका उपयोग कर रहे हैं।',
+      },
+    },
     deleteConfirm: {
       title: "{{itemType}} हटाएँ?",
       message: "क्या आप वाकई हटाना चाहते हैं",
@@ -2468,6 +2667,8 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
     status: {
       connecting: "कनेक्ट हो रहा है...",
       connected: "कनेक्टेड",
+      waitingConfirmation: "पुष्टि के लिए प्रतीक्षा कर रहा है",
+      waitingConfirmationDesc: "जारी रखने के लिए होस्ट डिवाइस पर कनेक्शन को मंजूरी दें।",
       syncing: "सिंक हो रहा है...",
       transferringData: "डेटा स्थानांतरित हो रहा है",
       syncInProgress: "सिंक प्रगति में",

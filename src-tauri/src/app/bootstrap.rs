@@ -4,8 +4,8 @@ use std::time::Duration;
 use tauri::Manager;
 
 use crate::{
-    abort_manager, chat_manager, content_filter, dynamic_memory_run_manager, logger, migrations,
-    storage_manager, sync, usage, utils,
+    abort_manager, chat_manager, content_filter, dynamic_memory_run_manager, host_api, logger,
+    migrations, storage_manager, sync, usage, utils,
 };
 
 use super::runtime::configure_onnxruntime_dylib;
@@ -68,6 +68,7 @@ fn manage_core_state(app: &mut tauri::App) -> Arc<usage::app_activity::AppActive
     app.manage(app_usage_service.clone());
 
     app.manage(sync::manager::SyncManagerState::new());
+    app.manage(host_api::HostApiManager::default());
 
     app_usage_service
 }
@@ -163,6 +164,14 @@ fn run_bootstrap_tasks(app: &tauri::AppHandle) {
         );
     }
 
+    if let Err(err) = chat_manager::prompts::ensure_local_roleplay_template(app) {
+        utils::log_error(
+            app,
+            "bootstrap",
+            format!("Failed to ensure local roleplay template: {}", err),
+        );
+    }
+
     if let Err(err) = chat_manager::prompts::ensure_help_me_reply_template(app) {
         utils::log_error(
             app,
@@ -186,12 +195,51 @@ fn run_bootstrap_tasks(app: &tauri::AppHandle) {
             format!("Failed to ensure scene generation template: {}", err),
         );
     }
+
+    if let Err(err) = chat_manager::prompts::ensure_design_reference_template(app) {
+        utils::log_error(
+            app,
+            "bootstrap",
+            format!("Failed to ensure design reference template: {}", err),
+        );
+    }
+}
+
+#[tauri::command]
+pub(crate) fn get_window_chrome_flags(app: tauri::AppHandle) -> Result<(bool, bool), String> {
+    let flags = app.state::<WindowChromeFlags>();
+    Ok((flags.os_decorations, flags.no_buttons))
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct WindowChromeFlags {
+    /// `--osdecorations`: re-enable OS titlebar, hide custom buttons.
+    pub os_decorations: bool,
+    /// `--nobuttons`: keep frameless window but hide custom buttons.
+    pub no_buttons: bool,
+}
+
+impl WindowChromeFlags {
+    pub fn from_env() -> Self {
+        Self {
+            os_decorations: true,
+            no_buttons: true,
+        }
+    }
 }
 
 pub(crate) fn setup_app(
     app: &mut tauri::App,
     aptabase_plugin_enabled: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let chrome_flags = WindowChromeFlags::from_env();
+    app.manage(chrome_flags);
+
+    #[cfg(not(mobile))]
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.set_decorations(true);
+    }
+
     let app_usage_service = manage_core_state(app);
     initialize_android_state(app);
     initialize_logging(app);
@@ -199,5 +247,10 @@ pub(crate) fn setup_app(
     start_usage_flush_task(app.handle(), app_usage_service);
     configure_runtime_state(app, aptabase_plugin_enabled);
     run_bootstrap_tasks(app.handle());
+    let app_handle = app.handle().clone();
+    tauri::async_runtime::spawn(async move {
+        host_api::maybe_start_from_settings(&app_handle).await;
+    });
+
     Ok(())
 }

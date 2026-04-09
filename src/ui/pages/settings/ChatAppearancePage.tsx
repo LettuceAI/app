@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
-import { RotateCcw, Bot, User, RefreshCw, Eye, ChevronDown } from "lucide-react";
+import { RotateCcw, Bot, User, RefreshCw, Eye } from "lucide-react";
 import {
   readSettings,
   saveAdvancedSettings,
@@ -28,6 +28,7 @@ import {
   computeBubbleTextClass,
   normalizeHexColor,
 } from "../../../core/utils/imageAnalysis";
+import { AnimatePresence, motion } from "framer-motion";
 
 type AppearanceKey = keyof ChatAppearanceSettings;
 
@@ -38,23 +39,23 @@ const SAMPLE_MESSAGES: { role: "assistant" | "user"; text: string }[] = [
   },
   {
     role: "user",
-    text: "I'm doing **great**, thanks for asking! Just needed a minute to finish a few things before I could \"relax.\"",
+    text: 'I\'m doing **great**, thanks for asking! Just needed a minute to finish a few things before I could "relax."',
   },
   {
     role: "assistant",
-    text: "That's good to hear. I was thinking about the trip we mentioned last time *(the lake cabin plan)* and wanted to revisit it.\n\n> You said you wanted somewhere \"quiet\" and close to the water.",
+    text: 'That\'s good to hear. I was thinking about the trip we mentioned last time *(the lake cabin plan)* and wanted to revisit it.\n\n> You said you wanted somewhere "quiet" and close to the water.',
   },
   {
     role: "user",
-    text: "Oh right, that one. Did you find anything *actually* \"quiet\", or just the **usual crowded spots** people keep recommending?",
+    text: 'Oh right, that one. Did you find anything *actually* "quiet", or just the **usual crowded spots** people keep recommending? I can check the `route` after dinner.',
   },
   {
     role: "assistant",
-    text: "I found a place that looks **\"perfect.\"** It's small, close to the water, and the view in the morning looks *incredible* from the deck.",
+    text: 'I found a place that looks **"perfect."** It\'s small, close to the water, and the view in the morning looks *incredible* from the deck.',
   },
   {
     role: "user",
-    text: "That sounds amazing. Send me the **details** when you can, and I'll check the route tonight *(plus the weather and traffic)*.\n\n> If the road is clear, we could leave \"early Saturday.\"",
+    text: 'That sounds amazing. Send me the **details** when you can, and I\'ll check the route tonight *(plus the weather and traffic)*.\n\n> If the road is clear, we could leave "early Saturday."',
   },
 ];
 
@@ -62,6 +63,11 @@ function normalizeOverride(override: ChatAppearanceOverride): ChatAppearanceOver
   const normalized = { ...override } as ChatAppearanceOverride;
   normalized.userBubbleColorHex = normalizeHexColor(override.userBubbleColorHex);
   normalized.assistantBubbleColorHex = normalizeHexColor(override.assistantBubbleColorHex);
+  normalized.messageTextColorHex = normalizeHexColor(override.messageTextColorHex);
+  normalized.plainTextColorHex = normalizeHexColor(override.plainTextColorHex);
+  normalized.italicTextColorHex = normalizeHexColor(override.italicTextColorHex);
+  normalized.quotedTextColorHex = normalizeHexColor(override.quotedTextColorHex);
+  normalized.inlineCodeTextColorHex = normalizeHexColor(override.inlineCodeTextColorHex);
   return Object.fromEntries(
     Object.entries(normalized)
       .filter(([_, value]) => value !== undefined)
@@ -82,6 +88,11 @@ function normalizeSettings(settings: ChatAppearanceSettings): ChatAppearanceSett
     ...settings,
     userBubbleColorHex: normalizeHexColor(settings.userBubbleColorHex),
     assistantBubbleColorHex: normalizeHexColor(settings.assistantBubbleColorHex),
+    messageTextColorHex: normalizeHexColor(settings.messageTextColorHex),
+    plainTextColorHex: normalizeHexColor(settings.plainTextColorHex),
+    italicTextColorHex: normalizeHexColor(settings.italicTextColorHex),
+    quotedTextColorHex: normalizeHexColor(settings.quotedTextColorHex),
+    inlineCodeTextColorHex: normalizeHexColor(settings.inlineCodeTextColorHex),
   };
 }
 
@@ -422,6 +433,7 @@ function LivePreview({
     plain: settings.plainTextColorHex ?? "currentColor",
     italic: settings.italicTextColorHex ?? "currentColor",
     quoted: settings.quotedTextColorHex ?? "currentColor",
+    code: settings.inlineCodeTextColorHex ?? "currentColor",
   };
 
   const useLive = liveMode && character;
@@ -564,6 +576,9 @@ export function ChatAppearancePage() {
   const [mobilePreviewOpen, setMobilePreviewOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isMobileViewport, setIsMobileViewport] = useState(() =>
+    typeof window !== "undefined" ? window.matchMedia("(max-width: 1023px)").matches : false,
+  );
   const backgroundUrl = useImageData(livePreview ? character?.backgroundImagePath : undefined);
 
   // The effective settings (global merged with character override)
@@ -733,6 +748,38 @@ export function ChatAppearancePage() {
     };
   }, [handleSave, isDirty, isSaving]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const mediaQuery = window.matchMedia("(max-width: 1023px)");
+    const syncViewport = () => {
+      const matches = mediaQuery.matches;
+      setIsMobileViewport(matches);
+      if (!matches) {
+        setMobilePreviewOpen(false);
+      }
+    };
+
+    syncViewport();
+    mediaQuery.addEventListener("change", syncViewport);
+    return () => mediaQuery.removeEventListener("change", syncViewport);
+  }, []);
+
+  useEffect(() => {
+    const globalWindow = window as any;
+    globalWindow.__openChatAppearancePreview = () => {
+      setMobilePreviewOpen(true);
+    };
+    globalWindow.__closeChatAppearancePreview = () => {
+      setMobilePreviewOpen(false);
+    };
+
+    return () => {
+      delete globalWindow.__openChatAppearancePreview;
+      delete globalWindow.__closeChatAppearancePreview;
+    };
+  }, []);
+
   // JS-based sticky for the preview panel (CSS sticky broken by framer-motion ancestor transforms).
   // Uses getBoundingClientRect each frame — no pre-measurement, no scroll-container guessing.
   const previewRef = useRef<HTMLDivElement>(null);
@@ -787,6 +834,44 @@ export function ChatAppearancePage() {
   }, [isLoading]);
 
   if (isLoading) return null;
+
+  const previewHeader = (
+    <div className="flex items-center justify-between gap-3">
+      <div>
+        <h2 className="text-[10px] font-semibold uppercase tracking-[0.25em] text-fg/35">
+          {t("chatAppearance.preview.label")}
+        </h2>
+      </div>
+      {character && (
+        <button
+          type="button"
+          onClick={() => setLivePreview((v) => !v)}
+          className={cn(
+            "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-medium transition-all",
+            livePreview
+              ? "border-accent/40 bg-accent/15 text-accent"
+              : "border-fg/10 bg-fg/5 text-fg/40 hover:text-fg/60",
+          )}
+        >
+          <Eye size={11} />
+          {livePreview ? t("chatAppearance.preview.live") : t("chatAppearance.preview.generic")}
+        </button>
+      )}
+    </div>
+  );
+
+  const previewSurface = (
+    <div className="space-y-3">
+      {previewHeader}
+      <LivePreview
+        settings={effectiveSettings}
+        character={character}
+        persona={persona}
+        liveMode={livePreview}
+        backgroundUrl={backgroundUrl}
+      />
+    </div>
+  );
 
   const settingsContent = (
     <>
@@ -1022,6 +1107,13 @@ export function ChatAppearancePage() {
             overridden={isOverridden("quotedTextColorHex")}
             onReset={mode === "character" ? () => resetField("quotedTextColorHex") : undefined}
           />
+          <HexColorControl
+            label={t("chatAppearance.colors.inlineCodeTextHex")}
+            value={effectiveSettings.inlineCodeTextColorHex}
+            onChange={(v) => updateField("inlineCodeTextColorHex", v)}
+            overridden={isOverridden("inlineCodeTextColorHex")}
+            onReset={mode === "character" ? () => resetField("inlineCodeTextColorHex") : undefined}
+          />
         </div>
       </div>
 
@@ -1108,69 +1200,79 @@ export function ChatAppearancePage() {
 
       {/* Desktop: two-column layout with sticky preview */}
       <div className="lg:flex lg:items-start lg:gap-8 lg:max-w-5xl lg:mx-auto">
-        {/* Preview column — collapsible on mobile, sticky on desktop */}
-        <div
-          ref={previewRef}
-          className="mb-5 lg:mb-0 lg:w-130 lg:shrink-0 lg:will-change-transform"
-        >
-          <div className="mb-2 flex items-center justify-between px-1">
-            <button
-              type="button"
-              onClick={() => setMobilePreviewOpen((v) => !v)}
-              className="flex items-center gap-1.5 lg:pointer-events-none"
-            >
-              <h2 className="text-[10px] font-semibold uppercase tracking-[0.25em] text-fg/35">
-                {t("chatAppearance.preview.label")}
-              </h2>
-              <ChevronDown
-                size={12}
-                className={cn(
-                  "text-fg/30 transition-transform lg:hidden",
-                  mobilePreviewOpen && "rotate-180",
-                )}
-              />
-            </button>
-            <div className="flex items-center gap-2">
-              {character && (
-                <button
-                  type="button"
-                  onClick={() => setLivePreview((v) => !v)}
-                  className={cn(
-                    "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-medium transition-all",
-                    livePreview
-                      ? "border-accent/40 bg-accent/15 text-accent"
-                      : "border-fg/10 bg-fg/5 text-fg/40 hover:text-fg/60",
-                  )}
-                >
-                  <Eye size={11} />
-                  {livePreview
-                    ? t("chatAppearance.preview.live")
-                    : t("chatAppearance.preview.generic")}
-                </button>
-              )}
-            </div>
-          </div>
-          {/* Always visible on desktop (lg+), collapsible on mobile */}
+        {!isMobileViewport && (
           <div
-            className={cn(
-              "overflow-hidden transition-all duration-200",
-              mobilePreviewOpen ? "max-h-500 opacity-100" : "max-h-0 opacity-0",
-              "lg:max-h-none lg:opacity-100",
-            )}
+            ref={previewRef}
+            className="mb-5 lg:mb-0 lg:w-130 lg:shrink-0 lg:will-change-transform"
           >
-            <LivePreview
-              settings={effectiveSettings}
-              character={character}
-              persona={persona}
-              liveMode={livePreview}
-              backgroundUrl={backgroundUrl}
-            />
+            {previewSurface}
           </div>
-        </div>
+        )}
 
         {/* Settings column */}
         <div className="flex-1 min-w-0 space-y-5">{settingsContent}</div>
       </div>
+
+      <AnimatePresence>
+        {isMobileViewport && mobilePreviewOpen && (
+          <motion.div
+            className="fixed inset-0 z-50 flex h-full flex-col bg-surface"
+            style={{ paddingTop: "env(safe-area-inset-top)" }}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            transition={{ duration: 0.2 }}
+          >
+            <div className="flex items-center justify-between border-b border-fg/10 px-4 py-3">
+              <div className="text-base font-semibold text-fg">
+                {t("chatAppearance.preview.label")}
+              </div>
+              <div className="flex items-center gap-2">
+                {character && (
+                  <button
+                    type="button"
+                    onClick={() => setLivePreview((v) => !v)}
+                    className={cn(
+                      "rounded-full border px-3 py-1.5 text-xs font-medium transition",
+                      livePreview
+                        ? "border-accent/40 bg-accent/15 text-accent"
+                        : "border-fg/10 text-fg/70 hover:bg-fg/10 hover:text-fg",
+                    )}
+                  >
+                    {livePreview
+                      ? t("chatAppearance.preview.live")
+                      : t("chatAppearance.preview.generic")}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setMobilePreviewOpen(false)}
+                  className="rounded-full border border-fg/10 px-3 py-1.5 text-xs font-medium text-fg/70 transition hover:bg-fg/10 hover:text-fg"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-4 pb-6 pt-4">
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <LivePreview
+                    settings={effectiveSettings}
+                    character={character}
+                    persona={persona}
+                    liveMode={livePreview}
+                    backgroundUrl={backgroundUrl}
+                  />
+                  <p className="text-[11px] text-fg/40">
+                    See your appearance changes without leaving the current controls.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

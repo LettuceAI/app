@@ -9,6 +9,7 @@ import {
   generateExportFilename,
 } from "../../../core/storage/personaTransfer";
 import { AvatarPicker } from "../../components/AvatarPicker";
+import { Switch } from "../../components/Switch";
 import { DesignReferenceEditor } from "../../components/DesignReferenceEditor";
 import { useI18n } from "../../../core/i18n/context";
 import { typography, radius, spacing, interactive, cn } from "../../design-tokens";
@@ -228,14 +229,11 @@ export function EditPersonaPage() {
               </div>
 
               <div className={spacing.field}>
-                <button
-                  type="button"
-                  onClick={() => setIsDefault(!isDefault)}
+                <div
                   className={cn(
                     "flex w-full items-center justify-between border border-fg/10 bg-surface-el/20 px-4 py-3 backdrop-blur-xl",
                     radius.md,
                     interactive.transition.default,
-                    "hover:border-fg/25 hover:bg-fg/5 active:scale-[0.99]",
                   )}
                 >
                   <div className="flex items-center gap-3">
@@ -256,24 +254,8 @@ export function EditPersonaPage() {
                     </div>
                   </div>
 
-                  <div className="relative">
-                    <div
-                      className={cn(
-                        "h-6 w-11 transition-colors",
-                        radius.full,
-                        isDefault ? "bg-accent/40" : "bg-fg/20",
-                      )}
-                    >
-                      <div
-                        className={cn(
-                          "absolute top-0.5 h-5 w-5 transition-transform",
-                          radius.full,
-                          isDefault ? "translate-x-5 bg-accent" : "translate-x-0.5 bg-fg",
-                        )}
-                      />
-                    </div>
-                  </div>
-                </button>
+                  <Switch checked={isDefault} onChange={(next) => setIsDefault(next)} />
+                </div>
               </div>
 
               <div className={spacing.field}>
@@ -339,6 +321,9 @@ export function EditPersonaPage() {
                 onDesignDescriptionChange={setDesignDescription}
                 referenceImages={designReferenceImageIds}
                 onReferenceImagesChange={setDesignReferenceImageIds}
+                subjectName={title}
+                subjectDescription={description}
+                avatarImage={avatarPath}
                 title="Design references"
                 description="Attach a few stable image references and one concise design note for scene generation."
               />

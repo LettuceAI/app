@@ -7,7 +7,7 @@ import {
   setCharacterLorebooks,
 } from "../../../../core/storage";
 import { saveAvatar } from "../../../../core/storage/avatars";
-import { convertToImageRef } from "../../../../core/storage/images";
+import { convertToImageRef, convertToImageUrl } from "../../../../core/storage/images";
 import type {
   AvatarCrop,
   Model,
@@ -19,8 +19,7 @@ import { listPromptTemplates } from "../../../../core/prompts/service";
 import { processBackgroundImage } from "../../../../core/utils/image";
 import { invalidateAvatarCache } from "../../../hooks/useAvatar";
 import {
-  previewCharacterImport,
-  readFileAsText,
+  previewCharacterImportFile,
   type CharacterFileFormat,
   type CharacterBookImport,
 } from "../../../../core/storage/characterTransfer";
@@ -536,9 +535,7 @@ export function useCharacterForm(draftCharacter?: any) {
 
     try {
       dispatch({ type: "SET_ERROR", payload: null });
-      const jsonContent = await readFileAsText(file);
-
-      const characterData = await previewCharacterImport(jsonContent);
+      const characterData = await previewCharacterImportFile(file);
       const settings = await readSettings();
       const legacyState = settings.appState as unknown as Record<string, unknown>;
       const autoDownloadCharacterCardAvatars =
@@ -716,7 +713,9 @@ export function useCharacterForm(draftCharacter?: any) {
             dispatch({ type: "SET_IMPORTING_AVATAR", payload: false });
           }
         } else {
-          dispatch({ type: "SET_AVATAR_PATH", payload: characterData.avatarData });
+          const resolvedAvatarPath =
+            (await convertToImageUrl(characterData.avatarData)) ?? characterData.avatarData;
+          dispatch({ type: "SET_AVATAR_PATH", payload: resolvedAvatarPath });
           dispatch({ type: "SET_AVATAR_ROUND_PATH", payload: null });
           dispatch({ type: "SET_AVATAR_CROP", payload: null });
           dispatch({ type: "SET_IMPORTING_AVATAR", payload: false });

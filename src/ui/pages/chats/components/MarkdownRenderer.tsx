@@ -7,6 +7,7 @@ type TextColors = {
   plain?: string;
   italic?: string;
   quoted?: string;
+  code?: string;
 };
 
 type MarkdownRendererProps = {
@@ -46,7 +47,7 @@ const QUOTED_TEXT_PATTERN = QUOTE_PAIRS.map(
   ([open, close]) => `${escapeRegExp(open)}[^${escapeRegExp(close)}\\n]+${escapeRegExp(close)}`,
 ).join("|");
 const INLINE_PATTERN = new RegExp(
-  `(<img\\s[^>]*>|\\*\\*[^*]+\\*\\*|\\*[^*]+\\*|_[^_]+_|\\\`[^\\\`]+\\\`|${QUOTED_TEXT_PATTERN}|\\[[^\\]]+\\]\\([^)]+\\)|\\[[^\\]]+\\]|\\([^)]+\\)|!\\[[^\\]]*\\]\\([^)]+\\))`,
+  `(<img\\s[^>]*>|\\*\\*\\*[^*]+\\*\\*\\*|\\*\\*[^*]+\\*\\*|\\*[^*]+\\*|_[^_]+_|\\\`[^\\\`]+\\\`|${QUOTED_TEXT_PATTERN}|\\[[^\\]]+\\]\\([^)]+\\)|\\[[^\\]]+\\]|\\([^)]+\\)|!\\[[^\\]]*\\]\\([^)]+\\))`,
   "i",
 );
 const CRLF_PATTERN = /\r\n/g;
@@ -156,6 +157,15 @@ function parseInline(
           />,
         );
       }
+    } else if (token.startsWith("***")) {
+      const inner = token.slice(3, -3);
+      nodes.push(
+        <strong key={key}>
+          <em className="opacity-80" style={textColors?.italic ? { color: textColors.italic } : undefined}>
+            {parseInline(inner, key, onImageClick, textColors)}
+          </em>
+        </strong>,
+      );
     } else if (token.startsWith("**")) {
       const inner = token.slice(2, -2);
       nodes.push(<strong key={key}>{parseInline(inner, key, onImageClick, textColors)}</strong>);
@@ -172,7 +182,11 @@ function parseInline(
       );
     } else if (token[0] === "`") {
       nodes.push(
-        <code key={key} className="rounded bg-black/40 px-1 py-0.5">
+        <code
+          key={key}
+          className="rounded bg-black/40 px-1 py-0.5"
+          style={textColors?.code ? { color: textColors.code } : undefined}
+        >
           {token.slice(1, -1)}
         </code>,
       );

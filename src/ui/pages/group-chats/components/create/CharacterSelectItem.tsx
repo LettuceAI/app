@@ -31,8 +31,8 @@ export function CharacterSelectItem({ character, selected, onToggle }: Character
       <div
         className={cn(
           "relative h-12 w-12 shrink-0 overflow-hidden rounded-full",
-          "bg-linear-to-br from-white/10 to-white/5",
-          selected ? "ring-2 ring-accent/50" : "ring-1 ring-white/10",
+          "bg-linear-to-br from-fg/8 to-fg/4",
+          selected ? "ring-2 ring-accent/50" : "ring-1 ring-fg/10",
         )}
       >
         {avatarUrl ? (

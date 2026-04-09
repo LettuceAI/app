@@ -13,6 +13,7 @@ import type { CustomColorPreset, CustomColors } from "../../../core/storage/sche
 import { cn, interactive, radius } from "../../design-tokens";
 import { toast } from "../../components/toast";
 import { useI18n } from "../../../core/i18n/context";
+import { Switch } from "../../components/Switch";
 
 const SETTINGS_CARD_OPACITY_DEFAULT = 5;
 
@@ -407,7 +408,11 @@ function hexToRgb(value: string): [number, number, number] {
 
 function rgbToHex([r, g, b]: [number, number, number]): string {
   return `#${[r, g, b]
-    .map((channel) => Math.max(0, Math.min(255, Math.round(channel))).toString(16).padStart(2, "0"))
+    .map((channel) =>
+      Math.max(0, Math.min(255, Math.round(channel)))
+        .toString(16)
+        .padStart(2, "0"),
+    )
     .join("")}`;
 }
 
@@ -504,7 +509,10 @@ function colorsEqual(a: CustomColors, b: CustomColors): boolean {
 
 function buildPresetColors(colors: CustomColors): Record<ColorKey, string> {
   return Object.fromEntries(
-    COLOR_TOKENS.map((token) => [token.key, colors[token.key] ?? getResolvedDefaultColor(token.key, colors)]),
+    COLOR_TOKENS.map((token) => [
+      token.key,
+      colors[token.key] ?? getResolvedDefaultColor(token.key, colors),
+    ]),
   ) as Record<ColorKey, string>;
 }
 
@@ -563,18 +571,48 @@ function slugify(value: string): string {
 }
 
 const TOKEN_LABEL_KEYS: Record<ColorKey, { label: string; desc: string }> = {
-  surface: { label: "colorCustomization.tokens.surface", desc: "colorCustomization.tokens.surfaceDesc" },
-  surfaceEl: { label: "colorCustomization.tokens.surfaceEl", desc: "colorCustomization.tokens.surfaceElDesc" },
+  surface: {
+    label: "colorCustomization.tokens.surface",
+    desc: "colorCustomization.tokens.surfaceDesc",
+  },
+  surfaceEl: {
+    label: "colorCustomization.tokens.surfaceEl",
+    desc: "colorCustomization.tokens.surfaceElDesc",
+  },
   nav: { label: "colorCustomization.tokens.nav", desc: "colorCustomization.tokens.navDesc" },
-  fg: { label: "colorCustomization.tokens.foreground", desc: "colorCustomization.tokens.foregroundDesc" },
-  appText: { label: "colorCustomization.tokens.appText", desc: "colorCustomization.tokens.appTextDesc" },
-  appTextMuted: { label: "colorCustomization.tokens.appTextMuted", desc: "colorCustomization.tokens.appTextMutedDesc" },
-  appTextSubtle: { label: "colorCustomization.tokens.appTextSubtle", desc: "colorCustomization.tokens.appTextSubtleDesc" },
-  accent: { label: "colorCustomization.tokens.accent", desc: "colorCustomization.tokens.accentDesc" },
+  fg: {
+    label: "colorCustomization.tokens.foreground",
+    desc: "colorCustomization.tokens.foregroundDesc",
+  },
+  appText: {
+    label: "colorCustomization.tokens.appText",
+    desc: "colorCustomization.tokens.appTextDesc",
+  },
+  appTextMuted: {
+    label: "colorCustomization.tokens.appTextMuted",
+    desc: "colorCustomization.tokens.appTextMutedDesc",
+  },
+  appTextSubtle: {
+    label: "colorCustomization.tokens.appTextSubtle",
+    desc: "colorCustomization.tokens.appTextSubtleDesc",
+  },
+  accent: {
+    label: "colorCustomization.tokens.accent",
+    desc: "colorCustomization.tokens.accentDesc",
+  },
   info: { label: "colorCustomization.tokens.info", desc: "colorCustomization.tokens.infoDesc" },
-  warning: { label: "colorCustomization.tokens.warning", desc: "colorCustomization.tokens.warningDesc" },
-  danger: { label: "colorCustomization.tokens.danger", desc: "colorCustomization.tokens.dangerDesc" },
-  secondary: { label: "colorCustomization.tokens.secondary", desc: "colorCustomization.tokens.secondaryDesc" },
+  warning: {
+    label: "colorCustomization.tokens.warning",
+    desc: "colorCustomization.tokens.warningDesc",
+  },
+  danger: {
+    label: "colorCustomization.tokens.danger",
+    desc: "colorCustomization.tokens.dangerDesc",
+  },
+  secondary: {
+    label: "colorCustomization.tokens.secondary",
+    desc: "colorCustomization.tokens.secondaryDesc",
+  },
 };
 
 const GROUP_LABEL_KEYS: Record<string, string> = {
@@ -590,16 +628,16 @@ const PRESET_NAME_KEYS: Record<string, string> = {
   "Purple Haze": "colorCustomization.presets.purpleHaze",
   "Rose Pine": "colorCustomization.presets.rosePine",
   "Tokyo Night": "colorCustomization.presets.tokyoNight",
-  "Catppuccin": "colorCustomization.presets.catppuccin",
-  "Gruvbox": "colorCustomization.presets.gruvbox",
-  "Nord": "colorCustomization.presets.nord",
-  "Dracula": "colorCustomization.presets.dracula",
-  "Solarized": "colorCustomization.presets.solarized",
+  Catppuccin: "colorCustomization.presets.catppuccin",
+  Gruvbox: "colorCustomization.presets.gruvbox",
+  Nord: "colorCustomization.presets.nord",
+  Dracula: "colorCustomization.presets.dracula",
+  Solarized: "colorCustomization.presets.solarized",
   "Ayu Dark": "colorCustomization.presets.ayuDark",
   "One Dark": "colorCustomization.presets.oneDark",
-  "Vesper": "colorCustomization.presets.vesper",
+  Vesper: "colorCustomization.presets.vesper",
   "Cyber Neon": "colorCustomization.presets.cyberNeon",
-  "Monochrome": "colorCustomization.presets.monochrome",
+  Monochrome: "colorCustomization.presets.monochrome",
 };
 
 export function ColorCustomizationPage() {
@@ -608,6 +646,9 @@ export function ColorCustomizationPage() {
     setSettingsCardOpacity: setThemeSettingsCardOpacity,
   } = useTheme();
   const { t } = useI18n();
+  const appTextStyle = { color: "var(--color-app-text)" } as const;
+  const appTextMutedStyle = { color: "var(--color-app-text-muted)" } as const;
+  const appTextSubtleStyle = { color: "var(--color-app-text-subtle)" } as const;
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -634,7 +675,8 @@ export function ColorCustomizationPage() {
         ]);
         const normalizedColors = normalizeCustomColors(storedColors ?? {});
         const normalizedPresets = (storedPresets ?? []).map(normalizePreset);
-        const normalizedSettingsCardOpacity = normalizeSettingsCardOpacity(storedSettingsCardOpacity);
+        const normalizedSettingsCardOpacity =
+          normalizeSettingsCardOpacity(storedSettingsCardOpacity);
 
         setWorkingColors(normalizedColors);
         setInitialColors(normalizedColors);
@@ -990,13 +1032,13 @@ export function ColorCustomizationPage() {
   const isPresetActive = (preset: Preset | CustomColorPreset) => {
     const presetColors = preset.colors;
     const presetOpacity = normalizeSettingsCardOpacity(preset.settingsCardOpacity);
-    return COLOR_TOKENS.every((tok) => {
-      const current = workingColors[tok.key] ?? getResolvedDefaultColor(tok.key, workingColors);
-      const candidate = presetColors[tok.key] ?? getResolvedDefaultColor(tok.key, presetColors);
-      return (
-        current === candidate
-      );
-    }) && settingsCardOpacity === presetOpacity;
+    return (
+      COLOR_TOKENS.every((tok) => {
+        const current = workingColors[tok.key] ?? getResolvedDefaultColor(tok.key, workingColors);
+        const candidate = presetColors[tok.key] ?? getResolvedDefaultColor(tok.key, presetColors);
+        return current === candidate;
+      }) && settingsCardOpacity === presetOpacity
+    );
   };
 
   if (isLoading) return null;
@@ -1027,7 +1069,10 @@ export function ColorCustomizationPage() {
         {/* Presets */}
         <div>
           <div className="mb-2.5 flex items-center justify-between px-1 gap-2">
-            <h2 className="text-[10px] font-semibold uppercase tracking-[0.25em] text-fg/35">
+            <h2
+              className="text-[10px] font-semibold uppercase tracking-[0.25em]"
+              style={appTextSubtleStyle}
+            >
               {t("colorCustomization.presetsLabel")}
             </h2>
             <div className="flex items-center gap-1.5">
@@ -1035,12 +1080,13 @@ export function ColorCustomizationPage() {
                 type="button"
                 onClick={handleImportClick}
                 className={cn(
-                  "flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-medium text-fg/55",
+                  "flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-medium",
                   radius.full,
                   "border border-fg/10 bg-fg/5",
                   interactive.transition.fast,
                   "hover:border-fg/20 hover:text-fg/75",
                 )}
+                style={appTextMutedStyle}
               >
                 <Upload className="h-3 w-3" />
                 {t("colorCustomization.importButton")}
@@ -1049,12 +1095,13 @@ export function ColorCustomizationPage() {
                 type="button"
                 onClick={handleExport}
                 className={cn(
-                  "flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-medium text-fg/55",
+                  "flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-medium",
                   radius.full,
                   "border border-fg/10 bg-fg/5",
                   interactive.transition.fast,
                   "hover:border-fg/20 hover:text-fg/75",
                 )}
+                style={appTextMutedStyle}
               >
                 <Download className="h-3 w-3" />
                 {t("colorCustomization.exportButton")}
@@ -1064,12 +1111,13 @@ export function ColorCustomizationPage() {
                   type="button"
                   onClick={handleResetAll}
                   className={cn(
-                    "flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-medium text-fg/55",
+                    "flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-medium",
                     radius.full,
                     "border border-fg/10 bg-fg/5",
                     interactive.transition.fast,
                     "hover:border-fg/20 hover:text-fg/75",
                   )}
+                  style={appTextMutedStyle}
                 >
                   <RotateCcw className="h-3 w-3" />
                   {t("colorCustomization.resetAllButton")}
@@ -1114,8 +1162,11 @@ export function ColorCustomizationPage() {
                       "text-[11px] font-medium truncate",
                       active ? "text-accent" : "text-fg/60",
                     )}
+                    style={active ? undefined : appTextMutedStyle}
                   >
-                    {PRESET_NAME_KEYS[preset.name] ? t(PRESET_NAME_KEYS[preset.name] as any) : preset.name}
+                    {PRESET_NAME_KEYS[preset.name]
+                      ? t(PRESET_NAME_KEYS[preset.name] as any)
+                      : preset.name}
                   </span>
                 </button>
               );
@@ -1125,7 +1176,10 @@ export function ColorCustomizationPage() {
 
         {importedPresets.length > 0 && (
           <div>
-            <h2 className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-fg/35">
+            <h2
+              className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.25em]"
+              style={appTextSubtleStyle}
+            >
               {t("colorCustomization.customPresetsLabel")}
             </h2>
             <div className="space-y-2">
@@ -1164,6 +1218,7 @@ export function ColorCustomizationPage() {
                           "text-[11px] font-medium truncate",
                           active ? "text-accent" : "text-fg/60",
                         )}
+                        style={active ? undefined : appTextMutedStyle}
                       >
                         {preset.name}
                       </span>
@@ -1171,7 +1226,8 @@ export function ColorCustomizationPage() {
                     <button
                       type="button"
                       onClick={() => handleRenameImportedPreset(preset)}
-                      className="text-fg/35 hover:text-fg/70 p-1"
+                      className="p-1 hover:text-fg/70"
+                      style={appTextSubtleStyle}
                       title="Rename preset"
                     >
                       <Edit3 className="h-4 w-4" />
@@ -1179,7 +1235,8 @@ export function ColorCustomizationPage() {
                     <button
                       type="button"
                       onClick={() => handleDeleteImportedPreset(preset)}
-                      className="text-fg/35 hover:text-danger p-1 ml-1.5"
+                      className="ml-1.5 p-1 hover:text-danger"
+                      style={appTextSubtleStyle}
                       title="Delete preset"
                     >
                       <Trash2 className="h-4 w-4" />
@@ -1192,20 +1249,26 @@ export function ColorCustomizationPage() {
         )}
 
         <div>
-          <h2 className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-fg/35">
+          <h2
+            className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.25em]"
+            style={appTextSubtleStyle}
+          >
             {t("colorCustomization.settingsCardsLabel")}
           </h2>
           <div className="rounded-xl border border-fg/10 bg-fg/5 px-4 py-3">
             <div className="flex items-center justify-between gap-4">
               <div className="min-w-0">
-                <div className="text-sm font-medium text-fg">
+                <div className="text-sm font-medium" style={appTextStyle}>
                   {t("colorCustomization.settingsCardsOpacity")}
                 </div>
-                <div className="text-[11px] text-fg/45">
+                <div className="text-[11px]" style={appTextMutedStyle}>
                   {t("colorCustomization.settingsCardsOpacityDesc")}
                 </div>
               </div>
-              <div className="min-w-14 rounded-md border border-fg/10 bg-fg/5 px-2.5 py-1 text-right text-xs font-medium text-fg">
+              <div
+                className="min-w-14 rounded-md border border-fg/10 bg-fg/5 px-2.5 py-1 text-right text-xs font-medium"
+                style={appTextStyle}
+              >
                 {settingsCardOpacity}%
               </div>
             </div>
@@ -1228,13 +1291,17 @@ export function ColorCustomizationPage() {
           const tokens = COLOR_TOKENS.filter((tok) => tok.group === group.id);
           return (
             <div key={group.id}>
-              <h2 className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-fg/35">
+              <h2
+                className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.25em]"
+                style={appTextSubtleStyle}
+              >
                 {t(GROUP_LABEL_KEYS[group.id] as any)}
               </h2>
               <div className="space-y-2.5">
                 {tokens.map((token) => {
                   const displayColor = getDisplayColor(token.key);
-                  const inputValue = getDraftOrValue(token.key) || getResolvedDefaultColor(token.key, workingColors);
+                  const inputValue =
+                    getDraftOrValue(token.key) || getResolvedDefaultColor(token.key, workingColors);
                   const isCustom = Boolean(workingColors[token.key]);
 
                   return (
@@ -1265,8 +1332,12 @@ export function ColorCustomizationPage() {
                             />
                           </button>
                           <div>
-                            <div className="text-sm font-medium text-fg">{t(TOKEN_LABEL_KEYS[token.key].label as any)}</div>
-                            <div className="text-[11px] text-fg/45">{t(TOKEN_LABEL_KEYS[token.key].desc as any)}</div>
+                            <div className="text-sm font-medium" style={appTextStyle}>
+                              {t(TOKEN_LABEL_KEYS[token.key].label as any)}
+                            </div>
+                            <div className="text-[11px]" style={appTextMutedStyle}>
+                              {t(TOKEN_LABEL_KEYS[token.key].desc as any)}
+                            </div>
                           </div>
                         </div>
 
@@ -1279,17 +1350,19 @@ export function ColorCustomizationPage() {
                             placeholder={getResolvedDefaultColor(token.key, workingColors)}
                             spellCheck={false}
                             className={cn(
-                              "w-22.5 rounded-lg border px-2.5 py-1.5 font-mono text-xs text-fg",
-                              "border-fg/10 bg-fg/5 placeholder-fg/30",
+                              "w-22.5 rounded-lg border px-2.5 py-1.5 font-mono text-xs",
+                              "border-fg/10 bg-fg/5 placeholder:text-[var(--color-app-text-subtle)]",
                               "focus:border-accent/40 focus:outline-none",
                               interactive.transition.fast,
                             )}
+                            style={appTextStyle}
                           />
                           {isCustom && (
                             <button
                               type="button"
                               onClick={() => handleReset(token.key)}
-                              className="text-fg/30 hover:text-fg/60"
+                              className="hover:text-fg/60"
+                              style={appTextSubtleStyle}
                               title="Reset to default"
                             >
                               <RotateCcw className="h-3.5 w-3.5" />
@@ -1307,7 +1380,10 @@ export function ColorCustomizationPage() {
 
         {/* Live preview */}
         <div>
-          <h2 className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-fg/35">
+          <h2
+            className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.25em]"
+            style={appTextSubtleStyle}
+          >
             {t("colorCustomization.previewLabel")}
           </h2>
           <div className="rounded-xl border border-fg/10 bg-surface p-4 space-y-4">
@@ -1364,9 +1440,7 @@ export function ColorCustomizationPage() {
               <span className="text-xs" style={{ color: "var(--color-app-text-muted)" }}>
                 Sample toggle
               </span>
-              <div className="relative inline-flex h-6 w-11 rounded-full bg-accent">
-                <span className="inline-block h-5 w-5 translate-x-5 transform rounded-full bg-fg transition" />
-              </div>
+              <Switch checked={true} onChange={() => {}} />
             </div>
           </div>
         </div>

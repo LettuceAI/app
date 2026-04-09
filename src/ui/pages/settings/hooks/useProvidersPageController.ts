@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 import {
   readSettings,
+  readSettingsCached,
   addOrUpdateProviderCredential,
   removeProviderCredential,
   SETTINGS_UPDATED_EVENT,
@@ -42,8 +43,23 @@ type ControllerReturn = {
   dismissEngineSetup: () => void;
 };
 
+function getInitialProvidersState(): ProvidersPageState {
+  const cached = readSettingsCached();
+  if (cached) {
+    const visibleProviders = cached.providerCredentials.filter(
+      (provider) => provider.providerId !== "llamacpp",
+    );
+    return {
+      ...initialProvidersPageState,
+      providers: visibleProviders,
+      loading: false,
+    };
+  }
+  return initialProvidersPageState;
+}
+
 export function useProvidersPageController(): ControllerReturn {
-  const [state, dispatch] = useReducer(providersPageReducer, initialProvidersPageState);
+  const [state, dispatch] = useReducer(providersPageReducer, undefined, getInitialProvidersState);
   const isMobile = getPlatform().type === "mobile";
 
   const reload = useCallback(async () => {
@@ -163,11 +179,12 @@ export function useProvidersPageController(): ControllerReturn {
         "ollama",
         "lmstudio",
         "intenserp",
+        "automatic1111",
       ].includes(editorProvider.providerId);
       const requiresVerification =
         !isLocalProvider &&
         !isEngineProvider &&
-        ["openai", "anthropic", "openrouter", "groq", "mistral"].includes(
+        ["openai", "anthropic", "openrouter", "groq", "mistral", "gemini", "lettuce-host"].includes(
           editorProvider.providerId,
         );
       const trimmedKey = apiKey.trim();
@@ -230,9 +247,13 @@ export function useProvidersPageController(): ControllerReturn {
         return;
       }
 
-      const requiresBaseUrl = ["ollama", "lmstudio", "intenserp"].includes(
-        editorProvider.providerId,
-      );
+      const requiresBaseUrl = [
+        "ollama",
+        "lmstudio",
+        "intenserp",
+        "automatic1111",
+        "lettuce-host",
+      ].includes(editorProvider.providerId);
       if (requiresBaseUrl && !editorProvider.baseUrl?.trim()) {
         dispatch({
           type: "set_validation_error",

@@ -1,6 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import type { Model, ProviderCredential, Settings } from "../storage/schemas";
+import type {
+  AdvancedModelSettings,
+  Model,
+  PromptEntryCondition,
+  ProviderCredential,
+  Settings,
+} from "../storage/schemas";
 import { convertToImageUrl } from "../storage/images";
 import { getPromptTemplate } from "../prompts/service";
 import { isRenderableImageUrl } from "../utils/image";
@@ -17,6 +23,7 @@ export interface ImageGenerationRequest {
   model: string;
   providerId: string;
   credentialId: string;
+  advancedModelSettings?: AdvancedModelSettings | null;
   inputImages?: string[];
   size?: string;
   quality?: string;
@@ -62,6 +69,7 @@ export async function generateImage(
       model: request.model,
       providerId: request.providerId,
       credentialId: request.credentialId,
+      advancedModelSettings: request.advancedModelSettings ?? null,
       inputImages: request.inputImages ?? null,
       size: request.size ?? null,
       quality: request.quality ?? null,
@@ -73,7 +81,11 @@ export async function generateImage(
 
 type PromptTemplateLike = {
   content: string;
-  entries?: Array<{ content: string; enabled?: boolean }>;
+  entries?: Array<{
+    content: string;
+    enabled?: boolean;
+    conditions?: PromptEntryCondition | null;
+  }>;
 };
 
 type AvatarPromptContext = {
@@ -84,31 +96,71 @@ type AvatarPromptContext = {
   editRequest?: string | null;
 };
 
+type AvatarPromptConditionContext = {
+  hasSubjectDescription: boolean;
+  hasCurrentDescription: boolean;
+};
+
 const FALLBACK_AVATAR_GENERATION_TEMPLATE = [
-  "Write one polished image prompt for a character avatar.",
+  "Generate a character avatar image directly from this request.",
   "Subject: {{avatar_subject_name}}",
   "{{avatar_subject_description}}",
-  "Request: {{avatar_request}}",
-  "Keep the subject centered and suitable for a profile image.",
-  "Output only the final image prompt text.",
+  "Avatar request: {{avatar_request}}",
+  "Create a centered, profile-friendly image that preserves identity-defining traits.",
+  "Prioritize face, hair, clothing, expression, pose, and overall vibe.",
+  "Do not add text, logos, watermarks, frames, UI, or split panels unless explicitly requested.",
+  "Return only the image.",
 ].join("\n\n");
 
 const FALLBACK_AVATAR_EDIT_TEMPLATE = [
-  "Revise the existing avatar image prompt using the source image and the edit request.",
+  "Edit the provided avatar image directly using the source image and the request below.",
   "Subject: {{avatar_subject_name}}",
   "{{avatar_subject_description}}",
-  "Current prompt: {{current_avatar_prompt}}",
+  "Current avatar notes: {{current_avatar_prompt}}",
   "Edit request: {{edit_request}}",
-  "Preserve identity and change only what the edit request asks for.",
-  "Output only the revised image prompt text.",
+  "Preserve identity and keep unchanged traits consistent with the source image.",
+  "Change only what the edit request asks for.",
+  "Return only the edited image.",
 ].join("\n\n");
 
-function resolveTemplateContent(template: PromptTemplateLike | null, fallback: string): string {
+function matchesAvatarPromptCondition(
+  condition: PromptEntryCondition,
+  context: AvatarPromptConditionContext,
+): boolean {
+  switch (condition.type) {
+    case "hasSubjectDescription":
+      return context.hasSubjectDescription === condition.value;
+    case "hasCurrentDescription":
+      return context.hasCurrentDescription === condition.value;
+    case "all":
+      return condition.conditions.every((child) => matchesAvatarPromptCondition(child, context));
+    case "any":
+      return (
+        condition.conditions.length > 0 &&
+        condition.conditions.some((child) => matchesAvatarPromptCondition(child, context))
+      );
+    case "not":
+      return !matchesAvatarPromptCondition(condition.condition, context);
+    default:
+      return true;
+  }
+}
+
+function resolveTemplateContent(
+  template: PromptTemplateLike | null,
+  fallback: string,
+  context: AvatarPromptConditionContext,
+): string {
   if (!template) return fallback;
 
   const mergedEntries =
     template.entries
-      ?.filter((entry) => entry.enabled !== false && entry.content.trim().length > 0)
+      ?.filter(
+        (entry) =>
+          entry.enabled !== false &&
+          entry.content.trim().length > 0 &&
+          (!entry.conditions || matchesAvatarPromptCondition(entry.conditions, context)),
+      )
       .map((entry) => entry.content)
       .join("\n\n") ?? "";
 
@@ -146,7 +198,10 @@ async function buildAvatarTemplatePrompt(
 ): Promise<string> {
   try {
     const template = await getPromptTemplate(templateId);
-    const content = resolveTemplateContent(template, fallback);
+    const content = resolveTemplateContent(template, fallback, {
+      hasSubjectDescription: Boolean(context.subjectDescription?.trim()),
+      hasCurrentDescription: Boolean(context.currentAvatarPrompt?.trim()),
+    });
     return applyTemplateVariables(content, context);
   } catch (error) {
     console.warn("Failed to load avatar prompt template, using fallback:", error);
@@ -176,6 +231,14 @@ export interface ImageGenerationOptions {
   defaultModel: Model | null;
   defaultProvider: ProviderCredential | null;
   enabled: boolean;
+}
+
+export function isImageTextToTextModel(model: Model): boolean {
+  const inputScopes = model.inputScopes ?? [];
+  const outputScopes = model.outputScopes ?? [];
+  return (
+    inputScopes.includes("text") && inputScopes.includes("image") && outputScopes.includes("text")
+  );
 }
 
 function resolveImageGenerationOptionsWithPreference(
@@ -231,6 +294,27 @@ export function resolveSceneGenerationOptions(settings: Settings): ImageGenerati
   );
 }
 
+export function resolveSceneWriterOptions(settings: Settings): ImageGenerationOptions {
+  const models = settings.models.filter(isImageTextToTextModel);
+  const providers = settings.providerCredentials;
+  const preferredModelId = settings.advancedSettings?.sceneWriterModelId;
+  const defaultModel =
+    (preferredModelId ? models.find((model) => model.id === preferredModelId) : null) ??
+    models[0] ??
+    null;
+  const defaultProvider = defaultModel
+    ? resolveProviderCredential(providers, defaultModel.providerId, defaultModel.providerLabel)
+    : null;
+
+  return {
+    models,
+    providers,
+    defaultModel,
+    defaultProvider,
+    enabled: models.length > 0,
+  };
+}
+
 export function resolveProviderCredential(
   providers: ProviderCredential[],
   providerId: string,
@@ -262,49 +346,30 @@ export async function resolveGeneratedImageUrl(image: GeneratedImage): Promise<s
 }
 
 /**
- * Image generation model presets for common providers
- */
-export const IMAGE_MODEL_PRESETS = {
-  openai: {
-    models: [
-      { id: "dall-e-3", name: "DALL-E 3", sizes: ["1024x1024", "1024x1792", "1792x1024"] },
-      { id: "dall-e-2", name: "DALL-E 2", sizes: ["256x256", "512x512", "1024x1024"] },
-      {
-        id: "gpt-image-1",
-        name: "GPT Image 1",
-        sizes: ["1024x1024", "1024x1536", "1536x1024", "auto"],
-      },
-    ],
-    qualities: ["standard", "hd"],
-    styles: ["vivid", "natural"],
-  },
-  gemini: {
-    models: [
-      {
-        id: "gemini-2.0-flash-preview-image-generation",
-        name: "Gemini 2.0 Flash (Image)",
-        sizes: [],
-      },
-      { id: "imagen-3.0-generate-002", name: "Imagen 3", sizes: ["1024x1024"] },
-    ],
-    qualities: [],
-    styles: [],
-  },
-  openrouter: {
-    // OpenRouter image models are dynamic, fetched via API
-    models: [],
-    qualities: [],
-    styles: [],
-  },
-} as const;
-
-/**
  * Get available sizes for a model
  */
 export function getModelSizes(providerId: string, modelId: string): readonly string[] {
-  const provider = IMAGE_MODEL_PRESETS[providerId as keyof typeof IMAGE_MODEL_PRESETS];
-  if (!provider) return ["1024x1024"];
+  if (providerId === "openai") {
+    if (modelId === "dall-e-3") {
+      return ["1024x1024", "1024x1792", "1792x1024"];
+    }
 
-  const model = provider.models.find((m) => m.id === modelId);
-  return model?.sizes ?? ["1024x1024"];
+    if (modelId === "dall-e-2") {
+      return ["256x256", "512x512", "1024x1024"];
+    }
+
+    if (modelId.startsWith("gpt-image-1")) {
+      return ["1024x1024", "1024x1536", "1536x1024", "auto"];
+    }
+  }
+
+  if (providerId === "automatic1111") {
+    return ["512x512", "768x768", "1024x1024", "1152x896", "896x1152"];
+  }
+
+  if (providerId === "stability") {
+    return ["512x512", "768x768", "1024x1024", "1152x896", "896x1152"];
+  }
+
+  return ["1024x1024"];
 }

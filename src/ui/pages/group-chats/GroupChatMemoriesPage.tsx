@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import type { ComponentType } from "react";
 import { useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
@@ -71,6 +71,14 @@ function MemoryActionRow({
   );
 }
 
+const MEMORY_PROGRESS_TOTAL = 4;
+const MEMORY_STEP_LABELS: Record<number, string> = {
+  1: "Summarizing conversation",
+  2: "Analyzing memories",
+  3: "Applying changes",
+  4: "Organizing memories",
+};
+
 export function GroupChatMemoriesPage() {
   const { backOrReplace } = useNavigationManager();
   const { t } = useI18n();
@@ -94,14 +102,26 @@ export function GroupChatMemoriesPage() {
     saveEdit,
     handleRunMemoryCycle,
     handleAbortMemoryCycle,
+    handleRevertMemoryEvent,
     handleRefresh,
     handleDismissError,
     handleTogglePinnedMessage,
     handleSaveSummaryClick,
+    revertingEventId,
   } = useGroupChatMemoriesController(groupSessionId);
 
   const [showAddMemoryMenu, setShowAddMemoryMenu] = useState(false);
   const [showSummaryEditor, setShowSummaryEditor] = useState(false);
+
+  const handleSaveEdit = useCallback(
+    async (index: number) => {
+      const didSave = await saveEdit(index);
+      if (didSave) {
+        dispatch({ type: "CLOSE_MEMORY_ACTIONS" });
+      }
+    },
+    [dispatch, saveEdit],
+  );
 
   const tabs = [
     { id: "memories" as const, icon: Bot, label: t("common.nav.dynamicMemory") },
@@ -112,7 +132,7 @@ export function GroupChatMemoriesPage() {
   if (loading) {
     return (
       <div className={cn("flex h-screen items-center justify-center", colors.surface.base)}>
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-fg/10 border-t-white/60" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-fg/10 border-t-fg/60" />
       </div>
     );
   }
@@ -141,11 +161,11 @@ export function GroupChatMemoriesPage() {
   }
 
   return (
-    <div className={cn("flex min-h-screen flex-col", colors.surface.base, colors.text.primary)}>
+    <div className={cn("flex h-full flex-col", colors.surface.base, colors.text.primary)}>
       {/* Header */}
       <header
         className={cn(
-          "sticky top-0 z-20 border-b border-fg/10 px-4",
+          "z-20 shrink-0 border-b border-fg/10 px-4",
           "pt-[calc(env(safe-area-inset-top)+24px)] pb-3",
           colors.glass.strong,
         )}
@@ -236,17 +256,45 @@ export function GroupChatMemoriesPage() {
               <div
                 className={cn(
                   radius.md,
-                  "bg-info/10 border border-info/20 p-3 flex items-center gap-3 animate-pulse",
+                  "bg-info/10 border border-info/20 p-3 space-y-2",
                 )}
               >
-                <RefreshCw className="h-5 w-5 text-info shrink-0 animate-spin" />
-                <div className={cn("flex-1", typography.body.size, "text-info")}>
-                  <p className="font-semibold">
-                    {session.memoryStatus === "processing"
-                      ? "AI is organizing group memories..."
-                      : "Retrying Memory Cycle..."}
-                  </p>
-                </div>
+                {(() => {
+                  const step = ui.memoryProgressStep ?? session.memoryProgressStep ?? null;
+                  const label = step ? MEMORY_STEP_LABELS[step] : null;
+                  return (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <RefreshCw className="h-4 w-4 text-info shrink-0 animate-spin" />
+                          <span className={cn(typography.body.size, "font-semibold text-info")}>
+                            {label ??
+                              (ui.retryStatus === "retrying"
+                                ? "Retrying Memory Cycle..."
+                                : "Processing memories...")}
+                          </span>
+                        </div>
+                        {step && (
+                          <span className="text-[12px] text-info/60 tabular-nums">
+                            {step}/{MEMORY_PROGRESS_TOTAL}
+                          </span>
+                        )}
+                      </div>
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-info/15">
+                        {step ? (
+                          <div
+                            className="h-full rounded-full bg-info/70 transition-all duration-500 ease-out"
+                            style={{
+                              width: `${(step / MEMORY_PROGRESS_TOTAL) * 100}%`,
+                            }}
+                          />
+                        ) : (
+                          <div className="h-full w-1/3 rounded-full bg-info/70 animate-[indeterminate_1.5s_ease-in-out_infinite]" />
+                        )}
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
             ) : ui.retryStatus === "success" ? (
               <div
@@ -665,9 +713,7 @@ export function GroupChatMemoriesPage() {
                 </span>
                 <button
                   onClick={
-                    ui.retryStatus === "retrying" || session.memoryStatus === "processing"
-                      ? handleAbortMemoryCycle
-                      : handleRunMemoryCycle
+                    session.memoryStatus !== "idle" ? handleAbortMemoryCycle : handleRunMemoryCycle
                   }
                   className={cn(
                     "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg",
@@ -677,17 +723,19 @@ export function GroupChatMemoriesPage() {
                     "transition-all active:scale-95",
                   )}
                 >
-                  {ui.retryStatus === "retrying" || session.memoryStatus === "processing" ? (
+                  {session.memoryStatus !== "idle" ? (
                     <X size={12} className="animate-pulse" />
                   ) : (
                     <Cpu size={12} />
                   )}
-                  {ui.retryStatus === "retrying" || session.memoryStatus === "processing"
-                    ? t("common.buttons.cancel")
-                    : "Run"}
+                  {session.memoryStatus !== "idle" ? t("common.buttons.cancel") : "Run"}
                 </button>
               </div>
-              <ToolLog events={session.memoryToolEvents || []} />
+              <ToolLog
+                events={session.memoryToolEvents || []}
+                onRevert={handleRevertMemoryEvent}
+                revertingEventId={revertingEventId}
+              />
             </motion.div>
           )}
         </AnimatePresence>
@@ -709,7 +757,7 @@ export function GroupChatMemoriesPage() {
               radius.lg,
               "border border-fg/10 bg-surface-el/30",
               "text-sm text-fg/90 resize-none leading-relaxed",
-              "focus:border-fg/20 focus:outline-none focus:ring-1 focus:ring-white/10",
+              "focus:border-fg/20 focus:outline-none focus:ring-1 focus:ring-fg/10",
               "placeholder:text-fg/30",
             )}
             placeholder="Short recap used to keep context consistent across messages..."
@@ -785,7 +833,7 @@ export function GroupChatMemoriesPage() {
               radius.lg,
               "border border-fg/10 bg-surface-el/30",
               "text-sm text-fg/90 resize-none leading-relaxed",
-              "focus:border-fg/20 focus:outline-none focus:ring-1 focus:ring-white/10",
+              "focus:border-fg/20 focus:outline-none focus:ring-1 focus:ring-fg/10",
               "placeholder:text-fg/30",
             )}
             placeholder="What should be remembered?"
@@ -843,13 +891,20 @@ export function GroupChatMemoriesPage() {
                 <textarea
                   value={ui.editingValue}
                   onChange={(e) => dispatch({ type: "SET_EDIT_VALUE", value: e.target.value })}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      void handleSaveEdit(selectedItem.index);
+                    }
+                  }}
                   rows={4}
                   className={cn(
                     "w-full p-3",
                     radius.lg,
                     "border border-fg/10 bg-surface-el/30",
                     "text-sm text-fg/90 resize-none leading-relaxed",
-                    "focus:border-fg/20 focus:outline-none focus:ring-1 focus:ring-white/10",
+                    "focus:border-fg/20 focus:outline-none focus:ring-1 focus:ring-fg/10",
                     "placeholder:text-fg/30",
                   )}
                   placeholder="Enter memory content..."
@@ -857,6 +912,7 @@ export function GroupChatMemoriesPage() {
                 />
                 <div className="flex gap-2">
                   <button
+                    type="button"
                     onClick={() => dispatch({ type: "SET_MEMORY_ACTION_MODE", mode: "actions" })}
                     className={cn(
                       "flex-1 px-4 py-2.5",
@@ -870,10 +926,8 @@ export function GroupChatMemoriesPage() {
                     Cancel
                   </button>
                   <button
-                    onClick={async () => {
-                      await saveEdit(selectedItem.index);
-                      dispatch({ type: "CLOSE_MEMORY_ACTIONS" });
-                    }}
+                    type="button"
+                    onClick={() => void handleSaveEdit(selectedItem.index)}
                     className={cn(
                       "flex-1 px-4 py-2.5 flex items-center justify-center gap-2",
                       radius.lg,

@@ -23,13 +23,32 @@
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
   }
+  .scrollbar-thin {
+    -ms-overflow-style: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255 255 255 / 0.1) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    display: block;
+    width: 6px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: rgba(255 255 255 / 0.1);
+    border-radius: 3px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: rgba(255 255 255 / 0.2);
+  }
 }
 
-* {
+*:not(.scrollbar-thin) {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
-*::-webkit-scrollbar {
+*:not(.scrollbar-thin)::-webkit-scrollbar {
   display: none;
 }
 
@@ -37,6 +56,11 @@
   .max-w-md {
     max-width: 100vw;
   }
+}
+
+@keyframes indeterminate {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
 }
 
 @keyframes bounce {

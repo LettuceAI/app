@@ -21,6 +21,7 @@ interface ChatFooterProps {
   onOpenPlusMenu?: () => void;
   triggerFileInput?: boolean;
   onFileInputTriggered?: () => void;
+  textareaRef?: React.RefObject<HTMLTextAreaElement | null>;
 }
 
 export function ChatFooter({
@@ -31,19 +32,30 @@ export function ChatFooter({
   onSendMessage,
   onAbort,
   hasBackgroundImage,
-  footerOverlayClassName,
+  footerOverlayClassName: _footerOverlayClassName,
   pendingAttachments = [],
   onAddAttachment,
   onRemoveAttachment,
   onOpenPlusMenu,
   triggerFileInput,
   onFileInputTriggered,
+  textareaRef: externalTextareaRef,
 }: ChatFooterProps) {
   const { t } = useI18n();
   const hasDraft = draft.trim().length > 0;
   const hasAttachments = pendingAttachments.length > 0;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (!externalTextareaRef) return;
+    externalTextareaRef.current = textareaRef.current;
+    return () => {
+      if (externalTextareaRef.current === textareaRef.current) {
+        externalTextareaRef.current = null;
+      }
+    };
+  }, [externalTextareaRef]);
 
   const isDesktop = useMemo(() => getPlatform().type === "desktop", []);
 
@@ -116,7 +128,7 @@ export function ChatFooter({
     <footer
       className={cn(
         "z-20 shrink-0 px-4 pb-6 pt-3",
-        hasBackgroundImage ? footerOverlayClassName || "bg-surface/45" : "bg-surface",
+        hasBackgroundImage ? "bg-transparent" : "bg-surface",
       )}
     >
       {error && (
@@ -139,7 +151,7 @@ export function ChatFooter({
           {pendingAttachments.map((attachment) => (
             <div
               key={attachment.id}
-              className={cn("relative", radius.md, "border border-white/20 bg-white/10")}
+              className={cn("relative", radius.md, "border border-fg/15 bg-fg/8")}
             >
               <img
                 src={attachment.data}
@@ -156,7 +168,7 @@ export function ChatFooter({
                   )}
                   aria-label={t("chats.footer.removeAttachment")}
                 >
-                  <X className="h-5 w-5 text-black drop-shadow-[0_1px_2px_rgba(255,255,255,0.8)]" />
+                  <X className="h-5 w-5 text-fg drop-shadow-[0_1px_2px_rgba(0,0,0,0.25)]" />
                 </button>
               )}
             </div>
@@ -178,7 +190,7 @@ export function ChatFooter({
         className={cn(
           "relative flex items-end gap-2.5 p-2",
           "rounded-4xl",
-          "border border-white/15 bg-white/5 backdrop-blur-md",
+          "border border-fg/15 bg-surface-el/65 backdrop-blur-md",
           shadows.md,
         )}
       >
@@ -190,10 +202,10 @@ export function ChatFooter({
             className={cn(
               "mb-0.5 flex h-10 w-11 shrink-0 items-center justify-center self-end",
               radius.full,
-              "border border-white/15 bg-white/10 text-white/70",
+              "border border-fg/15 bg-fg/10 text-fg/70",
               interactive.transition.fast,
               interactive.active.scale,
-              "hover:border-white/25 hover:bg-white/15",
+              "hover:border-fg/25 hover:bg-fg/15",
               "disabled:cursor-not-allowed disabled:opacity-40",
             )}
             title={onOpenPlusMenu ? t("chats.footer.moreOptions") : t("chats.footer.addImage")}
@@ -213,9 +225,9 @@ export function ChatFooter({
           placeholder={" "}
           rows={1}
           className={cn(
-            "max-h-32 flex-1 resize-none bg-transparent py-2.5",
+            "peer max-h-32 flex-1 resize-none bg-transparent py-2.5",
             typography.body.size,
-            "text-white placeholder:text-transparent",
+            "text-fg placeholder:text-transparent",
             "focus:outline-none",
           )}
           disabled={sending}
@@ -227,7 +239,7 @@ export function ChatFooter({
               "pointer-events-none absolute",
               onOpenPlusMenu || onAddAttachment ? "left-16" : "left-5",
               "top-1/2 -translate-y-1/2",
-              "text-white/40",
+              "text-fg/40",
               "transition-opacity duration-150",
               "peer-not-placeholder-shown:opacity-0",
               "peer-focus:opacity-70",
@@ -246,14 +258,14 @@ export function ChatFooter({
               ? "border border-red-400/40 bg-red-400/20 text-red-100"
               : hasDraft || hasAttachments
                 ? "border border-emerald-400/40 bg-emerald-400/20 text-emerald-100"
-                : "border border-white/15 bg-white/10 text-white/70",
+                : "border border-fg/15 bg-fg/10 text-fg/70",
             interactive.transition.fast,
             interactive.active.scale,
             sending && onAbort && "hover:border-red-400/60 hover:bg-red-400/30",
             !sending &&
               (hasDraft || hasAttachments) &&
               "hover:border-emerald-400/60 hover:bg-emerald-400/30",
-            !sending && !hasDraft && !hasAttachments && "hover:border-white/25 hover:bg-white/15",
+            !sending && !hasDraft && !hasAttachments && "hover:border-fg/25 hover:bg-fg/15",
             "disabled:cursor-not-allowed disabled:opacity-40",
           )}
           title={

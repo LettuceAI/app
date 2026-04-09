@@ -21,14 +21,31 @@ import {
   getEmbeddingModelInfo,
 } from "../../../core/storage/repo";
 import { storageBridge } from "../../../core/storage/files";
-import type { DynamicMemorySettings, Model, Settings } from "../../../core/storage/schemas";
+import type {
+  DynamicMemorySettings,
+  DynamicMemoryStructuredFallbackFormat,
+  Model,
+  Settings,
+} from "../../../core/storage/schemas";
 import { cn, typography, interactive } from "../../design-tokens";
 import { useNavigate } from "react-router-dom";
 import { EmbeddingUpgradePrompt } from "../../components/EmbeddingUpgradePrompt";
 import { BottomMenu } from "../../components/BottomMenu";
 import { confirmBottomMenu } from "../../components/ConfirmBottomMenu";
+import { ModelSelectionBottomMenu } from "../../components/ModelSelectionBottomMenu";
 import { getProviderIcon } from "../../../core/utils/providerIcons";
 import { useI18n } from "../../../core/i18n/context";
+import { Switch } from "../../components/Switch";
+
+const DYNAMIC_MEMORY_LLAMA_OVERWRITE_ORDER = [
+  "penalties",
+  "grammar",
+  "top_k",
+  "top_p",
+  "temp",
+  "min_p",
+  "typical",
+] as const;
 
 const DEFAULT_DYNAMIC_MEMORY_SETTINGS: DynamicMemorySettings = {
   enabled: false,
@@ -40,6 +57,8 @@ const DEFAULT_DYNAMIC_MEMORY_SETTINGS: DynamicMemorySettings = {
   hotMemoryTokenBudget: 2000,
   decayRate: 0.08,
   coldThreshold: 0.3,
+  deleteConfidenceDefault: 0.5,
+  maxHardDeleteRatioPerCycle: 0.5,
   contextEnrichmentEnabled: true,
 };
 
@@ -47,35 +66,41 @@ type MemoryPreset = "minimal" | "balanced" | "comprehensive" | "custom";
 
 const PRESETS: Record<
   Exclude<MemoryPreset, "custom">,
-  Omit<DynamicMemorySettings, "enabled" | "contextEnrichmentEnabled">
+  Omit<
+    DynamicMemorySettings,
+    | "enabled"
+    | "contextEnrichmentEnabled"
+    | "deleteConfidenceDefault"
+    | "maxHardDeleteRatioPerCycle"
+  >
 > = {
   minimal: {
     summaryMessageInterval: 30,
-    maxEntries: 25,
+    maxEntries: 100,
     minSimilarityThreshold: 0.5,
     retrievalLimit: 3,
     retrievalStrategy: "smart",
-    hotMemoryTokenBudget: 1000,
+    hotMemoryTokenBudget: 3072,
     decayRate: 0.15,
     coldThreshold: 0.4,
   },
   balanced: {
     summaryMessageInterval: 20,
-    maxEntries: 50,
+    maxEntries: 200,
     minSimilarityThreshold: 0.35,
     retrievalLimit: 5,
     retrievalStrategy: "smart",
-    hotMemoryTokenBudget: 2000,
+    hotMemoryTokenBudget: 6144,
     decayRate: 0.08,
     coldThreshold: 0.3,
   },
   comprehensive: {
     summaryMessageInterval: 15,
-    maxEntries: 100,
+    maxEntries: 400,
     minSimilarityThreshold: 0.25,
     retrievalLimit: 8,
     retrievalStrategy: "smart",
-    hotMemoryTokenBudget: 4000,
+    hotMemoryTokenBudget: 10240,
     decayRate: 0.05,
     coldThreshold: 0.2,
   },
@@ -113,13 +138,21 @@ const ensureAdvancedSettings = (settings: Settings): NonNullable<Settings["advan
   const advanced = settings.advancedSettings ?? {
     creationHelperEnabled: false,
     helpMeReplyEnabled: true,
+    dynamicMemoryStructuredFallbackFormat: "xml",
+    dynamicMemoryLlamaSamplerOverwriteEnabled: true,
     dynamicMemory: { ...DEFAULT_DYNAMIC_MEMORY_SETTINGS },
   };
   if (advanced.helpMeReplyEnabled === undefined) {
     advanced.helpMeReplyEnabled = true;
   }
+  if (advanced.dynamicMemoryStructuredFallbackFormat === undefined) {
+    advanced.dynamicMemoryStructuredFallbackFormat = "xml";
+  }
   if (!advanced.dynamicMemory) {
     advanced.dynamicMemory = { ...DEFAULT_DYNAMIC_MEMORY_SETTINGS };
+  }
+  if (advanced.dynamicMemoryLlamaSamplerOverwriteEnabled === undefined) {
+    advanced.dynamicMemoryLlamaSamplerOverwriteEnabled = true;
   }
   advanced.dynamicMemory = hydrateDynamicMemorySettings(advanced.dynamicMemory);
   settings.advancedSettings = advanced;
@@ -185,7 +218,10 @@ export function DynamicMemoryPage() {
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
   const [defaultModelId, setDefaultModelId] = useState<string | null>(null);
   const [showModelMenu, setShowModelMenu] = useState(false);
-  const [modelSearchQuery, setModelSearchQuery] = useState("");
+  const [structuredFallbackFormat, setStructuredFallbackFormat] =
+    useState<DynamicMemoryStructuredFallbackFormat>("xml");
+  const [dynamicMemoryLlamaSamplerOverwriteEnabled, setDynamicMemoryLlamaSamplerOverwriteEnabled] =
+    useState(true);
 
   useEffect(() => {
     const loadData = async () => {
@@ -215,6 +251,12 @@ export function DynamicMemoryPage() {
           defaultModelIdValue && summarisationModelValue === defaultModelIdValue
             ? null
             : summarisationModelValue,
+        );
+        setStructuredFallbackFormat(
+          settings.advancedSettings?.dynamicMemoryStructuredFallbackFormat ?? "xml",
+        );
+        setDynamicMemoryLlamaSamplerOverwriteEnabled(
+          settings.advancedSettings?.dynamicMemoryLlamaSamplerOverwriteEnabled ?? true,
         );
         setEmbeddingMaxTokens(settings.advancedSettings?.embeddingMaxTokens ?? 2048);
         setEmbeddingKeepModelLoaded(settings.advancedSettings?.embeddingKeepModelLoaded ?? false);
@@ -332,6 +374,22 @@ export function DynamicMemoryPage() {
     }, "Failed to save summarisation model:");
   };
 
+  const handleDynamicMemoryLlamaSamplerOverwriteChange = async (enabled: boolean) => {
+    setDynamicMemoryLlamaSamplerOverwriteEnabled(enabled);
+    await updateAdvancedSettings((advanced) => {
+      advanced.dynamicMemoryLlamaSamplerOverwriteEnabled = enabled;
+    }, "Failed to save dynamic memory llama sampler overwrite setting:");
+  };
+
+  const handleStructuredFallbackFormatChange = async (
+    format: DynamicMemoryStructuredFallbackFormat,
+  ) => {
+    setStructuredFallbackFormat(format);
+    await updateAdvancedSettings((advanced) => {
+      advanced.dynamicMemoryStructuredFallbackFormat = format;
+    }, "Failed to save dynamic memory structured fallback format:");
+  };
+
   const handleEmbeddingMaxTokensChange = async (val: number) => {
     setEmbeddingMaxTokens(val);
     await updateAdvancedSettings((advanced) => {
@@ -402,6 +460,9 @@ export function DynamicMemoryPage() {
   const selectedSummarisationModel = summarisationModelId
     ? models.find((model) => model.id === summarisationModelId)
     : null;
+  const effectiveSummarisationModel =
+    selectedSummarisationModel ?? models.find((model) => model.id === defaultModelId) ?? null;
+  const isLocalLlamaSummaryModel = effectiveSummarisationModel?.providerId === "llamacpp";
   const hasV2Installed = availableEmbeddingVersions.includes("v2");
   const hasV3Installed = availableEmbeddingVersions.includes("v3");
   const hasBothMajorEmbeddingVersionsInstalled = hasV2Installed && hasV3Installed;
@@ -619,27 +680,16 @@ export function DynamicMemoryPage() {
                           {t("dynamicMemory.page.contextEnrichmentDescription")}
                         </div>
                       </div>
-                      <label className="relative inline-flex items-center cursor-pointer shrink-0">
-                        <input
-                          type="checkbox"
-                          checked={currentSettings.contextEnrichmentEnabled}
-                          onChange={(e) => {
-                            if (activeTab === "direct") {
-                              handleDirectSettingChange(
-                                "contextEnrichmentEnabled",
-                                e.target.checked,
-                              );
-                            } else {
-                              handleGroupSettingChange(
-                                "contextEnrichmentEnabled",
-                                e.target.checked,
-                              );
-                            }
-                          }}
-                          className="sr-only peer"
-                        />
-                        <div className="w-11 h-6 bg-fg/10 rounded-full peer peer-checked:bg-info transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-fg after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5"></div>
-                      </label>
+                      <Switch
+                        checked={currentSettings.contextEnrichmentEnabled}
+                        onChange={(next) => {
+                          if (activeTab === "direct") {
+                            handleDirectSettingChange("contextEnrichmentEnabled", next);
+                          } else {
+                            handleGroupSettingChange("contextEnrichmentEnabled", next);
+                          }
+                        }}
+                      />
                     </div>
                   </div>
                 )}
@@ -701,7 +751,7 @@ export function DynamicMemoryPage() {
                             value={currentSettings.maxEntries}
                             unit={t("dynamicMemory.page.entriesUnit")}
                             min={10}
-                            max={200}
+                            max={500}
                             step={10}
                             onChange={(val) => {
                               if (activeTab === "direct") {
@@ -719,7 +769,7 @@ export function DynamicMemoryPage() {
                             value={currentSettings.hotMemoryTokenBudget}
                             unit={t("dynamicMemory.page.tokensUnit")}
                             min={500}
-                            max={10000}
+                            max={16384}
                             step={500}
                             onChange={(val) => {
                               if (activeTab === "direct") {
@@ -848,6 +898,40 @@ export function DynamicMemoryPage() {
                               }
                             }}
                           />
+
+                          <SettingRow
+                            label="Delete Confidence Default"
+                            description="Used when the model omits delete confidence. Lower values prefer cold storage instead of hard delete."
+                            value={currentSettings.deleteConfidenceDefault}
+                            min={0}
+                            max={1}
+                            step={0.05}
+                            decimals={2}
+                            onChange={(val) => {
+                              if (activeTab === "direct") {
+                                handleDirectSettingChange("deleteConfidenceDefault", val);
+                              } else {
+                                handleGroupSettingChange("deleteConfidenceDefault", val);
+                              }
+                            }}
+                          />
+
+                          <SettingRow
+                            label="Max Hard Delete Ratio"
+                            description="Caps how much of the starting memory set can be hard-deleted in one cycle. Extra deletes are downgraded to cold storage."
+                            value={currentSettings.maxHardDeleteRatioPerCycle}
+                            min={0.1}
+                            max={1}
+                            step={0.05}
+                            decimals={2}
+                            onChange={(val) => {
+                              if (activeTab === "direct") {
+                                handleDirectSettingChange("maxHardDeleteRatioPerCycle", val);
+                              } else {
+                                handleGroupSettingChange("maxHardDeleteRatioPerCycle", val);
+                              }
+                            }}
+                          />
                         </div>
                       </motion.div>
                     )}
@@ -908,6 +992,79 @@ export function DynamicMemoryPage() {
                   <p className="text-xs text-fg/50">
                     {t("dynamicMemory.page.summarisationModelDescription")}
                   </p>
+
+                  <div className="rounded-xl border border-fg/10 bg-fg/5 px-4 py-3 space-y-3">
+                    <div>
+                      <div className="text-sm font-medium text-fg">Structured Fallback Format</div>
+                      <div className="mt-1 text-[11px] leading-relaxed text-fg/45">
+                        Used when tool calling fails during dynamic memory updates and the model is
+                        asked to return structured output directly.
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {(["xml", "json"] as const).map((format) => (
+                        <button
+                          key={format}
+                          onClick={() => handleStructuredFallbackFormatChange(format)}
+                          className={cn(
+                            "rounded-lg border px-3 py-2 text-xs font-medium uppercase transition-colors",
+                            structuredFallbackFormat === format
+                              ? "border-info/50 bg-info/20 text-info"
+                              : "border-fg/10 bg-fg/5 text-fg/60 hover:border-fg/20",
+                          )}
+                        >
+                          {format}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[11px] text-fg/45">
+                      XML is the default. JSON can be useful for models that follow JSON-only
+                      instructions more reliably than XML.
+                    </p>
+                  </div>
+
+                  {isLocalLlamaSummaryModel && (
+                    <div className="rounded-xl border border-fg/10 bg-fg/5 px-4 py-3 space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-medium text-fg">
+                            Overwrite Model Sampler Configuration
+                          </div>
+                          <div className="mt-1 text-[11px] leading-relaxed text-fg/45">
+                            Use a fixed llama.cpp sampler setup for dynamic memory instead of the
+                            summarisation model&apos;s saved sampler configuration.
+                          </div>
+                        </div>
+                        <Switch
+                          checked={dynamicMemoryLlamaSamplerOverwriteEnabled}
+                          onChange={handleDynamicMemoryLlamaSamplerOverwriteChange}
+                        />
+                      </div>
+
+                      {dynamicMemoryLlamaSamplerOverwriteEnabled && (
+                        <div className="rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2.5 space-y-2">
+                          <div className="text-[11px] font-medium uppercase tracking-[0.18em] text-fg/35">
+                            Overwrite Values
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 text-xs text-fg/65">
+                            <div>Temperature: 0.4</div>
+                            <div>Top P: 1.0</div>
+                            <div>Top K: 40</div>
+                            <div>Frequency Penalty: 0.0</div>
+                            <div>Presence Penalty: 0.0</div>
+                            <div>Min P: disabled</div>
+                            <div>Typical P: disabled</div>
+                          </div>
+                          <div className="text-xs text-fg/55">
+                            Order:{" "}
+                            <span className="font-mono text-[11px] text-fg/70">
+                              {DYNAMIC_MEMORY_LLAMA_OVERWRITE_ORDER.join(" -> ")}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* Desktop: Model Management under Summarisation to avoid large left-column gap */}
                   <div className="hidden lg:block space-y-3 pt-4">
@@ -1042,15 +1199,10 @@ export function DynamicMemoryPage() {
                             {t("dynamicMemory.page.keepModelLoadedDescription")}
                           </div>
                         </div>
-                        <label className="relative inline-flex items-center cursor-pointer shrink-0">
-                          <input
-                            type="checkbox"
-                            checked={embeddingKeepModelLoaded}
-                            onChange={(e) => handleEmbeddingKeepModelLoadedChange(e.target.checked)}
-                            className="sr-only peer"
-                          />
-                          <div className="w-11 h-6 bg-fg/10 rounded-full peer peer-checked:bg-info transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-fg after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5"></div>
-                        </label>
+                        <Switch
+                          checked={embeddingKeepModelLoaded}
+                          onChange={handleEmbeddingKeepModelLoadedChange}
+                        />
                       </div>
                     </div>
                   )}
@@ -1203,97 +1355,27 @@ export function DynamicMemoryPage() {
         </div>
       </BottomMenu>
 
-      {/* Model Selection BottomMenu */}
-      <BottomMenu
+      <ModelSelectionBottomMenu
         isOpen={showModelMenu}
-        onClose={() => {
-          setShowModelMenu(false);
-          setModelSearchQuery("");
-        }}
+        onClose={() => setShowModelMenu(false)}
         title={t("dynamicMemory.page.selectModel")}
-      >
-        <div className="space-y-4">
-          <div className="relative">
-            <input
-              type="text"
-              value={modelSearchQuery}
-              onChange={(e) => setModelSearchQuery(e.target.value)}
-              placeholder={t("dynamicMemory.page.searchModels")}
-              className="w-full rounded-xl border border-fg/10 bg-surface-el/30 px-4 py-2.5 pl-10 text-sm text-fg placeholder-fg/40 focus:border-fg/20 focus:outline-none"
-            />
-            <svg
-              className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg/40"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-              />
-            </svg>
-          </div>
-          <div className="space-y-2 max-h-[50vh] overflow-y-auto">
-            <button
-              onClick={() => {
-                handleSummarisationModelChange(null);
-                setShowModelMenu(false);
-                setModelSearchQuery("");
-              }}
-              className={cn(
-                "flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition",
-                !summarisationModelId
-                  ? "border-accent/40 bg-accent/10"
-                  : "border-fg/10 bg-fg/5 hover:bg-fg/10",
-              )}
-            >
-              <Cpu className="h-5 w-5 text-fg/40" />
-              <span className="text-sm text-fg">
-                {t("dynamicMemory.page.useGlobalDefaultModel")}
-              </span>
-              {!summarisationModelId && <Check className="h-4 w-4 ml-auto text-accent" />}
-            </button>
-            {models
-              .filter((model) => {
-                if (!modelSearchQuery) return true;
-                const q = modelSearchQuery.toLowerCase();
-                return (
-                  model.displayName?.toLowerCase().includes(q) ||
-                  model.name?.toLowerCase().includes(q)
-                );
-              })
-              .map((model) => (
-                <button
-                  key={model.id}
-                  onClick={() => {
-                    handleSummarisationModelChange(model.id);
-                    setShowModelMenu(false);
-                    setModelSearchQuery("");
-                  }}
-                  className={cn(
-                    "flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition",
-                    summarisationModelId === model.id
-                      ? "border-accent/40 bg-accent/10"
-                      : "border-fg/10 bg-fg/5 hover:bg-fg/10",
-                  )}
-                >
-                  {getProviderIcon(model.providerId)}
-                  <div className="flex-1 min-w-0">
-                    <span className="block truncate text-sm text-fg">
-                      {model.displayName || model.name}
-                    </span>
-                    <span className="block truncate text-xs text-fg/40">{model.name}</span>
-                  </div>
-                  {summarisationModelId === model.id && (
-                    <Check className="h-4 w-4 shrink-0 text-accent" />
-                  )}
-                </button>
-              ))}
-          </div>
-        </div>
-      </BottomMenu>
+        models={models}
+        selectedModelIds={summarisationModelId ? [summarisationModelId] : []}
+        searchPlaceholder={t("dynamicMemory.page.searchModels")}
+        onSelectModel={(modelId) => {
+          handleSummarisationModelChange(modelId);
+          setShowModelMenu(false);
+        }}
+        clearOption={{
+          label: t("dynamicMemory.page.useGlobalDefaultModel"),
+          icon: Cpu,
+          selected: !summarisationModelId,
+          onClick: () => {
+            handleSummarisationModelChange(null);
+            setShowModelMenu(false);
+          },
+        }}
+      />
     </div>
   );
 }

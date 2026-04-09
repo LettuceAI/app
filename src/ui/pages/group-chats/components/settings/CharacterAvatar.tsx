@@ -23,7 +23,7 @@ export function CharacterAvatar({
       className={cn(
         sizeClasses[size],
         "rounded-full overflow-hidden",
-        "bg-linear-to-br from-white/10 to-white/5",
+        "bg-linear-to-br from-fg/8 to-fg/4",
         "border border-fg/10",
         "flex items-center justify-center",
       )}

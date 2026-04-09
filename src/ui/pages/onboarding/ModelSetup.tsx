@@ -6,16 +6,15 @@ import {
   HelpCircle,
   RefreshCw,
   ChevronDown,
-  Search,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 import { useModelController } from "./hooks/useModelController";
 import { getPlatform } from "../../../core/utils/platform";
-import { BottomMenu, MenuButton, MenuSection } from "../../components/BottomMenu";
 import { getProviderIcon } from "../../../core/utils/providerIcons";
+import { ModelSelectionBottomMenu } from "../../components/ModelSelectionBottomMenu";
 import { useI18n } from "../../../core/i18n/context";
 
 export function ModelSetupPage() {
@@ -49,25 +48,12 @@ export function ModelSetupPage() {
   const [fetchingModels, setFetchingModels] = useState(false);
   const [isManualInput, setIsManualInput] = useState(false);
   const [showModelSelector, setShowModelSelector] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
 
   const isLocalModel = selectedProvider?.providerId === "llamacpp";
   const modelFetchEnabled =
     !!selectedProvider && !["llamacpp", "intenserp"].includes(selectedProvider.providerId);
   const modelIdLabel = isLocalModel ? "Model Path (GGUF)" : "Model ID";
   const modelIdPlaceholder = isLocalModel ? "/path/to/model.gguf" : "e.g. gpt-4o";
-
-  const filteredModels = useMemo(() => {
-    if (!searchQuery) return fetchedModels;
-    const q = searchQuery.toLowerCase();
-    return fetchedModels.filter((m) => {
-      return (
-        m.id.toLowerCase().includes(q) ||
-        (m.displayName && m.displayName.toLowerCase().includes(q)) ||
-        (m.description && m.description.toLowerCase().includes(q))
-      );
-    });
-  }, [fetchedModels, searchQuery]);
 
   const fetchModels = async () => {
     if (!selectedProvider) return;
@@ -102,7 +88,6 @@ export function ModelSetupPage() {
   useEffect(() => {
     setFetchedModels([]);
     setIsManualInput(!modelFetchEnabled);
-    setSearchQuery("");
     if (modelFetchEnabled) {
       void fetchModels();
     }
@@ -200,48 +185,28 @@ export function ModelSetupPage() {
               <ChevronDown className="h-4 w-4 text-white/40" />
             </button>
 
-            <BottomMenu
+            <ModelSelectionBottomMenu
               isOpen={showModelSelector}
               onClose={() => setShowModelSelector(false)}
               title="Select Model"
-            >
-              <div className="px-4 pb-2 sticky top-0 z-10 bg-[#0f1014]">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
-                  <input
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search models..."
-                    className="w-full rounded-xl border border-white/10 bg-white/5 py-2.5 pl-9 pr-4 text-sm text-white placeholder-white/40 focus:border-white/20 focus:outline-none"
-                    autoFocus
-                  />
+              models={fetchedModels as any}
+              selectedModelIds={modelName ? [modelName] : []}
+              searchPlaceholder="Search models..."
+              theme="dark"
+              tone="emerald"
+              renderModelIcon={() => getProviderIcon(selectedProvider?.providerId ?? "custom")}
+              renderModelTitle={(model: any) => model.displayName || model.id}
+              renderModelDescription={(model: any) => model.description || model.id}
+              renderEmptyState={(query) => (
+                <div className="py-12 text-center text-sm text-white/40">
+                  No models found matching "{query}"
                 </div>
-              </div>
-              <MenuSection>
-                {filteredModels.length > 0 ? (
-                  filteredModels.map((m) => {
-                    const isSelected = m.id === modelName;
-                    return (
-                      <MenuButton
-                        key={m.id}
-                        icon={getProviderIcon(selectedProvider?.providerId ?? "custom")}
-                        title={m.displayName || m.id}
-                        description={m.description || m.id}
-                        color="from-emerald-500 to-emerald-600"
-                        rightElement={
-                          isSelected ? <Check className="h-4 w-4 text-emerald-400" /> : undefined
-                        }
-                        onClick={() => handleSelectModel(m.id, m.displayName)}
-                      />
-                    );
-                  })
-                ) : (
-                  <div className="py-12 text-center text-sm text-white/40">
-                    No models found matching "{searchQuery}"
-                  </div>
-                )}
-              </MenuSection>
-            </BottomMenu>
+              )}
+              onSelectModel={(modelId) => {
+                const model = fetchedModels.find((item) => item.id === modelId);
+                handleSelectModel(modelId, model?.displayName);
+              }}
+            />
           </>
         ) : (
           <>

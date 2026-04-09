@@ -1,15 +1,71 @@
 use super::*;
 use crate::utils::log_info;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 use std::collections::HashMap;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 use std::fs;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 use std::io::Cursor;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 use std::path::{Path, PathBuf};
+#[cfg(target_os = "macos")]
+use std::process::Command;
 use std::sync::atomic::Ordering;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 use tauri::path::BaseDirectory;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 use tauri::Manager;
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn macos_primary_dylib_name() -> String {
     format!("libonnxruntime.{}.dylib", ORT_VERSION)
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn leaked_macos_primary_dylib_name() -> &'static str {
+    Box::leak(macos_primary_dylib_name().into_boxed_str())
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn macos_archive_name(target_arch: &str) -> Option<&'static str> {
+    match target_arch {
+        "aarch64" => Some("arm64"),
+        "x86_64" => Some("x86_64"),
+        _ => None,
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn current_macos_arch() -> Option<&'static str> {
+    match std::env::consts::ARCH {
+        "aarch64" => Some("arm64"),
+        "x86_64" => Some("x86_64"),
+        _ => None,
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn macos_dylib_has_arch(path: &Path, expected_arch: &str) -> bool {
+    let Ok(output) = Command::new("lipo").arg("-archs").arg(path).output() else {
+        return true;
+    };
+    if !output.status.success() {
+        return true;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    stdout.split_whitespace().any(|arch| arch == expected_arch)
+}
+
+#[cfg(target_os = "macos")]
+fn macos_dylib_is_loadable(path: &Path) -> bool {
+    let Ok(output) = Command::new("otool").arg("-hV").arg(path).output() else {
+        return true;
+    };
+    if !output.status.success() {
+        return true;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    stdout.contains("MH_DYLIB")
 }
 
 pub(super) async fn ensure_ort_init(app: &AppHandle) -> Result<(), String> {
@@ -113,15 +169,26 @@ async fn resolve_or_download_onnxruntime(app: &AppHandle) -> Result<PathBuf, Str
                         }
                     }
                 } else if cfg!(target_os = "macos") {
-                    if let Some(ort_dir) = path.parent() {
-                        log_missing_macos_provider_dylibs(app, ort_dir, path);
-                        return Ok(path.to_path_buf());
+                    if is_valid_macos_ort_dylib(path) {
+                        if let Some(ort_dir) = path.parent() {
+                            log_missing_macos_provider_dylibs(app, ort_dir, path);
+                            return Ok(path.to_path_buf());
+                        } else {
+                            crate::utils::log_warn(
+                                app,
+                                "embedding_debug",
+                                format!(
+                                    "ORT_DYLIB_PATH is set to {} but parent directory is unavailable; attempting runtime download fallback.",
+                                    path.display()
+                                ),
+                            );
+                        }
                     } else {
                         crate::utils::log_warn(
                             app,
                             "embedding_debug",
                             format!(
-                                "ORT_DYLIB_PATH is set to {} but parent directory is unavailable; attempting runtime download fallback.",
+                                "ORT_DYLIB_PATH points to {} but it is not a usable macOS MH_DYLIB for this arch; ignoring it.",
                                 path.display()
                             ),
                         );
@@ -162,8 +229,8 @@ async fn resolve_or_download_onnxruntime(app: &AppHandle) -> Result<PathBuf, Str
     fs::create_dir_all(&ort_dir)
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 
-    let download_info = ort_download_info()?;
-    let dest_path = ort_dir.join(download_info.lib_name);
+    let download_infos = ort_download_info_candidates()?;
+    let dest_path = ort_dir.join(download_infos[0].lib_name);
     if is_nonempty_file(&dest_path) {
         if cfg!(target_os = "windows") {
             let shared = ort_dir.join("onnxruntime_providers_shared.dll");
@@ -171,8 +238,11 @@ async fn resolve_or_download_onnxruntime(app: &AppHandle) -> Result<PathBuf, Str
                 return Ok(dest_path);
             }
         } else if cfg!(target_os = "macos") {
-            log_missing_macos_provider_dylibs(app, &ort_dir, &dest_path);
-            return Ok(dest_path);
+            if is_valid_macos_ort_dylib(&dest_path) {
+                log_missing_macos_provider_dylibs(app, &ort_dir, &dest_path);
+                return Ok(dest_path);
+            }
+            let _ = fs::remove_file(&dest_path);
         } else {
             return Ok(dest_path);
         }
@@ -181,31 +251,67 @@ async fn resolve_or_download_onnxruntime(app: &AppHandle) -> Result<PathBuf, Str
     }
 
     let client = reqwest::Client::new();
-    let response = client
-        .get(&download_info.archive_url)
-        .send()
-        .await
-        .map_err(|e| {
-            crate::utils::err_msg(
+    let mut last_error = None;
+
+    for download_info in &download_infos {
+        let response = match client.get(&download_info.archive_url).send().await {
+            Ok(response) => response,
+            Err(e) => {
+                let err = crate::utils::err_msg(
+                    module_path!(),
+                    line!(),
+                    format!(
+                        "Failed to download ONNX Runtime archive {}: {}",
+                        download_info.archive_url, e
+                    ),
+                );
+                crate::utils::log_warn(app, "embedding_debug", err.clone());
+                last_error = Some(err);
+                continue;
+            }
+        };
+        if !response.status().is_success() {
+            let err = crate::utils::err_msg(
                 module_path!(),
                 line!(),
-                format!("Failed to download ONNX Runtime: {}", e),
-            )
-        })?;
-    if !response.status().is_success() {
-        return Err(crate::utils::err_msg(
-            module_path!(),
-            line!(),
-            format!("Failed to download ONNX Runtime: {}", response.status()),
-        ));
+                format!(
+                    "Failed to download ONNX Runtime archive {}: HTTP {}",
+                    download_info.archive_url,
+                    response.status()
+                ),
+            );
+            crate::utils::log_warn(app, "embedding_debug", err.clone());
+            last_error = Some(err);
+            continue;
+        }
+
+        let bytes = response
+            .bytes()
+            .await
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+
+        match extract_onnxruntime_archive(download_info, &bytes, &dest_path, &ort_dir) {
+            Ok(()) => {
+                last_error = None;
+                break;
+            }
+            Err(err) => {
+                crate::utils::log_warn(
+                    app,
+                    "embedding_debug",
+                    format!(
+                        "Failed to extract ONNX Runtime archive {}: {}",
+                        download_info.archive_url, err
+                    ),
+                );
+                last_error = Some(err);
+            }
+        }
     }
 
-    let bytes = response
-        .bytes()
-        .await
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-
-    extract_onnxruntime_archive(&download_info, &bytes, &dest_path, &ort_dir)?;
+    if let Some(err) = last_error {
+        return Err(err);
+    }
 
     if !is_nonempty_file(&dest_path) {
         return Err(crate::utils::err_msg(
@@ -256,10 +362,10 @@ struct OrtDownloadInfo {
 }
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
-fn ort_download_info() -> Result<OrtDownloadInfo, String> {
+fn ort_download_info_candidates() -> Result<Vec<OrtDownloadInfo>, String> {
     let (os, arch) = (std::env::consts::OS, std::env::consts::ARCH);
     match (os, arch) {
-        ("windows", "x86_64") => Ok(OrtDownloadInfo {
+        ("windows", "x86_64") => Ok(vec![OrtDownloadInfo {
             archive_url: format!(
                 "https://github.com/microsoft/onnxruntime/releases/download/v{0}/onnxruntime-win-x64-{0}.zip",
                 ORT_VERSION
@@ -267,8 +373,8 @@ fn ort_download_info() -> Result<OrtDownloadInfo, String> {
             lib_path_in_archive: format!("onnxruntime-win-x64-{}/lib/onnxruntime.dll", ORT_VERSION),
             lib_name: "onnxruntime.dll",
             lib_dir_in_archive: Some(format!("onnxruntime-win-x64-{}/lib/", ORT_VERSION)),
-        }),
-        ("linux", "x86_64") => Ok(OrtDownloadInfo {
+        }]),
+        ("linux", "x86_64") => Ok(vec![OrtDownloadInfo {
             archive_url: format!(
                 "https://github.com/microsoft/onnxruntime/releases/download/v{0}/onnxruntime-linux-x64-{0}.tgz",
                 ORT_VERSION
@@ -279,33 +385,46 @@ fn ort_download_info() -> Result<OrtDownloadInfo, String> {
             ),
             lib_name: "libonnxruntime.so",
             lib_dir_in_archive: None,
-        }),
-        ("macos", "aarch64") => Ok(OrtDownloadInfo {
-            archive_url: format!(
-                "https://github.com/microsoft/onnxruntime/releases/download/v{0}/onnxruntime-osx-universal2-{0}.tgz",
-                ORT_VERSION
-            ),
-            lib_path_in_archive: format!(
-                "onnxruntime-osx-universal2-{}/lib/{}",
-                ORT_VERSION,
-                macos_primary_dylib_name()
-            ),
-            lib_name: Box::leak(macos_primary_dylib_name().into_boxed_str()),
-            lib_dir_in_archive: Some(format!("onnxruntime-osx-universal2-{}/lib/", ORT_VERSION)),
-        }),
-        ("macos", "x86_64") => Ok(OrtDownloadInfo {
-            archive_url: format!(
-                "https://github.com/microsoft/onnxruntime/releases/download/v{0}/onnxruntime-osx-universal2-{0}.tgz",
-                ORT_VERSION
-            ),
-            lib_path_in_archive: format!(
-                "onnxruntime-osx-universal2-{}/lib/{}",
-                ORT_VERSION,
-                macos_primary_dylib_name()
-            ),
-            lib_name: Box::leak(macos_primary_dylib_name().into_boxed_str()),
-            lib_dir_in_archive: Some(format!("onnxruntime-osx-universal2-{}/lib/", ORT_VERSION)),
-        }),
+        }]),
+        ("macos", "aarch64") | ("macos", "x86_64") => {
+            let mut candidates = Vec::new();
+
+            if let Some(archive_name) = macos_archive_name(arch) {
+                candidates.push(OrtDownloadInfo {
+                    archive_url: format!(
+                        "https://github.com/microsoft/onnxruntime/releases/download/v{0}/onnxruntime-osx-{1}-{0}.tgz",
+                        ORT_VERSION, archive_name
+                    ),
+                    lib_path_in_archive: format!(
+                        "onnxruntime-osx-{}-{}/lib/{}",
+                        archive_name,
+                        ORT_VERSION,
+                        macos_primary_dylib_name()
+                    ),
+                    lib_name: leaked_macos_primary_dylib_name(),
+                    lib_dir_in_archive: Some(format!(
+                        "onnxruntime-osx-{}-{}/lib/",
+                        archive_name, ORT_VERSION
+                    )),
+                });
+            }
+
+            candidates.push(OrtDownloadInfo {
+                archive_url: format!(
+                    "https://github.com/microsoft/onnxruntime/releases/download/v{0}/onnxruntime-osx-universal2-{0}.tgz",
+                    ORT_VERSION
+                ),
+                lib_path_in_archive: format!(
+                    "onnxruntime-osx-universal2-{}/lib/{}",
+                    ORT_VERSION,
+                    macos_primary_dylib_name()
+                ),
+                lib_name: leaked_macos_primary_dylib_name(),
+                lib_dir_in_archive: Some(format!("onnxruntime-osx-universal2-{}/lib/", ORT_VERSION)),
+            });
+
+            Ok(candidates)
+        }
         _ => Err(crate::utils::err_msg(
             module_path!(),
             line!(),
@@ -380,7 +499,10 @@ fn extract_onnxruntime_archive(
                 .to_string_lossy()
                 .into_owned();
             if let Some(prefix) = download_info.lib_dir_in_archive.as_deref() {
-                if path.starts_with(prefix) && path.ends_with(".dylib") {
+                if let Some(relative_path) = path.strip_prefix(prefix) {
+                    if relative_path.contains('/') || !relative_path.ends_with(".dylib") {
+                        continue;
+                    }
                     let filename = Path::new(&path)
                         .file_name()
                         .ok_or_else(|| {
@@ -516,6 +638,27 @@ fn log_missing_macos_provider_dylibs(app: &AppHandle, ort_dir: &Path, dylib_path
     }
 }
 
+#[cfg(target_os = "macos")]
+fn is_valid_macos_ort_dylib(path: &Path) -> bool {
+    if !is_nonempty_file(path) {
+        return false;
+    }
+
+    let arch_ok = current_macos_arch()
+        .map(|expected_arch| macos_dylib_has_arch(path, expected_arch))
+        .unwrap_or(true);
+
+    arch_ok && macos_dylib_is_loadable(path)
+}
+
+#[cfg(all(
+    not(target_os = "macos"),
+    not(any(target_os = "android", target_os = "ios"))
+))]
+fn is_valid_macos_ort_dylib(path: &Path) -> bool {
+    is_nonempty_file(path)
+}
+
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn resolve_bundled_onnxruntime(app: &AppHandle) -> Option<PathBuf> {
     let candidates = if cfg!(target_os = "windows") {
@@ -542,7 +685,11 @@ fn resolve_bundled_onnxruntime(app: &AppHandle) -> Option<PathBuf> {
         let Ok(path) = app.path().resolve(&candidate, BaseDirectory::Resource) else {
             continue;
         };
-        if is_nonempty_file(&path) {
+        if cfg!(target_os = "macos") {
+            if is_valid_macos_ort_dylib(&path) {
+                return Some(path);
+            }
+        } else if is_nonempty_file(&path) {
             return Some(path);
         }
     }
@@ -550,6 +697,7 @@ fn resolve_bundled_onnxruntime(app: &AppHandle) -> Option<PathBuf> {
     None
 }
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn is_nonempty_file(path: &Path) -> bool {
     fs::metadata(path)
         .map(|metadata| metadata.is_file() && metadata.len() > 0)

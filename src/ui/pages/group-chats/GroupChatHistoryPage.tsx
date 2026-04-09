@@ -37,17 +37,17 @@ export function GroupChatHistoryPage() {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-surface flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border border-fg/10 border-t-white/60" />
+        <div className="animate-spin rounded-full h-8 w-8 border border-fg/10 border-t-fg/60" />
       </div>
     );
   }
 
   return (
-    <div className={cn("flex min-h-screen flex-col", colors.surface.base, colors.text.primary)}>
+    <div className={cn("flex h-full flex-col", colors.surface.base, colors.text.primary)}>
       {/* Header */}
       <header
         className={cn(
-          "z-20 shrink-0 border-b border-fg/10 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+12px)] sticky top-0",
+          "z-20 shrink-0 border-b border-fg/10 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+12px)] shrink-0",
           "bg-surface",
         )}
       >
@@ -109,7 +109,7 @@ export function GroupChatHistoryPage() {
                   radius.lg,
                   typography.bodySmall.size,
                   "text-fg placeholder-fg/40",
-                  "focus:outline-none focus:ring-2 focus:ring-white/10 focus:border-fg/20",
+                  "focus:outline-none focus:ring-2 focus:ring-fg/10 focus:border-fg/20",
                 )}
               />
               {query.trim().length > 0 && (

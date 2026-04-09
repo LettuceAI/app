@@ -1,8 +1,10 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { Cpu, Download, FolderOpen } from "lucide-react";
 import type { ProviderCapabilitiesCamel } from "../../../../core/providers/capabilities";
 import type { TestResult } from "../hooks/onboardingReducer";
 import { ProviderCard } from "../components/ProviderCard";
 import { ProviderConfigForm } from "../components/ConfigForm";
+import { BottomMenu, MenuButton } from "../../../components/BottomMenu";
 import { getPlatform } from "../../../../core/utils/platform";
 import { useI18n } from "../../../../core/i18n/context";
 
@@ -25,6 +27,8 @@ interface ProviderStepProps {
   onConfigChange?: (config: Record<string, any>) => void;
   onTestConnection: () => void;
   onSave: () => void;
+  onBrowseModelLibrary: () => void;
+  onUseOwnGguf: () => void;
 }
 
 export function ProviderStep({
@@ -46,10 +50,13 @@ export function ProviderStep({
   onConfigChange,
   onTestConnection,
   onSave,
+  onBrowseModelLibrary,
+  onUseOwnGguf,
 }: ProviderStepProps) {
   const { t } = useI18n();
   const platform = getPlatform();
   const isDesktop = platform.type === "desktop";
+  const [showLocalLLMMenu, setShowLocalLLMMenu] = useState(false);
   const visibleCapabilities = isDesktop
     ? capabilities
     : capabilities.filter((provider) => provider.id !== "llamacpp");
@@ -75,17 +82,57 @@ export function ProviderStep({
     return () => window.clearTimeout(timeout);
   }, [showForm, isDesktop]);
 
+  const localLLMMenu = (
+    <BottomMenu
+      isOpen={showLocalLLMMenu}
+      onClose={() => setShowLocalLLMMenu(false)}
+      title="Local LLMs"
+    >
+      <div className="space-y-3">
+        <MenuButton
+          icon={Download}
+          title="Browse Model Library"
+          description="Search and download GGUF models from HuggingFace"
+          onClick={() => {
+            setShowLocalLLMMenu(false);
+            onBrowseModelLibrary();
+          }}
+          color="from-emerald-500 to-emerald-600"
+        />
+        <MenuButton
+          icon={FolderOpen}
+          title="Use my own GGUF files"
+          description="Select a GGUF model and optional mmproj file from your device"
+          onClick={() => {
+            setShowLocalLLMMenu(false);
+            onUseOwnGguf();
+          }}
+          color="from-blue-500 to-blue-600"
+        />
+      </div>
+    </BottomMenu>
+  );
+
   // Desktop Layout
   if (isDesktop) {
     return (
       <div className="flex flex-1 min-h-0">
         {/* Left Panel - Provider Grid */}
         <div className="flex-1 flex flex-col border-r border-white/10">
-          <div className="p-6 pb-3">
-            <h2 className="text-sm font-medium text-white/70">
-              {t("onboarding.provider.availableProviders")}
-            </h2>
-            <p className="text-xs text-gray-500 mt-0.5">Click to select a provider</p>
+          <div className="p-6 pb-3 flex items-start justify-between">
+            <div>
+              <h2 className="text-sm font-medium text-white/70">
+                {t("onboarding.provider.availableProviders")}
+              </h2>
+              <p className="text-xs text-gray-500 mt-0.5">Click to select a provider</p>
+            </div>
+            <button
+              onClick={() => setShowLocalLLMMenu(true)}
+              className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-400 transition hover:bg-emerald-500/20 hover:border-emerald-500/40 active:scale-[0.98]"
+            >
+              <Cpu size={14} />
+              I want to use Local LLMs
+            </button>
           </div>
           <div className="flex-1 overflow-y-auto px-6">
             <div className="grid grid-cols-2 xl:grid-cols-3 gap-2">
@@ -149,6 +196,7 @@ export function ProviderStep({
             </div>
           )}
         </div>
+        {localLLMMenu}
       </div>
     );
   }
@@ -221,6 +269,7 @@ export function ProviderStep({
           />
         )}
       </div>
+      {localLLMMenu}
     </div>
   );
 }

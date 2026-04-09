@@ -10,9 +10,11 @@ use super::{
     resolve_llama_kv_type, resolve_llama_mmproj_path, resolve_llama_offload_kqv,
     resolve_llama_profile_min_p, resolve_llama_profile_typical_p,
     resolve_llama_raw_completion_fallback, resolve_llama_rope_freq_base,
-    resolve_llama_rope_freq_scale, resolve_llama_sampler_profile, resolve_llama_seed,
-    resolve_llama_threads, resolve_llama_threads_batch, resolve_max_tokens,
-    resolve_presence_penalty, resolve_temperature, resolve_top_k, resolve_top_p,
+    resolve_llama_rope_freq_scale, resolve_llama_sampler_order, resolve_llama_sampler_profile,
+    resolve_llama_seed,
+    resolve_llama_strict_mode, resolve_llama_threads, resolve_llama_threads_batch,
+    resolve_max_tokens, resolve_presence_penalty, resolve_temperature, resolve_top_k,
+    resolve_top_p,
 };
 
 fn build_llama_extra_fields(
@@ -74,8 +76,14 @@ fn build_llama_extra_fields(
     if let Some(v) = resolve_llama_raw_completion_fallback(session, model, settings) {
         extra.insert("llamaRawCompletionFallback".to_string(), json!(v));
     }
+    if let Some(v) = resolve_llama_strict_mode(session, model, settings) {
+        extra.insert("llamaStrictMode".to_string(), json!(v));
+    }
     if let Some(v) = sampler_profile {
         extra.insert("llamaSamplerProfile".to_string(), json!(v));
+    }
+    if let Some(v) = resolve_llama_sampler_order(session, model, settings) {
+        extra.insert("llamaSamplerOrder".to_string(), json!(v));
     }
     if let Some(v) = resolve_llama_profile_min_p(session, model, settings) {
         extra.insert("llamaMinP".to_string(), json!(v));
@@ -405,6 +413,7 @@ pub(crate) struct RequestSettings {
     pub(crate) reasoning_enabled: bool,
     pub(crate) reasoning_effort: Option<String>,
     pub(crate) reasoning_budget: Option<u32>,
+    pub(crate) prompt_caching_enabled: Option<bool>,
 }
 
 impl RequestSettings {
@@ -426,6 +435,10 @@ impl RequestSettings {
                 reasoning_effort.as_deref(),
             ),
             reasoning_effort,
+            prompt_caching_enabled: model
+                .advanced_model_settings
+                .as_ref()
+                .and_then(|s| s.prompt_caching_enabled),
         }
     }
 
@@ -437,6 +450,7 @@ impl RequestSettings {
         top_k: Option<u32>,
         frequency_penalty: Option<f64>,
         presence_penalty: Option<f64>,
+        prompt_caching_enabled: Option<bool>,
     ) -> Self {
         Self {
             temperature: Some(temperature),
@@ -449,6 +463,7 @@ impl RequestSettings {
             reasoning_enabled: false,
             reasoning_effort: None,
             reasoning_budget: None,
+            prompt_caching_enabled,
         }
     }
 }
@@ -460,11 +475,47 @@ pub(crate) fn build_provider_extra_fields(
     settings: &Settings,
     request_settings: &RequestSettings,
 ) -> Option<HashMap<String, Value>> {
+    let mut extra = HashMap::new();
+
+    // Keep all your existing provider-specific logic
     if provider_id == "llamacpp" {
-        build_llama_extra_fields(session, model, settings)
+        if let Some(llama_extra) = build_llama_extra_fields(session, model, settings) {
+            extra.extend(llama_extra);
+        }
     } else if provider_id == "ollama" {
-        build_ollama_extra_fields(session, model, settings, request_settings)
-    } else {
+        if let Some(ollama_extra) =
+            build_ollama_extra_fields(session, model, settings, request_settings)
+        {
+            extra.extend(ollama_extra);
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // NEW: Prompt caching TTL (used by Claude, Bedrock, Vertex, Gemini, etc.)
+    // ─────────────────────────────────────────────────────────────
+    let ttl_val = model
+        .advanced_model_settings
+        .as_ref()
+        .and_then(|cfg| cfg.prompt_caching_ttl.clone())
+        .or_else(|| {
+            session
+                .advanced_model_settings
+                .as_ref()
+                .and_then(|cfg| cfg.prompt_caching_ttl.clone())
+        })
+        // Global settings fallback (in case you ever add it there)
+        .or_else(|| {
+            // settings.advanced_model_settings.prompt_caching_ttl.clone()  // uncomment if the field exists
+            None
+        });
+
+    if let Some(ttl) = ttl_val {
+        extra.insert("promptCachingTtl".to_string(), json!(ttl));
+    }
+
+    if extra.is_empty() {
         None
+    } else {
+        Some(extra)
     }
 }

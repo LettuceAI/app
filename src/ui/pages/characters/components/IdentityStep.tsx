@@ -2,6 +2,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, Camera, Image, Upload, Sparkles, Loader2, AlertCircle, FolderOpen } from "lucide-react";
 import { typography, radius, spacing, interactive, shadows, cn } from "../../../design-tokens";
 import { AvatarPicker } from "../../../components/AvatarPicker";
+import { Switch } from "../../../components/Switch";
 import type { AvatarCrop } from "../../../../core/storage/schemas";
 import { useI18n } from "../../../../core/i18n/context";
 
@@ -10,6 +11,7 @@ interface IdentityStepProps {
   onNameChange: (value: string) => void;
   avatarPath: string;
   onAvatarChange: (value: string) => void;
+  onBeforeChooseAvatarFromLibrary?: () => void;
   avatarCrop?: AvatarCrop | null;
   onAvatarCropChange?: (value: AvatarCrop | null) => void;
   avatarRoundPath?: string | null;
@@ -32,6 +34,7 @@ export function IdentityStep({
   onNameChange,
   avatarPath,
   onAvatarChange,
+  onBeforeChooseAvatarFromLibrary,
   avatarCrop,
   onAvatarCropChange,
   avatarRoundPath,
@@ -76,6 +79,7 @@ export function IdentityStep({
             <AvatarPicker
               currentAvatarPath={avatarPath}
               onAvatarChange={onAvatarChange}
+              onBeforeChooseFromLibrary={onBeforeChooseAvatarFromLibrary}
               promptSubjectName={name}
               avatarCrop={avatarCrop}
               onAvatarCropChange={onAvatarCropChange}
@@ -185,9 +189,9 @@ export function IdentityStep({
                 exit={{ opacity: 0, height: 0 }}
                 className={spacing.field}
               >
-                <label
+                <div
                   className={cn(
-                    "flex cursor-pointer items-center justify-between border border-fg/10 bg-surface-el/20 px-4 py-3",
+                    "flex items-center justify-between border border-fg/10 bg-surface-el/20 px-4 py-3",
                     radius.md,
                     interactive.transition.default,
                     "active:bg-surface-el/30",
@@ -204,17 +208,13 @@ export function IdentityStep({
                       {t("characters.identity.avatarGradientDesc")}
                     </p>
                   </div>
-                  <div className="relative ml-3">
-                    <input
-                      type="checkbox"
+                  <div className="ml-3">
+                    <Switch
                       checked={!disableAvatarGradient}
-                      onChange={(e) => onDisableAvatarGradientChange(!e.target.checked)}
-                      className="peer sr-only"
+                      onChange={(next) => onDisableAvatarGradientChange(!next)}
                     />
-                    <div className="h-6 w-11 rounded-full bg-fg/20 transition peer-checked:bg-accent/80"></div>
-                    <div className="absolute left-1 top-1 h-4 w-4 rounded-full bg-fg transition peer-checked:translate-x-5"></div>
                   </div>
-                </label>
+                </div>
               </motion.div>
             )}
           </AnimatePresence>
@@ -366,7 +366,7 @@ export function IdentityStep({
             <input type="file" onChange={onImport} className="hidden" />
           </label>
           <p className={cn(typography.bodySmall.size, "mt-2 text-center text-fg/40")}>
-            Load a character from a .uec (or .json) export file
+            Load a character from a PNG card, .uec, or .json export file
           </p>
         </div>
       )}

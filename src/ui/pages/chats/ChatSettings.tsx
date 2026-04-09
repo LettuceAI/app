@@ -4,13 +4,11 @@ import {
   MessageSquarePlus,
   Cpu,
   ChevronRight,
-  Check,
   History,
   User,
   SlidersHorizontal,
   Edit2,
   Trash2,
-  Info,
   Sparkles,
   TriangleAlert,
   Upload,
@@ -35,23 +33,20 @@ import {
   deletePersona,
   getSessionMessageCount,
 } from "../../../core/storage/repo";
-import { getProviderIcon } from "../../../core/utils/providerIcons";
 import { BottomMenu, MenuSection } from "../../components";
+import { ModelSelectionBottomMenu } from "../../components/ModelSelectionBottomMenu";
+import { SessionAdvancedSettings } from "./components/SessionAdvancedSettings";
 import { ProviderParameterSupportInfo } from "../../components/ProviderParameterSupportInfo";
 import { AvatarImage } from "../../components/AvatarImage";
+import { Switch } from "../../components/Switch";
 import { useAvatar } from "../../hooks/useAvatar";
 import { useChatLayoutContext } from "./ChatLayout";
 import {
-  ADVANCED_TEMPERATURE_RANGE,
-  ADVANCED_TOP_P_RANGE,
-  ADVANCED_MAX_TOKENS_RANGE,
-  ADVANCED_FREQUENCY_PENALTY_RANGE,
-  ADVANCED_PRESENCE_PENALTY_RANGE,
-  ADVANCED_TOP_K_RANGE,
   formatAdvancedModelSettingsSummary,
   sanitizeAdvancedModelSettings,
 } from "../../components/AdvancedModelSettingsForm";
 import { typography, radius, spacing, interactive, cn, colors } from "../../design-tokens";
+import { WindowControlButtons, useDragRegionProps, hasCustomWindowControls } from "../../components/App/TopNav";
 import { Routes, useNavigationManager } from "../../navigation";
 import { PersonaSelector } from "../group-chats/components/settings";
 import { storageBridge } from "../../../core/storage/files";
@@ -266,11 +261,20 @@ function ModelOption({
   );
 }*/
 
-function ChatSettingsContent({ character }: { character: Character }) {
+export function ChatSettingsContent({
+  character,
+  mode = "page",
+  onClose,
+}: {
+  character: Character;
+  mode?: "page" | "drawer";
+  onClose?: () => void;
+}) {
   const navigate = useNavigate();
   const { backOrReplace } = useNavigationManager();
   const { t } = useI18n();
   const { characterId } = useParams();
+  const dragRegionProps = useDragRegionProps();
   const [models, setModels] = useState<Model[]>([]);
   const [globalDefaultModelId, setGlobalDefaultModelId] = useState<string | null>(null);
   const [currentCharacter, setCurrentCharacter] = useState<Character>(character);
@@ -291,7 +295,6 @@ function ChatSettingsContent({ character }: { character: Character }) {
   const [showSessionAdvancedMenu, setShowSessionAdvancedMenu] = useState(false);
   const [showParameterSupport, setShowParameterSupport] = useState(false);
   const [showChatpkgImportMenu, setShowChatpkgImportMenu] = useState(false);
-  const [modelSearchQuery, setModelSearchQuery] = useState("");
   const [sessionAdvancedDraft, setSessionAdvancedDraft] = useState<AdvancedModelSettings>(
     createDefaultAdvancedModelSettings(),
   );
@@ -716,6 +719,10 @@ function ChatSettingsContent({ character }: { character: Character }) {
   }, [currentSession, isDynamic]);
 
   const handleBack = () => {
+    if (mode === "drawer" && onClose) {
+      onClose();
+      return;
+    }
     if (characterId) {
       const urlParams = new URLSearchParams(window.location.search);
       const sessionId = urlParams.get("sessionId");
@@ -761,46 +768,56 @@ function ChatSettingsContent({ character }: { character: Character }) {
     return fallback?.displayName || fallback?.name || "Unknown model";
   };
 
+  const isDrawer = mode === "drawer";
+
   return (
     <div
       className={cn(
-        "relative flex min-h-screen flex-col overflow-hidden",
+        "relative flex h-full flex-col",
         colors.text.primary,
-        !backgroundImageData && "bg-surface",
+        !isDrawer && !backgroundImageData && "bg-surface",
+        isDrawer && "bg-surface",
       )}
     >
-      {/* Scrim overlay on top of shared background */}
-      {backgroundImageData && (
+      {/* Scrim overlay on top of shared background (page mode only) */}
+      {!isDrawer && backgroundImageData && (
         <div className="pointer-events-none fixed inset-0 z-0 bg-black/40" aria-hidden="true" />
       )}
       {/* Header */}
-      <header
-        className={cn(
-          "sticky top-0 z-20 shrink-0 border-b border-fg/10 px-3 lg:px-8",
-          !backgroundImageData ? "bg-surface" : "",
-        )}
-        style={{
-          paddingTop: "calc(env(safe-area-inset-top) + 12px)",
-          paddingBottom: "12px",
-        }}
-      >
-        <div className="flex h-10 items-center">
-          <button
-            onClick={handleBack}
-            className="flex shrink-0 items-center justify-center -ml-2 px-[0.6em] py-[0.3em] text-fg transition hover:text-fg/80"
-            aria-label="Back to chat"
-          >
-            <ArrowLeft size={18} strokeWidth={2.5} />
-          </button>
-          <div className="min-w-0 flex-1 text-left">
-            <p className="truncate text-xl font-bold text-fg/90">Chat Settings</p>
-            <p className="mt-0.5 truncate text-xs text-fg/50">Manage conversation preferences</p>
+      {!isDrawer && (
+        <header
+          className={cn(
+            "z-20 shrink-0 border-b border-fg/10 pl-3 lg:pl-8",
+            hasCustomWindowControls ? "pr-0" : "pr-3 lg:pr-8",
+            !backgroundImageData ? "bg-surface" : "",
+          )}
+          style={{
+            paddingTop: "calc(env(safe-area-inset-top) + 12px)",
+            paddingBottom: "12px",
+          }}
+          {...dragRegionProps}
+        >
+          <div className="flex h-10 items-center justify-between" {...dragRegionProps}>
+            <div className="flex items-center min-w-0">
+              <button
+                onClick={handleBack}
+                className="flex shrink-0 items-center justify-center -ml-2 px-[0.6em] py-[0.3em] text-fg transition hover:text-fg/80"
+                aria-label="Back to chat"
+              >
+                <ArrowLeft size={18} strokeWidth={2.5} />
+              </button>
+              <div className="min-w-0 text-left">
+                <p className="truncate text-xl font-bold text-fg/90">Chat Settings</p>
+                <p className="mt-0.5 truncate text-xs text-fg/50">Manage conversation preferences</p>
+              </div>
+            </div>
+            <WindowControlButtons />
           </div>
-        </div>
-      </header>
+        </header>
+      )}
 
       {/* Content */}
-      <main className="relative z-10 flex-1 overflow-y-auto px-3 pt-4 pb-16">
+      <main className={cn("relative z-10 flex-1 overflow-y-auto px-3 pt-4 pb-16", !isDrawer && "")}>
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
@@ -976,28 +993,12 @@ function ChatSettingsContent({ character }: { character: Character }) {
                       : "Open a chat session first"}
                   </p>
                 </div>
-                <div className="flex items-center">
-                  <input
-                    id="session-voice-autoplay"
-                    type="checkbox"
-                    checked={effectiveVoiceAutoplay}
-                    onChange={handleToggleSessionVoiceAutoplay}
-                    disabled={!currentSession}
-                    className="peer sr-only"
-                  />
-                  <label
-                    htmlFor="session-voice-autoplay"
-                    className={`relative inline-flex h-6 w-11 shrink-0 rounded-full transition-all ${
-                      effectiveVoiceAutoplay ? "bg-emerald-500" : "bg-white/20"
-                    } ${currentSession ? "cursor-pointer" : "cursor-not-allowed"}`}
-                  >
-                    <span
-                      className={`inline-block h-5 w-5 mt-0.5 transform rounded-full bg-white transition ${
-                        effectiveVoiceAutoplay ? "translate-x-5" : "translate-x-0.5"
-                      }`}
-                    />
-                  </label>
-                </div>
+                <Switch
+                  id="session-voice-autoplay"
+                  checked={effectiveVoiceAutoplay}
+                  onChange={() => handleToggleSessionVoiceAutoplay()}
+                  disabled={!currentSession}
+                />
               </div>
               {currentSession && currentSession.voiceAutoplay != null && (
                 <button
@@ -1134,120 +1135,53 @@ function ChatSettingsContent({ character }: { character: Character }) {
       />
 
       {/* Model Selection */}
-      <BottomMenu
+      <ModelSelectionBottomMenu
         isOpen={showModelSelector}
-        onClose={() => {
-          setShowModelSelector(false);
-          setModelSearchQuery("");
-        }}
+        onClose={() => setShowModelSelector(false)}
         title={
           modelSelectorTarget === "fallback"
             ? t("chats.settings.selectFallbackModel")
             : t("chats.settings.selectModel")
         }
+        models={models}
+        selectedModelIds={
+          modelSelectorTarget === "fallback"
+            ? selectedFallbackModelId
+              ? [selectedFallbackModelId]
+              : []
+            : selectedModelId
+              ? [selectedModelId]
+              : []
+        }
+        searchPlaceholder="Search models..."
+        theme="dark"
+        tone="emerald"
         includeExitIcon={false}
         location="bottom"
-      >
-        <div className="space-y-4">
-          <div className="relative">
-            <input
-              type="text"
-              value={modelSearchQuery}
-              onChange={(e) => setModelSearchQuery(e.target.value)}
-              placeholder="Search models..."
-              className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-2.5 pl-10 text-sm text-white placeholder-white/40 focus:border-white/20 focus:outline-none"
-            />
-            <svg
-              className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-              />
-            </svg>
-          </div>
-          <div className="space-y-2 max-h-[50vh] overflow-y-auto">
-            <button
-              onClick={() => {
-                if (modelSelectorTarget === "fallback") {
-                  void handleChangeFallbackModel(null);
-                } else {
-                  void handleChangeModel(null);
-                }
-                setShowModelSelector(false);
-                setModelSearchQuery("");
-              }}
-              className={cn(
-                "flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition",
-                (modelSelectorTarget === "fallback" ? !selectedFallbackModelId : !selectedModelId)
-                  ? "border-emerald-400/40 bg-emerald-400/10"
-                  : "border-white/10 bg-white/5 hover:bg-white/10",
-              )}
-            >
-              <Cpu className="h-5 w-5 text-white/40" />
-              <span className="text-sm text-white">
-                {modelSelectorTarget === "fallback"
-                  ? "No fallback model"
-                  : "Use global default model"}
-              </span>
-              {modelSelectorTarget === "fallback"
-                ? !selectedFallbackModelId && <Check className="h-4 w-4 ml-auto text-emerald-400" />
-                : !selectedModelId && <Check className="h-4 w-4 ml-auto text-emerald-400" />}
-            </button>
-            {models
-              .filter((model) => {
-                if (!modelSearchQuery) return true;
-                const q = modelSearchQuery.toLowerCase();
-                return (
-                  model.displayName?.toLowerCase().includes(q) ||
-                  model.name?.toLowerCase().includes(q)
-                );
-              })
-              .map((model) => (
-                <button
-                  key={model.id}
-                  onClick={() => {
-                    if (modelSelectorTarget === "fallback") {
-                      void handleChangeFallbackModel(model.id);
-                    } else {
-                      void handleChangeModel(model.id);
-                    }
-                    setShowModelSelector(false);
-                    setModelSearchQuery("");
-                  }}
-                  className={cn(
-                    "flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition",
-                    (
-                      modelSelectorTarget === "fallback"
-                        ? selectedFallbackModelId === model.id
-                        : selectedModelId === model.id
-                    )
-                      ? "border-emerald-400/40 bg-emerald-400/10"
-                      : "border-white/10 bg-white/5 hover:bg-white/10",
-                  )}
-                >
-                  {getProviderIcon(model.providerId)}
-                  <div className="flex-1 min-w-0">
-                    <span className="block truncate text-sm text-white">
-                      {model.displayName || model.name}
-                    </span>
-                    <span className="block truncate text-xs text-white/40">{model.name}</span>
-                  </div>
-                  {(modelSelectorTarget === "fallback"
-                    ? selectedFallbackModelId === model.id
-                    : selectedModelId === model.id) && (
-                    <Check className="h-4 w-4 shrink-0 text-emerald-400" />
-                  )}
-                </button>
-              ))}
-          </div>
-        </div>
-      </BottomMenu>
+        onSelectModel={(modelId) => {
+          if (modelSelectorTarget === "fallback") {
+            void handleChangeFallbackModel(modelId);
+          } else {
+            void handleChangeModel(modelId);
+          }
+          setShowModelSelector(false);
+        }}
+        clearOption={{
+          label:
+            modelSelectorTarget === "fallback" ? "No fallback model" : "Use global default model",
+          icon: Cpu,
+          selected:
+            modelSelectorTarget === "fallback" ? !selectedFallbackModelId : !selectedModelId,
+          onClick: () => {
+            if (modelSelectorTarget === "fallback") {
+              void handleChangeFallbackModel(null);
+            } else {
+              void handleChangeModel(null);
+            }
+            setShowModelSelector(false);
+          },
+        }}
+      />
 
       {/* Persona Actions */}
       <BottomMenu
@@ -1260,7 +1194,7 @@ function ChatSettingsContent({ character }: { character: Character }) {
             <button
               onClick={() => {
                 if (selectedPersonaForActions) {
-                  navigate(`/settings/personas/${selectedPersonaForActions.id}/edit`);
+                  navigate(`/personas/${selectedPersonaForActions.id}/edit`);
                 }
                 setShowPersonaActions(false);
               }}
@@ -1295,328 +1229,21 @@ function ChatSettingsContent({ character }: { character: Character }) {
         </MenuSection>
       </BottomMenu>
 
-      {/* Session Advanced Settings Bottom Menu */}
-      <BottomMenu
+      {/* Session Advanced Settings */}
+      <SessionAdvancedSettings
         isOpen={showSessionAdvancedMenu}
         onClose={() => setShowSessionAdvancedMenu(false)}
-        title="Session Advanced Settings"
-        includeExitIcon={true}
-        location="bottom"
-      >
-        <MenuSection>
-          {currentSession ? (
-            <div className="space-y-5">
-              <div className="flex items-center justify-between rounded-xl border border-white/10 px-4 py-3">
-                <div>
-                  <p className="text-sm font-semibold text-white">Override defaults</p>
-                  <p className="mt-1 text-xs text-white/50 leading-relaxed">
-                    Override model parameters just for this conversation
-                  </p>
-                </div>
-
-                <div className="flex items-center">
-                  <input
-                    id="use-as-default"
-                    type="checkbox"
-                    checked={sessionOverrideEnabled}
-                    onChange={() => setSessionOverrideEnabled((value) => !value)}
-                    className="peer sr-only"
-                  />
-                  <label
-                    htmlFor="use-as-default"
-                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full transition-all ${
-                      sessionOverrideEnabled ? "bg-emerald-500" : "bg-white/20"
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-5 w-5 mt-0.5 transform rounded-full bg-white transition ${
-                        sessionOverrideEnabled ? "translate-x-5" : "translate-x-0.5"
-                      }`}
-                    />
-                  </label>
-                </div>
-              </div>
-
-              {/* Advanced Settings Controls */}
-              {sessionOverrideEnabled && (
-                <div className="space-y-3">
-                  {/* Parameter Support Info Button */}
-                  <button
-                    onClick={() => setShowParameterSupport(true)}
-                    className="flex w-full items-center justify-center gap-2 rounded-xl border border-blue-400/30 bg-blue-400/10 px-4 py-2.5 text-sm text-blue-200 transition hover:bg-blue-400/15 active:scale-[0.99]"
-                  >
-                    <Info className="h-4 w-4" />
-                    <span>View Parameter Support</span>
-                  </button>
-
-                  {/* Temperature */}
-                  <div className="rounded-xl border border-white/10 p-4">
-                    <div className="mb-3 flex items-start justify-between gap-3">
-                      <div className="flex-1">
-                        <label className="text-sm font-medium text-white">Temperature</label>
-                        <p className="mt-0.5 text-xs text-white/50">
-                          Controls randomness and creativity
-                        </p>
-                      </div>
-                      <span className="rounded-lg bg-emerald-400/15 px-2.5 py-1 text-sm font-mono font-semibold text-emerald-200">
-                        {sessionAdvancedDraft.temperature?.toFixed(2) ?? "0.70"}
-                      </span>
-                    </div>
-                    <input
-                      type="number"
-                      inputMode="decimal"
-                      min={ADVANCED_TEMPERATURE_RANGE.min}
-                      max={ADVANCED_TEMPERATURE_RANGE.max}
-                      step={0.01}
-                      value={sessionAdvancedDraft.temperature ?? ""}
-                      onChange={(e) => {
-                        const raw = e.target.value;
-                        setSessionAdvancedDraft({
-                          ...sessionAdvancedDraft,
-                          temperature: raw === "" ? null : Number(raw),
-                        });
-                      }}
-                      placeholder="0.70"
-                      className="w-full rounded-lg border border-white/10 bg-black/20 px-3.5 py-3 text-base text-white placeholder-white/40 focus:border-white/30 focus:outline-none"
-                    />
-                    <div className="mt-2 flex items-center justify-between text-xs text-white/40">
-                      <span>0 - Precise</span>
-                      <span>2 - Creative</span>
-                    </div>
-                  </div>
-
-                  {/* Top P */}
-                  <div className="rounded-xl border border-white/10 p-4">
-                    <div className="mb-3 flex items-start justify-between gap-3">
-                      <div className="flex-1">
-                        <label className="text-sm font-medium text-white">Top P</label>
-                        <p className="mt-0.5 text-xs text-white/50">Nucleus sampling threshold</p>
-                      </div>
-                      <span className="rounded-lg bg-blue-400/15 px-2.5 py-1 text-sm font-mono font-semibold text-blue-200">
-                        {sessionAdvancedDraft.topP?.toFixed(2) ?? "1.00"}
-                      </span>
-                    </div>
-                    <input
-                      type="number"
-                      inputMode="decimal"
-                      min={ADVANCED_TOP_P_RANGE.min}
-                      max={ADVANCED_TOP_P_RANGE.max}
-                      step={0.01}
-                      value={sessionAdvancedDraft.topP ?? ""}
-                      onChange={(e) => {
-                        const raw = e.target.value;
-                        setSessionAdvancedDraft({
-                          ...sessionAdvancedDraft,
-                          topP: raw === "" ? null : Number(raw),
-                        });
-                      }}
-                      placeholder="1.00"
-                      className="w-full rounded-lg border border-white/10 bg-black/20 px-3.5 py-3 text-base text-white placeholder-white/40 focus:border-white/30 focus:outline-none"
-                    />
-                    <div className="mt-2 flex items-center justify-between text-xs text-white/40">
-                      <span>0 - Focused</span>
-                      <span>1 - Diverse</span>
-                    </div>
-                  </div>
-
-                  {/* Max Tokens */}
-                  <div className="rounded-xl border border-white/10 p-4">
-                    <div className="mb-3">
-                      <label className="text-sm font-medium text-white">Max Output Tokens</label>
-                      <p className="mt-0.5 text-xs text-white/50">Maximum response length</p>
-                    </div>
-
-                    <div className="flex gap-2 mb-3">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setSessionAdvancedDraft({
-                            ...sessionAdvancedDraft,
-                            maxOutputTokens: null,
-                          })
-                        }
-                        className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium transition ${
-                          !sessionAdvancedDraft.maxOutputTokens
-                            ? "bg-purple-400/20 text-purple-200"
-                            : "border border-white/10 text-white/60 hover:bg-white/5 active:bg-white/10"
-                        }`}
-                      >
-                        Auto
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setSessionAdvancedDraft({
-                            ...sessionAdvancedDraft,
-                            maxOutputTokens: 2048,
-                          })
-                        }
-                        className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium transition ${
-                          sessionAdvancedDraft.maxOutputTokens
-                            ? "bg-purple-400/20 text-purple-200"
-                            : "border border-white/10 text-white/60 hover:bg-white/5 active:bg-white/10"
-                        }`}
-                      >
-                        Custom
-                      </button>
-                    </div>
-
-                    {sessionAdvancedDraft.maxOutputTokens !== null &&
-                      sessionAdvancedDraft.maxOutputTokens !== undefined && (
-                        <input
-                          type="number"
-                          inputMode="numeric"
-                          min={ADVANCED_MAX_TOKENS_RANGE.min}
-                          max={ADVANCED_MAX_TOKENS_RANGE.max}
-                          value={sessionAdvancedDraft.maxOutputTokens ?? ""}
-                          onChange={(e) =>
-                            setSessionAdvancedDraft({
-                              ...sessionAdvancedDraft,
-                              maxOutputTokens: Number(e.target.value),
-                            })
-                          }
-                          placeholder="2048"
-                          className="w-full rounded-lg border border-white/10 bg-black/20 px-3.5 py-3 text-base text-white placeholder-white/40 focus:border-white/30 focus:outline-none"
-                        />
-                      )}
-
-                    <p className="mt-2 text-xs text-white/40">
-                      {!sessionAdvancedDraft.maxOutputTokens
-                        ? "Let the model decide the response length"
-                        : `Range: ${ADVANCED_MAX_TOKENS_RANGE.min.toLocaleString()} - ${ADVANCED_MAX_TOKENS_RANGE.max.toLocaleString()}`}
-                    </p>
-                  </div>
-
-                  {/* Frequency Penalty */}
-                  <div className="rounded-xl border border-white/10 p-4">
-                    <div className="mb-3 flex items-start justify-between gap-3">
-                      <div className="flex-1">
-                        <label className="text-sm font-medium text-white">Frequency Penalty</label>
-                        <p className="mt-0.5 text-xs text-white/50">
-                          Reduce repetition of token sequences
-                        </p>
-                      </div>
-                      <span className="rounded-lg bg-orange-400/15 px-2.5 py-1 text-sm font-mono font-semibold text-orange-200">
-                        {sessionAdvancedDraft.frequencyPenalty?.toFixed(2) ?? "0.00"}
-                      </span>
-                    </div>
-                    <input
-                      type="number"
-                      inputMode="decimal"
-                      min={ADVANCED_FREQUENCY_PENALTY_RANGE.min}
-                      max={ADVANCED_FREQUENCY_PENALTY_RANGE.max}
-                      step={0.01}
-                      value={sessionAdvancedDraft.frequencyPenalty ?? ""}
-                      onChange={(e) => {
-                        const raw = e.target.value;
-                        setSessionAdvancedDraft({
-                          ...sessionAdvancedDraft,
-                          frequencyPenalty: raw === "" ? null : Number(raw),
-                        });
-                      }}
-                      placeholder="0.00"
-                      className="w-full rounded-lg border border-white/10 bg-black/20 px-3.5 py-3 text-base text-white placeholder-white/40 focus:border-white/30 focus:outline-none"
-                    />
-                    <div className="mt-2 flex items-center justify-between text-xs text-white/40">
-                      <span>-2 - More Rep.</span>
-                      <span>2 - Less Rep.</span>
-                    </div>
-                  </div>
-
-                  {/* Presence Penalty */}
-                  <div className="rounded-xl border border-white/10 p-4">
-                    <div className="mb-3 flex items-start justify-between gap-3">
-                      <div className="flex-1">
-                        <label className="text-sm font-medium text-white">Presence Penalty</label>
-                        <p className="mt-0.5 text-xs text-white/50">
-                          Encourage discussing new topics
-                        </p>
-                      </div>
-                      <span className="rounded-lg bg-pink-400/15 px-2.5 py-1 text-sm font-mono font-semibold text-pink-200">
-                        {sessionAdvancedDraft.presencePenalty?.toFixed(2) ?? "0.00"}
-                      </span>
-                    </div>
-                    <input
-                      type="number"
-                      inputMode="decimal"
-                      min={ADVANCED_PRESENCE_PENALTY_RANGE.min}
-                      max={ADVANCED_PRESENCE_PENALTY_RANGE.max}
-                      step={0.01}
-                      value={sessionAdvancedDraft.presencePenalty ?? ""}
-                      onChange={(e) => {
-                        const raw = e.target.value;
-                        setSessionAdvancedDraft({
-                          ...sessionAdvancedDraft,
-                          presencePenalty: raw === "" ? null : Number(raw),
-                        });
-                      }}
-                      placeholder="0.00"
-                      className="w-full rounded-lg border border-white/10 bg-black/20 px-3.5 py-3 text-base text-white placeholder-white/40 focus:border-white/30 focus:outline-none"
-                    />
-                    <div className="mt-2 flex items-center justify-between text-xs text-white/40">
-                      <span>-2 - Repeat</span>
-                      <span>2 - Explore</span>
-                    </div>
-                  </div>
-
-                  {/* Top K */}
-                  <div className="rounded-xl border border-white/10 p-4">
-                    <div className="mb-3">
-                      <label className="text-sm font-medium text-white">Top K</label>
-                      <p className="mt-0.5 text-xs text-white/50">Limit sampling to top K tokens</p>
-                    </div>
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      min={ADVANCED_TOP_K_RANGE.min}
-                      max={ADVANCED_TOP_K_RANGE.max}
-                      value={sessionAdvancedDraft.topK ?? ""}
-                      onChange={(e) => {
-                        const val = e.target.value === "" ? null : Number(e.target.value);
-                        setSessionAdvancedDraft({ ...sessionAdvancedDraft, topK: val });
-                      }}
-                      placeholder="40"
-                      className="w-full rounded-lg border border-white/10 bg-black/20 px-3.5 py-3 text-base text-white placeholder-white/40 focus:border-white/30 focus:outline-none"
-                    />
-                    <p className="mt-2 text-xs text-white/40">
-                      Lower values = more focused, higher = more diverse
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSessionOverrideEnabled(false);
-                    setSessionAdvancedDraft(baseAdvancedSettings);
-                    handleSaveSessionAdvancedSettings(null);
-                  }}
-                  className="flex-1 rounded-xl border border-white/10 py-3 text-sm font-medium text-white hover:bg-white/5 active:scale-[0.99]"
-                >
-                  Use defaults
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleSaveSessionAdvancedSettings(
-                      sessionOverrideEnabled ? sessionAdvancedDraft : null,
-                    )
-                  }
-                  className="flex-1 rounded-xl bg-emerald-400/20 py-3 text-sm font-semibold text-emerald-100 hover:bg-emerald-400/25 active:scale-[0.99]"
-                >
-                  Save changes
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-6 py-4 text-sm text-amber-200">
-              Open a chat session to configure per-session settings.
-            </div>
-          )}
-        </MenuSection>
-      </BottomMenu>
+        draft={sessionAdvancedDraft}
+        onDraftChange={setSessionAdvancedDraft}
+        overrideEnabled={sessionOverrideEnabled}
+        onOverrideEnabledChange={setSessionOverrideEnabled}
+        baseSettings={baseAdvancedSettings}
+        onSave={handleSaveSessionAdvancedSettings}
+        onShowParameterSupport={() => setShowParameterSupport(true)}
+        hasSession={!!currentSession}
+        providerId={currentModel?.providerId ?? "openai"}
+        modelPath={currentModel?.name}
+      />
 
       {/* Parameter Support */}
       <BottomMenu

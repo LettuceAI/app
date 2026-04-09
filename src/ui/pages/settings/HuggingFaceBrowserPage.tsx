@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Search,
@@ -19,11 +19,13 @@ import {
   ExternalLink,
   Monitor,
   Info,
+  ArrowRight,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 import { cn, typography, interactive } from "../../design-tokens";
 import { useI18n } from "../../../core/i18n/context";
+import { Switch } from "../../components/Switch";
 import { HfReadmeRenderer } from "./components/HfReadmeRenderer";
 import { InlineDownloadCards } from "./components/DownloadQueueBar";
 import {
@@ -32,7 +34,12 @@ import {
 } from "../../../core/downloads/DownloadQueueContext";
 import { BottomMenu, MenuLabel, MenuDivider } from "../../components/BottomMenu";
 import { toast } from "../../components/toast";
-import { addOrUpdateModel } from "../../../core/storage/repo";
+import {
+  addOrUpdateModel,
+  readSettings,
+  readSettingsCached,
+  SETTINGS_UPDATED_EVENT,
+} from "../../../core/storage/repo";
 import { createDefaultAdvancedModelSettings } from "../../../core/storage/schemas";
 
 interface HfSearchResult {
@@ -145,6 +152,40 @@ function computeOverhead(modelSize: number): number {
   return Math.max(modelSize * 0.05, 200_000_000);
 }
 
+function computeGpuOptimalContext(
+  fileSize: number,
+  kvBasePerToken: number | null,
+  bpv: number,
+  availableVram: number,
+  modelMaxCtx: number,
+  kvContextCap: number | null,
+): number {
+  if (availableVram <= 0 || !kvBasePerToken) return 0;
+  const vramBudget = availableVram * 0.9;
+  const overhead = computeOverhead(fileSize);
+  if (fileSize + overhead >= vramBudget) return 0;
+  const vramForKv = vramBudget - fileSize - overhead;
+  const rawCtx = Math.floor(vramForKv / (kvBasePerToken * bpv));
+  if (kvContextCap && rawCtx >= kvContextCap) return modelMaxCtx;
+  return rawCtx >= 512 ? Math.min(rawCtx, modelMaxCtx) : 0;
+}
+
+function computeRamMaxContext(
+  fileSize: number,
+  kvBasePerToken: number | null,
+  bpv: number,
+  totalAvailable: number,
+  modelMaxCtx: number,
+  kvContextCap: number | null,
+): number {
+  if (!kvBasePerToken) return 0;
+  const overhead = computeOverhead(fileSize);
+  const remaining = Math.max(totalAvailable - fileSize - overhead, 0);
+  const rawCtx = Math.floor(remaining / (kvBasePerToken * bpv));
+  if (kvContextCap && rawCtx >= kvContextCap) return modelMaxCtx;
+  return rawCtx >= 512 ? Math.min(rawCtx, modelMaxCtx) : 0;
+}
+
 function calcScore(
   modelSize: number,
   quantQuality: number,
@@ -254,27 +295,15 @@ type CompareSelection = {
   filename: string;
   kvType: string;
 };
-type TrackedDownloadSource = "recommended" | "files";
 type TrackedDownloadRole = "model" | "mmproj";
-type TrackedHfDownload = {
-  source: TrackedDownloadSource;
-  modelId: string;
-  filename: string;
-  displayName: string;
-  contextLength: number | null;
-  kvType: string | null;
+type QueueDownloadMetadata = {
+  createModelWhenFinished?: boolean;
+  mmprojFile?: string | false;
   installId?: string | null;
-  role?: TrackedDownloadRole;
-};
-
-type PendingRecommendedInstall = {
-  displayName: string;
-  contextLength: number | null;
-  kvType: string | null;
-  modelQueueId: string | null;
-  mmprojQueueId: string | null;
-  modelPath: string | null;
-  mmprojPath: string | null;
+  displayName?: string | null;
+  contextLength?: number | null;
+  kvType?: string | null;
+  downloadRole?: TrackedDownloadRole | null;
 };
 
 type ViewState = { kind: "search" } | { kind: "model"; modelId: string };
@@ -432,21 +461,22 @@ function DetailReportContent({
   );
 
   const modelMax = recData.modelMaxContext;
-  const detailFullGpuCtx = (() => {
-    if (recData.availableVram <= 0 || !recData.kvBasePerToken) return 0;
-    if (selectedFile.size + overhead >= vramBudget) return 0;
-    const vramForKv = vramBudget - selectedFile.size - overhead;
-    const rawCtx = Math.floor(vramForKv / (recData.kvBasePerToken * bpv));
-    if (recData.kvContextCap && rawCtx >= recData.kvContextCap) return modelMax;
-    return rawCtx >= 512 ? Math.min(rawCtx, modelMax) : 0;
-  })();
-  const detailMaxRamCtx = (() => {
-    if (!recData.kvBasePerToken) return 0;
-    const remaining = Math.max(totalAvail - selectedFile.size - overhead, 0);
-    const rawCtx = Math.floor(remaining / (recData.kvBasePerToken * bpv));
-    if (recData.kvContextCap && rawCtx >= recData.kvContextCap) return modelMax;
-    return rawCtx >= 512 ? Math.min(rawCtx, modelMax) : 0;
-  })();
+  const detailFullGpuCtx = computeGpuOptimalContext(
+    selectedFile.size,
+    recData.kvBasePerToken,
+    bpv,
+    recData.availableVram,
+    modelMax,
+    recData.kvContextCap,
+  );
+  const detailMaxRamCtx = computeRamMaxContext(
+    selectedFile.size,
+    recData.kvBasePerToken,
+    bpv,
+    totalAvail,
+    modelMax,
+    recData.kvContextCap,
+  );
 
   const memoryScore = (() => {
     if (totalAvail === 0) return 50;
@@ -793,20 +823,55 @@ function DetailReportContent({
 
 export function HuggingFaceBrowserPage() {
   const { t } = useI18n();
+  const hfNavigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const returnTo = searchParams.get("returnTo");
   const { queue, dismissItem, hasItems: hasDownloads } = useDownloadQueue();
+
+  const [hasPersistedLocalModel, setHasPersistedLocalModel] = useState(() => {
+    const cached = readSettingsCached();
+    return cached ? cached.models.some((m) => m.providerId === "llamacpp") : false;
+  });
+  const hasCompletedDownload = queue.some(
+    (item) => item.status === "complete" && item.createModelWhenFinished,
+  );
+  const hasLocalModel = hasPersistedLocalModel || hasCompletedDownload;
 
   const [avatars, setAvatars] = useState<Record<string, string>>({});
 
   const [defaultedToSearch, setDefaultedToSearch] = useState(false);
 
   useEffect(() => {
+    const syncLocalModelState = async () => {
+      const settings = await readSettings();
+      setHasPersistedLocalModel(settings.models.some((model) => model.providerId === "llamacpp"));
+    };
+
+    void syncLocalModelState();
+
+    const handler = () => {
+      void syncLocalModelState();
+    };
+    window.addEventListener(SETTINGS_UPDATED_EVENT, handler);
+    return () => window.removeEventListener(SETTINGS_UPDATED_EVENT, handler);
+  }, []);
+
+  // Helper to preserve returnTo across param changes
+  const preserveParams = useCallback(
+    (next: Record<string, string>) => {
+      if (returnTo) next.returnTo = returnTo;
+      return next;
+    },
+    [returnTo],
+  );
+
+  useEffect(() => {
     if (defaultedToSearch) return;
     if (searchParams.get("model")) {
-      setSearchParams({}, { replace: true });
+      setSearchParams(preserveParams({}), { replace: true });
     }
     setDefaultedToSearch(true);
-  }, [defaultedToSearch, searchParams, setSearchParams]);
+  }, [defaultedToSearch, searchParams, setSearchParams, preserveParams]);
 
   const view: ViewState = useMemo(() => {
     if (!defaultedToSearch) return { kind: "search" };
@@ -818,12 +883,12 @@ export function HuggingFaceBrowserPage() {
   const setView = useCallback(
     (v: ViewState) => {
       if (v.kind === "search") {
-        setSearchParams({}, { replace: true });
+        setSearchParams(preserveParams({}), { replace: true });
       } else if (v.kind === "model") {
-        setSearchParams({ model: v.modelId }, { replace: false });
+        setSearchParams(preserveParams({ model: v.modelId }), { replace: false });
       }
     },
-    [setSearchParams],
+    [setSearchParams, preserveParams],
   );
 
   const [query, setQuery] = useState("");
@@ -867,8 +932,7 @@ export function HuggingFaceBrowserPage() {
   const compareSyncRafRef = useRef<number | null>(null);
   const compareSyncSourceIdRef = useRef<number | null>(null);
   const compareSyncRatioRef = useRef(0);
-  const trackedDownloadsRef = useRef<Map<string, TrackedHfDownload>>(new Map());
-  const pendingRecommendedInstallsRef = useRef<Map<string, PendingRecommendedInstall>>(new Map());
+  const processedRecommendedInstallsRef = useRef<Set<string>>(new Set());
   const prevQueueRef = useRef<QueuedDownload[]>([]);
 
   useEffect(() => {
@@ -1227,77 +1291,82 @@ export function HuggingFaceBrowserPage() {
     [],
   );
 
-  const queueTrackedDownload = useCallback(async (tracked: TrackedHfDownload) => {
-    try {
-      const queueId = await invoke<string>("hf_queue_download", {
-        modelId: tracked.modelId,
-        filename: tracked.filename,
-      });
-      trackedDownloadsRef.current.set(queueId, tracked);
-      return queueId;
-    } catch (err: any) {
-      toast.error(
-        "Download failed",
-        typeof err === "string" ? err : err?.message || "Unknown error",
-      );
-      return null;
-    }
-  }, []);
+  const queueTrackedDownload = useCallback(
+    async (modelId: string, filename: string, metadata: QueueDownloadMetadata | null = null) => {
+      try {
+        return await invoke<string>("hf_queue_download", {
+          modelId,
+          filename,
+          metadata,
+        });
+      } catch (err: any) {
+        toast.error(
+          "Download failed",
+          typeof err === "string" ? err : err?.message || "Unknown error",
+        );
+        return null;
+      }
+    },
+    [],
+  );
 
-  const autoCreateModelFromRecommendedInstall = useCallback(
-    async (installId: string, install: PendingRecommendedInstall) => {
-      if (!install.modelPath) {
+  const autoCreateModelFromQueuedDownload = useCallback(
+    async (modelItem: QueuedDownload, mmprojItem: QueuedDownload | null) => {
+      if (!modelItem.resultPath) {
         return;
       }
 
-      if (install.mmprojQueueId && !install.mmprojPath) {
+      if (typeof modelItem.mmprojFile === "string" && !mmprojItem?.resultPath) {
         return;
       }
 
+      const installId = modelItem.installId || modelItem.id;
+      const displayName =
+        modelItem.displayName ||
+        extractFileDisplayName(modelItem.filename) ||
+        extractModelShortName(modelItem.modelId);
       const contextLength =
-        install.contextLength != null && install.contextLength > 0
-          ? Math.floor(install.contextLength)
+        modelItem.contextLength != null && modelItem.contextLength > 0
+          ? Math.floor(modelItem.contextLength)
           : 8192;
-      const kvType = install.kvType || "q8_0";
-      const hasImageSupport = !!install.mmprojPath;
+      const kvType = modelItem.kvType || "q8_0";
+      const mmprojPath = mmprojItem?.resultPath ?? null;
+      const hasImageSupport = !!mmprojPath;
 
       try {
         const defaultAdvanced = createDefaultAdvancedModelSettings();
         await addOrUpdateModel({
-          name: install.modelPath,
+          name: modelItem.resultPath,
           providerId: "llamacpp",
           providerLabel: "llama.cpp (Local)",
-          displayName: install.displayName,
+          displayName,
           inputScopes: hasImageSupport ? ["text", "image"] : ["text"],
           outputScopes: ["text"],
           advancedModelSettings: {
             ...defaultAdvanced,
             contextLength,
             llamaKvType: kvType as NonNullable<typeof defaultAdvanced.llamaKvType>,
-            llamaMmprojPath: install.mmprojPath,
+            llamaMmprojPath: mmprojPath,
           },
         });
 
         toast.success(
           "Model installed",
           hasImageSupport
-            ? `${install.displayName} added with image support, ${contextLength.toLocaleString()} ctx, and ${kvType.toUpperCase()} KV cache.`
-            : `${install.displayName} added with ${contextLength.toLocaleString()} ctx and ${kvType.toUpperCase()} KV cache.`,
+            ? `${displayName} added with image support, ${contextLength.toLocaleString()} ctx, and ${kvType.toUpperCase()} KV cache.`
+            : `${displayName} added with ${contextLength.toLocaleString()} ctx and ${kvType.toUpperCase()} KV cache.`,
         );
+        setHasPersistedLocalModel(true);
 
-        pendingRecommendedInstallsRef.current.delete(installId);
-        if (install.modelQueueId) {
-          trackedDownloadsRef.current.delete(install.modelQueueId);
-          await dismissItem(install.modelQueueId);
-        }
-        if (install.mmprojQueueId) {
-          trackedDownloadsRef.current.delete(install.mmprojQueueId);
-          await dismissItem(install.mmprojQueueId);
+        await dismissItem(modelItem.id);
+        if (mmprojItem) {
+          await dismissItem(mmprojItem.id);
         }
       } catch (err: any) {
+        processedRecommendedInstallsRef.current.delete(installId);
         toast.error(
           "Model setup failed",
-          `Downloaded ${install.displayName}, but auto-add failed: ${err?.message || String(err)}`,
+          `Downloaded ${displayName}, but auto-add failed: ${err?.message || String(err)}`,
         );
       }
     },
@@ -1318,67 +1387,55 @@ export function HuggingFaceBrowserPage() {
     }
 
     const bpv = KV_BPV[recKvType] || 2;
-    const maxGpuContext = maxContextForBpv(
-      selectedFile.size,
-      recData.kvBasePerToken,
-      bpv,
-      recData.availableVram,
-      recData.modelMaxContext,
+    const maxAllowedContext = Math.max(
+      maxContextForBpv(
+        selectedFile.size,
+        recData.kvBasePerToken,
+        bpv,
+        recData.totalAvailable,
+        recData.modelMaxContext,
+      ),
+      1024,
     );
+    const requestedContext = Math.min(Math.max(recContext, 1024), maxAllowedContext);
 
     const installId = crypto.randomUUID();
-    const install: PendingRecommendedInstall = {
-      displayName:
-        extractFileDisplayName(selectedFile.filename) || extractModelShortName(modelInfo.modelId),
-      contextLength: maxGpuContext > 0 ? maxGpuContext : 8192,
-      kvType: recKvType,
-      modelQueueId: null,
-      mmprojQueueId: null,
-      modelPath: null,
-      mmprojPath: null,
-    };
+    const displayName =
+      extractFileDisplayName(selectedFile.filename) || extractModelShortName(modelInfo.modelId);
 
     if (selectedMmproj) {
-      install.mmprojQueueId = await queueTrackedDownload({
-        source: "recommended",
-        modelId: modelInfo.modelId,
-        filename: selectedMmproj.filename,
-        displayName: install.displayName,
-        contextLength: null,
-        kvType: null,
+      const mmprojQueueId = await queueTrackedDownload(modelInfo.modelId, selectedMmproj.filename, {
+        createModelWhenFinished: false,
+        mmprojFile: false,
         installId,
-        role: "mmproj",
+        displayName,
+        downloadRole: "mmproj",
       });
-      if (!install.mmprojQueueId) {
+      if (!mmprojQueueId) {
         return;
       }
     }
 
-    install.modelQueueId = await queueTrackedDownload({
-      source: "recommended",
-      modelId: modelInfo.modelId,
-      filename: selectedFile.filename,
-      displayName: install.displayName,
-      contextLength: install.contextLength,
-      kvType: recKvType,
+    const modelQueueId = await queueTrackedDownload(modelInfo.modelId, selectedFile.filename, {
+      createModelWhenFinished: true,
+      mmprojFile: selectedMmproj?.filename ?? false,
       installId,
-      role: "model",
+      displayName,
+      contextLength: requestedContext,
+      kvType: recKvType,
+      downloadRole: "model",
     });
-    if (!install.modelQueueId) {
-      if (install.mmprojQueueId) {
-        toast.error(
-          "Download partially queued",
-          "The mmproj file was queued, but the main model file could not be queued.",
-        );
-      }
-      return;
+    if (!modelQueueId && selectedMmproj) {
+      toast.error(
+        "Download partially queued",
+        "The mmproj file was queued, but the main model file could not be queued.",
+      );
     }
-
-    pendingRecommendedInstallsRef.current.set(installId, install);
   }, [
     mmprojFilesWithSize,
     modelInfo,
     queueTrackedDownload,
+    recContext,
     recData,
     recFile,
     recImageSupport,
@@ -1387,102 +1444,86 @@ export function HuggingFaceBrowserPage() {
   ]);
 
   const queueFilesDownload = useCallback(
-    async (filename: string) => {
+    async (file: HfModelFile) => {
       if (!modelInfo) return;
-      await queueTrackedDownload({
-        source: "files",
-        modelId: modelInfo.modelId,
-        filename,
-        displayName: extractFileDisplayName(filename) || extractModelShortName(modelInfo.modelId),
-        contextLength: null,
-        kvType: null,
-      });
+
+      const shouldCreateModel = Boolean(returnTo) && !file.isMmproj;
+      const metadata = shouldCreateModel
+        ? {
+            createModelWhenFinished: true,
+            installId: crypto.randomUUID(),
+            displayName: extractFileDisplayName(file.filename) || extractModelShortName(modelInfo.modelId),
+            downloadRole: "model" as const,
+          }
+        : null;
+
+      await queueTrackedDownload(modelInfo.modelId, file.filename, metadata);
     },
-    [modelInfo, queueTrackedDownload],
+    [modelInfo, queueTrackedDownload, returnTo],
   );
+
+  useEffect(() => {
+    for (const modelItem of queue) {
+      if (!modelItem.createModelWhenFinished || modelItem.downloadRole === "mmproj") {
+        continue;
+      }
+      if (modelItem.status !== "complete") {
+        continue;
+      }
+
+      const installId = modelItem.installId || modelItem.id;
+      if (processedRecommendedInstallsRef.current.has(installId)) {
+        continue;
+      }
+
+      let mmprojItem: QueuedDownload | null = null;
+      if (typeof modelItem.mmprojFile === "string") {
+        mmprojItem =
+          queue.find(
+            (item) =>
+              item.installId === modelItem.installId &&
+              item.downloadRole === "mmproj" &&
+              item.filename === modelItem.mmprojFile,
+          ) ?? null;
+        if (!mmprojItem || mmprojItem.status !== "complete" || !mmprojItem.resultPath) {
+          continue;
+        }
+      }
+
+      processedRecommendedInstallsRef.current.add(installId);
+      void autoCreateModelFromQueuedDownload(modelItem, mmprojItem);
+    }
+  }, [queue, autoCreateModelFromQueuedDownload]);
 
   useEffect(() => {
     const prev = prevQueueRef.current;
 
     for (const item of queue) {
       const prevItem = prev.find((p) => p.id === item.id);
-      if (!prevItem) continue;
+      const becameComplete = (!prevItem || prevItem.status !== "complete") && item.status === "complete";
+      const becameError = (!prevItem || prevItem.status !== "error") && item.status === "error";
+      const becameCancelled =
+        (!prevItem || prevItem.status !== "cancelled") && item.status === "cancelled";
 
-      const tracked = trackedDownloadsRef.current.get(item.id);
-      if (!tracked) continue;
-
-      if (prevItem.status !== "complete" && item.status === "complete") {
-        if (tracked.source === "recommended" && tracked.installId) {
-          const install = pendingRecommendedInstallsRef.current.get(tracked.installId);
-          if (!install) {
-            trackedDownloadsRef.current.delete(item.id);
-            toast.success("Download complete", `${item.filename} downloaded.`);
-            void dismissItem(item.id);
-            continue;
-          }
-
-          if (!item.resultPath) {
-            toast.error(
-              "Model setup failed",
-              `Downloaded ${item.filename}, but file path is missing.`,
-            );
-            continue;
-          }
-
-          if (tracked.role === "mmproj") {
-            install.mmprojPath = item.resultPath;
-          } else {
-            install.modelPath = item.resultPath;
-          }
-          pendingRecommendedInstallsRef.current.set(tracked.installId, install);
-          void autoCreateModelFromRecommendedInstall(tracked.installId, install);
-        } else if (tracked.source === "recommended") {
-          trackedDownloadsRef.current.delete(item.id);
-          const displayName = tracked.displayName || extractModelShortName(item.modelId);
-          const installId = item.id;
-          const install: PendingRecommendedInstall = {
-            displayName,
-            contextLength: tracked.contextLength,
-            kvType: tracked.kvType,
-            modelQueueId: item.id,
-            mmprojQueueId: null,
-            modelPath: item.resultPath,
-            mmprojPath: null,
-          };
-          pendingRecommendedInstallsRef.current.set(installId, install);
-          void autoCreateModelFromRecommendedInstall(installId, install);
-        } else {
-          trackedDownloadsRef.current.delete(item.id);
-          toast.success("Download complete", `${item.filename} downloaded.`);
-          void dismissItem(item.id);
-        }
+      if (becameComplete && !item.installId) {
+        toast.success("Download complete", `${item.filename} downloaded.`);
+        void dismissItem(item.id);
       }
 
-      if (prevItem.status !== "error" && item.status === "error") {
-        if (tracked.installId) {
-          pendingRecommendedInstallsRef.current.delete(tracked.installId);
+      if (becameError) {
+        if (item.installId) {
+          processedRecommendedInstallsRef.current.delete(item.installId);
         }
-        trackedDownloadsRef.current.delete(item.id);
         toast.error("Download failed", `${item.filename}: ${item.error || "Unknown error"}`);
       }
 
-      if (prevItem.status !== "cancelled" && item.status === "cancelled") {
-        if (tracked.installId) {
-          pendingRecommendedInstallsRef.current.delete(tracked.installId);
-        }
-        trackedDownloadsRef.current.delete(item.id);
-      }
-    }
-
-    const activeQueueIds = new Set(queue.map((item) => item.id));
-    for (const queueId of trackedDownloadsRef.current.keys()) {
-      if (!activeQueueIds.has(queueId)) {
-        trackedDownloadsRef.current.delete(queueId);
+      if (becameCancelled && item.installId) {
+        processedRecommendedInstallsRef.current.delete(item.installId);
       }
     }
 
     prevQueueRef.current = queue;
-  }, [queue, autoCreateModelFromRecommendedInstall, dismissItem]);
+  }, [queue, dismissItem]);
 
   return (
     <div className="flex h-full flex-col text-fg">
@@ -2103,11 +2144,27 @@ export function HuggingFaceBrowserPage() {
                                                 ),
                                                 1024,
                                               );
+                                              const optimalGpuCtx = computeGpuOptimalContext(
+                                                f.size,
+                                                recData.kvBasePerToken,
+                                                bpvSel,
+                                                recData.availableVram,
+                                                recData.modelMaxContext,
+                                                recData.kvContextCap,
+                                              );
+                                              const optimalRamCtx = computeRamMaxContext(
+                                                f.size,
+                                                recData.kvBasePerToken,
+                                                bpvSel,
+                                                totalAvail,
+                                                recData.modelMaxContext,
+                                                recData.kvContextCap,
+                                              );
                                               const optimal =
-                                                f.optimalGpuCtx > 0
-                                                  ? f.optimalGpuCtx
-                                                  : f.optimalRamCtx > 0
-                                                    ? f.optimalRamCtx
+                                                optimalGpuCtx > 0
+                                                  ? optimalGpuCtx
+                                                  : optimalRamCtx > 0
+                                                    ? optimalRamCtx
                                                     : 8192;
                                               setRecContext(Math.min(optimal, mx));
                                             }
@@ -2137,33 +2194,11 @@ export function HuggingFaceBrowserPage() {
                                               <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-fg/35">
                                                 {recImageSupport ? "On" : "Off"}
                                               </span>
-                                              <input
+                                              <Switch
                                                 id="hf-image-support-toggle"
-                                                type="checkbox"
                                                 checked={recImageSupport}
-                                                onChange={(e) =>
-                                                  setRecImageSupport(e.target.checked)
-                                                }
-                                                className="peer sr-only"
+                                                onChange={setRecImageSupport}
                                               />
-                                              <label
-                                                htmlFor="hf-image-support-toggle"
-                                                className={cn(
-                                                  "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-all duration-200 ease-in-out",
-                                                  recImageSupport
-                                                    ? "bg-emerald-500 shadow-sm shadow-emerald-500/20"
-                                                    : "bg-fg/20",
-                                                )}
-                                              >
-                                                <span
-                                                  className={cn(
-                                                    "inline-block h-4 w-4 rounded-full bg-fg shadow-sm transition duration-200 ease-in-out",
-                                                    recImageSupport
-                                                      ? "translate-x-4"
-                                                      : "translate-x-0",
-                                                  )}
-                                                />
-                                              </label>
                                             </div>
                                           </div>
 
@@ -2192,43 +2227,23 @@ export function HuggingFaceBrowserPage() {
                                       {(() => {
                                         const modelMax = recData.modelMaxContext;
                                         // Max context for 100% GPU offload (model+KV+compute all in VRAM)
-                                        const fullGpuCtx = (() => {
-                                          if (recData.availableVram <= 0 || !recData.kvBasePerToken)
-                                            return 0;
-                                          const vBudget = recData.availableVram * 0.9;
-                                          const oh = computeOverhead(selFile.size);
-                                          if (selFile.size + oh >= vBudget) return 0;
-                                          const vramForKv = vBudget - selFile.size - oh;
-                                          const bpvVal = KV_BPV[recKvType] || 2;
-                                          const rawCtx = Math.floor(
-                                            vramForKv / (recData.kvBasePerToken * bpvVal),
-                                          );
-                                          if (
-                                            recData.kvContextCap &&
-                                            rawCtx >= recData.kvContextCap
-                                          )
-                                            return modelMax;
-                                          return rawCtx >= 512 ? Math.min(rawCtx, modelMax) : 0;
-                                        })();
+                                        const fullGpuCtx = computeGpuOptimalContext(
+                                          selFile.size,
+                                          recData.kvBasePerToken,
+                                          KV_BPV[recKvType] || 2,
+                                          recData.availableVram,
+                                          modelMax,
+                                          recData.kvContextCap,
+                                        );
                                         // Max context before RAM runs out (dynamic for current KV type)
-                                        const ramCtx = (() => {
-                                          if (!recData.kvBasePerToken) return 0;
-                                          const oh = computeOverhead(selFile.size);
-                                          const remaining = Math.max(
-                                            totalAvail - selFile.size - oh,
-                                            0,
-                                          );
-                                          const bpvVal = KV_BPV[recKvType] || 2;
-                                          const rawCtx = Math.floor(
-                                            remaining / (recData.kvBasePerToken * bpvVal),
-                                          );
-                                          if (
-                                            recData.kvContextCap &&
-                                            rawCtx >= recData.kvContextCap
-                                          )
-                                            return modelMax;
-                                          return rawCtx >= 512 ? Math.min(rawCtx, modelMax) : 0;
-                                        })();
+                                        const ramCtx = computeRamMaxContext(
+                                          selFile.size,
+                                          recData.kvBasePerToken,
+                                          KV_BPV[recKvType] || 2,
+                                          totalAvail,
+                                          modelMax,
+                                          recData.kvContextCap,
+                                        );
 
                                         return (
                                           <div>
@@ -2488,7 +2503,7 @@ export function HuggingFaceBrowserPage() {
                                     </span>
                                   </div>
                                   <button
-                                    onClick={() => void queueFilesDownload(file.filename)}
+                                    onClick={() => void queueFilesDownload(file)}
                                     className={cn(
                                       "mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-accent/30 bg-accent/15 py-1.5 text-[11px] font-semibold text-accent",
                                       interactive.transition.default,
@@ -2496,7 +2511,9 @@ export function HuggingFaceBrowserPage() {
                                     )}
                                   >
                                     <Download size={12} />
-                                    {t("hfBrowser.download")}
+                                    {returnTo && !file.isMmproj
+                                      ? "Download and Use"
+                                      : t("hfBrowser.download")}
                                   </button>
                                 </div>
                               );
@@ -2705,6 +2722,25 @@ export function HuggingFaceBrowserPage() {
             );
           })()}
       </BottomMenu>
+
+      {/* Continue Setup button when coming from onboarding */}
+      {returnTo && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
+          <button
+            onClick={() => hfNavigate(returnTo)}
+            disabled={!hasLocalModel}
+            className={cn(
+              "flex items-center gap-2 rounded-full px-6 py-3 text-sm font-bold transition active:scale-[0.98]",
+              hasLocalModel
+                ? "border border-emerald-500/40 bg-emerald-500 text-black shadow-[0_4px_20px_rgba(16,185,129,0.35)] hover:bg-emerald-400 hover:shadow-[0_4px_24px_rgba(16,185,129,0.5)]"
+                : "border border-white/10 bg-white/10 text-white/40 cursor-not-allowed",
+            )}
+          >
+            {hasLocalModel ? "Continue Setup" : "Download a model to continue"}
+            <ArrowRight size={16} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

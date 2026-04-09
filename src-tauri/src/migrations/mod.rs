@@ -7,7 +7,7 @@ use crate::storage_manager::settings::{read_settings_typed, write_settings_typed
 use crate::utils::log_info;
 
 /// Current migration version
-pub const CURRENT_MIGRATION_VERSION: u32 = 47;
+pub const CURRENT_MIGRATION_VERSION: u32 = 50;
 
 pub fn run_migrations(app: &AppHandle) -> Result<(), String> {
     log_info(app, "migrations", "Starting migration check");
@@ -507,6 +507,36 @@ pub fn run_migrations(app: &AppHandle) -> Result<(), String> {
         );
         migrate_v46_to_v47(app)?;
         version = 47;
+    }
+
+    if version < 48 {
+        log_info(
+            app,
+            "migrations",
+            "Running migration v47 -> v48: Add lorebook keyword detection mode",
+        );
+        migrate_v47_to_v48(app)?;
+        version = 48;
+    }
+
+    if version < 49 {
+        log_info(
+            app,
+            "migrations",
+            "Running migration v48 -> v49: Add deferred pricing refresh caches",
+        );
+        migrate_v48_to_v49(app)?;
+        version = 49;
+    }
+
+    if version < 50 {
+        log_info(
+            app,
+            "migrations",
+            "Running migration v49 -> v50: Add direct session background override",
+        );
+        migrate_v49_to_v50(app)?;
+        version = 50;
     }
 
     // Update the stored version
@@ -2032,6 +2062,7 @@ fn migrate_v19_to_v20(app: &AppHandle) -> Result<(), String> {
         CREATE TABLE IF NOT EXISTS lorebooks (
           id TEXT PRIMARY KEY,
           name TEXT NOT NULL,
+          keyword_detection_mode TEXT NOT NULL DEFAULT 'recent_message_window',
           created_at INTEGER NOT NULL,
           updated_at INTEGER NOT NULL
         );
@@ -2226,8 +2257,14 @@ fn migrate_v19_to_v20(app: &AppHandle) -> Result<(), String> {
         };
 
         conn.execute(
-            "INSERT INTO lorebooks (id, name, created_at, updated_at) VALUES (?1, ?2, ?3, ?4)",
-            params![lorebook_id, lorebook_name, now, now],
+            "INSERT INTO lorebooks (id, name, keyword_detection_mode, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                lorebook_id,
+                lorebook_name,
+                "recent_message_window",
+                now,
+                now
+            ],
         )
         .map_err(|e| {
             crate::utils::err_msg(
@@ -2726,6 +2763,81 @@ fn migrate_v46_to_v47(app: &AppHandle) -> Result<(), String> {
         "ALTER TABLE settings ADD COLUMN advanced_model_settings TEXT",
         [],
     );
+
+    Ok(())
+}
+
+fn migrate_v47_to_v48(app: &AppHandle) -> Result<(), String> {
+    let conn = crate::storage_manager::db::open_db(app)?;
+    let _ = conn.execute(
+        "ALTER TABLE lorebooks ADD COLUMN keyword_detection_mode TEXT NOT NULL DEFAULT 'recent_message_window'",
+        [],
+    );
+    Ok(())
+}
+
+fn migrate_v48_to_v49(app: &AppHandle) -> Result<(), String> {
+    let conn = crate::storage_manager::db::open_db(app)?;
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS openrouter_provider_pricing_cache (
+          model_id TEXT PRIMARY KEY,
+          provider_pricings_json TEXT NOT NULL,
+          cached_at INTEGER NOT NULL
+        )",
+        [],
+    )
+    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS deferred_pricing_refreshes (
+          provider_id TEXT NOT NULL,
+          model_id TEXT NOT NULL,
+          refresh_kind TEXT NOT NULL,
+          retry_after INTEGER NOT NULL,
+          last_error TEXT,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          PRIMARY KEY (provider_id, model_id, refresh_kind)
+        )",
+        [],
+    )
+    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_openrouter_provider_pricing_cached_at
+          ON openrouter_provider_pricing_cache(cached_at)",
+        [],
+    )
+    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_deferred_pricing_refreshes_due
+          ON deferred_pricing_refreshes(provider_id, retry_after)",
+        [],
+    )
+    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    Ok(())
+}
+
+fn migrate_v49_to_v50(app: &AppHandle) -> Result<(), String> {
+    let conn = crate::storage_manager::db::open_db(app)?;
+
+    let mut has_background_image_path = false;
+    let mut stmt = conn
+        .prepare("PRAGMA table_info(sessions)")
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    let rows = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+
+    for col in rows {
+        let name = col.map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        if name == "background_image_path" {
+            has_background_image_path = true;
+            break;
+        }
+    }
+
+    if !has_background_image_path {
+        let _ = conn.execute("ALTER TABLE sessions ADD COLUMN background_image_path TEXT", []);
+    }
 
     Ok(())
 }

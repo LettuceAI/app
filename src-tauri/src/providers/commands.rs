@@ -21,6 +21,9 @@ pub async fn get_remote_models(
     if credential.provider_id == "llamacpp" {
         return Ok(Vec::new());
     }
+    if credential.provider_id == "ollama" {
+        return crate::ollama::list_models(&app, &credential).await;
+    }
 
     let is_custom_provider =
         credential.provider_id == "custom" || credential.provider_id == "custom-anthropic";

@@ -576,6 +576,7 @@ mod tests {
         GroupChatContext {
             session: GroupSession {
                 id: "session-1".to_string(),
+                memory_progress_step: None,
                 name: "Test".to_string(),
                 memory_type: "manual".to_string(),
                 character_ids: vec![

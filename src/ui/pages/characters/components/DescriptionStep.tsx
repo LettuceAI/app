@@ -15,6 +15,8 @@ import {
 import type { Model, SystemPromptTemplate } from "../../../../core/storage/schemas";
 import { typography, radius, spacing, interactive, shadows, cn } from "../../../design-tokens";
 import { BottomMenu, MenuSection } from "../../../components/BottomMenu";
+import { ModelSelectionBottomMenu } from "../../../components/ModelSelectionBottomMenu";
+import { Switch } from "../../../components/Switch";
 import { getProviderIcon } from "../../../../core/utils/providerIcons";
 import { useI18n } from "../../../../core/i18n/context";
 
@@ -89,9 +91,7 @@ export function DescriptionStep({
   const resolvedSubmitLabel = submitLabel ?? t("characters.identity.title");
   const wordCount = definition.trim().split(/\s+/).filter(Boolean).length;
   const [showModelMenu, setShowModelMenu] = useState(false);
-  const [modelSearchQuery, setModelSearchQuery] = useState("");
   const [showFallbackModelMenu, setShowFallbackModelMenu] = useState(false);
-  const [fallbackModelSearchQuery, setFallbackModelSearchQuery] = useState("");
   const [showVoiceMenu, setShowVoiceMenu] = useState(false);
   const [voiceSearchQuery, setVoiceSearchQuery] = useState("");
 
@@ -591,31 +591,12 @@ export function DescriptionStep({
                   {voiceConfig ? "Play this character's replies automatically" : "Select a voice first"}
                 </p>
               </div>
-              <div className="flex items-center">
-                <input
-                  id="character-voice-autoplay"
-                  type="checkbox"
-                  checked={voiceAutoplay}
-                  onChange={() => onVoiceAutoplayChange(!voiceAutoplay)}
-                  disabled={!voiceConfig}
-                  className="peer sr-only"
-                />
-                <label
-                  htmlFor="character-voice-autoplay"
-                  className={cn(
-                    "relative inline-flex h-6 w-11 shrink-0 rounded-full transition-all",
-                    voiceAutoplay ? "bg-accent" : "bg-fg/20",
-                    voiceConfig ? "cursor-pointer" : "cursor-not-allowed",
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "mt-0.5 inline-block h-5 w-5 transform rounded-full bg-fg transition",
-                      voiceAutoplay ? "translate-x-5" : "translate-x-0.5",
-                    )}
-                  />
-                </label>
-              </div>
+              <Switch
+                id="character-voice-autoplay"
+                checked={voiceAutoplay}
+                onChange={(next) => onVoiceAutoplayChange(next)}
+                disabled={!voiceConfig}
+              />
             </div>
           </div>
         </div>
@@ -671,167 +652,40 @@ export function DescriptionStep({
         </motion.button>
       </div>
 
-      {/* Model Selection BottomMenu */}
-      <BottomMenu
+      <ModelSelectionBottomMenu
         isOpen={showModelMenu}
-        onClose={() => {
-          setShowModelMenu(false);
-          setModelSearchQuery("");
-        }}
+        onClose={() => setShowModelMenu(false)}
         title="Select Model"
-      >
-        <div className="space-y-4">
-          <div className="relative">
-            <input
-              type="text"
-              value={modelSearchQuery}
-              onChange={(e) => setModelSearchQuery(e.target.value)}
-              placeholder="Search models..."
-              className="w-full rounded-xl border border-fg/10 bg-surface-el/30 px-4 py-2.5 pl-10 text-sm text-fg placeholder-fg/40 focus:border-fg/20 focus:outline-none"
-            />
-            <svg
-              className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg/40"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-              />
-            </svg>
-          </div>
-          <div className="max-h-[50vh] space-y-2 overflow-y-auto">
-            {models
-              .filter((m) => {
-                if (!modelSearchQuery) return true;
-                const q = modelSearchQuery.toLowerCase();
-                return (
-                  m.displayName?.toLowerCase().includes(q) || m.name?.toLowerCase().includes(q)
-                );
-              })
-              .map((model) => (
-                <button
-                  key={model.id}
-                  onClick={() => {
-                    onSelectModel(model.id);
-                    setShowModelMenu(false);
-                    setModelSearchQuery("");
-                  }}
-                  className={cn(
-                    "flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition",
-                    selectedModelId === model.id
-                      ? "border-accent/40 bg-accent/10"
-                      : "border-fg/10 bg-fg/5 hover:bg-fg/10",
-                  )}
-                >
-                  {getProviderIcon(model.providerId)}
-                  <div className="min-w-0 flex-1">
-                    <span className="block truncate text-sm text-fg">
-                      {model.displayName || model.name}
-                    </span>
-                    <span className="block truncate text-xs text-fg/40">{model.name}</span>
-                  </div>
-                  {selectedModelId === model.id && (
-                    <Check className="h-4 w-4 shrink-0 text-accent" />
-                  )}
-                </button>
-              ))}
-          </div>
-        </div>
-      </BottomMenu>
-
-      {/* Fallback Model Selection BottomMenu */}
-      <BottomMenu
-        isOpen={showFallbackModelMenu}
-        onClose={() => {
-          setShowFallbackModelMenu(false);
-          setFallbackModelSearchQuery("");
+        models={models}
+        selectedModelIds={selectedModelId ? [selectedModelId] : []}
+        searchPlaceholder="Search models..."
+        onSelectModel={(modelId) => {
+          onSelectModel(modelId);
+          setShowModelMenu(false);
         }}
+      />
+
+      <ModelSelectionBottomMenu
+        isOpen={showFallbackModelMenu}
+        onClose={() => setShowFallbackModelMenu(false)}
         title="Select Fallback Model"
-      >
-        <div className="space-y-4">
-          <div className="relative">
-            <input
-              type="text"
-              value={fallbackModelSearchQuery}
-              onChange={(e) => setFallbackModelSearchQuery(e.target.value)}
-              placeholder="Search models..."
-              className="w-full rounded-xl border border-fg/10 bg-surface-el/30 px-4 py-2.5 pl-10 text-sm text-fg placeholder-fg/40 focus:border-fg/20 focus:outline-none"
-            />
-            <svg
-              className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg/40"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-              />
-            </svg>
-          </div>
-          <div className="max-h-[50vh] space-y-2 overflow-y-auto">
-            <button
-              onClick={() => {
-                onSelectFallbackModel(null);
-                setShowFallbackModelMenu(false);
-                setFallbackModelSearchQuery("");
-              }}
-              className={cn(
-                "flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition",
-                !selectedFallbackModelId
-                  ? "border-accent/40 bg-accent/10"
-                  : "border-fg/10 bg-fg/5 hover:bg-fg/10",
-              )}
-            >
-              <Cpu className="h-5 w-5 text-fg/40" />
-              <span className="text-sm text-fg">Off (no fallback)</span>
-              {!selectedFallbackModelId && <Check className="ml-auto h-4 w-4 text-accent" />}
-            </button>
-            {models
-              .filter((m) => m.id !== selectedModelId)
-              .filter((m) => {
-                if (!fallbackModelSearchQuery) return true;
-                const q = fallbackModelSearchQuery.toLowerCase();
-                return (
-                  m.displayName?.toLowerCase().includes(q) || m.name?.toLowerCase().includes(q)
-                );
-              })
-              .map((model) => (
-                <button
-                  key={model.id}
-                  onClick={() => {
-                    onSelectFallbackModel(model.id);
-                    setShowFallbackModelMenu(false);
-                    setFallbackModelSearchQuery("");
-                  }}
-                  className={cn(
-                    "flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition",
-                    selectedFallbackModelId === model.id
-                      ? "border-accent/40 bg-accent/10"
-                      : "border-fg/10 bg-fg/5 hover:bg-fg/10",
-                  )}
-                >
-                  {getProviderIcon(model.providerId)}
-                  <div className="min-w-0 flex-1">
-                    <span className="block truncate text-sm text-fg">
-                      {model.displayName || model.name}
-                    </span>
-                    <span className="block truncate text-xs text-fg/40">{model.name}</span>
-                  </div>
-                  {selectedFallbackModelId === model.id && (
-                    <Check className="h-4 w-4 shrink-0 text-accent" />
-                  )}
-                </button>
-              ))}
-          </div>
-        </div>
-      </BottomMenu>
+        models={models.filter((m) => m.id !== selectedModelId)}
+        selectedModelIds={selectedFallbackModelId ? [selectedFallbackModelId] : []}
+        searchPlaceholder="Search models..."
+        onSelectModel={(modelId) => {
+          onSelectFallbackModel(modelId);
+          setShowFallbackModelMenu(false);
+        }}
+        clearOption={{
+          label: "Off (no fallback)",
+          icon: Cpu,
+          selected: !selectedFallbackModelId,
+          onClick: () => {
+            onSelectFallbackModel(null);
+            setShowFallbackModelMenu(false);
+          },
+        }}
+      />
 
       {/* Voice Selection BottomMenu */}
       <BottomMenu

@@ -11,6 +11,10 @@ import {
   ADVANCED_FREQUENCY_PENALTY_RANGE,
   ADVANCED_PRESENCE_PENALTY_RANGE,
   ADVANCED_TOP_K_RANGE,
+  ADVANCED_SD_CFG_SCALE_RANGE,
+  ADVANCED_SD_DENOISING_STRENGTH_RANGE,
+  ADVANCED_SD_SEED_RANGE,
+  ADVANCED_SD_STEPS_RANGE,
   ADVANCED_REASONING_BUDGET_RANGE,
   ADVANCED_LLAMA_GPU_LAYERS_RANGE,
   ADVANCED_LLAMA_THREADS_RANGE,
@@ -34,12 +38,12 @@ import {
   ADVANCED_OLLAMA_SEED_RANGE,
 } from "../../components/AdvancedModelSettingsForm";
 import { BottomMenu, MenuButton, MenuSection } from "../../components/BottomMenu";
+import { ModelSelectionBottomMenu } from "../../components/ModelSelectionBottomMenu";
 import {
   Info,
   Brain,
   RefreshCw,
   Check,
-  Search,
   ChevronDown,
   ChevronRight,
   HelpCircle,
@@ -48,17 +52,27 @@ import {
   Loader,
   HardDrive,
   ArrowRight,
+  CopyCheck,
+  Copy,
+  Maximize2,
 } from "lucide-react";
 import { ProviderParameterSupportInfo } from "../../components/ProviderParameterSupportInfo";
+import { LlamaSamplerOrderEditor } from "../../components/LlamaSamplerOrderEditor";
+import { toast } from "../../components/toast";
 import { useModelEditorController } from "./hooks/useModelEditorController";
-import { Routes, useNavigationManager } from "../../navigation";
-import { addOrUpdateModel } from "../../../core/storage/repo";
-import type { ReasoningSupport } from "../../../core/storage/schemas";
-import { getProviderReasoningSupport } from "../../../core/storage/schemas";
+import { useNavigationManager } from "../../navigation";
+import { useSearchParams, useNavigate } from "react-router-dom";
+import { addOrUpdateModel, readSettingsCached } from "../../../core/storage/repo";
+import type { LlamaLastRuntimeReport, ReasoningSupport } from "../../../core/storage/schemas";
+import {
+  getProviderReasoningSupport,
+  getProviderCachingSupport,
+} from "../../../core/storage/schemas";
 import { getProviderIcon } from "../../../core/utils/providerIcons";
 import { cn } from "../../design-tokens";
 import { openDocs } from "../../../core/utils/docs";
 import { useI18n } from "../../../core/i18n/context";
+import { Switch } from "../../components/Switch";
 import { getPlatform } from "../../../core/utils/platform";
 
 type DownloadedGgufModel = {
@@ -95,11 +109,63 @@ type LlamaCppContextInfo = {
   availableMemoryBytes?: number | null;
   availableVramBytes?: number | null;
   modelSizeBytes?: number | null;
+  layerCount?: number | null;
 };
 
+function formatRuntimeNumber(value?: number | null): string | null {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return null;
+  }
+  return new Intl.NumberFormat("en-US").format(value);
+}
+
+function formatRuntimeDate(value?: number | null): string | null {
+  if (!value || !Number.isFinite(value)) {
+    return null;
+  }
+  try {
+    return new Date(value).toLocaleString();
+  } catch {
+    return null;
+  }
+}
+
+function formatRuntimeRate(value?: number | null): string | null {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return null;
+  }
+  return `${value.toFixed(value >= 10 ? 1 : 2)} tok/s`;
+}
+
+function getLlamaRuntimeHeadline(report: LlamaLastRuntimeReport): string {
+  if (report.status === "succeeded") {
+    return "The last local run completed successfully.";
+  }
+  if (report.status === "cpuFallbackSucceeded") {
+    return "GPU load failed, then the model recovered on CPU.";
+  }
+  if (report.status === "cpuFallbackFailed") {
+    return "GPU load failed and the CPU fallback still did not complete.";
+  }
+  return "The last local run failed before llama.cpp could complete.";
+}
+
+function getLlamaRuntimeDetail(report: LlamaLastRuntimeReport): string {
+  if (report.status === "succeeded") {
+    return "This report also seeds the smart offload cache so future runs can reuse the last stable GPU setup.";
+  }
+  if (report.status === "cpuFallbackSucceeded") {
+    return "We stored the CPU-safe context and batch that did run so you can reuse them.";
+  }
+  if (report.status === "cpuFallbackFailed") {
+    return "The model was retried on CPU, but the recovered configuration still failed.";
+  }
+  return "This report keeps the last known runtime state so you can inspect what happened.";
+}
+
 type EditorViewMode = "simple" | "advanced";
-type EditorSectionKey = "generation" | "runtime" | "reasoning";
-type SimpleEditorSectionKey = EditorSectionKey | "capabilities";
+type EditorSectionKey = "generation" | "runtime" | "reasoning" | "caching" | "capabilities";
+type SimpleEditorSectionKey = "generation" | "runtime" | "reasoning" | "capabilities";
 
 const EDITOR_FADE_DURATION = 0.16;
 const MODEL_EDITOR_VIEW_MODE_STORAGE_KEY = "lettuce.settings.models.editorViewMode";
@@ -239,23 +305,6 @@ function FieldBlock({
   );
 }
 
-function SummaryField({
-  label,
-  value,
-  mono = false,
-}: {
-  label: string;
-  value: ReactNode;
-  mono?: boolean;
-}) {
-  return (
-    <div className="grid grid-cols-[92px_minmax(0,1fr)] gap-3 text-[13px]">
-      <dt className="text-fg/45">{label}</dt>
-      <dd className={cn("min-w-0 text-fg/82", mono && "font-mono text-[12px]")}>{value}</dd>
-    </div>
-  );
-}
-
 function CollapsedEditorSectionButton({
   title,
   summary,
@@ -323,6 +372,29 @@ export function EditModelPage() {
   const [movePromptSource, setMovePromptSource] = useState<"save" | "browse">("save");
   const [movingModel, setMovingModel] = useState(false);
   const [moveError, setMoveError] = useState<string | null>(null);
+  const [showLlamaRuntimeReport, setShowLlamaRuntimeReport] = useState(false);
+  const [showTemplateOverlay, setShowTemplateOverlay] = useState(false);
+  const [templateOverlayDraft, setTemplateOverlayDraft] = useState("");
+  const [showEmbeddedTemplateViewer, setShowEmbeddedTemplateViewer] = useState(false);
+  const [embeddedTemplateLoading, setEmbeddedTemplateLoading] = useState(false);
+  const [embeddedTemplateText, setEmbeddedTemplateText] = useState("");
+  const [embeddedTemplateError, setEmbeddedTemplateError] = useState<string | null>(null);
+  const [runabilityScore, setRunabilityScore] = useState<{
+    score: number;
+    label: "excellent" | "good" | "marginal" | "poor" | "unrunnable";
+    fitsInRam: boolean;
+    fitsInVram: boolean;
+    memoryScore: number;
+    gpuScore: number;
+    kvScore: number;
+    quantScore: number;
+    gpuMode: string;
+    availableRam: number;
+    availableVram: number;
+    modelSize: number;
+    quantization: string;
+  } | null>(null);
+  const [runabilityLoading, setRunabilityLoading] = useState(false);
 
   const {
     state: {
@@ -341,6 +413,7 @@ export function EditModelPage() {
     handleDisplayNameChange,
     handleModelNameChange,
     handleProviderSelection,
+    setModelAdvancedDraft,
     handleTemperatureChange,
     handleTopPChange,
     handleMaxTokensChange,
@@ -359,12 +432,14 @@ export function EditModelPage() {
     handleLlamaKvTypeChange,
     handleLlamaFlashAttentionChange,
     handleLlamaSamplerProfileChange,
+    handleLlamaSamplerOrderChange,
     handleLlamaMinPChange,
     handleLlamaTypicalPChange,
     handleLlamaChatTemplateOverrideChange,
     handleLlamaMmprojPathChange,
     handleLlamaChatTemplatePresetChange,
     handleLlamaRawCompletionFallbackChange,
+    handleLlamaStrictModeChange,
     handleOllamaNumCtxChange,
     handleOllamaNumPredictChange,
     handleOllamaNumKeepChange,
@@ -383,14 +458,115 @@ export function EditModelPage() {
     handleReasoningEnabledChange,
     handleReasoningEffortChange,
     handleReasoningBudgetChange,
+    handlePromptCachingEnabledChange,
+    handlePromptCachingTtlChange,
+    applyLlamaRuntimeSuggestion,
     handleSave,
     saveModel,
     resetToInitial,
     fetchModels,
   } = useModelEditorController();
-  const { backOrReplace } = useNavigationManager();
+  useNavigationManager();
+  const editNavigate = useNavigate();
+  const [editSearchParams] = useSearchParams();
+  const returnTo = editSearchParams.get("returnTo");
   const isLocalModel = editorModel?.providerId === "llamacpp";
   const isOllamaModel = editorModel?.providerId === "ollama";
+  const llamaRuntimeReport = modelAdvancedDraft.llamaLastRuntimeReport ?? null;
+  const llamaRuntimeFacts = useMemo(() => {
+    if (!llamaRuntimeReport) {
+      return [];
+    }
+    const fields = [
+      ["Updated", formatRuntimeDate(llamaRuntimeReport.updatedAt)],
+      ["Model path", llamaRuntimeReport.modelPath],
+      ["Backend used", llamaRuntimeReport.backendPathUsed ?? null],
+      ["Failure stage", llamaRuntimeReport.failureStage ?? null],
+      ["Requested context", formatRuntimeNumber(llamaRuntimeReport.requestedContext)],
+      ["Recommended context", formatRuntimeNumber(llamaRuntimeReport.recommendedContext)],
+      ["Initial context", formatRuntimeNumber(llamaRuntimeReport.initialContextCandidate)],
+      ["Actual context", formatRuntimeNumber(llamaRuntimeReport.actualContextUsed)],
+      ["Requested GPU layers", formatRuntimeNumber(llamaRuntimeReport.requestedGpuLayers)],
+      ["Actual GPU layers", formatRuntimeNumber(llamaRuntimeReport.actualGpuLayersUsed)],
+      ["Requested batch", formatRuntimeNumber(llamaRuntimeReport.requestedBatchLimit)],
+      ["Initial batch", formatRuntimeNumber(llamaRuntimeReport.initialBatchCandidate)],
+      ["Actual batch", formatRuntimeNumber(llamaRuntimeReport.actualBatchUsed)],
+      [
+        "Smart offload fallback",
+        llamaRuntimeReport.smartGpuLayerFallbackActivated == null
+          ? null
+          : llamaRuntimeReport.smartGpuLayerFallbackActivated
+            ? "Active"
+            : "Not needed",
+      ],
+      [
+        "KQV fallback",
+        llamaRuntimeReport.kqvFallbackActivated == null
+          ? null
+          : llamaRuntimeReport.kqvFallbackActivated
+            ? "Moved to RAM"
+            : "Not needed",
+      ],
+      [
+        "Smart offload estimate",
+        formatRuntimeNumber(llamaRuntimeReport.smartOffloadEstimatedGpuLayers),
+      ],
+      [
+        "Smart offload candidates",
+        llamaRuntimeReport.smartOffloadCandidateLayers?.length
+          ? llamaRuntimeReport.smartOffloadCandidateLayers.join(", ")
+          : null,
+      ],
+      ["KV cache", llamaRuntimeReport.actualKvTypeUsed ?? null],
+      ["KQV offload", llamaRuntimeReport.actualOffloadKqvMode ?? null],
+      ["Flash attention", llamaRuntimeReport.flashAttentionPolicy ?? null],
+      [
+        "GPU backends",
+        llamaRuntimeReport.compiledGpuBackends?.length
+          ? llamaRuntimeReport.compiledGpuBackends.join(", ")
+          : null,
+      ],
+      [
+        "Available RAM",
+        llamaRuntimeReport.availableMemoryBytes
+          ? formatBytes(llamaRuntimeReport.availableMemoryBytes)
+          : null,
+      ],
+      [
+        "Available VRAM",
+        llamaRuntimeReport.availableVramBytes
+          ? formatBytes(llamaRuntimeReport.availableVramBytes)
+          : null,
+      ],
+      [
+        "Model size",
+        llamaRuntimeReport.modelSizeBytes ? formatBytes(llamaRuntimeReport.modelSizeBytes) : null,
+      ],
+      ["Prompt tokens", formatRuntimeNumber(llamaRuntimeReport.promptTokens)],
+      ["Prompt positions", formatRuntimeNumber(llamaRuntimeReport.promptPositions)],
+      ["Target new tokens", formatRuntimeNumber(llamaRuntimeReport.targetNewTokens)],
+      ["Completion tokens", formatRuntimeNumber(llamaRuntimeReport.completionTokens)],
+      ["Finish reason", llamaRuntimeReport.finishReason ?? null],
+      [
+        "First token",
+        llamaRuntimeReport.firstTokenMs
+          ? `${formatRuntimeNumber(llamaRuntimeReport.firstTokenMs)} ms`
+          : null,
+      ],
+      ["Throughput", formatRuntimeRate(llamaRuntimeReport.tokensPerSecond)],
+      ["Prompt template", llamaRuntimeReport.promptTemplateSource ?? null],
+    ] as const;
+    return fields.filter(([, value]) => value).map(([label, value]) => ({ label, value: value! }));
+  }, [llamaRuntimeReport]);
+  const handleApplyLlamaRuntimeSuggestion = async () => {
+    const applied = await applyLlamaRuntimeSuggestion();
+    if (applied) {
+      toast.success(
+        "Runtime config applied",
+        "Future local runs will reuse the last CPU-safe context and batch.",
+      );
+    }
+  };
 
   // Fetch GGUF models directory path on mount
   useEffect(() => {
@@ -485,6 +661,173 @@ export function EditModelPage() {
     }
   };
 
+  const highlightedTemplate = useMemo(() => {
+    if (!embeddedTemplateText) return null;
+
+    // Tokenize Jinja template into colored spans
+    const jinjaKeywords = new Set([
+      "if",
+      "else",
+      "elif",
+      "endif",
+      "for",
+      "endfor",
+      "block",
+      "endblock",
+      "macro",
+      "endmacro",
+      "set",
+      "extends",
+      "include",
+      "import",
+      "from",
+      "not",
+      "and",
+      "or",
+      "in",
+      "is",
+      "true",
+      "false",
+      "none",
+      "True",
+      "False",
+      "None",
+      "namespace",
+    ]);
+
+    const escapeHtml = (s: string) =>
+      s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+    // Highlight the inside of a Jinja tag (block or expression)
+    const highlightTagInner = (inner: string): string => {
+      // Match strings, keywords, numbers, pipes/operators, and plain text
+      return inner.replace(
+        /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|(\b\d+(?:\.\d+)?\b)|(\b[a-zA-Z_]\w*\b)|([|~%^!=<>]+)|([^"'a-zA-Z_0-9|~%^!=<>]+)/g,
+        (match, str, num, word, op, rest) => {
+          if (str) return `<span style="color:#a8db8a">${escapeHtml(str)}</span>`;
+          if (num) return `<span style="color:#d4976c">${escapeHtml(num)}</span>`;
+          if (word) {
+            if (jinjaKeywords.has(word))
+              return `<span style="color:#c792ea;font-weight:500">${escapeHtml(word)}</span>`;
+            return `<span style="color:#82aaff">${escapeHtml(word)}</span>`;
+          }
+          if (op) return `<span style="color:#89ddff">${escapeHtml(op)}</span>`;
+          return escapeHtml(rest ?? match);
+        },
+      );
+    };
+
+    // Main pass: split by Jinja tags, then by plain-text tokens
+    const parts: string[] = [];
+    let cursor = 0;
+    // Match {# ... #}, {% ... %}, {{ ... }}
+    const tagRegex = /\{#[\s\S]*?#\}|\{%[-+]?[\s\S]*?[-+]?%\}|\{\{[\s\S]*?\}\}/g;
+    let m: RegExpExecArray | null;
+
+    while ((m = tagRegex.exec(embeddedTemplateText)) !== null) {
+      // Plain text before this tag
+      if (m.index > cursor) {
+        parts.push(
+          `<span style="color:rgba(255,255,255,0.55)">${escapeHtml(embeddedTemplateText.slice(cursor, m.index))}</span>`,
+        );
+      }
+
+      const tag = m[0];
+      if (tag.startsWith("{#")) {
+        // Comment
+        parts.push(
+          `<span style="color:rgba(255,255,255,0.25);font-style:italic">${escapeHtml(tag)}</span>`,
+        );
+      } else if (tag.startsWith("{%")) {
+        // Block tag
+        const delimiters = tag.match(/^(\{%[-+]?)([\s\S]*)([-+]?%\})$/);
+        if (delimiters) {
+          parts.push(`<span style="color:#c792ea">${escapeHtml(delimiters[1])}</span>`);
+          parts.push(highlightTagInner(delimiters[2]));
+          parts.push(`<span style="color:#c792ea">${escapeHtml(delimiters[3])}</span>`);
+        } else {
+          parts.push(`<span style="color:#c792ea">${escapeHtml(tag)}</span>`);
+        }
+      } else {
+        // Expression {{ ... }}
+        const delimiters = tag.match(/^(\{\{)([\s\S]*)(\}\})$/);
+        if (delimiters) {
+          parts.push(`<span style="color:#89ddff">${escapeHtml(delimiters[1])}</span>`);
+          parts.push(highlightTagInner(delimiters[2]));
+          parts.push(`<span style="color:#89ddff">${escapeHtml(delimiters[3])}</span>`);
+        } else {
+          parts.push(`<span style="color:#89ddff">${escapeHtml(tag)}</span>`);
+        }
+      }
+      cursor = m.index + tag.length;
+    }
+
+    // Remaining plain text
+    if (cursor < embeddedTemplateText.length) {
+      parts.push(
+        `<span style="color:rgba(255,255,255,0.55)">${escapeHtml(embeddedTemplateText.slice(cursor))}</span>`,
+      );
+    }
+
+    return parts.join("");
+  }, [embeddedTemplateText]);
+
+  const toggleEmbeddedTemplate = async () => {
+    if (showEmbeddedTemplateViewer) {
+      setShowEmbeddedTemplateViewer(false);
+      return;
+    }
+
+    if (!editorModel?.name?.trim()) {
+      toast.warning(
+        "Model path required",
+        "Select a GGUF model path before reading the embedded template.",
+      );
+      return;
+    }
+
+    setShowEmbeddedTemplateViewer(true);
+    setEmbeddedTemplateLoading(true);
+    setEmbeddedTemplateError(null);
+    setEmbeddedTemplateText("");
+
+    try {
+      const template = await invoke<string>("llamacpp_embedded_chat_template", {
+        modelPath: editorModel.name.trim(),
+      });
+      setEmbeddedTemplateText(template);
+    } catch (error) {
+      setEmbeddedTemplateError(typeof error === "string" ? error : String(error));
+    } finally {
+      setEmbeddedTemplateLoading(false);
+    }
+  };
+
+  const handleUseEmbeddedTemplate = () => {
+    if (!embeddedTemplateText.trim()) return;
+    setTemplateOverlayDraft(embeddedTemplateText);
+    setShowEmbeddedTemplateViewer(false);
+    toast.success("Embedded template pasted into editor");
+  };
+
+  const openTemplateOverlay = () => {
+    setTemplateOverlayDraft(modelAdvancedDraft.llamaChatTemplateOverride ?? "");
+    setShowTemplateOverlay(true);
+  };
+
+  const saveTemplateOverlay = () => {
+    handleLlamaChatTemplateOverrideChange(
+      templateOverlayDraft.trim() === "" ? null : templateOverlayDraft,
+    );
+    setShowTemplateOverlay(false);
+    setShowEmbeddedTemplateViewer(false);
+  };
+
+  const cancelTemplateOverlay = () => {
+    setShowTemplateOverlay(false);
+    setShowEmbeddedTemplateViewer(false);
+  };
+
   // Check if a path is outside the GGUF models dir
   const isPathOutsideGgufDir = (path: string): boolean => {
     if (!ggufModelsDir || !path.trim()) return false;
@@ -539,9 +882,6 @@ export function EditModelPage() {
       }
 
       setShowMovePrompt(false);
-      if (movePromptSource === "save") {
-        backOrReplace(Routes.settingsModels);
-      }
     } catch (err: any) {
       console.error("Failed to move model", err);
       setMoveError(
@@ -554,9 +894,6 @@ export function EditModelPage() {
 
   const handleSkipMove = () => {
     setShowMovePrompt(false);
-    if (movePromptSource === "save") {
-      backOrReplace(Routes.settingsModels);
-    }
   };
   const selectedProviderCredential =
     editorModel &&
@@ -568,7 +905,8 @@ export function EditModelPage() {
     if (!selectedProviderCredential) return false;
     if (
       selectedProviderCredential.providerId === "llamacpp" ||
-      selectedProviderCredential.providerId === "intenserp"
+      selectedProviderCredential.providerId === "intenserp" ||
+      selectedProviderCredential.providerId === "stability"
     ) {
       return false;
     }
@@ -796,6 +1134,7 @@ export function EditModelPage() {
     localLibraryPickerMode === "mmproj"
       ? "Download a multimodal projector from the Model Browser, or enter a path manually."
       : t("hfBrowser.libraryEmptyHint");
+  const isAutomatic1111Provider = editorModel?.providerId === "automatic1111";
 
   // Get reasoning support for the current provider
   const reasoningSupport: ReasoningSupport = editorModel?.providerId
@@ -804,6 +1143,11 @@ export function EditModelPage() {
   const showReasoningSection = reasoningSupport !== "none";
   const isAutoReasoning = reasoningSupport === "auto";
   const showEffortOptions = reasoningSupport === "effort" || reasoningSupport === "dynamic";
+  // Get caching support for the current provider
+  const cachingSupport = editorModel?.providerId
+    ? getProviderCachingSupport(editorModel.providerId)
+    : "none";
+  const showCachingSection = cachingSupport !== "none";
   const numberInputClassName =
     "w-full rounded-lg border border-fg/10 bg-surface-el/20 px-4 py-3.5 text-[13px] text-fg placeholder-fg/40 transition focus:border-fg/30 focus:outline-none";
   const selectInputClassName =
@@ -812,6 +1156,27 @@ export function EditModelPage() {
     "w-full rounded-lg border border-fg/10 bg-surface-el/20 px-4 py-3.5 text-[13px] text-fg placeholder-fg/40 transition focus:border-fg/30 focus:outline-none";
   const contextLimit = llamaContextInfo?.maxContextLength ?? ADVANCED_CONTEXT_LENGTH_RANGE.max;
   const recommendedContextLength = llamaContextInfo?.recommendedContextLength ?? null;
+  const llamaLayerPlacementSummary = useMemo(() => {
+    const totalLayers = llamaContextInfo?.layerCount;
+    if (!totalLayers || totalLayers <= 0) {
+      return null;
+    }
+
+    const requestedGpuLayers = modelAdvancedDraft.llamaGpuLayers;
+    if (requestedGpuLayers === null || requestedGpuLayers === undefined) {
+      return {
+        totalLayers,
+        detail: `Auto placement • ${totalLayers.toLocaleString()} total layers`,
+      };
+    }
+
+    const gpuLayers = Math.max(0, Math.min(totalLayers, Math.trunc(requestedGpuLayers)));
+    const cpuLayers = Math.max(totalLayers - gpuLayers, 0);
+    return {
+      totalLayers,
+      detail: `${gpuLayers.toLocaleString()} to GPU • ${cpuLayers.toLocaleString()} on CPU • ${totalLayers.toLocaleString()} total`,
+    };
+  }, [llamaContextInfo?.layerCount, modelAdvancedDraft.llamaGpuLayers]);
   const selectedContextLength = modelAdvancedDraft.contextLength ?? null;
   const showContextWarning =
     isLocalModel &&
@@ -845,19 +1210,6 @@ export function EditModelPage() {
     editorModel?.providerLabel ||
     editorModel?.providerId ||
     "Select platform";
-  const localModelFilename = editorModel?.name?.split(/[/\\]/).filter(Boolean).pop() || "";
-  const summaryModelLabel = isLocalModel
-    ? editorModel?.displayName || localModelFilename || "Not selected"
-    : selectedFetchedModel?.displayName || editorModel?.name || "Not selected";
-  const modelSourceLabel = isLocalModel
-    ? "Local file"
-    : !modelFetchEnabledForSelectedProvider
-      ? "Manual entry"
-      : isManualInput || fetchedModels.length === 0
-        ? "Manual entry"
-        : "Provider catalog";
-  const shouldShowMoveReminder =
-    isLocalModel && isPathOutsideGgufDir(editorModel.name?.trim() ?? "");
   const hasRuntimePanel = isLocalModel || isOllamaModel;
   const runtimePanelTitle = isLocalModel ? "llama.cpp" : isOllamaModel ? "Ollama" : "Runtime";
   const effectiveEditorViewMode: EditorViewMode = isMobile ? "simple" : editorViewMode;
@@ -866,18 +1218,37 @@ export function EditModelPage() {
   const toggleSimplePanel = (panel: SimpleEditorSectionKey) => {
     setActiveSimplePanel((current) => (current === panel ? null : panel));
   };
-  const generationSummary =
-    [
-      modelAdvancedDraft.temperature != null
-        ? `Temp ${modelAdvancedDraft.temperature.toFixed(2)}`
-        : null,
-      modelAdvancedDraft.topP != null ? `Top P ${modelAdvancedDraft.topP.toFixed(2)}` : null,
-      modelAdvancedDraft.maxOutputTokens != null
-        ? `Max ${modelAdvancedDraft.maxOutputTokens.toLocaleString()}`
-        : null,
-    ]
-      .filter(Boolean)
-      .join(" • ") || "Default sampling and output limits";
+  function updateSdSetting<K extends keyof typeof modelAdvancedDraft>(
+    key: K,
+    value: (typeof modelAdvancedDraft)[K],
+  ) {
+    setModelAdvancedDraft({
+      ...modelAdvancedDraft,
+      [key]: value,
+    });
+  }
+  const generationSummary = isAutomatic1111Provider
+    ? [
+        modelAdvancedDraft.sdSteps != null ? `Steps ${modelAdvancedDraft.sdSteps}` : null,
+        modelAdvancedDraft.sdCfgScale != null
+          ? `CFG ${modelAdvancedDraft.sdCfgScale.toFixed(1)}`
+          : null,
+        modelAdvancedDraft.sdSampler ? modelAdvancedDraft.sdSampler : null,
+        modelAdvancedDraft.sdSize ? modelAdvancedDraft.sdSize : null,
+      ]
+        .filter(Boolean)
+        .join(" • ") || "Stable Diffusion sampler, CFG, seed, and size defaults"
+    : [
+        modelAdvancedDraft.temperature != null
+          ? `Temp ${modelAdvancedDraft.temperature.toFixed(2)}`
+          : null,
+        modelAdvancedDraft.topP != null ? `Top P ${modelAdvancedDraft.topP.toFixed(2)}` : null,
+        modelAdvancedDraft.maxOutputTokens != null
+          ? `Max ${modelAdvancedDraft.maxOutputTokens.toLocaleString()}`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" • ") || "Default sampling and output limits";
   const runtimeSummary = isLocalModel
     ? [
         modelAdvancedDraft.llamaBatchSize != null
@@ -1043,6 +1414,7 @@ export function EditModelPage() {
           modelPath,
           llamaOffloadKqv: modelAdvancedDraft.llamaOffloadKqv ?? null,
           llamaKvType: modelAdvancedDraft.llamaKvType ?? null,
+          llamaGpuLayers: modelAdvancedDraft.llamaGpuLayers ?? null,
         });
         if (!cancelled) {
           setLlamaContextInfo(info);
@@ -1073,7 +1445,52 @@ export function EditModelPage() {
     isLocalModel,
     modelAdvancedDraft.llamaOffloadKqv,
     modelAdvancedDraft.llamaKvType,
+    modelAdvancedDraft.llamaGpuLayers,
   ]);
+
+  // Fetch runability score for local models
+  useEffect(() => {
+    if (!isLocalModel) {
+      setRunabilityScore(null);
+      setRunabilityLoading(false);
+      return;
+    }
+
+    const modelPath = editorModel?.name?.trim();
+    if (!modelPath) {
+      setRunabilityScore(null);
+      setRunabilityLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setRunabilityLoading(true);
+
+    const timer = setTimeout(async () => {
+      try {
+        const result = await invoke<NonNullable<typeof runabilityScore>>(
+          "hf_compute_local_runability",
+          { filePath: modelPath },
+        );
+        if (!cancelled) {
+          setRunabilityScore(result);
+        }
+      } catch {
+        if (!cancelled) {
+          setRunabilityScore(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setRunabilityLoading(false);
+        }
+      }
+    }, 400);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [editorModel?.name, isLocalModel]);
 
   const scopeOrder = ["text", "image", "audio"] as const;
   const toggleScope = (
@@ -1082,6 +1499,7 @@ export function EditModelPage() {
     enabled: boolean,
   ) => {
     if (!editorModel) return;
+    if (isAutomatic1111Provider) return;
     const current = new Set((editorModel as any)[key] ?? ["text"]);
     if (enabled) current.add(scope);
     else current.delete(scope);
@@ -1124,18 +1542,162 @@ export function EditModelPage() {
             </div>
           )}
 
-          <div className="relative xl:pr-96">
-            <div
-              className={cn(
-                "w-full space-y-6 transition-transform duration-200 ease-in-out xl:max-w-190",
-                effectiveEditorViewMode === "advanced" ? "xl:translate-x-0" : "xl:translate-x-48",
-              )}
-            >
+          <div className="relative">
+            <div className="w-full space-y-6">
               <EditorPanel
                 title="Model setup"
                 description="Choose the platform, give this entry a readable name, and connect it to the model identifier or file you want to use."
               >
                 <div className="space-y-6">
+                  {isLocalModel && llamaRuntimeReport && (
+                    <div className="rounded-lg border border-fg/10 bg-fg/4">
+                      <button
+                        type="button"
+                        onClick={() => setShowLlamaRuntimeReport((value) => !value)}
+                        className="flex w-full items-start justify-between gap-4 px-4 py-3 text-left"
+                      >
+                        <div className="flex min-w-0 items-start gap-3">
+                          <div
+                            className={cn(
+                              "mt-0.5 flex h-7 w-7 items-center justify-center rounded-md border",
+                              llamaRuntimeReport.status === "succeeded"
+                                ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-400"
+                                : llamaRuntimeReport.status === "cpuFallbackSucceeded"
+                                  ? "border-warning/30 bg-warning/10 text-warning"
+                                  : "border-danger/30 bg-danger/10 text-danger",
+                            )}
+                          >
+                            {llamaRuntimeReport.status === "succeeded" ||
+                            llamaRuntimeReport.status === "cpuFallbackSucceeded" ? (
+                              <Check className="h-4 w-4" />
+                            ) : (
+                              <AlertTriangle className="h-4 w-4" />
+                            )}
+                          </div>
+                          <div className="min-w-0 space-y-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-[13px] font-medium text-fg">
+                                Last runtime report
+                              </span>
+                              <span
+                                className={cn(
+                                  "rounded-md px-2 py-0.5 text-[11px] font-medium",
+                                  llamaRuntimeReport.status === "succeeded"
+                                    ? "bg-emerald-400/12 text-emerald-400"
+                                    : llamaRuntimeReport.status === "cpuFallbackSucceeded"
+                                      ? "bg-warning/12 text-warning"
+                                      : "bg-danger/12 text-danger",
+                                )}
+                              >
+                                {llamaRuntimeReport.status === "succeeded"
+                                  ? "Run succeeded"
+                                  : llamaRuntimeReport.status === "cpuFallbackSucceeded"
+                                    ? "CPU fallback recovered"
+                                    : llamaRuntimeReport.status === "cpuFallbackFailed"
+                                      ? "CPU fallback failed"
+                                      : "Run failed"}
+                              </span>
+                            </div>
+                            <p className="text-[13px] leading-relaxed text-fg/72">
+                              {getLlamaRuntimeHeadline(llamaRuntimeReport)}
+                            </p>
+                            <p className="text-[12px] leading-relaxed text-fg/48">
+                              {getLlamaRuntimeDetail(llamaRuntimeReport)}
+                            </p>
+                          </div>
+                        </div>
+                        {showLlamaRuntimeReport ? (
+                          <ChevronDown className="mt-1 h-4 w-4 text-fg/45" />
+                        ) : (
+                          <ChevronRight className="mt-1 h-4 w-4 text-fg/45" />
+                        )}
+                      </button>
+
+                      <AnimatePresence initial={false}>
+                        {showLlamaRuntimeReport && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: "auto", opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.16, ease: "easeOut" }}
+                            className="overflow-hidden border-t border-fg/8"
+                          >
+                            <div className="space-y-4 px-4 py-4">
+                              {(llamaRuntimeReport.gpuFallbackReason ||
+                                llamaRuntimeReport.errorMessage) && (
+                                <div className="grid gap-3 lg:grid-cols-2">
+                                  {llamaRuntimeReport.gpuFallbackReason && (
+                                    <div className="rounded-lg border border-warning/25 bg-warning/8 px-3 py-2.5">
+                                      <div className="text-[11px] font-medium uppercase tracking-wide text-warning/90">
+                                        GPU fallback reason
+                                      </div>
+                                      <p className="mt-1 text-[13px] leading-relaxed text-fg/78">
+                                        {llamaRuntimeReport.gpuFallbackReason}
+                                      </p>
+                                    </div>
+                                  )}
+                                  {llamaRuntimeReport.errorMessage && (
+                                    <div className="rounded-lg border border-danger/25 bg-danger/8 px-3 py-2.5">
+                                      <div className="text-[11px] font-medium uppercase tracking-wide text-danger/90">
+                                        Final error
+                                      </div>
+                                      <p className="mt-1 text-[13px] leading-relaxed text-fg/78">
+                                        {llamaRuntimeReport.errorMessage}
+                                      </p>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
+                              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                                {llamaRuntimeFacts.map((item) => (
+                                  <div
+                                    key={item.label}
+                                    className="rounded-lg border border-fg/8 bg-surface-el/14 px-3 py-2.5"
+                                  >
+                                    <div className="text-[11px] text-fg/42">{item.label}</div>
+                                    <div className="mt-1 break-words text-[13px] text-fg/86">
+                                      {item.value}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+
+                              {llamaRuntimeReport.status === "cpuFallbackSucceeded" &&
+                                llamaRuntimeReport.suggestedSettings && (
+                                  <div className="flex flex-col gap-3 rounded-lg border border-fg/10 bg-surface-el/18 px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+                                    <div className="space-y-1">
+                                      <div className="text-[13px] font-medium text-fg">
+                                        Working recovery config
+                                      </div>
+                                      <p className="text-[12px] text-fg/52">
+                                        Context{" "}
+                                        {formatRuntimeNumber(
+                                          llamaRuntimeReport.suggestedSettings.contextLength,
+                                        ) ?? "n/a"}
+                                        {" • "}Batch{" "}
+                                        {formatRuntimeNumber(
+                                          llamaRuntimeReport.suggestedSettings.llamaBatchSize,
+                                        ) ?? "n/a"}
+                                      </p>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => void handleApplyLlamaRuntimeSuggestion()}
+                                      disabled={saving}
+                                      className="rounded-lg border border-warning/30 bg-warning/12 px-3 py-2 text-[13px] font-medium text-warning transition hover:bg-warning/18 disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                      Apply working config
+                                    </button>
+                                  </div>
+                                )}
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  )}
+
                   <FieldBlock label="Platform">
                     {providers.length === 0 ? (
                       <div className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2.5 text-[13px] text-warning">
@@ -1361,98 +1923,61 @@ export function EditModelPage() {
                               <ChevronDown className="h-4 w-4 text-fg/40" />
                             </button>
 
-                            <BottomMenu
+                            <ModelSelectionBottomMenu
                               isOpen={showModelSelector}
                               onClose={() => setShowModelSelector(false)}
                               title="Select Model"
+                              models={filteredModels as any}
+                              selectedModelIds={editorModel.name ? [editorModel.name] : []}
+                              searchQuery={searchQuery}
+                              onSearchChange={setSearchQuery}
+                              searchPlaceholder="Search models..."
+                              filterModels={false}
                               rightAction={
                                 isOpenRouterProvider ? (
-                                  <label className="flex items-center gap-2">
+                                  <span className="flex items-center gap-2">
                                     <span className="text-[13px] text-fg/70 whitespace-nowrap">
                                       only free models
                                     </span>
-                                    <span className="relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200">
-                                      <input
-                                        type="checkbox"
-                                        checked={showOnlyFreeModels}
-                                        onChange={(e) => setShowOnlyFreeModels(e.target.checked)}
-                                        className="sr-only"
-                                      />
-                                      <span
-                                        className={cn(
-                                          "inline-block h-full w-full rounded-full transition-colors duration-200",
-                                          showOnlyFreeModels ? "bg-accent" : "bg-fg/10",
-                                        )}
-                                      />
-                                      <span
-                                        className={cn(
-                                          "absolute h-3.5 w-3.5 transform rounded-full bg-fg transition-transform duration-200",
-                                          showOnlyFreeModels ? "translate-x-4.5" : "translate-x-1",
-                                        )}
-                                      />
-                                    </span>
-                                  </label>
+                                    <Switch
+                                      checked={showOnlyFreeModels}
+                                      onChange={setShowOnlyFreeModels}
+                                    />
+                                  </span>
                                 ) : null
                               }
-                            >
-                              <div className="sticky top-0 z-10 bg-[#0f1014] px-4 pb-2">
-                                <div className="relative">
-                                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg/40" />
-                                  <input
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
-                                    placeholder="Search models..."
-                                    className="w-full rounded-xl border border-fg/10 bg-fg/5 py-2.5 pl-9 pr-4 text-[13px] text-fg placeholder-fg/40 focus:border-fg/20 focus:outline-none"
-                                    autoFocus
-                                  />
-                                </div>
-                              </div>
-                              <MenuSection>
-                                {filteredModels.length > 0 ? (
-                                  filteredModels.map((m) => {
-                                    const isSelected = m.id === editorModel.name;
-                                    return (
-                                      <MenuButton
-                                        key={m.id}
-                                        icon={getProviderIcon(editorModel.providerId)}
-                                        title={m.displayName || m.id}
-                                        description={m.description || m.id}
-                                        color="from-accent to-accent/80"
-                                        rightElement={
-                                          isSelected ? (
-                                            <Check className="h-4 w-4 text-accent" />
-                                          ) : undefined
-                                        }
-                                        onClick={() => handleSelectModel(m.id, m.displayName)}
-                                      />
-                                    );
-                                  })
-                                ) : (
-                                  <div className="py-10 text-center text-[13px] text-fg/40">
-                                    <p>
-                                      {t("common.buttons.search")}: "{searchQuery}"
-                                    </p>
-                                    {didYouMeanSuggestions.length > 0 && (
-                                      <div className="mt-4">
-                                        <p className="mb-2 text-[13px] text-fg/50">Did you mean:</p>
-                                        <div className="flex flex-wrap justify-center gap-2">
-                                          {didYouMeanSuggestions.map((model) => (
-                                            <button
-                                              key={model.id}
-                                              type="button"
-                                              onClick={() => setSearchQuery(model.id)}
-                                              className="rounded-full border border-fg/15 bg-fg/5 px-3 py-1.5 text-[13px] text-fg/80 transition hover:border-fg/30 hover:bg-fg/10"
-                                            >
-                                              {model.displayName || model.id}
-                                            </button>
-                                          ))}
-                                        </div>
+                              renderModelIcon={() => getProviderIcon(editorModel.providerId)}
+                              renderModelTitle={(model: any) => model.displayName || model.id}
+                              renderModelDescription={(model: any) => model.description || model.id}
+                              renderEmptyState={() => (
+                                <div className="py-10 text-center text-[13px] text-fg/40">
+                                  <p>
+                                    {t("common.buttons.search")}: "{searchQuery}"
+                                  </p>
+                                  {didYouMeanSuggestions.length > 0 && (
+                                    <div className="mt-4">
+                                      <p className="mb-2 text-[13px] text-fg/50">Did you mean:</p>
+                                      <div className="flex flex-wrap justify-center gap-2">
+                                        {didYouMeanSuggestions.map((model) => (
+                                          <button
+                                            key={model.id}
+                                            type="button"
+                                            onClick={() => setSearchQuery(model.id)}
+                                            className="rounded-full border border-fg/15 bg-fg/5 px-3 py-1.5 text-[13px] text-fg/80 transition hover:border-fg/30 hover:bg-fg/10"
+                                          >
+                                            {model.displayName || model.id}
+                                          </button>
+                                        ))}
                                       </div>
-                                    )}
-                                  </div>
-                                )}
-                              </MenuSection>
-                            </BottomMenu>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                              onSelectModel={(modelId) => {
+                                const model = filteredModels.find((item) => item.id === modelId);
+                                handleSelectModel(modelId, model?.displayName);
+                              }}
+                            />
                           </>
                         ) : (
                           <>
@@ -1581,7 +2106,9 @@ export function EditModelPage() {
                       >
                         <div className="text-[13px] font-medium">Generation Parameters</div>
                         <div className="mt-1 text-[13px] text-fg/45">
-                          Temperature, sampling, penalties, and output limits.
+                          {isAutomatic1111Provider
+                            ? "Sampler, CFG, seed, negative prompt, denoise, and size defaults."
+                            : "Temperature, sampling, penalties, and output limits."}
                         </div>
                       </button>
 
@@ -1620,13 +2147,51 @@ export function EditModelPage() {
                           </div>
                         </button>
                       )}
+
+                      {showCachingSection && (
+                        <button
+                          type="button"
+                          onClick={() => setActiveAdvancedPanel("caching")}
+                          className={cn(
+                            "rounded-lg border px-4 py-3 text-left transition",
+                            activeAdvancedPanel === "caching"
+                              ? "border-fg/22 bg-fg/8 text-fg"
+                              : "border-fg/10 bg-transparent text-fg/65 hover:border-fg/18 hover:bg-fg/4 hover:text-fg/90",
+                          )}
+                        >
+                          <div className="text-[13px] font-medium">Prompt Caching</div>
+                          <div className="mt-1 text-[13px] text-fg/45">
+                            Context reuse and prefix caching behavior.
+                          </div>
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => setActiveAdvancedPanel("capabilities")}
+                        className={cn(
+                          "rounded-lg border px-4 py-3 text-left transition",
+                          activeAdvancedPanel === "capabilities"
+                            ? "border-fg/22 bg-fg/8 text-fg"
+                            : "border-fg/10 bg-transparent text-fg/65 hover:border-fg/18 hover:bg-fg/4 hover:text-fg/90",
+                        )}
+                      >
+                        <div className="text-[13px] font-medium">Capabilities</div>
+                        <div className="mt-1 text-[13px] text-fg/45">
+                          Input and output modalities this model supports.
+                        </div>
+                      </button>
                     </div>
                   ) : (
                     <>
                       <div style={{ order: 10 }}>
                         <CollapsedEditorSectionButton
                           title="Generation Parameters"
-                          description="Temperature, sampling, penalties, and output limits."
+                          description={
+                            isAutomatic1111Provider
+                              ? "Sampler, CFG, seed, negative prompt, denoise, and size defaults."
+                              : "Temperature, sampling, penalties, and output limits."
+                          }
                           summary={generationSummary}
                           isOpen={activeSimplePanel === "generation"}
                           onClick={() => toggleSimplePanel("generation")}
@@ -1695,289 +2260,520 @@ export function EditModelPage() {
                               </button>
                             </div>
 
-                            <div className="grid grid-cols-1 gap-x-6 gap-y-8 md:grid-cols-2 xl:grid-cols-3 xl:gap-x-8">
-                              {/* Temperature */}
-                              <div className="space-y-4">
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-2">
-                                    <div className="space-y-0.5">
-                                      <span className="block text-[13px] font-medium text-fg/70">
-                                        Temperature
-                                      </span>
-                                      <span className="block text-[13px] text-fg/40">
-                                        Higher = more creative
-                                      </span>
-                                    </div>
-                                    <button
-                                      type="button"
-                                      onClick={() => openDocs("models", "temperature")}
-                                      className="text-fg/30 hover:text-fg/60 transition"
-                                      aria-label="Help with temperature"
-                                    >
-                                      <HelpCircle size={12} />
-                                    </button>
-                                  </div>
-                                  <span className="rounded-lg bg-surface-el/30 px-2 py-1 font-mono text-[13px] text-accent">
-                                    {modelAdvancedDraft.temperature?.toFixed(2) ?? "0.70"}
-                                  </span>
+                            {isAutomatic1111Provider ? (
+                              <div className="space-y-5">
+                                <div className="rounded-xl border border-accent/20 bg-accent/8 px-4 py-3 text-[13px] leading-relaxed text-fg/72">
+                                  AUTOMATIC1111 uses Stable Diffusion controls here. These values
+                                  become the default sampler settings for avatars, scene images, and
+                                  other local diffusion requests.
                                 </div>
-                                <input
-                                  type="number"
-                                  inputMode="decimal"
-                                  min={ADVANCED_TEMPERATURE_RANGE.min}
-                                  max={ADVANCED_TEMPERATURE_RANGE.max}
-                                  step={0.01}
-                                  value={modelAdvancedDraft.temperature ?? ""}
-                                  onChange={(e) => {
-                                    const raw = e.target.value;
-                                    handleTemperatureChange(raw === "" ? null : Number(raw));
-                                  }}
-                                  placeholder="0.70"
-                                  className={numberInputClassName}
-                                />
-                                <div className="flex justify-between text-[13px] text-fg/30 px-0.5 mt-1">
-                                  <span>{ADVANCED_TEMPERATURE_RANGE.min}</span>
-                                  <span>{ADVANCED_TEMPERATURE_RANGE.max}</span>
-                                </div>
-                              </div>
 
-                              {/* Top P */}
-                              <div className="space-y-4">
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-2">
-                                    <div className="space-y-0.5">
-                                      <span className="block text-[13px] font-medium text-fg/70">
-                                        Top P
-                                      </span>
-                                      <span className="block text-[13px] text-fg/40">
-                                        Lower = more focused
+                                <div className="grid grid-cols-1 gap-x-6 gap-y-8 md:grid-cols-2 xl:grid-cols-3 xl:gap-x-8">
+                                  <div className="space-y-4">
+                                    <div className="flex items-center justify-between">
+                                      <div className="space-y-0.5">
+                                        <span className="block text-[13px] font-medium text-fg/70">
+                                          Steps
+                                        </span>
+                                        <span className="block text-[13px] text-fg/40">
+                                          Diffusion sampling steps
+                                        </span>
+                                      </div>
+                                      <span className="rounded-lg bg-surface-el/30 px-2 py-1 font-mono text-[13px] text-accent">
+                                        {modelAdvancedDraft.sdSteps ?? "28"}
                                       </span>
                                     </div>
-                                    <button
-                                      type="button"
-                                      onClick={() => openDocs("models", "top-p")}
-                                      className="text-fg/30 hover:text-fg/60 transition"
-                                      aria-label="Help with top p"
-                                    >
-                                      <HelpCircle size={12} />
-                                    </button>
+                                    <input
+                                      type="number"
+                                      inputMode="numeric"
+                                      min={ADVANCED_SD_STEPS_RANGE.min}
+                                      max={ADVANCED_SD_STEPS_RANGE.max}
+                                      step={1}
+                                      value={modelAdvancedDraft.sdSteps ?? ""}
+                                      onChange={(e) => {
+                                        const raw = e.target.value;
+                                        const next = raw === "" ? null : Number(raw);
+                                        updateSdSetting(
+                                          "sdSteps",
+                                          next === null || !Number.isFinite(next)
+                                            ? null
+                                            : Math.trunc(next),
+                                        );
+                                      }}
+                                      placeholder="28"
+                                      className={numberInputClassName}
+                                    />
+                                    <div className="flex justify-between text-[13px] text-fg/30 px-0.5 mt-1">
+                                      <span>{ADVANCED_SD_STEPS_RANGE.min}</span>
+                                      <span>{ADVANCED_SD_STEPS_RANGE.max}</span>
+                                    </div>
                                   </div>
-                                  <span className="rounded-lg bg-surface-el/30 px-2 py-1 font-mono text-[13px] text-accent">
-                                    {modelAdvancedDraft.topP?.toFixed(2) ?? "1.00"}
-                                  </span>
-                                </div>
-                                <input
-                                  type="number"
-                                  inputMode="decimal"
-                                  min={ADVANCED_TOP_P_RANGE.min}
-                                  max={ADVANCED_TOP_P_RANGE.max}
-                                  step={0.01}
-                                  value={modelAdvancedDraft.topP ?? ""}
-                                  onChange={(e) => {
-                                    const raw = e.target.value;
-                                    handleTopPChange(raw === "" ? null : Number(raw));
-                                  }}
-                                  placeholder="1.00"
-                                  className={numberInputClassName}
-                                />
-                                <div className="flex justify-between text-[13px] text-fg/30 px-0.5 mt-1">
-                                  <span>{ADVANCED_TOP_P_RANGE.min}</span>
-                                  <span>{ADVANCED_TOP_P_RANGE.max}</span>
-                                </div>
-                              </div>
 
-                              {/* Max Tokens */}
-                              <div className="space-y-4">
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-2">
-                                    <div className="space-y-0.5">
-                                      <span className="block text-[13px] font-medium text-fg/70">
-                                        Max Output Tokens
-                                      </span>
-                                      <span className="block text-[13px] text-fg/40">
-                                        Limit response length
+                                  <div className="space-y-4">
+                                    <div className="flex items-center justify-between">
+                                      <div className="space-y-0.5">
+                                        <span className="block text-[13px] font-medium text-fg/70">
+                                          CFG Scale
+                                        </span>
+                                        <span className="block text-[13px] text-fg/40">
+                                          Prompt guidance strength
+                                        </span>
+                                      </div>
+                                      <span className="rounded-lg bg-surface-el/30 px-2 py-1 font-mono text-[13px] text-accent">
+                                        {modelAdvancedDraft.sdCfgScale?.toFixed(1) ?? "6.5"}
                                       </span>
                                     </div>
-                                    <button
-                                      type="button"
-                                      onClick={() => openDocs("models", "max-output-tokens")}
-                                      className="text-fg/30 hover:text-fg/60 transition"
-                                      aria-label="Help with max output tokens"
-                                    >
-                                      <HelpCircle size={12} />
-                                    </button>
+                                    <input
+                                      type="number"
+                                      inputMode="decimal"
+                                      min={ADVANCED_SD_CFG_SCALE_RANGE.min}
+                                      max={ADVANCED_SD_CFG_SCALE_RANGE.max}
+                                      step={0.1}
+                                      value={modelAdvancedDraft.sdCfgScale ?? ""}
+                                      onChange={(e) => {
+                                        const raw = e.target.value;
+                                        updateSdSetting(
+                                          "sdCfgScale",
+                                          raw === "" ? null : Number(raw),
+                                        );
+                                      }}
+                                      placeholder="6.5"
+                                      className={numberInputClassName}
+                                    />
+                                    <div className="flex justify-between text-[13px] text-fg/30 px-0.5 mt-1">
+                                      <span>{ADVANCED_SD_CFG_SCALE_RANGE.min}</span>
+                                      <span>{ADVANCED_SD_CFG_SCALE_RANGE.max}</span>
+                                    </div>
                                   </div>
-                                  <span className="rounded-lg bg-surface-el/30 px-2 py-1 font-mono text-[13px] text-accent">
-                                    {modelAdvancedDraft.maxOutputTokens
-                                      ? modelAdvancedDraft.maxOutputTokens.toLocaleString()
-                                      : "Auto"}
-                                  </span>
-                                </div>
-                                <input
-                                  type="number"
-                                  inputMode="numeric"
-                                  min={ADVANCED_MAX_TOKENS_RANGE.min}
-                                  max={ADVANCED_MAX_TOKENS_RANGE.max}
-                                  step={1}
-                                  value={modelAdvancedDraft.maxOutputTokens || ""}
-                                  onChange={(e) => {
-                                    const raw = e.target.value;
-                                    const next = raw === "" ? null : Number(raw);
-                                    handleMaxTokensChange(
-                                      next === null || !Number.isFinite(next) || next === 0
-                                        ? null
-                                        : Math.trunc(next),
-                                    );
-                                  }}
-                                  placeholder="Auto"
-                                  className={numberInputClassName}
-                                />
-                                <div className="flex justify-between text-[13px] text-fg/30 px-0.5 mt-1">
-                                  <span>Auto</span>
-                                  <span>{ADVANCED_MAX_TOKENS_RANGE.max.toLocaleString()}</span>
-                                </div>
-                              </div>
 
-                              {/* Top K */}
-                              <div className="space-y-4">
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-2">
-                                    <div className="space-y-0.5">
-                                      <span className="block text-[13px] font-medium text-fg/70">
-                                        Top K
-                                      </span>
-                                      <span className="block text-[13px] text-fg/40">
-                                        Sample from top K tokens
+                                  <div className="space-y-4">
+                                    <div className="flex items-center justify-between">
+                                      <div className="space-y-0.5">
+                                        <span className="block text-[13px] font-medium text-fg/70">
+                                          Default Size
+                                        </span>
+                                        <span className="block text-[13px] text-fg/40">
+                                          Used when the request does not override size
+                                        </span>
+                                      </div>
+                                      <span className="rounded-lg bg-surface-el/30 px-2 py-1 font-mono text-[13px] text-accent">
+                                        {modelAdvancedDraft.sdSize ?? "1024x1024"}
                                       </span>
                                     </div>
-                                    <button
-                                      type="button"
-                                      onClick={() => openDocs("models", "top-k-if-supported")}
-                                      className="text-fg/30 hover:text-fg/60 transition"
-                                      aria-label="Help with top k"
-                                    >
-                                      <HelpCircle size={12} />
-                                    </button>
+                                    <input
+                                      type="text"
+                                      value={modelAdvancedDraft.sdSize ?? ""}
+                                      onChange={(e) => updateSdSetting("sdSize", e.target.value)}
+                                      placeholder="1024x1024"
+                                      className={numberInputClassName}
+                                    />
+                                    <div className="text-[13px] text-fg/30 px-0.5 mt-1">
+                                      Format: width x height
+                                    </div>
                                   </div>
-                                  <span className="rounded-lg bg-surface-el/30 px-2 py-1 font-mono text-[13px] text-accent">
-                                    {modelAdvancedDraft.topK ? modelAdvancedDraft.topK : "Auto"}
-                                  </span>
-                                </div>
-                                <input
-                                  type="number"
-                                  inputMode="numeric"
-                                  min={ADVANCED_TOP_K_RANGE.min}
-                                  max={ADVANCED_TOP_K_RANGE.max}
-                                  step={1}
-                                  value={modelAdvancedDraft.topK || ""}
-                                  onChange={(e) => {
-                                    const raw = e.target.value;
-                                    const next = raw === "" ? null : Number(raw);
-                                    handleTopKChange(
-                                      next === null || !Number.isFinite(next) || next === 0
-                                        ? null
-                                        : Math.trunc(next),
-                                    );
-                                  }}
-                                  placeholder="Auto"
-                                  className={numberInputClassName}
-                                />
-                                <div className="flex justify-between text-[13px] text-fg/30 px-0.5 mt-1">
-                                  <span>Auto</span>
-                                  <span>{ADVANCED_TOP_K_RANGE.max}</span>
-                                </div>
-                              </div>
 
-                              {/* Penalties - Frequency */}
-                              <div className="space-y-4">
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-2">
+                                  <div className="space-y-4">
                                     <div className="space-y-0.5">
                                       <span className="block text-[13px] font-medium text-fg/70">
-                                        Frequency Penalty
+                                        Sampler
                                       </span>
                                       <span className="block text-[13px] text-fg/40">
-                                        Reduce word repetition
+                                        Sampler name sent to A1111
                                       </span>
                                     </div>
-                                    <button
-                                      type="button"
-                                      onClick={() => openDocs("models", "frequency-penalty")}
-                                      className="text-fg/30 hover:text-fg/60 transition"
-                                      aria-label="Help with frequency penalty"
-                                    >
-                                      <HelpCircle size={12} />
-                                    </button>
+                                    <input
+                                      type="text"
+                                      value={modelAdvancedDraft.sdSampler ?? ""}
+                                      onChange={(e) => updateSdSetting("sdSampler", e.target.value)}
+                                      placeholder="DPM++ 2M Karras"
+                                      className={selectInputClassName}
+                                    />
                                   </div>
-                                  <span className="rounded-lg bg-surface-el/30 px-2 py-1 font-mono text-[13px] text-accent">
-                                    {modelAdvancedDraft.frequencyPenalty?.toFixed(2) ?? "0.00"}
-                                  </span>
-                                </div>
-                                <input
-                                  type="number"
-                                  inputMode="decimal"
-                                  min={ADVANCED_FREQUENCY_PENALTY_RANGE.min}
-                                  max={ADVANCED_FREQUENCY_PENALTY_RANGE.max}
-                                  step={0.01}
-                                  value={modelAdvancedDraft.frequencyPenalty ?? ""}
-                                  onChange={(e) => {
-                                    const raw = e.target.value;
-                                    handleFrequencyPenaltyChange(raw === "" ? null : Number(raw));
-                                  }}
-                                  placeholder="0.00"
-                                  className={numberInputClassName}
-                                />
-                                <div className="flex justify-between text-[13px] text-fg/30 px-0.5 mt-1">
-                                  <span>{ADVANCED_FREQUENCY_PENALTY_RANGE.min}</span>
-                                  <span>{ADVANCED_FREQUENCY_PENALTY_RANGE.max}</span>
-                                </div>
-                              </div>
 
-                              {/* Penalties - Presence */}
-                              <div className="space-y-4">
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-2">
-                                    <div className="space-y-0.5">
-                                      <span className="block text-[13px] font-medium text-fg/70">
-                                        Presence Penalty
-                                      </span>
-                                      <span className="block text-[13px] text-fg/40">
-                                        Encourage new topics
+                                  <div className="space-y-4">
+                                    <div className="flex items-center justify-between">
+                                      <div className="space-y-0.5">
+                                        <span className="block text-[13px] font-medium text-fg/70">
+                                          Seed
+                                        </span>
+                                        <span className="block text-[13px] text-fg/40">
+                                          Leave blank for random generations
+                                        </span>
+                                      </div>
+                                      <span className="rounded-lg bg-surface-el/30 px-2 py-1 font-mono text-[13px] text-accent">
+                                        {modelAdvancedDraft.sdSeed ?? "Random"}
                                       </span>
                                     </div>
-                                    <button
-                                      type="button"
-                                      onClick={() => openDocs("models", "presence-penalty")}
-                                      className="text-fg/30 hover:text-fg/60 transition"
-                                      aria-label="Help with presence penalty"
-                                    >
-                                      <HelpCircle size={12} />
-                                    </button>
+                                    <input
+                                      type="number"
+                                      inputMode="numeric"
+                                      min={ADVANCED_SD_SEED_RANGE.min}
+                                      max={ADVANCED_SD_SEED_RANGE.max}
+                                      step={1}
+                                      value={modelAdvancedDraft.sdSeed ?? ""}
+                                      onChange={(e) => {
+                                        const raw = e.target.value;
+                                        const next = raw === "" ? null : Number(raw);
+                                        updateSdSetting(
+                                          "sdSeed",
+                                          next === null || !Number.isFinite(next)
+                                            ? null
+                                            : Math.trunc(next),
+                                        );
+                                      }}
+                                      placeholder="Random"
+                                      className={numberInputClassName}
+                                    />
+                                    <div className="flex justify-between text-[13px] text-fg/30 px-0.5 mt-1">
+                                      <span>Random</span>
+                                      <span>{ADVANCED_SD_SEED_RANGE.max.toLocaleString()}</span>
+                                    </div>
                                   </div>
-                                  <span className="rounded-lg bg-surface-el/30 px-2 py-1 font-mono text-[13px] text-accent">
-                                    {modelAdvancedDraft.presencePenalty?.toFixed(2) ?? "0.00"}
-                                  </span>
+
+                                  <div className="space-y-4">
+                                    <div className="flex items-center justify-between">
+                                      <div className="space-y-0.5">
+                                        <span className="block text-[13px] font-medium text-fg/70">
+                                          Img2img Denoise
+                                        </span>
+                                        <span className="block text-[13px] text-fg/40">
+                                          Edit strength for reference-based generations
+                                        </span>
+                                      </div>
+                                      <span className="rounded-lg bg-surface-el/30 px-2 py-1 font-mono text-[13px] text-accent">
+                                        {modelAdvancedDraft.sdDenoisingStrength?.toFixed(2) ??
+                                          "0.75"}
+                                      </span>
+                                    </div>
+                                    <input
+                                      type="number"
+                                      inputMode="decimal"
+                                      min={ADVANCED_SD_DENOISING_STRENGTH_RANGE.min}
+                                      max={ADVANCED_SD_DENOISING_STRENGTH_RANGE.max}
+                                      step={0.01}
+                                      value={modelAdvancedDraft.sdDenoisingStrength ?? ""}
+                                      onChange={(e) => {
+                                        const raw = e.target.value;
+                                        updateSdSetting(
+                                          "sdDenoisingStrength",
+                                          raw === "" ? null : Number(raw),
+                                        );
+                                      }}
+                                      placeholder="0.75"
+                                      className={numberInputClassName}
+                                    />
+                                    <div className="flex justify-between text-[13px] text-fg/30 px-0.5 mt-1">
+                                      <span>{ADVANCED_SD_DENOISING_STRENGTH_RANGE.min}</span>
+                                      <span>{ADVANCED_SD_DENOISING_STRENGTH_RANGE.max}</span>
+                                    </div>
+                                  </div>
                                 </div>
-                                <input
-                                  type="number"
-                                  inputMode="decimal"
-                                  min={ADVANCED_PRESENCE_PENALTY_RANGE.min}
-                                  max={ADVANCED_PRESENCE_PENALTY_RANGE.max}
-                                  step={0.01}
-                                  value={modelAdvancedDraft.presencePenalty ?? ""}
-                                  onChange={(e) => {
-                                    const raw = e.target.value;
-                                    handlePresencePenaltyChange(raw === "" ? null : Number(raw));
-                                  }}
-                                  placeholder="0.00"
-                                  className={numberInputClassName}
-                                />
-                                <div className="flex justify-between text-[13px] text-fg/30 px-0.5 mt-1">
-                                  <span>{ADVANCED_PRESENCE_PENALTY_RANGE.min}</span>
-                                  <span>{ADVANCED_PRESENCE_PENALTY_RANGE.max}</span>
+
+                                <div className="space-y-4">
+                                  <div className="space-y-0.5">
+                                    <span className="block text-[13px] font-medium text-fg/70">
+                                      Negative Prompt
+                                    </span>
+                                    <span className="block text-[13px] text-fg/40">
+                                      Applied to every AUTOMATIC1111 request for this model
+                                    </span>
+                                  </div>
+                                  <textarea
+                                    value={modelAdvancedDraft.sdNegativePrompt ?? ""}
+                                    onChange={(e) =>
+                                      updateSdSetting("sdNegativePrompt", e.target.value)
+                                    }
+                                    placeholder="blurry, low quality, bad anatomy, extra fingers"
+                                    rows={4}
+                                    className={textAreaInputClassName}
+                                  />
                                 </div>
                               </div>
-                            </div>
+                            ) : (
+                              <div className="grid grid-cols-1 gap-x-6 gap-y-8 md:grid-cols-2 xl:grid-cols-3 xl:gap-x-8">
+                                {/* Temperature */}
+                                <div className="space-y-4">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                      <div className="space-y-0.5">
+                                        <span className="block text-[13px] font-medium text-fg/70">
+                                          Temperature
+                                        </span>
+                                        <span className="block text-[13px] text-fg/40">
+                                          Higher = more creative
+                                        </span>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => openDocs("models", "temperature")}
+                                        className="text-fg/30 hover:text-fg/60 transition"
+                                        aria-label="Help with temperature"
+                                      >
+                                        <HelpCircle size={12} />
+                                      </button>
+                                    </div>
+                                    <span className="rounded-lg bg-surface-el/30 px-2 py-1 font-mono text-[13px] text-accent">
+                                      {modelAdvancedDraft.temperature?.toFixed(2) ?? "0.70"}
+                                    </span>
+                                  </div>
+                                  <input
+                                    type="number"
+                                    inputMode="decimal"
+                                    min={ADVANCED_TEMPERATURE_RANGE.min}
+                                    max={ADVANCED_TEMPERATURE_RANGE.max}
+                                    step={0.01}
+                                    value={modelAdvancedDraft.temperature ?? ""}
+                                    onChange={(e) => {
+                                      const raw = e.target.value;
+                                      handleTemperatureChange(raw === "" ? null : Number(raw));
+                                    }}
+                                    placeholder="0.70"
+                                    className={numberInputClassName}
+                                  />
+                                  <div className="flex justify-between text-[13px] text-fg/30 px-0.5 mt-1">
+                                    <span>{ADVANCED_TEMPERATURE_RANGE.min}</span>
+                                    <span>{ADVANCED_TEMPERATURE_RANGE.max}</span>
+                                  </div>
+                                </div>
+
+                                {/* Top P */}
+                                <div className="space-y-4">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                      <div className="space-y-0.5">
+                                        <span className="block text-[13px] font-medium text-fg/70">
+                                          Top P
+                                        </span>
+                                        <span className="block text-[13px] text-fg/40">
+                                          Lower = more focused
+                                        </span>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => openDocs("models", "top-p")}
+                                        className="text-fg/30 hover:text-fg/60 transition"
+                                        aria-label="Help with top p"
+                                      >
+                                        <HelpCircle size={12} />
+                                      </button>
+                                    </div>
+                                    <span className="rounded-lg bg-surface-el/30 px-2 py-1 font-mono text-[13px] text-accent">
+                                      {modelAdvancedDraft.topP?.toFixed(2) ?? "1.00"}
+                                    </span>
+                                  </div>
+                                  <input
+                                    type="number"
+                                    inputMode="decimal"
+                                    min={ADVANCED_TOP_P_RANGE.min}
+                                    max={ADVANCED_TOP_P_RANGE.max}
+                                    step={0.01}
+                                    value={modelAdvancedDraft.topP ?? ""}
+                                    onChange={(e) => {
+                                      const raw = e.target.value;
+                                      handleTopPChange(raw === "" ? null : Number(raw));
+                                    }}
+                                    placeholder="1.00"
+                                    className={numberInputClassName}
+                                  />
+                                  <div className="flex justify-between text-[13px] text-fg/30 px-0.5 mt-1">
+                                    <span>{ADVANCED_TOP_P_RANGE.min}</span>
+                                    <span>{ADVANCED_TOP_P_RANGE.max}</span>
+                                  </div>
+                                </div>
+
+                                {/* Max Tokens */}
+                                <div className="space-y-4">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                      <div className="space-y-0.5">
+                                        <span className="block text-[13px] font-medium text-fg/70">
+                                          Max Output Tokens
+                                        </span>
+                                        <span className="block text-[13px] text-fg/40">
+                                          Limit response length
+                                        </span>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => openDocs("models", "max-output-tokens")}
+                                        className="text-fg/30 hover:text-fg/60 transition"
+                                        aria-label="Help with max output tokens"
+                                      >
+                                        <HelpCircle size={12} />
+                                      </button>
+                                    </div>
+                                    <span className="rounded-lg bg-surface-el/30 px-2 py-1 font-mono text-[13px] text-accent">
+                                      {modelAdvancedDraft.maxOutputTokens
+                                        ? modelAdvancedDraft.maxOutputTokens.toLocaleString()
+                                        : "Auto"}
+                                    </span>
+                                  </div>
+                                  <input
+                                    type="number"
+                                    inputMode="numeric"
+                                    min={ADVANCED_MAX_TOKENS_RANGE.min}
+                                    max={ADVANCED_MAX_TOKENS_RANGE.max}
+                                    step={1}
+                                    value={modelAdvancedDraft.maxOutputTokens || ""}
+                                    onChange={(e) => {
+                                      const raw = e.target.value;
+                                      const next = raw === "" ? null : Number(raw);
+                                      handleMaxTokensChange(
+                                        next === null || !Number.isFinite(next) || next === 0
+                                          ? null
+                                          : Math.trunc(next),
+                                      );
+                                    }}
+                                    placeholder="Auto"
+                                    className={numberInputClassName}
+                                  />
+                                  <div className="flex justify-between text-[13px] text-fg/30 px-0.5 mt-1">
+                                    <span>Auto</span>
+                                    <span>{ADVANCED_MAX_TOKENS_RANGE.max.toLocaleString()}</span>
+                                  </div>
+                                </div>
+
+                                {/* Top K */}
+                                <div className="space-y-4">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                      <div className="space-y-0.5">
+                                        <span className="block text-[13px] font-medium text-fg/70">
+                                          Top K
+                                        </span>
+                                        <span className="block text-[13px] text-fg/40">
+                                          Sample from top K tokens
+                                        </span>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => openDocs("models", "top-k-if-supported")}
+                                        className="text-fg/30 hover:text-fg/60 transition"
+                                        aria-label="Help with top k"
+                                      >
+                                        <HelpCircle size={12} />
+                                      </button>
+                                    </div>
+                                    <span className="rounded-lg bg-surface-el/30 px-2 py-1 font-mono text-[13px] text-accent">
+                                      {modelAdvancedDraft.topK ? modelAdvancedDraft.topK : "Auto"}
+                                    </span>
+                                  </div>
+                                  <input
+                                    type="number"
+                                    inputMode="numeric"
+                                    min={ADVANCED_TOP_K_RANGE.min}
+                                    max={ADVANCED_TOP_K_RANGE.max}
+                                    step={1}
+                                    value={modelAdvancedDraft.topK || ""}
+                                    onChange={(e) => {
+                                      const raw = e.target.value;
+                                      const next = raw === "" ? null : Number(raw);
+                                      handleTopKChange(
+                                        next === null || !Number.isFinite(next) || next === 0
+                                          ? null
+                                          : Math.trunc(next),
+                                      );
+                                    }}
+                                    placeholder="Auto"
+                                    className={numberInputClassName}
+                                  />
+                                  <div className="flex justify-between text-[13px] text-fg/30 px-0.5 mt-1">
+                                    <span>Auto</span>
+                                    <span>{ADVANCED_TOP_K_RANGE.max}</span>
+                                  </div>
+                                </div>
+
+                                {/* Penalties - Frequency */}
+                                <div className="space-y-4">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                      <div className="space-y-0.5">
+                                        <span className="block text-[13px] font-medium text-fg/70">
+                                          Frequency Penalty
+                                        </span>
+                                        <span className="block text-[13px] text-fg/40">
+                                          Reduce word repetition
+                                        </span>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => openDocs("models", "frequency-penalty")}
+                                        className="text-fg/30 hover:text-fg/60 transition"
+                                        aria-label="Help with frequency penalty"
+                                      >
+                                        <HelpCircle size={12} />
+                                      </button>
+                                    </div>
+                                    <span className="rounded-lg bg-surface-el/30 px-2 py-1 font-mono text-[13px] text-accent">
+                                      {modelAdvancedDraft.frequencyPenalty?.toFixed(2) ?? "0.00"}
+                                    </span>
+                                  </div>
+                                  <input
+                                    type="number"
+                                    inputMode="decimal"
+                                    min={ADVANCED_FREQUENCY_PENALTY_RANGE.min}
+                                    max={ADVANCED_FREQUENCY_PENALTY_RANGE.max}
+                                    step={0.01}
+                                    value={modelAdvancedDraft.frequencyPenalty ?? ""}
+                                    onChange={(e) => {
+                                      const raw = e.target.value;
+                                      handleFrequencyPenaltyChange(raw === "" ? null : Number(raw));
+                                    }}
+                                    placeholder="0.00"
+                                    className={numberInputClassName}
+                                  />
+                                  <div className="flex justify-between text-[13px] text-fg/30 px-0.5 mt-1">
+                                    <span>{ADVANCED_FREQUENCY_PENALTY_RANGE.min}</span>
+                                    <span>{ADVANCED_FREQUENCY_PENALTY_RANGE.max}</span>
+                                  </div>
+                                </div>
+
+                                {/* Penalties - Presence */}
+                                <div className="space-y-4">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                      <div className="space-y-0.5">
+                                        <span className="block text-[13px] font-medium text-fg/70">
+                                          Presence Penalty
+                                        </span>
+                                        <span className="block text-[13px] text-fg/40">
+                                          Encourage new topics
+                                        </span>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => openDocs("models", "presence-penalty")}
+                                        className="text-fg/30 hover:text-fg/60 transition"
+                                        aria-label="Help with presence penalty"
+                                      >
+                                        <HelpCircle size={12} />
+                                      </button>
+                                    </div>
+                                    <span className="rounded-lg bg-surface-el/30 px-2 py-1 font-mono text-[13px] text-accent">
+                                      {modelAdvancedDraft.presencePenalty?.toFixed(2) ?? "0.00"}
+                                    </span>
+                                  </div>
+                                  <input
+                                    type="number"
+                                    inputMode="decimal"
+                                    min={ADVANCED_PRESENCE_PENALTY_RANGE.min}
+                                    max={ADVANCED_PRESENCE_PENALTY_RANGE.max}
+                                    step={0.01}
+                                    value={modelAdvancedDraft.presencePenalty ?? ""}
+                                    onChange={(e) => {
+                                      const raw = e.target.value;
+                                      handlePresencePenaltyChange(raw === "" ? null : Number(raw));
+                                    }}
+                                    placeholder="0.00"
+                                    className={numberInputClassName}
+                                  />
+                                  <div className="flex justify-between text-[13px] text-fg/30 px-0.5 mt-1">
+                                    <span>{ADVANCED_PRESENCE_PENALTY_RANGE.min}</span>
+                                    <span>{ADVANCED_PRESENCE_PENALTY_RANGE.max}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         )}
 
@@ -1988,7 +2784,7 @@ export function EditModelPage() {
                               Local Inference (llama.cpp)
                             </label>
 
-                            <div className="space-y-6">
+                            <div className="grid grid-cols-1 gap-6 xl:grid-cols-2 xl:items-start">
                               {/* 1. Memory & Context */}
                               <div className="space-y-6 rounded-xl border border-fg/8 bg-surface-el/10 p-4">
                                 <div className="flex items-center gap-2 border-l-2 border-accent/30 pl-3">
@@ -2029,126 +2825,289 @@ export function EditModelPage() {
                                         : "Auto"}
                                     </span>
                                   </div>
-                                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,420px)_minmax(260px,1fr)] xl:items-start">
-                                    <div className="space-y-3">
-                                      <input
-                                        type="number"
-                                        inputMode="numeric"
-                                        min={ADVANCED_CONTEXT_LENGTH_RANGE.min}
-                                        max={contextLimit}
-                                        step={1}
-                                        value={modelAdvancedDraft.contextLength || ""}
-                                        onChange={(e) => {
-                                          const raw = e.target.value;
-                                          const next = raw === "" ? null : Number(raw);
-                                          handleContextLengthChange(
-                                            next === null || !Number.isFinite(next) || next === 0
-                                              ? null
-                                              : Math.trunc(next),
-                                          );
-                                        }}
-                                        placeholder="Auto"
-                                        className={numberInputClassName}
-                                      />
-                                      <div className="mt-1 flex justify-between px-0.5 text-[13px] text-fg/30">
-                                        <span>Auto</span>
-                                        <span>{contextLimit.toLocaleString()}</span>
-                                      </div>
-                                      {llamaContextLoading && (
-                                        <p className="text-[13px] text-fg/40">
-                                          Calculating memory limits for this model...
-                                        </p>
-                                      )}
-                                      {llamaContextError && (
-                                        <p className="text-[13px] text-warning/80">
-                                          {llamaContextError}
-                                        </p>
-                                      )}
-                                      {showContextWarning && (
-                                        <div className="flex items-start gap-2 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2 text-[13px] text-warning/80">
-                                          <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-                                          <span>
-                                            Are you sure? This may not run on your device. We
-                                            recommend {recommendedContextLength?.toLocaleString()}{" "}
-                                            tokens.
-                                          </span>
-                                        </div>
-                                      )}
-                                      {showContextCritical && (
-                                        <div className="flex items-start gap-2 rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-[13px] text-danger/80">
-                                          <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-                                          <span>
-                                            This model likely won&apos;t fit in memory on your
-                                            device. Try a smaller model or a much shorter context.
-                                          </span>
-                                        </div>
-                                      )}
+                                  <div className="space-y-3">
+                                    <input
+                                      type="number"
+                                      inputMode="numeric"
+                                      min={ADVANCED_CONTEXT_LENGTH_RANGE.min}
+                                      max={contextLimit}
+                                      step={1}
+                                      value={modelAdvancedDraft.contextLength || ""}
+                                      onChange={(e) => {
+                                        const raw = e.target.value;
+                                        const next = raw === "" ? null : Number(raw);
+                                        handleContextLengthChange(
+                                          next === null || !Number.isFinite(next) || next === 0
+                                            ? null
+                                            : Math.trunc(next),
+                                        );
+                                      }}
+                                      placeholder="Auto"
+                                      className={numberInputClassName}
+                                    />
+                                    <div className="mt-1 flex justify-between px-0.5 text-[13px] text-fg/30">
+                                      <span>Auto</span>
+                                      <span>{contextLimit.toLocaleString()}</span>
                                     </div>
-
-                                    {(llamaContextInfo ||
-                                      availableRamGiB ||
-                                      availableVramGiB ||
-                                      modelSizeGiB) && (
-                                      <div className="rounded-lg border border-fg/8 bg-fg/4 px-4 py-3 text-[13px] leading-5 text-fg/52">
-                                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                                          <div>
-                                            <div className="text-fg/38">Max supported</div>
-                                            <div className="font-mono text-fg/78">
-                                              {llamaContextInfo
-                                                ? llamaContextInfo.maxContextLength.toLocaleString()
-                                                : contextLimit.toLocaleString()}
-                                            </div>
-                                          </div>
-                                          {recommendedContextLength !== null && (
-                                            <div>
-                                              <div className="text-fg/38">Recommended</div>
-                                              <div className="font-mono text-fg/78">
-                                                {recommendedContextLength.toLocaleString()}
-                                              </div>
-                                            </div>
-                                          )}
-                                          {availableRamGiB && (
-                                            <div>
-                                              <div className="text-fg/38">Available RAM</div>
-                                              <div className="font-mono text-fg/78">
-                                                {availableRamGiB} GB
-                                              </div>
-                                            </div>
-                                          )}
-                                          {availableVramGiB && (
-                                            <div>
-                                              <div className="text-fg/38">Available VRAM</div>
-                                              <div className="font-mono text-fg/78">
-                                                {availableVramGiB} GB
-                                              </div>
-                                            </div>
-                                          )}
-                                          {modelSizeGiB && (
-                                            <div>
-                                              <div className="text-fg/38">Model size</div>
-                                              <div className="font-mono text-fg/78">
-                                                {modelSizeGiB} GB
-                                              </div>
-                                            </div>
-                                          )}
-                                          <div>
-                                            <div className="text-fg/38">Context cache</div>
-                                            <div className="font-mono text-fg/78">
-                                              {contextCacheLocationLabel}
-                                            </div>
-                                          </div>
-                                        </div>
-                                        {!selectedContextLength &&
-                                          recommendedContextLength &&
-                                          recommendedContextLength > 0 && (
-                                            <p className="mt-3 border-t border-fg/8 pt-3">
-                                              Auto will use the recommended context length.
-                                            </p>
-                                          )}
+                                    {llamaContextLoading && (
+                                      <p className="text-[13px] text-fg/40">
+                                        Calculating memory limits for this model...
+                                      </p>
+                                    )}
+                                    {llamaContextError && (
+                                      <p className="text-[13px] text-warning/80">
+                                        {llamaContextError}
+                                      </p>
+                                    )}
+                                    {showContextWarning && (
+                                      <div className="flex items-start gap-2 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2 text-[13px] text-warning/80">
+                                        <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+                                        <span>
+                                          Are you sure? This may not run on your device. We
+                                          recommend {recommendedContextLength?.toLocaleString()}{" "}
+                                          tokens.
+                                        </span>
+                                      </div>
+                                    )}
+                                    {showContextCritical && (
+                                      <div className="flex items-start gap-2 rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-[13px] text-danger/80">
+                                        <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+                                        <span>
+                                          This model likely won&apos;t fit in memory on your device.
+                                          Try a smaller model or a much shorter context.
+                                        </span>
                                       </div>
                                     )}
                                   </div>
                                 </div>
+
+                                {/* Runability & System Info */}
+                                {editorModel?.name?.trim() && (
+                                  <div className="rounded-lg border border-fg/8 bg-fg/4 px-4 py-3 text-[13px]">
+                                    {runabilityLoading ? (
+                                      /* Skeleton */
+                                      <div className="space-y-3 animate-pulse">
+                                        <div className="flex items-center justify-between">
+                                          <div className="flex items-center gap-3">
+                                            <div className="h-4 w-20 rounded bg-fg/8" />
+                                            <div className="h-5 w-14 rounded-md bg-fg/8" />
+                                          </div>
+                                          <div className="flex gap-2">
+                                            <div className="h-5 w-18 rounded-md bg-fg/8" />
+                                            <div className="h-5 w-20 rounded-md bg-fg/8" />
+                                          </div>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-3 lg:grid-cols-6">
+                                          {Array.from({ length: 6 }).map((_, i) => (
+                                            <div key={i} className="space-y-1">
+                                              <div className="h-3 w-16 rounded bg-fg/6" />
+                                              <div className="h-4 w-12 rounded bg-fg/8" />
+                                            </div>
+                                          ))}
+                                        </div>
+                                        <div className="space-y-2">
+                                          {Array.from({ length: 4 }).map((_, i) => (
+                                            <div key={i} className="space-y-1">
+                                              <div className="flex justify-between">
+                                                <div className="h-3 w-28 rounded bg-fg/6" />
+                                                <div className="h-3 w-8 rounded bg-fg/8" />
+                                              </div>
+                                              <div className="h-1.5 w-full rounded-full bg-fg/8" />
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="space-y-3">
+                                        {/* Header row */}
+                                        {runabilityScore && (
+                                          <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-3">
+                                              <span className="font-medium text-fg/70">
+                                                Runability
+                                              </span>
+                                              <span
+                                                className={cn(
+                                                  "rounded-md border px-2 py-0.5 text-[12px] font-semibold",
+                                                  runabilityScore.label === "excellent"
+                                                    ? "border-emerald-400/30 bg-emerald-400/15 text-emerald-400"
+                                                    : runabilityScore.label === "good"
+                                                      ? "border-blue-400/30 bg-blue-400/15 text-blue-400"
+                                                      : runabilityScore.label === "marginal"
+                                                        ? "border-amber-400/30 bg-amber-400/15 text-amber-400"
+                                                        : runabilityScore.label === "poor"
+                                                          ? "border-orange-400/30 bg-orange-400/15 text-orange-400"
+                                                          : "border-red-400/30 bg-red-400/15 text-red-400",
+                                                )}
+                                              >
+                                                {runabilityScore.score}/100
+                                              </span>
+                                            </div>
+                                            <div className="flex items-center gap-2 text-[11px]">
+                                              {runabilityScore.fitsInRam && (
+                                                <span className="rounded-md bg-emerald-400/10 px-1.5 py-0.5 text-emerald-400/80">
+                                                  Fits in RAM
+                                                </span>
+                                              )}
+                                              {runabilityScore.fitsInVram && (
+                                                <span className="rounded-md bg-emerald-400/10 px-1.5 py-0.5 text-emerald-400/80">
+                                                  Fits in VRAM
+                                                </span>
+                                              )}
+                                            </div>
+                                          </div>
+                                        )}
+
+                                        {/* System info stats row */}
+                                        {(llamaContextInfo ||
+                                          availableRamGiB ||
+                                          availableVramGiB ||
+                                          modelSizeGiB) && (
+                                          <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-[13px] leading-5 text-fg/52 sm:grid-cols-3 lg:grid-cols-6">
+                                            <div>
+                                              <div className="text-fg/38">Max supported</div>
+                                              <div className="font-mono text-fg/78">
+                                                {llamaContextInfo
+                                                  ? llamaContextInfo.maxContextLength.toLocaleString()
+                                                  : contextLimit.toLocaleString()}
+                                              </div>
+                                            </div>
+                                            {recommendedContextLength !== null && (
+                                              <div>
+                                                <div className="text-fg/38">Recommended</div>
+                                                <div className="font-mono text-fg/78">
+                                                  {recommendedContextLength.toLocaleString()}
+                                                </div>
+                                              </div>
+                                            )}
+                                            {availableRamGiB && (
+                                              <div>
+                                                <div className="text-fg/38">Available RAM</div>
+                                                <div className="font-mono text-fg/78">
+                                                  {availableRamGiB} GB
+                                                </div>
+                                              </div>
+                                            )}
+                                            {availableVramGiB && (
+                                              <div>
+                                                <div className="text-fg/38">Available VRAM</div>
+                                                <div className="font-mono text-fg/78">
+                                                  {availableVramGiB} GB
+                                                </div>
+                                              </div>
+                                            )}
+                                            {modelSizeGiB && (
+                                              <div>
+                                                <div className="text-fg/38">Model size</div>
+                                                <div className="font-mono text-fg/78">
+                                                  {modelSizeGiB} GB
+                                                </div>
+                                              </div>
+                                            )}
+                                            <div>
+                                              <div className="text-fg/38">Context cache</div>
+                                              <div className="font-mono text-fg/78">
+                                                {contextCacheLocationLabel}
+                                              </div>
+                                            </div>
+                                          </div>
+                                        )}
+                                        {!selectedContextLength &&
+                                          recommendedContextLength &&
+                                          recommendedContextLength > 0 &&
+                                          !runabilityScore && (
+                                            <p className="text-fg/52">
+                                              Auto will use the recommended context length.
+                                            </p>
+                                          )}
+
+                                        {/* Score breakdown bars */}
+                                        {runabilityScore && (
+                                          <>
+                                            <div className="space-y-2">
+                                              {(
+                                                [
+                                                  {
+                                                    label: "Memory Fitness",
+                                                    value: runabilityScore.memoryScore,
+                                                    weight: 0.25,
+                                                  },
+                                                  {
+                                                    label: "GPU Acceleration",
+                                                    value: runabilityScore.gpuScore,
+                                                    weight: 0.35,
+                                                  },
+                                                  {
+                                                    label: "KV Headroom",
+                                                    value: runabilityScore.kvScore,
+                                                    weight: 0.15,
+                                                  },
+                                                  {
+                                                    label: "Quant Quality",
+                                                    value: runabilityScore.quantScore,
+                                                    weight: 0.25,
+                                                  },
+                                                ] as const
+                                              ).map((item) => (
+                                                <div key={item.label} className="space-y-1">
+                                                  <div className="flex items-center justify-between">
+                                                    <span className="text-[12px] text-fg/50">
+                                                      {item.label}{" "}
+                                                      <span className="text-fg/30">
+                                                        ({Math.round(item.weight * 100)}%)
+                                                      </span>
+                                                    </span>
+                                                    <span
+                                                      className={cn(
+                                                        "text-[12px] font-mono font-medium",
+                                                        item.value >= 70
+                                                          ? "text-emerald-400"
+                                                          : item.value >= 40
+                                                            ? "text-amber-400"
+                                                            : "text-red-400",
+                                                      )}
+                                                    >
+                                                      {item.value}
+                                                    </span>
+                                                  </div>
+                                                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-fg/8">
+                                                    <div
+                                                      className={cn(
+                                                        "h-full rounded-full transition-all duration-300",
+                                                        item.value >= 70
+                                                          ? "bg-emerald-400/60"
+                                                          : item.value >= 40
+                                                            ? "bg-amber-400/60"
+                                                            : "bg-red-400/60",
+                                                      )}
+                                                      style={{ width: `${item.value}%` }}
+                                                    />
+                                                  </div>
+                                                </div>
+                                              ))}
+                                            </div>
+                                            {runabilityScore.quantization && (
+                                              <div className="flex items-center gap-3 border-t border-fg/8 pt-2 text-[12px] text-fg/45">
+                                                <span>
+                                                  Quantization:{" "}
+                                                  <span className="font-mono text-fg/65">
+                                                    {runabilityScore.quantization}
+                                                  </span>
+                                                </span>
+                                                <span>
+                                                  Size:{" "}
+                                                  <span className="font-mono text-fg/65">
+                                                    {formatBytes(runabilityScore.modelSize)}
+                                                  </span>
+                                                </span>
+                                              </div>
+                                            )}
+                                          </>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
 
                                 <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                                   <div className="space-y-4">
@@ -2279,131 +3238,104 @@ export function EditModelPage() {
                                     />
                                   </div>
                                 </div>
-                              </div>
 
-                              {/* 2. Performance */}
-                              <div className="space-y-6 rounded-xl border border-fg/8 bg-surface-el/10 p-4">
-                                <div className="flex items-center gap-2 border-l-2 border-accent/30 pl-3">
-                                  <div className="space-y-0.5">
-                                    <span className="block text-[13px] font-bold text-fg/80 uppercase tracking-tight">
-                                      Performance
-                                    </span>
-                                    <span className="block text-[13px] text-fg/40">
-                                      Hardware acceleration and threading
-                                    </span>
+                                {/* Performance */}
+                                <div className="space-y-6 border-t border-fg/8 pt-6">
+                                  <div className="flex items-center gap-2 border-l-2 border-accent/30 pl-3">
+                                    <div className="space-y-0.5">
+                                      <span className="block text-[13px] font-bold text-fg/80 uppercase tracking-tight">
+                                        Performance
+                                      </span>
+                                      <span className="block text-[13px] text-fg/40">
+                                        Hardware acceleration and threading
+                                      </span>
+                                    </div>
                                   </div>
-                                </div>
 
-                                <div className="space-y-3 rounded-xl border border-fg/10 bg-surface-el/10 p-3">
-                                  <span className="block text-[13px] font-medium text-fg/70">
-                                    Quick Presets
-                                  </span>
-                                  <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-                                    <button
-                                      type="button"
-                                      onClick={() => applyLlamaPreset("balanced")}
-                                      className="rounded-lg border border-fg/10 bg-surface-el/20 px-2.5 py-2 text-[13px] text-fg/80 transition hover:border-fg/20 hover:bg-surface-el/30"
-                                    >
-                                      Balanced
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => applyLlamaPreset("throughput")}
-                                      className="rounded-lg border border-fg/10 bg-surface-el/20 px-2.5 py-2 text-[13px] text-fg/80 transition hover:border-fg/20 hover:bg-surface-el/30"
-                                    >
-                                      Throughput
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => applyLlamaPreset("vram")}
-                                      className="rounded-lg border border-fg/10 bg-surface-el/20 px-2.5 py-2 text-[13px] text-fg/80 transition hover:border-fg/20 hover:bg-surface-el/30"
-                                    >
-                                      VRAM Saver
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => applyLlamaPreset("cpu_ram")}
-                                      className="rounded-lg border border-fg/10 bg-surface-el/20 px-2.5 py-2 text-[13px] text-fg/80 transition hover:border-fg/20 hover:bg-surface-el/30"
-                                    >
-                                      CPU + RAM
-                                    </button>
+                                  <div className="space-y-3 rounded-xl border border-fg/10 bg-surface-el/10 p-3">
+                                    <span className="block text-[13px] font-medium text-fg/70">
+                                      Quick Presets
+                                    </span>
+                                    <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+                                      <button
+                                        type="button"
+                                        onClick={() => applyLlamaPreset("balanced")}
+                                        className="rounded-lg border border-fg/10 bg-surface-el/20 px-2.5 py-2 text-[13px] text-fg/80 transition hover:border-fg/20 hover:bg-surface-el/30"
+                                      >
+                                        Balanced
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => applyLlamaPreset("throughput")}
+                                        className="rounded-lg border border-fg/10 bg-surface-el/20 px-2.5 py-2 text-[13px] text-fg/80 transition hover:border-fg/20 hover:bg-surface-el/30"
+                                      >
+                                        Throughput
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => applyLlamaPreset("vram")}
+                                        className="rounded-lg border border-fg/10 bg-surface-el/20 px-2.5 py-2 text-[13px] text-fg/80 transition hover:border-fg/20 hover:bg-surface-el/30"
+                                      >
+                                        VRAM Saver
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => applyLlamaPreset("cpu_ram")}
+                                        className="rounded-lg border border-fg/10 bg-surface-el/20 px-2.5 py-2 text-[13px] text-fg/80 transition hover:border-fg/20 hover:bg-surface-el/30"
+                                      >
+                                        CPU + RAM
+                                      </button>
+                                    </div>
+                                    {selectedLlamaQuickPreset && (
+                                      <div className="flex flex-wrap gap-2 border-t border-fg/8 pt-3">
+                                        {LLAMA_QUICK_PRESET_DETAILS[selectedLlamaQuickPreset].map(
+                                          (detail) => (
+                                            <span
+                                              key={detail}
+                                              className="rounded-md border border-fg/10 bg-fg/4 px-2.5 py-1 text-[13px] text-fg/62"
+                                            >
+                                              {detail}
+                                            </span>
+                                          ),
+                                        )}
+                                      </div>
+                                    )}
                                   </div>
-                                  {selectedLlamaQuickPreset && (
-                                    <div className="flex flex-wrap gap-2 border-t border-fg/8 pt-3">
-                                      {LLAMA_QUICK_PRESET_DETAILS[selectedLlamaQuickPreset].map(
-                                        (detail) => (
-                                          <span
-                                            key={detail}
-                                            className="rounded-md border border-fg/10 bg-fg/4 px-2.5 py-1 text-[13px] text-fg/62"
-                                          >
-                                            {detail}
+
+                                  <div className="space-y-4">
+                                    <div className="flex items-center justify-between">
+                                      <div className="space-y-0.5">
+                                        <span className="block text-[13px] font-medium text-fg/70">
+                                          GPU Layers
+                                        </span>
+                                        <span className="block text-[13px] text-fg/40">
+                                          Offload layers to GPU (0 = CPU only)
+                                        </span>
+                                        {llamaLayerPlacementSummary ? (
+                                          <span className="block text-[12px] text-fg/34">
+                                            {llamaLayerPlacementSummary.detail}
                                           </span>
-                                        ),
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
-
-                                <div className="space-y-4">
-                                  <div className="flex items-center justify-between">
-                                    <div className="space-y-0.5">
-                                      <span className="block text-[13px] font-medium text-fg/70">
-                                        GPU Layers
-                                      </span>
-                                      <span className="block text-[13px] text-fg/40">
-                                        Offload layers to GPU (0 = CPU only)
-                                      </span>
-                                    </div>
-                                    <span className="rounded-lg bg-surface-el/30 px-2 py-1 font-mono text-[13px] text-accent">
-                                      {modelAdvancedDraft.llamaGpuLayers !== null &&
-                                      modelAdvancedDraft.llamaGpuLayers !== undefined
-                                        ? modelAdvancedDraft.llamaGpuLayers
-                                        : "Auto"}
-                                    </span>
-                                  </div>
-                                  <input
-                                    type="number"
-                                    inputMode="numeric"
-                                    min={ADVANCED_LLAMA_GPU_LAYERS_RANGE.min}
-                                    max={ADVANCED_LLAMA_GPU_LAYERS_RANGE.max}
-                                    step={1}
-                                    value={modelAdvancedDraft.llamaGpuLayers ?? ""}
-                                    onChange={(e) => {
-                                      const raw = e.target.value;
-                                      const next = raw === "" ? null : Number(raw);
-                                      handleLlamaGpuLayersChange(
-                                        next === null || !Number.isFinite(next) || next < 0
-                                          ? null
-                                          : Math.trunc(next),
-                                      );
-                                    }}
-                                    placeholder="Auto"
-                                    className={numberInputClassName}
-                                  />
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-6">
-                                  <div className="space-y-4">
-                                    <div className="space-y-0.5">
-                                      <span className="block text-[13px] font-medium text-fg/70">
-                                        Threads
-                                      </span>
-                                      <span className="block text-[13px] text-fg/40">
-                                        Inference
+                                        ) : null}
+                                      </div>
+                                      <span className="rounded-lg bg-surface-el/30 px-2 py-1 font-mono text-[13px] text-accent">
+                                        {modelAdvancedDraft.llamaGpuLayers !== null &&
+                                        modelAdvancedDraft.llamaGpuLayers !== undefined
+                                          ? modelAdvancedDraft.llamaGpuLayers
+                                          : "Auto"}
                                       </span>
                                     </div>
                                     <input
                                       type="number"
                                       inputMode="numeric"
-                                      min={ADVANCED_LLAMA_THREADS_RANGE.min}
-                                      max={ADVANCED_LLAMA_THREADS_RANGE.max}
+                                      min={ADVANCED_LLAMA_GPU_LAYERS_RANGE.min}
+                                      max={ADVANCED_LLAMA_GPU_LAYERS_RANGE.max}
                                       step={1}
-                                      value={modelAdvancedDraft.llamaThreads ?? ""}
+                                      value={modelAdvancedDraft.llamaGpuLayers ?? ""}
                                       onChange={(e) => {
                                         const raw = e.target.value;
                                         const next = raw === "" ? null : Number(raw);
-                                        handleLlamaThreadsChange(
-                                          next === null || !Number.isFinite(next) || next <= 0
+                                        handleLlamaGpuLayersChange(
+                                          next === null || !Number.isFinite(next) || next < 0
                                             ? null
                                             : Math.trunc(next),
                                         );
@@ -2413,102 +3345,134 @@ export function EditModelPage() {
                                     />
                                   </div>
 
-                                  <div className="space-y-4">
-                                    <div className="space-y-0.5">
-                                      <span className="block text-[13px] font-medium text-fg/70">
-                                        Batch Threads
-                                      </span>
-                                      <span className="block text-[13px] text-fg/40">
-                                        Processing
-                                      </span>
+                                  <div className="grid grid-cols-2 gap-6">
+                                    <div className="space-y-4">
+                                      <div className="space-y-0.5">
+                                        <span className="block text-[13px] font-medium text-fg/70">
+                                          Threads
+                                        </span>
+                                        <span className="block text-[13px] text-fg/40">
+                                          Inference
+                                        </span>
+                                      </div>
+                                      <input
+                                        type="number"
+                                        inputMode="numeric"
+                                        min={ADVANCED_LLAMA_THREADS_RANGE.min}
+                                        max={ADVANCED_LLAMA_THREADS_RANGE.max}
+                                        step={1}
+                                        value={modelAdvancedDraft.llamaThreads ?? ""}
+                                        onChange={(e) => {
+                                          const raw = e.target.value;
+                                          const next = raw === "" ? null : Number(raw);
+                                          handleLlamaThreadsChange(
+                                            next === null || !Number.isFinite(next) || next <= 0
+                                              ? null
+                                              : Math.trunc(next),
+                                          );
+                                        }}
+                                        placeholder="Auto"
+                                        className={numberInputClassName}
+                                      />
                                     </div>
-                                    <input
-                                      type="number"
-                                      inputMode="numeric"
-                                      min={ADVANCED_LLAMA_THREADS_BATCH_RANGE.min}
-                                      max={ADVANCED_LLAMA_THREADS_BATCH_RANGE.max}
-                                      step={1}
-                                      value={modelAdvancedDraft.llamaThreadsBatch ?? ""}
-                                      onChange={(e) => {
-                                        const raw = e.target.value;
-                                        const next = raw === "" ? null : Number(raw);
-                                        handleLlamaThreadsBatchChange(
-                                          next === null || !Number.isFinite(next) || next <= 0
-                                            ? null
-                                            : Math.trunc(next),
-                                        );
-                                      }}
-                                      placeholder="Auto"
-                                      className={numberInputClassName}
-                                    />
-                                  </div>
-                                </div>
 
-                                <div className="grid grid-cols-2 gap-6">
-                                  <div className="space-y-4">
-                                    <div className="space-y-0.5">
-                                      <span className="block text-[13px] font-medium text-fg/70">
-                                        Batch Size
-                                      </span>
-                                      <span className="block text-[13px] text-fg/40">
-                                        Prompt chunk
-                                      </span>
+                                    <div className="space-y-4">
+                                      <div className="space-y-0.5">
+                                        <span className="block text-[13px] font-medium text-fg/70">
+                                          Batch Threads
+                                        </span>
+                                        <span className="block text-[13px] text-fg/40">
+                                          Processing
+                                        </span>
+                                      </div>
+                                      <input
+                                        type="number"
+                                        inputMode="numeric"
+                                        min={ADVANCED_LLAMA_THREADS_BATCH_RANGE.min}
+                                        max={ADVANCED_LLAMA_THREADS_BATCH_RANGE.max}
+                                        step={1}
+                                        value={modelAdvancedDraft.llamaThreadsBatch ?? ""}
+                                        onChange={(e) => {
+                                          const raw = e.target.value;
+                                          const next = raw === "" ? null : Number(raw);
+                                          handleLlamaThreadsBatchChange(
+                                            next === null || !Number.isFinite(next) || next <= 0
+                                              ? null
+                                              : Math.trunc(next),
+                                          );
+                                        }}
+                                        placeholder="Auto"
+                                        className={numberInputClassName}
+                                      />
                                     </div>
-                                    <input
-                                      type="number"
-                                      inputMode="numeric"
-                                      min={ADVANCED_LLAMA_BATCH_SIZE_RANGE.min}
-                                      max={ADVANCED_LLAMA_BATCH_SIZE_RANGE.max}
-                                      step={1}
-                                      value={modelAdvancedDraft.llamaBatchSize ?? ""}
-                                      onChange={(e) => {
-                                        const raw = e.target.value;
-                                        const next = raw === "" ? null : Number(raw);
-                                        handleLlamaBatchSizeChange(
-                                          next === null || !Number.isFinite(next) || next <= 0
-                                            ? null
-                                            : Math.trunc(next),
-                                        );
-                                      }}
-                                      placeholder="512"
-                                      className={numberInputClassName}
-                                    />
                                   </div>
 
-                                  <div className="space-y-4">
-                                    <div className="space-y-0.5">
-                                      <span className="block text-[13px] font-medium text-fg/70">
-                                        Flash Attention
-                                      </span>
-                                      <span className="block text-[13px] text-fg/40">
-                                        Optimization
-                                      </span>
+                                  <div className="grid grid-cols-2 gap-6">
+                                    <div className="space-y-4">
+                                      <div className="space-y-0.5">
+                                        <span className="block text-[13px] font-medium text-fg/70">
+                                          Batch Size
+                                        </span>
+                                        <span className="block text-[13px] text-fg/40">
+                                          Prompt chunk
+                                        </span>
+                                      </div>
+                                      <input
+                                        type="number"
+                                        inputMode="numeric"
+                                        min={ADVANCED_LLAMA_BATCH_SIZE_RANGE.min}
+                                        max={ADVANCED_LLAMA_BATCH_SIZE_RANGE.max}
+                                        step={1}
+                                        value={modelAdvancedDraft.llamaBatchSize ?? ""}
+                                        onChange={(e) => {
+                                          const raw = e.target.value;
+                                          const next = raw === "" ? null : Number(raw);
+                                          handleLlamaBatchSizeChange(
+                                            next === null || !Number.isFinite(next) || next <= 0
+                                              ? null
+                                              : Math.trunc(next),
+                                          );
+                                        }}
+                                        placeholder="512"
+                                        className={numberInputClassName}
+                                      />
                                     </div>
-                                    <select
-                                      value={modelAdvancedDraft.llamaFlashAttention ?? "auto"}
-                                      onChange={(e) => {
-                                        const val = e.target.value;
-                                        handleLlamaFlashAttentionChange(
-                                          val === "auto" ? null : (val as "enabled" | "disabled"),
-                                        );
-                                      }}
-                                      className={selectInputClassName}
-                                    >
-                                      <option value="auto" className="bg-[#16171d]">
-                                        Auto
-                                      </option>
-                                      <option value="enabled" className="bg-[#16171d]">
-                                        Enabled
-                                      </option>
-                                      <option value="disabled" className="bg-[#16171d]">
-                                        Disabled
-                                      </option>
-                                    </select>
+
+                                    <div className="space-y-4">
+                                      <div className="space-y-0.5">
+                                        <span className="block text-[13px] font-medium text-fg/70">
+                                          Flash Attention
+                                        </span>
+                                        <span className="block text-[13px] text-fg/40">
+                                          Optimization
+                                        </span>
+                                      </div>
+                                      <select
+                                        value={modelAdvancedDraft.llamaFlashAttention ?? "auto"}
+                                        onChange={(e) => {
+                                          const val = e.target.value;
+                                          handleLlamaFlashAttentionChange(
+                                            val === "auto" ? null : (val as "enabled" | "disabled"),
+                                          );
+                                        }}
+                                        className={selectInputClassName}
+                                      >
+                                        <option value="auto" className="bg-[#16171d]">
+                                          Auto
+                                        </option>
+                                        <option value="enabled" className="bg-[#16171d]">
+                                          Enabled
+                                        </option>
+                                        <option value="disabled" className="bg-[#16171d]">
+                                          Disabled
+                                        </option>
+                                      </select>
+                                    </div>
                                   </div>
                                 </div>
                               </div>
 
-                              {/* 3. Sampling & Quality */}
+                              {/* 3. Sampling & Quality + 4. Prompting & Templates */}
                               <div className="space-y-6 rounded-xl border border-fg/8 bg-surface-el/10 p-4">
                                 <div className="flex items-center gap-2 border-l-2 border-accent/30 pl-3">
                                   <div className="space-y-0.5">
@@ -2566,6 +3530,11 @@ export function EditModelPage() {
                                     )}
                                   </div>
                                 </div>
+
+                                <LlamaSamplerOrderEditor
+                                  value={modelAdvancedDraft.llamaSamplerOrder}
+                                  onChange={handleLlamaSamplerOrderChange}
+                                />
 
                                 <div className="grid grid-cols-2 gap-6">
                                   <div className="space-y-4">
@@ -2648,142 +3617,210 @@ export function EditModelPage() {
                                     className={numberInputClassName}
                                   />
                                 </div>
-                              </div>
 
-                              {/* 4. Chat Templates */}
-                              <div className="space-y-6 rounded-xl border border-fg/8 bg-surface-el/10 p-4">
-                                <div className="flex items-center gap-2 border-l-2 border-accent/30 pl-3">
-                                  <div className="space-y-0.5">
-                                    <span className="block text-[13px] font-bold text-fg/80 uppercase tracking-tight">
-                                      Prompting & Templates
-                                    </span>
-                                    <span className="block text-[13px] text-fg/40">
-                                      Format controls and fallbacks
-                                    </span>
-                                  </div>
-                                </div>
-
-                                <div className="space-y-4">
-                                  <div className="space-y-0.5">
-                                    <span className="block text-[13px] font-medium text-fg/70">
-                                      Template Override
-                                    </span>
-                                    <span className="block text-[13px] text-fg/40">
-                                      Jinja template or internal name
-                                    </span>
-                                  </div>
-                                  <textarea
-                                    value={modelAdvancedDraft.llamaChatTemplateOverride ?? ""}
-                                    onChange={(e) =>
-                                      handleLlamaChatTemplateOverrideChange(
-                                        e.target.value === "" ? null : e.target.value,
-                                      )
-                                    }
-                                    rows={2}
-                                    placeholder="Prefer embedded GGUF template"
-                                    className={selectInputClassName}
-                                  />
-                                </div>
-
-                                <div className="space-y-4">
-                                  <div className="flex items-start justify-between gap-3">
+                                {/* Prompting & Templates */}
+                                <div className="space-y-6 border-t border-fg/8 pt-6">
+                                  <div className="flex items-center gap-2 border-l-2 border-accent/30 pl-3">
                                     <div className="space-y-0.5">
-                                      <span className="block text-[13px] font-medium text-fg/70">
-                                        MMProj Path
+                                      <span className="block text-[13px] font-bold text-fg/80 uppercase tracking-tight">
+                                        Prompting & Templates
                                       </span>
                                       <span className="block text-[13px] text-fg/40">
-                                        Multimodal projector GGUF required for vision models
+                                        Format controls and fallbacks
                                       </span>
+                                    </div>
+                                  </div>
+
+                                  <div className="space-y-4">
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div className="space-y-0.5">
+                                        <span className="block text-[13px] font-medium text-fg/70">
+                                          Template Override
+                                        </span>
+                                        <span className="block text-[13px] text-fg/40">
+                                          Jinja template or internal name
+                                        </span>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={openTemplateOverlay}
+                                        className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-fg/10 bg-fg/5 px-2.5 py-1.5 text-[12px] font-medium text-fg/68 transition hover:border-fg/20 hover:bg-fg/10 hover:text-fg"
+                                      >
+                                        <Maximize2 className="h-3.5 w-3.5 text-accent/70" />
+                                        Edit
+                                      </button>
                                     </div>
                                     <button
                                       type="button"
-                                      onClick={openLocalMmprojPicker}
-                                      className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-fg/10 bg-fg/5 px-2.5 py-1.5 text-[12px] font-medium text-fg/68 transition hover:border-fg/20 hover:bg-fg/10 hover:text-fg"
+                                      onClick={openTemplateOverlay}
+                                      className={cn(
+                                        selectInputClassName,
+                                        "block w-full cursor-pointer truncate text-left",
+                                        modelAdvancedDraft.llamaChatTemplateOverride
+                                          ? "text-fg/78"
+                                          : "text-fg/35",
+                                      )}
                                     >
-                                      <FolderOpen className="h-3.5 w-3.5 text-accent/70" />
-                                      {t("hfBrowser.selectFromLibrary")}
+                                      {modelAdvancedDraft.llamaChatTemplateOverride
+                                        ? modelAdvancedDraft.llamaChatTemplateOverride.length > 80
+                                          ? `${modelAdvancedDraft.llamaChatTemplateOverride.slice(0, 80)}...`
+                                          : modelAdvancedDraft.llamaChatTemplateOverride
+                                        : "Prefer embedded GGUF template"}
                                     </button>
                                   </div>
-                                  <input
-                                    type="text"
-                                    value={modelAdvancedDraft.llamaMmprojPath ?? ""}
-                                    onChange={(e) => {
-                                      const nextValue =
-                                        e.target.value === "" ? null : e.target.value;
-                                      handleLlamaMmprojPathChange(nextValue);
-                                      syncImageInputScope(nextValue);
-                                    }}
-                                    placeholder="/path/to/mmproj.gguf"
-                                    className={selectInputClassName}
-                                    spellCheck={false}
-                                  />
-                                </div>
 
-                                <div className="space-y-4">
-                                  <div className="space-y-0.5">
-                                    <span className="block text-[13px] font-medium text-fg/70">
-                                      Template Preset
-                                    </span>
-                                    <span className="block text-[13px] text-fg/40">
-                                      Fallback if GGUF has no template
-                                    </span>
-                                  </div>
-                                  <select
-                                    value={modelAdvancedDraft.llamaChatTemplatePreset ?? "auto"}
-                                    onChange={(e) =>
-                                      handleLlamaChatTemplatePresetChange(
-                                        e.target.value === "auto" ? null : e.target.value,
-                                      )
-                                    }
-                                    className={selectInputClassName}
-                                  >
-                                    {LLAMA_CHAT_TEMPLATE_PRESET_OPTIONS.map((option) => (
-                                      <option
-                                        key={option.value}
-                                        value={option.value}
-                                        className="bg-[#16171d]"
+                                  <div className="space-y-4">
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div className="space-y-0.5">
+                                        <span className="block text-[13px] font-medium text-fg/70">
+                                          MMProj Path
+                                        </span>
+                                        <span className="block text-[13px] text-fg/40">
+                                          Multimodal projector GGUF required for vision models
+                                        </span>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={openLocalMmprojPicker}
+                                        className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-fg/10 bg-fg/5 px-2.5 py-1.5 text-[12px] font-medium text-fg/68 transition hover:border-fg/20 hover:bg-fg/10 hover:text-fg"
                                       >
-                                        {option.label}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </div>
-
-                                <div className="space-y-4">
-                                  <div className="space-y-0.5">
-                                    <span className="block text-[13px] font-medium text-fg/70">
-                                      Raw Completion Fallback
-                                    </span>
-                                    <span className="block text-[13px] text-fg/40">
-                                      Only for raw-tuned models
-                                    </span>
+                                        <FolderOpen className="h-3.5 w-3.5 text-accent/70" />
+                                        {t("hfBrowser.selectFromLibrary")}
+                                      </button>
+                                    </div>
+                                    <input
+                                      type="text"
+                                      value={modelAdvancedDraft.llamaMmprojPath ?? ""}
+                                      onChange={(e) => {
+                                        const nextValue =
+                                          e.target.value === "" ? null : e.target.value;
+                                        handleLlamaMmprojPathChange(nextValue);
+                                        syncImageInputScope(nextValue);
+                                      }}
+                                      placeholder="/path/to/mmproj.gguf"
+                                      className={selectInputClassName}
+                                      spellCheck={false}
+                                    />
                                   </div>
-                                  <select
-                                    value={
-                                      modelAdvancedDraft.llamaRawCompletionFallback === true
-                                        ? "enabled"
-                                        : modelAdvancedDraft.llamaRawCompletionFallback === false
-                                          ? "disabled"
-                                          : "default"
-                                    }
-                                    onChange={(e) => {
-                                      const val = e.target.value;
-                                      handleLlamaRawCompletionFallbackChange(
-                                        val === "default" ? null : val === "enabled",
-                                      );
-                                    }}
-                                    className={selectInputClassName}
-                                  >
-                                    <option value="default" className="bg-[#16171d]">
-                                      Default (disabled)
-                                    </option>
-                                    <option value="enabled" className="bg-[#16171d]">
-                                      Enabled
-                                    </option>
-                                    <option value="disabled" className="bg-[#16171d]">
-                                      Disabled
-                                    </option>
-                                  </select>
+
+                                  <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                                    <div className="space-y-4">
+                                      <div className="space-y-0.5">
+                                        <span className="block text-[13px] font-medium text-fg/70">
+                                          Template Preset
+                                        </span>
+                                        <span className="block text-[13px] text-fg/40">
+                                          Fallback if GGUF has no template
+                                        </span>
+                                      </div>
+                                      <select
+                                        value={modelAdvancedDraft.llamaChatTemplatePreset ?? "auto"}
+                                        onChange={(e) =>
+                                          handleLlamaChatTemplatePresetChange(
+                                            e.target.value === "auto" ? null : e.target.value,
+                                          )
+                                        }
+                                        className={selectInputClassName}
+                                      >
+                                        {LLAMA_CHAT_TEMPLATE_PRESET_OPTIONS.map((option) => (
+                                          <option
+                                            key={option.value}
+                                            value={option.value}
+                                            className="bg-[#16171d]"
+                                          >
+                                            {option.label}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
+
+                                    <div className="space-y-4">
+                                      <div className="space-y-0.5">
+                                        <span className="block text-[13px] font-medium text-fg/70">
+                                          Raw Completion Fallback
+                                        </span>
+                                        <span className="block text-[13px] text-fg/40">
+                                          Only for raw-tuned models
+                                        </span>
+                                      </div>
+                                      <select
+                                        value={
+                                          modelAdvancedDraft.llamaRawCompletionFallback === true
+                                            ? "enabled"
+                                            : modelAdvancedDraft.llamaRawCompletionFallback ===
+                                                false
+                                              ? "disabled"
+                                              : "default"
+                                        }
+                                        onChange={(e) => {
+                                          const val = e.target.value;
+                                          handleLlamaRawCompletionFallbackChange(
+                                            val === "default" ? null : val === "enabled",
+                                          );
+                                        }}
+                                        className={selectInputClassName}
+                                      >
+                                        <option value="default" className="bg-[#16171d]">
+                                          Default (disabled)
+                                        </option>
+                                        <option value="enabled" className="bg-[#16171d]">
+                                          Enabled
+                                        </option>
+                                        <option value="disabled" className="bg-[#16171d]">
+                                          Disabled
+                                        </option>
+                                      </select>
+                                    </div>
+                                  </div>
+
+                                  <div className="rounded-xl border border-danger/20 bg-danger/6 p-4">
+                                    <div className="flex items-start justify-between gap-4">
+                                      <div className="min-w-0 space-y-1.5">
+                                        <div className="flex items-start gap-3">
+                                          <div className="mt-0.5 shrink-0 text-danger/80">
+                                            <AlertTriangle className="h-4 w-4" />
+                                          </div>
+                                          <div className="min-w-0 space-y-1">
+                                            <span className="block text-[13px] font-medium text-fg/82">
+                                              Strict Mode
+                                            </span>
+                                            <span className="block text-[13px] leading-relaxed text-fg/48">
+                                              Don&apos;t use this if you don&apos;t know what you
+                                              are doing. This bypasses llama.cpp safety fallbacks
+                                              that lower GPU layers, clamp context or batch, or
+                                              switch a failed GPU load to CPU.
+                                            </span>
+                                          </div>
+                                        </div>
+                                        <span className="block text-[12px] text-danger/75">
+                                          Use only when you want manual layer offload, context, and
+                                          batch settings enforced as-is.
+                                        </span>
+                                      </div>
+                                      <div className="flex shrink-0 items-center gap-3">
+                                        <span
+                                          className={cn(
+                                            "text-[12px] font-medium transition",
+                                            modelAdvancedDraft.llamaStrictMode === true
+                                              ? "text-danger/85"
+                                              : "text-fg/42",
+                                          )}
+                                        >
+                                          {modelAdvancedDraft.llamaStrictMode === true
+                                            ? "On"
+                                            : "Off"}
+                                        </span>
+                                        <Switch
+                                          id="llama-strict-mode"
+                                          checked={modelAdvancedDraft.llamaStrictMode === true}
+                                          onChange={(next) =>
+                                            handleLlamaStrictModeChange(next ? true : null)
+                                          }
+                                          aria-label="Toggle llama strict mode"
+                                        />
+                                      </div>
+                                    </div>
+                                  </div>
                                 </div>
                               </div>
                             </div>
@@ -3293,32 +4330,10 @@ export function EditModelPage() {
                                   </button>
                                 </div>
                                 {!isAutoReasoning && (
-                                  <label className="relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200">
-                                    <input
-                                      type="checkbox"
-                                      checked={modelAdvancedDraft.reasoningEnabled || false}
-                                      onChange={(e) =>
-                                        handleReasoningEnabledChange(e.target.checked)
-                                      }
-                                      className="sr-only"
-                                    />
-                                    <span
-                                      className={cn(
-                                        "inline-block h-full w-full rounded-full transition-colors duration-200",
-                                        modelAdvancedDraft.reasoningEnabled
-                                          ? "bg-warning"
-                                          : "bg-fg/10",
-                                      )}
-                                    />
-                                    <span
-                                      className={cn(
-                                        "absolute h-3.5 w-3.5 transform rounded-full bg-fg transition-transform duration-200",
-                                        modelAdvancedDraft.reasoningEnabled
-                                          ? "translate-x-4.5"
-                                          : "translate-x-1",
-                                      )}
-                                    />
-                                  </label>
+                                  <Switch
+                                    checked={modelAdvancedDraft.reasoningEnabled || false}
+                                    onChange={handleReasoningEnabledChange}
+                                  />
                                 )}
                               </div>
 
@@ -3388,6 +4403,115 @@ export function EditModelPage() {
                             </div>
                           </div>
                         )}
+
+                        {/* Prompt Caching Section */}
+                        {activeDetailPanel === "caching" && showCachingSection && (
+                          <div className="space-y-4">
+                            <div className="flex items-center justify-between">
+                              <label className="text-[13px] font-bold tracking-wider text-fg/50 uppercase">
+                                Prompt Caching
+                              </label>
+                              <button
+                                type="button"
+                                onClick={() => setShowParameterSupport(true)}
+                                className="text-fg/40 hover:text-fg/60 transition"
+                                title="View Parameter Support"
+                              >
+                                <Info size={14} />
+                              </button>
+                            </div>
+
+                            <div className="space-y-6">
+                              {/* ── Enable toggle ── */}
+                              <div className="flex items-center justify-between rounded-xl border border-fg/8 bg-surface-el/10 p-4">
+                                <div className="flex items-center gap-3 border-l-2 border-accent/30 pl-3">
+                                  <HardDrive size={16} className="text-accent/80" />
+                                  <div className="space-y-0.5">
+                                    <span className="block text-[13px] font-medium text-fg/70">
+                                      Enable Context Caching
+                                    </span>
+                                    <span className="block text-[13px] text-fg/40">
+                                      Preserve static system prompts and document context across
+                                      interactions.
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <Switch
+                                  checked={modelAdvancedDraft.promptCachingEnabled || false}
+                                  onChange={handlePromptCachingEnabledChange}
+                                />
+                              </div>
+
+                              {modelAdvancedDraft.promptCachingEnabled && (
+                                <>
+                                  {/* ── TTL toggle ── */}
+                                  <div className="flex items-center justify-between rounded-xl border border-fg/8 bg-surface-el/10 p-4">
+                                    <div className="flex items-center gap-3 border-l-2 border-fg/10 pl-3">
+                                      <div className="space-y-0.5">
+                                        <span className="block text-[13px] font-medium text-fg/70">
+                                          Cache TTL
+                                        </span>
+                                        <span className="block text-[13px] text-fg/40">
+                                          How long cached prefixes remain valid between requests.
+                                        </span>
+                                      </div>
+                                    </div>
+
+                                    <div className="inline-flex shrink-0 rounded-lg border border-fg/10 bg-fg/4 p-0.5">
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.preventDefault();
+                                          handlePromptCachingTtlChange("5min");
+                                        }}
+                                        className={cn(
+                                          "rounded-md px-3 py-1 text-[12px] font-medium transition",
+                                          (modelAdvancedDraft.promptCachingTtl ?? "5min") === "5min"
+                                            ? "bg-accent/15 text-accent"
+                                            : "text-fg/45 hover:text-fg/70",
+                                        )}
+                                      >
+                                        5 min
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.preventDefault();
+                                          handlePromptCachingTtlChange("1h");
+                                        }}
+                                        className={cn(
+                                          "rounded-md px-3 py-1 text-[12px] font-medium transition",
+                                          modelAdvancedDraft.promptCachingTtl === "1h"
+                                            ? "bg-accent/15 text-accent"
+                                            : "text-fg/45 hover:text-fg/70",
+                                        )}
+                                      >
+                                        1 hr
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  {/* ── Pricing / TTL notes ── */}
+                                  <div className="rounded-lg border border-fg/10 bg-fg/4 px-4 py-3 text-[13px] leading-relaxed text-fg/65">
+                                    <strong className="text-fg/80">Note on pricing:</strong> While
+                                    caching reduces the cost of repeated input tokens, the initial
+                                    write to the cache may incur a slight premium depending on the
+                                    selected provider.
+                                    {modelAdvancedDraft.promptCachingTtl === "1h" && (
+                                      <span className="mt-1.5 block text-fg/50">
+                                        Extended 1-hour TTL may not be honoured by all providers.
+                                        Falls back to the provider's default cache lifetime when
+                                        unsupported.
+                                      </span>
+                                    )}
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
                         {activeDetailPanel === "capabilities" && (
                           <div className="space-y-4">
                             <div className="flex items-center justify-between">
@@ -3411,6 +4535,7 @@ export function EditModelPage() {
                                   <button
                                     key={scope}
                                     type="button"
+                                    disabled={isAutomatic1111Provider}
                                     onClick={() =>
                                       toggleScope(
                                         "inputScopes",
@@ -3420,6 +4545,7 @@ export function EditModelPage() {
                                     }
                                     className={cn(
                                       "flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-[13px] transition",
+                                      isAutomatic1111Provider && "cursor-not-allowed opacity-60",
                                       editorModel.inputScopes?.includes(scope as any)
                                         ? "border-accent/25 bg-accent/10 text-accent"
                                         : "border-fg/10 bg-fg/5 text-fg/55 hover:border-fg/20 hover:bg-fg/8 hover:text-fg/85",
@@ -3439,6 +4565,7 @@ export function EditModelPage() {
                                   <button
                                     key={scope}
                                     type="button"
+                                    disabled={isAutomatic1111Provider}
                                     onClick={() =>
                                       toggleScope(
                                         "outputScopes",
@@ -3448,6 +4575,7 @@ export function EditModelPage() {
                                     }
                                     className={cn(
                                       "flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-[13px] transition",
+                                      isAutomatic1111Provider && "cursor-not-allowed opacity-60",
                                       editorModel.outputScopes?.includes(scope as any)
                                         ? "border-accent/25 bg-accent/10 text-accent"
                                         : "border-fg/10 bg-fg/5 text-fg/55 hover:border-fg/20 hover:bg-fg/8 hover:text-fg/85",
@@ -3461,6 +4589,12 @@ export function EditModelPage() {
                                 ))}
                               </div>
                             </div>
+                            {isAutomatic1111Provider && (
+                              <p className="text-[12px] leading-relaxed text-fg/45">
+                                AUTOMATIC1111 models are fixed to text + image input and image
+                                output.
+                              </p>
+                            )}
                           </div>
                         )}
                       </div>
@@ -3477,147 +4611,6 @@ export function EditModelPage() {
                 </motion.div>
               </AnimatePresence>
             </div>
-
-            <AnimatePresence initial={false}>
-              {effectiveEditorViewMode === "advanced" && (
-                <motion.aside
-                  key="advanced-sidebar"
-                  initial={{ opacity: 0, x: 18 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: 12 }}
-                  transition={{
-                    duration: EDITOR_FADE_DURATION,
-                    ease: "easeInOut",
-                  }}
-                  className="space-y-6 xl:absolute xl:right-0 xl:top-0 xl:w-90"
-                >
-                  <EditorPanel
-                    title="Current configuration"
-                    description="This stays visible on desktop so you can confirm what you are editing without scrolling back through the form."
-                  >
-                    <dl className="space-y-3.5">
-                      <SummaryField label="Platform" value={selectedProviderLabel} />
-                      <SummaryField label="Source" value={modelSourceLabel} />
-                      <SummaryField label="Model" value={summaryModelLabel} mono={isLocalModel} />
-                    </dl>
-                    {isLocalModel && editorModel.name && (
-                      <div className="mt-4 rounded-lg border border-fg/10 bg-fg/4 px-3 py-2.5">
-                        <div className="text-[13px] text-fg/45">Path</div>
-                        <div
-                          className="mt-1 break-all font-mono text-[12px] leading-5 text-fg/62"
-                          title={editorModel.name}
-                        >
-                          {editorModel.name}
-                        </div>
-                      </div>
-                    )}
-                  </EditorPanel>
-
-                  <EditorPanel
-                    title="Capabilities"
-                    description="Mark which modalities this model accepts and what it can produce."
-                    action={
-                      <button
-                        type="button"
-                        onClick={() => openDocs("imagegen", "model-capabilities")}
-                        className="rounded-md border border-fg/10 p-1.5 text-fg/45 transition hover:border-fg/20 hover:bg-fg/5 hover:text-fg/80"
-                        aria-label="Help with capabilities"
-                      >
-                        <HelpCircle size={14} />
-                      </button>
-                    }
-                  >
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-1">
-                      <div className="space-y-3">
-                        <p className="text-[13px] font-medium text-fg/72">Input</p>
-                        {["image", "audio"].map((scope) => (
-                          <button
-                            key={scope}
-                            type="button"
-                            onClick={() =>
-                              toggleScope(
-                                "inputScopes",
-                                scope as any,
-                                !editorModel.inputScopes?.includes(scope as any),
-                              )
-                            }
-                            className={cn(
-                              "flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-[13px] transition",
-                              editorModel.inputScopes?.includes(scope as any)
-                                ? "border-accent/25 bg-accent/10 text-accent"
-                                : "border-fg/10 bg-fg/5 text-fg/55 hover:border-fg/20 hover:bg-fg/8 hover:text-fg/85",
-                            )}
-                          >
-                            <span className="capitalize">{scope}</span>
-                            {editorModel.inputScopes?.includes(scope as any) ? (
-                              <Check size={14} />
-                            ) : null}
-                          </button>
-                        ))}
-                      </div>
-
-                      <div className="space-y-3">
-                        <p className="text-[13px] font-medium text-fg/72">Output</p>
-                        {["image", "audio"].map((scope) => (
-                          <button
-                            key={scope}
-                            type="button"
-                            onClick={() =>
-                              toggleScope(
-                                "outputScopes",
-                                scope as any,
-                                !editorModel.outputScopes?.includes(scope as any),
-                              )
-                            }
-                            className={cn(
-                              "flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-[13px] transition",
-                              editorModel.outputScopes?.includes(scope as any)
-                                ? "border-accent/25 bg-accent/10 text-accent"
-                                : "border-fg/10 bg-fg/5 text-fg/55 hover:border-fg/20 hover:bg-fg/8 hover:text-fg/85",
-                            )}
-                          >
-                            <span className="capitalize">{scope}</span>
-                            {editorModel.outputScopes?.includes(scope as any) ? (
-                              <Check size={14} />
-                            ) : null}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </EditorPanel>
-
-                  {(shouldShowMoveReminder ||
-                    !modelFetchEnabledForSelectedProvider ||
-                    isLocalModel) && (
-                    <EditorPanel
-                      title="Notes"
-                      description="A few page-level details that affect how this model behaves after save."
-                    >
-                      <div className="space-y-3 text-[13px] leading-relaxed text-fg/65">
-                        {isLocalModel && (
-                          <p>
-                            Local llama.cpp models use the file path above. The runtime settings in
-                            the advanced section only apply to this provider.
-                          </p>
-                        )}
-                        {!isLocalModel && !modelFetchEnabledForSelectedProvider && (
-                          <p>
-                            This provider does not expose model discovery here, so the model
-                            identifier must be entered manually.
-                          </p>
-                        )}
-                        {shouldShowMoveReminder && (
-                          <div className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2.5 text-warning/85">
-                            Saving will ask whether this GGUF file should be moved into your local
-                            model library.
-                          </div>
-                        )}
-                      </div>
-                    </EditorPanel>
-                  )}
-                </motion.aside>
-              )}
-            </AnimatePresence>
           </div>
         </motion.div>
       </main>
@@ -3632,6 +4625,145 @@ export function EditModelPage() {
           <ProviderParameterSupportInfo providerId={editorModel?.providerId || "openai"} />
         </div>
       </BottomMenu>
+
+      <AnimatePresence>
+        {showTemplateOverlay && (
+          <motion.div
+            className="fixed inset-0 z-50 flex h-full flex-col bg-surface"
+            style={{ paddingTop: "env(safe-area-inset-top)" }}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            transition={{ duration: 0.2 }}
+          >
+            <div className="flex items-center justify-between border-b border-fg/10 px-4 py-3">
+              <div className="text-base font-semibold text-fg">Template Override</div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={toggleEmbeddedTemplate}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition",
+                    showEmbeddedTemplateViewer
+                      ? "border-accent/30 bg-accent/10 text-accent"
+                      : "border-fg/10 text-fg/70 hover:bg-fg/10 hover:text-fg",
+                  )}
+                >
+                  <CopyCheck className="h-3 w-3" />
+                  {showEmbeddedTemplateViewer ? "Hide Embedded" : "Show Embedded"}
+                </button>
+                <button
+                  type="button"
+                  onClick={cancelTemplateOverlay}
+                  className="rounded-full border border-fg/10 px-3 py-1.5 text-xs font-medium text-fg/70 transition hover:bg-fg/10 hover:text-fg"
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  onClick={saveTemplateOverlay}
+                  className={cn(
+                    "rounded-full px-3 py-1.5 text-xs font-semibold text-fg transition",
+                    "bg-linear-to-r from-accent to-accent/80",
+                    "hover:from-accent/80 hover:to-accent/60",
+                  )}
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-4 pb-6 pt-4">
+              <div className="mx-auto max-w-4xl space-y-4">
+                {showEmbeddedTemplateViewer && (
+                  <div className="overflow-hidden rounded-xl border border-fg/8 bg-[#0b0c10]">
+                    {embeddedTemplateLoading ? (
+                      <div className="flex h-40 items-center justify-center text-[12px] text-fg/50">
+                        <Loader className="mr-2 h-3.5 w-3.5 animate-spin" />
+                        Reading embedded template...
+                      </div>
+                    ) : embeddedTemplateError ? (
+                      <div className="space-y-1 p-3">
+                        <div className="text-[12px] font-medium text-danger">
+                          Could not read embedded template
+                        </div>
+                        <div className="whitespace-pre-wrap break-words text-[12px] text-fg/50">
+                          {embeddedTemplateError}
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <pre
+                          className="max-h-64 overflow-auto px-4 py-3 font-mono text-[11px] leading-[18px]"
+                          dangerouslySetInnerHTML={{
+                            __html: highlightedTemplate ?? "",
+                          }}
+                        />
+                        <div className="flex items-center justify-end gap-2 border-t border-fg/6 px-3 py-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(embeddedTemplateText);
+                              toast.success("Copied to clipboard");
+                            }}
+                            className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium text-fg/50 transition hover:bg-fg/8 hover:text-fg/70"
+                          >
+                            <Copy className="h-3 w-3" />
+                            Copy
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleUseEmbeddedTemplate}
+                            disabled={!embeddedTemplateText.trim()}
+                            className="inline-flex items-center gap-1.5 rounded-md bg-accent/12 px-2.5 py-1 text-[11px] font-medium text-accent transition hover:bg-accent/20 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            <CopyCheck className="h-3 w-3" />
+                            Paste into Editor
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <div className="text-sm font-medium text-fg/80">Jinja Template</div>
+                  <textarea
+                    value={templateOverlayDraft}
+                    onChange={(e) => setTemplateOverlayDraft(e.target.value)}
+                    className="min-h-[50vh] w-full resize-none rounded-2xl border border-fg/10 bg-surface-el/40 px-4 py-4 font-mono text-[12px] leading-relaxed text-fg placeholder-fg/40 transition focus:border-fg/20 focus:outline-none"
+                    placeholder="Enter a Jinja chat template or an internal template name..."
+                    spellCheck={false}
+                  />
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Continue Setup button when coming from onboarding */}
+      {returnTo && (() => {
+        const cached = readSettingsCached();
+        const hasModel = cached ? cached.models.some((m) => m.providerId === "llamacpp") : false;
+        return (
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
+            <button
+              onClick={() => editNavigate(returnTo)}
+              disabled={!hasModel}
+              className={cn(
+                "flex items-center gap-2 rounded-full px-6 py-3 text-sm font-bold transition active:scale-[0.98]",
+                hasModel
+                  ? "border border-emerald-500/40 bg-emerald-500 text-black shadow-[0_4px_20px_rgba(16,185,129,0.35)] hover:bg-emerald-400"
+                  : "border border-white/10 bg-white/10 text-white/40 cursor-not-allowed",
+              )}
+            >
+              {hasModel ? "Continue Setup" : "Save a model to continue"}
+              <ArrowRight size={16} />
+            </button>
+          </div>
+        );
+      })()}
     </div>
   );
 }

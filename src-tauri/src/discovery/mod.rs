@@ -1181,6 +1181,8 @@ pub async fn discovery_import_character(app: AppHandle, path: String) -> Result<
                     id: lorebook_id.clone(),
                     name: lorebook_name,
                     avatar_path: None,
+                    keyword_detection_mode:
+                        crate::storage_manager::lorebook::LorebookKeywordDetectionMode::RecentMessageWindow,
                     created_at: now,
                     updated_at: now,
                 };

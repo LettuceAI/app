@@ -66,6 +66,10 @@ impl ProviderAdapter for GoogleGeminiAdapter {
         true
     }
 
+    fn requires_api_key(&self) -> bool {
+        true
+    }
+
     fn required_auth_headers(&self) -> &'static [&'static str] {
         &[]
     }

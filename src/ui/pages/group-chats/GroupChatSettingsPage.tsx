@@ -28,6 +28,7 @@ import { Routes, useNavigationManager } from "../../navigation";
 import { useGroupChatSettingsController } from "./hooks/useGroupChatSettingsController";
 import { useGroupChatLayoutContext } from "./GroupChatLayout";
 import { SectionHeader, CharacterAvatar, QuickChip, PersonaSelector } from "./components/settings";
+import { Switch } from "../../components/Switch";
 import { processBackgroundImage } from "../../../core/utils/image";
 import { storageBridge } from "../../../core/storage/files";
 import { useAvatar } from "../../hooks/useAvatar";
@@ -328,7 +329,7 @@ export function GroupChatSettingsPage() {
   return (
     <div
       className={cn(
-        "relative flex h-full flex-col text-fg overflow-hidden",
+        "relative flex h-full flex-col text-fg",
         !backgroundImagePath && "bg-surface",
       )}
     >
@@ -355,7 +356,7 @@ export function GroupChatSettingsPage() {
       {/* Header */}
       <header
         className={cn(
-          "z-20 shrink-0 border-b border-fg/10 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+12px)] sticky top-0",
+          "z-20 shrink-0 border-b border-fg/10 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+12px)] shrink-0",
           !backgroundImagePath ? "bg-surface" : "",
         )}
       >
@@ -402,7 +403,7 @@ export function GroupChatSettingsPage() {
                     alt="Background"
                     className="h-full w-full object-cover"
                   />
-                  <div className="absolute inset-0 bg-linear-to-t from-[#0c0d13] to-transparent" />
+                  <div className="absolute inset-0 bg-linear-to-t from-surface-el/90 to-transparent" />
                   <button
                     onClick={handleRemoveBackground}
                     disabled={savingBackground}
@@ -687,14 +688,10 @@ export function GroupChatSettingsPage() {
               value={`${session.lorebookIds?.length ?? 0} attached`}
               onClick={() => navigate(Routes.groupChatLorebook(session.id))}
             />
-            <button
-              onClick={() =>
-                void handleSetDisableCharacterLorebooks(!session.disableCharacterLorebooks)
-              }
+            <div
               className={cn(
                 "mt-2 flex w-full items-center justify-between rounded-xl border border-fg/10 bg-surface-el/85 p-3 text-left",
                 interactive.transition.default,
-                "hover:border-fg/20",
               )}
             >
               <div>
@@ -703,20 +700,11 @@ export function GroupChatSettingsPage() {
                   Group replies will use only the lorebooks attached to this session.
                 </div>
               </div>
-              <span
-                className={cn(
-                  "relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-all",
-                  session.disableCharacterLorebooks ? "bg-accent" : "bg-fg/20",
-                )}
-              >
-                <span
-                  className={cn(
-                    "inline-block h-5 w-5 rounded-full bg-fg shadow transition",
-                    session.disableCharacterLorebooks ? "translate-x-5" : "translate-x-0",
-                  )}
-                />
-              </span>
-            </button>
+              <Switch
+                checked={!!session.disableCharacterLorebooks}
+                onChange={(next) => void handleSetDisableCharacterLorebooks(next)}
+              />
+            </div>
           </section>
 
           {/* Characters Section */}
@@ -1432,7 +1420,7 @@ export function GroupChatSettingsPage() {
                         return { ...prev, [participantKey]: next };
                       });
                     }}
-                    className="mt-2 w-full rounded-lg border border-fg/10 bg-black/20 px-3 py-2 text-sm text-fg focus:border-fg/30 focus:outline-none"
+                    className="mt-2 w-full rounded-lg border border-fg/10 bg-surface-el/40 px-3 py-2 text-sm text-fg focus:border-fg/30 focus:outline-none focus:ring-1 focus:ring-fg/10"
                   >
                     <option value="">
                       {t("groupChats.sessionSettings.selectCharacterPlaceholder")}

@@ -13,8 +13,34 @@ pub struct Lorebook {
     pub id: String,
     pub name: String,
     pub avatar_path: Option<String>,
+    #[serde(default)]
+    pub keyword_detection_mode: LorebookKeywordDetectionMode,
     pub created_at: i64,
     pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum LorebookKeywordDetectionMode {
+    #[default]
+    RecentMessageWindow,
+    LatestUserMessage,
+}
+
+impl LorebookKeywordDetectionMode {
+    pub(crate) fn from_db_value(value: Option<String>) -> Self {
+        match value.as_deref() {
+            Some("latest_user_message") => Self::LatestUserMessage,
+            _ => Self::RecentMessageWindow,
+        }
+    }
+
+    pub(crate) fn as_db_value(self) -> &'static str {
+        match self {
+            Self::RecentMessageWindow => "recent_message_window",
+            Self::LatestUserMessage => "latest_user_message",
+        }
+    }
 }
 
 impl Lorebook {
@@ -23,8 +49,9 @@ impl Lorebook {
             id: row.get(0)?,
             name: row.get(1)?,
             avatar_path: row.get(2)?,
-            created_at: row.get(3)?,
-            updated_at: row.get(4)?,
+            keyword_detection_mode: LorebookKeywordDetectionMode::from_db_value(row.get(3)?),
+            created_at: row.get(4)?,
+            updated_at: row.get(5)?,
         })
     }
 }
@@ -44,6 +71,12 @@ pub struct LorebookEntry {
     pub display_order: i32,
     pub created_at: i64,
     pub updated_at: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct LorebookEntryActivationContext {
+    pub entry: LorebookEntry,
+    pub keyword_detection_mode: LorebookKeywordDetectionMode,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -106,6 +139,8 @@ struct WorldInfoExportEntry {
 struct WorldInfoImport {
     name: String,
     #[serde(default)]
+    extensions: JsonValue,
+    #[serde(default)]
     entries: JsonValue,
 }
 
@@ -139,7 +174,7 @@ pub fn list_lorebooks(conn: &DbConnection) -> Result<Vec<Lorebook>, String> {
     let mut stmt = conn
         .prepare(
             r#"
-            SELECT id, name, avatar_path, created_at, updated_at
+            SELECT id, name, avatar_path, keyword_detection_mode, created_at, updated_at
             FROM lorebooks
             ORDER BY updated_at DESC
             "#,
@@ -175,7 +210,7 @@ pub fn list_lorebooks(conn: &DbConnection) -> Result<Vec<Lorebook>, String> {
 
 pub fn get_lorebook(conn: &DbConnection, lorebook_id: &str) -> Result<Option<Lorebook>, String> {
     conn.query_row(
-        "SELECT id, name, avatar_path, created_at, updated_at FROM lorebooks WHERE id = ?1",
+        "SELECT id, name, avatar_path, keyword_detection_mode, created_at, updated_at FROM lorebooks WHERE id = ?1",
         params![lorebook_id],
         Lorebook::from_row,
     )
@@ -210,8 +245,14 @@ pub fn upsert_lorebook(conn: &DbConnection, lorebook: &Lorebook) -> Result<Loreb
 
     if exists {
         conn.execute(
-            "UPDATE lorebooks SET name = ?2, avatar_path = ?3, updated_at = ?4 WHERE id = ?1",
-            params![lorebook.id, lorebook.name, lorebook.avatar_path, now],
+            "UPDATE lorebooks SET name = ?2, avatar_path = ?3, keyword_detection_mode = ?4, updated_at = ?5 WHERE id = ?1",
+            params![
+                lorebook.id,
+                lorebook.name,
+                lorebook.avatar_path,
+                lorebook.keyword_detection_mode.as_db_value(),
+                now
+            ],
         )
         .map_err(|e| {
             crate::utils::err_msg(
@@ -222,11 +263,12 @@ pub fn upsert_lorebook(conn: &DbConnection, lorebook: &Lorebook) -> Result<Loreb
         })?;
     } else {
         conn.execute(
-            "INSERT INTO lorebooks (id, name, avatar_path, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            "INSERT INTO lorebooks (id, name, avatar_path, keyword_detection_mode, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
                 lorebook.id,
                 lorebook.name,
                 lorebook.avatar_path,
+                lorebook.keyword_detection_mode.as_db_value(),
                 lorebook.created_at,
                 now
             ],
@@ -263,7 +305,7 @@ pub fn list_character_lorebooks(
     let mut stmt = conn
         .prepare(
             r#"
-            SELECT l.id, l.name, l.avatar_path, l.created_at, l.updated_at
+            SELECT l.id, l.name, l.avatar_path, l.keyword_detection_mode, l.created_at, l.updated_at
             FROM character_lorebooks cl
             JOIN lorebooks l ON l.id = cl.lorebook_id
             WHERE cl.character_id = ?1 AND cl.enabled = 1
@@ -395,18 +437,19 @@ pub fn get_lorebook_entries(
     Ok(entries)
 }
 
-pub fn get_enabled_character_lorebook_entries(
+pub fn get_enabled_character_lorebook_entry_contexts(
     conn: &DbConnection,
     character_id: &str,
-) -> Result<Vec<LorebookEntry>, String> {
+) -> Result<Vec<LorebookEntryActivationContext>, String> {
     let mut stmt = conn
         .prepare(
             r#"
             SELECT e.id, e.lorebook_id, e.title, e.enabled, e.always_active, e.keywords,
                    e.case_sensitive, e.content, e.priority, e.display_order,
-                   e.created_at, e.updated_at
+                   e.created_at, e.updated_at, l.keyword_detection_mode
             FROM lorebook_entries e
             JOIN character_lorebooks cl ON cl.lorebook_id = e.lorebook_id
+            JOIN lorebooks l ON l.id = e.lorebook_id
             WHERE cl.character_id = ?1 AND cl.enabled = 1 AND e.enabled = 1
             ORDER BY cl.display_order ASC, e.display_order ASC, e.created_at ASC
             "#,
@@ -420,7 +463,12 @@ pub fn get_enabled_character_lorebook_entries(
         })?;
 
     let entries = stmt
-        .query_map(params![character_id], LorebookEntry::from_row)
+        .query_map(params![character_id], |row| {
+            Ok(LorebookEntryActivationContext {
+                entry: LorebookEntry::from_row(row)?,
+                keyword_detection_mode: LorebookKeywordDetectionMode::from_db_value(row.get(12)?),
+            })
+        })
         .map_err(|e| {
             crate::utils::err_msg(
                 module_path!(),
@@ -440,10 +488,10 @@ pub fn get_enabled_character_lorebook_entries(
     Ok(entries)
 }
 
-pub fn get_enabled_lorebook_entries_for_ids(
+pub fn get_enabled_lorebook_entry_contexts_for_ids(
     conn: &DbConnection,
     lorebook_ids: &[String],
-) -> Result<Vec<LorebookEntry>, String> {
+) -> Result<Vec<LorebookEntryActivationContext>, String> {
     if lorebook_ids.is_empty() {
         return Ok(Vec::new());
     }
@@ -451,22 +499,30 @@ pub fn get_enabled_lorebook_entries_for_ids(
     let mut entries = Vec::new();
     for lorebook_id in lorebook_ids {
         let lorebook_entries = get_lorebook_entries(conn, lorebook_id)?;
-        entries.extend(lorebook_entries.into_iter().filter(|entry| entry.enabled));
+        let keyword_detection_mode = get_lorebook(conn, lorebook_id)?
+            .map(|lorebook| lorebook.keyword_detection_mode)
+            .unwrap_or_default();
+        for entry in lorebook_entries.into_iter().filter(|entry| entry.enabled) {
+            entries.push(LorebookEntryActivationContext {
+                entry,
+                keyword_detection_mode,
+            });
+        }
     }
 
     entries.sort_by(|a, b| {
         let a_idx = lorebook_ids
             .iter()
-            .position(|id| id == &a.lorebook_id)
+            .position(|id| id == &a.entry.lorebook_id)
             .unwrap_or(usize::MAX);
         let b_idx = lorebook_ids
             .iter()
-            .position(|id| id == &b.lorebook_id)
+            .position(|id| id == &b.entry.lorebook_id)
             .unwrap_or(usize::MAX);
         a_idx
             .cmp(&b_idx)
-            .then_with(|| a.display_order.cmp(&b.display_order))
-            .then_with(|| a.created_at.cmp(&b.created_at))
+            .then_with(|| a.entry.display_order.cmp(&b.entry.display_order))
+            .then_with(|| a.entry.created_at.cmp(&b.entry.created_at))
     });
 
     Ok(entries)
@@ -983,7 +1039,19 @@ pub fn lorebook_export(app: tauri::AppHandle, lorebook_id: String) -> Result<Str
         scan_depth: 4,
         token_budget: 0,
         recursive_scanning: false,
-        extensions: JsonValue::Object(JsonMap::new()),
+        extensions: {
+            let mut extensions = JsonMap::new();
+            extensions.insert(
+                "lettuceai".to_string(),
+                serde_json::json!({
+                    "keywordDetectionMode": match lorebook.keyword_detection_mode {
+                        LorebookKeywordDetectionMode::RecentMessageWindow => "recentMessageWindow",
+                        LorebookKeywordDetectionMode::LatestUserMessage => "latestUserMessage",
+                    }
+                }),
+            );
+            JsonValue::Object(extensions)
+        },
         entries: entry_map,
     };
 
@@ -1029,10 +1097,21 @@ pub fn lorebook_import(app: tauri::AppHandle, import_json: String) -> Result<Str
 
     let mut parsed_entries = parse_world_info_entries(&parsed.entries);
     let now = now_millis()? as i64;
+    let keyword_detection_mode = parsed
+        .extensions
+        .get("lettuceai")
+        .and_then(|value| value.get("keywordDetectionMode"))
+        .and_then(|value| value.as_str())
+        .map(|value| match value {
+            "latestUserMessage" => LorebookKeywordDetectionMode::LatestUserMessage,
+            _ => LorebookKeywordDetectionMode::RecentMessageWindow,
+        })
+        .unwrap_or(LorebookKeywordDetectionMode::RecentMessageWindow);
     let lorebook = Lorebook {
         id: Uuid::new_v4().to_string(),
         name: parsed.name.trim().to_string(),
         avatar_path: None,
+        keyword_detection_mode,
         created_at: now,
         updated_at: now,
     };

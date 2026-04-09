@@ -1,7 +1,10 @@
 use crate::storage_manager::db::DbConnection;
-use crate::storage_manager::lorebook::{get_enabled_character_lorebook_entries, LorebookEntry};
+use crate::storage_manager::lorebook::{
+    get_enabled_character_lorebook_entry_contexts, LorebookEntry, LorebookEntryActivationContext,
+    LorebookKeywordDetectionMode,
+};
 
-fn keyword_matches(keyword: &str, text: &str, case_sensitive: bool) -> bool {
+pub(crate) fn keyword_matches(keyword: &str, text: &str, case_sensitive: bool) -> bool {
     let keyword = keyword.trim();
     if keyword.is_empty() {
         return false;
@@ -56,17 +59,25 @@ fn keyword_matches(keyword: &str, text: &str, case_sensitive: bool) -> bool {
 }
 
 pub fn activate_lorebook_entries(
-    entries: Vec<LorebookEntry>,
+    entries: Vec<LorebookEntryActivationContext>,
     recent_messages: &[String],
+    latest_user_message: Option<&str>,
 ) -> Vec<LorebookEntry> {
     if entries.is_empty() {
         return vec![];
     }
-    let context = recent_messages.join("\n");
+    let recent_context = recent_messages.join("\n");
+    let latest_user_context = latest_user_message.unwrap_or_default();
 
     let mut active_entries: Vec<LorebookEntry> = vec![];
 
-    for entry in entries {
+    for entry_context in entries {
+        let entry = entry_context.entry;
+        let keyword_context = match entry_context.keyword_detection_mode {
+            LorebookKeywordDetectionMode::RecentMessageWindow => recent_context.as_str(),
+            LorebookKeywordDetectionMode::LatestUserMessage => latest_user_context,
+        };
+
         let should_activate = if entry.always_active {
             true
         } else if entry.keywords.is_empty() {
@@ -75,7 +86,7 @@ pub fn activate_lorebook_entries(
             entry
                 .keywords
                 .iter()
-                .any(|keyword| keyword_matches(keyword, &context, entry.case_sensitive))
+                .any(|keyword| keyword_matches(keyword, keyword_context, entry.case_sensitive))
         };
 
         if should_activate {
@@ -96,9 +107,14 @@ pub fn get_active_lorebook_entries(
     conn: &DbConnection,
     character_id: &str,
     recent_messages: &[String],
+    latest_user_message: Option<&str>,
 ) -> Result<Vec<LorebookEntry>, String> {
-    let entries = get_enabled_character_lorebook_entries(conn, character_id)?;
-    Ok(activate_lorebook_entries(entries, recent_messages))
+    let entries = get_enabled_character_lorebook_entry_contexts(conn, character_id)?;
+    Ok(activate_lorebook_entries(
+        entries,
+        recent_messages,
+        latest_user_message,
+    ))
 }
 
 pub fn format_lorebook_for_prompt(entries: &[LorebookEntry]) -> String {

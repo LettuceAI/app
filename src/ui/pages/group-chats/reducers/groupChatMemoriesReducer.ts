@@ -18,6 +18,7 @@ export type UiState = {
   memoryTempBusy: number | null;
   pendingRefresh: boolean;
   memoryStatus: MemoryStatus;
+  memoryProgressStep: number | null;
   selectedMemoryId: string | null;
   memoryActionMode: "actions" | "edit" | null;
 };
@@ -42,6 +43,7 @@ export type UiAction =
   | { type: "SET_MEMORY_TEMP_BUSY"; value: number | null }
   | { type: "SET_PENDING_REFRESH"; value: boolean }
   | { type: "SET_MEMORY_STATUS"; value: MemoryStatus }
+  | { type: "SET_MEMORY_PROGRESS_STEP"; value: number | null }
   | { type: "OPEN_MEMORY_ACTIONS"; id: string }
   | { type: "SET_MEMORY_ACTION_MODE"; mode: "actions" | "edit" }
   | { type: "CLOSE_MEMORY_ACTIONS" };
@@ -63,6 +65,7 @@ export function initUi(): UiState {
     memoryTempBusy: null,
     pendingRefresh: false,
     memoryStatus: "idle",
+    memoryProgressStep: null,
     selectedMemoryId: null,
     memoryActionMode: null,
   };
@@ -119,7 +122,13 @@ export function uiReducer(state: UiState, action: UiAction): UiState {
     case "SET_PENDING_REFRESH":
       return { ...state, pendingRefresh: action.value };
     case "SET_MEMORY_STATUS":
-      return { ...state, memoryStatus: action.value };
+      return {
+        ...state,
+        memoryStatus: action.value,
+        memoryProgressStep: action.value === "idle" || action.value === "failed" ? null : state.memoryProgressStep,
+      };
+    case "SET_MEMORY_PROGRESS_STEP":
+      return { ...state, memoryProgressStep: action.value };
     case "OPEN_MEMORY_ACTIONS":
       return { ...state, selectedMemoryId: action.id, memoryActionMode: "actions" };
     case "SET_MEMORY_ACTION_MODE":

@@ -17,6 +17,7 @@ export type ProvidersPageState = {
   validationError: string | null;
   capabilities: ProviderCapabilitiesCamel[];
   engineSetupResult: EngineSetupResult;
+  loading: boolean;
 };
 
 export type ProvidersPageAction =
@@ -46,6 +47,7 @@ export const initialProvidersPageState: ProvidersPageState = {
   validationError: null,
   capabilities: [],
   engineSetupResult: null,
+  loading: true,
 };
 
 export function providersPageReducer(
@@ -57,6 +59,7 @@ export function providersPageReducer(
       return {
         ...state,
         providers: action.payload,
+        loading: false,
       };
     case "set_selected_provider":
       return {

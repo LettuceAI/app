@@ -36,6 +36,7 @@ src-tauri/gen/android/app/src/main/assets/feedback_sounds/success.mp3
 .secrets
 .act/
 .tmp/
+src-tauri/onnxruntime-ios/
 src-tauri/gen/android/app/src/main/assets/onnxruntime/libonnxruntime.so
 docs/memory-cycle-workflow.svg
 docs/chatpkg-format.md
@@ -48,3 +49,4 @@ docs/sync-architecture-report.md
 docs/sync-current-system.md
 docs/sync-old-architecture.mmd
 docs/sync-old-architecture.svg
+src-tauri/target-check/

@@ -1,4 +1,6 @@
-name: Android Build (Tauri)
+name: Build / Dev / Android
+
+run-name: Android dev build by @${{ github.actor }}
 
 on:
   workflow_dispatch:

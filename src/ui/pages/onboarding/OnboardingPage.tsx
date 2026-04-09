@@ -7,20 +7,38 @@ import { MemoryStep } from "./steps/MemoryStep";
 import { ModelRecommendations } from "./ModelRecommendations";
 import { cn, typography } from "../../design-tokens";
 import { getPlatform } from "../../../core/utils/platform";
-import { useState, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useCallback, useEffect } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { checkEmbeddingModel } from "../../../core/storage/repo";
+import { setProviderSetupCompleted } from "../../../core/storage/appState";
 import { useI18n } from "../../../core/i18n/context";
 
 export function OnboardingPage() {
   const { t } = useI18n();
   const navigate = useNavigate();
+  const location = useLocation();
   const platform = getPlatform();
   const isDesktop = platform.type === "desktop";
   const controller = useOnboardingController();
   const { state } = controller;
 
-  // Modal state for memory download prompt
+  useEffect(() => {
+    if (location.pathname === "/onboarding/memory" && state.step !== OnboardingStep.Memory) {
+      controller.setStep(OnboardingStep.Memory);
+    }
+  }, [location.pathname]);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && e.key === "L") {
+        e.preventDefault();
+        navigate("/settings/logs");
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [navigate]);
+
   const [showDownloadModal, setShowDownloadModal] = useState(false);
   const [showRecommendations, setShowRecommendations] = useState(false);
 
@@ -33,6 +51,16 @@ export function OnboardingPage() {
 
   const stepNumber =
     state.step === OnboardingStep.Provider ? 1 : state.step === OnboardingStep.Model ? 2 : 3;
+
+  const handleBrowseModelLibrary = useCallback(async () => {
+    await setProviderSetupCompleted(true);
+    navigate("/settings/models/browse?returnTo=/onboarding/memory");
+  }, [navigate]);
+
+  const handleUseOwnGguf = useCallback(async () => {
+    await setProviderSetupCompleted(true);
+    navigate("/settings/models/new?provider=llamacpp&returnTo=/onboarding/memory");
+  }, [navigate]);
 
   // Handle finish - checks for embedding model if dynamic is selected
   const handleFinish = useCallback(async () => {
@@ -64,15 +92,12 @@ export function OnboardingPage() {
     navigate("/settings/embedding-download?returnTo=/chat?firstTime=true");
   }, [navigate]);
 
-  // Handle skip download
   const handleSkipDownload = useCallback(async () => {
     setShowDownloadModal(false);
-    // Save with dynamic memory disabled since no model
     controller.handleSelectMemoryType("manual");
     await controller.handleFinish();
   }, [controller]);
 
-  // Loading state
   if (state.capabilitiesLoading && state.step === OnboardingStep.Provider) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-[#050505] text-gray-200">
@@ -84,7 +109,6 @@ export function OnboardingPage() {
     );
   }
 
-  // Animation variants for step transitions
   const pageVariants = {
     initial: { opacity: 0, x: 20 },
     animate: { opacity: 1, x: 0 },
@@ -163,6 +187,8 @@ export function OnboardingPage() {
                   onConfigChange={controller.handleConfigChange}
                   onTestConnection={controller.handleTestConnection}
                   onSave={controller.handleSaveProvider}
+                  onBrowseModelLibrary={() => void handleBrowseModelLibrary()}
+                  onUseOwnGguf={() => void handleUseOwnGguf()}
                 />
               </motion.div>
             )}

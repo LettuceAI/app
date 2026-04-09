@@ -1,0 +1,434 @@
+name: Build / Release / Android
+
+run-name: Android release build by @${{ github.actor }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_override:
+        description: "Optional Tauri/app version override for this release build"
+        required: false
+        default: ""
+        type: string
+
+concurrency:
+  group: android-release-build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  actions: read
+
+env:
+  NDK_VERSION: r26d
+
+jobs:
+  prepare_release:
+    name: Prepare GitHub Release
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      name: ${{ steps.meta.outputs.name }}
+    steps:
+      - name: Checkout (full history for changelog)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Compute release metadata
+        id: meta
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          VERSION_OVERRIDE='${{ inputs.version_override }}'
+
+          if [[ -n "${VERSION_OVERRIDE}" ]]; then
+            SAFE_VERSION="$(printf '%s' "${VERSION_OVERRIDE}" | tr -cs '[:alnum:]._-' '-')"
+            SAFE_VERSION="${SAFE_VERSION#-}"
+            SAFE_VERSION="${SAFE_VERSION%-}"
+            TAG="android-release-${SAFE_VERSION}"
+            NAME="Android Release ${VERSION_OVERRIDE}"
+            if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+              TAG="${TAG}-${GITHUB_RUN_ATTEMPT}-${SHORT_SHA}"
+              NAME="${NAME} (${SHORT_SHA}, attempt ${GITHUB_RUN_ATTEMPT})"
+            fi
+          else
+            TAG="android-release-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}-${SHORT_SHA}"
+            NAME="Android Release Build #${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT} (${SHORT_SHA})"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Build release body (include commits since last Android release build)
+        id: release_body
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          REPO_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+          TAG_PREFIX="android-release"
+          PREV_TAG=""
+
+          print_commit_range() {
+            local range="$1"
+            local empty_message="$2"
+            local count=0
+
+            while IFS=$'\t' read -r sha subject; do
+              [[ -z "$sha" ]] && continue
+              short_sha="${sha:0:7}"
+              echo "- [\`${short_sha}\`](${REPO_URL}/commit/${sha}) ${subject}"
+              count=$((count + 1))
+            done < <(git log --pretty=format:'%H%x09%s%n' "${range}")
+
+            if [[ "${count}" -eq 0 ]]; then
+              echo "- ${empty_message}"
+            fi
+          }
+
+          PREV_SUCCESS_RUN_INFO="$(
+            python - <<'PY'
+          import json
+          import os
+          import urllib.parse
+          import urllib.request
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          workflow_ref = os.environ["GITHUB_WORKFLOW_REF"]
+          workflow = workflow_ref.split("@", 1)[0].split("/")[-1]
+          branch = os.environ["GITHUB_REF_NAME"]
+          current_run = int(os.environ["GITHUB_RUN_NUMBER"])
+          current_attempt = int(os.environ["GITHUB_RUN_ATTEMPT"])
+          token = os.environ.get("GH_TOKEN", "")
+
+          params = urllib.parse.urlencode({
+              "status": "completed",
+              "event": "workflow_dispatch",
+              "branch": branch,
+              "per_page": 100,
+          })
+          url = f"https://api.github.com/repos/{repo}/actions/workflows/{workflow}/runs?{params}"
+
+          headers = {
+              "Accept": "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28",
+          }
+          if token:
+              headers["Authorization"] = f"Bearer {token}"
+
+          req = urllib.request.Request(url, headers=headers)
+          with urllib.request.urlopen(req) as resp:
+              data = json.load(resp)
+
+          best = None
+          for run in data.get("workflow_runs", []):
+              if run.get("conclusion") != "success":
+                  continue
+              run_number = int(run.get("run_number") or 0)
+              run_attempt = int(run.get("run_attempt") or 1)
+              if run_number < current_run or (run_number == current_run and run_attempt < current_attempt):
+                  key = (run_number, run_attempt)
+                  if best is None or key > best:
+                      best = key
+
+          if best is not None:
+              print(f"{best[0]}\t{best[1]}")
+          PY
+          )"
+          if [[ -n "${PREV_SUCCESS_RUN_INFO}" ]]; then
+            IFS=$'\t' read -r PREV_RUN PREV_ATTEMPT <<< "${PREV_SUCCESS_RUN_INFO}"
+            PREV_TAG="$(git tag --list "${TAG_PREFIX}-${PREV_RUN}-${PREV_ATTEMPT}-*" --sort=-creatordate | head -n 1)"
+            if [[ -z "${PREV_TAG}" ]]; then
+              PREV_TAG="$(git tag --list "${TAG_PREFIX}-${PREV_RUN}-*" --sort=-creatordate | head -n 1)"
+            fi
+          fi
+
+          BODY_DELIM="BODY_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
+          {
+            echo "body<<${BODY_DELIM}"
+            echo "Automated Android release build artifacts for commit \`${GITHUB_SHA}\`."
+            echo "Workflow run: ${REPO_URL}/actions/runs/${GITHUB_RUN_ID}"
+            echo
+
+            if [[ -n "$PREV_TAG" ]]; then
+              PREV_SHA="$(git rev-list -n 1 "${PREV_TAG}")"
+              echo "### Changes since previous Android release build \`${PREV_TAG}\`"
+              echo "Compare: ${REPO_URL}/compare/${PREV_TAG}...${GITHUB_SHA}"
+              echo
+
+              if git merge-base --is-ancestor "${PREV_SHA}" "${GITHUB_SHA}"; then
+                print_commit_range "${PREV_TAG}..${GITHUB_SHA}" "No new commits since the previous Android release build."
+              elif git merge-base --is-ancestor "${GITHUB_SHA}" "${PREV_SHA}"; then
+                echo "- This build is on an older commit than the previous Android release build."
+                echo "- Commits in previous release build but not this build:"
+                print_commit_range "${GITHUB_SHA}..${PREV_TAG}" "No differing commits found."
+              else
+                echo "- Current and previous Android release builds are on different branches."
+                echo "- Commits only in this build:"
+                print_commit_range "${PREV_TAG}..${GITHUB_SHA}" "No unique commits in this build."
+                echo "- Commits only in previous release build:"
+                print_commit_range "${GITHUB_SHA}..${PREV_TAG}" "No unique commits in previous release build."
+              fi
+            else
+              echo "### Changes"
+              echo "- No previous successful Android release build tag found."
+            fi
+            echo "${BODY_DELIM}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create prerelease
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ steps.meta.outputs.name }}
+          prerelease: false
+          generate_release_notes: false
+          body: ${{ steps.release_body.outputs.body }}
+
+  android:
+    needs: prepare_release
+    runs-on: ubuntu-latest
+    env:
+      APTABASE_KEY: ${{ secrets.APTABASE_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "lts/*"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "latest"
+
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          cache: true
+          rust-src-dir: src-tauri
+          cache-workspaces: src-tauri
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: "temurin"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Setup Android NDK
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: ${{ env.NDK_VERSION }}
+          link-to-sdk: true
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            pkg-config \
+            libssl-dev \
+            perl
+
+      - name: Install Android Rust targets
+        run: |
+          rustup target add \
+            aarch64-linux-android \
+            armv7-linux-androideabi \
+            i686-linux-android \
+            x86_64-linux-android
+
+      - name: Provide Android AR/RANLIB shims for OpenSSL
+        run: |
+          NDK="${{ steps.setup-ndk.outputs.ndk-path }}"
+          TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+
+          echo "Using NDK at $NDK"
+          echo "Toolchain bin at $TOOLCHAIN"
+
+          TRIPLES=(
+            aarch64-linux-android
+            armv7-linux-androideabi
+            arm-linux-androideabi
+            i686-linux-android
+            x86_64-linux-android
+          )
+
+          for triple in "${TRIPLES[@]}"; do
+            sudo ln -sf "$TOOLCHAIN/llvm-ar" "/usr/local/bin/${triple}-ar"
+            sudo ln -sf "$TOOLCHAIN/llvm-ranlib" "/usr/local/bin/${triple}-ranlib"
+          done
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Write Tauri version override
+        if: ${{ inputs.version_override != '' }}
+        env:
+          VERSION_OVERRIDE: ${{ inputs.version_override }}
+        run: |
+          node -e "require('fs').writeFileSync('tauri-version-override.json', JSON.stringify({ version: process.env.VERSION_OVERRIDE }))"
+
+      - name: Configure Android signing
+        env:
+          ANDROID_KEY_BASE64: ${{ secrets.ANDROID_KEY_BASE64 }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$ANDROID_KEY_BASE64" ] || [ -z "$ANDROID_KEY_ALIAS" ] || [ -z "$ANDROID_KEY_PASSWORD" ]; then
+            echo "Missing Android signing secrets."
+            exit 1
+          fi
+
+          base64 -d <<< "$ANDROID_KEY_BASE64" > "$RUNNER_TEMP/keystore.jks"
+          cd src-tauri/gen/android
+          cat > keystore.properties << EOF
+          keyAlias=$ANDROID_KEY_ALIAS
+          password=$ANDROID_KEY_PASSWORD
+          storeFile=$RUNNER_TEMP/keystore.jks
+          EOF
+          {
+            echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/keystore.jks"
+            echo "ANDROID_KEY_ALIAS=$ANDROID_KEY_ALIAS"
+            echo "ANDROID_KEY_PASSWORD=$ANDROID_KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+
+      - name: Build Tauri Android app (Release build)
+        env:
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
+          ANDROID_HOME: ${{ env.ANDROID_SDK_ROOT }}
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
+          NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          RUST_BACKTRACE: 1
+        run: |
+          BUILD_ARGS=(android build --ci)
+          if [ -f tauri-version-override.json ]; then
+            BUILD_ARGS+=(--config tauri-version-override.json)
+          fi
+          BUILD_ARGS+=(--apk)
+          bun run tauri "${BUILD_ARGS[@]}"
+
+      - name: Ensure signed APK output
+        env:
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
+          ANDROID_HOME: ${{ env.ANDROID_SDK_ROOT }}
+          ANDROID_KEY_ALIAS: ${{ env.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ env.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEYSTORE_PATH: ${{ env.ANDROID_KEYSTORE_PATH }}
+        run: |
+          APK_DIR="src-tauri/gen/android/app/build/outputs/apk/universal/release"
+          SIGNED_APK="$APK_DIR/app-universal-release.apk"
+          UNSIGNED_APK="$APK_DIR/app-universal-release-unsigned.apk"
+
+          if [ ! -f "$SIGNED_APK" ] && [ ! -f "$UNSIGNED_APK" ]; then
+            echo "No APK found in $APK_DIR"
+            ls -la "$APK_DIR"
+            exit 1
+          fi
+
+          BUILD_TOOLS="$(ls "$ANDROID_SDK_ROOT/build-tools" | sort -V | tail -1)"
+          ZIPALIGN="$ANDROID_SDK_ROOT/build-tools/$BUILD_TOOLS/zipalign"
+          APKSIGNER="$ANDROID_SDK_ROOT/build-tools/$BUILD_TOOLS/apksigner"
+
+          if [ -f "$UNSIGNED_APK" ]; then
+            ALIGNED_APK="$APK_DIR/app-universal-release-aligned.apk"
+            "$ZIPALIGN" -f 4 "$UNSIGNED_APK" "$ALIGNED_APK"
+            "$APKSIGNER" sign \
+              --ks "$ANDROID_KEYSTORE_PATH" \
+              --ks-pass "pass:$ANDROID_KEY_PASSWORD" \
+              --key-pass "pass:$ANDROID_KEY_PASSWORD" \
+              --ks-key-alias "$ANDROID_KEY_ALIAS" \
+              --out "$SIGNED_APK" \
+              "$ALIGNED_APK"
+            rm -f "$ALIGNED_APK"
+          fi
+
+          "$APKSIGNER" verify --verbose "$SIGNED_APK"
+          rm -f "$UNSIGNED_APK"
+
+      - name: Package Android artifacts
+        run: |
+          APK_ROOT="src-tauri/gen/android/app/build/outputs/apk"
+          SIGNED_APK="$APK_ROOT/universal/release/app-universal-release.apk"
+          mkdir -p dist-artifacts
+
+          if [ ! -f "$SIGNED_APK" ]; then
+            echo "Signed universal APK not found at $SIGNED_APK"
+            exit 1
+          fi
+
+          cp "$SIGNED_APK" dist-artifacts/android-universal-release.apk
+
+          (
+            cd "$APK_ROOT"
+            find . -type f -name "*.apk" ! -name "*-unsigned.apk" | sort > "$GITHUB_WORKSPACE/dist-artifacts/apk-file-list.txt"
+            if [ ! -s "$GITHUB_WORKSPACE/dist-artifacts/apk-file-list.txt" ]; then
+              echo "No signed APK files found under $APK_ROOT"
+              exit 1
+            fi
+            zip -9 "$GITHUB_WORKSPACE/dist-artifacts/android-apk-bundle.zip" -@ < "$GITHUB_WORKSPACE/dist-artifacts/apk-file-list.txt"
+          )
+
+      - name: Upload Android artifacts to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare_release.outputs.tag }}
+          files: |
+            dist-artifacts/android-universal-release.apk
+            dist-artifacts/android-apk-bundle.zip
+          fail_on_unmatched_files: true
+
+  cleanup_release_on_failure:
+    name: Cleanup release on failure/cancel
+    needs:
+      - prepare_release
+      - android
+    if: ${{ always() && needs.prepare_release.result == 'success' && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete prerelease and tag
+        uses: actions/github-script@v7
+        env:
+          RELEASE_TAG: ${{ needs.prepare_release.outputs.tag }}
+        with:
+          script: |
+            const tag = process.env.RELEASE_TAG;
+            if (!tag) {
+              core.info("No release tag from prepare_release; skipping cleanup.");
+              return;
+            }
+
+            const { owner, repo } = context.repo;
+
+            try {
+              const release = await github.rest.repos.getReleaseByTag({ owner, repo, tag });
+              await github.rest.repos.deleteRelease({ owner, repo, release_id: release.data.id });
+              core.info(`Deleted release ${tag} (id=${release.data.id}).`);
+            } catch (error) {
+              if (error.status === 404) {
+                core.info(`Release ${tag} not found; skipping.`);
+              } else {
+                throw error;
+              }
+            }
+
+            try {
+              await github.rest.git.deleteRef({ owner, repo, ref: `tags/${tag}` });
+              core.info(`Deleted tag ${tag}.`);
+            } catch (error) {
+              if (error.status === 404) {
+                core.info(`Tag ${tag} not found; skipping.`);
+              } else {
+                throw error;
+              }
+            }

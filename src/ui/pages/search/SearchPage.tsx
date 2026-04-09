@@ -11,6 +11,7 @@ import {
 } from "../../../core/storage/repo";
 import type { Character, Persona } from "../../../core/storage/schemas";
 import { cn } from "../../design-tokens";
+import { WindowControlButtons, useDragRegionProps, hasCustomWindowControls } from "../../components/App/TopNav";
 import { useI18n } from "../../../core/i18n/context";
 import { useAvatar } from "../../hooks/useAvatar";
 import { useAvatarGradient } from "../../hooks/useAvatarGradient";
@@ -22,6 +23,7 @@ type SearchTab = "characters" | "personas";
 
 export function SearchPage() {
   const { t } = useI18n();
+  const dragRegionProps = useDragRegionProps();
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<SearchTab>("characters");
   const [characters, setCharacters] = useState<Character[]>([]);
@@ -81,7 +83,7 @@ export function SearchPage() {
   };
 
   const openPersona = (persona: Persona) => {
-    navigate(`/settings/personas/${persona.id}/edit`);
+    navigate(`/personas/${persona.id}/edit`);
   };
 
   const hasQuery = searchQuery.trim().length > 0;
@@ -90,8 +92,9 @@ export function SearchPage() {
     <div className="flex h-screen flex-col bg-surface text-fg/80">
       {/* Minimal Header */}
       <header
-        className="shrink-0 px-3"
+        className={cn("shrink-0 pl-3", hasCustomWindowControls ? "pr-0" : "px-3")}
         style={{ paddingTop: "calc(env(safe-area-inset-top) + 8px)" }}
+        {...dragRegionProps}
       >
         {/* Search Bar Row */}
         <div className="flex items-center gap-2">
@@ -123,6 +126,7 @@ export function SearchPage() {
               </button>
             )}
           </div>
+          <WindowControlButtons />
         </div>
 
         {/* Compact Inline Tabs */}

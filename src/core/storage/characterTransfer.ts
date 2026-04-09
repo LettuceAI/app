@@ -147,6 +147,20 @@ export async function previewCharacterImport(importJson: string): Promise<Charac
   }
 }
 
+export async function previewCharacterImportFile(file: File): Promise<CharacterImportPreview> {
+  try {
+    const buffer = await file.arrayBuffer();
+    const previewJson = await invoke<string>("character_import_preview_from_bytes", {
+      filename: file.name,
+      data: Array.from(new Uint8Array(buffer)),
+    });
+    return JSON.parse(previewJson) as CharacterImportPreview;
+  } catch (error) {
+    console.error("[previewCharacterImportFile] Failed to parse character:", error);
+    throw new Error(typeof error === "string" ? error : "Failed to parse character");
+  }
+}
+
 /**
  * Download a JSON string as a file
  * On mobile (Android/iOS), saves to the Downloads folder
@@ -176,7 +190,7 @@ export async function downloadJson(json: string, filename: string): Promise<void
 }
 
 /**
- * Read a file as text
+ * Read a file as UTF-8 text
  */
 export function readFileAsText(file: File): Promise<string> {
   return new Promise((resolve, reject) => {

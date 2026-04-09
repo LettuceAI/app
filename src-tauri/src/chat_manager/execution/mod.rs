@@ -99,6 +99,24 @@ pub(super) fn resolve_llama_sampler_profile(
         .and_then(|value| normalize_llama_sampler_profile(&value))
 }
 
+pub(super) fn resolve_llama_sampler_order(
+    session: &Session,
+    model: &Model,
+    settings: &Settings,
+) -> Option<Vec<String>> {
+    session
+        .advanced_model_settings
+        .as_ref()
+        .and_then(|cfg| cfg.llama_sampler_order.clone())
+        .or_else(|| {
+            model
+                .advanced_model_settings
+                .as_ref()
+                .and_then(|cfg| cfg.llama_sampler_order.clone())
+        })
+        .or_else(|| settings.advanced_model_settings.llama_sampler_order.clone())
+}
+
 pub(super) fn resolve_temperature(
     session: &Session,
     model: &Model,
@@ -119,10 +137,12 @@ pub(super) fn resolve_temperature(
         return Some(value);
     }
     if is_llama_cpp_model(model) {
-        return Some(llama_sampler_profile_defaults(
-            resolve_llama_sampler_profile(session, model, settings).as_deref(),
-        )
-        .temperature);
+        return Some(
+            llama_sampler_profile_defaults(
+                resolve_llama_sampler_profile(session, model, settings).as_deref(),
+            )
+            .temperature,
+        );
     }
     None
 }
@@ -143,10 +163,12 @@ pub(super) fn resolve_top_p(session: &Session, model: &Model, settings: &Setting
         return Some(value);
     }
     if is_llama_cpp_model(model) {
-        return Some(llama_sampler_profile_defaults(
-            resolve_llama_sampler_profile(session, model, settings).as_deref(),
-        )
-        .top_p);
+        return Some(
+            llama_sampler_profile_defaults(
+                resolve_llama_sampler_profile(session, model, settings).as_deref(),
+            )
+            .top_p,
+        );
     }
     None
 }
@@ -542,6 +564,24 @@ pub(super) fn resolve_llama_raw_completion_fallback(
             .llama_raw_completion_fallback)
 }
 
+pub(super) fn resolve_llama_strict_mode(
+    session: &Session,
+    model: &Model,
+    settings: &Settings,
+) -> Option<bool> {
+    session
+        .advanced_model_settings
+        .as_ref()
+        .and_then(|cfg| cfg.llama_strict_mode)
+        .or_else(|| {
+            model
+                .advanced_model_settings
+                .as_ref()
+                .and_then(|cfg| cfg.llama_strict_mode)
+        })
+        .or(settings.advanced_model_settings.llama_strict_mode)
+}
+
 pub(super) fn resolve_llama_profile_min_p(
     session: &Session,
     model: &Model,
@@ -619,6 +659,7 @@ pub(crate) fn prepare_sampling_request(
         top_k,
         frequency_penalty,
         presence_penalty,
+        model_request_settings.prompt_caching_enabled,
     );
     let extra_body_fields =
         build_provider_extra_fields(provider_id, session, model, settings, &request_settings);

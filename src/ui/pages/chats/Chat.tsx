@@ -10,7 +10,7 @@ import {
 import { useParams, useSearchParams, useNavigate } from "react-router-dom";
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
 import { ArrowLeftRight, ChevronDown, User, X } from "lucide-react";
-import { invoke } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import type {
   AccessibilitySettings,
   Character,
@@ -48,6 +48,7 @@ import {
   saveSession,
   SETTINGS_UPDATED_EVENT,
   SESSION_UPDATED_EVENT,
+  updateSessionBackgroundImage,
 } from "../../../core/storage";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { playAccessibilitySound } from "../../../core/utils/accessibilityAudio";
@@ -61,6 +62,7 @@ import {
   MessageActionsBottomSheet,
   LoadingSpinner,
   EmptyState,
+  ChatSettingsDrawer,
 } from "./components";
 import { BottomMenu, MenuButton } from "../../components";
 import { AvatarImage } from "../../components/AvatarImage";
@@ -70,6 +72,15 @@ import { radius, cn } from "../../design-tokens";
 import { useI18n } from "../../../core/i18n/context";
 import { PersonaSelector } from "../group-chats/components/settings";
 import { sanitizeAssistantSceneDirective } from "./hooks/sceneImageProtocol";
+import { processBackgroundImage } from "../../../core/utils/image";
+import { convertToImageRef } from "../../../core/storage/images";
+import { useImageData } from "../../hooks/useImageData";
+import { ImageLibraryPanel } from "../library/ImageLibraryPage";
+import type { ImageLibraryItem } from "../../../core/storage/repo";
+import {
+  SCENE_PROMPT_APPROVAL_EVENT,
+  type ScenePromptApprovalDetail,
+} from "./hooks/useChatEnhancementsController";
 
 const LONG_PRESS_DELAY = 450;
 const SCROLL_THRESHOLD = 10; // pixels of movement to cancel long press
@@ -106,6 +117,7 @@ export function ChatConversationPage() {
   const [groupBranchError, setGroupBranchError] = useState<string | null>(null);
   const [groupBranchCreating, setGroupBranchCreating] = useState(false);
   const [selectedImage, setSelectedImage] = useState<{ src: string; alt: string } | null>(null);
+  const [selectedImagePromptExpanded, setSelectedImagePromptExpanded] = useState(false);
   const [supportsImageInput, setSupportsImageInput] = useState(false);
   const [keyboardInset, setKeyboardInset] = useState(0);
   const audioCacheRef = useRef<{
@@ -146,6 +158,8 @@ export function ChatConversationPage() {
   const [showChoiceMenu, setShowChoiceMenu] = useState(false);
   const [showResultMenu, setShowResultMenu] = useState(false);
   const [showPersonaSelector, setShowPersonaSelector] = useState(false);
+  const [showBackgroundMenu, setShowBackgroundMenu] = useState(false);
+  const [showBackgroundLibraryMenu, setShowBackgroundLibraryMenu] = useState(false);
   const [generatedReply, setGeneratedReply] = useState<string | null>(null);
   const [generatingReply, setGeneratingReply] = useState(false);
   const [helpMeReplyError, setHelpMeReplyError] = useState<string | null>(null);
@@ -160,18 +174,93 @@ export function ChatConversationPage() {
   const [generatingScenePrompt, setGeneratingScenePrompt] = useState(false);
   const [scenePromptError, setScenePromptError] = useState<string | null>(null);
   const [applyingSceneImage, setApplyingSceneImage] = useState(false);
+  const [scenePromptResultMode, setScenePromptResultMode] = useState<"generated" | "approval">(
+    "generated",
+  );
   const [helpMeReplyEnabled, setHelpMeReplyEnabled] = useState(true);
-  const [sceneGenerationEnabled, setSceneGenerationEnabled] = useState(true);
+  const [sceneGenerationEnabled, setSceneGenerationEnabled] = useState(false);
   const [shouldTriggerFileInput, setShouldTriggerFileInput] = useState(false);
+  const [savingSessionBackground, setSavingSessionBackground] = useState(false);
   const [personas, setPersonas] = useState<Persona[]>([]);
   const isMobile = useMemo(() => getPlatform().type === "mobile", []);
+  const [settingsDrawerOpen, setSettingsDrawerOpen] = useState(false);
+  const footerTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const shouldRestoreFooterFocusRef = useRef(false);
+  const previousSettingsDrawerOpenRef = useRef(false);
   const helpMeReplyRequestIdRef = useRef<string | null>(null);
   const helpMeReplyUnlistenRef = useRef<UnlistenFn | null>(null);
   const helpMeReplyLoadingTimeoutRef = useRef<number | null>(null);
+  const sessionBackgroundInputRef = useRef<HTMLInputElement | null>(null);
+  const backgroundLibraryScrollRef = useRef<HTMLDivElement | null>(null);
+
+  const sessionBackgroundPreview = useImageData(chatController.session?.backgroundImagePath);
+  const characterBackgroundPreview = useImageData(chatController.character?.backgroundImagePath);
+  const hasSessionBackgroundOverride = !!chatController.session?.backgroundImagePath;
+  const hasCharacterBackgroundDefault = !!chatController.character?.backgroundImagePath;
 
   const handleImageClick = useCallback((src: string, alt: string) => {
     setSelectedImage({ src, alt });
   }, []);
+
+  const handleUpdateSessionBackground = useCallback(
+    async (backgroundImagePath: string | null) => {
+      if (!chatController.session?.id) return;
+      await updateSessionBackgroundImage(chatController.session.id, backgroundImagePath);
+    },
+    [chatController.session?.id],
+  );
+
+  const handleSessionBackgroundUpload = useCallback(
+    async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      const input = event.target;
+      if (!file) return;
+
+      setSavingSessionBackground(true);
+      try {
+        const dataUrl = await processBackgroundImage(file);
+        const imageRef = await convertToImageRef(dataUrl);
+        await handleUpdateSessionBackground(imageRef);
+        setShowBackgroundMenu(false);
+      } catch (error) {
+        console.error("Failed to update session background:", error);
+      } finally {
+        input.value = "";
+        setSavingSessionBackground(false);
+      }
+    },
+    [handleUpdateSessionBackground],
+  );
+
+  const handleUseCharacterBackground = useCallback(async () => {
+    setSavingSessionBackground(true);
+    try {
+      await handleUpdateSessionBackground(null);
+      setShowBackgroundMenu(false);
+    } catch (error) {
+      console.error("Failed to revert to character background:", error);
+    } finally {
+      setSavingSessionBackground(false);
+    }
+  }, [handleUpdateSessionBackground]);
+
+  const handleUseLibraryBackground = useCallback(
+    async (item: ImageLibraryItem) => {
+      setSavingSessionBackground(true);
+      try {
+        const storedId =
+          item.bucket === "stored" ? item.filename.replace(/\.[^.]+$/, "") || null : null;
+        await handleUpdateSessionBackground(storedId ?? convertFileSrc(item.filePath));
+        setShowBackgroundLibraryMenu(false);
+        setShowBackgroundMenu(false);
+      } catch (error) {
+        console.error("Failed to use library background:", error);
+      } finally {
+        setSavingSessionBackground(false);
+      }
+    },
+    [handleUpdateSessionBackground],
+  );
 
   const selectedImagePrompt = useMemo(() => {
     const value = selectedImage?.alt?.trim();
@@ -182,6 +271,7 @@ export function ChatConversationPage() {
 
   useEffect(() => {
     if (!selectedImage) return;
+    setSelectedImagePromptExpanded(false);
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -247,6 +337,21 @@ export function ChatConversationPage() {
     setSessionForHeader(chatController.session);
   }, [chatController.session]);
 
+  useEffect(() => {
+    const wasOpen = previousSettingsDrawerOpenRef.current;
+    previousSettingsDrawerOpenRef.current = settingsDrawerOpen;
+    if (!wasOpen || settingsDrawerOpen || !shouldRestoreFooterFocusRef.current) {
+      return;
+    }
+
+    shouldRestoreFooterFocusRef.current = false;
+    const restoreId = window.requestAnimationFrame(() => {
+      footerTextareaRef.current?.focus();
+    });
+
+    return () => window.cancelAnimationFrame(restoreId);
+  }, [settingsDrawerOpen]);
+
   const {
     character,
     persona,
@@ -295,7 +400,8 @@ export function ChatConversationPage() {
 
   const resolveSceneAttachment = useCallback((message: StoredMessage | null | undefined) => {
     if (!message) return null;
-    return message.attachments?.[0] ?? null;
+    const attachments = message.attachments ?? [];
+    return attachments.length > 0 ? attachments[attachments.length - 1] : null;
   }, []);
 
   const resolveScenePromptSeed = useCallback(
@@ -401,8 +507,6 @@ export function ChatConversationPage() {
   const isGenerating = sending || regeneratingMessageId !== null;
   const lastMessageContentLength = messages[messages.length - 1]?.content.length ?? 0;
 
-  const unloadProviderIdRef = useRef<string | null>(null);
-
   useEffect(() => {
     const checkModelCapabilities = async () => {
       if (!character) {
@@ -422,35 +526,6 @@ export function ChatConversationPage() {
     };
     checkModelCapabilities();
   }, [character]);
-
-  useEffect(() => {
-    let active = true;
-    unloadProviderIdRef.current = null;
-    if (!character) {
-      return () => {
-        active = false;
-      };
-    }
-
-    (async () => {
-      try {
-        const settings = await readSettings();
-        if (!active) return;
-        const effectiveModelId = character.defaultModelId || settings.defaultModelId;
-        const currentModel = settings.models.find((m: Model) => m.id === effectiveModelId);
-        unloadProviderIdRef.current = currentModel?.providerId ?? null;
-      } catch (err) {
-        console.error("Failed to resolve model provider for unload:", err);
-      }
-    })();
-
-    return () => {
-      active = false;
-      if (unloadProviderIdRef.current === "llamacpp") {
-        void invoke("llamacpp_unload");
-      }
-    };
-  }, [character?.id]);
 
   const swapOverlayStyle = useMemo<CSSProperties>(() => {
     const tintRgb = isBackgroundLight ? "22, 101, 52" : "16, 185, 129";
@@ -1246,6 +1321,7 @@ export function ChatConversationPage() {
     setGeneratingScenePrompt(false);
     setScenePromptError(null);
     setApplyingSceneImage(false);
+    setScenePromptResultMode("generated");
   }, []);
 
   const handleOpenSceneImageFlow = useCallback(
@@ -1258,6 +1334,7 @@ export function ChatConversationPage() {
       setScenePromptError(null);
       setGeneratingScenePrompt(false);
       setApplyingSceneImage(false);
+      setScenePromptResultMode("generated");
       setShowScenePromptEditorMenu(false);
       setShowScenePromptResultMenu(false);
       setShowScenePromptModeMenu(true);
@@ -1274,6 +1351,7 @@ export function ChatConversationPage() {
     setScenePromptError(null);
     setGeneratingScenePrompt(true);
     setGeneratedScenePrompt(null);
+    setScenePromptResultMode("generated");
 
     try {
       const prompt = await generateAiScenePrompt(scenePromptTargetMessage.id);
@@ -1296,22 +1374,34 @@ export function ChatConversationPage() {
   const handleApplySceneImagePrompt = useCallback(
     async (prompt: string) => {
       if (!scenePromptTargetMessage) return;
+      const targetMessage = scenePromptTargetMessage;
 
+      resetMessageActions();
+      setShowScenePromptModeMenu(false);
+      setShowScenePromptEditorMenu(false);
+      setShowScenePromptResultMenu(false);
       setApplyingSceneImage(true);
       setScenePromptError(null);
 
       try {
-        await applySceneImagePrompt(scenePromptTargetMessage, prompt, {
-          existingAttachmentId: resolveSceneAttachment(scenePromptTargetMessage)?.id ?? null,
-        });
+        await applySceneImagePrompt(targetMessage, prompt);
         resetScenePromptFlow();
       } catch (error) {
         setScenePromptError(error instanceof Error ? error.message : String(error));
+        setScenePromptTargetMessage(targetMessage);
+        setScenePromptDraft(prompt);
+        setShowScenePromptEditorMenu(true);
       } finally {
         setApplyingSceneImage(false);
       }
     },
-    [applySceneImagePrompt, resetScenePromptFlow, resolveSceneAttachment, scenePromptTargetMessage],
+    [
+      applySceneImagePrompt,
+      resetMessageActions,
+      resetScenePromptFlow,
+      resolveSceneAttachment,
+      scenePromptTargetMessage,
+    ],
   );
 
   useEffect(
@@ -1320,6 +1410,27 @@ export function ChatConversationPage() {
     },
     [cancelHelpMeReplyGeneration],
   );
+
+  useEffect(() => {
+    const handleScenePromptApproval = (event: Event) => {
+      const customEvent = event as CustomEvent<ScenePromptApprovalDetail>;
+      if (customEvent.detail.sessionId !== session?.id) return;
+
+      setShowScenePromptModeMenu(false);
+      setShowScenePromptEditorMenu(false);
+      setScenePromptTargetMessage(customEvent.detail.message);
+      setScenePromptDraft(customEvent.detail.scenePrompt);
+      setGeneratedScenePrompt(customEvent.detail.scenePrompt);
+      setScenePromptError(null);
+      setGeneratingScenePrompt(false);
+      setApplyingSceneImage(false);
+      setScenePromptResultMode("approval");
+      setShowScenePromptResultMenu(true);
+    };
+
+    window.addEventListener(SCENE_PROMPT_APPROVAL_EVENT, handleScenePromptApproval);
+    return () => window.removeEventListener(SCENE_PROMPT_APPROVAL_EVENT, handleScenePromptApproval);
+  }, [session?.id]);
 
   const loadOlderFromDb = useCallback(async () => {
     if (!hasMoreMessagesBefore) return;
@@ -1467,6 +1578,10 @@ export function ChatConversationPage() {
     accessibilitySettings,
     swapPlaces,
   ]);
+
+  const captureFooterFocusForDrawer = useCallback(() => {
+    shouldRestoreFooterFocusRef.current = document.activeElement === footerTextareaRef.current;
+  }, []);
 
   const handleRegenerateMessage = useCallback(
     async (message: StoredMessage) => {
@@ -1685,6 +1800,8 @@ export function ChatConversationPage() {
           hasBackgroundImage={!!backgroundImageData}
           headerOverlayClassName={theme.headerOverlay}
           onSessionUpdate={handleSessionUpdate}
+          onBeforeSettingsOpen={!isMobile ? captureFooterFocusForDrawer : undefined}
+          onSettingsOpen={!isMobile ? () => setSettingsDrawerOpen(true) : undefined}
         />
       </div>
 
@@ -1884,6 +2001,7 @@ export function ChatConversationPage() {
           onOpenPlusMenu={handleOpenPlusMenu}
           triggerFileInput={shouldTriggerFileInput}
           onFileInputTriggered={() => setShouldTriggerFileInput(false)}
+          textareaRef={footerTextareaRef}
         />
       </div>
 
@@ -1926,6 +2044,7 @@ export function ChatConversationPage() {
         characterMemoryType={character?.memoryType}
         characterDefaultModelId={character?.defaultModelId ?? null}
         characterId={characterId}
+        sessionId={session?.id ?? null}
       />
 
       {/* Character Selection for Branch */}
@@ -2041,6 +2160,21 @@ export function ChatConversationPage() {
             }}
           />
           <MenuButton
+            icon={Image}
+            title="Chat Background"
+            description={
+              hasSessionBackgroundOverride
+                ? "Session override active"
+                : hasCharacterBackgroundDefault
+                  ? "Using character default background"
+                  : "No background selected"
+            }
+            onClick={() => {
+              setShowPlusMenu(false);
+              setShowBackgroundMenu(true);
+            }}
+          />
+          <MenuButton
             icon={ArrowLeftRight}
             title={swapPlaces ? t("chats.swapPlacesOn") : t("chats.swapPlaces")}
             description={
@@ -2082,6 +2216,108 @@ export function ChatConversationPage() {
         selectedPersonaId={selectedPersonaId}
         onSelect={handleChangePersona}
       />
+
+      <BottomMenu
+        isOpen={showBackgroundMenu}
+        onClose={() => !savingSessionBackground && setShowBackgroundMenu(false)}
+        title="Chat Background"
+      >
+        <div className="space-y-4">
+          <input
+            ref={sessionBackgroundInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(event) => {
+              void handleSessionBackgroundUpload(event);
+            }}
+          />
+
+          {(backgroundImageData || characterBackgroundPreview || sessionBackgroundPreview) && (
+            <div className="space-y-3">
+              {backgroundImageData && (
+                <div className="overflow-hidden rounded-2xl border border-fg/10 bg-fg/[0.04]">
+                  <img
+                    src={backgroundImageData}
+                    alt="Current chat background"
+                    className="h-32 w-full object-cover"
+                  />
+                  <div className="border-t border-fg/10 px-4 py-3 text-sm text-fg/70">
+                    {hasSessionBackgroundOverride
+                      ? "Current session background"
+                      : "Current character default background"}
+                  </div>
+                </div>
+              )}
+
+              {hasSessionBackgroundOverride &&
+                characterBackgroundPreview &&
+                characterBackgroundPreview !== sessionBackgroundPreview && (
+                  <div className="overflow-hidden rounded-2xl border border-fg/10 bg-fg/[0.04]">
+                    <img
+                      src={characterBackgroundPreview}
+                      alt="Character default background"
+                      className="h-24 w-full object-cover"
+                    />
+                    <div className="border-t border-fg/10 px-4 py-3 text-sm text-fg/55">
+                      Character default background
+                    </div>
+                  </div>
+                )}
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <MenuButton
+              icon={Image}
+              title={hasSessionBackgroundOverride ? "Replace Session Background" : "Upload Session Background"}
+              description="Only changes this chat session"
+              loading={savingSessionBackground}
+              onClick={() => sessionBackgroundInputRef.current?.click()}
+            />
+            <MenuButton
+              icon={Image}
+              title="Choose from Library"
+              description="Pick an existing image library item for this chat session"
+              loading={savingSessionBackground}
+              onClick={() => setShowBackgroundLibraryMenu(true)}
+            />
+            {(hasSessionBackgroundOverride || hasCharacterBackgroundDefault) && (
+              <MenuButton
+                icon={X}
+                title={hasCharacterBackgroundDefault ? "Use Character Default" : "Remove Background"}
+                description={
+                  hasCharacterBackgroundDefault
+                    ? "Clear the session override and return to the character background"
+                    : "Remove the session background override"
+                }
+                loading={savingSessionBackground}
+                onClick={() => {
+                  void handleUseCharacterBackground();
+                }}
+              />
+            )}
+          </div>
+        </div>
+      </BottomMenu>
+
+      <BottomMenu
+        isOpen={showBackgroundLibraryMenu}
+        onClose={() => !savingSessionBackground && setShowBackgroundLibraryMenu(false)}
+        title="Choose Background"
+      >
+        <div ref={backgroundLibraryScrollRef} className="max-h-[60vh] overflow-y-auto">
+          <ImageLibraryPanel
+            scrollContainerRef={backgroundLibraryScrollRef}
+            embedded
+            mode="picker"
+            fixedFilter="Backgrounds"
+            hideFilterTabs
+            columnCountOverride={2}
+            onUseItem={(item) => void handleUseLibraryBackground(item)}
+          />
+        </div>
+      </BottomMenu>
 
       {/* Choice Menu - Use existing draft or generate new */}
       <BottomMenu
@@ -2256,7 +2492,11 @@ export function ChatConversationPage() {
       <BottomMenu
         isOpen={showScenePromptResultMenu}
         onClose={resetScenePromptFlow}
-        title={t("chats.sceneImage.aiTitle")}
+        title={
+          scenePromptResultMode === "approval"
+            ? t("chats.sceneImage.reviewTitle")
+            : t("chats.sceneImage.aiTitle")
+        }
       >
         <div className="space-y-4">
           {scenePromptError ? (
@@ -2278,54 +2518,101 @@ export function ChatConversationPage() {
             </div>
           ) : null}
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <button
-              onClick={() => void handleGenerateAiScenePrompt()}
-              disabled={generatingScenePrompt || applyingSceneImage}
-              className={cn(
-                "flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium text-white/80 transition",
-                "border border-white/10 bg-white/5 hover:bg-white/10",
-                "disabled:opacity-50",
-                radius.lg,
-              )}
-            >
-              <RefreshCw size={18} />
-              <span>{t("chats.sceneImage.regeneratePrompt")}</span>
-            </button>
-            <button
-              onClick={() => {
-                setScenePromptDraft(generatedScenePrompt ?? "");
-                setShowScenePromptResultMenu(false);
-                setShowScenePromptEditorMenu(true);
-              }}
-              disabled={generatingScenePrompt || !generatedScenePrompt || applyingSceneImage}
-              className={cn(
-                "flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium text-white/80 transition",
-                "border border-white/10 bg-white/5 hover:bg-white/10",
-                "disabled:opacity-50",
-                radius.lg,
-              )}
-            >
-              <PenLine size={18} />
-              <span>{t("chats.sceneImage.editPrompt")}</span>
-            </button>
-            <button
-              onClick={() => void handleApplySceneImagePrompt(generatedScenePrompt ?? "")}
-              disabled={generatingScenePrompt || !generatedScenePrompt || applyingSceneImage}
-              className={cn(
-                "flex items-center justify-center gap-2 px-4 py-3 text-sm font-semibold text-white transition",
-                "bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50",
-                radius.lg,
-              )}
-            >
-              {applyingSceneImage ? <LoadingSpinner /> : <Check size={18} />}
-              <span>
-                {resolveSceneAttachment(scenePromptTargetMessage)
-                  ? t("chats.sceneImage.updateImage")
-                  : t("chats.sceneImage.generateImage")}
-              </span>
-            </button>
-          </div>
+          {scenePromptResultMode === "approval" ? (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <button
+                onClick={resetScenePromptFlow}
+                disabled={generatingScenePrompt || applyingSceneImage}
+                className={cn(
+                  "flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium text-white/80 transition",
+                  "border border-white/10 bg-white/5 hover:bg-white/10",
+                  "disabled:opacity-50",
+                  radius.lg,
+                )}
+              >
+                <X size={18} />
+                <span>{t("chats.sceneImage.denyPrompt")}</span>
+              </button>
+              <button
+                onClick={() => {
+                  setScenePromptDraft(generatedScenePrompt ?? "");
+                  setShowScenePromptResultMenu(false);
+                  setShowScenePromptEditorMenu(true);
+                }}
+                disabled={generatingScenePrompt || !generatedScenePrompt || applyingSceneImage}
+                className={cn(
+                  "flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium text-white/80 transition",
+                  "border border-white/10 bg-white/5 hover:bg-white/10",
+                  "disabled:opacity-50",
+                  radius.lg,
+                )}
+              >
+                <PenLine size={18} />
+                <span>{t("chats.sceneImage.editPrompt")}</span>
+              </button>
+              <button
+                onClick={() => void handleApplySceneImagePrompt(generatedScenePrompt ?? "")}
+                disabled={generatingScenePrompt || !generatedScenePrompt || applyingSceneImage}
+                className={cn(
+                  "flex items-center justify-center gap-2 px-4 py-3 text-sm font-semibold text-white transition",
+                  "bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50",
+                  radius.lg,
+                )}
+              >
+                {applyingSceneImage ? <LoadingSpinner /> : <Check size={18} />}
+                <span>{t("chats.sceneImage.acceptPrompt")}</span>
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <button
+                onClick={() => void handleGenerateAiScenePrompt()}
+                disabled={generatingScenePrompt || applyingSceneImage}
+                className={cn(
+                  "flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium text-white/80 transition",
+                  "border border-white/10 bg-white/5 hover:bg-white/10",
+                  "disabled:opacity-50",
+                  radius.lg,
+                )}
+              >
+                <RefreshCw size={18} />
+                <span>{t("chats.sceneImage.regeneratePrompt")}</span>
+              </button>
+              <button
+                onClick={() => {
+                  setScenePromptDraft(generatedScenePrompt ?? "");
+                  setShowScenePromptResultMenu(false);
+                  setShowScenePromptEditorMenu(true);
+                }}
+                disabled={generatingScenePrompt || !generatedScenePrompt || applyingSceneImage}
+                className={cn(
+                  "flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium text-white/80 transition",
+                  "border border-white/10 bg-white/5 hover:bg-white/10",
+                  "disabled:opacity-50",
+                  radius.lg,
+                )}
+              >
+                <PenLine size={18} />
+                <span>{t("chats.sceneImage.editPrompt")}</span>
+              </button>
+              <button
+                onClick={() => void handleApplySceneImagePrompt(generatedScenePrompt ?? "")}
+                disabled={generatingScenePrompt || !generatedScenePrompt || applyingSceneImage}
+                className={cn(
+                  "flex items-center justify-center gap-2 px-4 py-3 text-sm font-semibold text-white transition",
+                  "bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50",
+                  radius.lg,
+                )}
+              >
+                {applyingSceneImage ? <LoadingSpinner /> : <Check size={18} />}
+                <span>
+                  {resolveSceneAttachment(scenePromptTargetMessage)
+                    ? t("chats.sceneImage.updateImage")
+                    : t("chats.sceneImage.generateImage")}
+                </span>
+              </button>
+            </div>
+          )}
         </div>
       </BottomMenu>
 
@@ -2363,7 +2650,7 @@ export function ChatConversationPage() {
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: -8 }}
                   transition={{ duration: 0.18, delay: 0.04 }}
-                  className="w-full max-w-3xl rounded-[32px] border border-white/12 bg-white/[0.045] p-3 backdrop-blur-xl lg:order-none lg:flex lg:h-full lg:max-w-none lg:flex-col lg:rounded-[38px] lg:border-white/10 lg:bg-white/[0.03] lg:p-4"
+                  className="hidden w-full max-w-3xl rounded-[32px] border border-white/12 bg-white/[0.045] p-3 backdrop-blur-xl lg:order-none lg:flex lg:h-full lg:max-w-none lg:flex-col lg:rounded-[38px] lg:border-white/10 lg:bg-white/[0.03] lg:p-4"
                 >
                   <div className="rounded-[18px] border border-white/10 bg-black/35 px-4 py-3 lg:flex lg:h-full lg:flex-col lg:rounded-[24px] lg:border-white/8 lg:bg-black/30 lg:px-5 lg:py-5">
                     <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-white/45 lg:mb-4 lg:text-[10px] lg:tracking-[0.28em]">
@@ -2386,10 +2673,65 @@ export function ChatConversationPage() {
                 alt={selectedImage.alt}
                 className="max-h-[78vh] max-w-full rounded-[28px] object-contain shadow-[0_30px_80px_rgba(0,0,0,0.45)] lg:justify-self-center lg:max-h-[90vh] lg:max-w-[min(100%,920px)]"
               />
+
+              {selectedImagePrompt && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 8 }}
+                  transition={{ duration: 0.18, delay: 0.04 }}
+                  className="w-full max-w-3xl rounded-[24px] border border-white/12 bg-white/[0.045] p-3 backdrop-blur-xl lg:hidden"
+                >
+                  <button
+                    type="button"
+                    onClick={() => setSelectedImagePromptExpanded((current) => !current)}
+                    className="flex w-full items-center justify-between gap-3 rounded-[18px] border border-white/10 bg-black/35 px-4 py-3 text-left"
+                  >
+                    <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-white/45">
+                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-300/80" />
+                      Image Prompt
+                    </div>
+                    <ChevronDown
+                      size={18}
+                      className={cn(
+                        "shrink-0 text-white/55 transition-transform duration-200",
+                        selectedImagePromptExpanded && "rotate-180",
+                      )}
+                    />
+                  </button>
+
+                  <AnimatePresence initial={false}>
+                    {selectedImagePromptExpanded && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.18 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="mt-3 rounded-[18px] border border-white/10 bg-black/35 px-4 py-3">
+                          <p className="max-h-[26vh] overflow-y-auto pr-1 text-sm leading-relaxed text-white/82">
+                            {selectedImagePrompt}
+                          </p>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </motion.div>
+              )}
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Desktop Settings Drawer */}
+      {!isMobile && character && (
+        <ChatSettingsDrawer
+          isOpen={settingsDrawerOpen}
+          onClose={() => setSettingsDrawerOpen(false)}
+          character={character}
+        />
+      )}
     </div>
   );
 }

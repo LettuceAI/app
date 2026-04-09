@@ -179,7 +179,7 @@ export function BottomMenu({
       {isOpen && (
         <>
           <motion.div
-            className="fixed inset-0 z-100 bg-black/60 backdrop-blur-sm"
+            className="fixed inset-0 z-100 bg-black/45 backdrop-blur-sm"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -189,7 +189,7 @@ export function BottomMenu({
           />
 
           <motion.div
-            className={`${menuClasses} z-110 mx-auto max-w-xl border border-white/10 bg-[#0f1014] p-1 ${isBottomMenu ? "max-h-[90vh]" : "max-h-[95vh]"} overflow-hidden flex flex-col ${className}`}
+            className={`${menuClasses} z-110 mx-auto max-w-xl border border-fg/10 bg-surface-el/98 p-1 text-fg ${isBottomMenu ? "max-h-[90vh]" : "max-h-[95vh]"} overflow-hidden flex flex-col ${className}`}
             style={bottomMenuStyle}
             variants={menuVariants}
             initial="hidden"
@@ -225,7 +225,7 @@ export function BottomMenu({
                   className="flex h-8 w-28 items-center justify-center border-0 bg-transparent focus:outline-none"
                   aria-label={t("components.bottomMenu.dragTip")}
                 >
-                  <span className="h-1 w-20 rounded-full bg-white/40" />
+                  <span className="h-1 w-20 rounded-full bg-fg/25" />
                 </button>
               </div>
             )}
@@ -234,14 +234,14 @@ export function BottomMenu({
               className={`grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center px-6 ${isBottomMenu ? "pb-4" : "pt-4 pb-4"} shrink-0`}
             >
               <div className="flex min-w-0 items-center justify-start">{leftAction}</div>
-              <h3 id={titleId} className="text-center text-lg font-semibold text-white">
+              <h3 id={titleId} className="text-center text-lg font-semibold text-fg">
                 {resolvedTitle}
               </h3>
               <div className="flex min-w-0 items-center justify-end gap-2">
                 {rightAction}
                 {includeExitIcon && (
                   <button
-                    className="flex items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/70 hover:border-white/20 hover:text-white hover:bg-white/10 active:scale-95"
+                    className="flex items-center justify-center rounded-full border border-fg/10 bg-fg/5 text-fg/70 hover:border-fg/20 hover:bg-fg/10 hover:text-fg active:scale-95"
                     onClick={onClose}
                     aria-label={t("components.bottomMenu.closeLabel")}
                   >
@@ -282,15 +282,15 @@ export function MenuButton({
     if (!disabled && !loading) onClick();
   }, [disabled, loading, onClick]);
 
-  const iconAccentClasses = ICON_ACCENT_MAP[color] || "border-white/10 bg-white/5 text-white/60";
+  const iconAccentClasses = ICON_ACCENT_MAP[color] || "border-fg/10 bg-fg/5 text-fg/60";
 
   return (
     <motion.button
-      className={`group relative w-full rounded-xl border border-white/10 bg-white/4 p-3 text-left text-white ${
+      className={`group relative w-full rounded-xl border border-fg/10 bg-fg/[0.04] p-3 text-left text-fg ${
         disabled || loading
           ? "cursor-not-allowed opacity-50"
-          : "hover:border-white/15 hover:bg-white/[0.07] active:scale-[0.98]"
-      } focus:outline-none focus-visible:ring-2 focus-visible:ring-white/25`}
+          : "hover:border-fg/15 hover:bg-fg/[0.07] active:scale-[0.98]"
+      } focus:outline-none focus-visible:ring-2 focus-visible:ring-fg/20`}
       onClick={handleClick}
       disabled={disabled || loading}
     >
@@ -311,17 +311,17 @@ export function MenuButton({
         </div>
         <div className="flex flex-1 items-center gap-2">
           <div className="flex-1">
-            <h4 className="text-sm font-medium text-white group-hover:text-white">
+            <h4 className="text-sm font-medium text-fg">
               {loading ? t("components.bottomMenu.buttonProcessing") : title}
             </h4>
             {description && !loading && (
-              <p className="mt-0.5 text-xs text-white/55">{description}</p>
+              <p className="mt-0.5 text-xs text-fg/55">{description}</p>
             )}
           </div>
           {!disabled &&
             !loading &&
             (rightElement || (
-              <ChevronRight className="h-4 w-4 text-white/30 transition group-hover:text-white/60" />
+              <ChevronRight className="h-4 w-4 text-fg/30 transition group-hover:text-fg/60" />
             ))}
         </div>
       </div>
@@ -332,7 +332,7 @@ export function MenuButton({
 export function MenuLabel({ children, className = "" }: MenuLabelProps) {
   return (
     <div className={`py-2 px-1 ${className}`}>
-      <h4 className="text-[11px] font-medium uppercase tracking-[0.28em] text-white/40">
+      <h4 className="text-[11px] font-medium uppercase tracking-[0.28em] text-fg/40">
         {children}
       </h4>
     </div>
@@ -342,13 +342,13 @@ export function MenuLabel({ children, className = "" }: MenuLabelProps) {
 export function MenuDivider({ label, className = "" }: MenuDividerProps) {
   return (
     <div className={`flex items-center py-4 ${className}`}>
-      <div className="flex-1 border-t border-white/10" />
+      <div className="flex-1 border-t border-fg/10" />
       {label && (
         <>
-          <span className="px-3 text-[11px] font-medium uppercase tracking-[0.28em] text-white/40">
+          <span className="px-3 text-[11px] font-medium uppercase tracking-[0.28em] text-fg/40">
             {label}
           </span>
-          <div className="flex-1 border-t border-white/10" />
+          <div className="flex-1 border-t border-fg/10" />
         </>
       )}
     </div>
@@ -377,7 +377,7 @@ export function MenuSection({
   return (
     <div className={`space-y-3 ${className}`}>
       {label && (
-        <p className="text-[11px] font-medium uppercase tracking-[0.28em] text-white/40">{label}</p>
+        <p className="text-[11px] font-medium uppercase tracking-[0.28em] text-fg/40">{label}</p>
       )}
       {children}
     </div>

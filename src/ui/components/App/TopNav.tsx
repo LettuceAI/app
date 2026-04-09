@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useCallback } from "react";
+import { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
@@ -14,25 +14,80 @@ import {
   LayoutGrid,
   Grid3X3,
   Upload,
+  Eye,
+  Minus,
+  Square,
+  X,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { invoke } from "@tauri-apps/api/core";
 import { typography, interactive, cn } from "../../design-tokens";
 import { toast } from "../toast";
 import { openDocs } from "../../../core/utils/docs";
 import { type TranslationKey, useI18n } from "../../../core/i18n/context";
+import { getPlatform } from "../../../core/utils/platform";
 
 interface TopNavProps {
   currentPath: string;
   onBackOverride?: () => void;
   titleOverride?: string;
   rightAction?: React.ReactNode;
+  suppressWindowControls?: boolean;
 }
 
-export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction }: TopNavProps) {
+const appPlatform = getPlatform();
+const isDesktop = appPlatform.type === "desktop";
+const isMacOS = appPlatform.os === "macos";
+/** Custom in-app window controls are disabled; use OS-decorated windows instead. */
+export const hasCustomWindowControls = false;
+
+// Cache window chrome flags from CLI args (--osdecorations, --nobuttons).
+let _chromeFlags: { osDecorations: boolean; noButtons: boolean } | null = {
+  osDecorations: true,
+  noButtons: true,
+};
+const chromeFlagsPromise = isDesktop
+  ? invoke<[boolean, boolean]>("get_window_chrome_flags")
+      .then(([osDecorations, noButtons]) => {
+        _chromeFlags = { osDecorations, noButtons };
+        return _chromeFlags;
+      })
+      .catch(() => ({ osDecorations: true, noButtons: true }))
+  : Promise.resolve({ osDecorations: true, noButtons: true });
+
+function useChromeFlags() {
+  const [flags, setFlags] = useState(_chromeFlags);
+  useEffect(() => {
+    if (_chromeFlags) {
+      setFlags(_chromeFlags);
+    } else {
+      chromeFlagsPromise.then((f) => setFlags(f));
+    }
+  }, []);
+  return flags;
+}
+
+export function TopNav({
+  currentPath,
+  onBackOverride,
+  titleOverride,
+  rightAction,
+  suppressWindowControls = false,
+}: TopNavProps) {
   const navigate = useNavigate();
   const { t } = useI18n();
+  const chromeFlags = useChromeFlags();
+  const showWindowControls =
+    isDesktop &&
+    !isMacOS &&
+    !chromeFlags?.osDecorations &&
+    !chromeFlags?.noButtons &&
+    !suppressWindowControls;
+  const showDragRegion = isDesktop && !chromeFlags?.osDecorations;
   const basePath = useMemo(() => currentPath.split("?")[0], [currentPath]);
   const hasAdvancedView = useMemo(() => currentPath.includes("view=advanced"), [currentPath]);
+  const wasUnsavedRef = useRef(false);
 
   const title = useMemo(() => {
     if (titleOverride) return titleOverride;
@@ -41,6 +96,10 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
       match: (path: string) => boolean;
       titleKey: TranslationKey;
     }> = [
+      { match: (p) => p === "/discover", titleKey: "common.bottomNav.discover" },
+      { match: (p) => p === "/discover/search", titleKey: "common.bottomNav.discover" },
+      { match: (p) => p.startsWith("/discover/browse"), titleKey: "common.bottomNav.discover" },
+      { match: (p) => p.startsWith("/discover/card/"), titleKey: "common.bottomNav.discover" },
       { match: (p) => p === "/settings/providers", titleKey: "common.nav.providers" },
       { match: (p) => p.includes("view=advanced"), titleKey: "common.nav.responseStyle" },
       { match: (p) => p === "/settings/models/installed", titleKey: "hfBrowser.libraryTitle" },
@@ -60,6 +119,8 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
       },
       { match: (p) => p === "/settings/usage", titleKey: "common.nav.usageAnalytics" },
       { match: (p) => p === "/settings/changelog", titleKey: "common.nav.changelog" },
+      { match: (p) => p === "/settings/about", titleKey: "common.nav.about" },
+      { match: (p) => p.includes("/debug/"), titleKey: "common.nav.messageDebug" },
       { match: (p) => p === "/settings/prompts/new", titleKey: "common.nav.createSystemPrompt" },
       { match: (p) => p.startsWith("/settings/prompts/"), titleKey: "common.nav.editSystemPrompt" },
       { match: (p) => p === "/settings/prompts", titleKey: "common.nav.systemPrompts" },
@@ -76,6 +137,14 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
       {
         match: (p) => p === "/settings/advanced/help-me-reply",
         titleKey: "common.nav.helpMeReply",
+      },
+      {
+        match: (p) => p === "/settings/advanced/host-api",
+        titleKey: "common.nav.hostApi",
+      },
+      {
+        match: (p) => p.startsWith("/personas/") && p.endsWith("/edit"),
+        titleKey: "common.nav.editPersona",
       },
       {
         match: (p) => p.startsWith("/settings/personas/") && p.endsWith("/edit"),
@@ -137,9 +206,11 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
     if (onBackOverride) return true;
     if (basePath.startsWith("/settings/") || basePath === "/settings") return true;
     if (basePath.startsWith("/create/")) return true;
+    if (basePath.startsWith("/personas/") && basePath.endsWith("/edit")) return true;
     if (basePath.startsWith("/library/")) return true;
     if (basePath.startsWith("/library/lorebooks")) return true;
     if (basePath === "/group-chats/new") return true;
+    if (basePath.startsWith("/discover/")) return true;
     return false;
   }, [basePath, onBackOverride]);
 
@@ -238,6 +309,7 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
     )
       return "characters";
     if (
+      (basePath.startsWith("/personas/") && basePath.endsWith("/edit")) ||
       basePath === "/settings/personas" ||
       (basePath.startsWith("/settings/personas/") && basePath.endsWith("/edit"))
     )
@@ -252,7 +324,10 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
   const showHelpButton = useMemo(() => docsKeyForPath !== null, [docsKeyForPath]);
 
   const isCenteredTitle = useMemo(() => {
-    return basePath.startsWith("/settings");
+    return (
+      basePath.startsWith("/settings") ||
+      (basePath.startsWith("/personas/") && basePath.endsWith("/edit"))
+    );
   }, [basePath]);
 
   const isCharacterEdit = useMemo(
@@ -260,7 +335,9 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
     [basePath],
   );
   const isPersonaEdit = useMemo(
-    () => /^\/settings\/personas\/[^/]+\/edit$/.test(basePath),
+    () =>
+      /^\/settings\/personas\/[^/]+\/edit$/.test(basePath) ||
+      /^\/personas\/[^/]+\/edit$/.test(basePath),
     [basePath],
   );
   const isModelEdit = useMemo(
@@ -298,6 +375,22 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
     isChatAppearanceEdit ||
     isColorCustomizationEdit ||
     isTemplateEdit;
+
+  const [isMobileViewport, setIsMobileViewport] = useState(() =>
+    typeof window !== "undefined" ? window.matchMedia("(max-width: 1023px)").matches : false,
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mediaQuery = window.matchMedia("(max-width: 1023px)");
+    const syncViewport = () => setIsMobileViewport(mediaQuery.matches);
+    syncViewport();
+    mediaQuery.addEventListener("change", syncViewport);
+    return () => mediaQuery.removeEventListener("change", syncViewport);
+  }, []);
+
+  const showChatAppearancePreviewButton = isChatAppearanceEdit && isMobileViewport;
+  const chatAppearancePreviewLabel = t("chatAppearance.preview.label");
 
   // Track save button state from window globals
   const [canSave, setCanSave] = useState(false);
@@ -389,18 +482,12 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
   }, [t]);
 
   useEffect(() => {
-    if (isUnsaved) {
+    if (isUnsaved && !wasUnsavedRef.current) {
       ensureUnsavedToast();
-    } else {
+    } else if (!isUnsaved) {
       toast.dismiss("unsaved-changes");
     }
-  }, [isUnsaved, ensureUnsavedToast]);
-
-  useEffect(() => {
-    if (!isUnsaved) return;
-    const handleInput = () => ensureUnsavedToast();
-    document.addEventListener("input", handleInput, true);
-    return () => document.removeEventListener("input", handleInput, true);
+    wasUnsavedRef.current = isUnsaved;
   }, [isUnsaved, ensureUnsavedToast]);
 
   const handleBack = () => {
@@ -476,13 +563,24 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
     <header
       className="fixed top-0 left-0 right-0 z-40 border-b border-fg/10 backdrop-blur-md bg-nav/80"
       style={{
-        paddingTop: "calc(env(safe-area-inset-top) + 12px)",
-        paddingBottom: "12px",
+        paddingTop: isDesktop ? "8px" : "calc(env(safe-area-inset-top) + 12px)",
+        paddingBottom: isDesktop ? "8px" : "12px",
       }}
+      {...(showDragRegion ? { "data-tauri-drag-region": "" } : {})}
     >
-      <div className="relative mx-auto flex w-full max-w-md lg:max-w-none items-center justify-between px-3 lg:px-8 h-10">
+      <div
+        className={cn(
+          "relative mx-auto flex w-full max-w-md lg:max-w-none items-center justify-between px-3 h-10",
+          showWindowControls ? "lg:pl-8 lg:pr-0" : "lg:px-8",
+        )}
+        style={isMacOS ? { paddingLeft: "72px" } : undefined}
+        {...(showDragRegion ? { "data-tauri-drag-region": "" } : {})}
+      >
         {/* Left side: */}
-        <div className="flex items-center gap-1 overflow-hidden h-full">
+        <div
+          className="flex items-center gap-1 overflow-hidden h-full"
+          {...(showDragRegion ? { "data-tauri-drag-region": "" } : {})}
+        >
           <div
             className={cn(
               "flex items-center justify-center shrink-0",
@@ -517,6 +615,7 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
             initial={{ opacity: 0, y: 5 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3, ease: "easeOut" }}
+            {...(showDragRegion ? { "data-tauri-drag-region": "" } : {})}
             className={cn(
               typography.h1.size,
               "font-bold text-fg tracking-tight truncate leading-none",
@@ -527,7 +626,10 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
           </motion.h1>
         </div>
 
-        <div className="flex items-center justify-end gap-1 shrink-0 min-w-10 h-full">
+        <div
+          className="flex items-center justify-end gap-1 shrink-0 min-w-10 h-full"
+          {...(showDragRegion ? { "data-tauri-drag-region": "" } : {})}
+        >
           {showLayoutToggle && (
             <button
               onClick={() =>
@@ -621,6 +723,26 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
               <Upload size={20} strokeWidth={2.5} className="text-fg" />
             </button>
           )}
+          {showChatAppearancePreviewButton && (
+            <button
+              onClick={() => {
+                const globalWindow = window as any;
+                if (typeof globalWindow.__openChatAppearancePreview === "function") {
+                  globalWindow.__openChatAppearancePreview();
+                }
+              }}
+              className={cn(
+                "flex items-center px-[0.6em] py-[0.3em] justify-center rounded-full",
+                "text-fg/70 hover:text-fg hover:bg-fg/10",
+                interactive.transition.fast,
+                interactive.active.scale,
+              )}
+              aria-label={chatAppearancePreviewLabel}
+              title={chatAppearancePreviewLabel}
+            >
+              <Eye size={20} strokeWidth={2.5} className="text-fg" />
+            </button>
+          )}
           {showAddButton && (
             <button
               onClick={handleAddClick}
@@ -693,8 +815,168 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
             </button>
           )}
           {rightAction}
+
+          {showWindowControls && (
+            <div className="ml-1 flex items-center">
+              <button
+                type="button"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  await getCurrentWindow().minimize();
+                }}
+                className="flex h-8 w-10 items-center justify-center text-fg/45 transition hover:bg-fg/10 hover:text-fg"
+                aria-label="Minimize"
+              >
+                <Minus size={15} strokeWidth={1.5} />
+              </button>
+              <button
+                type="button"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  await getCurrentWindow().toggleMaximize();
+                }}
+                className="flex h-8 w-10 items-center justify-center text-fg/45 transition hover:bg-fg/10 hover:text-fg"
+                aria-label="Maximize"
+              >
+                <Square size={12} strokeWidth={1.5} />
+              </button>
+              <button
+                type="button"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  await getCurrentWindow().close();
+                }}
+                className="flex h-8 w-10 items-center justify-center text-fg/45 transition hover:bg-red-500/80 hover:text-white"
+                aria-label="Close"
+              >
+                <X size={15} strokeWidth={1.5} />
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </header>
+  );
+}
+
+/**
+ * Just the minimize/maximize/close buttons. Import this into custom headers
+ * (e.g. discovery pages) that don't use TopNav.
+ */
+export function WindowControlButtons() {
+  const chromeFlags = useChromeFlags();
+  const show = isDesktop && !isMacOS && !chromeFlags?.osDecorations && !chromeFlags?.noButtons;
+  if (!show) return null;
+
+  return (
+    <div className="ml-1 flex items-center">
+      <button
+        type="button"
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={async (e) => {
+          e.stopPropagation();
+          await getCurrentWindow().minimize();
+        }}
+        className="flex h-8 w-10 items-center justify-center text-fg/45 transition hover:bg-fg/10 hover:text-fg"
+        aria-label="Minimize"
+      >
+        <Minus size={15} strokeWidth={1.5} />
+      </button>
+      <button
+        type="button"
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={async (e) => {
+          e.stopPropagation();
+          await getCurrentWindow().toggleMaximize();
+        }}
+        className="flex h-8 w-10 items-center justify-center text-fg/45 transition hover:bg-fg/10 hover:text-fg"
+        aria-label="Maximize"
+      >
+        <Square size={12} strokeWidth={1.5} />
+      </button>
+      <button
+        type="button"
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={async (e) => {
+          e.stopPropagation();
+          await getCurrentWindow().close();
+        }}
+        className="flex h-8 w-10 items-center justify-center text-fg/45 transition hover:bg-red-500/80 hover:text-white"
+        aria-label="Close"
+      >
+        <X size={15} strokeWidth={1.5} />
+      </button>
+    </div>
+  );
+}
+
+/** Returns props to spread onto a header element to make it a drag region. */
+export function useDragRegionProps(): Record<string, string> {
+  const chromeFlags = useChromeFlags();
+  const showDrag = isDesktop && !chromeFlags?.osDecorations;
+  return showDrag ? { "data-tauri-drag-region": "" } : {};
+}
+
+/**
+ * Compact window controls strip for pages that don't render TopNav.
+ * Renders as a thin bar in document flow (not floating) with drag region + buttons.
+ */
+export function WindowControls() {
+  const chromeFlags = useChromeFlags();
+  const showButtons =
+    isDesktop && !isMacOS && !chromeFlags?.osDecorations && !chromeFlags?.noButtons;
+  const showDrag = isDesktop && !chromeFlags?.osDecorations;
+
+  if (!showButtons && !showDrag) return null;
+
+  return (
+    <div
+      className="pointer-events-none fixed top-0 right-0 z-60 flex h-10 items-center justify-end pr-1"
+      {...(showDrag ? { "data-tauri-drag-region": "" } : {})}
+    >
+      {showButtons && (
+        <div className="pointer-events-auto flex items-center">
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={async (e) => {
+              e.stopPropagation();
+              await getCurrentWindow().minimize();
+            }}
+            className="flex h-7 w-10 items-center justify-center text-fg/45 transition hover:bg-fg/10 hover:text-fg"
+            aria-label="Minimize"
+          >
+            <Minus size={15} strokeWidth={1.5} />
+          </button>
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={async (e) => {
+              e.stopPropagation();
+              await getCurrentWindow().toggleMaximize();
+            }}
+            className="flex h-7 w-10 items-center justify-center text-fg/45 transition hover:bg-fg/10 hover:text-fg"
+            aria-label="Maximize"
+          >
+            <Square size={12} strokeWidth={1.5} />
+          </button>
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={async (e) => {
+              e.stopPropagation();
+              await getCurrentWindow().close();
+            }}
+            className="flex h-7 w-10 items-center justify-center text-fg/45 transition hover:bg-red-500/80 hover:text-white"
+            aria-label="Close"
+          >
+            <X size={15} strokeWidth={1.5} />
+          </button>
+        </div>
+      )}
+    </div>
   );
 }

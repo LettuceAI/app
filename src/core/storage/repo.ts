@@ -29,6 +29,7 @@ import {
   createDefaultSettings,
   createDefaultAccessibilitySettings,
 } from "./schemas";
+import { setDeveloperModeOverride } from "../utils/env";
 
 const SessionPreviewSchema = z.object({
   id: z.string(),
@@ -68,23 +69,89 @@ const BackgroundImageRefSchema = z.object({
 
 export const SETTINGS_UPDATED_EVENT = "lettuceai:settings-updated";
 export const SESSION_UPDATED_EVENT = "lettuceai:session-updated";
+export const LLAMA_RUNTIME_REPORT_UPDATED_EVENT = "llama-runtime-report-updated";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+let lastKnownGoodSettings: Settings | null = null;
 
-function normalizeProviderCredentialIds(input: unknown): { next: unknown; changed: boolean } {
+function cloneSettingsSnapshot(settings: Settings): Settings {
+  return JSON.parse(JSON.stringify(settings)) as Settings;
+}
+
+function rememberSettings(settings: Settings): Settings {
+  lastKnownGoodSettings = cloneSettingsSnapshot(settings);
+  return settings;
+}
+
+function updateCachedSettings(mutator: (draft: Settings) => void): void {
+  if (!lastKnownGoodSettings) return;
+  const draft = cloneSettingsSnapshot(lastKnownGoodSettings);
+  mutator(draft);
+  lastKnownGoodSettings = draft;
+}
+
+function cloneSerializable<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function repairSettingsReferentialIntegrity(input: unknown): { next: unknown; changed: boolean } {
   if (!input || typeof input !== "object") {
     return { next: input, changed: false };
   }
 
   const root = JSON.parse(JSON.stringify(input)) as any;
-  const models = Array.isArray(root?.models) ? root.models : null;
-  if (!models) {
-    return { next: input, changed: false };
+  let changed = false;
+  const providerCredentials = Array.isArray(root?.providerCredentials)
+    ? root.providerCredentials
+    : [];
+  const providerCredentialIdMap = new Map<string, string>();
+
+  for (const credential of providerCredentials) {
+    if (!credential || typeof credential !== "object") continue;
+    const id = credential.id;
+    if (typeof id === "string" && id.length > 0 && !UUID_RE.test(id)) {
+      const nextId = uuidv4();
+      providerCredentialIdMap.set(id, nextId);
+      credential.id = nextId;
+      changed = true;
+    }
   }
 
-  let changed = false;
+  const defaultProviderCredentialId = root?.defaultProviderCredentialId;
+  if (typeof defaultProviderCredentialId === "string" && defaultProviderCredentialId.length > 0) {
+    const mappedId = providerCredentialIdMap.get(defaultProviderCredentialId);
+    if (mappedId) {
+      root.defaultProviderCredentialId = mappedId;
+      changed = true;
+    } else if (!UUID_RE.test(defaultProviderCredentialId)) {
+      root.defaultProviderCredentialId = null;
+      changed = true;
+    }
+  }
+
+  const defaultModelId = root?.defaultModelId;
+  if (
+    typeof defaultModelId === "string" &&
+    defaultModelId.length > 0 &&
+    !UUID_RE.test(defaultModelId)
+  ) {
+    root.defaultModelId = null;
+    changed = true;
+  }
+
+  const models = Array.isArray(root?.models) ? root.models : [];
   for (const model of models) {
     if (!model || typeof model !== "object") continue;
     const providerCredentialId = model.providerCredentialId;
+    if (
+      typeof providerCredentialId === "string" &&
+      providerCredentialId.length > 0 &&
+      providerCredentialIdMap.has(providerCredentialId)
+    ) {
+      model.providerCredentialId = providerCredentialIdMap.get(providerCredentialId);
+      changed = true;
+      continue;
+    }
+
     if (
       typeof providerCredentialId === "string" &&
       providerCredentialId.length > 0 &&
@@ -423,9 +490,27 @@ function hasDynamicMemoryState(
   );
 }
 
+/**
+ * Return the last successfully loaded settings snapshot, or null if none exists yet.
+ * Use this to render immediately on page mount, then call readSettings() to refresh.
+ */
+export function readSettingsCached(): Settings | null {
+  return lastKnownGoodSettings ? cloneSettingsSnapshot(lastKnownGoodSettings) : null;
+}
+
 export async function readSettings(): Promise<Settings> {
-  const fallback = createDefaultSettings();
-  const data = await storageBridge.readSettings<Settings>(fallback);
+  const fallback = lastKnownGoodSettings
+    ? cloneSettingsSnapshot(lastKnownGoodSettings)
+    : createDefaultSettings();
+  const data = await storageBridge.readSettings<Settings | null>(null);
+
+  if (data == null) {
+    if (lastKnownGoodSettings) {
+      console.warn("Falling back to last known good settings after read failure.");
+      return cloneSettingsSnapshot(lastKnownGoodSettings);
+    }
+    return fallback;
+  }
 
   const parsed = SettingsSchema.safeParse(data);
   if (parsed.success) {
@@ -472,14 +557,19 @@ export async function readSettings(): Promise<Settings> {
       await saveAdvancedSettings(settings.advancedSettings);
     }
 
-    return settings;
+    return rememberSettings(settings);
   }
 
-  const repaired = normalizeProviderCredentialIds(data);
+  const repaired = repairSettingsReferentialIntegrity(data);
   const repairedParsed = SettingsSchema.safeParse(repaired.next);
   if (repaired.changed && repairedParsed.success) {
     await writeSettings(repairedParsed.data, true);
-    return repairedParsed.data;
+    return rememberSettings(repairedParsed.data);
+  }
+
+  if (lastKnownGoodSettings) {
+    console.warn("Falling back to last known good settings after validation failure.");
+    return cloneSettingsSnapshot(lastKnownGoodSettings);
   }
 
   await storageBridge.settingsSetDefaults(null, null);
@@ -489,6 +579,7 @@ export async function readSettings(): Promise<Settings> {
 export async function writeSettings(s: Settings, suppressBroadcast = false): Promise<void> {
   SettingsSchema.parse(s);
   await storageBridge.writeSettings(s);
+  rememberSettings(s);
   if (!suppressBroadcast) {
     broadcastSettingsUpdated();
   }
@@ -497,16 +588,25 @@ export async function writeSettings(s: Settings, suppressBroadcast = false): Pro
 // Granular update functions
 export async function setDefaultProvider(id: string | null): Promise<void> {
   await storageBridge.settingsSetDefaultProvider(id);
+  updateCachedSettings((settings) => {
+    settings.defaultProviderCredentialId = id;
+  });
   broadcastSettingsUpdated();
 }
 
 export async function setDefaultModel(id: string | null): Promise<void> {
   await storageBridge.settingsSetDefaultModel(id);
+  updateCachedSettings((settings) => {
+    settings.defaultModelId = id;
+  });
   broadcastSettingsUpdated();
 }
 
 export async function setAppState(state: AppState): Promise<void> {
   await storageBridge.settingsSetAppState(state);
+  updateCachedSettings((settings) => {
+    settings.appState = cloneSerializable(state);
+  });
   broadcastSettingsUpdated();
 }
 
@@ -536,6 +636,14 @@ export async function addOrUpdateProviderCredential(
     id: cred.id ?? uuidv4(),
     ...cred,
   });
+  updateCachedSettings((settings) => {
+    const index = settings.providerCredentials.findIndex((provider) => provider.id === entity.id);
+    if (index >= 0) {
+      settings.providerCredentials[index] = cloneSerializable(entity);
+      return;
+    }
+    settings.providerCredentials.push(cloneSerializable(entity));
+  });
   // Ensure a default provider is set if missing
   const current = await readSettings();
   if (!current.defaultProviderCredentialId) {
@@ -547,6 +655,9 @@ export async function addOrUpdateProviderCredential(
 
 export async function removeProviderCredential(id: string): Promise<void> {
   await storageBridge.providerDelete(id);
+  updateCachedSettings((settings) => {
+    settings.providerCredentials = settings.providerCredentials.filter((provider) => provider.id !== id);
+  });
   const current = await readSettings();
   if (current.defaultProviderCredentialId === id) {
     const nextDefault = current.providerCredentials.find((c) => c.id !== id)?.id ?? null;
@@ -559,20 +670,15 @@ export async function addOrUpdateModel(
   model: Omit<Model, "id" | "createdAt"> & { id?: string },
 ): Promise<Model> {
   const entity: Model = await storageBridge.modelUpsert({ id: model.id ?? uuidv4(), ...model });
-  const current = await readSettings();
-  if (entity.providerId === "llamacpp") {
-    const hasLocalProvider = current.providerCredentials.some(
-      (cred) => cred.providerId === "llamacpp",
-    );
-    if (!hasLocalProvider) {
-      await addOrUpdateProviderCredential({
-        id: uuidv4(),
-        providerId: "llamacpp",
-        label: "llama.cpp (Local)",
-        apiKey: "",
-      });
+  updateCachedSettings((settings) => {
+    const index = settings.models.findIndex((existingModel) => existingModel.id === entity.id);
+    if (index >= 0) {
+      settings.models[index] = cloneSerializable(entity);
+      return;
     }
-  }
+    settings.models.push(cloneSerializable(entity));
+  });
+  const current = await readSettings();
   if (!current.defaultModelId) {
     await setDefaultModel(entity.id);
   }
@@ -582,6 +688,9 @@ export async function addOrUpdateModel(
 
 export async function removeModel(id: string): Promise<void> {
   await storageBridge.modelDelete(id);
+  updateCachedSettings((settings) => {
+    settings.models = settings.models.filter((model) => model.id !== id);
+  });
   const current = await readSettings();
   if (current.defaultModelId === id) {
     const nextDefault = current.models.find((m) => m.id !== id)?.id ?? null;
@@ -611,6 +720,12 @@ export async function downloadImageLibraryItem(
   item: Pick<ImageLibraryItem, "filePath" | "filename">,
 ): Promise<string> {
   return storageBridge.imageLibraryDownloadToDownloads(item.filePath, item.filename);
+}
+
+export async function deleteImageLibraryItem(
+  item: Pick<ImageLibraryItem, "storagePath">,
+): Promise<void> {
+  await storageBridge.imageLibraryDeleteItem(item.storagePath);
 }
 
 export async function listReferencedBackgroundImagePaths(): Promise<string[]> {
@@ -718,6 +833,7 @@ export async function saveLorebook(
     id: lorebook.id ?? uuidv4(),
     name: lorebook.name,
     avatarPath: lorebook.avatarPath,
+    keywordDetectionMode: lorebook.keywordDetectionMode ?? "recentMessageWindow",
     createdAt: lorebook.createdAt ?? timestamp,
     updatedAt: timestamp,
   };
@@ -856,7 +972,30 @@ export async function listSessionPreviews(
 
 export async function saveAdvancedSettings(settings: Settings["advancedSettings"]): Promise<void> {
   await storageBridge.settingsSetAdvanced(settings);
+  updateCachedSettings((current) => {
+    current.advancedSettings = settings ? cloneSerializable(settings) : settings;
+  });
+  setDeveloperModeOverride(settings?.developerModeEnabled === true);
   broadcastSettingsUpdated();
+}
+
+export interface HostApiStatus {
+  running: boolean;
+  bindAddress?: string | null;
+  port?: number | null;
+  baseUrl?: string | null;
+}
+
+export async function getHostApiStatus(): Promise<HostApiStatus> {
+  return storageBridge.hostApiGetStatus();
+}
+
+export async function startHostApi(): Promise<HostApiStatus> {
+  return storageBridge.hostApiStart();
+}
+
+export async function stopHostApi(): Promise<HostApiStatus> {
+  return storageBridge.hostApiStop();
 }
 
 export async function getSession(id: string): Promise<Session | null> {
@@ -905,6 +1044,25 @@ export async function saveSession(s: Session): Promise<void> {
   SessionSchema.parse(s);
   await storageBridge.sessionUpsert(s);
   broadcastSessionUpdated();
+}
+
+export async function updateSessionBackgroundImage(
+  id: string,
+  backgroundImagePath: string | null,
+): Promise<Session | null> {
+  const session = await getSessionMeta(id);
+  if (!session) return null;
+
+  const next: Session = {
+    ...session,
+    backgroundImagePath: backgroundImagePath ?? undefined,
+    updatedAt: now(),
+  };
+
+  SessionSchema.parse(next);
+  await storageBridge.sessionUpsertMeta(next);
+  broadcastSessionUpdated();
+  return getSessionMeta(id);
 }
 
 export async function archiveSession(id: string, archived = true): Promise<Session | null> {
@@ -1031,6 +1189,7 @@ export async function createBranchedSession(
     id,
     characterId: sourceSession.characterId,
     title: `${sourceSession.title} (branch)`,
+    backgroundImagePath: sourceSession.backgroundImagePath,
     selectedSceneId: sourceSession.selectedSceneId,
     promptTemplateId: sourceSession.promptTemplateId,
     personaId: sourceSession.personaId,
@@ -1083,6 +1242,7 @@ export async function createBranchedSessionToCharacter(
     id,
     characterId: targetCharacterId,
     title: `Branch to ${characterName}`,
+    backgroundImagePath: undefined,
     selectedSceneId: targetCharacter?.defaultSceneId ?? targetCharacter?.scenes?.[0]?.id,
     promptTemplateId: targetCharacter?.promptTemplateId ?? null,
     personaId: sourceSession.personaId,

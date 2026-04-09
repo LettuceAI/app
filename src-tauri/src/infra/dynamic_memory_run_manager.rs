@@ -103,6 +103,13 @@ impl DynamicMemoryRunManager {
         Ok(())
     }
 
+    pub fn is_run_active(&self, key: &str) -> bool {
+        self.inner
+            .lock()
+            .map(|map| map.contains_key(key))
+            .unwrap_or(false)
+    }
+
     fn set_active_request_id(&self, key: &str, request_id: Option<String>) {
         if let Ok(mut map) = self.inner.lock() {
             if let Some(state) = map.get_mut(key) {

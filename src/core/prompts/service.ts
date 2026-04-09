@@ -12,6 +12,7 @@ export {
   getAppDefaultTemplateId,
   isAppDefaultTemplate,
   resetAppDefaultTemplate,
+  resetLocalRoleplayTemplate,
   resetDynamicSummaryTemplate,
   resetDynamicMemoryTemplate,
   resetHelpMeReplyTemplate,
@@ -19,6 +20,7 @@ export {
   resetAvatarGenerationTemplate,
   resetAvatarEditTemplate,
   resetSceneGenerationTemplate,
+  resetDesignReferenceTemplate,
   getRequiredTemplateVariables,
   validateTemplateVariables,
 } from "./index";

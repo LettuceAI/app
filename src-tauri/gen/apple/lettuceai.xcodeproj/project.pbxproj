@@ -11,6 +11,7 @@
 		20404BA261C4FAB81AEF4784 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FE4323449C206F4848BF21AB /* QuartzCore.framework */; };
 		227D718C6672A5689C68511D /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 42630E1385193C3C4BFB4E34 /* Security.framework */; };
 		2DB6608EDB3C16F91F3DB95C /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2925B6A54CFE896F1B7500AF /* UIKit.framework */; };
+		5512423D2C3CB594D7B6B8EB /* CoreML.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7810C5D1496418A150742F57 /* CoreML.framework */; };
 		5E96988A7C58349EA5C1FB33 /* main.mm in Sources */ = {isa = PBXBuildFile; fileRef = C6D4E20F2C01A14B34CC71ED /* main.mm */; };
 		8384B8E6C586E8639149260B /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D0F512DF9E56940B42EB43D6 /* Metal.framework */; };
 		9C8DBA27BCF7ED85F465C736 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 53EA732F7B876E50EEEABF92 /* CoreGraphics.framework */; };
@@ -76,6 +77,7 @@
 		62C12AC6644AD4B20656DEFC /* anannas.rs */ = {isa = PBXFileReference; path = anannas.rs; sourceTree = "<group>"; };
 		64D3D6A0F366B1156603746E /* models.rs */ = {isa = PBXFileReference; path = models.rs; sourceTree = "<group>"; };
 		64D58960718CB222A9EA083C /* deepseek.rs */ = {isa = PBXFileReference; path = deepseek.rs; sourceTree = "<group>"; };
+		7810C5D1496418A150742F57 /* CoreML.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreML.framework; path = System/Library/Frameworks/CoreML.framework; sourceTree = SDKROOT; };
 		66E93ABE0118ABC595E23848 /* dynamic_memory.rs */ = {isa = PBXFileReference; path = dynamic_memory.rs; sourceTree = "<group>"; };
 		6ADED7F80442842354CE36EA /* llamacpp.rs */ = {isa = PBXFileReference; path = llamacpp.rs; sourceTree = "<group>"; };
 		6BA99BCC1F6F0F767CD3287D /* lib.rs */ = {isa = PBXFileReference; path = lib.rs; sourceTree = "<group>"; };
@@ -178,6 +180,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				C1A98371CD3E82696AA8C4F2 /* libapp.a in Frameworks */,
+				5512423D2C3CB594D7B6B8EB /* CoreML.framework in Frameworks */,
 				9C8DBA27BCF7ED85F465C736 /* CoreGraphics.framework in Frameworks */,
 				8384B8E6C586E8639149260B /* Metal.framework in Frameworks */,
 				DEEF6651551BEB3EA53837E4 /* MetalKit.framework in Frameworks */,
@@ -350,6 +353,7 @@
 		6AC73BB9ED72F78DD3247E0F /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				7810C5D1496418A150742F57 /* CoreML.framework */,
 				53EA732F7B876E50EEEABF92 /* CoreGraphics.framework */,
 				47DBCFB922913D37B9C1A186 /* libapp.a */,
 				D0F512DF9E56940B42EB43D6 /* Metal.framework */,
@@ -646,7 +650,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "bun tauri ios xcode-script -v --platform ${PLATFORM_DISPLAY_NAME:?} --sdk-root ${SDKROOT:?} --framework-search-paths \"${FRAMEWORK_SEARCH_PATHS:?}\" --header-search-paths \"${HEADER_SEARCH_PATHS:?}\" --gcc-preprocessor-definitions \"${GCC_PREPROCESSOR_DEFINITIONS:-}\" --configuration ${CONFIGURATION:?} ${FORCE_COLOR} ${ARCHS:?}";
+			shellScript = "\"${SRCROOT}/../../scripts/run-tauri-ios-xcode-onnxruntime.sh\" -v --platform ${PLATFORM_DISPLAY_NAME:?} --sdk-root ${SDKROOT:?} --framework-search-paths \"${FRAMEWORK_SEARCH_PATHS:?}\" --header-search-paths \"${HEADER_SEARCH_PATHS:?}\" --gcc-preprocessor-definitions \"${GCC_PREPROCESSOR_DEFINITIONS:-}\" --configuration ${CONFIGURATION:?} ${FORCE_COLOR} ${ARCHS:?}";
 		};
 /* End PBXShellScriptBuildPhase section */
 

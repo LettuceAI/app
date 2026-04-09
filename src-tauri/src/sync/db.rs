@@ -12,8 +12,10 @@ use crate::sync::models::{
     UsageRecord, UserVoice,
 };
 use crate::sync::protocol::{ChangeOp, ChangeRecord, CursorSet, DomainCursor, SyncDomain};
+use crate::utils::{log_error_global, log_info_global};
 
-const CHANGE_SCHEMA_VERSION: u16 = 1;
+pub const CHANGE_SCHEMA_VERSION: u16 = 1;
+pub const LOCAL_SYNC_STATE_VERSION: u16 = 3;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct EntityKey {
@@ -1273,15 +1275,17 @@ fn materialize_domain_heads(conn: &mut DbConnection, domain: SyncDomain) -> Resu
             };
             for (key, head) in domain_heads {
                 match key.entity_type.as_str() {
-                    "meta" => snapshot.meta.push(deserialize_head(&head)?),
-                    "settings" => snapshot.settings.push(deserialize_head(&head)?),
-                    "persona" => snapshot.personas.push(deserialize_head(&head)?),
-                    "model" => snapshot.models.push(deserialize_head(&head)?),
-                    "secret" => snapshot.secrets.push(deserialize_head(&head)?),
-                    "provider_credential" => {
-                        snapshot.provider_credentials.push(deserialize_head(&head)?)
-                    }
-                    "prompt_template" => snapshot.prompt_templates.push(deserialize_head(&head)?),
+                    "meta" => snapshot.meta.push(deserialize_head(&key, &head)?),
+                    "settings" => snapshot.settings.push(deserialize_head(&key, &head)?),
+                    "persona" => snapshot.personas.push(deserialize_head(&key, &head)?),
+                    "model" => snapshot.models.push(deserialize_head(&key, &head)?),
+                    "secret" => snapshot.secrets.push(deserialize_head(&key, &head)?),
+                    "provider_credential" => snapshot
+                        .provider_credentials
+                        .push(deserialize_head(&key, &head)?),
+                    "prompt_template" => snapshot
+                        .prompt_templates
+                        .push(deserialize_head(&key, &head)?),
                     _ => {}
                 }
             }
@@ -1296,8 +1300,10 @@ fn materialize_domain_heads(conn: &mut DbConnection, domain: SyncDomain) -> Resu
             };
             for (key, head) in domain_heads {
                 match key.entity_type.as_str() {
-                    "audio_provider" => snapshot.audio_providers.push(deserialize_head(&head)?),
-                    "user_voice" => snapshot.user_voices.push(deserialize_head(&head)?),
+                    "audio_provider" => snapshot
+                        .audio_providers
+                        .push(deserialize_head(&key, &head)?),
+                    "user_voice" => snapshot.user_voices.push(deserialize_head(&key, &head)?),
                     _ => {}
                 }
             }
@@ -1312,8 +1318,8 @@ fn materialize_domain_heads(conn: &mut DbConnection, domain: SyncDomain) -> Resu
             };
             for (key, head) in domain_heads {
                 match key.entity_type.as_str() {
-                    "lorebook" => snapshot.lorebooks.push(deserialize_head(&head)?),
-                    "lorebook_entry" => snapshot.entries.push(deserialize_head(&head)?),
+                    "lorebook" => snapshot.lorebooks.push(deserialize_head(&key, &head)?),
+                    "lorebook_entry" => snapshot.entries.push(deserialize_head(&key, &head)?),
                     _ => {}
                 }
             }
@@ -1333,17 +1339,17 @@ fn materialize_domain_heads(conn: &mut DbConnection, domain: SyncDomain) -> Resu
             };
             for (key, head) in domain_heads {
                 match key.entity_type.as_str() {
-                    "character" => snapshot.characters.push(deserialize_head(&head)?),
-                    "character_rule" => snapshot.rules.push(deserialize_head(&head)?),
-                    "scene" => snapshot.scenes.push(deserialize_head(&head)?),
-                    "scene_variant" => snapshot.scene_variants.push(deserialize_head(&head)?),
-                    "character_lorebook" => {
-                        snapshot.character_lorebooks.push(deserialize_head(&head)?)
-                    }
-                    "chat_template" => snapshot.chat_templates.push(deserialize_head(&head)?),
+                    "character" => snapshot.characters.push(deserialize_head(&key, &head)?),
+                    "character_rule" => snapshot.rules.push(deserialize_head(&key, &head)?),
+                    "scene" => snapshot.scenes.push(deserialize_head(&key, &head)?),
+                    "scene_variant" => snapshot.scene_variants.push(deserialize_head(&key, &head)?),
+                    "character_lorebook" => snapshot
+                        .character_lorebooks
+                        .push(deserialize_head(&key, &head)?),
+                    "chat_template" => snapshot.chat_templates.push(deserialize_head(&key, &head)?),
                     "chat_template_message" => snapshot
                         .chat_template_messages
-                        .push(deserialize_head(&head)?),
+                        .push(deserialize_head(&key, &head)?),
                     _ => {}
                 }
             }
@@ -1363,18 +1369,22 @@ fn materialize_domain_heads(conn: &mut DbConnection, domain: SyncDomain) -> Resu
             };
             for (key, head) in domain_heads {
                 match key.entity_type.as_str() {
-                    "group_character" => snapshot.group_characters.push(deserialize_head(&head)?),
-                    "group_session" => snapshot.group_sessions.push(deserialize_head(&head)?),
-                    "group_participation" => {
-                        snapshot.group_participation.push(deserialize_head(&head)?)
-                    }
-                    "group_message" => snapshot.group_messages.push(deserialize_head(&head)?),
+                    "group_character" => snapshot
+                        .group_characters
+                        .push(deserialize_head(&key, &head)?),
+                    "group_session" => snapshot.group_sessions.push(deserialize_head(&key, &head)?),
+                    "group_participation" => snapshot
+                        .group_participation
+                        .push(deserialize_head(&key, &head)?),
+                    "group_message" => snapshot.group_messages.push(deserialize_head(&key, &head)?),
                     "group_message_variant" => snapshot
                         .group_message_variants
-                        .push(deserialize_head(&head)?),
-                    "group_usage_record" => snapshot.usage_records.push(deserialize_head(&head)?),
+                        .push(deserialize_head(&key, &head)?),
+                    "group_usage_record" => {
+                        snapshot.usage_records.push(deserialize_head(&key, &head)?)
+                    }
                     "group_usage_metadata" => {
-                        snapshot.usage_metadata.push(deserialize_head(&head)?)
+                        snapshot.usage_metadata.push(deserialize_head(&key, &head)?)
                     }
                     _ => {}
                 }
@@ -1389,7 +1399,7 @@ fn materialize_domain_heads(conn: &mut DbConnection, domain: SyncDomain) -> Resu
             };
             for (key, head) in domain_heads {
                 if key.entity_type == "session" {
-                    snapshot.sessions.push(deserialize_head(&head)?);
+                    snapshot.sessions.push(deserialize_head(&key, &head)?);
                 }
             }
             let payload = bincode::serialize(&snapshot)
@@ -1405,10 +1415,14 @@ fn materialize_domain_heads(conn: &mut DbConnection, domain: SyncDomain) -> Resu
             };
             for (key, head) in domain_heads {
                 match key.entity_type.as_str() {
-                    "message" => snapshot.messages.push(deserialize_head(&head)?),
-                    "message_variant" => snapshot.message_variants.push(deserialize_head(&head)?),
-                    "usage_record" => snapshot.usage_records.push(deserialize_head(&head)?),
-                    "usage_metadata" => snapshot.usage_metadata.push(deserialize_head(&head)?),
+                    "message" => snapshot.messages.push(deserialize_head(&key, &head)?),
+                    "message_variant" => snapshot
+                        .message_variants
+                        .push(deserialize_head(&key, &head)?),
+                    "usage_record" => snapshot.usage_records.push(deserialize_head(&key, &head)?),
+                    "usage_metadata" => {
+                        snapshot.usage_metadata.push(deserialize_head(&key, &head)?)
+                    }
                     _ => {}
                 }
             }
@@ -1420,9 +1434,57 @@ fn materialize_domain_heads(conn: &mut DbConnection, domain: SyncDomain) -> Resu
     }
 }
 
-fn deserialize_head<T: serde::de::DeserializeOwned>(head: &EntityHeadRecord) -> Result<T, String> {
-    bincode::deserialize(&head.payload)
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
+fn payload_hex(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity(bytes.len() * 3);
+    for (idx, byte) in bytes.iter().enumerate() {
+        if idx > 0 {
+            out.push(' ');
+        }
+        out.push_str(&format!("{:02x}", byte));
+    }
+    out
+}
+
+fn deserialize_head<T: serde::de::DeserializeOwned + serde::Serialize>(
+    key: &EntityKey,
+    head: &EntityHeadRecord,
+) -> Result<T, String> {
+    match bincode::deserialize(&head.payload) {
+        Ok(value) => {
+            let pretty = serde_json::to_string_pretty(&value)
+                .unwrap_or_else(|err| format!("<failed to render json: {}>", err));
+            log_info_global(
+                "sync_payload",
+                format!(
+                    "deserialized domain={:?} entity_type={} entity_id={} source_device_id={} source_change_id={} payload_bytes={}\n{}",
+                    key.domain,
+                    key.entity_type,
+                    key.entity_id,
+                    head.source_device_id,
+                    head.source_change_id,
+                    head.payload.len(),
+                    pretty
+                ),
+            );
+            Ok(value)
+        }
+        Err(err) => {
+            log_error_global(
+                "sync_payload",
+                format!(
+                    "failed to deserialize domain={:?} entity_type={} entity_id={} source_device_id={} source_change_id={} payload_bytes={} payload_hex={}",
+                    key.domain,
+                    key.entity_type,
+                    key.entity_id,
+                    head.source_device_id,
+                    head.source_change_id,
+                    head.payload.len(),
+                    payload_hex(&head.payload)
+                ),
+            );
+            Err(crate::utils::err_to_string(module_path!(), line!(), err))
+        }
+    }
 }
 
 fn collect_text_ids(conn: &DbConnection, sql: &str) -> Result<Vec<String>, String> {
@@ -1782,11 +1844,12 @@ fn apply_lorebooks_snapshot(conn: &mut DbConnection, payload: &[u8]) -> Result<(
         .collect::<Vec<_>>();
     for lorebook in snapshot.lorebooks {
         tx.execute(
-            "INSERT OR REPLACE INTO lorebooks (id, name, avatar_path, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            "INSERT OR REPLACE INTO lorebooks (id, name, avatar_path, keyword_detection_mode, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
                 lorebook.id,
                 lorebook.name,
                 lorebook.avatar_path,
+                lorebook.keyword_detection_mode,
                 lorebook.created_at,
                 lorebook.updated_at
             ],
@@ -2606,7 +2669,7 @@ fn fetch_lorebooks(conn: &DbConnection, ids: &[String]) -> Result<Vec<u8>, Strin
 
     let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
     let sql_lb = format!(
-        "SELECT id, name, avatar_path, created_at, updated_at FROM lorebooks WHERE id IN ({})",
+        "SELECT id, name, avatar_path, keyword_detection_mode, created_at, updated_at FROM lorebooks WHERE id IN ({})",
         placeholders
     );
 
@@ -2619,8 +2682,9 @@ fn fetch_lorebooks(conn: &DbConnection, ids: &[String]) -> Result<Vec<u8>, Strin
                 id: r.get(0)?,
                 name: r.get(1)?,
                 avatar_path: r.get(2)?,
-                created_at: r.get(3)?,
-                updated_at: r.get(4)?,
+                keyword_detection_mode: r.get(3)?,
+                created_at: r.get(4)?,
+                updated_at: r.get(5)?,
             })
         })
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?

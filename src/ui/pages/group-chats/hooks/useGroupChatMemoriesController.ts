@@ -14,6 +14,10 @@ import {
   toggleGroupMessagePin,
 } from "../../../../core/storage/repo";
 import { storageBridge } from "../../../../core/storage/files";
+import {
+  markMemoryToolEventReverted,
+  revertMemoryToolEvent,
+} from "../../../../core/storage/memoryToolEvents";
 import { initUi, uiReducer } from "../reducers/groupChatMemoriesReducer";
 
 type MemoryItem = {
@@ -173,6 +177,7 @@ export function useGroupChatMemoriesController(groupSessionId?: string) {
     (s) => setSession(s),
   );
   const [ui, dispatch] = useReducer(uiReducer, undefined, initUi);
+  const [revertingEventId, setRevertingEventId] = useState<string | null>(null);
 
   const handleSetColdState = useCallback(
     async (memoryIndex: number, isCold: boolean) => {
@@ -262,7 +267,12 @@ export function useGroupChatMemoriesController(groupSessionId?: string) {
             void reload();
           }
         });
-        unlisteners.push(u1, u2, u3, u4);
+        const u5 = await listen("group-dynamic-memory:progress", (e: any) => {
+          if (e.payload?.sessionId === session.id) {
+            dispatch({ type: "SET_MEMORY_PROGRESS_STEP", value: e.payload.step });
+          }
+        });
+        unlisteners.push(u1, u2, u3, u4, u5);
       } catch (err) {
         console.error("Failed to setup memory event listeners", err);
       }
@@ -387,18 +397,21 @@ export function useGroupChatMemoriesController(groupSessionId?: string) {
 
   const saveEdit = useCallback(
     async (index: number) => {
+      const currentItem = memoryItems.find((item) => item.index === index);
       const trimmed = ui.editingValue.trim();
-      if (!trimmed || trimmed === memoryItems.find((m) => m.index === index)?.text) {
+      if (!trimmed || trimmed === currentItem?.text) {
         dispatch({ type: "CANCEL_EDIT" });
-        return;
+        return true;
       }
       try {
         await handleUpdate(index, trimmed);
         dispatch({ type: "CANCEL_EDIT" });
         dispatch({ type: "SET_ACTION_ERROR", value: null });
+        return true;
       } catch (err: any) {
         console.error("Failed to update memory:", err);
         dispatch({ type: "SET_ACTION_ERROR", value: err?.message || "Failed to update memory" });
+        return false;
       }
     },
     [handleUpdate, memoryItems, ui.editingValue],
@@ -432,8 +445,22 @@ export function useGroupChatMemoriesController(groupSessionId?: string) {
   const handleAbortMemoryCycle = useCallback(async () => {
     if (!session?.id) return;
     try {
-      await storageBridge.groupChatAbortDynamicMemory(session.id);
+      if (session.memoryStatus === "processing") {
+        await storageBridge.groupChatAbortDynamicMemory(session.id);
+      }
+      await storageBridge.groupSessionUpdateMemories(
+        session.id,
+        session.memoryEmbeddings ?? [],
+        session.memorySummary ?? "",
+        session.memorySummaryTokenCount ?? 0,
+        "idle",
+        null,
+      );
+      setSession({ ...session, memoryStatus: "idle", memoryError: null });
       dispatch({ type: "SET_ACTION_ERROR", value: null });
+      dispatch({ type: "SET_RETRY_STATUS", value: "idle" });
+      dispatch({ type: "SET_MEMORY_STATUS", value: "idle" });
+      await reload();
     } catch (err: any) {
       if (!isAbortError(err)) {
         console.error("Failed to abort memory processing:", err);
@@ -442,7 +469,46 @@ export function useGroupChatMemoriesController(groupSessionId?: string) {
       dispatch({ type: "SET_MEMORY_STATUS", value: "idle" });
       void reload();
     }
-  }, [session?.id, reload]);
+  }, [reload, session, setSession]);
+
+  const handleRevertMemoryEvent = useCallback(
+    async (event: NonNullable<GroupSession["memoryToolEvents"]>[number]) => {
+      if (!session?.id || !event.id || !session.memoryEmbeddings) return;
+      setRevertingEventId(event.id);
+      try {
+        const nextEmbeddings = revertMemoryToolEvent(session.memoryEmbeddings, event);
+        const nextEvents = markMemoryToolEventReverted(
+          session.memoryToolEvents ?? [],
+          event.id,
+          Date.now(),
+        );
+        await storageBridge.groupSessionUpdateMemoryState(
+          session.id,
+          nextEmbeddings.map((memory) => memory.text),
+          nextEmbeddings,
+          session.memorySummary ?? "",
+          session.memorySummaryTokenCount ?? 0,
+          nextEvents,
+          session.memoryStatus ?? "idle",
+          session.memoryError ?? null,
+        );
+        setSession({
+          ...session,
+          memories: nextEmbeddings.map((memory) => memory.text),
+          memoryEmbeddings: nextEmbeddings,
+          memoryToolEvents: nextEvents,
+          updatedAt: Date.now(),
+        });
+        dispatch({ type: "SET_ACTION_ERROR", value: null });
+      } catch (err: any) {
+        console.error("Failed to revert group memory cycle:", err);
+        dispatch({ type: "SET_ACTION_ERROR", value: err?.message || "Failed to revert cycle" });
+      } finally {
+        setRevertingEventId(null);
+      }
+    },
+    [session, setSession],
+  );
 
   const handleRefresh = useCallback(async () => {
     if (!session?.id) return;
@@ -510,9 +576,11 @@ export function useGroupChatMemoriesController(groupSessionId?: string) {
     saveEdit,
     handleRunMemoryCycle,
     handleAbortMemoryCycle,
+    handleRevertMemoryEvent,
     handleRefresh,
     handleDismissError,
     handleTogglePinnedMessage,
     handleSaveSummaryClick,
+    revertingEventId,
   } as const;
 }

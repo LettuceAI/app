@@ -149,24 +149,32 @@ pub async fn usage_recalculate_costs(app: AppHandle, api_key: String) -> Result<
             prompt_tokens: record.prompt_tokens,
             completion_tokens: record.completion_tokens,
             total_tokens: record.total_tokens,
-            cached_prompt_tokens: record
-                .metadata
-                .get("openrouter_cached_prompt_tokens")
-                .and_then(|v| v.parse::<u64>().ok()),
-            cache_write_tokens: record
-                .metadata
-                .get("openrouter_cache_write_tokens")
-                .and_then(|v| v.parse::<u64>().ok()),
+            cached_prompt_tokens: record.cached_prompt_tokens.or_else(|| {
+                record
+                    .metadata
+                    .get("openrouter_cached_prompt_tokens")
+                    .and_then(|v| v.parse::<u64>().ok())
+            }),
+            cache_write_tokens: record.cache_write_tokens.or_else(|| {
+                record
+                    .metadata
+                    .get("openrouter_cache_write_tokens")
+                    .and_then(|v| v.parse::<u64>().ok())
+            }),
             reasoning_tokens: record.reasoning_tokens,
             image_tokens: record.image_tokens,
-            web_search_requests: record
-                .metadata
-                .get("openrouter_web_search_requests")
-                .and_then(|v| v.parse::<u64>().ok()),
-            api_cost: record
-                .metadata
-                .get("openrouter_api_cost")
-                .and_then(|v| v.parse::<f64>().ok()),
+            web_search_requests: record.web_search_requests.or_else(|| {
+                record
+                    .metadata
+                    .get("openrouter_web_search_requests")
+                    .and_then(|v| v.parse::<u64>().ok())
+            }),
+            api_cost: record.api_cost.or_else(|| {
+                record
+                    .metadata
+                    .get("openrouter_api_cost")
+                    .and_then(|v| v.parse::<f64>().ok())
+            }),
             response_id: record.metadata.get("openrouter_response_id").cloned(),
             first_token_ms: None,
             tokens_per_second: None,

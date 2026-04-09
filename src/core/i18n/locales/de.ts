@@ -22,6 +22,7 @@ export const deMessages: DeepPartialMessageTree<LocaleMessages> = {
       convertFiles: "Dateien konvertieren",
       usageAnalytics: "Nutzungsanalysen",
       changelog: "Änderungsprotokoll",
+      about: "Info",
       createSystemPrompt: "System-Prompt erstellen",
       editSystemPrompt: "System-Prompt bearbeiten",
       systemPrompts: "System-Prompts",
@@ -58,6 +59,7 @@ export const deMessages: DeepPartialMessageTree<LocaleMessages> = {
       embeddingDownload: "Embedding-Download",
       embeddingTest: "Embedding-Test",
       editModel: "Modell bearbeiten",
+      messageDebug: "Nachrichten-Debug",
     },
     bottomNav: {
       chats: "Chats",
@@ -145,6 +147,7 @@ export const deMessages: DeepPartialMessageTree<LocaleMessages> = {
     items: {
       providers: { title: "Anbieter", subtitle: "Mit KI-Diensten verbinden" },
       models: { title: "Modelle", subtitle: "KI-Modelle konfigurieren" },
+      imageGeneration: { title: "Bilderzeugung", subtitle: "Bilder erstellen und testen" },
       voices: { title: "Stimmen", subtitle: "Text-zu-Sprache-Stimmen" },
       accessibility: { title: "Barrierefreiheit", subtitle: "Tonsignale & Haptik" },
       prompts: { title: "System-Prompts", subtitle: "KI-Persönlichkeit gestalten" },
@@ -165,6 +168,7 @@ export const deMessages: DeepPartialMessageTree<LocaleMessages> = {
       docs: { title: "Dokumentation", subtitle: "Anleitungen & Referenz" },
       github: { title: "Probleme melden", subtitle: "Fehler & Feedback • v{{version}}" },
       discord: { title: "Discord beitreten", subtitle: "Community & Hilfe" },
+      about: { title: "Info", subtitle: "Version, Updates & Links" },
       changelog: { title: "Änderungsprotokoll", subtitle: "Was ist neu" },
       reset: { title: "Zurücksetzen", subtitle: "Alles löschen" },
       developer: { title: "Entwickler-Tools", subtitle: "Debug & Tests" },
@@ -225,6 +229,65 @@ export const deMessages: DeepPartialMessageTree<LocaleMessages> = {
     save: "Speichern",
   },
 
+  updates: {
+    available: {
+      title: "Neue Version verfügbar",
+      description: "v{{latestVersion}} ist verfügbar. Du verwendest v{{currentVersion}}.",
+      actions: {
+        view: "Release ansehen",
+      },
+    },
+  },
+
+  about: {
+    kicker: "App-Info",
+    appName: "LettuceAI",
+    description: "Versionsdetails, Update-Prüfungen und nützliche Links.",
+    info: {
+      version: "Version",
+      channel: "Kanal",
+      platform: "Plattform",
+    },
+    buildChannel: {
+      dev: "Entwicklungs-Build",
+      release: "Stabile Version",
+    },
+    update: {
+      sectionTitle: "Updates",
+      title: "App-Updates",
+      description:
+        "Suche manuell nach neuen Versionen oder deaktiviere automatische Prüfungen beim Start.",
+      autoChecks: "Automatische Update-Prüfungen",
+      autoChecksDescription:
+        "Wenn aktiviert, sucht LettuceAI beim Öffnen der App nach neuen Versionen.",
+      checkNow: "Nach Updates suchen",
+      checking: "Suche nach Updates...",
+      upToDateTitle: "Du bist auf dem neuesten Stand",
+      upToDateDescription: "Derzeit ist keine neuere Version für dieses Gerät verfügbar.",
+      failedTitle: "Update-Prüfung fehlgeschlagen",
+      failedDescription:
+        "Updates konnten gerade nicht geprüft werden. Versuche es gleich noch einmal.",
+    },
+    links: {
+      sectionTitle: "Links",
+      website: "Website",
+      websiteDescription: "Download-Seite und Release-Informationen",
+      github: "GitHub",
+      githubDescription: "Quellcode, Issues und Entwicklung",
+      discord: "Discord",
+      discordDescription: "Community-Server und Hilfe",
+      reddit: "Reddit",
+      redditDescription: "Community-Diskussionen, Feedback und Updates",
+    },
+    developerMode: {
+      enable: "Entwicklermodus aktivieren",
+      enabled: "Entwicklermodus aktiviert",
+    },
+    errors: {
+      saveTitle: "Einstellung konnte nicht gespeichert werden",
+      saveDescription: "Deine Einstellung zur Update-Prüfung wurde nicht geändert.",
+    },
+  },
   components: {
     tooltip: {
       dismissHint: "Tippe irgendwo zum Schließen",
@@ -242,6 +305,14 @@ export const deMessages: DeepPartialMessageTree<LocaleMessages> = {
       chooseImage: "Bild auswählen",
       chooseImageDesc: "Von deinem Gerät auswählen",
     },
+    avatarCurrentEdit: {
+      title: "Aktuelle bearbeiten",
+      reposition: "Neu positionieren",
+      repositionDesc: "Verschieben oder beschneiden Sie den aktuellen Avatar",
+      editWithAI: "Mit KI bearbeiten",
+      editWithAIDesc: "Öffnen Sie die KI-Bearbeitung für den aktuellen Avatar",
+      noImageModels: "Keine Bildmodelle verfügbar",
+    },
     avatarGeneration: {
       modelsLoadError: "Bildgenerierungsmodelle konnten nicht geladen werden",
       title: "Avatar generieren",
@@ -252,6 +323,21 @@ export const deMessages: DeepPartialMessageTree<LocaleMessages> = {
       describePlaceholder:
         "Ein freundliches Anime-Mädchen mit bunten Haaren, warmherzig lächelnd...",
       inProgress: "Avatar wird generiert...",
+      editingInProgress: "Avatar-Bearbeitung wird angewendet...",
+      previousVariant: "Vorherige Variante",
+      nextVariant: "Nächste Variante",
+      variantCounter: "{{current}} / {{total}}",
+      editRequest: "Anfrage bearbeiten",
+      editRequestPlaceholder:
+        "Machen Sie die Haare dunkler, fügen Sie eine Brille hinzu, behalten Sie das gleiche Gesicht ...",
+      applyEdit: "Bearbeiten anwenden",
+      editImageLoadError:
+        "Der generierte Avatar konnte nicht für die Bearbeitung vorbereitet werden",
+      aiAssistant: "KI-Assistent",
+      backToResults: "Zurück zur Eingabeaufforderung",
+      magicInTheWorks: "Magie in Arbeit...",
+      refine: "Verfeinern",
+      apply: "Anwenden",
       alt: "Generierter Avatar",
       regenerate: "Neu generieren",
       useThis: "Diesen verwenden",
@@ -281,6 +367,9 @@ export const deMessages: DeepPartialMessageTree<LocaleMessages> = {
       searchPlaceholder: "Modelle suchen...",
       noResults: "Keine Modelle gefunden",
       noResultsHint: "Versuche einen anderen Suchbegriff",
+    },
+    localeSelector: {
+      title: "Wählen Sie Sprache aus",
     },
     promptTemplate: {
       nameContentRequired: "Name und Inhalt sind erforderlich",
@@ -513,6 +602,31 @@ export const deMessages: DeepPartialMessageTree<LocaleMessages> = {
     swapPlacesOn: "Plätze tauschen (An)",
     uploadImage: "Bild hochladen",
     helpMeReply: "Hilf mir antworten",
+    sceneImage: {
+      modeTitle: "Szenenbild",
+      modeDescription:
+        "Wählen Sie, ob Sie die Szenenaufforderung selbst schreiben oder sie zuerst von der KI entwerfen lassen möchten.",
+      writePrompt: "Eingabeaufforderung schreiben",
+      writePromptDesc:
+        "Geben Sie die genaue Szenenbildaufforderung ein, die Sie verwenden möchten.",
+      askAi: "Fragen Sie die KI",
+      askAiDesc:
+        "Lassen Sie das aktuelle Chat-Modell ab dem ausgewählten Moment eine Szenenaufforderung entwerfen.",
+      generateTitle: "Szenenbild generieren",
+      regenerateTitle: "Szenenbild neu generieren",
+      aiTitle: "AI-Szenen-Eingabeaufforderung",
+      promptLabel: "SZENE-AUFFORDERUNG",
+      promptPlaceholder:
+        "Beschreiben Sie die Szene, Charaktere, Stimmung, Beleuchtung, Kameraeinstellung und wichtige Details ...",
+      suggestedPrompt: "Vorgeschlagene Eingabeaufforderung",
+      regeneratePrompt: "Regenerieren",
+      editPrompt: "Eingabeaufforderung bearbeiten",
+      reviewTitle: "Szenen-Prompt prüfen",
+      denyPrompt: "Ablehnen",
+      acceptPrompt: "Akzeptieren",
+      generateImage: "Bild generieren",
+      updateImage: "Bild aktualisieren",
+    },
     useMyTextAsBase: "Meinen Text als Basis verwenden",
     writeNewReply: "Etwas Neues schreiben",
     suggestedReply: "Vorgeschlagene Antwort",
@@ -647,8 +761,11 @@ export const deMessages: DeepPartialMessageTree<LocaleMessages> = {
       branchFromHere: "Von hier abzweigen",
       branchToGroupChat: "Zu Gruppenchat abzweigen",
       branchToCharacter: "Zu Charakter abzweigen",
+      generateSceneImage: "Szenenbild erzeugen",
+      regenerateSceneImage: "Szenenbild neu generieren",
       chatAppearance: "Chat-Darstellung",
       delete: "Löschen",
+      debug: "Debug",
       unpinToDelete: "Loslösen zum Löschen",
       editPlaceholder: "Nachricht bearbeiten...",
       memoriesUsed: "{{count}} Erinnerungen verwendet",
@@ -939,7 +1056,8 @@ export const deMessages: DeepPartialMessageTree<LocaleMessages> = {
       minTwoRequired: "Mindestens 2 Charaktere erforderlich",
       removeCharacter: "Charakter entfernen",
       groupMinCharacters: "Eine Gruppe benötigt mindestens 2 Charaktere",
-      mutedCharactersNote: "Stummgeschaltete Charaktere werden bei der automatischen Sprecherauswahl übersprungen, können aber über explizite `@Erwähnung` antworten.",
+      mutedCharactersNote:
+        "Stummgeschaltete Charaktere werden bei der automatischen Sprecherauswahl übersprungen, können aber über explizite `@Erwähnung` antworten.",
       addCharacterTitle: "Charakter hinzufügen",
       allCharactersInGroup: "Alle Charaktere sind bereits in dieser Gruppe.",
       removeCharacterTitle: "Charakter entfernen?",
@@ -982,7 +1100,8 @@ export const deMessages: DeepPartialMessageTree<LocaleMessages> = {
       minTwoRequired: "Mindestens 2 Charaktere erforderlich",
       removeCharacter: "Charakter entfernen",
       groupMinCharacters: "Ein Gruppenchat benötigt mindestens 2 Charaktere",
-      mutedCharactersNote: "Stummgeschaltete Charaktere werden bei der automatischen Sprecherauswahl übersprungen, können aber über explizite `@Erwähnung` antworten.",
+      mutedCharactersNote:
+        "Stummgeschaltete Charaktere werden bei der automatischen Sprecherauswahl übersprungen, können aber über explizite `@Erwähnung` antworten.",
       data: "Daten",
       dataSubtitle: "Gespräche exportieren oder importieren",
       export: "Exportieren",
@@ -1010,7 +1129,8 @@ export const deMessages: DeepPartialMessageTree<LocaleMessages> = {
       withoutMessages: "Ohne Nachrichten",
       withoutMessagesDesc: "Nur Einstellungen klonen (Charaktere, Startszene)",
       branchWithCharacterTitle: "Mit Charakter verzweigen",
-      branchWithCharacterDesc: "Wähle einen Charakter, um als 1-zu-1-Gespräch fortzufahren. Alle Nachrichten aus dieser Gruppe werden konvertiert.",
+      branchWithCharacterDesc:
+        "Wähle einen Charakter, um als 1-zu-1-Gespräch fortzufahren. Alle Nachrichten aus dieser Gruppe werden konvertiert.",
       continueWith: "Gespräch mit {{name}} fortsetzen",
       exportChatPackageTitle: "Chatpaket exportieren",
       includeCharacterSnapshots: "Charakter-Snapshots einschließen",
@@ -1417,7 +1537,8 @@ export const deMessages: DeepPartialMessageTree<LocaleMessages> = {
       nameHint: "Gib deiner Persona einen beschreibenden Namen",
       nicknameLabel: "SPITZNAME (OPTIONAL)",
       nicknamePlaceholder: "z. B. Arbeitsvariante, RPG-Modus...",
-      nicknameHint: "Ein privater Spitzname, um Varianten dieser Persona in Ihrer Bibliothek zu unterscheiden",
+      nicknameHint:
+        "Ein privater Spitzname, um Varianten dieser Persona in Ihrer Bibliothek zu unterscheiden",
       descriptionLabel: "BESCHREIBUNG",
       descriptionPlaceholder:
         "Beschreibe, wie die KI dich ansprechen soll, deine Vorlieben, Hintergrund oder Kommunikationsstil...",
@@ -1593,6 +1714,7 @@ export const deMessages: DeepPartialMessageTree<LocaleMessages> = {
       plainTextHex: "Plain Text Color",
       italicTextHex: "Italic Text Color",
       quotedTextHex: "Blockzitatfarbe",
+      inlineCodeTextHex: "Farbe für Inline-Code",
     },
     backgroundTransparency: {
       label: "Hintergrund & Transparenz",
@@ -1810,11 +1932,47 @@ export const deMessages: DeepPartialMessageTree<LocaleMessages> = {
       size: "GRÖSSE",
       quality: "QUALITÄT",
       style: "STIL",
+      searchModels: "Modelle suchen...",
+      selectAvatarModel: "Wählen Sie Avatar-Modell aus",
+      selectSceneModel: "Wählen Sie Szenenmodell aus",
+      selectWriterModel: "Szenenautor-Modell auswählen",
+      useFirstAvailable: "Verwenden Sie das erste verfügbare Modell",
+      useFirstCompatible: "Erstes kompatibles Autorenmodell verwenden",
+    },
+    mode: {
+      title: "Modus",
+      description: "Lege fest, wie in der Modellausgabe erkannte Szenen-Prompts behandelt werden.",
+      auto: "Automatisch",
+      autoDescription:
+        "Erzeuge das Szenenbild sofort, sobald das Modell einen Szenen-Prompt liefert.",
+      askFirst: "Erst fragen",
+      askFirstDescription:
+        "Zeige den erkannten Szenen-Prompt und warte auf deine Bestätigung, bevor ein Bild erzeugt wird.",
+      manual: "Manuell",
+      manualDescription:
+        "Ignoriere Szenen-Prompts aus Modellantworten. Verwende nur Aktionen, die du selbst auslöst.",
     },
     empty: {
       title: "Keine Bildmodelle",
       description:
         "Füge ein Bildgenerierungsmodell auf der Modelle-Seite hinzu, um mit der Bilderzeugung zu beginnen.",
+    },
+    sections: {
+      avatar: {
+        title: "Avatar-Generierung",
+        description:
+          "Standardmodell, das beim Generieren von Avataren aus der Avatar-Auswahl oder zugehörigen Profilbildabläufen verwendet wird.",
+      },
+      scene: {
+        title: "Szenengenerierung",
+        description:
+          "Reserviertes Modell für Szenenbilder, die aus Gesprächskontext oder Szenenaufforderungen generiert werden.",
+      },
+      writer: {
+        title: "Szenenautor",
+        description:
+          "Reserviertes multimodales Textmodell zum Entwerfen von Szenen-Prompts und Design-Referenzbeschreibungen aus Chat-Kontext, Avataren und Referenzbildern.",
+      },
     },
   },
 
@@ -1831,6 +1989,7 @@ export const deMessages: DeepPartialMessageTree<LocaleMessages> = {
       testDataGenerators: "Testdaten-Generatoren",
       storageMaintenance: "Speicherwartung",
       usageTracking: "Nutzungsverfolgung",
+      crashTesting: "Crashtests",
       environmentInfo: "Umgebungsinformationen",
     },
     testData: {
@@ -1853,6 +2012,12 @@ export const deMessages: DeepPartialMessageTree<LocaleMessages> = {
       recalculateAll: "Alle Nutzungskosten neu berechnen",
       recalculateAllDesc:
         "Preise neu abrufen und Kosten für alle OpenRouter-Nutzungsdatensätze neu berechnen",
+    },
+    crashTesting: {
+      forceCrash: "App jetzt abstürzen",
+      forceCrashDesc: "Beendet den nativen App-Prozess sofort, um die Absturzerkennung zu testen",
+      forceCrashConfirm:
+        "Dadurch wird die App sofort zum Absturz gebracht, um den Absturzdetektor zu testen. Weitermachen?",
     },
     environmentInfo: {
       mode: "Modus",
@@ -2348,6 +2513,45 @@ export const deMessages: DeepPartialMessageTree<LocaleMessages> = {
       deleteLorebook: "Lorebook löschen",
       importLorebook: "Lorebook importieren",
     },
+    imageLibrary: {
+      filters: {
+        all: "Alle",
+        backgrounds: "Hintergründe",
+        avatars: "Avatare",
+        attachments: "Anhänge",
+        other: "Sonstige",
+      },
+      searchPlaceholder: "Nach Dateiname, Pfad, Sitzungs-ID oder Entitäts-ID suchen",
+      empty: {
+        title: "Keine Bilder für diese Ansicht gefunden",
+        description:
+          "Versuche einen anderen Filter oder Suchbegriff. Die Bibliothek zeigt nur Bilder, die bereits im lokalen Speicher der App liegen.",
+      },
+      actions: {
+        sort: "Sortieren",
+        useThis: "Dieses verwenden",
+        using: "Wird verwendet...",
+        copyPath: "Pfad kopieren",
+        saving: "Wird gespeichert...",
+        download: "Herunterladen",
+        delete: "Bild löschen",
+        deleting: "Wird gelöscht...",
+      },
+      active: "Aktiv",
+      messages: {
+        loadFailed: "Bildbibliothek konnte nicht geladen werden",
+        saved: "Bild gespeichert",
+        downloadFailed: "Download fehlgeschlagen",
+        useFailed: "Dieses Bild konnte nicht verwendet werden",
+        deleted: "Bild gelöscht",
+        deleteFailed: "Bild konnte nicht gelöscht werden",
+      },
+      deleteConfirm: {
+        title: "Bild löschen?",
+        message:
+          'Möchtest du "{{filename}}" wirklich löschen? Dadurch können Avatare, Chat-Hintergründe oder Nachrichtenanhänge kaputtgehen, die es noch verwenden.',
+      },
+    },
     deleteConfirm: {
       title: "{{itemType}} löschen?",
       message: "Bist du sicher, dass du löschen möchtest",
@@ -2499,6 +2703,8 @@ export const deMessages: DeepPartialMessageTree<LocaleMessages> = {
     status: {
       connecting: "Verbinden...",
       connected: "Verbunden",
+      waitingConfirmation: "Warten auf Bestätigung",
+      waitingConfirmationDesc: "Genehmigen Sie die Verbindung auf dem Hostgerät, um fortzufahren.",
       syncing: "Synchronisieren...",
       transferringData: "Daten übertragen",
       syncInProgress: "Synchronisierung läuft",

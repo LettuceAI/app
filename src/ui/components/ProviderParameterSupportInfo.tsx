@@ -18,6 +18,13 @@ const PARAMETER_LABELS: Record<keyof AdvancedModelSettings, string> = {
   frequencyPenalty: "Frequency Penalty",
   presencePenalty: "Presence Penalty",
   topK: "Top K",
+  sdSteps: "SD Steps",
+  sdCfgScale: "SD CFG Scale",
+  sdSampler: "SD Sampler",
+  sdSeed: "SD Seed",
+  sdNegativePrompt: "SD Negative Prompt",
+  sdDenoisingStrength: "SD Denoise",
+  sdSize: "SD Default Size",
   llamaGpuLayers: "llama.cpp GPU Layers",
   llamaThreads: "llama.cpp Threads",
   llamaThreadsBatch: "llama.cpp Batch Threads",
@@ -32,9 +39,12 @@ const PARAMETER_LABELS: Record<keyof AdvancedModelSettings, string> = {
   llamaMmprojPath: "llama.cpp MMProj Path",
   llamaChatTemplatePreset: "llama.cpp Template Preset",
   llamaRawCompletionFallback: "llama.cpp Raw Fallback",
+  llamaStrictMode: "llama.cpp Strict Mode",
   llamaSamplerProfile: "llama.cpp Sampler Profile",
+  llamaSamplerOrder: "llama.cpp Sampler Order",
   llamaMinP: "llama.cpp Min P",
   llamaTypicalP: "llama.cpp Typical P",
+  llamaLastRuntimeReport: "llama.cpp Runtime Report",
   ollamaNumCtx: "Ollama Num Ctx",
   ollamaNumPredict: "Ollama Num Predict",
   ollamaNumKeep: "Ollama Num Keep",
@@ -53,6 +63,8 @@ const PARAMETER_LABELS: Record<keyof AdvancedModelSettings, string> = {
   reasoningEnabled: "Reasoning",
   reasoningEffort: "Reasoning Effort",
   reasoningBudgetTokens: "Reasoning Budget",
+  promptCachingEnabled: "Prompt Caching",
+  promptCachingTtl: "Prompt Caching TTL",
 };
 
 const PARAMETER_DESCRIPTIONS: Record<keyof AdvancedModelSettings, string> = {
@@ -63,6 +75,13 @@ const PARAMETER_DESCRIPTIONS: Record<keyof AdvancedModelSettings, string> = {
   frequencyPenalty: "Reduce token repetition (-2 to 2)",
   presencePenalty: "Encourage new topics (-2 to 2)",
   topK: "Limit token pool size (1-500)",
+  sdSteps: "Diffusion sampling steps",
+  sdCfgScale: "Prompt guidance scale",
+  sdSampler: "Sampler name sent to the diffusion backend",
+  sdSeed: "Fixed seed for reproducible images",
+  sdNegativePrompt: "Negative prompt appended to every request",
+  sdDenoisingStrength: "Img2img denoise strength (0-1)",
+  sdSize: "Default WIDTHxHEIGHT when the request does not override size",
   llamaGpuLayers: "Number of layers to offload to GPU (0 = CPU)",
   llamaThreads: "CPU threads for generation",
   llamaThreadsBatch: "CPU threads for batch processing",
@@ -77,9 +96,14 @@ const PARAMETER_DESCRIPTIONS: Record<keyof AdvancedModelSettings, string> = {
   llamaMmprojPath: "Filesystem path to the multimodal projector GGUF used for vision",
   llamaChatTemplatePreset: "Known preset name used when GGUF has no embedded template",
   llamaRawCompletionFallback: "Allow plain raw completion fallback if template resolution fails",
-  llamaSamplerProfile: "Preset local sampler defaults for chat, creativity, stability, or reasoning",
+  llamaStrictMode:
+    "Disable llama.cpp safety fallbacks that lower offload, context, or batch settings",
+  llamaSamplerProfile:
+    "Preset local sampler defaults for chat, creativity, stability, or reasoning",
+  llamaSamplerOrder: "Array of sampler stages executed in the saved order for local llama.cpp",
   llamaMinP: "Min-p sampling threshold for llama.cpp (0-1)",
   llamaTypicalP: "Typical sampling threshold for llama.cpp (0-1)",
+  llamaLastRuntimeReport: "Persisted diagnostics from the last local llama.cpp run",
   ollamaNumCtx: "Ollama context window size",
   ollamaNumPredict: "Max tokens to generate",
   ollamaNumKeep: "Tokens to keep from prompt",
@@ -98,6 +122,8 @@ const PARAMETER_DESCRIPTIONS: Record<keyof AdvancedModelSettings, string> = {
   reasoningEnabled: "Enable/disable thinking mode",
   reasoningEffort: "Thinking depth - OpenAI/DeepSeek style",
   reasoningBudgetTokens: "Max tokens for extended thinking",
+  promptCachingEnabled: "Enable prompt caching",
+  promptCachingTtl: "How long a cached prompt prefix stays reusable",
 };
 
 /**
@@ -115,16 +141,21 @@ export function ProviderParameterSupportInfo({
   if (!provider) {
     return (
       <div className="rounded-lg border border-white/10 bg-white/5 p-3">
-        <p className="text-xs text-white/50">{t("components.providerParameterSupport.unknownProvider", { providerId })}</p>
+        <p className="text-xs text-white/50">
+          {t("components.providerParameterSupport.unknownProvider", { providerId })}
+        </p>
       </div>
     );
   }
 
-  const parameters = Object.keys(provider.supportedParameters) as (keyof AdvancedModelSettings)[];
+  const supportedParameters = provider.supportedParameters as Partial<
+    Record<keyof AdvancedModelSettings, boolean>
+  >;
+  const parameters = Object.keys(supportedParameters) as (keyof AdvancedModelSettings)[];
   const reasoningCapability = getProviderReasoningCapability(providerId);
 
   if (compact) {
-    const supported = parameters.filter((param) => provider.supportedParameters[param]);
+    const supported = parameters.filter((param) => supportedParameters[param]);
     return (
       <div className="flex flex-wrap gap-1">
         {supported.map((param) => (
@@ -143,7 +174,7 @@ export function ProviderParameterSupportInfo({
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-2">
         {parameters.map((param) => {
-          const isSupported = provider.supportedParameters[param];
+          const isSupported = supportedParameters[param];
           return (
             <div
               key={param}
@@ -217,7 +248,11 @@ export function ProviderParameterSupportInfo({
             />
           </svg>
           <div className="text-xs text-blue-200/80 leading-relaxed space-y-1">
-            <p>{t("components.providerParameterSupport.unsupportedParametersIgnored", { providerName: provider.displayName })}</p>
+            <p>
+              {t("components.providerParameterSupport.unsupportedParametersIgnored", {
+                providerName: provider.displayName,
+              })}
+            </p>
             {reasoningCapability.type === "effort" && (
               <p className="font-medium text-amber-200">
                 ⚡ {t("components.providerParameterSupport.reasoningEffortSupported")}
@@ -229,7 +264,9 @@ export function ProviderParameterSupportInfo({
               </p>
             )}
             {reasoningCapability.type === "none" && (
-              <p className="text-white/50">{t("components.providerParameterSupport.reasoningNotSupportedProvider")}</p>
+              <p className="text-white/50">
+                {t("components.providerParameterSupport.reasoningNotSupportedProvider")}
+              </p>
             )}
           </div>
         </div>
@@ -250,13 +287,17 @@ export function AllProvidersParameterSupport() {
 
   return (
     <div className="space-y-4">
-      <h3 className="text-sm font-semibold text-white">{t("components.providerParameterSupport.matrixTitle")}</h3>
+      <h3 className="text-sm font-semibold text-white">
+        {t("components.providerParameterSupport.matrixTitle")}
+      </h3>
 
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
             <tr className="border-b border-white/10">
-              <th className="pb-2 pr-4 text-left font-medium text-white/60">{t("components.providerParameterSupport.providerColumn")}</th>
+              <th className="pb-2 pr-4 text-left font-medium text-white/60">
+                {t("components.providerParameterSupport.providerColumn")}
+              </th>
               {allParams.map((param) => (
                 <th key={param} className="pb-2 px-2 text-center font-medium text-white/60">
                   {PARAMETER_LABELS[param]}
@@ -269,7 +310,11 @@ export function AllProvidersParameterSupport() {
               <tr key={provider.providerId} className="border-b border-white/5">
                 <td className="py-2.5 pr-4 font-medium text-white">{provider.displayName}</td>
                 {allParams.map((param) => {
-                  const isSupported = provider.supportedParameters[param];
+                  const isSupported = (
+                    provider.supportedParameters as Partial<
+                      Record<keyof AdvancedModelSettings, boolean>
+                    >
+                  )[param];
                   return (
                     <td key={param} className="py-2.5 px-2 text-center">
                       {isSupported ? (

@@ -234,7 +234,7 @@ export function GroupChatCreatePage() {
                         return { ...prev, [participantKey]: next };
                       });
                     }}
-                    className="mt-2 w-full rounded-lg border border-fg/10 bg-black/20 px-3 py-2 text-sm text-fg focus:border-fg/30 focus:outline-none"
+                    className="mt-2 w-full rounded-lg border border-fg/10 bg-surface-el/40 px-3 py-2 text-sm text-fg focus:border-fg/30 focus:outline-none focus:ring-1 focus:ring-fg/10"
                   >
                     <option value="">{t("groupChats.create.selectCharacterPlaceholder")}</option>
                     {state.characters.map((character) => (

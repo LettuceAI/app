@@ -1,4 +1,13 @@
 {
+  "app": {
+    "windows": [
+      {
+        "decorations": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": false
+      }
+    ]
+  },
   "bundle": {
     "resources": [
       "./onnxruntime",

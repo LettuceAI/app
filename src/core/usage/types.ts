@@ -6,9 +6,22 @@ export interface RequestCost {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
+  regularPromptTokens?: number;
+  cachedPromptTokens?: number;
+  cacheWriteTokens?: number;
+  reasoningTokens?: number;
+  webSearchRequests?: number;
   promptCost: number;
+  promptBaseCost?: number;
+  cacheReadCost?: number;
+  cacheWriteCost?: number;
   completionCost: number;
+  completionBaseCost?: number;
+  reasoningCost?: number;
+  requestCost?: number;
+  webSearchCost?: number;
   totalCost: number;
+  authoritativeTotalCost?: number | null;
 }
 
 export interface RequestUsage {
@@ -27,8 +40,12 @@ export interface RequestUsage {
   promptTokens?: number;
   completionTokens?: number;
   totalTokens?: number;
+  cachedPromptTokens?: number;
+  cacheWriteTokens?: number;
   reasoningTokens?: number;
   imageTokens?: number;
+  webSearchRequests?: number;
+  apiCost?: number;
 
   // Token breakdown for prompt analysis
   memoryTokens?: number; // Tokens from memory embeddings

@@ -189,7 +189,7 @@ export function GroupChatMessageActionsBottomSheet({
                       {usedLorebookEntries.map((entry, idx) => (
                         <div
                           key={`${entry}-${idx}`}
-                          className="rounded border border-sky-500/10 bg-black/20 px-2 py-1.5 text-xs text-sky-100/85"
+                          className="rounded border border-sky-500/15 bg-sky-500/8 px-2 py-1.5 text-xs text-sky-200/90"
                         >
                           {entry}
                         </div>
@@ -361,8 +361,8 @@ function CharacterPickerItem({
       <div
         className={cn(
           "h-10 w-10 rounded-full overflow-hidden",
-          "bg-linear-to-br from-white/10 to-white/5",
-          "ring-1 ring-white/10",
+          "bg-linear-to-br from-fg/8 to-fg/4",
+          "ring-1 ring-fg/10",
         )}
       >
         {avatarUrl ? (

@@ -17,7 +17,8 @@
         "height": 810,
         "minWidth": 1068,
         "minHeight": 600,
-        "transparent": true
+        "transparent": true,
+        "decorations": true
       }
     ],
     "security": {
@@ -31,6 +32,44 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "fileAssociations": [
+      {
+        "ext": ["uec"],
+        "name": "Unified Entity Card",
+        "description": "LettuceAI Unified Entity Card",
+        "role": "Editor",
+        "mimeType": "application/x-uec+json",
+        "rank": "Owner",
+        "exportedType": {
+          "identifier": "com.lettuceai.uec",
+          "conformsTo": ["public.json"]
+        }
+      },
+      {
+        "ext": ["usc"],
+        "name": "Unified System Card",
+        "description": "LettuceAI Unified System Card",
+        "role": "Editor",
+        "mimeType": "application/x-usc+json",
+        "rank": "Owner",
+        "exportedType": {
+          "identifier": "com.lettuceai.usc",
+          "conformsTo": ["public.json"]
+        }
+      },
+      {
+        "ext": ["lettuce"],
+        "name": "LettuceAI Backup",
+        "description": "LettuceAI encrypted backup",
+        "role": "Editor",
+        "mimeType": "application/zip",
+        "rank": "Owner",
+        "exportedType": {
+          "identifier": "com.lettuceai.backup",
+          "conformsTo": ["public.zip-archive", "public.data"]
+        }
+      }
+    ],
     "macOS": {
       "minimumSystemVersion": "11.0",
       "dmg": {

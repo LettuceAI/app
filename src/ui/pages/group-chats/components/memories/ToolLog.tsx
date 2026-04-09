@@ -89,11 +89,20 @@ function ActionCard({ action }: { action: NonNullable<MemoryToolEvent["actions"]
   };
   const Icon = style.icon;
   const args = action.arguments as Record<string, unknown> | undefined;
-  const memoryText = args?.text as string | undefined;
-  const category = args?.category as string | undefined;
-  const important = args?.important as boolean | undefined;
+  const rawAction = action as Record<string, unknown>;
+  const memoryText =
+    (args?.text as string | undefined) ??
+    (rawAction.deletedText as string | undefined) ??
+    (rawAction.text as string | undefined);
+  const category =
+    (args?.category as string | undefined) ?? (rawAction.category as string | undefined);
+  const important =
+    (args?.important as boolean | undefined) ?? (rawAction.important as boolean | undefined);
   const confidence = args?.confidence as number | undefined;
-  const id = args?.id as string | undefined;
+  const id =
+    (args?.id as string | undefined) ??
+    (rawAction.deletedMemoryId as string | undefined) ??
+    (args?.text as string | undefined);
 
   return (
     <div
@@ -157,7 +166,17 @@ function summarizeActions(actions: NonNullable<MemoryToolEvent["actions"]>): str
     .join(", ");
 }
 
-function CycleCard({ event, defaultOpen }: { event: MemoryToolEvent; defaultOpen: boolean }) {
+function CycleCard({
+  event,
+  defaultOpen,
+  onRevert,
+  reverting,
+}: {
+  event: MemoryToolEvent;
+  defaultOpen: boolean;
+  onRevert?: (event: MemoryToolEvent) => void;
+  reverting?: boolean;
+}) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const hasError = !!event.error;
   const actions = event.actions || [];
@@ -237,6 +256,27 @@ function CycleCard({ event, defaultOpen }: { event: MemoryToolEvent; defaultOpen
             </div>
           )}
 
+          {event.id && !event.revertedAt && onRevert && (
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => onRevert(event)}
+                disabled={reverting}
+                className="rounded-lg border border-fg/10 bg-fg/5 px-3 py-1.5 text-xs font-medium text-fg/80 transition hover:bg-fg/10 disabled:pointer-events-none disabled:opacity-50"
+              >
+                {reverting ? "Reverting..." : "Revert"}
+              </button>
+            </div>
+          )}
+
+          {event.revertedAt && (
+            <div className="flex justify-end">
+              <span className="rounded-lg border border-warning/20 bg-warning/10 px-3 py-1.5 text-xs font-medium text-warning">
+                Reverted
+              </span>
+            </div>
+          )}
+
           <div
             className={cn(
               "flex items-center gap-3 pt-1",
@@ -255,7 +295,15 @@ function CycleCard({ event, defaultOpen }: { event: MemoryToolEvent; defaultOpen
   );
 }
 
-export function ToolLog({ events }: { events: MemoryToolEvent[] }) {
+export function ToolLog({
+  events,
+  onRevert,
+  revertingEventId,
+}: {
+  events: MemoryToolEvent[];
+  onRevert?: (event: MemoryToolEvent) => void;
+  revertingEventId?: string | null;
+}) {
   const { t } = useI18n();
 
   if (!events.length) {
@@ -284,6 +332,8 @@ export function ToolLog({ events }: { events: MemoryToolEvent[] }) {
           key={event.id ?? `event-${idx}`}
           event={event}
           defaultOpen={idx === events.length - 1}
+          onRevert={onRevert}
+          reverting={revertingEventId != null && event.id === revertingEventId}
         />
       ))}
     </div>

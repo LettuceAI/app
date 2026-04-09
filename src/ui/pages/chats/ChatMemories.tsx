@@ -41,9 +41,12 @@ import {
   toggleMemoryPin,
   readSettings,
 } from "../../../core/storage/repo";
+import {
+  markMemoryToolEventReverted,
+  revertMemoryToolEvent,
+} from "../../../core/storage/memoryToolEvents";
 
 import { storageBridge } from "../../../core/storage/files";
-import { getProviderIcon } from "../../../core/utils/providerIcons";
 import {
   typography,
   radius,
@@ -54,7 +57,13 @@ import {
   components,
 } from "../../design-tokens";
 import { Routes, useNavigationManager } from "../../navigation";
-import { BottomMenu, MenuSection } from "../../components/BottomMenu";
+import {
+  WindowControlButtons,
+  useDragRegionProps,
+  hasCustomWindowControls,
+} from "../../components/App/TopNav";
+import { BottomMenu } from "../../components/BottomMenu";
+import { ModelSelectionBottomMenu } from "../../components/ModelSelectionBottomMenu";
 import { useI18n } from "../../../core/i18n/context";
 
 type MemoryToolEvent = NonNullable<Session["memoryToolEvents"]>[number];
@@ -69,6 +78,14 @@ const MEMORY_CATEGORY_OPTIONS = [
 const isValidMemoryCategory = (value: string): value is (typeof MEMORY_CATEGORY_OPTIONS)[number] =>
   (MEMORY_CATEGORY_OPTIONS as readonly string[]).includes(value);
 const formatMemoryCategoryLabel = (category: string) => category.replace(/_/g, " ");
+
+const MEMORY_PROGRESS_TOTAL = 4;
+const MEMORY_STEP_LABELS: Record<number, string> = {
+  1: "Summarizing conversation",
+  2: "Analyzing memories",
+  3: "Applying changes",
+  4: "Organizing memories",
+};
 
 type MemoriesTab = "memories" | "tools" | "pinned";
 type RetryStatus = "idle" | "retrying" | "success";
@@ -105,6 +122,7 @@ type UiState = {
   actionError: string | null;
   memoryStatus: MemoryStatus; // This is now for local UI transitions, but session.memoryStatus is source of truth
   expandedMemories: Set<number>;
+  memoryProgressStep: number | null;
   memoryTempBusy: number | null;
   selectedCategory: string | null;
   selectedMemoryId: string | null;
@@ -129,6 +147,7 @@ type UiAction =
   | { type: "SET_RETRY_STATUS"; value: RetryStatus }
   | { type: "SET_ACTION_ERROR"; value: string | null }
   | { type: "SET_MEMORY_STATUS"; value: MemoryStatus }
+  | { type: "SET_MEMORY_PROGRESS_STEP"; value: number | null }
   | { type: "TOGGLE_EXPANDED"; index: number }
   | { type: "SHIFT_EXPANDED_AFTER_DELETE"; index: number }
   | { type: "SET_MEMORY_TEMP_BUSY"; value: number | null }
@@ -153,6 +172,7 @@ function initUi(errorParam: string | null): UiState {
     retryStatus: "idle",
     actionError: errorParam,
     memoryStatus: "idle",
+    memoryProgressStep: null,
     expandedMemories: new Set<number>(),
     memoryTempBusy: null,
     selectedCategory: null,
@@ -204,7 +224,14 @@ function uiReducer(state: UiState, action: UiAction): UiState {
     case "SET_ACTION_ERROR":
       return { ...state, actionError: action.value };
     case "SET_MEMORY_STATUS":
-      return { ...state, memoryStatus: action.value };
+      return {
+        ...state,
+        memoryStatus: action.value,
+        memoryProgressStep:
+          action.value === "idle" || action.value === "failed" ? null : state.memoryProgressStep,
+      };
+    case "SET_MEMORY_PROGRESS_STEP":
+      return { ...state, memoryProgressStep: action.value };
     case "TOGGLE_EXPANDED": {
       const next = new Set(state.expandedMemories);
       if (next.has(action.index)) next.delete(action.index);
@@ -258,7 +285,7 @@ function SectionHeader({
     <div className="flex items-end justify-between gap-3 mb-3">
       <div className="min-w-0">
         <div className="flex items-center gap-2 min-w-0">
-          {Icon ? <Icon size={16} className="text-white/40" /> : null}
+          {Icon ? <Icon size={16} className="text-fg/40" /> : null}
           <h2
             className={cn(
               typography.h2.size,
@@ -302,7 +329,7 @@ function MemoryActionRow({
       disabled={disabled}
       className={cn(
         "flex w-full items-center gap-3 px-1 py-2.5 transition-all rounded-lg",
-        "hover:bg-white/5 active:bg-white/10",
+        "hover:bg-fg/5 active:bg-fg/10",
         "disabled:opacity-40 disabled:pointer-events-none",
         variant === "danger" && "hover:bg-red-500/10",
       )}
@@ -310,15 +337,15 @@ function MemoryActionRow({
       <div
         className={cn(
           "flex items-center justify-center w-8 h-8 rounded-lg",
-          iconBg || "bg-white/10",
+          iconBg || "bg-fg/10",
         )}
       >
-        <Icon size={16} className={cn(variant === "danger" ? "text-red-400" : "text-white")} />
+        <Icon size={16} className={cn(variant === "danger" ? "text-red-400" : "text-fg")} />
       </div>
       <span
         className={cn(
           "text-[15px] text-left",
-          variant === "danger" ? "text-red-400" : "text-white/90",
+          variant === "danger" ? "text-red-400" : "text-fg/90",
         )}
       >
         {label}
@@ -538,16 +565,25 @@ function ActionCard({ action }: { action: MemoryToolEvent["actions"][number] }) 
     icon: Cpu,
     color: "text-zinc-300",
     label: action.name,
-    bg: "bg-white/5",
-    border: "border-white/10",
+    bg: "bg-fg/5",
+    border: "border-fg/10",
   };
   const Icon = style.icon;
   const args = action.arguments as Record<string, unknown> | undefined;
-  const memoryText = args?.text as string | undefined;
-  const category = args?.category as string | undefined;
-  const important = args?.important as boolean | undefined;
+  const rawAction = action as Record<string, unknown>;
+  const memoryText =
+    (args?.text as string | undefined) ??
+    (rawAction.deletedText as string | undefined) ??
+    (rawAction.text as string | undefined);
+  const category =
+    (args?.category as string | undefined) ?? (rawAction.category as string | undefined);
+  const important =
+    (args?.important as boolean | undefined) ?? (rawAction.important as boolean | undefined);
   const confidence = args?.confidence as number | undefined;
-  const id = args?.id as string | undefined;
+  const id =
+    (args?.id as string | undefined) ??
+    (rawAction.deletedMemoryId as string | undefined) ??
+    (args?.text as string | undefined);
 
   return (
     <div
@@ -563,7 +599,7 @@ function ActionCard({ action }: { action: MemoryToolEvent["actions"][number] }) 
         <div className="flex items-center gap-2">
           <span className={cn("text-[11px] font-semibold", style.color)}>{style.label}</span>
           {category && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-white/5 text-white/40 border border-white/8">
+            <span className="rounded-full border border-fg/8 bg-fg/5 px-1.5 py-0.5 text-[10px] text-fg/40">
               {category.replace(/_/g, " ")}
             </span>
           )}
@@ -611,7 +647,17 @@ function summarizeActions(actions: MemoryToolEvent["actions"]): string {
     .join(", ");
 }
 
-function CycleCard({ event, defaultOpen }: { event: MemoryToolEvent; defaultOpen: boolean }) {
+function CycleCard({
+  event,
+  defaultOpen,
+  onRevert,
+  reverting,
+}: {
+  event: MemoryToolEvent;
+  defaultOpen: boolean;
+  onRevert?: (event: MemoryToolEvent) => void;
+  reverting?: boolean;
+}) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const hasError = !!event.error;
   const actionSummary = event.actions?.length ? summarizeActions(event.actions) : null;
@@ -698,6 +744,27 @@ function CycleCard({ event, defaultOpen }: { event: MemoryToolEvent; defaultOpen
             </div>
           )}
 
+          {event.id && !event.revertedAt && onRevert && (
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => onRevert(event)}
+                disabled={reverting}
+                className="rounded-lg border border-fg/10 bg-fg/5 px-3 py-1.5 text-xs font-medium text-fg/80 transition hover:bg-fg/10 disabled:pointer-events-none disabled:opacity-50"
+              >
+                {reverting ? "Reverting..." : "Revert"}
+              </button>
+            </div>
+          )}
+
+          {event.revertedAt && (
+            <div className="flex justify-end">
+              <span className="rounded-lg border border-warning/20 bg-warning/10 px-3 py-1.5 text-xs font-medium text-warning">
+                Reverted
+              </span>
+            </div>
+          )}
+
           {/* Footer meta */}
           <div
             className={cn(
@@ -717,7 +784,15 @@ function CycleCard({ event, defaultOpen }: { event: MemoryToolEvent; defaultOpen
   );
 }
 
-function ToolLog({ events }: { events: MemoryToolEvent[] }) {
+function ToolLog({
+  events,
+  onRevert,
+  revertingEventId,
+}: {
+  events: MemoryToolEvent[];
+  onRevert?: (event: MemoryToolEvent) => void;
+  revertingEventId?: string | null;
+}) {
   const { t } = useI18n();
   if (!events.length) {
     return (
@@ -727,10 +802,10 @@ function ToolLog({ events }: { events: MemoryToolEvent[] }) {
         transition={{ duration: 0.3, ease: "easeOut" }}
         className="flex flex-col items-center justify-center py-16"
       >
-        <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-white/10 bg-white/5 mb-4">
-          <Clock className="h-7 w-7 text-white/20" />
+        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-fg/10 bg-fg/5">
+          <Clock className="h-7 w-7 text-fg/20" />
         </div>
-        <h3 className="mb-1 text-base font-semibold text-white">
+        <h3 className="mb-1 text-base font-semibold text-fg">
           {t("groupChats.memories.noActivityYet")}
         </h3>
         <p className={cn("text-center text-sm max-w-60", colors.text.tertiary)}>
@@ -743,7 +818,13 @@ function ToolLog({ events }: { events: MemoryToolEvent[] }) {
   return (
     <div className={cn(spacing.item, "space-y-2")}>
       {events.map((event, idx) => (
-        <CycleCard key={event.id} event={event} defaultOpen={idx === events.length - 1} />
+        <CycleCard
+          key={event.id}
+          event={event}
+          defaultOpen={idx === events.length - 1}
+          onRevert={onRevert}
+          reverting={revertingEventId != null && event.id === revertingEventId}
+        />
       ))}
     </div>
   );
@@ -752,6 +833,7 @@ function ToolLog({ events }: { events: MemoryToolEvent[] }) {
 export function ChatMemoriesPage() {
   const { t } = useI18n();
   const { go, backOrReplace } = useNavigationManager();
+  const dragRegionProps = useDragRegionProps();
   const { characterId } = useParams();
   const [searchParams] = useSearchParams();
   const sessionId = searchParams.get("sessionId");
@@ -771,9 +853,11 @@ export function ChatMemoriesPage() {
   const isDynamic = useMemo(() => {
     return character?.memoryType === "dynamic";
   }, [character?.memoryType]);
-  const [modelSearchQuery, setModelSearchQuery] = useState("");
+  const isMemoryCycleActive =
+    isDynamic && (session?.memoryStatus === "processing" || ui.retryStatus === "retrying");
   const [allModels, setAllModels] = useState<Model[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
+  const [revertingEventId, setRevertingEventId] = useState<string | null>(null);
 
   const handleSetColdState = useCallback(
     async (memoryIndex: number, isCold: boolean) => {
@@ -830,7 +914,12 @@ export function ChatMemoriesPage() {
             void reload();
           }
         });
-        unlisteners.push(u1, u2, u3, u4);
+        const u5 = await listen("dynamic-memory:progress", (e: any) => {
+          if (e.payload?.sessionId === session.id) {
+            dispatch({ type: "SET_MEMORY_PROGRESS_STEP", value: e.payload.step });
+          }
+        });
+        unlisteners.push(u1, u2, u3, u4, u5);
       } catch (err) {
         console.error("Failed to setup memory event listeners", err);
       }
@@ -1026,27 +1115,37 @@ export function ChatMemoriesPage() {
 
   const saveEdit = useCallback(
     async (index: number) => {
+      const currentItem = memoryItems.find((item) => item.index === index);
       const trimmed = ui.editingValue.trim();
       const category = ui.editingCategory.trim();
       const normalizedCategory = isValidMemoryCategory(category) ? category : "";
-      const previousCategory = (memoryItems[index]?.category ?? "").trim();
-      if (
-        !trimmed ||
-        (trimmed === memoryItems[index]?.text && normalizedCategory === previousCategory)
-      ) {
+      const previousCategory = (currentItem?.category ?? "").trim();
+      if (!trimmed || (trimmed === currentItem?.text && normalizedCategory === previousCategory)) {
         dispatch({ type: "CANCEL_EDIT" });
-        return;
+        return true;
       }
       try {
         await handleUpdate(index, trimmed, normalizedCategory || undefined);
         dispatch({ type: "CANCEL_EDIT" });
         dispatch({ type: "SET_ACTION_ERROR", value: null });
+        return true;
       } catch (err: any) {
         console.error("Failed to update memory:", err);
         dispatch({ type: "SET_ACTION_ERROR", value: err?.message || "Failed to update memory" });
+        return false;
       }
     },
     [handleUpdate, memoryItems, ui.editingCategory, ui.editingValue],
+  );
+
+  const handleSaveEdit = useCallback(
+    async (index: number) => {
+      const didSave = await saveEdit(index);
+      if (didSave) {
+        dispatch({ type: "CLOSE_MEMORY_ACTIONS" });
+      }
+    },
+    [dispatch, saveEdit],
   );
 
   const handleSaveSummaryClick = useCallback(async () => {
@@ -1068,7 +1167,6 @@ export function ChatMemoriesPage() {
 
   // Model selection for retry
   const [showModelSelector, setShowModelSelector] = useState(false);
-  const [retryingWithModel, setRetryingWithModel] = useState(false);
 
   useEffect(() => {
     if (!isDynamic) return;
@@ -1087,14 +1185,6 @@ export function ChatMemoriesPage() {
     void loadModels();
   }, [isDynamic]);
 
-  const filteredModels = useMemo(() => {
-    if (!modelSearchQuery) return allModels;
-    const query = modelSearchQuery.toLowerCase();
-    return allModels.filter(
-      (m) => m.name.toLowerCase().includes(query) || m.displayName.toLowerCase().includes(query),
-    );
-  }, [allModels, modelSearchQuery]);
-
   const tabs = useMemo(() => {
     if (!isDynamic) {
       return [{ id: "memories" as const, icon: Bot, label: t("groupChats.memories.tabMemories") }];
@@ -1109,7 +1199,6 @@ export function ChatMemoriesPage() {
   const handleRetryWithModel = useCallback(
     async (modelId?: string) => {
       if (!session?.id || !isDynamic) return;
-      setRetryingWithModel(true);
       setShowModelSelector(false);
       dispatch({ type: "SET_RETRY_STATUS", value: "retrying" });
       try {
@@ -1131,7 +1220,6 @@ export function ChatMemoriesPage() {
         }
         void reload();
       } finally {
-        setRetryingWithModel(false);
       }
     },
     [session?.id, isDynamic, reload],
@@ -1147,6 +1235,37 @@ export function ChatMemoriesPage() {
       console.error("Failed to dismiss error:", err);
     }
   }, [session, reload]);
+
+  const handleRevertMemoryEvent = useCallback(
+    async (event: MemoryToolEvent) => {
+      if (!session?.id || !event.id || !session.memoryEmbeddings) return;
+      setRevertingEventId(event.id);
+      try {
+        const nextEmbeddings = revertMemoryToolEvent(session.memoryEmbeddings, event);
+        const nextEvents = markMemoryToolEventReverted(
+          (session.memoryToolEvents as MemoryToolEvent[]) ?? [],
+          event.id,
+          Date.now(),
+        );
+        const nextSession: Session = {
+          ...session,
+          memoryEmbeddings: nextEmbeddings,
+          memories: nextEmbeddings.map((memory) => memory.text),
+          memoryToolEvents: nextEvents,
+          updatedAt: Date.now(),
+        };
+        await saveSession(nextSession);
+        setSession(nextSession);
+        dispatch({ type: "SET_ACTION_ERROR", value: null });
+      } catch (err: any) {
+        console.error("Failed to revert memory cycle:", err);
+        dispatch({ type: "SET_ACTION_ERROR", value: err?.message || "Failed to revert cycle" });
+      } finally {
+        setRevertingEventId(null);
+      }
+    },
+    [session, setSession],
+  );
 
   const handleRetry = useCallback(async () => {
     await handleRetryWithModel();
@@ -1172,10 +1291,16 @@ export function ChatMemoriesPage() {
   }, [sessionId, isDynamic, reload]);
 
   const handleAbortMemoryCycle = useCallback(async () => {
-    if (!sessionId || !isDynamic) return;
+    if (!sessionId || !isDynamic || !session) return;
     try {
-      await storageBridge.abortDynamicMemory(sessionId);
+      if (session.memoryStatus === "processing") {
+        await storageBridge.abortDynamicMemory(sessionId);
+      }
+      await saveSession({ ...session, memoryStatus: "idle", memoryError: null });
       dispatch({ type: "SET_ACTION_ERROR", value: null });
+      dispatch({ type: "SET_RETRY_STATUS", value: "idle" });
+      dispatch({ type: "SET_MEMORY_STATUS", value: "idle" });
+      void reload();
     } catch (err: any) {
       if (!isAbortError(err)) {
         console.error("Failed to abort memory processing:", err);
@@ -1184,12 +1309,12 @@ export function ChatMemoriesPage() {
       dispatch({ type: "SET_MEMORY_STATUS", value: "idle" });
       void reload();
     }
-  }, [sessionId, isDynamic, reload]);
+  }, [session, sessionId, isDynamic, reload]);
 
   if (loading) {
     return (
       <div className={cn("flex h-screen items-center justify-center", colors.surface.base)}>
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/10 border-t-white/60" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-fg/10 border-t-fg/60" />
       </div>
     );
   }
@@ -1212,7 +1337,7 @@ export function ChatMemoriesPage() {
           className={cn(
             components.button.primary,
             components.button.sizes.md,
-            "bg-white/5 text-white hover:bg-white/10",
+            "bg-fg/5 text-fg hover:bg-fg/10",
           )}
         >
           {t("common.buttons.goBack")}
@@ -1222,40 +1347,48 @@ export function ChatMemoriesPage() {
   }
 
   return (
-    <div className={cn("flex min-h-screen flex-col", colors.surface.base, colors.text.primary)}>
+    <div className={cn("flex h-full flex-col", colors.surface.base, colors.text.primary)}>
       {/* Header */}
       <header
         className={cn(
-          "sticky top-0 z-20 border-b border-white/10 px-3 lg:px-8",
+          "z-20 shrink-0 border-b border-fg/10 pl-3 lg:pl-8",
+          hasCustomWindowControls ? "pr-0" : "pr-3 lg:pr-8",
           colors.glass.strong,
         )}
         style={{
           paddingTop: "calc(env(safe-area-inset-top) + 12px)",
           paddingBottom: "12px",
         }}
+        {...dragRegionProps}
       >
-        <div className="flex h-10 items-center">
-          <button
-            onClick={() =>
-              backOrReplace(characterId ? Routes.chatSession(characterId, sessionId) : Routes.chat)
-            }
-            className={cn(
-              "flex shrink-0 items-center justify-center -ml-2 px-[0.6em] py-[0.3em]",
-              colors.text.primary,
-              interactive.transition.fast,
-              "hover:text-white/80",
-            )}
-            aria-label={t("common.buttons.goBack")}
-          >
-            <ArrowLeft size={18} strokeWidth={2.5} />
-          </button>
-          <div className="min-w-0 flex-1 text-left">
-            <p className={cn("truncate text-xl font-bold", colors.text.primary)}>
-              {t("groupChats.memories.tabMemories")}
-            </p>
-            <p className={cn("mt-0.5 truncate text-xs", colors.text.tertiary)}>{character.name}</p>
+        <div className="flex h-10 items-center justify-between" {...dragRegionProps}>
+          <div className="flex items-center min-w-0">
+            <button
+              onClick={() =>
+                backOrReplace(
+                  characterId ? Routes.chatSession(characterId, sessionId) : Routes.chat,
+                )
+              }
+              className={cn(
+                "flex shrink-0 items-center justify-center -ml-2 px-[0.6em] py-[0.3em]",
+                colors.text.primary,
+                interactive.transition.fast,
+                "hover:text-fg/80",
+              )}
+              aria-label={t("common.buttons.goBack")}
+            >
+              <ArrowLeft size={18} strokeWidth={2.5} />
+            </button>
+            <div className="min-w-0 text-left">
+              <p className={cn("truncate text-xl font-bold", colors.text.primary)}>
+                {t("groupChats.memories.tabMemories")}
+              </p>
+              <p className={cn("mt-0.5 truncate text-xs", colors.text.tertiary)}>
+                {character.name}
+              </p>
+            </div>
           </div>
-          <div className="ml-auto flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             {isDynamic && session.memoryStatus === "processing" && (
               <div
                 className={cn(
@@ -1271,26 +1404,27 @@ export function ChatMemoriesPage() {
                 {t("groupChats.memories.processing")}
               </div>
             )}
+            <WindowControlButtons />
           </div>
         </div>
 
         {/* Segmented Tab Control */}
         {isDynamic && (
-          <div className="mt-3 flex bg-white/5 border border-white/8 rounded-xl p-1">
+          <div className="mt-3 flex rounded-xl border border-fg/10 bg-fg/5 p-1">
             {tabs.map(({ id, icon: Icon, label }) => (
               <button
                 key={id}
                 onClick={() => dispatch({ type: "SET_TAB", tab: id })}
                 className={cn(
                   "relative flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-semibold transition-colors",
-                  ui.activeTab === id ? "text-white" : "text-white/40 hover:text-white/60",
+                  ui.activeTab === id ? "text-fg" : "text-fg/40 hover:text-fg/60",
                 )}
                 aria-label={label}
               >
                 {ui.activeTab === id && (
                   <motion.div
                     layoutId="memoryTabIndicator"
-                    className="absolute inset-0 rounded-lg bg-white/10 border border-white/10"
+                    className="absolute inset-0 rounded-lg border border-fg/10 bg-fg/10"
                     transition={{ type: "spring", stiffness: 320, damping: 28 }}
                   />
                 )}
@@ -1313,19 +1447,44 @@ export function ChatMemoriesPage() {
             {isDynamic &&
             (ui.retryStatus === "retrying" || session.memoryStatus === "processing") ? (
               <div
-                className={cn(
-                  radius.md,
-                  "bg-blue-500/10 border border-blue-500/20 p-3 flex items-center gap-3 animate-pulse",
-                )}
+                className={cn(radius.md, "bg-blue-500/10 border border-blue-500/20 p-3 space-y-2")}
               >
-                <RefreshCw className="h-5 w-5 text-blue-400 shrink-0 animate-spin" />
-                <div className={cn("flex-1", typography.body.size, "text-blue-200")}>
-                  <p className="font-semibold">
-                    {session.memoryStatus === "processing"
-                      ? "AI is organizing memories..."
-                      : "Retrying Memory Cycle..."}
-                  </p>
-                </div>
+                {(() => {
+                  const step = ui.memoryProgressStep ?? session.memoryProgressStep ?? null;
+                  const label = step ? MEMORY_STEP_LABELS[step] : null;
+                  return (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <RefreshCw className="h-4 w-4 text-blue-400 shrink-0 animate-spin" />
+                          <span className={cn(typography.body.size, "font-semibold text-blue-200")}>
+                            {label ??
+                              (ui.retryStatus === "retrying"
+                                ? "Retrying Memory Cycle..."
+                                : "Processing memories...")}
+                          </span>
+                        </div>
+                        {step && (
+                          <span className="text-[12px] text-blue-300/60 tabular-nums">
+                            {step}/{MEMORY_PROGRESS_TOTAL}
+                          </span>
+                        )}
+                      </div>
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-blue-500/15">
+                        {step ? (
+                          <div
+                            className="h-full rounded-full bg-blue-400/70 transition-all duration-500 ease-out"
+                            style={{
+                              width: `${(step / MEMORY_PROGRESS_TOTAL) * 100}%`,
+                            }}
+                          />
+                        ) : (
+                          <div className="h-full w-1/3 rounded-full bg-blue-400/70 animate-[indeterminate_1.5s_ease-in-out_infinite]" />
+                        )}
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
             ) : isDynamic && ui.retryStatus === "success" ? (
               <div
@@ -1435,17 +1594,17 @@ export function ChatMemoriesPage() {
                   type="button"
                   onClick={() => setShowSummaryEditor(true)}
                   className={cn(
-                    "w-full rounded-xl border border-emerald-400/15 bg-emerald-400/3 px-4 py-3 text-left",
-                    "transition-all hover:border-emerald-400/25 hover:bg-emerald-400/5 active:scale-[0.99]",
+                    "w-full rounded-xl border border-emerald-400/22 bg-emerald-400/8 px-4 py-3 text-left",
+                    "transition-all hover:border-emerald-400/30 hover:bg-emerald-400/10 active:scale-[0.99]",
                   )}
                 >
                   <div className="flex items-center gap-2 mb-1.5">
-                    <Sparkles size={13} className="text-emerald-400/70 shrink-0" />
-                    <span className="text-[11px] font-semibold text-emerald-300/80 uppercase tracking-wider">
+                    <Sparkles size={13} className="shrink-0 text-emerald-500" />
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-emerald-600">
                       Context Summary
                     </span>
                     {session?.memorySummaryTokenCount && session.memorySummaryTokenCount > 0 ? (
-                      <span className="text-[10px] text-white/30 ml-auto">
+                      <span className="ml-auto text-[10px] text-fg/45">
                         {session.memorySummaryTokenCount.toLocaleString()} tokens
                       </span>
                     ) : null}
@@ -1454,7 +1613,7 @@ export function ChatMemoriesPage() {
                     className={cn(
                       typography.bodySmall.size,
                       "leading-relaxed line-clamp-4 min-h-14",
-                      ui.summaryDraft ? "text-emerald-50/70" : "text-emerald-200/25 italic",
+                      ui.summaryDraft ? "text-fg/78" : "text-fg/42 italic",
                     )}
                   >
                     {ui.summaryDraft || "Tap to add a context summary..."}
@@ -1467,14 +1626,14 @@ export function ChatMemoriesPage() {
                 <div className="flex items-center gap-2 mb-2">
                   <span
                     className={cn(
-                      "text-[12px] font-semibold uppercase tracking-wider text-white/50",
+                      "text-[12px] font-semibold uppercase tracking-wider text-fg/50",
                     )}
                   >
                     {ui.searchTerm.trim()
                       ? t("groupChats.memories.resultsCount", { count: filteredMemories.length })
                       : t("groupChats.memories.savedMemories")}
                   </span>
-                  <span className={cn("text-[10px] text-white/30 ml-auto")}>
+                  <span className={cn("ml-auto text-[10px] text-fg/30")}>
                     {stats.ai} AI · {stats.user} You
                   </span>
                 </div>
@@ -1497,7 +1656,7 @@ export function ChatMemoriesPage() {
                         "w-full pl-10 pr-10 py-2.5",
                         components.input.base,
                         radius.lg,
-                        "text-sm text-white placeholder-white/40",
+                        "text-sm text-fg placeholder:text-fg/40",
                       )}
                     />
                     {ui.searchTerm.trim().length > 0 && (
@@ -1507,7 +1666,7 @@ export function ChatMemoriesPage() {
                         className={cn(
                           "absolute right-3 top-1/2 -translate-y-1/2",
                           colors.text.tertiary,
-                          "hover:text-white",
+                          "hover:text-fg",
                           interactive.transition.fast,
                         )}
                         aria-label={t("common.buttons.clearSearch")}
@@ -1521,9 +1680,9 @@ export function ChatMemoriesPage() {
                     className={cn(
                       "flex items-center justify-center shrink-0",
                       "h-10.5 w-10.5 rounded-lg",
-                      "border border-white/10 bg-white/5",
-                      "text-white/50",
-                      "hover:bg-white/8 hover:text-white/70",
+                      "border border-fg/10 bg-fg/5",
+                      "text-fg/50",
+                      "hover:bg-fg/8 hover:text-fg/70",
                       "transition-all active:scale-95",
                     )}
                     aria-label={t("groupChats.memories.addMemory")}
@@ -1541,8 +1700,8 @@ export function ChatMemoriesPage() {
                       className={cn(
                         "px-2 py-0.5 rounded-full text-[11px] font-medium border transition-colors",
                         !ui.selectedCategory
-                          ? "bg-white/12 text-white/80 border-white/20"
-                          : "bg-white/4 text-white/35 border-white/8 hover:bg-white/8",
+                          ? "border-fg/20 bg-fg/12 text-fg/80"
+                          : "border-fg/8 bg-fg/4 text-fg/35 hover:bg-fg/8",
                       )}
                     >
                       All
@@ -1560,8 +1719,8 @@ export function ChatMemoriesPage() {
                         className={cn(
                           "px-2 py-0.5 rounded-full text-[11px] font-medium border transition-colors",
                           ui.selectedCategory === cat
-                            ? "bg-white/12 text-white/80 border-white/20"
-                            : "bg-white/4 text-white/35 border-white/8 hover:bg-white/8",
+                            ? "border-fg/20 bg-fg/12 text-fg/80"
+                            : "border-fg/8 bg-fg/4 text-fg/35 hover:bg-fg/8",
                         )}
                       >
                         {cat.replace(/_/g, " ")}
@@ -1578,19 +1737,19 @@ export function ChatMemoriesPage() {
                     transition={{ duration: 0.3, ease: "easeOut" }}
                     className="flex flex-col items-center justify-center py-16"
                   >
-                    <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-white/10 bg-white/5 mb-4">
+                    <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-fg/10 bg-fg/5">
                       {ui.searchTerm ? (
-                        <Search className="h-7 w-7 text-white/20" />
+                        <Search className="h-7 w-7 text-fg/20" />
                       ) : (
-                        <Bot className="h-7 w-7 text-white/20" />
+                        <Bot className="h-7 w-7 text-fg/20" />
                       )}
                     </div>
-                    <h3 className="mb-1 text-base font-semibold text-white">
+                    <h3 className="mb-1 text-base font-semibold text-fg">
                       {ui.searchTerm
                         ? t("groupChats.memories.noMatchingMemories")
                         : t("groupChats.memories.noMemoriesYet")}
                     </h3>
-                    <p className="text-center text-sm text-white/40 max-w-60">
+                    <p className="max-w-60 text-center text-sm text-fg/40">
                       {ui.searchTerm
                         ? t("groupChats.memories.noMatchingDesc")
                         : t("groupChats.memories.noMemoriesDesc")}
@@ -1621,8 +1780,8 @@ export function ChatMemoriesPage() {
                               "group relative overflow-hidden rounded-xl",
                               "border",
                               expanded
-                                ? "border-white/10 bg-white/2"
-                                : "border-white/6 bg-white/2 hover:border-white/10 hover:bg-white/3",
+                                ? "border-fg/10 bg-fg/2"
+                                : "border-fg/6 bg-fg/2 hover:border-fg/10 hover:bg-fg/3",
                             )}
                           >
                             <div
@@ -1669,8 +1828,8 @@ export function ChatMemoriesPage() {
                                   }}
                                   className={cn(
                                     "flex items-center justify-center shrink-0 p-2.5 -m-2 -mr-1",
-                                    "rounded-lg text-white/30",
-                                    "transition-all hover:bg-white/5 hover:text-white/60",
+                                    "rounded-lg text-fg/30",
+                                    "transition-all hover:bg-fg/5 hover:text-fg/60",
                                     "active:scale-95",
                                   )}
                                   aria-label="Memory actions"
@@ -1689,7 +1848,7 @@ export function ChatMemoriesPage() {
                                           "inline-flex items-center px-1.5 py-0.5",
                                           radius.md,
                                           "text-[10px] font-medium",
-                                          "bg-white/5 text-white/40 border border-white/8",
+                                          "border border-fg/8 bg-fg/5 text-fg/40",
                                         )}
                                       >
                                         {item.category.replace(/_/g, " ")}
@@ -1712,8 +1871,8 @@ export function ChatMemoriesPage() {
                                   >
                                     <div
                                       className={cn(
-                                        "flex items-center gap-3 mt-2 pt-2 border-t border-white/5",
-                                        "text-[10px] text-white/30",
+                                        "mt-2 flex items-center gap-3 border-t border-fg/5 pt-2",
+                                        "text-[10px] text-fg/30",
                                       )}
                                     >
                                       {item.tokenCount > 0 && (
@@ -1760,38 +1919,35 @@ export function ChatMemoriesPage() {
               className={cn("px-3 py-4", "space-y-5")}
             >
               <div className="flex items-center gap-2 mb-3">
-                <span className="text-[12px] font-semibold uppercase tracking-wider text-white/50">
+                <span className="text-[12px] font-semibold uppercase tracking-wider text-fg/50">
                   {t("groupChats.memories.activityLog")}
                 </span>
-                <span className="text-[10px] text-white/20 ml-auto">
+                <span className="ml-auto text-[10px] text-fg/20">
                   {(session.memoryToolEvents?.length ?? 0).toLocaleString()} events
                 </span>
                 <button
-                  onClick={
-                    session?.memoryStatus === "processing"
-                      ? handleAbortMemoryCycle
-                      : handleTriggerManual
-                  }
+                  onClick={isMemoryCycleActive ? handleAbortMemoryCycle : handleTriggerManual}
                   className={cn(
                     "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg",
-                    "border border-white/10 bg-white/5",
-                    "text-[11px] font-semibold text-white/50",
-                    "hover:bg-white/8 hover:text-white/70",
+                    "border border-fg/10 bg-fg/5",
+                    "text-[11px] font-semibold text-fg/50",
+                    "hover:bg-fg/8 hover:text-fg/70",
                     "transition-all active:scale-95",
                   )}
                 >
-                  {session?.memoryStatus === "processing" ? (
+                  {isMemoryCycleActive ? (
                     <X size={12} className="animate-pulse" />
                   ) : (
-                    <Cpu
-                      size={12}
-                      className={cn(session?.memoryStatus === "processing" && "animate-pulse")}
-                    />
+                    <Cpu size={12} />
                   )}
-                  {session?.memoryStatus === "processing" ? t("common.buttons.cancel") : "Run"}
+                  {isMemoryCycleActive ? t("common.buttons.cancel") : "Run"}
                 </button>
               </div>
-              <ToolLog events={(session.memoryToolEvents as MemoryToolEvent[]) || []} />
+              <ToolLog
+                events={(session.memoryToolEvents as MemoryToolEvent[]) || []}
+                onRevert={handleRevertMemoryEvent}
+                revertingEventId={revertingEventId}
+              />
             </motion.div>
           ) : isDynamic && ui.activeTab === "pinned" ? (
             <motion.div
@@ -1812,7 +1968,7 @@ export function ChatMemoriesPage() {
                       typography.caption.size,
                       "inline-flex items-center gap-1 px-2 py-0.5",
                       radius.full,
-                      "border bg-white/5",
+                      "border bg-fg/5",
                       colors.border.subtle,
                       colors.text.secondary,
                     )}
@@ -1828,11 +1984,11 @@ export function ChatMemoriesPage() {
                   transition={{ duration: 0.3, ease: "easeOut" }}
                   className="flex flex-col items-center justify-center py-16"
                 >
-                  <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-white/10 bg-white/5 mb-4">
-                    <Pin className="h-7 w-7 text-white/20" />
+                  <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-fg/10 bg-fg/5">
+                    <Pin className="h-7 w-7 text-fg/20" />
                   </div>
-                  <h3 className="mb-1 text-base font-semibold text-white">No pinned messages</h3>
-                  <p className="text-center text-sm text-white/40 max-w-60">
+                  <h3 className="mb-1 text-base font-semibold text-fg">No pinned messages</h3>
+                  <p className="max-w-60 text-center text-sm text-fg/40">
                     Pin important messages from the chat to always include them in context
                   </p>
                 </motion.div>
@@ -1854,7 +2010,7 @@ export function ChatMemoriesPage() {
                             ? "border-emerald-400/30"
                             : isAssistant
                               ? "border-blue-400/30"
-                              : "border-white/10",
+                              : "border-fg/10",
                         )}
                       >
                         <div className="flex items-start gap-3">
@@ -1862,13 +2018,13 @@ export function ChatMemoriesPage() {
                             className={cn(
                               "flex h-8 w-8 shrink-0 items-center justify-center",
                               radius.full,
-                              "border text-white/70",
+                              "border text-fg/70",
                               interactive.transition.default,
                               isUser
                                 ? "border-emerald-400/30 bg-emerald-400/10"
                                 : isAssistant
                                   ? "border-blue-400/30 bg-blue-400/10"
-                                  : "border-white/10 bg-white/5",
+                                  : "border-fg/10 bg-fg/5",
                             )}
                           >
                             {isUser ? (
@@ -1876,7 +2032,7 @@ export function ChatMemoriesPage() {
                             ) : isAssistant ? (
                               <Bot className="h-4 w-4 text-blue-400" />
                             ) : (
-                              <MessageSquare className="h-4 w-4 text-white/60" />
+                              <MessageSquare className="h-4 w-4 text-fg/60" />
                             )}
                           </div>
                           <div className="flex-1 min-w-0">
@@ -1916,7 +2072,7 @@ export function ChatMemoriesPage() {
                               typography.caption.size,
                               "font-medium flex items-center gap-1.5",
                               colors.text.tertiary,
-                              "hover:text-white transition-colors",
+                              "hover:text-fg transition-colors",
                             )}
                           >
                             <MessageSquare size={12} />
@@ -1951,7 +2107,7 @@ export function ChatMemoriesPage() {
         onClose={() => setShowSummaryEditor(false)}
         title="Context Summary"
       >
-        <div className="space-y-4 text-white">
+        <div className="space-y-4 text-fg">
           <textarea
             value={ui.summaryDraft}
             onChange={(e) => dispatch({ type: "SET_SUMMARY_DRAFT", value: e.target.value })}
@@ -1959,16 +2115,16 @@ export function ChatMemoriesPage() {
             className={cn(
               "w-full p-3",
               radius.lg,
-              "border border-white/10 bg-black/30",
-              "text-sm text-white/90 resize-none leading-relaxed",
-              "focus:border-white/20 focus:outline-none focus:ring-1 focus:ring-white/10",
-              "placeholder:text-white/30",
+              "border border-fg/10 bg-surface-el/40",
+              "text-sm text-fg/90 resize-none leading-relaxed",
+              "focus:border-fg/20 focus:outline-none focus:ring-1 focus:ring-fg/10",
+              "placeholder:text-fg/30",
             )}
             placeholder="Short recap used to keep context consistent across messages..."
             autoFocus
           />
           {session?.memorySummaryTokenCount && session.memorySummaryTokenCount > 0 ? (
-            <p className="text-[10px] text-white/30">
+            <p className="text-[10px] text-fg/30">
               {session.memorySummaryTokenCount.toLocaleString()} tokens
             </p>
           ) : null}
@@ -1984,9 +2140,9 @@ export function ChatMemoriesPage() {
               className={cn(
                 "flex-1 px-4 py-2.5",
                 radius.lg,
-                "border border-white/10 bg-white/5",
-                "text-sm font-medium text-white/60",
-                "transition-all hover:border-white/15 hover:bg-white/8 hover:text-white/80",
+                "border border-fg/10 bg-fg/5",
+                "text-sm font-medium text-fg/60",
+                "transition-all hover:border-fg/15 hover:bg-fg/8 hover:text-fg/80",
                 "active:scale-[0.98]",
               )}
             >
@@ -2020,7 +2176,7 @@ export function ChatMemoriesPage() {
         onClose={() => setShowAddCategoryMenu(false)}
         title="Add Memory"
       >
-        <div className="space-y-4 text-white">
+        <div className="space-y-4 text-fg">
           <textarea
             value={ui.newMemory}
             onChange={(e) => dispatch({ type: "SET_NEW_MEMORY", value: e.target.value })}
@@ -2035,17 +2191,17 @@ export function ChatMemoriesPage() {
             className={cn(
               "w-full p-3",
               radius.lg,
-              "border border-white/10 bg-black/30",
-              "text-sm text-white/90 resize-none leading-relaxed",
-              "focus:border-white/20 focus:outline-none focus:ring-1 focus:ring-white/10",
-              "placeholder:text-white/30",
+              "border border-fg/10 bg-surface-el/40",
+              "text-sm text-fg/90 resize-none leading-relaxed",
+              "focus:border-fg/20 focus:outline-none focus:ring-1 focus:ring-fg/10",
+              "placeholder:text-fg/30",
             )}
             placeholder="What should be remembered?"
             autoFocus
           />
           {isDynamic && (
             <div>
-              <p className="text-[11px] font-medium text-white/30 uppercase tracking-wider mb-2">
+              <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-fg/30">
                 Category
               </p>
               <div className="flex flex-wrap gap-1.5">
@@ -2055,8 +2211,8 @@ export function ChatMemoriesPage() {
                   className={cn(
                     "px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors",
                     !ui.newMemoryCategory
-                      ? "bg-white/12 text-white/80 border-white/20"
-                      : "bg-white/4 text-white/35 border-white/8 hover:bg-white/8",
+                      ? "border-fg/20 bg-fg/12 text-fg/80"
+                      : "border-fg/8 bg-fg/4 text-fg/35 hover:bg-fg/8",
                   )}
                 >
                   None
@@ -2069,8 +2225,8 @@ export function ChatMemoriesPage() {
                     className={cn(
                       "px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors",
                       ui.newMemoryCategory === category
-                        ? "bg-white/12 text-white/80 border-white/20"
-                        : "bg-white/4 text-white/35 border-white/8 hover:bg-white/8",
+                        ? "border-fg/20 bg-fg/12 text-fg/80"
+                        : "border-fg/8 bg-fg/4 text-fg/35 hover:bg-fg/8",
                     )}
                   >
                     {formatMemoryCategoryLabel(category)}
@@ -2127,18 +2283,25 @@ export function ChatMemoriesPage() {
 
           if (ui.memoryActionMode === "edit") {
             return (
-              <div className="space-y-4 text-white">
+              <div className="space-y-4 text-fg">
                 <textarea
                   value={ui.editingValue}
                   onChange={(e) => dispatch({ type: "SET_EDIT_VALUE", value: e.target.value })}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      void handleSaveEdit(selectedItem.index);
+                    }
+                  }}
                   rows={4}
                   className={cn(
                     "w-full p-3",
                     radius.lg,
-                    "border border-white/10 bg-black/30",
-                    "text-sm text-white/90 resize-none leading-relaxed",
-                    "focus:border-white/20 focus:outline-none focus:ring-1 focus:ring-white/10",
-                    "placeholder:text-white/30",
+                    "border border-fg/10 bg-surface-el/40",
+                    "text-sm text-fg/90 resize-none leading-relaxed",
+                    "focus:border-fg/20 focus:outline-none focus:ring-1 focus:ring-fg/10",
+                    "placeholder:text-fg/30",
                   )}
                   placeholder="Enter memory content..."
                   autoFocus
@@ -2151,8 +2314,8 @@ export function ChatMemoriesPage() {
                       className={cn(
                         "px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors",
                         !ui.editingCategory
-                          ? "bg-white/12 text-white/80 border-white/20"
-                          : "bg-white/4 text-white/35 border-white/8 hover:bg-white/8",
+                          ? "border-fg/20 bg-fg/12 text-fg/80"
+                          : "border-fg/8 bg-fg/4 text-fg/35 hover:bg-fg/8",
                       )}
                     >
                       No tag
@@ -2165,8 +2328,8 @@ export function ChatMemoriesPage() {
                         className={cn(
                           "px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors",
                           ui.editingCategory === category
-                            ? "bg-white/12 text-white/80 border-white/20"
-                            : "bg-white/4 text-white/35 border-white/8 hover:bg-white/8",
+                            ? "border-fg/20 bg-fg/12 text-fg/80"
+                            : "border-fg/8 bg-fg/4 text-fg/35 hover:bg-fg/8",
                         )}
                       >
                         {formatMemoryCategoryLabel(category)}
@@ -2176,23 +2339,22 @@ export function ChatMemoriesPage() {
                 )}
                 <div className="flex gap-2">
                   <button
+                    type="button"
                     onClick={() => dispatch({ type: "SET_MEMORY_ACTION_MODE", mode: "actions" })}
                     className={cn(
                       "flex-1 px-4 py-2.5",
                       radius.lg,
-                      "border border-white/10 bg-white/5",
-                      "text-sm font-medium text-white/60",
-                      "transition-all hover:border-white/15 hover:bg-white/8 hover:text-white/80",
+                      "border border-fg/10 bg-fg/5",
+                      "text-sm font-medium text-fg/60",
+                      "transition-all hover:border-fg/15 hover:bg-fg/8 hover:text-fg/80",
                       "active:scale-[0.98]",
                     )}
                   >
                     Cancel
                   </button>
                   <button
-                    onClick={async () => {
-                      await saveEdit(selectedItem.index);
-                      dispatch({ type: "CLOSE_MEMORY_ACTIONS" });
-                    }}
+                    type="button"
+                    onClick={() => void handleSaveEdit(selectedItem.index)}
                     className={cn(
                       "flex-1 px-4 py-2.5 flex items-center justify-center gap-2",
                       radius.lg,
@@ -2211,7 +2373,7 @@ export function ChatMemoriesPage() {
           }
 
           return (
-            <div className="space-y-1 text-white">
+            <div className="space-y-1 text-fg">
               <MemoryActionRow
                 icon={Edit2}
                 label="Edit"
@@ -2258,7 +2420,7 @@ export function ChatMemoriesPage() {
                 />
               )}
 
-              <div className="h-px bg-white/5 my-2" />
+              <div className="my-2 h-px bg-fg/5" />
 
               <MemoryActionRow
                 icon={Trash2}
@@ -2283,107 +2445,37 @@ export function ChatMemoriesPage() {
         })()}
       </BottomMenu>
 
-      {/* Model Selection BottomMenu */}
-      <BottomMenu
+      <ModelSelectionBottomMenu
         isOpen={showModelSelector}
-        onClose={() => {
-          setShowModelSelector(false);
-          setModelSearchQuery("");
-        }}
+        onClose={() => setShowModelSelector(false)}
         title="Select Model for Retry"
-      >
-        <MenuSection className="pb-0">
-          <div className="px-4 py-3">
-            <div
-              className={cn(
-                "relative flex items-center",
-                radius.md,
-                "bg-white/5 border",
-                colors.border.subtle,
-              )}
-            >
-              <Search className="absolute left-3 h-4 w-4 text-white/30" />
-              <input
-                type="text"
-                placeholder="Search models..."
-                value={modelSearchQuery}
-                onChange={(e) => setModelSearchQuery(e.target.value)}
-                className="w-full bg-transparent py-2.5 pl-9 pr-4 text-sm text-white placeholder:text-white/20 focus:outline-none"
-              />
-              {modelSearchQuery && (
-                <button
-                  onClick={() => setModelSearchQuery("")}
-                  className="absolute right-3 text-white/30 hover:text-white/50"
-                >
-                  <X size={14} />
-                </button>
-              )}
-            </div>
+        models={allModels}
+        selectedModelIds={character.defaultModelId ? [character.defaultModelId] : []}
+        searchPlaceholder="Search models..."
+        theme="dark"
+        tone="emerald"
+        loading={loadingModels}
+        loadingContent={
+          <div className="flex flex-col items-center justify-center py-12">
+            <RefreshCw className="h-6 w-6 animate-spin text-fg/20" />
+            <p className={cn(typography.bodySmall.size, colors.text.tertiary, "mt-3")}>
+              Loading available models...
+            </p>
           </div>
-        </MenuSection>
-
-        <div className="max-h-[60vh] overflow-y-auto pb-6">
-          {loadingModels ? (
-            <div className="flex flex-col items-center justify-center py-12">
-              <RefreshCw className="h-6 w-6 animate-spin text-white/20" />
-              <p className={cn(typography.bodySmall.size, colors.text.tertiary, "mt-3")}>
-                Loading available models...
-              </p>
-            </div>
-          ) : filteredModels.length === 0 ? (
-            <div className="px-4 py-12 text-center">
-              <p className={cn(typography.body.size, colors.text.secondary)}>
-                No models found matching "{modelSearchQuery}"
-              </p>
-            </div>
-          ) : (
-            <div className="flex flex-col">
-              {filteredModels.map((model) => {
-                const isSelected = model.id === character.defaultModelId;
-                return (
-                  <button
-                    key={model.id}
-                    onClick={() => handleRetryWithModel(model.id)}
-                    disabled={retryingWithModel}
-                    className={cn(
-                      "group relative flex w-full flex-col gap-1 px-4 py-3 transition",
-                      isSelected ? "bg-white/5" : "hover:bg-white/5",
-                    )}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/5">
-                        {getProviderIcon(model.providerId)}
-                      </div>
-                      <div className="min-w-0 flex-1 text-left">
-                        <div className="flex items-center gap-2">
-                          <span
-                            className={cn(
-                              typography.body.size,
-                              "font-semibold text-white truncate",
-                            )}
-                          >
-                            {model.displayName}
-                          </span>
-                          {isSelected && (
-                            <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-emerald-500/20">
-                              <Check size={10} className="text-emerald-400" />
-                            </span>
-                          )}
-                        </div>
-                        <p
-                          className={cn(typography.caption.size, colors.text.tertiary, "truncate")}
-                        >
-                          {model.providerLabel} • {model.name}
-                        </p>
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </BottomMenu>
+        }
+        renderModelTitle={(model) => model.displayName || model.name}
+        renderModelDescription={(model) => `${model.providerLabel} • ${model.name}`}
+        renderEmptyState={(query) => (
+          <div className="px-4 py-12 text-center">
+            <p className={cn(typography.body.size, colors.text.secondary)}>
+              No models found matching "{query}"
+            </p>
+          </div>
+        )}
+        onSelectModel={(modelId) => {
+          handleRetryWithModel(modelId);
+        }}
+      />
     </div>
   );
 }

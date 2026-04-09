@@ -10,3 +10,4 @@ export * from "./UsageActivityPage";
 export * from "./BackupRestorePage";
 export * from "./ConvertPage";
 export * from "./LogsPage";
+export * from "./AboutPage";

@@ -54,10 +54,14 @@ fn record_image_generation_usage(
         prompt_tokens: None,
         completion_tokens: None,
         total_tokens: None,
+        cached_prompt_tokens: None,
+        cache_write_tokens: None,
         memory_tokens: None,
         summary_tokens: None,
         reasoning_tokens: None,
         image_tokens: None,
+        web_search_requests: None,
+        api_cost: None,
         cost: None,
         success,
         error_message,
@@ -93,14 +97,18 @@ pub async fn generate_image(
         )?;
         provider_label = provider_cred.label.clone();
 
-        let api_key = provider_cred
-            .api_key
-            .ok_or_else(|| "API key not found for provider".to_string())?;
+        let adapter = get_adapter(&request.provider_id)?;
+
+        let api_key = if !adapter.requires_api_key() {
+            provider_cred.api_key.unwrap_or_default()
+        } else {
+            provider_cred
+                .api_key
+                .ok_or_else(|| "API key not found for provider".to_string())?
+        };
 
         let base_url_opt = provider_cred.base_url.as_deref();
         let headers_map = provider_cred.headers;
-
-        let adapter = get_adapter(&request.provider_id)?;
 
         let base_url = resolve_base_url(&ProviderId(request.provider_id.clone()), base_url_opt);
 
@@ -166,18 +174,28 @@ pub async fn generate_image(
         log_info(
             &app,
             "image_generator",
-            format!("Received response: {:?}", response_json),
+            format!("Received response: {}", response_json),
         );
 
         let image_data: Vec<ImageResponseData> = adapter.parse_response(response_json)?;
 
         let mut generated_images = Vec::new();
         for img_data in image_data {
-            let image_source = img_data
-                .url
-                .as_ref()
-                .or(img_data.b64_json.as_ref())
-                .ok_or_else(|| "No image URL or data in response".to_string())?;
+            let image_source = match img_data.url.as_ref().or(img_data.b64_json.as_ref()) {
+                Some(source) => source,
+                None => {
+                    let detail = img_data
+                        .text
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|text| !text.is_empty())
+                        .map(|text| text.chars().take(160).collect::<String>())
+                        .map(|snippet| format!(" Provider returned text instead: {}", snippet))
+                        .unwrap_or_default();
+
+                    return Err(format!("No image URL or data in response.{}", detail));
+                }
+            };
 
             let saved = save_image(&app, image_source).await?;
 

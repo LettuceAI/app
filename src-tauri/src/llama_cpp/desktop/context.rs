@@ -1,9 +1,19 @@
+use super::engine::{shared_backend, using_rocm_backend};
+use super::offload::{
+    compute_recommended_context_for_gpu_layers, load_model_metadata, plan_smart_gpu_offload,
+    LlamaModelMetadata,
+};
 use super::*;
-use llama_cpp_2::llama_backend::LlamaBackend;
-use llama_cpp_2::model::params::LlamaModelParams;
 use llama_cpp_sys_2::{
     ggml_backend_dev_count, ggml_backend_dev_get, ggml_backend_dev_memory, ggml_backend_dev_type,
     GGML_BACKEND_DEVICE_TYPE_ACCEL, GGML_BACKEND_DEVICE_TYPE_GPU, GGML_BACKEND_DEVICE_TYPE_IGPU,
+};
+#[cfg(target_os = "windows")]
+use windows::core::Interface;
+#[cfg(target_os = "windows")]
+use windows::Win32::Graphics::Dxgi::{
+    CreateDXGIFactory1, IDXGIAdapter1, IDXGIAdapter3, IDXGIFactory6, DXGI_ADAPTER_FLAG_SOFTWARE,
+    DXGI_MEMORY_SEGMENT_GROUP_LOCAL, DXGI_QUERY_VIDEO_MEMORY_INFO,
 };
 
 #[derive(serde::Serialize)]
@@ -14,6 +24,7 @@ pub(crate) struct LlamaCppContextInfo {
     available_memory_bytes: Option<u64>,
     available_vram_bytes: Option<u64>,
     model_size_bytes: Option<u64>,
+    layer_count: Option<u32>,
 }
 
 fn push_unique_u32(out: &mut Vec<u32>, value: u32) {
@@ -118,7 +129,22 @@ pub(crate) fn get_available_memory_bytes() -> Option<u64> {
     Some(sys.available_memory())
 }
 
-pub(crate) fn get_available_vram_bytes() -> Option<u64> {
+fn choose_effective_vram_bytes(
+    ggml_free_bytes: Option<u64>,
+    platform_cap_bytes: Option<u64>,
+) -> Option<u64> {
+    match (
+        ggml_free_bytes.filter(|value| *value > 0),
+        platform_cap_bytes.filter(|value| *value > 0),
+    ) {
+        (Some(ggml_free), Some(platform_cap)) => Some(ggml_free.min(platform_cap)),
+        (Some(ggml_free), None) => Some(ggml_free),
+        (None, Some(platform_cap)) => Some(platform_cap),
+        (None, None) => None,
+    }
+}
+
+fn ggml_available_vram_bytes() -> Option<u64> {
     let mut max_free: u64 = 0;
     // SAFETY: read-only ggml backend device enumeration and memory queries.
     unsafe {
@@ -152,6 +178,68 @@ pub(crate) fn get_available_vram_bytes() -> Option<u64> {
     } else {
         None
     }
+}
+
+#[cfg(target_os = "windows")]
+fn windows_local_vram_cap_bytes() -> Option<u64> {
+    // SAFETY: read-only DXGI factory/adapter enumeration and local-memory queries.
+    unsafe {
+        let factory: IDXGIFactory6 = CreateDXGIFactory1().ok()?;
+        let mut best: u64 = 0;
+        let mut index: u32 = 0;
+
+        loop {
+            let adapter: IDXGIAdapter1 = match factory.EnumAdapters1(index) {
+                Ok(adapter) => adapter,
+                Err(_) => break,
+            };
+            index = index.saturating_add(1);
+
+            let desc = match adapter.GetDesc1() {
+                Ok(desc) => desc,
+                Err(_) => continue,
+            };
+            if desc.Flags & (DXGI_ADAPTER_FLAG_SOFTWARE.0 as u32) != 0 {
+                continue;
+            }
+
+            let dedicated_bytes = desc.DedicatedVideoMemory as u64;
+            if dedicated_bytes == 0 {
+                continue;
+            }
+
+            let local_available_bytes = adapter
+                .cast::<IDXGIAdapter3>()
+                .ok()
+                .and_then(|adapter3: IDXGIAdapter3| {
+                    let mut info = DXGI_QUERY_VIDEO_MEMORY_INFO::default();
+                    adapter3
+                        .QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &mut info)
+                        .ok()?;
+                    Some(
+                        info.Budget
+                            .saturating_sub(info.CurrentUsage)
+                            .min(dedicated_bytes),
+                    )
+                })
+                .unwrap_or(dedicated_bytes);
+
+            if local_available_bytes > best {
+                best = local_available_bytes;
+            }
+        }
+
+        (best > 0).then_some(best)
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn windows_local_vram_cap_bytes() -> Option<u64> {
+    None
+}
+
+pub(crate) fn get_available_vram_bytes() -> Option<u64> {
+    choose_effective_vram_bytes(ggml_available_vram_bytes(), windows_local_vram_cap_bytes())
 }
 
 /// Detect if the system uses unified memory (shared RAM/VRAM).
@@ -215,6 +303,58 @@ fn estimate_kv_bytes_per_token(model: &LlamaModel, llama_kv_type: Option<&str>) 
     Some(bytes.max(0.0) as u64)
 }
 
+fn estimate_kv_bytes_per_token_from_metadata(
+    metadata: &LlamaModelMetadata,
+    llama_kv_type: Option<&str>,
+) -> Option<u64> {
+    let n_layer = u64::from(metadata.layer_count.max(1));
+    let n_embd = metadata.n_embd.max(1);
+    let n_head = metadata.n_head.max(1);
+    let n_head_kv = metadata.n_head_kv.max(1);
+    let gqa_correction = n_head_kv as f64 / n_head as f64;
+    let effective_n_embd = (n_embd as f64 * gqa_correction) as u64;
+    let bytes_per_value = kv_bytes_per_value(llama_kv_type);
+    let bytes = (n_layer as f64) * (effective_n_embd as f64) * 2.0 * bytes_per_value;
+    Some(bytes.max(0.0) as u64)
+}
+
+fn default_memory_reserve_bytes(available_memory_bytes: u64) -> u64 {
+    (available_memory_bytes / 5).max(512 * 1024 * 1024)
+}
+
+fn ram_budget_for_context(model: &LlamaModel, available_memory_bytes: u64) -> u64 {
+    let reserve = default_memory_reserve_bytes(available_memory_bytes);
+    available_memory_bytes.saturating_sub(model.size().saturating_add(reserve))
+}
+
+fn cpu_fallback_headroom_bytes(base_budget: u64, available_memory_bytes: u64) -> u64 {
+    let availability_headroom = (available_memory_bytes / 10).max(256 * 1024 * 1024);
+    let budget_headroom = (base_budget / 4).max(128 * 1024 * 1024);
+    availability_headroom
+        .min(base_budget)
+        .max(budget_headroom.min(base_budget))
+}
+
+fn safe_cpu_context_from_budget(
+    base_budget: u64,
+    available_memory_bytes: u64,
+    kv_bytes_per_token: u64,
+    max_context_length: u32,
+    requested_context: Option<u32>,
+) -> u32 {
+    let base_context = (base_budget / kv_bytes_per_token).min(u64::from(max_context_length)) as u32;
+    let requested_or_base_context = requested_context
+        .unwrap_or(base_context)
+        .min(max_context_length)
+        .max(1);
+
+    let extra_cpu_headroom = cpu_fallback_headroom_bytes(base_budget, available_memory_bytes);
+    let safe_budget = base_budget.saturating_sub(extra_cpu_headroom);
+    (safe_budget / kv_bytes_per_token)
+        .min(u64::from(requested_or_base_context))
+        .max(1) as u32
+}
+
 pub(super) fn compute_recommended_context(
     model: &LlamaModel,
     available_memory_bytes: Option<u64>,
@@ -225,13 +365,11 @@ pub(super) fn compute_recommended_context(
 ) -> Option<u32> {
     let available_for_ctx = if llama_offload_kqv == Some(true) {
         let vram = available_vram_bytes?;
-        let reserve = (vram / 5).max(512 * 1024 * 1024);
+        let reserve = default_memory_reserve_bytes(vram);
         vram.saturating_sub(reserve)
     } else {
         let ram = available_memory_bytes?;
-        let model_size = model.size();
-        let reserve = (ram / 5).max(512 * 1024 * 1024);
-        ram.saturating_sub(model_size.saturating_add(reserve))
+        ram_budget_for_context(model, ram)
     };
     let kv_bytes_per_token = estimate_kv_bytes_per_token(model, llama_kv_type)?;
     if kv_bytes_per_token == 0 {
@@ -244,11 +382,122 @@ pub(super) fn compute_recommended_context(
     Some(recommended as u32)
 }
 
+pub(super) fn compute_cpu_fallback_limits(
+    model: &LlamaModel,
+    available_memory_bytes: Option<u64>,
+    max_context_length: u32,
+    llama_kv_type: Option<&str>,
+    requested_context: Option<u32>,
+    requested_batch_size: u32,
+) -> Option<(u32, u32)> {
+    let available_memory_bytes = available_memory_bytes?;
+    let kv_bytes_per_token = estimate_kv_bytes_per_token(model, llama_kv_type)?;
+    if kv_bytes_per_token == 0 {
+        return None;
+    }
+
+    let base_budget = ram_budget_for_context(model, available_memory_bytes);
+    let requested_batch_size = requested_batch_size.max(1);
+    let base_context = (base_budget / kv_bytes_per_token).min(u64::from(max_context_length)) as u32;
+    let requested_or_base_context = requested_context
+        .unwrap_or(base_context)
+        .min(max_context_length)
+        .max(1);
+    let safe_context = safe_cpu_context_from_budget(
+        base_budget,
+        available_memory_bytes,
+        kv_bytes_per_token,
+        max_context_length,
+        requested_context,
+    );
+
+    let safe_batch = u64::from(requested_batch_size)
+        .saturating_mul(u64::from(safe_context))
+        .checked_div(u64::from(requested_or_base_context))
+        .unwrap_or(u64::from(requested_batch_size))
+        .max(1)
+        .min(u64::from(requested_batch_size)) as u32;
+
+    Some((safe_context, safe_batch.max(1)))
+}
+
+fn compute_cpu_safe_recommended_context_for_metadata(
+    metadata: &LlamaModelMetadata,
+    available_memory_bytes: Option<u64>,
+    llama_kv_type: Option<&str>,
+    requested_context: Option<u32>,
+) -> Option<u32> {
+    let available_memory_bytes = available_memory_bytes?;
+    let kv_bytes_per_token = estimate_kv_bytes_per_token_from_metadata(metadata, llama_kv_type)?;
+    if kv_bytes_per_token == 0 {
+        return None;
+    }
+
+    let reserve = default_memory_reserve_bytes(available_memory_bytes);
+    let base_budget =
+        available_memory_bytes.saturating_sub(metadata.model_size_bytes.saturating_add(reserve));
+
+    Some(safe_cpu_context_from_budget(
+        base_budget,
+        available_memory_bytes,
+        kv_bytes_per_token,
+        metadata.max_context_length.max(1),
+        requested_context,
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{choose_effective_vram_bytes, cpu_fallback_headroom_bytes};
+
+    #[test]
+    fn cpu_fallback_headroom_does_not_exceed_budget() {
+        let budget = 3_u64 * 1024 * 1024 * 1024;
+        let available = 12_u64 * 1024 * 1024 * 1024;
+        let headroom = cpu_fallback_headroom_bytes(budget, available);
+
+        assert!(headroom > 0);
+        assert!(headroom < budget);
+    }
+
+    #[test]
+    fn cpu_fallback_headroom_keeps_small_budget_usable() {
+        let budget = 700_u64 * 1024 * 1024;
+        let available = 8_u64 * 1024 * 1024 * 1024;
+        let headroom = cpu_fallback_headroom_bytes(budget, available);
+
+        assert!(headroom < budget);
+        assert!(budget - headroom >= 128_u64 * 1024 * 1024);
+    }
+
+    #[test]
+    fn windows_vram_cap_clamps_inflated_backend_free_memory() {
+        let ggml_free = Some(14_u64 * 1024 * 1024 * 1024);
+        let windows_cap = Some(4_u64 * 1024 * 1024 * 1024);
+
+        assert_eq!(
+            choose_effective_vram_bytes(ggml_free, windows_cap),
+            Some(4_u64 * 1024 * 1024 * 1024)
+        );
+    }
+
+    #[test]
+    fn windows_vram_cap_preserves_backend_value_without_platform_cap() {
+        let ggml_free = Some(3_u64 * 1024 * 1024 * 1024);
+
+        assert_eq!(
+            choose_effective_vram_bytes(ggml_free, None),
+            Some(3_u64 * 1024 * 1024 * 1024)
+        );
+    }
+}
+
 pub(crate) async fn llamacpp_context_info(
     app: AppHandle,
     model_path: String,
     llama_offload_kqv: Option<bool>,
     llama_kv_type: Option<String>,
+    llama_gpu_layers: Option<u32>,
 ) -> Result<LlamaCppContextInfo, String> {
     let _ = app;
     if model_path.trim().is_empty() {
@@ -266,42 +515,69 @@ pub(crate) async fn llamacpp_context_info(
         ));
     }
 
-    let backend = LlamaBackend::init().map_err(|e| {
-        crate::utils::err_msg(
-            module_path!(),
-            line!(),
-            format!("Failed to initialize llama backend for context info: {e}"),
-        )
-    })?;
-    let model = LlamaModel::load_from_file(
-        &backend,
-        &model_path,
-        &LlamaModelParams::default().with_n_gpu_layers(0),
-    )
-    .map_err(|e| {
-        crate::utils::err_msg(
-            module_path!(),
-            line!(),
-            format!("Failed to load llama model for context info: {e}"),
-        )
-    })?;
-    let max_ctx = model.n_ctx_train().max(1);
+    let metadata = load_model_metadata(&model_path)?;
+    let max_ctx = metadata.max_context_length.max(1);
     let available_memory_bytes = get_available_memory_bytes();
     let available_vram_bytes = get_available_vram_bytes();
-    let recommended_context_length = compute_recommended_context(
-        &model,
-        available_memory_bytes,
-        available_vram_bytes,
-        max_ctx,
-        llama_offload_kqv,
-        llama_kv_type.as_deref(),
-    );
+    let supports_gpu_offload = shared_backend()?.supports_gpu_offload();
+    let resolved_offload_kqv = if llama_offload_kqv.is_some() {
+        llama_offload_kqv
+    } else if !supports_gpu_offload {
+        Some(false)
+    } else if using_rocm_backend() {
+        Some(false)
+    } else {
+        None
+    };
+    let resolved_gpu_layers = if let Some(requested) = llama_gpu_layers {
+        if supports_gpu_offload {
+            requested.min(metadata.layer_count.max(1))
+        } else {
+            0
+        }
+    } else if !supports_gpu_offload {
+        0
+    } else {
+        let flash_attention_policy = if using_rocm_backend() {
+            llama_cpp_sys_2::LLAMA_FLASH_ATTN_TYPE_DISABLED
+        } else {
+            llama_cpp_sys_2::LLAMA_FLASH_ATTN_TYPE_AUTO
+        };
+        plan_smart_gpu_offload(
+            &model_path,
+            available_memory_bytes,
+            available_vram_bytes,
+            None,
+            resolved_offload_kqv,
+            llama_kv_type.as_deref(),
+            flash_attention_policy,
+        )?
+        .estimated_gpu_layers
+    };
+    let recommended_context_length = if resolved_gpu_layers == 0 || !supports_gpu_offload {
+        compute_cpu_safe_recommended_context_for_metadata(
+            &metadata,
+            available_memory_bytes,
+            llama_kv_type.as_deref(),
+            None,
+        )
+    } else {
+        compute_recommended_context_for_gpu_layers(
+            &metadata,
+            available_memory_bytes,
+            available_vram_bytes,
+            resolved_gpu_layers,
+            resolved_offload_kqv,
+            llama_kv_type.as_deref(),
+        )
+    };
 
     Ok(LlamaCppContextInfo {
         max_context_length: max_ctx,
         recommended_context_length,
         available_memory_bytes,
         available_vram_bytes,
-        model_size_bytes: Some(model.size()),
+        model_size_bytes: Some(metadata.model_size_bytes),
+        layer_count: Some(metadata.layer_count),
     })
 }

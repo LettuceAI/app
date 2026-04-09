@@ -11,12 +11,18 @@ import {
   generateImage,
   resolveGeneratedImageUrl,
   resolveImageGenerationOptions,
+  resolveSceneGenerationOptions,
   resolveProviderCredential,
   type ImageGenerationRequest,
 } from "../../../../core/image-generation";
 import type { GeneratedImage } from "../../../../core/image-generation";
 import { readSettings, SETTINGS_UPDATED_EVENT } from "../../../../core/storage/repo";
-import type { ImageAttachment, Session, StoredMessage } from "../../../../core/storage/schemas";
+import type {
+  AdvancedModelSettings,
+  ImageAttachment,
+  Session,
+  StoredMessage,
+} from "../../../../core/storage/schemas";
 import { isRenderableImageUrl } from "../../../../core/utils/image";
 import { toast } from "../../../components/toast";
 import type { ChatControllerModuleContext } from "./chatControllerShared";
@@ -27,6 +33,17 @@ interface ImageGenConfig {
   modelName: string;
   providerId: string;
   credentialId: string;
+  advancedModelSettings: AdvancedModelSettings | null;
+  defaultSize: string | null;
+}
+
+type SceneGenerationMode = "auto" | "askFirst" | "manual";
+export const SCENE_PROMPT_APPROVAL_EVENT = "lettuceai:scene-prompt-approval";
+
+export interface ScenePromptApprovalDetail {
+  sessionId: string;
+  message: StoredMessage;
+  scenePrompt: string;
 }
 
 interface UseChatEnhancementsControllerArgs {
@@ -40,7 +57,8 @@ export function useChatEnhancementsController({ context }: UseChatEnhancementsCo
   const imageGenConfigRef = useRef<ImageGenConfig | null>(null);
   const hapticsEnabledRef = useRef<boolean>(false);
   const hapticIntensityRef = useRef<any>("light");
-  const sceneGenerationEnabledRef = useRef<boolean>(true);
+  const sceneGenerationEnabledRef = useRef<boolean>(false);
+  const sceneGenerationModeRef = useRef<SceneGenerationMode>("auto");
   const lastHapticTimeRef = useRef<number>(0);
   const platformRef = useRef<string>("");
 
@@ -60,6 +78,12 @@ export function useChatEnhancementsController({ context }: UseChatEnhancementsCo
         hapticIntensityRef.current = acc?.hapticIntensity ?? "light";
         sceneGenerationEnabledRef.current =
           settings.advancedSettings?.sceneGenerationEnabled ?? true;
+        sceneGenerationModeRef.current =
+          settings.advancedSettings?.sceneGenerationMode === "manual"
+            ? "manual"
+            : settings.advancedSettings?.sceneGenerationMode === "askFirst"
+              ? "askFirst"
+              : "auto";
       } catch {
         // ignore settings read failures
       }
@@ -113,6 +137,8 @@ export function useChatEnhancementsController({ context }: UseChatEnhancementsCo
       modelName: firstModel.name,
       providerId: firstModel.providerId,
       credentialId: provider.id,
+      advancedModelSettings: firstModel.advancedModelSettings ?? null,
+      defaultSize: firstModel.advancedModelSettings?.sdSize ?? null,
     };
     imageGenConfigRef.current = config;
     return config;
@@ -223,6 +249,28 @@ export function useChatEnhancementsController({ context }: UseChatEnhancementsCo
       options?: { scenePrompt?: string | null; requestId?: string | null },
     ) => {
       if (!state.session || !state.character) return;
+      let sceneGenerationEnabled = sceneGenerationEnabledRef.current;
+      let sceneGenerationMode = sceneGenerationModeRef.current;
+      let sceneGenerationAvailable = false;
+      try {
+        const settings = await readSettings();
+        sceneGenerationEnabled = settings.advancedSettings?.sceneGenerationEnabled ?? true;
+        sceneGenerationMode =
+          settings.advancedSettings?.sceneGenerationMode === "manual"
+            ? "manual"
+            : settings.advancedSettings?.sceneGenerationMode === "askFirst"
+              ? "askFirst"
+              : "auto";
+        const sceneOptions = resolveSceneGenerationOptions(settings);
+        sceneGenerationAvailable = Boolean(
+          sceneOptions.enabled && sceneOptions.defaultModel && sceneOptions.defaultProvider,
+        );
+        sceneGenerationEnabledRef.current = sceneGenerationEnabled;
+        sceneGenerationModeRef.current = sceneGenerationMode;
+      } catch {
+        // Fall back to the last known value.
+      }
+
       const currentSession = state.session;
       const currentCharacter = state.character;
       if (processedImageDirectiveMessagesRef.current.has(assistantMessageId)) return;
@@ -236,9 +284,11 @@ export function useChatEnhancementsController({ context }: UseChatEnhancementsCo
       if (!currentMessage) return;
 
       const { cleanContent, directives } = parseImageDirectives(currentMessage.content);
-      const scenePrompt = sceneGenerationEnabledRef.current
-        ? (options?.scenePrompt?.trim() ?? "")
-        : "";
+      const scenePrompt =
+        sceneGenerationEnabled && sceneGenerationAvailable && sceneGenerationMode !== "manual"
+          ? (options?.scenePrompt?.trim() ?? "")
+          : "";
+      const shouldAskForSceneApproval = Boolean(scenePrompt) && sceneGenerationMode === "askFirst";
       if (directives.length === 0 && !scenePrompt) return;
 
       const config = directives.length > 0 ? await resolveDefaultImageGenConfig() : null;
@@ -263,15 +313,16 @@ export function useChatEnhancementsController({ context }: UseChatEnhancementsCo
           });
         }
       }
-      const scenePlaceholder = scenePrompt
-        ? {
-            id: crypto.randomUUID(),
-            data: "",
-            mimeType: "image/webp",
-            width: 1024,
-            height: 1024,
-          }
-        : null;
+      const scenePlaceholder =
+        scenePrompt && !shouldAskForSceneApproval
+          ? {
+              id: crypto.randomUUID(),
+              data: "",
+              mimeType: "image/webp",
+              width: 1024,
+              height: 1024,
+            }
+          : null;
       if (scenePlaceholder) {
         placeholderAttachments.push(scenePlaceholder);
       }
@@ -383,7 +434,8 @@ export function useChatEnhancementsController({ context }: UseChatEnhancementsCo
           model: config!.modelName,
           providerId: config!.providerId,
           credentialId: config!.credentialId,
-          size: directive.size ?? "1024x1024",
+          advancedModelSettings: config!.advancedModelSettings,
+          size: directive.size ?? config!.defaultSize ?? "1024x1024",
           n: count,
           quality: directive.quality,
           style: directive.style,
@@ -468,6 +520,21 @@ export function useChatEnhancementsController({ context }: UseChatEnhancementsCo
             // leave cleaned UI state in memory if persistence fails
           }
         }
+      }
+
+      if (shouldAskForSceneApproval) {
+        if (requestWasAborted()) {
+          return;
+        }
+        window.dispatchEvent(
+          new CustomEvent<ScenePromptApprovalDetail>(SCENE_PROMPT_APPROVAL_EVENT, {
+            detail: {
+              sessionId: currentSession.id,
+              message: updatedMessage,
+              scenePrompt,
+            },
+          }),
+        );
       }
 
       if (scenePrompt && scenePlaceholder) {
@@ -560,11 +627,7 @@ export function useChatEnhancementsController({ context }: UseChatEnhancementsCo
   );
 
   const applySceneImagePrompt = useCallback(
-    async (
-      message: StoredMessage,
-      scenePrompt: string,
-      options?: { existingAttachmentId?: string | null },
-    ) => {
+    async (message: StoredMessage, scenePrompt: string) => {
       if (!state.session) {
         throw new Error("Session not loaded");
       }
@@ -574,9 +637,8 @@ export function useChatEnhancementsController({ context }: UseChatEnhancementsCo
         throw new Error("Scene prompt cannot be empty");
       }
 
-      const attachmentId = options?.existingAttachmentId?.trim() || crypto.randomUUID();
+      const attachmentId = crypto.randomUUID();
       const previousMessage = message;
-      const hasExistingAttachment = Boolean(options?.existingAttachmentId?.trim());
       const placeholderAttachment: ImageAttachment = {
         id: attachmentId,
         data: "",
@@ -588,11 +650,7 @@ export function useChatEnhancementsController({ context }: UseChatEnhancementsCo
 
       const optimisticMessage: StoredMessage = {
         ...previousMessage,
-        attachments: hasExistingAttachment
-          ? (previousMessage.attachments ?? []).map((attachment) =>
-              attachment.id === attachmentId ? placeholderAttachment : attachment,
-            )
-          : [...(previousMessage.attachments ?? []), placeholderAttachment],
+        attachments: [...(previousMessage.attachments ?? []), placeholderAttachment],
       };
 
       const optimisticMessages = messagesRef.current.map((entry) =>

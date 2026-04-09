@@ -1,6 +1,13 @@
-import { BrowserRouter, Route, Routes, useLocation, Navigate } from "react-router-dom";
+import {
+  BrowserRouter,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+  Navigate,
+  useParams,
+} from "react-router-dom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { motion } from "framer-motion";
 import { Toaster } from "sonner";
 
 import { WelcomePage, OnboardingPage } from "./ui/pages/onboarding";
@@ -24,12 +31,14 @@ import { AccessibilityPage } from "./ui/pages/settings/AccessibilityPage";
 import { ColorCustomizationPage } from "./ui/pages/settings/ColorCustomizationPage";
 import { ChatAppearancePage } from "./ui/pages/settings/ChatAppearancePage";
 import { LogsPage } from "./ui/pages/settings/LogsPage";
+import { AboutPage } from "./ui/pages/settings/AboutPage";
 import { CharactersPage } from "./ui/pages/settings/CharactersPage";
 import { DeveloperPage } from "./ui/pages/settings/DeveloperPage";
 import { ChangelogPage } from "./ui/pages/settings/ChangelogPage";
 import { AdvancedPage } from "./ui/pages/settings/AdvancedPage";
 import { CreationHelperPage as AICreationHelperPage } from "./ui/pages/settings/CreationHelperPage";
 import { HelpMeReplyPage } from "./ui/pages/settings/HelpMeReplyPage";
+import { HostApiPage } from "./ui/pages/settings/HostApiPage";
 import { VoicesPage } from "./ui/pages/settings/VoicesPage";
 import { DynamicMemoryPage } from "./ui/pages/settings/DynamicMemoryPage";
 import { EmbeddingDownloadPage } from "./ui/pages/settings/EmbeddingDownloadPage";
@@ -40,6 +49,7 @@ import {
   ChatSettingsPage,
   ChatHistoryPage,
   ChatMemoriesPage,
+  MessageDebugPage,
   SearchMessagesPage,
   ChatLayout,
 } from "./ui/pages/chats";
@@ -52,7 +62,7 @@ import {
   LorebookEditor,
   CreationHelperPage,
 } from "./ui/pages/characters";
-import { CreatePersonaPage, PersonasPage, EditPersonaPage } from "./ui/pages/personas";
+import { CreatePersonaPage, EditPersonaPage } from "./ui/pages/personas";
 import ChatTemplateListPage from "./ui/pages/characters/ChatTemplateListPage";
 import ChatTemplateEditorPage from "./ui/pages/characters/ChatTemplateEditorPage";
 import { SearchPage } from "./ui/pages/search";
@@ -90,15 +100,219 @@ import { V1UpgradeToast } from "./ui/components/V1UpgradeToast";
 import { V2UpgradeToast } from "./ui/components/V2UpgradeToast";
 import { ConfirmBottomMenuHost } from "./ui/components/ConfirmBottomMenu";
 import { isOnboardingCompleted } from "./core/storage/appState";
-import { TopNav, BottomNav } from "./ui/components/App";
+import { TopNav, BottomNav, WindowControls } from "./ui/components/App";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen, UnlistenFn } from "@tauri-apps/api/event";
 import { useAndroidBackHandler } from "./ui/hooks/useAndroidBackHandler";
 import { logManager, isLoggingEnabled } from "./core/utils/logger";
 import { getPlatform } from "./core/utils/platform";
-import { I18nProvider } from "./core/i18n/context";
+import { I18nProvider, useI18n } from "./core/i18n/context";
+import { hasSeenTooltip, setTooltipSeen } from "./core/storage/appState";
+import { checkForAppUpdate } from "./core/app-updates/checkForAppUpdate";
+import { presentAppUpdateToast } from "./core/app-updates/presentAppUpdateToast";
+import { readSettings, SETTINGS_UPDATED_EVENT } from "./core/storage/repo";
+import { recordChatDebugEvent } from "./core/debug/chatDebugStore";
 
 const chatLog = logManager({ component: "Chat" });
+
+function getPayloadObject(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object") return null;
+  return value as Record<string, unknown>;
+}
+
+function getString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
+}
+
+function getBoolean(value: unknown): boolean | undefined {
+  return typeof value === "boolean" ? value : undefined;
+}
+
+function getNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function summarizeChatDebugEvent(
+  state: string,
+  payload: unknown,
+  level?: string,
+): { level: "info" | "warn" | "error"; message: string } | null {
+  const obj = getPayloadObject(payload);
+  if (!obj) return null;
+
+  const operation = getString(obj.operation);
+  const providerId = getString(obj.providerId);
+  const model = getString(obj.model);
+  const requestId = getString(obj.requestId);
+  const status = getNumber(obj.status);
+  const elapsedMs = getNumber(obj.elapsedMs);
+  const stream = getBoolean(obj.stream);
+  const fallbackAttempt = getBoolean(obj.fallbackAttempt);
+  const message = getString(obj.message);
+  const hasReasoning = getBoolean(obj.hasReasoning);
+  const length = getNumber(obj.length);
+
+  switch (state) {
+    case "continue_start":
+      return {
+        level: "info",
+        message: `session=${getString(obj.sessionId) ?? "unknown"} character=${getString(obj.characterId) ?? "unknown"} messages=${getNumber(obj.messageCount) ?? 0}`,
+      };
+    case "continue_model_selected":
+      return {
+        level: "info",
+        message: `provider=${providerId ?? "unknown"} model=${model ?? "unknown"} credential=${getString(obj.credentialId) ?? "unknown"}`,
+      };
+    case "system_prompt_built": {
+      const debug = getPayloadObject(obj.system_prompt_debug);
+      return {
+        level: "info",
+        message: `session=${getString(debug?.session_id) ?? "unknown"} base_source=${getString(debug?.base_template_source) ?? "unknown"} entries=${getNumber(debug?.entry_count) ?? 0} total_chars=${getNumber(debug?.total_chars) ?? 0}`,
+      };
+    }
+    case "sending_request":
+    case "continue_request":
+    case "regenerate_request":
+      return {
+        level: "info",
+        message:
+          `operation=${operation ?? state} provider=${providerId ?? "unknown"} model=${model ?? "unknown"}` +
+          ` stream=${stream ?? false} request_id=${requestId ?? "missing"}` +
+          (fallbackAttempt ? " fallback_attempt=true" : ""),
+      };
+    case "response":
+    case "continue_response":
+    case "regenerate_response":
+      return {
+        level: "info",
+        message:
+          `operation=${operation ?? state} model=${model ?? "unknown"} status=${status ?? "unknown"}` +
+          (elapsedMs != null ? ` elapsed_ms=${elapsedMs}` : "") +
+          (requestId ? ` request_id=${requestId}` : ""),
+      };
+    case "provider_error":
+    case "continue_provider_error":
+    case "regenerate_provider_error":
+      return {
+        level: "error",
+        message:
+          `operation=${operation ?? state} model=${model ?? "unknown"} status=${status ?? "unknown"}` +
+          (requestId ? ` request_id=${requestId}` : "") +
+          (message ? ` message=${message}` : ""),
+      };
+    case "assistant_reply":
+    case "continue_assistant_reply":
+      return {
+        level: "info",
+        message:
+          `operation=${operation ?? state} reply_length=${length ?? 0}` +
+          (requestId ? ` request_id=${requestId}` : ""),
+      };
+    case "continue_empty_response":
+    case "regenerate_empty_response":
+      return {
+        level: "warn",
+        message:
+          `operation=${operation ?? state} empty_response=true has_reasoning=${hasReasoning ?? false}` +
+          (requestId ? ` request_id=${requestId}` : ""),
+      };
+    case "transport_retry":
+      return {
+        level: "warn",
+        message:
+          `scope=${getString(obj.scope) ?? "unknown"} attempt=${getNumber(obj.attempt) ?? 0}/${getNumber(obj.maxRetries) ?? 0}` +
+          ` reason=${getString(obj.reason) ?? "unknown"}` +
+          (status != null ? ` status=${status}` : "") +
+          (getNumber(obj.delayMs) != null ? ` delay_ms=${getNumber(obj.delayMs)}` : "") +
+          (requestId ? ` request_id=${requestId}` : ""),
+      };
+    default:
+      if (level?.toUpperCase() === "ERROR" && message) {
+        return { level: "error", message };
+      }
+      if (level?.toUpperCase() === "WARN" && message) {
+        return { level: "warn", message };
+      }
+      return null;
+  }
+}
+
+type LlamaModelLoadProgressEvent = {
+  requestId?: string | null;
+  modelPath?: string | null;
+  modelName?: string | null;
+  stage?: number | null;
+  status?: number | null;
+  progress?: number | null;
+};
+
+const LLAMA_MODEL_LOAD_STATUS_LOADING = 0;
+const LLAMA_MODEL_LOAD_STATUS_RETRYING = 1;
+const LLAMA_MODEL_LOAD_STATUS_LOADED = 2;
+const LLAMA_MODEL_LOAD_STATUS_FAILED = 3;
+const PERSONA_LIBRARY_ROUTE = "/library?view=personas";
+
+function shouldKeepLlamaLoaded(pathname: string) {
+  if (pathname.startsWith("/chat/")) {
+    return true;
+  }
+
+  if (pathname.startsWith("/engine-chat/")) {
+    return true;
+  }
+
+  if (pathname.startsWith("/group-chats/groups/")) {
+    return false;
+  }
+
+  if (
+    pathname === "/group-chats" ||
+    pathname === "/group-chats/history" ||
+    pathname === "/group-chats/new"
+  ) {
+    return false;
+  }
+
+  return /^\/group-chats\/[^/]+(?:\/.*)?$/.test(pathname);
+}
+
+function resolveLlamaModelLoadCopy(stage?: number | null) {
+  switch (stage) {
+    case 0:
+      return {
+        title: "Local model startup",
+        subtitle: "Preparing GPU offload",
+      };
+    case 1:
+      return {
+        title: "Local model startup",
+        subtitle: "Preparing CPU runtime",
+      };
+    case 2:
+      return {
+        title: "Local model startup",
+        subtitle: "Switching to CPU fallback",
+      };
+    case 3:
+      return {
+        title: "Local model startup",
+        subtitle: "Finalizing runtime",
+      };
+    default:
+      return {
+        title: "Local model startup",
+        subtitle: "Preparing model runtime",
+      };
+  }
+}
+
+function LegacyPersonaEditRedirect() {
+  const { personaId } = useParams();
+
+  return (
+    <Navigate to={personaId ? `/personas/${personaId}/edit` : PERSONA_LIBRARY_ROUTE} replace />
+  );
+}
 
 function App() {
   const platform = useMemo(() => getPlatform(), []);
@@ -149,9 +363,11 @@ function App() {
                 }
               }
             } else if (payload !== undefined) {
-              chatLog.with({ fn: state }).log(payload);
-            } else {
-              chatLog.with({ fn: state }).log(event.payload);
+              recordChatDebugEvent({ state, payload, level });
+              const summary = summarizeChatDebugEvent(state, payload, level);
+              if (summary) {
+                chatLog.with({ fn: state })[summary.level](summary.message);
+              }
             }
           } else {
             chatLog.warn("unknown event payload", event.payload);
@@ -205,26 +421,101 @@ function App() {
           const variant = payload.variant;
           const title = payload.title;
           const description = payload.description;
+          const id = payload.id;
           if (typeof title !== "string") {
             return;
           }
           const detail = typeof description === "string" ? description : undefined;
+          const toastOptions =
+            typeof id === "string" || typeof id === "number" ? { id } : undefined;
           switch (variant) {
             case "success":
-              toast.success(title, detail);
+              toast.success(title, detail, toastOptions);
               break;
             case "warning":
-              toast.warning(title, detail);
+              toast.warning(title, detail, toastOptions);
               break;
             case "error":
-              toast.error(title, detail);
+              toast.error(title, detail, toastOptions);
               break;
             default:
-              toast.info(title, detail);
+              toast.info(title, detail, toastOptions);
           }
         });
       } catch (err) {
         console.error("Failed to attach toast listener:", err);
+      }
+    })();
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, []);
+
+  useEffect(() => {
+    let unlisten: UnlistenFn | null = null;
+    (async () => {
+      try {
+        unlisten = await listen<LlamaModelLoadProgressEvent>(
+          "llama-model-load-progress",
+          (event) => {
+            const payload = event.payload;
+            if (!payload || typeof payload !== "object") {
+              return;
+            }
+
+            const requestId =
+              typeof payload.requestId === "string" && payload.requestId.trim()
+                ? payload.requestId
+                : null;
+            const modelPath =
+              typeof payload.modelPath === "string" && payload.modelPath.trim()
+                ? payload.modelPath
+                : null;
+            const toastId = requestId ?? (modelPath ? `llama-model-load:${modelPath}` : null);
+            if (!toastId) {
+              return;
+            }
+
+            const status =
+              typeof payload.status === "number" && Number.isFinite(payload.status)
+                ? payload.status
+                : LLAMA_MODEL_LOAD_STATUS_LOADING;
+            if (
+              status === LLAMA_MODEL_LOAD_STATUS_LOADED ||
+              status === LLAMA_MODEL_LOAD_STATUS_FAILED
+            ) {
+              toast.dismiss(toastId);
+              return;
+            }
+
+            const modelName =
+              typeof payload.modelName === "string" && payload.modelName.trim()
+                ? payload.modelName
+                : "Local model";
+            const progress =
+              typeof payload.progress === "number" && Number.isFinite(payload.progress)
+                ? payload.progress
+                : 0;
+            const stage =
+              typeof payload.stage === "number" && Number.isFinite(payload.stage)
+                ? payload.stage
+                : undefined;
+            const copy = resolveLlamaModelLoadCopy(stage);
+
+            toast.modelLoad({
+              id: toastId,
+              title: copy.title,
+              subtitle:
+                status === LLAMA_MODEL_LOAD_STATUS_RETRYING
+                  ? "Switching to CPU fallback"
+                  : copy.subtitle,
+              modelName,
+              progress,
+            });
+          },
+        );
+      } catch (err) {
+        console.error("Failed to attach llama model load progress listener:", err);
       }
     })();
     return () => {
@@ -239,6 +530,7 @@ function App() {
           <div id="app-root" className="min-h-screen bg-surface text-fg antialiased">
             <Toaster
               position={"top-center"}
+              expand={true}
               offset={{ top: 16 }}
               mobileOffset={{
                 top: "calc(env(safe-area-inset-top) + 80px)",
@@ -253,6 +545,7 @@ function App() {
             />
             <ConfirmBottomMenuHost />
             <DownloadQueueProvider>
+              <AppUpdateNotifier />
               <AppContent />
             </DownloadQueueProvider>
           </div>
@@ -262,10 +555,144 @@ function App() {
   );
 }
 
+function AppUpdateNotifier() {
+  const { t } = useI18n();
+  const platform = useMemo(() => getPlatform(), []);
+  const [autoChecksEnabled, setAutoChecksEnabled] = useState(true);
+  const [settingsReady, setSettingsReady] = useState(false);
+  const showUpdateToast = useCallback(
+    (update: {
+      currentVersion: string;
+      latestVersion: string;
+      releaseUrl: string;
+      downloadUrl: string;
+      releaseTag: string;
+      channel: "dev" | "release";
+    }) => {
+      presentAppUpdateToast(update, platform.os, {
+        title: t("updates.available.title"),
+        description: t("updates.available.description", {
+          currentVersion: update.currentVersion,
+          latestVersion: update.latestVersion,
+        }),
+        viewLabel: t("updates.available.actions.view"),
+        laterLabel: t("common.buttons.later"),
+      });
+    },
+    [platform.os, t],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const syncSettings = async () => {
+      try {
+        const settings = await readSettings();
+        if (cancelled) return;
+        setAutoChecksEnabled(settings.advancedSettings?.appUpdateChecksEnabled ?? true);
+      } catch {
+        if (!cancelled) {
+          setAutoChecksEnabled(true);
+        }
+      } finally {
+        if (!cancelled) {
+          setSettingsReady(true);
+        }
+      }
+    };
+
+    const handleSettingsUpdated = () => {
+      void syncSettings();
+    };
+
+    void syncSettings();
+    window.addEventListener(SETTINGS_UPDATED_EVENT, handleSettingsUpdated);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener(SETTINGS_UPDATED_EVENT, handleSettingsUpdated);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleForceUpdateNotification = async (event: Event) => {
+      const detail = (
+        event as CustomEvent<
+          | {
+              currentVersion?: string;
+              latestVersion?: string;
+              releaseUrl?: string;
+              downloadUrl?: string;
+              releaseTag?: string;
+              channel?: "dev" | "release";
+            }
+          | undefined
+        >
+      ).detail;
+
+      const currentVersion =
+        detail?.currentVersion ?? (await invoke<string>("get_app_version").catch(() => "1.0.0"));
+      const channel = detail?.channel ?? (currentVersion.includes("-dev.") ? "dev" : "release");
+      const latestVersion = detail?.latestVersion ?? "999.0.0";
+      const releaseUrl = detail?.releaseUrl ?? "https://github.com/LettuceAI/app/releases";
+      const downloadUrl =
+        detail?.downloadUrl ??
+        `https://www.lettuceai.app/download?platform=${encodeURIComponent(platform.os)}&source=in-app-update-test`;
+      const releaseTag =
+        detail?.releaseTag ??
+        `forced-update-${platform.os}-${latestVersion.replace(/[^\w.-]+/g, "-")}`;
+
+      await setTooltipSeen(`app-update-dismissed:${platform.os}:${releaseTag}`, false);
+      showUpdateToast({
+        currentVersion,
+        latestVersion,
+        releaseUrl,
+        downloadUrl,
+        releaseTag,
+        channel,
+      });
+    };
+
+    window.addEventListener("lettuce:update-check:force", handleForceUpdateNotification);
+    return () => {
+      window.removeEventListener("lettuce:update-check:force", handleForceUpdateNotification);
+    };
+  }, [platform.os, showUpdateToast]);
+
+  useEffect(() => {
+    if (import.meta.env.DEV || !settingsReady || !autoChecksEnabled) return;
+
+    let cancelled = false;
+
+    const run = async () => {
+      try {
+        const update = await checkForAppUpdate(platform);
+        if (!update || cancelled) return;
+
+        const dismissKey = `app-update-dismissed:${platform.os}:${update.releaseTag}`;
+        if (await hasSeenTooltip(dismissKey)) return;
+        if (cancelled) return;
+
+        showUpdateToast(update);
+      } catch {}
+    };
+
+    void run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [autoChecksEnabled, platform, settingsReady, showUpdateToast]);
+
+  return null;
+}
+
 function AppContent() {
   const location = useLocation();
+  const navigate = useNavigate();
   console.log("AppContent render:", location.pathname, location.key);
   const mainRef = useRef<HTMLDivElement | null>(null);
+  const previousLlamaKeepAliveRouteRef = useRef(shouldKeepLlamaLoaded(location.pathname));
   const platform = useMemo(() => getPlatform(), []);
   const isChatRoute = location.pathname === "/chat" || location.pathname === "/";
   // Group chat detail: /group-chats/:id, /group-chats/:id/settings, /group-chats/new (NOT /group-chats list)
@@ -286,8 +713,16 @@ function AppContent() {
     () => location.pathname.startsWith("/discover"),
     [location.pathname],
   );
+  const isDiscoverySubRoute = useMemo(
+    () => location.pathname.startsWith("/discover/"),
+    [location.pathname],
+  );
   const isCreateRoute = useMemo(
     () => location.pathname.startsWith("/create/"),
+    [location.pathname],
+  );
+  const isPersonaEditRoute = useMemo(
+    () => /^\/personas\/[^/]+\/edit$/.test(location.pathname),
     [location.pathname],
   );
 
@@ -295,7 +730,8 @@ function AppContent() {
     () => location.pathname.startsWith("/settings"),
     [location.pathname],
   );
-  const shouldAnimatePage = !location.pathname.startsWith("/settings/providers");
+
+  const isLogsRoute = location.pathname === "/settings/logs";
 
   const isLorebookEditorRoute = useMemo(
     () =>
@@ -315,17 +751,17 @@ function AppContent() {
     !isChatDetailRoute &&
     !isCreateRoute &&
     !isSearchRoute &&
-    !isLorebookEditorRoute &&
-    !isDiscoveryRoute;
+    !isLorebookEditorRoute;
   const showBottomNav =
     !isSettingRoute &&
     !isOnboardingRoute &&
     !isChatDetailRoute &&
     !isCreateRoute &&
+    !isPersonaEditRoute &&
     !isSearchRoute &&
     !isAvatarLibraryPickerRoute &&
     !isLorebookEditorRoute &&
-    !isDiscoveryRoute;
+    !isDiscoverySubRoute;
 
   const [showCreateMenu, setShowCreateMenu] = useState(false);
   const { isVisible: showCreateTooltip, dismissTooltip: dismissCreateTooltip } =
@@ -365,6 +801,20 @@ function AppContent() {
       // Ignore monitor update failures; Android monitor is best-effort metadata.
     });
   }, [location.pathname, location.search, platform.os]);
+
+  useEffect(() => {
+    const previousShouldKeepLoaded = previousLlamaKeepAliveRouteRef.current;
+    const nextShouldKeepLoaded = shouldKeepLlamaLoaded(location.pathname);
+    previousLlamaKeepAliveRouteRef.current = nextShouldKeepLoaded;
+
+    if (!previousShouldKeepLoaded || nextShouldKeepLoaded) {
+      return;
+    }
+
+    invoke("llamacpp_unload").catch((error) => {
+      console.error("Failed to unload llama.cpp after leaving chat routes:", error);
+    });
+  }, [location.pathname]);
 
   useEffect(() => {
     const urlParams = new URLSearchParams(location.search);
@@ -578,13 +1028,19 @@ function AppContent() {
       }`}
     >
       <div
-        className={`relative z-10 mx-auto flex min-h-screen w-full ${
-          isChatDetailRoute ? "max-w-full" : "max-w-md lg:max-w-none"
+        className={`relative z-10 mx-auto flex w-full ${
+          isChatDetailRoute ? "max-w-full h-screen" : "max-w-md lg:max-w-none min-h-screen"
         } flex-col ${showBottomNav ? "pb-[calc(72px+env(safe-area-inset-bottom))]" : "pb-0"}`}
       >
+        {!showTopNav && !isChatDetailRoute && !isSearchRoute && <WindowControls />}
         {showTopNav && (
           <TopNav
             currentPath={location.pathname + location.search}
+            onBackOverride={
+              isPersonaEditRoute
+                ? () => navigate(PERSONA_LIBRARY_ROUTE, { replace: true })
+                : undefined
+            }
             titleOverride={
               isAvatarLibraryPickerRoute
                 ? "Select from library"
@@ -606,13 +1062,17 @@ function AppContent() {
                   ? "overflow-hidden px-0 pt-0 pb-0"
                   : isSearchRoute
                     ? "overflow-hidden px-0 pt-0 pb-0"
-                    : isLorebookEditorRoute
+                    : isLogsRoute
                       ? "overflow-hidden px-0 pt-0 pb-0"
-                      : isTemplateEditorRoute
+                      : isLorebookEditorRoute
                         ? "overflow-hidden px-0 pt-0 pb-0"
-                        : isDiscoveryRoute
+                        : isPersonaEditRoute
+                        ? "overflow-hidden px-0 pt-0 pb-0"
+                        : isTemplateEditorRoute
                           ? "overflow-hidden px-0 pt-0 pb-0"
-                          : `overflow-y-auto px-4 pt-4 ${showBottomNav ? "pb-[calc(96px+env(safe-area-inset-bottom))]" : "pb-6"}`
+                          : isDiscoveryRoute
+                            ? "overflow-hidden px-0 pt-0 pb-0"
+                            : `overflow-y-auto px-4 pt-4 ${showBottomNav ? "pb-[calc(96px+env(safe-area-inset-bottom))]" : "pb-6"}`
           }`}
         >
           {voidActive && (
@@ -642,7 +1102,7 @@ function AppContent() {
               </div>
             </div>
           )}
-          <motion.div
+          <div
             key={(() => {
               if (location.pathname.startsWith("/settings")) return location.pathname;
               if (location.pathname.startsWith("/library")) return location.pathname;
@@ -652,10 +1112,6 @@ function AppContent() {
               if (groupMatch) return `/group-chats/${groupMatch[1]}`;
               return location.key;
             })()}
-            initial={shouldAnimatePage ? { opacity: 0, y: 16 } : false}
-            animate={{ opacity: 1, y: 0 }}
-            exit={shouldAnimatePage ? { opacity: 0, y: -16 } : { opacity: 1, y: 0 }}
-            transition={shouldAnimatePage ? { duration: 0.2, ease: "easeOut" } : { duration: 0 }}
             className={
               location.pathname.startsWith("/settings")
                 ? "h-full app-text-scope settings-theme-scope"
@@ -700,10 +1156,12 @@ function AppContent() {
               <Route path="/settings/accessibility/colors" element={<ColorCustomizationPage />} />
               <Route path="/settings/accessibility/chat" element={<ChatAppearancePage />} />
               <Route path="/settings/logs" element={<LogsPage />} />
+              <Route path="/settings/about" element={<AboutPage />} />
               <Route path="/settings/advanced" element={<AdvancedPage />} />
               <Route path="/settings/advanced/memory" element={<DynamicMemoryPage />} />
               <Route path="/settings/advanced/creation-helper" element={<AICreationHelperPage />} />
               <Route path="/settings/advanced/help-me-reply" element={<HelpMeReplyPage />} />
+              <Route path="/settings/advanced/host-api" element={<HostApiPage />} />
               <Route path="/settings/embedding-download" element={<EmbeddingDownloadPage />} />
               <Route path="/settings/embedding-test" element={<EmbeddingTestPage />} />
               <Route path="/settings/changelog" element={<ChangelogPage />} />
@@ -735,6 +1193,10 @@ function AppContent() {
               <Route path="/chat/:characterId/search" element={<SearchMessagesPage />} />
               <Route path="/chat/:characterId/history" element={<ChatHistoryPage />} />
               <Route path="/chat/:characterId/memories" element={<ChatMemoriesPage />} />
+              <Route
+                path="/chat/:characterId/debug/:sessionId/:messageId"
+                element={<MessageDebugPage />}
+              />
               <Route path="/create/character" element={<CreateCharacterPage />} />
               <Route path="/create/character/helper" element={<CreationHelperPage />} />
               <Route path="/settings/characters" element={<CharactersPage />} />
@@ -756,9 +1218,16 @@ function AppContent() {
                 element={<ChatTemplateEditorPage />}
               />
               <Route path="/create/persona" element={<CreatePersonaPage />} />
-              <Route path="/personas" element={<PersonasPage />} />
-              <Route path="/settings/personas" element={<PersonasPage />} />
-              <Route path="/settings/personas/:personaId/edit" element={<EditPersonaPage />} />
+              <Route path="/personas" element={<Navigate to={PERSONA_LIBRARY_ROUTE} replace />} />
+              <Route path="/personas/:personaId/edit" element={<EditPersonaPage />} />
+              <Route
+                path="/settings/personas"
+                element={<Navigate to={PERSONA_LIBRARY_ROUTE} replace />}
+              />
+              <Route
+                path="/settings/personas/:personaId/edit"
+                element={<LegacyPersonaEditRedirect />}
+              />
               <Route path="/group-chats" element={<GroupChatsListPage />} />
               <Route path="/group-chats/history" element={<GroupChatHistoryPage />} />
               <Route path="/group-chats/new" element={<GroupChatCreatePage />} />
@@ -770,7 +1239,7 @@ function AppContent() {
                 <Route path="memories" element={<GroupChatMemoriesPage />} />
               </Route>
             </Routes>
-          </motion.div>
+          </div>
         </main>
 
         {showBottomNav && <BottomNav onCreateClick={() => setShowCreateMenu(true)} />}

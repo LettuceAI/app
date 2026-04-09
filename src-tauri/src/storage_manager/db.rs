@@ -2,10 +2,14 @@ use rusqlite::{params, Connection};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::RwLock;
+use std::time::Duration;
 
 use super::legacy::storage_root;
 use crate::migrations;
-use crate::utils::{log_info, log_warn, now_millis};
+use crate::sync::db::LOCAL_SYNC_STATE_VERSION;
+use crate::utils::{
+    log_info, log_info_global, log_warn, log_warn_global, now_millis,
+};
 
 pub fn db_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     Ok(storage_root(app)?.join("app.db"))
@@ -56,13 +60,24 @@ impl SwappablePool {
                 format!("Pool lock poisoned: {}", e),
             )
         })?;
-        pool.get().map_err(|e| {
+        let conn = pool.get().map_err(|e| {
             crate::utils::err_msg(
                 module_path!(),
                 line!(),
                 format!("Failed to get connection from pool: {}", e),
             )
-        })
+        })?;
+
+        let state = pool.state();
+        log_info_global(
+            "db_status",
+            format!(
+                "connection acquired total={} idle={}",
+                state.connections, state.idle_connections
+            ),
+        );
+
+        Ok(conn)
     }
 
     /// Swap the pool with a new one (used after backup restore)
@@ -79,20 +94,58 @@ impl SwappablePool {
     }
 }
 
+fn attach_db_logging(c: &mut Connection) {
+    c.trace(Some(|stmt: &str| {
+        let trimmed = stmt.trim();
+        if trimmed.starts_with("PRAGMA") {
+            return;
+        }
+        let is_write = trimmed.starts_with("INSERT")
+            || trimmed.starts_with("UPDATE")
+            || trimmed.starts_with("DELETE")
+            || trimmed.starts_with("CREATE")
+            || trimmed.starts_with("DROP")
+            || trimmed.starts_with("ALTER");
+        let label = if is_write { "db_write" } else { "db_read" };
+        let display = if trimmed.len() > 1024 {
+            format!("{}...", &trimmed[..1024])
+        } else {
+            trimmed.to_string()
+        };
+        log_info_global(label, &display);
+    }));
+    c.profile(Some(|stmt: &str, dur: Duration| {
+        let ms = dur.as_millis();
+        if ms >= 50 {
+            let trimmed = stmt.trim();
+            let display = if trimmed.len() > 768 {
+                format!("{}...", &trimmed[..768])
+            } else {
+                trimmed.to_string()
+            };
+            log_warn_global("db_slow", format!("{}ms | {}", ms, display));
+        }
+    }));
+}
+
 /// Create a new pool for a given database path
 pub fn create_pool_for_path(path: &PathBuf) -> Result<DbPool, String> {
     let manager = SqliteConnectionManager::file(path).with_init(|c| {
+        c.busy_timeout(Duration::from_secs(5))?;
         c.execute_batch(
             r#"
                 PRAGMA journal_mode=WAL;
                 PRAGMA synchronous=NORMAL;
                 PRAGMA temp_store=MEMORY;
                 PRAGMA cache_size=-8000;
+                PRAGMA busy_timeout=5000;
                 PRAGMA wal_autocheckpoint=1000;
                 PRAGMA mmap_size=268435456;
                 PRAGMA foreign_keys=ON;
                 "#,
-        )
+        )?;
+        attach_db_logging(c);
+        Ok(())
     });
 
     Pool::builder().max_size(10).build(manager).map_err(|e| {
@@ -176,17 +229,21 @@ pub fn init_pool(app: &tauri::AppHandle) -> Result<DbPool, String> {
     }
 
     let manager = SqliteConnectionManager::file(&path).with_init(|c| {
+        c.busy_timeout(Duration::from_secs(5))?;
         c.execute_batch(
             r#"
                 PRAGMA journal_mode=WAL;
                 PRAGMA synchronous=NORMAL;
                 PRAGMA temp_store=MEMORY;
                 PRAGMA cache_size=-8000;
+                PRAGMA busy_timeout=5000;
                 PRAGMA wal_autocheckpoint=1000;
                 PRAGMA mmap_size=268435456;
                 PRAGMA foreign_keys=ON;
                 "#,
-        )
+        )?;
+        attach_db_logging(c);
+        Ok(())
     });
 
     let pool = Pool::builder().max_size(10).build(manager).map_err(|e| {
@@ -334,6 +391,7 @@ pub fn init_db(_app: &tauri::AppHandle, conn: &Connection) -> Result<(), String>
           id TEXT PRIMARY KEY,
           name TEXT NOT NULL,
           avatar_path TEXT,
+          keyword_detection_mode TEXT NOT NULL DEFAULT 'recent_message_window',
           created_at INTEGER NOT NULL,
           updated_at INTEGER NOT NULL
         );
@@ -431,6 +489,7 @@ pub fn init_db(_app: &tauri::AppHandle, conn: &Connection) -> Result<(), String>
           id TEXT PRIMARY KEY,
           character_id TEXT NOT NULL,
           title TEXT NOT NULL,
+          background_image_path TEXT,
           system_prompt TEXT,
           selected_scene_id TEXT,
           prompt_template_id TEXT,
@@ -450,6 +509,7 @@ pub fn init_db(_app: &tauri::AppHandle, conn: &Connection) -> Result<(), String>
           memory_tool_events TEXT NOT NULL DEFAULT '[]',
           memory_status TEXT,
           memory_error TEXT,
+          memory_progress_step INTEGER,
           archived INTEGER NOT NULL DEFAULT 0,
           created_at INTEGER NOT NULL,
           updated_at INTEGER NOT NULL,
@@ -539,6 +599,23 @@ pub fn init_db(_app: &tauri::AppHandle, conn: &Connection) -> Result<(), String>
           cached_at INTEGER NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS openrouter_provider_pricing_cache (
+          model_id TEXT PRIMARY KEY,
+          provider_pricings_json TEXT NOT NULL,
+          cached_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS deferred_pricing_refreshes (
+          provider_id TEXT NOT NULL,
+          model_id TEXT NOT NULL,
+          refresh_kind TEXT NOT NULL,
+          retry_after INTEGER NOT NULL,
+          last_error TEXT,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          PRIMARY KEY (provider_id, model_id, refresh_kind)
+        );
+
         -- Audio providers for TTS
         CREATE TABLE IF NOT EXISTS audio_providers (
           id TEXT PRIMARY KEY,
@@ -620,6 +697,7 @@ pub fn init_db(_app: &tauri::AppHandle, conn: &Connection) -> Result<(), String>
           memory_tool_events TEXT NOT NULL DEFAULT '[]',
           memory_status TEXT,
           memory_error TEXT,
+          memory_progress_step INTEGER,
           speaker_selection_method TEXT NOT NULL DEFAULT 'llm',
           FOREIGN KEY(persona_id) REFERENCES personas(id) ON DELETE SET NULL,
           FOREIGN KEY(group_character_id) REFERENCES group_characters(id) ON DELETE SET NULL
@@ -692,6 +770,10 @@ pub fn init_db(_app: &tauri::AppHandle, conn: &Connection) -> Result<(), String>
         CREATE INDEX IF NOT EXISTS idx_secrets_service ON secrets(service);
         CREATE INDEX IF NOT EXISTS idx_prompt_templates_scope ON prompt_templates(scope);
         CREATE INDEX IF NOT EXISTS idx_model_pricing_cached_at ON model_pricing_cache(cached_at);
+        CREATE INDEX IF NOT EXISTS idx_openrouter_provider_pricing_cached_at
+          ON openrouter_provider_pricing_cache(cached_at);
+        CREATE INDEX IF NOT EXISTS idx_deferred_pricing_refreshes_due
+          ON deferred_pricing_refreshes(provider_id, retry_after);
         CREATE INDEX IF NOT EXISTS idx_group_sessions_updated ON group_sessions(updated_at);
         CREATE INDEX IF NOT EXISTS idx_group_participation_session ON group_participation(session_id);
         CREATE INDEX IF NOT EXISTS idx_group_messages_session ON group_messages(session_id);
@@ -784,6 +866,13 @@ pub fn init_db(_app: &tauri::AppHandle, conn: &Connection) -> Result<(), String>
     if !group_session_cols.contains("memory_error") {
         conn.execute(
             "ALTER TABLE group_sessions ADD COLUMN memory_error TEXT",
+            [],
+        )
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    }
+    if !group_session_cols.contains("memory_progress_step") {
+        conn.execute(
+            "ALTER TABLE group_sessions ADD COLUMN memory_progress_step INTEGER",
             [],
         )
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
@@ -900,6 +989,26 @@ pub fn init_db(_app: &tauri::AppHandle, conn: &Connection) -> Result<(), String>
         reset_sync_state = true;
     }
 
+    let sync_state_schema_version = conn
+        .query_row(
+            "SELECT value FROM sync_local_state WHERE key = 'sync_state_schema_version'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .ok()
+        .and_then(|value| value.parse::<u16>().ok());
+    if sync_state_schema_version != Some(LOCAL_SYNC_STATE_VERSION) {
+        log_warn(
+            _app,
+            "db",
+            format!(
+                "Resetting sync state because local sync_state_schema_version is {:?} instead of {}",
+                sync_state_schema_version, LOCAL_SYNC_STATE_VERSION
+            ),
+        );
+        reset_sync_state = true;
+    }
+
     if reset_sync_state {
         conn.execute("DELETE FROM sync_changes", [])
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
@@ -908,6 +1017,12 @@ pub fn init_db(_app: &tauri::AppHandle, conn: &Connection) -> Result<(), String>
         conn.execute("DELETE FROM sync_peer_cursors", [])
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     }
+
+    conn.execute(
+        "INSERT OR REPLACE INTO sync_local_state (key, value) VALUES ('sync_state_schema_version', ?1)",
+        params![LOCAL_SYNC_STATE_VERSION.to_string()],
+    )
+    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 
     // Migrations: add reasoning_tokens and image_tokens to usage_records if missing
     let mut stmt = conn
@@ -1073,6 +1188,37 @@ pub fn init_db(_app: &tauri::AppHandle, conn: &Connection) -> Result<(), String>
     }
     if !has_memory_error {
         let _ = conn.execute("ALTER TABLE sessions ADD COLUMN memory_error TEXT", []);
+    }
+    // memory_progress_step migration for sessions
+    {
+        let has_col = {
+            let mut stmt = conn
+                .prepare("PRAGMA table_info(sessions)")
+                .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+            let mut rows = stmt
+                .query([])
+                .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+            let mut found = false;
+            while let Some(row) = rows
+                .next()
+                .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
+            {
+                let name: String = row
+                    .get(1)
+                    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+                if name == "memory_progress_step" {
+                    found = true;
+                    break;
+                }
+            }
+            found
+        };
+        if !has_col {
+            let _ = conn.execute(
+                "ALTER TABLE sessions ADD COLUMN memory_progress_step INTEGER",
+                [],
+            );
+        }
     }
 
     let mut stmt_audio_providers = conn
@@ -1256,6 +1402,37 @@ pub fn init_db(_app: &tauri::AppHandle, conn: &Connection) -> Result<(), String>
     if !has_lorebook_entry_title {
         let _ = conn.execute(
             "ALTER TABLE lorebook_entries ADD COLUMN title TEXT NOT NULL DEFAULT ''",
+            [],
+        );
+    }
+
+    let mut stmt_lorebooks = conn
+        .prepare("PRAGMA table_info(lorebooks)")
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    let mut has_lorebook_avatar_path = false;
+    let mut has_lorebook_keyword_detection_mode = false;
+    let mut rows_lorebooks = stmt_lorebooks
+        .query([])
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    while let Some(row) = rows_lorebooks
+        .next()
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
+    {
+        let col_name: String = row
+            .get(1)
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        match col_name.as_str() {
+            "avatar_path" => has_lorebook_avatar_path = true,
+            "keyword_detection_mode" => has_lorebook_keyword_detection_mode = true,
+            _ => {}
+        }
+    }
+    if !has_lorebook_avatar_path {
+        let _ = conn.execute("ALTER TABLE lorebooks ADD COLUMN avatar_path TEXT", []);
+    }
+    if !has_lorebook_keyword_detection_mode {
+        let _ = conn.execute(
+            "ALTER TABLE lorebooks ADD COLUMN keyword_detection_mode TEXT NOT NULL DEFAULT 'recent_message_window'",
             [],
         );
     }

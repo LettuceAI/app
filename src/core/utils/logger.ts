@@ -2,7 +2,6 @@ import { isDevelopmentMode } from "./env";
 import { invoke } from "@tauri-apps/api/core";
 
 type LogLevel = "debug" | "info" | "warn" | "error" | "log";
-const MAX_SERIALIZED_ARG_CHARS = 2048;
 
 export type LoggerOptions = {
   component: string; // e.g. useChatController, Chat.tsx, SettingsPage
@@ -57,10 +56,7 @@ function serializeError(err: Error): Record<string, unknown> {
 }
 
 function serializeArg(arg: any): string {
-  const clamp = (value: string): string =>
-    value.length > MAX_SERIALIZED_ARG_CHARS
-      ? `${value.slice(0, MAX_SERIALIZED_ARG_CHARS)}... <truncated>`
-      : value;
+  const clamp = (value: string): string => value;
 
   if (arg instanceof Error) {
     return clamp(JSON.stringify(serializeError(arg)));

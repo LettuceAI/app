@@ -40,7 +40,7 @@ export function GroupChatFooter({
   onContinue,
   onAbort,
   hasBackgroundImage,
-  footerOverlayClassName,
+  footerOverlayClassName: _footerOverlayClassName,
   pendingAttachments = [],
   onAddAttachment,
   onRemoveAttachment,
@@ -268,7 +268,7 @@ export function GroupChatFooter({
     <footer
       className={cn(
         "z-20 shrink-0 px-4 pb-3 pt-3",
-        hasBackgroundImage ? footerOverlayClassName || "bg-surface/85" : "bg-surface",
+        hasBackgroundImage ? "bg-transparent" : "bg-surface",
       )}
     >
       {error && (
@@ -357,7 +357,9 @@ export function GroupChatFooter({
                 />
               ))}
               {filteredCharacters.length === 0 && (
-                <div className="px-3 py-4 text-center text-sm text-fg/40">{t("groupChats.footer.noCharactersFound")}</div>
+                <div className="px-3 py-4 text-center text-sm text-fg/40">
+                  {t("groupChats.footer.noCharactersFound")}
+                </div>
               )}
             </div>
           </motion.div>
@@ -378,7 +380,7 @@ export function GroupChatFooter({
         className={cn(
           "relative flex items-end gap-2.5 p-2",
           "rounded-4xl",
-          "border border-fg/15 bg-fg/5 backdrop-blur-md",
+          "border border-fg/15 bg-surface-el/65 backdrop-blur-md",
           shadows.md,
         )}
       >
@@ -396,8 +398,12 @@ export function GroupChatFooter({
               "hover:border-fg/25 hover:bg-fg/15",
               "disabled:cursor-not-allowed disabled:opacity-40",
             )}
-            title={onOpenPlusMenu ? t("groupChats.footer.moreOptions") : t("groupChats.footer.addImage")}
-            aria-label={onOpenPlusMenu ? t("groupChats.footer.moreOptions") : t("groupChats.footer.addImage")}
+            title={
+              onOpenPlusMenu ? t("groupChats.footer.moreOptions") : t("groupChats.footer.addImage")
+            }
+            aria-label={
+              onOpenPlusMenu ? t("groupChats.footer.moreOptions") : t("groupChats.footer.addImage")
+            }
           >
             <Plus size={20} />
           </button>
@@ -411,7 +417,7 @@ export function GroupChatFooter({
           placeholder=" "
           rows={1}
           className={cn(
-            "max-h-32 flex-1 resize-none bg-transparent py-2.5",
+            "peer max-h-32 flex-1 resize-none bg-transparent py-2.5",
             typography.body.size,
             "text-fg placeholder:text-transparent",
             "focus:outline-none",
@@ -445,7 +451,7 @@ export function GroupChatFooter({
               ? "border border-red-400/40 bg-red-400/20 text-red-100"
               : hasDraft || hasAttachments
                 ? "border border-accent/40 bg-accent/20 text-accent"
-                : "border border-white/15 bg-white/10 text-white/70",
+                : "border border-fg/15 bg-fg/10 text-fg/70",
             interactive.transition.fast,
             interactive.active.scale,
             sending && onAbort && "hover:border-red-400/60 hover:bg-red-400/30",
@@ -453,8 +459,7 @@ export function GroupChatFooter({
             !sending &&
               !hasDraft &&
               !hasAttachments &&
-              onContinue &&
-              "hover:border-emerald-400/60 hover:bg-emerald-400/30",
+              "hover:border-fg/25 hover:bg-fg/15",
             "disabled:cursor-not-allowed disabled:opacity-40",
           )}
           title={
@@ -502,7 +507,7 @@ function MentionPickerItem({
   character: Character;
   onClick: () => void;
   query: string;
-  }) {
+}) {
   const { t } = useI18n();
   const avatarUrl = useAvatar("character", character.id, character.avatarPath, "round");
 
@@ -538,8 +543,8 @@ function MentionPickerItem({
       <div
         className={cn(
           "h-8 w-8 shrink-0 rounded-full overflow-hidden",
-          "bg-linear-to-br from-white/10 to-white/5",
-          "ring-1 ring-white/10",
+          "bg-linear-to-br from-fg/8 to-fg/4",
+          "ring-1 ring-fg/10",
         )}
       >
         {avatarUrl ? (

@@ -22,6 +22,7 @@ export { AvatarSourceMenu, AvatarCurrentEditMenu, AvatarGenerationSheet, AvatarP
 interface AvatarPickerProps {
   currentAvatarPath: string;
   onAvatarChange: (path: string) => void;
+  onBeforeChooseFromLibrary?: () => void;
   promptSubjectName?: string;
   promptSubjectDescription?: string;
   avatarCrop?: AvatarCrop | null;
@@ -38,6 +39,7 @@ interface AvatarPickerProps {
 export function AvatarPicker({
   currentAvatarPath,
   onAvatarChange,
+  onBeforeChooseFromLibrary,
   promptSubjectName,
   promptSubjectDescription,
   avatarCrop,
@@ -93,12 +95,13 @@ export function AvatarPicker({
   }, []);
 
   const handleChooseFromLibrary = useCallback(() => {
+    onBeforeChooseFromLibrary?.();
     navigate("/library/images/pick", {
       state: {
         returnPath,
       },
     });
-  }, [navigate, returnPath]);
+  }, [navigate, onBeforeChooseFromLibrary, returnPath]);
 
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

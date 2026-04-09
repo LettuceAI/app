@@ -7,6 +7,7 @@ export type ProviderCapabilities = {
     api_endpoint_path: string;
     system_role: string;
     supports_stream: boolean;
+    requires_api_key: boolean;
     required_auth_headers: string[];
     default_headers: Record<string, string>;
 };
@@ -22,6 +23,7 @@ export type ProviderCapabilitiesCamel = {
     apiEndpointPath: string;
     systemRole: string;
     supportsStream: boolean;
+    requiresApiKey: boolean;
     requiredAuthHeaders: string[];
     defaultHeaders: Record<string, string>;
 };
@@ -34,6 +36,7 @@ export function toCamel(c: ProviderCapabilities): ProviderCapabilitiesCamel {
         apiEndpointPath: c.api_endpoint_path,
         systemRole: c.system_role,
         supportsStream: c.supports_stream,
+        requiresApiKey: c.requires_api_key,
         requiredAuthHeaders: c.required_auth_headers,
         defaultHeaders: c.default_headers,
     };

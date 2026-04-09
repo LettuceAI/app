@@ -152,6 +152,45 @@ pub struct QueuedDownload {
     pub speed_bytes_per_sec: u64,
     pub error: Option<String>,
     pub result_path: Option<String>,
+    pub create_model_when_finished: bool,
+    pub mmproj_file: MmprojFileLink,
+    pub install_id: Option<String>,
+    pub display_name: Option<String>,
+    pub context_length: Option<u64>,
+    pub kv_type: Option<String>,
+    pub download_role: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum MmprojFileLink {
+    Filename(String),
+    Disabled(bool),
+}
+
+impl Default for MmprojFileLink {
+    fn default() -> Self {
+        Self::Disabled(false)
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct QueueDownloadMetadata {
+    #[serde(default)]
+    pub create_model_when_finished: bool,
+    #[serde(default)]
+    pub mmproj_file: MmprojFileLink,
+    #[serde(default)]
+    pub install_id: Option<String>,
+    #[serde(default)]
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub context_length: Option<u64>,
+    #[serde(default)]
+    pub kv_type: Option<String>,
+    #[serde(default)]
+    pub download_role: Option<String>,
 }
 
 struct DownloadQueueState {
@@ -722,13 +761,15 @@ fn compute_overhead(model_size: u64) -> u64 {
 
 /// Core scoring for a single configuration. All parameters are concrete values.
 /// `total_available` should already account for unified memory (use max, not sum).
+///
+/// Returns (score, fits_in_ram, fits_in_vram, memory_score, gpu_score, kv_score, gpu_mode).
 fn score_configuration(
     model_size: u64,
     quant_quality: f64,
     kv_cache_bytes: u64,
     total_available: u64,
     available_vram: u64,
-) -> (u32, bool, bool) {
+) -> (u32, bool, bool, u32, u32, u32, &'static str) {
     let overhead = compute_overhead(model_size);
     let total_needed = model_size
         .saturating_add(kv_cache_bytes)
@@ -759,13 +800,13 @@ fn score_configuration(
     //   1. Everything fits in VRAM → 100 (blazing fast)
     //   2. Model fits, KV/compute spills → 70-95 (fast inference, slow prefill)
     //   3. Model spills to RAM → 10-70 (partial layer offload via -ngl)
-    let (gpu_score, fits_in_vram) = if available_vram > 0 {
+    let (gpu_score, fits_in_vram, gpu_mode) = if available_vram > 0 {
         let vram_budget = (available_vram as f64 * 0.90) as u64;
         if total_needed <= vram_budget {
             // Full offload: model + KV + compute all fit in VRAM
-            (100.0, true)
+            (100.0, true, "full")
         } else if model_size == 0 {
-            (10.0, false)
+            (10.0, false, "cpu")
         } else if model_size <= vram_budget {
             // Model weights fit, KV/compute spills to system RAM
             let remaining = vram_budget.saturating_sub(model_size);
@@ -775,16 +816,32 @@ fn score_configuration(
             } else {
                 1.0
             };
+            let mode = if fit_ratio >= 0.8 {
+                "nearFull"
+            } else if fit_ratio >= 0.4 {
+                "kvSpill"
+            } else {
+                "kvHeavySpill"
+            };
             // 70-95: good experience, layers all on GPU
-            (70.0 + fit_ratio * 25.0, true)
+            (70.0 + fit_ratio * 25.0, true, mode)
         } else {
             // Model doesn't fit: partial layer offload
             let offload_ratio = (vram_budget as f64 / model_size as f64).min(1.0);
+            let mode = if offload_ratio >= 0.75 {
+                "mostLayers"
+            } else if offload_ratio >= 0.5 {
+                "halfLayers"
+            } else if offload_ratio >= 0.2 {
+                "fewLayers"
+            } else {
+                "cpu"
+            };
             // 10-70: scales with how many layers can be offloaded
-            (10.0 + offload_ratio * 60.0, false)
+            (10.0 + offload_ratio * 60.0, false, mode)
         }
     } else {
-        (0.0, false)
+        (0.0, false, "cpu")
     };
 
     // KV headroom (15%)
@@ -816,7 +873,15 @@ fn score_configuration(
     };
     let score = (capped.round() as u32).min(100);
 
-    (score, fits_in_ram, fits_in_vram)
+    (
+        score,
+        fits_in_ram,
+        fits_in_vram,
+        (memory_score.round() as u32).min(100),
+        (gpu_score.round() as u32).min(100),
+        (kv_score.round() as u32).min(100),
+        gpu_mode,
+    )
 }
 
 fn resolve_total_available(available_ram: u64, available_vram: u64, unified: bool) -> u64 {
@@ -848,7 +913,7 @@ fn compute_scores(
     files
         .iter()
         .map(|file| {
-            let (score, fits_in_ram, fits_in_vram) = score_configuration(
+            let (score, fits_in_ram, fits_in_vram, ..) = score_configuration(
                 file.size,
                 quant_quality_score(&file.quantization),
                 kv_8k,
@@ -1099,7 +1164,7 @@ fn build_recommendation(
                 .map(|b| (b * bpv * effective_ctx as f64) as u64)
                 .unwrap_or(0);
 
-            let (score, _, _) =
+            let (score, ..) =
                 score_configuration(file.size, qq, kv_bytes, total_available, available_vram);
 
             if best.as_ref().map_or(true, |b| score > b.score) {
@@ -1139,7 +1204,7 @@ fn build_recommendation(
                 let ctx = rec.optimal_gpu_ctx;
                 let effective_ctx = kv_ctx_cap.map(|cap| ctx.min(cap)).unwrap_or(ctx);
                 let kv_bytes = (base * 1.0 * effective_ctx as f64) as u64; // Q8_0
-                let (score, _, _) = score_configuration(
+                let (score, ..) = score_configuration(
                     file.size,
                     quant_quality_score(&file.quantization),
                     kv_bytes,
@@ -1446,8 +1511,10 @@ pub async fn hf_queue_download(
     app: AppHandle,
     model_id: String,
     filename: String,
+    metadata: Option<QueueDownloadMetadata>,
 ) -> Result<String, String> {
     let queue_id = uuid::Uuid::new_v4().to_string();
+    let metadata = metadata.unwrap_or_default();
 
     {
         let mut state = HF_DOWNLOAD_QUEUE.lock().await;
@@ -1461,6 +1528,13 @@ pub async fn hf_queue_download(
             speed_bytes_per_sec: 0,
             error: None,
             result_path: None,
+            create_model_when_finished: metadata.create_model_when_finished,
+            mmproj_file: metadata.mmproj_file,
+            install_id: metadata.install_id,
+            display_name: metadata.display_name,
+            context_length: metadata.context_length,
+            kv_type: metadata.kv_type,
+            download_role: metadata.download_role,
         });
         emit_queue(&app, &state.queue);
     }
@@ -2145,6 +2219,94 @@ pub async fn hf_compute_runability(
         available_ram,
         available_vram,
     ))
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalRunabilityResult {
+    pub score: u32,
+    pub label: String,
+    pub fits_in_ram: bool,
+    pub fits_in_vram: bool,
+    pub memory_score: u32,
+    pub gpu_score: u32,
+    pub kv_score: u32,
+    pub quant_score: u32,
+    pub gpu_mode: String,
+    pub available_ram: u64,
+    pub available_vram: u64,
+    pub model_size: u64,
+    pub quantization: String,
+}
+
+#[tauri::command]
+pub async fn hf_compute_local_runability(
+    app: AppHandle,
+    file_path: String,
+) -> Result<LocalRunabilityResult, String> {
+    let path = PathBuf::from(&file_path);
+    if !path.exists() {
+        return Err("File does not exist".to_string());
+    }
+
+    let file_size = std::fs::metadata(&path)
+        .map(|m| m.len())
+        .map_err(|e| format!("Failed to read file metadata: {e}"))?;
+
+    let quantization = extract_quantization(&file_path);
+    let meta = read_local_gguf_meta(&path);
+
+    let available_ram = crate::llama_cpp::available_memory_bytes().unwrap_or(0);
+    let available_vram = crate::llama_cpp::available_vram_bytes().unwrap_or(0);
+    let unified = crate::llama_cpp::is_unified_memory();
+    let total_available = resolve_total_available(available_ram, available_vram, unified);
+
+    // KV cache at 8192 context, F16 KV
+    let effective_ctx = meta
+        .as_ref()
+        .map(|m| effective_kv_context(m, 8192))
+        .unwrap_or(8192);
+    let kv_8k: u64 = meta
+        .as_ref()
+        .and_then(|m| kv_base_per_token(m))
+        .map(|base| (base * 2.0 * effective_ctx as f64) as u64)
+        .unwrap_or(0);
+
+    let quant_quality = quant_quality_score(&quantization);
+
+    log_info(
+        &app,
+        "hf_browser",
+        format!(
+            "local runability: path={} size={} quant={} RAM={} VRAM={}",
+            file_path, file_size, quantization, available_ram, available_vram
+        ),
+    );
+
+    let (score, fits_in_ram, fits_in_vram, memory_score, gpu_score, kv_score, gpu_mode) =
+        score_configuration(
+            file_size,
+            quant_quality,
+            kv_8k,
+            total_available,
+            available_vram,
+        );
+
+    Ok(LocalRunabilityResult {
+        score,
+        label: score_label(score),
+        fits_in_ram,
+        fits_in_vram,
+        memory_score,
+        gpu_score,
+        kv_score,
+        quant_score: (quant_quality.round() as u32).min(100),
+        gpu_mode: gpu_mode.to_string(),
+        available_ram,
+        available_vram,
+        model_size: file_size,
+        quantization,
+    })
 }
 
 #[tauri::command]

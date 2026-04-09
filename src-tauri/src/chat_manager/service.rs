@@ -191,8 +191,8 @@ pub fn require_api_key(
     credential: &ProviderCredential,
     log_scope: &str,
 ) -> Result<String, String> {
-    if credential.provider_id == "llamacpp" {
-        return Ok(String::new());
+    if credential.provider_id == "llamacpp" || credential.provider_id == "ollama" {
+        return Ok(credential.api_key.clone().unwrap_or_default());
     }
     // Prefer inline api_key on the credential
     if let Some(ref key) = credential.api_key {
@@ -215,7 +215,7 @@ pub fn require_api_key(
     ))
 }
 
-fn insert_openrouter_usage_metadata(
+pub fn insert_extended_usage_metadata(
     metadata: &mut std::collections::HashMap<String, String>,
     usage: &UsageSummary,
 ) {
@@ -243,6 +243,84 @@ fn insert_openrouter_usage_metadata(
             web_search_requests.to_string(),
         );
     }
+    if let Some(api_cost) = usage.api_cost {
+        metadata.insert("api_cost".to_string(), api_cost.to_string());
+    }
+    if let Some(cached_prompt_tokens) = usage.cached_prompt_tokens {
+        metadata.insert(
+            "cached_prompt_tokens".to_string(),
+            cached_prompt_tokens.to_string(),
+        );
+    }
+    if let Some(cache_write_tokens) = usage.cache_write_tokens {
+        metadata.insert(
+            "cache_write_tokens".to_string(),
+            cache_write_tokens.to_string(),
+        );
+    }
+    if let Some(web_search_requests) = usage.web_search_requests {
+        metadata.insert(
+            "web_search_requests".to_string(),
+            web_search_requests.to_string(),
+        );
+    }
+}
+
+fn insert_cost_breakdown_metadata(
+    metadata: &mut std::collections::HashMap<String, String>,
+    cost: &crate::models::RequestCost,
+) {
+    metadata.insert(
+        "cost_regular_prompt_tokens".to_string(),
+        cost.regular_prompt_tokens.to_string(),
+    );
+    metadata.insert(
+        "cost_cached_prompt_tokens".to_string(),
+        cost.cached_prompt_tokens.to_string(),
+    );
+    metadata.insert(
+        "cost_cache_write_tokens".to_string(),
+        cost.cache_write_tokens.to_string(),
+    );
+    metadata.insert(
+        "cost_reasoning_tokens".to_string(),
+        cost.reasoning_tokens.to_string(),
+    );
+    metadata.insert(
+        "cost_web_search_requests".to_string(),
+        cost.web_search_requests.to_string(),
+    );
+    metadata.insert(
+        "cost_prompt_base".to_string(),
+        cost.prompt_base_cost.to_string(),
+    );
+    metadata.insert(
+        "cost_cache_read".to_string(),
+        cost.cache_read_cost.to_string(),
+    );
+    metadata.insert(
+        "cost_cache_write".to_string(),
+        cost.cache_write_cost.to_string(),
+    );
+    metadata.insert(
+        "cost_completion_base".to_string(),
+        cost.completion_base_cost.to_string(),
+    );
+    metadata.insert(
+        "cost_reasoning".to_string(),
+        cost.reasoning_cost.to_string(),
+    );
+    metadata.insert("cost_request".to_string(), cost.request_cost.to_string());
+    metadata.insert(
+        "cost_web_search".to_string(),
+        cost.web_search_cost.to_string(),
+    );
+    if let Some(authoritative_total_cost) = cost.authoritative_total_cost {
+        metadata.insert(
+            "cost_authoritative_total".to_string(),
+            authoritative_total_cost.to_string(),
+        );
+    }
 }
 
 pub async fn apply_openrouter_cost_to_usage(
@@ -253,7 +331,7 @@ pub async fn apply_openrouter_cost_to_usage(
     api_key: &str,
     log_scope: &str,
 ) {
-    insert_openrouter_usage_metadata(&mut request_usage.metadata, usage_info);
+    insert_extended_usage_metadata(&mut request_usage.metadata, usage_info);
 
     let provider_pricings =
         match fetch_openrouter_provider_pricings(app.clone(), api_key, model_name).await {
@@ -368,10 +446,15 @@ pub async fn apply_openrouter_cost_to_usage(
     };
 
     if let Some(cost) = calculate_openrouter_request_cost(&cost_input, &pricing) {
+        insert_cost_breakdown_metadata(&mut request_usage.metadata, &cost);
         request_usage.cost = Some(cost.clone());
         request_usage.prompt_tokens = Some(prompt_tokens);
         request_usage.completion_tokens = Some(completion_tokens);
         request_usage.total_tokens = Some(prompt_tokens + completion_tokens);
+        request_usage.cached_prompt_tokens = usage_info.cached_prompt_tokens;
+        request_usage.cache_write_tokens = usage_info.cache_write_tokens;
+        request_usage.web_search_requests = usage_info.web_search_requests;
+        request_usage.api_cost = authoritative_total_cost.or(usage_info.api_cost);
 
         if let Some(authoritative_total_cost) = authoritative_total_cost {
             request_usage.metadata.insert(
@@ -431,10 +514,14 @@ pub async fn record_usage_if_available(
         prompt_tokens: usage_info.prompt_tokens,
         completion_tokens: usage_info.completion_tokens,
         total_tokens: usage_info.total_tokens,
+        cached_prompt_tokens: usage_info.cached_prompt_tokens,
+        cache_write_tokens: usage_info.cache_write_tokens,
         memory_tokens: None,
         summary_tokens: None,
         reasoning_tokens: usage_info.reasoning_tokens,
         image_tokens: usage_info.image_tokens,
+        web_search_requests: usage_info.web_search_requests,
+        api_cost: usage_info.api_cost,
         cost: None,
         success: true,
         error_message: None,
@@ -478,6 +565,12 @@ pub async fn record_usage_if_available(
             log_scope,
         )
         .await;
+    } else if usage_info.cached_prompt_tokens.is_some()
+        || usage_info.cache_write_tokens.is_some()
+        || usage_info.web_search_requests.is_some()
+        || usage_info.api_cost.is_some()
+    {
+        insert_extended_usage_metadata(&mut request_usage.metadata, usage_info);
     }
 
     if let Err(err) = add_usage_record(context.app(), request_usage) {
@@ -522,15 +615,47 @@ pub fn record_failed_usage(
         prompt_tokens: usage_info.prompt_tokens,
         completion_tokens: usage_info.completion_tokens,
         total_tokens: usage_info.total_tokens,
+        cached_prompt_tokens: usage_info.cached_prompt_tokens,
+        cache_write_tokens: usage_info.cache_write_tokens,
         memory_tokens: None,
         summary_tokens: None,
         reasoning_tokens: usage_info.reasoning_tokens,
         image_tokens: usage_info.image_tokens,
+        web_search_requests: usage_info.web_search_requests,
+        api_cost: usage_info.api_cost,
         cost: None,
         success: false,
         error_message: Some(error_message.to_string()),
         metadata: Default::default(),
     };
+
+    if credential.provider_id.eq_ignore_ascii_case("openrouter")
+        || usage_info.cached_prompt_tokens.is_some()
+        || usage_info.cache_write_tokens.is_some()
+        || usage_info.web_search_requests.is_some()
+        || usage_info.api_cost.is_some()
+    {
+        let mut request_usage = request_usage;
+        insert_extended_usage_metadata(&mut request_usage.metadata, usage_info);
+
+        log_info(
+            app,
+            log_scope,
+            format!(
+                "recording failed usage: tokens={:?} error={}",
+                usage_info.total_tokens, error_message
+            ),
+        );
+
+        if let Err(err) = add_usage_record(app, request_usage) {
+            log_error(
+                app,
+                log_scope,
+                format!("failed to save failed usage record: {}", err),
+            );
+        }
+        return;
+    }
 
     log_info(
         app,

@@ -22,6 +22,7 @@ export const plMessages: DeepPartialMessageTree<LocaleMessages> = {
       convertFiles: "Konwertuj pliki",
       usageAnalytics: "Analityka użycia",
       changelog: "Lista zmian",
+      about: "Informacje",
       createSystemPrompt: "Utwórz prompt systemowy",
       editSystemPrompt: "Edytuj prompt systemowy",
       systemPrompts: "Prompty systemowe",
@@ -58,6 +59,7 @@ export const plMessages: DeepPartialMessageTree<LocaleMessages> = {
       embeddingDownload: "Pobieranie embeddingu",
       embeddingTest: "Test embeddingu",
       editModel: "Edytuj model",
+      messageDebug: "Debugowanie wiadomości",
     },
     bottomNav: {
       chats: "Czaty",
@@ -145,6 +147,7 @@ export const plMessages: DeepPartialMessageTree<LocaleMessages> = {
     items: {
       providers: { title: "Dostawcy", subtitle: "Połącz z usługami AI" },
       models: { title: "Modele", subtitle: "Konfiguruj modele AI" },
+      imageGeneration: { title: "Generowanie obrazu", subtitle: "Generuj i testuj obrazy" },
       voices: { title: "Głosy", subtitle: "Głosy tekst-na-mowę" },
       accessibility: { title: "Dostępność", subtitle: "Dźwięki i haptyka" },
       prompts: { title: "Prompty systemowe", subtitle: "Kształtuj osobowość AI" },
@@ -159,6 +162,7 @@ export const plMessages: DeepPartialMessageTree<LocaleMessages> = {
       docs: { title: "Dokumentacja", subtitle: "Poradniki i referencje" },
       github: { title: "Zgłoś problemy", subtitle: "Błędy i opinie • v{{version}}" },
       discord: { title: "Dołącz do Discord", subtitle: "Społeczność i pomoc" },
+      about: { title: "Informacje", subtitle: "Wersja, aktualizacje i linki" },
       changelog: { title: "Lista zmian", subtitle: "Co nowego" },
       reset: { title: "Resetuj", subtitle: "Wymaż wszystko" },
       developer: { title: "Narzędzia deweloperskie", subtitle: "Debugowanie i testowanie" },
@@ -219,6 +223,63 @@ export const plMessages: DeepPartialMessageTree<LocaleMessages> = {
     save: "Zapisz",
   },
 
+  updates: {
+    available: {
+      title: "Nowa wersja jest dostępna",
+      description: "Dostępna jest wersja v{{latestVersion}}. Używasz v{{currentVersion}}.",
+      actions: {
+        view: "Zobacz wydanie",
+      },
+    },
+  },
+
+  about: {
+    kicker: "Informacje o aplikacji",
+    appName: "LettuceAI",
+    description: "Szczegóły wersji, sprawdzanie aktualizacji i przydatne linki.",
+    info: {
+      version: "Wersja",
+      channel: "Kanał",
+      platform: "Platforma",
+    },
+    buildChannel: {
+      dev: "Wersja deweloperska",
+      release: "Wersja stabilna",
+    },
+    update: {
+      sectionTitle: "Aktualizacje",
+      title: "Aktualizacje aplikacji",
+      description: "Sprawdź ręcznie nowe wydania lub wyłącz automatyczne sprawdzanie przy starcie.",
+      autoChecks: "Automatyczne sprawdzanie aktualizacji",
+      autoChecksDescription:
+        "Po włączeniu LettuceAI sprawdza nowe wersje przy uruchomieniu aplikacji.",
+      checkNow: "Sprawdź aktualizacje",
+      checking: "Sprawdzanie aktualizacji...",
+      upToDateTitle: "Masz najnowszą wersję",
+      upToDateDescription: "Obecnie nie ma nowszego wydania dla tego urządzenia.",
+      failedTitle: "Nie udało się sprawdzić aktualizacji",
+      failedDescription: "Nie udało się teraz sprawdzić aktualizacji. Spróbuj ponownie za chwilę.",
+    },
+    links: {
+      sectionTitle: "Linki",
+      website: "Strona internetowa",
+      websiteDescription: "Strona pobierania i informacje o wydaniach",
+      github: "GitHub",
+      githubDescription: "Kod źródłowy, zgłoszenia i rozwój",
+      discord: "Discord",
+      discordDescription: "Serwer społeczności i pomoc",
+      reddit: "Reddit",
+      redditDescription: "Dyskusje społeczności, opinie i aktualizacje",
+    },
+    developerMode: {
+      enable: "Włącz tryb deweloperski",
+      enabled: "Tryb deweloperski włączony",
+    },
+    errors: {
+      saveTitle: "Nie udało się zapisać preferencji",
+      saveDescription: "Preferencja sprawdzania aktualizacji nie została zmieniona.",
+    },
+  },
   components: {
     tooltip: {
       dismissHint: "Stuknij gdziekolwiek, aby zamknąć",
@@ -236,6 +297,14 @@ export const plMessages: DeepPartialMessageTree<LocaleMessages> = {
       chooseImage: "Wybierz obraz",
       chooseImageDesc: "Wybierz z urządzenia",
     },
+    avatarCurrentEdit: {
+      title: "Edytuj bieżący",
+      reposition: "Zmień położenie",
+      repositionDesc: "Przenieś lub przytnij bieżący awatar",
+      editWithAI: "Edytuj za pomocą sztucznej inteligencji",
+      editWithAIDesc: "Otwórz edycję AI dla bieżącego awatara",
+      noImageModels: "Brak dostępnych modeli obrazów",
+    },
     avatarGeneration: {
       modelsLoadError: "Nie udało się załadować modeli generowania obrazów",
       title: "Generuj awatar",
@@ -246,6 +315,19 @@ export const plMessages: DeepPartialMessageTree<LocaleMessages> = {
       describePlaceholder:
         "Przyjazna dziewczyna w stylu anime z kolorowymi włosami, ciepło się uśmiechająca...",
       inProgress: "Generowanie awatara...",
+      editingInProgress: "Stosowanie edycji awatara...",
+      previousVariant: "Poprzedni wariant",
+      nextVariant: "Następny wariant",
+      variantCounter: "{{current}} / {{total}}",
+      editRequest: "Edytuj żądanie",
+      editRequestPlaceholder: "Przyciemnij włosy, dodaj okulary, zachowaj twarz taką samą...",
+      applyEdit: "Zastosuj Edytuj",
+      editImageLoadError: "Nie udało się przygotować wygenerowanego awatara do edycji",
+      aiAssistant: "Asystent AI",
+      backToResults: "Powrót do monitu",
+      magicInTheWorks: "Magia w działaniu...",
+      refine: "Oczyścić",
+      apply: "Stosować",
       alt: "Wygenerowany awatar",
       regenerate: "Regeneruj",
       useThis: "Użyj tego",
@@ -275,6 +357,9 @@ export const plMessages: DeepPartialMessageTree<LocaleMessages> = {
       searchPlaceholder: "Szukaj modeli...",
       noResults: "Nie znaleziono modeli",
       noResultsHint: "Spróbuj innego wyszukiwania",
+    },
+    localeSelector: {
+      title: "Wybierz Język",
     },
     promptTemplate: {
       nameContentRequired: "Nazwa i treść są wymagane",
@@ -504,6 +589,30 @@ export const plMessages: DeepPartialMessageTree<LocaleMessages> = {
     swapPlacesOn: "Zamień miejsca (wł.)",
     uploadImage: "Prześlij obraz",
     helpMeReply: "Pomóż mi odpowiedzieć",
+    sceneImage: {
+      modeTitle: "Obraz sceny",
+      modeDescription:
+        "Zdecyduj, czy sam napiszesz podpowiedź dotyczącą sceny, czy też pozwól, aby sztuczna inteligencja przygotowała ją jako pierwsza.",
+      writePrompt: "Napisz monit",
+      writePromptDesc: "Wpisz dokładny monit dotyczący obrazu sceny, którego chcesz użyć.",
+      askAi: "Zapytaj AI",
+      askAiDesc:
+        "Pozwól, aby bieżący model czatu przygotował podpowiedź dotyczącą sceny od wybranego momentu.",
+      generateTitle: "Wygeneruj obraz sceny",
+      regenerateTitle: "Regeneruj obraz sceny",
+      aiTitle: "Monit dotyczący sceny AI",
+      promptLabel: "PODSUMOWANIE SCENY",
+      promptPlaceholder:
+        "Opisz scenę, postacie, nastrój, oświetlenie, kadrowanie kamery i ważne szczegóły...",
+      suggestedPrompt: "Sugerowany monit",
+      regeneratePrompt: "Zregenerować",
+      editPrompt: "Edytuj monit",
+      reviewTitle: "Sprawdź prompt sceny",
+      denyPrompt: "Odrzuć",
+      acceptPrompt: "Akceptuj",
+      generateImage: "Wygeneruj obraz",
+      updateImage: "Aktualizuj obraz",
+    },
     useMyTextAsBase: "Użyj mojego tekstu jako bazy",
     writeNewReply: "Napisz coś nowego",
     suggestedReply: "Sugerowana odpowiedź",
@@ -638,8 +747,11 @@ export const plMessages: DeepPartialMessageTree<LocaleMessages> = {
       branchFromHere: "Rozgałęź stąd",
       branchToGroupChat: "Rozgałęź do czatu grupowego",
       branchToCharacter: "Rozgałęź do postaci",
+      generateSceneImage: "Wygeneruj obraz sceny",
+      regenerateSceneImage: "Regeneruj obraz sceny",
       chatAppearance: "Wygląd czatu",
       delete: "Usuń",
+      debug: "Debug",
       unpinToDelete: "Odepnij, aby usunąć",
       editPlaceholder: "Edytuj swoją wiadomość...",
       memoriesUsed: "{{count}} wspomnień użyto",
@@ -929,7 +1041,8 @@ export const plMessages: DeepPartialMessageTree<LocaleMessages> = {
       minTwoRequired: "Wymagane minimum 2 postacie",
       removeCharacter: "Usuń postać",
       groupMinCharacters: "Grupa wymaga co najmniej 2 postaci",
-      mutedCharactersNote: "Wyciszone postacie są pomijane przez automatyczny wybór mówcy, ale mogą odpowiadać przez jawną `@wzmiankę`.",
+      mutedCharactersNote:
+        "Wyciszone postacie są pomijane przez automatyczny wybór mówcy, ale mogą odpowiadać przez jawną `@wzmiankę`.",
       addCharacterTitle: "Dodaj postać",
       allCharactersInGroup: "Wszystkie postacie są już w tej grupie.",
       removeCharacterTitle: "Usunąć postać?",
@@ -972,7 +1085,8 @@ export const plMessages: DeepPartialMessageTree<LocaleMessages> = {
       minTwoRequired: "Wymagane minimum 2 postacie",
       removeCharacter: "Usuń postać",
       groupMinCharacters: "Czat grupowy wymaga co najmniej 2 postaci",
-      mutedCharactersNote: "Wyciszone postacie są pomijane przez automatyczny wybór mówcy, ale mogą odpowiadać przez jawną `@wzmiankę`.",
+      mutedCharactersNote:
+        "Wyciszone postacie są pomijane przez automatyczny wybór mówcy, ale mogą odpowiadać przez jawną `@wzmiankę`.",
       data: "Dane",
       dataSubtitle: "Eksportuj lub importuj rozmowy",
       export: "Eksportuj",
@@ -1000,7 +1114,8 @@ export const plMessages: DeepPartialMessageTree<LocaleMessages> = {
       withoutMessages: "Bez wiadomości",
       withoutMessagesDesc: "Klonuj tylko ustawienia (postacie, scena początkowa)",
       branchWithCharacterTitle: "Rozgałęź z postacią",
-      branchWithCharacterDesc: "Wybierz postać, aby kontynuować jako rozmowa 1-na-1. Wszystkie wiadomości z tej grupy zostaną przekonwertowane.",
+      branchWithCharacterDesc:
+        "Wybierz postać, aby kontynuować jako rozmowa 1-na-1. Wszystkie wiadomości z tej grupy zostaną przekonwertowane.",
       continueWith: "Kontynuuj rozmowę z {{name}}",
       exportChatPackageTitle: "Eksportuj pakiet czatu",
       includeCharacterSnapshots: "Dołącz migawki postaci",
@@ -1400,7 +1515,8 @@ export const plMessages: DeepPartialMessageTree<LocaleMessages> = {
       nameHint: "Nadaj swojej personie opisową nazwę",
       nicknameLabel: "PSEUDONIM (OPCJONALNIE)",
       nicknamePlaceholder: "np. Wariant roboczy, Tryb RPG...",
-      nicknameHint: "Prywatny pseudonim pozwalający odróżnić warianty tej persony w twojej bibliotece",
+      nicknameHint:
+        "Prywatny pseudonim pozwalający odróżnić warianty tej persony w twojej bibliotece",
       descriptionLabel: "OPIS",
       descriptionPlaceholder:
         "Opisz, jak AI powinno się do ciebie zwracać, twoje preferencje, tło lub styl komunikacji...",
@@ -1574,6 +1690,7 @@ export const plMessages: DeepPartialMessageTree<LocaleMessages> = {
       plainTextHex: "Plain Text Color",
       italicTextHex: "Italic Text Color",
       quotedTextHex: "Kolor cytatu blokowego",
+      inlineCodeTextHex: "Kolor kodu inline",
     },
     backgroundTransparency: {
       label: "Tło i przezroczystość",
@@ -1631,8 +1748,7 @@ export const plMessages: DeepPartialMessageTree<LocaleMessages> = {
     previewLabel: "Podgląd",
     settingsCardsLabel: "Karty ustawień",
     settingsCardsOpacity: "Nieprzezroczystość kart",
-    settingsCardsOpacityDesc:
-      "Określa, jak przezroczyste wyglądają karty ustawień i wiersze list.",
+    settingsCardsOpacityDesc: "Określa, jak przezroczyste wyglądają karty ustawień i wiersze list.",
     importButton: "Importuj",
     exportButton: "Eksportuj",
     resetAllButton: "Resetuj wszystko",
@@ -1792,11 +1908,46 @@ export const plMessages: DeepPartialMessageTree<LocaleMessages> = {
       size: "ROZMIAR",
       quality: "JAKOŚĆ",
       style: "STYL",
+      searchModels: "Wyszukaj modele...",
+      selectAvatarModel: "Wybierz Model awatara",
+      selectSceneModel: "Wybierz Model sceny",
+      selectWriterModel: "Wybierz model autora scen",
+      useFirstAvailable: "Użyj pierwszego dostępnego modelu",
+      useFirstCompatible: "Użyj pierwszego zgodnego modelu autora",
+    },
+    mode: {
+      title: "Tryb działania",
+      description: "Wybierz, jak obsługiwać prompty scen wykryte w odpowiedzi modelu.",
+      auto: "Automatyczny",
+      autoDescription: "Generuj obraz sceny od razu, gdy model poda prompt sceny.",
+      askFirst: "Pytaj najpierw",
+      askFirstDescription:
+        "Pokaż wykryty prompt sceny i poczekaj na akceptację przed wygenerowaniem obrazu.",
+      manual: "Ręczny",
+      manualDescription:
+        "Ignoruj prompty scen z odpowiedzi modelu. Używaj tylko działań uruchomionych ręcznie przez użytkownika.",
     },
     empty: {
       title: "Brak modeli obrazów",
       description:
         "Dodaj model generowania obrazów na stronie Modele, aby zacząć generować obrazy.",
+    },
+    sections: {
+      avatar: {
+        title: "Generacja awatarów",
+        description:
+          "Domyślny model używany podczas generowania awatarów na podstawie selektora awatarów lub powiązanych przepływów obrazów profilowych.",
+      },
+      scene: {
+        title: "Generowanie scen",
+        description:
+          "Zarezerwowany model dla obrazów scen generowanych na podstawie kontekstu konwersacji lub podpowiedzi scen.",
+      },
+      writer: {
+        title: "Autor scen",
+        description:
+          "Zarezerwowany multimodalny model tekstowy do tworzenia promptów scen i opisów referencji projektowych na podstawie kontekstu czatu, awatarów i obrazów referencyjnych.",
+      },
     },
   },
 
@@ -1813,6 +1964,7 @@ export const plMessages: DeepPartialMessageTree<LocaleMessages> = {
       testDataGenerators: "Generatory danych testowych",
       storageMaintenance: "Konserwacja pamięci",
       usageTracking: "Śledzenie użycia",
+      crashTesting: "Testy zderzeniowe",
       environmentInfo: "Informacje o środowisku",
     },
     testData: {
@@ -1835,6 +1987,13 @@ export const plMessages: DeepPartialMessageTree<LocaleMessages> = {
       recalculateAll: "Przelicz wszystkie koszty użycia",
       recalculateAllDesc:
         "Ponownie pobiera ceny i przelicza koszty dla wszystkich rekordów użycia OpenRouter",
+    },
+    crashTesting: {
+      forceCrash: "Awaria aplikacji teraz",
+      forceCrashDesc:
+        "Natychmiast kończy proces aplikacji natywnej w celu przetestowania wykrywania awarii",
+      forceCrashConfirm:
+        "Spowoduje to natychmiastową awarię aplikacji w celu przetestowania detektora awarii. Kontynuować?",
     },
     environmentInfo: {
       mode: "Tryb",
@@ -2328,6 +2487,45 @@ export const plMessages: DeepPartialMessageTree<LocaleMessages> = {
       deleteLorebook: "Usuń lorebook",
       importLorebook: "Importuj lorebook",
     },
+    imageLibrary: {
+      filters: {
+        all: "Wszystko",
+        backgrounds: "Tła",
+        avatars: "Awatary",
+        attachments: "Załączniki",
+        other: "Inne",
+      },
+      searchPlaceholder: "Szukaj po nazwie pliku, ścieżce, identyfikatorze sesji lub encji",
+      empty: {
+        title: "Brak obrazów dla tego widoku",
+        description:
+          "Spróbuj innego filtra lub hasła wyszukiwania. Biblioteka pokazuje tylko obrazy zapisane już w lokalnej pamięci aplikacji.",
+      },
+      actions: {
+        sort: "Sortuj",
+        useThis: "Użyj tego",
+        using: "Używanie...",
+        copyPath: "Kopiuj ścieżkę",
+        saving: "Zapisywanie...",
+        download: "Pobierz",
+        delete: "Usuń obraz",
+        deleting: "Usuwanie...",
+      },
+      active: "Aktywne",
+      messages: {
+        loadFailed: "Nie udało się załadować biblioteki obrazów",
+        saved: "Obraz zapisany",
+        downloadFailed: "Pobieranie nie powiodło się",
+        useFailed: "Nie udało się użyć tego obrazu",
+        deleted: "Obraz usunięty",
+        deleteFailed: "Nie udało się usunąć obrazu",
+      },
+      deleteConfirm: {
+        title: "Usunąć obraz?",
+        message:
+          'Na pewno usunąć "{{filename}}"? Może to zepsuć awatary, tła czatu lub załączniki wiadomości, które nadal go używają.',
+      },
+    },
     deleteConfirm: {
       title: "Usunąć {{itemType}}?",
       message: "Czy na pewno chcesz usunąć",
@@ -2479,6 +2677,8 @@ export const plMessages: DeepPartialMessageTree<LocaleMessages> = {
     status: {
       connecting: "Łączenie...",
       connected: "Połączono",
+      waitingConfirmation: "Czekam na potwierdzenie",
+      waitingConfirmationDesc: "Aby kontynuować, zatwierdź połączenie na urządzeniu hosta.",
       syncing: "Synchronizowanie...",
       transferringData: "Przesyłanie danych",
       syncInProgress: "Synchronizacja w toku",

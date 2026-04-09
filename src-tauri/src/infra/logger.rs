@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File, OpenOptions};
-use std::io::Write;
+use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 use tauri::{AppHandle, Manager};
@@ -20,6 +20,18 @@ pub struct LogEntry {
     pub component: String,
     pub function: Option<String>,
     pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct LogPage {
+    pub total: usize,
+    pub lines: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct LogSearchResult {
+    pub matches: Vec<usize>,
+    pub total: usize,
 }
 
 pub struct LogManager {
@@ -175,6 +187,210 @@ impl LogManager {
                 format!("Failed to read log file: {}", e),
             )
         })
+    }
+
+    /// Read a log file returning total line count and a specific page of lines.
+    /// `offset` is the starting line (0-based), `limit` is the max lines to return.
+    pub fn read_log_file_page(
+        &self,
+        filename: &str,
+        offset: usize,
+        limit: usize,
+    ) -> Result<LogPage, String> {
+        let path = self.log_dir.join(filename);
+
+        if !path.exists() || !path.is_file() {
+            return Err(crate::utils::err_msg(
+                module_path!(),
+                line!(),
+                "Log file not found",
+            ));
+        }
+
+        let file = File::open(&path).map_err(|e| {
+            crate::utils::err_msg(
+                module_path!(),
+                line!(),
+                format!("Failed to open log file: {}", e),
+            )
+        })?;
+        let reader = BufReader::new(file);
+        let mut total: usize = 0;
+        let mut lines: Vec<String> = Vec::with_capacity(limit.min(2000));
+
+        for line_result in reader.lines() {
+            let line = line_result.map_err(|e| {
+                crate::utils::err_msg(
+                    module_path!(),
+                    line!(),
+                    format!("Failed to read line: {}", e),
+                )
+            })?;
+            if total >= offset && lines.len() < limit {
+                lines.push(line);
+            }
+            total += 1;
+        }
+
+        Ok(LogPage { total, lines })
+    }
+
+    /// Search a log file for lines containing the query (case-insensitive).
+    /// Returns the 0-based line indices of all matching lines.
+    pub fn search_log_file(
+        &self,
+        filename: &str,
+        query: &str,
+    ) -> Result<LogSearchResult, String> {
+        let path = self.log_dir.join(filename);
+
+        if !path.exists() || !path.is_file() {
+            return Err(crate::utils::err_msg(
+                module_path!(),
+                line!(),
+                "Log file not found",
+            ));
+        }
+
+        let file = File::open(&path).map_err(|e| {
+            crate::utils::err_msg(
+                module_path!(),
+                line!(),
+                format!("Failed to open log file: {}", e),
+            )
+        })?;
+        let reader = BufReader::new(file);
+        let query_lower = query.to_lowercase();
+        let mut matches = Vec::new();
+        let mut total: usize = 0;
+
+        for line_result in reader.lines() {
+            let line = line_result.map_err(|e| {
+                crate::utils::err_msg(
+                    module_path!(),
+                    line!(),
+                    format!("Failed to read line: {}", e),
+                )
+            })?;
+            if line.to_lowercase().contains(&query_lower) {
+                matches.push(total);
+            }
+            total += 1;
+        }
+
+        Ok(LogSearchResult { matches, total })
+    }
+
+    /// Find log lines relevant to a given reference line.
+    pub fn find_relevant_lines(
+        &self,
+        filename: &str,
+        reference_line: &str,
+    ) -> Result<LogSearchResult, String> {
+        let path = self.log_dir.join(filename);
+        if !path.exists() || !path.is_file() {
+            return Err(crate::utils::err_msg(
+                module_path!(),
+                line!(),
+                "Log file not found",
+            ));
+        }
+
+        let ref_component = reference_line
+            .split_whitespace()
+            .nth(2)
+            .unwrap_or("")
+            .to_string();
+
+        let uuid_re = regex::Regex::new(
+            r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+        )
+        .unwrap();
+        let ref_uuids: Vec<String> = uuid_re
+            .find_iter(reference_line)
+            .map(|m| m.as_str().to_lowercase())
+            .collect();
+
+        let ref_message_keywords: Vec<String> = reference_line
+            .split('|')
+            .nth(1)
+            .unwrap_or("")
+            .split_whitespace()
+            .filter(|w| w.len() >= 5) // only significant words
+            .map(|w| w.to_lowercase())
+            .collect();
+
+        let parse_epoch = |line: &str| -> Option<i64> {
+            let ts = line.get(1..20)?;
+            chrono::NaiveDateTime::parse_from_str(ts, "%Y-%m-%dT%H:%M:%S")
+                .ok()
+                .map(|dt| dt.and_utc().timestamp())
+        };
+        let ref_epoch = parse_epoch(reference_line);
+
+        let file = File::open(&path).map_err(|e| {
+            crate::utils::err_msg(
+                module_path!(),
+                line!(),
+                format!("Failed to open log file: {}", e),
+            )
+        })?;
+        let reader = BufReader::new(file);
+        let mut matches = Vec::new();
+        let mut total: usize = 0;
+
+        for line_result in reader.lines() {
+            let line = line_result.map_err(|e| {
+                crate::utils::err_msg(
+                    module_path!(),
+                    line!(),
+                    format!("Failed to read line: {}", e),
+                )
+            })?;
+
+            let mut matched = false;
+
+            if !ref_uuids.is_empty() {
+                let line_lower = line.to_lowercase();
+                if ref_uuids.iter().any(|uuid| line_lower.contains(uuid)) {
+                    matched = true;
+                }
+            }
+
+            if !matched && !ref_component.is_empty() {
+                let line_component = line.split_whitespace().nth(2).unwrap_or("");
+                if line_component == ref_component {
+                    if let (Some(ref_ts), Some(line_ts)) = (ref_epoch, parse_epoch(&line)) {
+                        if (line_ts - ref_ts).abs() <= 30 {
+                            matched = true;
+                        }
+                    }
+
+                    if !matched && !ref_message_keywords.is_empty() {
+                        if let Some(line_msg) = line.split('|').nth(1) {
+                            let line_msg_lower = line_msg.to_lowercase();
+                            let shared = ref_message_keywords
+                                .iter()
+                                .filter(|kw| line_msg_lower.contains(kw.as_str()))
+                                .count();
+                            if shared >= 2
+                                || (ref_message_keywords.len() > 0
+                                    && shared * 100 / ref_message_keywords.len() > 40)
+                            {
+                                matched = true;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if matched {
+                matches.push(total);
+            }
+            total += 1;
+        }
+
+        Ok(LogSearchResult { matches, total })
     }
 
     pub fn delete_log_file(&self, filename: &str) -> Result<(), String> {
@@ -333,6 +549,37 @@ pub async fn list_log_files(app_handle: AppHandle) -> Result<Vec<String>, String
 pub async fn read_log_file(app_handle: AppHandle, filename: String) -> Result<String, String> {
     let logger = app_handle.state::<LogManager>();
     logger.read_log_file(&filename)
+}
+
+#[tauri::command]
+pub async fn read_log_file_page(
+    app_handle: AppHandle,
+    filename: String,
+    offset: usize,
+    limit: usize,
+) -> Result<LogPage, String> {
+    let logger = app_handle.state::<LogManager>();
+    logger.read_log_file_page(&filename, offset, limit)
+}
+
+#[tauri::command]
+pub async fn find_relevant_lines(
+    app_handle: AppHandle,
+    filename: String,
+    reference_line: String,
+) -> Result<LogSearchResult, String> {
+    let logger = app_handle.state::<LogManager>();
+    logger.find_relevant_lines(&filename, &reference_line)
+}
+
+#[tauri::command]
+pub async fn search_log_file(
+    app_handle: AppHandle,
+    filename: String,
+    query: String,
+) -> Result<LogSearchResult, String> {
+    let logger = app_handle.state::<LogManager>();
+    logger.search_log_file(&filename, &query)
 }
 
 #[tauri::command]

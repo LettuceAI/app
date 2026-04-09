@@ -62,6 +62,27 @@ export const storageBridge = {
     invoke("settings_set_advanced", {
       advancedJson: advanced == null ? "null" : JSON.stringify(advanced),
     }) as Promise<void>,
+  hostApiGetStatus: () =>
+    invoke<{
+      running: boolean;
+      bindAddress?: string | null;
+      port?: number | null;
+      baseUrl?: string | null;
+    }>("host_api_get_status"),
+  hostApiStart: () =>
+    invoke<{
+      running: boolean;
+      bindAddress?: string | null;
+      port?: number | null;
+      baseUrl?: string | null;
+    }>("host_api_start"),
+  hostApiStop: () =>
+    invoke<{
+      running: boolean;
+      bindAddress?: string | null;
+      port?: number | null;
+      baseUrl?: string | null;
+    }>("host_api_stop"),
   abortRequest: (requestId: string) => invoke("abort_request", { requestId }) as Promise<void>,
 
   // Embedding model download
@@ -183,6 +204,8 @@ export const storageBridge = {
       filePath,
       filename: filename ?? null,
     }),
+  imageLibraryDeleteItem: (storagePath: string) =>
+    invoke("storage_delete_image_library_item", { storagePath }) as Promise<void>,
 
   // Lorebook
   lorebooksList: () => invoke<string>("lorebooks_list").then((s) => JSON.parse(s) as any[]),
@@ -277,6 +300,8 @@ export const storageBridge = {
     invoke<number>("session_message_count", { sessionId }),
   sessionUpsert: (session: unknown) =>
     invoke("session_upsert", { sessionJson: JSON.stringify(session) }) as Promise<void>,
+  sessionUpsertMeta: (session: unknown) =>
+    invoke("session_upsert_meta", { sessionJson: JSON.stringify(session) }) as Promise<void>,
   sessionDelete: (id: string) => invoke("session_delete", { id }) as Promise<void>,
   sessionArchive: (id: string, archived: boolean) =>
     invoke("session_archive", { id, archived }) as Promise<void>,

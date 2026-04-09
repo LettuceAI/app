@@ -29,6 +29,11 @@ pub trait ProviderAdapter {
     fn supports_stream(&self) -> bool {
         true
     }
+    /// Whether this provider requires an API key, regardless of whether auth is sent via
+    /// headers, query params, or another transport.
+    fn requires_api_key(&self) -> bool {
+        !self.required_auth_headers().is_empty()
+    }
     /// The required auth header keys for this provider (case sensitive suggestions for UI).
     fn required_auth_headers(&self) -> &'static [&'static str];
     /// A template of default headers (values redacted) to show expected headers without secrets.
@@ -206,6 +211,7 @@ pub(crate) fn parse_data_url(data_url: &str) -> Option<(String, String)> {
 
 mod anannas;
 mod anthropic;
+mod automatic1111;
 mod chutes;
 mod deepseek;
 mod featherless;
@@ -221,6 +227,7 @@ mod nvidia;
 mod ollama;
 mod openai;
 mod qwen;
+mod stability;
 mod xai;
 mod zai;
 
@@ -236,6 +243,7 @@ pub fn adapter_for(credential: &ProviderCredential) -> Box<dyn ProviderAdapter +
         "intenserp" => Box::new(intenserp::IntenseRpAdapter),
         "llamacpp" => Box::new(llamacpp::LlamaCppAdapter),
         "lmstudio" => Box::new(lmstudio::LMStudioAdapter),
+        "automatic1111" => Box::new(automatic1111::Automatic1111Adapter),
         "chutes" | "chutes.ai" => Box::new(chutes::ChutesAdapter),
         "anthropic" => Box::new(anthropic::AnthropicAdapter),
         "mistral" => Box::new(mistral::MistralAdapter),
@@ -250,7 +258,9 @@ pub fn adapter_for(credential: &ProviderCredential) -> Box<dyn ProviderAdapter +
         "featherless" => Box::new(featherless::FeatherlessAdapter),
         "nvidia" | "nvidia-nim" => Box::new(nvidia::NvidiaAdapter),
         "qwen" => Box::new(qwen::QwenAdapter),
+        "stability" => Box::new(stability::StabilityAdapter),
         "openrouter" => Box::new(openai::OpenRouterAdapter),
+        "lettuce-host" => Box::new(openai::OpenAIAdapter),
         "lettuce-engine" => Box::new(lettuce_engine::LettuceEngineAdapter),
         _ => Box::new(openai::OpenAIAdapter),
     }

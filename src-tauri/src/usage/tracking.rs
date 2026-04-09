@@ -127,6 +127,10 @@ pub struct RequestUsage {
     pub prompt_tokens: Option<u64>,
     pub completion_tokens: Option<u64>,
     pub total_tokens: Option<u64>,
+    #[serde(default)]
+    pub cached_prompt_tokens: Option<u64>,
+    #[serde(default)]
+    pub cache_write_tokens: Option<u64>,
 
     // Token breakdown for prompt analysis
     pub memory_tokens: Option<u64>,  // Tokens from memory embeddings
@@ -136,6 +140,10 @@ pub struct RequestUsage {
     pub reasoning_tokens: Option<u64>, // Tokens used for reasoning/thinking
     #[serde(default)]
     pub image_tokens: Option<u64>, // Tokens used for image processing
+    #[serde(default)]
+    pub web_search_requests: Option<u64>,
+    #[serde(default)]
+    pub api_cost: Option<f64>,
 
     pub cost: Option<RequestCost>, // Calculated cost (only for OpenRouter for now)
 

@@ -11,6 +11,74 @@ const OptionalPositiveNumber = z.preprocess(
   z.number().nonnegative().optional(),
 );
 
+export const LLAMA_SAMPLER_PROFILE_VALUES = [
+  "balanced",
+  "creative",
+  "stable",
+  "reasoning",
+] as const;
+export const LLAMA_SAMPLER_ORDER_STAGE_VALUES = [
+  "penalties",
+  "grammar",
+  "top_k",
+  "top_p",
+  "min_p",
+  "typical",
+  "temp",
+] as const;
+
+export const LlamaSamplerProfileSchema = z.enum(LLAMA_SAMPLER_PROFILE_VALUES);
+export const LlamaSamplerOrderStageSchema = z.enum(LLAMA_SAMPLER_ORDER_STAGE_VALUES);
+
+export type LlamaSamplerProfile = z.infer<typeof LlamaSamplerProfileSchema>;
+export type LlamaSamplerOrderStage = z.infer<typeof LlamaSamplerOrderStageSchema>;
+
+export const DEFAULT_LLAMA_SAMPLER_ORDER: readonly LlamaSamplerOrderStage[] = [
+  "penalties",
+  "grammar",
+  "top_k",
+  "top_p",
+  "min_p",
+  "typical",
+  "temp",
+];
+
+export const LLAMA_SAMPLER_ORDER_PRESETS = {
+  default: DEFAULT_LLAMA_SAMPLER_ORDER,
+  unsloth: ["top_k", "top_p", "min_p", "temp", "typical", "penalties", "grammar"],
+  focused: ["penalties", "grammar", "min_p", "top_k", "top_p", "typical", "temp"],
+  creative: ["penalties", "grammar", "top_k", "typical", "top_p", "temp", "min_p"],
+} as const satisfies Record<string, readonly LlamaSamplerOrderStage[]>;
+
+export type LlamaSamplerOrderPreset = keyof typeof LLAMA_SAMPLER_ORDER_PRESETS;
+
+export function normalizeLlamaSamplerOrder(value: unknown): LlamaSamplerOrderStage[] | null {
+  if (!Array.isArray(value)) return null;
+
+  const known = new Set<string>(LLAMA_SAMPLER_ORDER_STAGE_VALUES);
+  const seen = new Set<string>();
+  const normalized: LlamaSamplerOrderStage[] = [];
+
+  for (const entry of value) {
+    if (typeof entry !== "string") continue;
+    const trimmed = entry.trim().toLowerCase();
+    if (!known.has(trimmed) || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    normalized.push(trimmed as LlamaSamplerOrderStage);
+  }
+
+  if (normalized.length === 0) {
+    return null;
+  }
+
+  for (const stage of DEFAULT_LLAMA_SAMPLER_ORDER) {
+    if (seen.has(stage)) continue;
+    normalized.push(stage);
+  }
+
+  return normalized;
+}
+
 export const PromptScopeSchema = z.enum(["appWide", "modelSpecific", "characterSpecific"]);
 export type PromptScope = z.infer<typeof PromptScopeSchema>;
 
@@ -19,6 +87,91 @@ export type PromptEntryRole = z.infer<typeof PromptEntryRoleSchema>;
 
 export const PromptEntryPositionSchema = z.enum(["relative", "inChat", "conditional", "interval"]);
 export type PromptEntryPosition = z.infer<typeof PromptEntryPositionSchema>;
+
+export const PromptEntryChatModeSchema = z.enum(["direct", "group"]);
+export type PromptEntryChatMode = z.infer<typeof PromptEntryChatModeSchema>;
+
+export type PromptEntryCondition =
+  | { type: "chatMode"; value: PromptEntryChatMode }
+  | { type: "sceneGenerationEnabled"; value: boolean }
+  | { type: "avatarGenerationEnabled"; value: boolean }
+  | { type: "hasScene"; value: boolean }
+  | { type: "hasSceneDirection"; value: boolean }
+  | { type: "hasPersona"; value: boolean }
+  | { type: "messageCountAtLeast"; value: number }
+  | { type: "participantCountAtLeast"; value: number }
+  | { type: "keywordAny"; values: string[] }
+  | { type: "keywordAll"; values: string[] }
+  | { type: "keywordNone"; values: string[] }
+  | { type: "dynamicMemoryEnabled"; value: boolean }
+  | { type: "hasMemorySummary"; value: boolean }
+  | { type: "hasKeyMemories"; value: boolean }
+  | { type: "hasLorebookContent"; value: boolean }
+  | { type: "hasSubjectDescription"; value: boolean }
+  | { type: "hasCurrentDescription"; value: boolean }
+  | { type: "hasCharacterReferenceImages"; value: boolean }
+  | { type: "hasChatBackground"; value: boolean }
+  | { type: "hasPersonaReferenceImages"; value: boolean }
+  | { type: "hasCharacterReferenceText"; value: boolean }
+  | { type: "hasPersonaReferenceText"; value: boolean }
+  | { type: "inputScopeAny"; values: string[] }
+  | { type: "outputScopeAny"; values: string[] }
+  | { type: "providerIdAny"; values: string[] }
+  | { type: "reasoningEnabled"; value: boolean }
+  | { type: "visionEnabled"; value: boolean }
+  | { type: "all"; conditions: PromptEntryCondition[] }
+  | { type: "any"; conditions: PromptEntryCondition[] }
+  | { type: "not"; condition: PromptEntryCondition };
+
+export const PromptEntryConditionSchema: z.ZodType<PromptEntryCondition> = z.lazy(() =>
+  z.discriminatedUnion("type", [
+    z.object({ type: z.literal("chatMode"), value: PromptEntryChatModeSchema }),
+    z.object({ type: z.literal("sceneGenerationEnabled"), value: z.boolean() }),
+    z.object({ type: z.literal("avatarGenerationEnabled"), value: z.boolean() }),
+    z.object({ type: z.literal("hasScene"), value: z.boolean() }),
+    z.object({ type: z.literal("hasSceneDirection"), value: z.boolean() }),
+    z.object({ type: z.literal("hasPersona"), value: z.boolean() }),
+    z.object({ type: z.literal("messageCountAtLeast"), value: z.number().int().min(0) }),
+    z.object({ type: z.literal("participantCountAtLeast"), value: z.number().int().min(1) }),
+    z.object({ type: z.literal("keywordAny"), values: z.array(z.string().trim().min(1)).min(1) }),
+    z.object({ type: z.literal("keywordAll"), values: z.array(z.string().trim().min(1)).min(1) }),
+    z.object({ type: z.literal("keywordNone"), values: z.array(z.string().trim().min(1)).min(1) }),
+    z.object({ type: z.literal("dynamicMemoryEnabled"), value: z.boolean() }),
+    z.object({ type: z.literal("hasMemorySummary"), value: z.boolean() }),
+    z.object({ type: z.literal("hasKeyMemories"), value: z.boolean() }),
+    z.object({ type: z.literal("hasLorebookContent"), value: z.boolean() }),
+    z.object({ type: z.literal("hasSubjectDescription"), value: z.boolean() }),
+    z.object({ type: z.literal("hasCurrentDescription"), value: z.boolean() }),
+    z.object({ type: z.literal("hasCharacterReferenceImages"), value: z.boolean() }),
+    z.object({ type: z.literal("hasChatBackground"), value: z.boolean() }),
+    z.object({ type: z.literal("hasPersonaReferenceImages"), value: z.boolean() }),
+    z.object({ type: z.literal("hasCharacterReferenceText"), value: z.boolean() }),
+    z.object({ type: z.literal("hasPersonaReferenceText"), value: z.boolean() }),
+    z.object({
+      type: z.literal("inputScopeAny"),
+      values: z.array(z.string().trim().min(1)).min(1),
+    }),
+    z.object({
+      type: z.literal("outputScopeAny"),
+      values: z.array(z.string().trim().min(1)).min(1),
+    }),
+    z.object({
+      type: z.literal("providerIdAny"),
+      values: z.array(z.string().trim().min(1)).min(1),
+    }),
+    z.object({ type: z.literal("reasoningEnabled"), value: z.boolean() }),
+    z.object({ type: z.literal("visionEnabled"), value: z.boolean() }),
+    z.object({
+      type: z.literal("all"),
+      conditions: z.array(PromptEntryConditionSchema).default([]),
+    }),
+    z.object({
+      type: z.literal("any"),
+      conditions: z.array(PromptEntryConditionSchema).default([]),
+    }),
+    z.object({ type: z.literal("not"), condition: PromptEntryConditionSchema }),
+  ]),
+);
 
 export const SystemPromptEntrySchema = z.object({
   id: z.string(),
@@ -31,6 +184,14 @@ export const SystemPromptEntrySchema = z.object({
   conditionalMinMessages: z.number().int().min(1).nullable().optional(),
   intervalTurns: z.number().int().min(1).nullable().optional(),
   systemPrompt: z.boolean().default(false),
+  conditions: PromptEntryConditionSchema.nullable().optional(),
+  promptEntryPayload: z
+    .object({
+      type: z.literal("imageSlot"),
+      slot: z.enum(["character", "persona", "chatBackground", "avatar", "references"]),
+    })
+    .nullable()
+    .optional(),
 });
 export type SystemPromptEntry = z.infer<typeof SystemPromptEntrySchema>;
 
@@ -58,6 +219,62 @@ export const UsageSummarySchema = z.object({
 });
 export type UsageSummary = z.infer<typeof UsageSummarySchema>;
 
+export const LlamaRuntimeSuggestedSettingsSchema = z.object({
+  contextLength: z.number().int().min(1).nullable().optional(),
+  llamaBatchSize: z.number().int().min(1).nullable().optional(),
+});
+export type LlamaRuntimeSuggestedSettings = z.infer<typeof LlamaRuntimeSuggestedSettingsSchema>;
+
+export const LlamaLastRuntimeReportSchema = z.object({
+  status: z.enum(["succeeded", "cpuFallbackSucceeded", "cpuFallbackFailed", "failed"]),
+  updatedAt: z.number().int().nullable().optional(),
+  modelPath: z.string().trim().min(1),
+  backendPathUsed: z.string().trim().min(1).nullable().optional(),
+  gpuLoadFallbackActivated: z.boolean().nullable().optional(),
+  gpuFallbackReason: z.string().trim().min(1).nullable().optional(),
+  failureStage: z.string().trim().min(1).nullable().optional(),
+  errorMessage: z.string().trim().min(1).nullable().optional(),
+  requestedContext: z.number().int().min(1).nullable().optional(),
+  recommendedContext: z.number().int().min(1).nullable().optional(),
+  initialContextCandidate: z.number().int().min(1).nullable().optional(),
+  actualContextUsed: z.number().int().min(1).nullable().optional(),
+  requestedGpuLayers: z.number().int().min(0).nullable().optional(),
+  actualGpuLayersUsed: z.number().int().min(0).nullable().optional(),
+  requestedBatchLimit: z.number().int().min(1).nullable().optional(),
+  initialBatchCandidate: z.number().int().min(1).nullable().optional(),
+  actualBatchUsed: z.number().int().min(1).nullable().optional(),
+  smartGpuLayerFallbackActivated: z.boolean().nullable().optional(),
+  kqvFallbackActivated: z.boolean().nullable().optional(),
+  smartOffloadPlannedContext: z.number().int().min(1).nullable().optional(),
+  smartOffloadRecommendedContext: z.number().int().min(1).nullable().optional(),
+  smartOffloadEstimatedGpuLayers: z.number().int().min(0).nullable().optional(),
+  smartOffloadCandidateLayers: z.array(z.number().int().min(0)).nullable().optional(),
+  smartOffloadKqvVramReserved: z.boolean().nullable().optional(),
+  smartOffloadPlanningKqvMode: z.boolean().nullable().optional(),
+  smartOffloadEstimatedKvBytes: z.number().int().nonnegative().nullable().optional(),
+  smartOffloadRuntimeReserveBytes: z.number().int().nonnegative().nullable().optional(),
+  smartOffloadEffectiveVramBudgetBytes: z.number().int().nonnegative().nullable().optional(),
+  actualKvTypeUsed: z.string().trim().min(1).nullable().optional(),
+  actualOffloadKqvMode: z.string().trim().min(1).nullable().optional(),
+  flashAttentionPolicy: z.string().trim().min(1).nullable().optional(),
+  supportsGpuOffload: z.boolean().nullable().optional(),
+  compiledGpuBackends: z.array(z.string().trim().min(1)).nullable().optional(),
+  contextFallbackActivated: z.boolean().nullable().optional(),
+  availableMemoryBytes: z.number().int().nonnegative().nullable().optional(),
+  availableVramBytes: z.number().int().nonnegative().nullable().optional(),
+  modelSizeBytes: z.number().int().nonnegative().nullable().optional(),
+  promptTokens: z.number().int().nonnegative().nullable().optional(),
+  promptPositions: z.number().int().nonnegative().nullable().optional(),
+  targetNewTokens: z.number().int().nonnegative().nullable().optional(),
+  completionTokens: z.number().int().nonnegative().nullable().optional(),
+  finishReason: z.string().trim().min(1).nullable().optional(),
+  firstTokenMs: z.number().int().nonnegative().nullable().optional(),
+  tokensPerSecond: z.number().nonnegative().nullable().optional(),
+  promptTemplateSource: z.string().trim().min(1).nullable().optional(),
+  suggestedSettings: LlamaRuntimeSuggestedSettingsSchema.nullish().optional(),
+});
+export type LlamaLastRuntimeReport = z.infer<typeof LlamaLastRuntimeReportSchema>;
+
 export const AdvancedModelSettingsSchema = z.object({
   temperature: z.number().min(0).max(2).nullable().optional(),
   topP: z.number().min(0).max(1).nullable().optional(),
@@ -66,6 +283,14 @@ export const AdvancedModelSettingsSchema = z.object({
   frequencyPenalty: z.number().min(-2).max(2).nullable().optional(),
   presencePenalty: z.number().min(-2).max(2).nullable().optional(),
   topK: z.number().int().min(1).max(500).nullable().optional(),
+  // Stable Diffusion / AUTOMATIC1111 specific settings
+  sdSteps: z.number().int().min(1).max(150).nullable().optional(),
+  sdCfgScale: z.number().min(1).max(30).nullable().optional(),
+  sdSampler: z.string().trim().min(1).nullable().optional(),
+  sdSeed: z.number().int().min(0).max(2_147_483_647).nullable().optional(),
+  sdNegativePrompt: z.string().trim().min(1).nullable().optional(),
+  sdDenoisingStrength: z.number().min(0).max(1).nullable().optional(),
+  sdSize: z.string().trim().min(3).nullable().optional(),
   // llama.cpp specific settings
   llamaGpuLayers: z.number().int().min(0).max(512).nullable().optional(),
   llamaThreads: z.number().int().min(1).max(256).nullable().optional(),
@@ -104,12 +329,12 @@ export const AdvancedModelSettingsSchema = z.object({
   llamaMmprojPath: z.string().trim().min(1).nullable().optional(),
   llamaChatTemplatePreset: z.string().trim().min(1).nullable().optional(),
   llamaRawCompletionFallback: z.boolean().nullable().optional(),
-  llamaSamplerProfile: z
-    .enum(["balanced", "creative", "stable", "reasoning"])
-    .nullable()
-    .optional(),
+  llamaStrictMode: z.boolean().nullable().optional(),
+  llamaSamplerProfile: LlamaSamplerProfileSchema.nullable().optional(),
+  llamaSamplerOrder: z.array(LlamaSamplerOrderStageSchema).min(1).nullable().optional(),
   llamaMinP: z.number().min(0).max(1).nullable().optional(),
   llamaTypicalP: z.number().min(0).max(1).nullable().optional(),
+  llamaLastRuntimeReport: LlamaLastRuntimeReportSchema.nullish().optional(),
   // Ollama specific settings
   ollamaNumCtx: z.number().int().min(0).max(262_144).nullable().optional(),
   ollamaNumPredict: z.number().int().min(0).max(131_072).nullable().optional(),
@@ -130,6 +355,9 @@ export const AdvancedModelSettingsSchema = z.object({
   reasoningEnabled: z.boolean().nullable().optional(),
   reasoningEffort: z.enum(["low", "medium", "high"]).nullable().optional(),
   reasoningBudgetTokens: z.number().int().min(1024).nullable().optional(),
+  // Caching settings
+  promptCachingEnabled: z.boolean().nullable().optional(),
+  promptCachingTtl: z.string().nullish().optional(),
 });
 
 export type AdvancedModelSettings = z.infer<typeof AdvancedModelSettingsSchema>;
@@ -177,6 +405,14 @@ export type ReasoningCapability =
 
 export const PROVIDER_REASONING_CAPABILITIES: Record<string, ReasoningCapability> = {
   openai: {
+    type: "effort",
+    options: [
+      { value: "low", label: "Low", description: "Quick responses with less reasoning" },
+      { value: "medium", label: "Medium", description: "Balanced reasoning depth" },
+      { value: "high", label: "High", description: "Maximum reasoning depth" },
+    ],
+  },
+  "lettuce-host": {
     type: "effort",
     options: [
       { value: "low", label: "Low", description: "Quick responses with less reasoning" },
@@ -276,6 +512,14 @@ export const PROVIDER_REASONING_CAPABILITIES: Record<string, ReasoningCapability
       { value: "high", label: "High", description: "Deep reasoning" },
     ],
   },
+  llamacpp: {
+    type: "effort",
+    options: [
+      { value: "low", label: "Low", description: "Quick responses" },
+      { value: "medium", label: "Medium", description: "Balanced" },
+      { value: "high", label: "High", description: "Deep reasoning" },
+    ],
+  },
   lmstudio: {
     type: "effort",
     options: [
@@ -366,6 +610,34 @@ export function getOpenRouterModelReasoningCapability(
  * Documents which advanced parameters are supported by each LLM provider
  */
 export const PROVIDER_PARAMETER_SUPPORT = {
+  automatic1111: {
+    providerId: "automatic1111",
+    displayName: "AUTOMATIC1111",
+    reasoningSupport: "none" as ReasoningSupport,
+    supportedParameters: {
+      sdSteps: true,
+      sdCfgScale: true,
+      sdSampler: true,
+      sdSeed: true,
+      sdNegativePrompt: true,
+      sdDenoisingStrength: true,
+      sdSize: true,
+    },
+  },
+  stability: {
+    providerId: "stability",
+    displayName: "Stability AI",
+    reasoningSupport: "none" as ReasoningSupport,
+    supportedParameters: {
+      sdSteps: false,
+      sdCfgScale: false,
+      sdSampler: false,
+      sdSeed: false,
+      sdNegativePrompt: false,
+      sdDenoisingStrength: false,
+      sdSize: true,
+    },
+  },
   chutes: {
     providerId: "chutes",
     displayName: "Chutes",
@@ -396,6 +668,7 @@ export const PROVIDER_PARAMETER_SUPPORT = {
       llamaChatTemplatePreset: false,
       llamaRawCompletionFallback: false,
       llamaSamplerProfile: false,
+      llamaSamplerOrder: false,
       llamaMinP: false,
       llamaTypicalP: false,
       ollamaNumCtx: false,
@@ -445,6 +718,7 @@ export const PROVIDER_PARAMETER_SUPPORT = {
       llamaChatTemplatePreset: false,
       llamaRawCompletionFallback: false,
       llamaSamplerProfile: false,
+      llamaSamplerOrder: false,
       llamaMinP: false,
       llamaTypicalP: false,
       ollamaNumCtx: false,
@@ -479,6 +753,8 @@ export const PROVIDER_PARAMETER_SUPPORT = {
       reasoningEnabled: true,
       reasoningEffort: true,
       reasoningBudgetTokens: true,
+      promptCachingEnabled: true,
+      promptCachingTtl: true,
       llamaGpuLayers: false,
       llamaThreads: false,
       llamaThreadsBatch: false,
@@ -494,6 +770,7 @@ export const PROVIDER_PARAMETER_SUPPORT = {
       llamaChatTemplatePreset: false,
       llamaRawCompletionFallback: false,
       llamaSamplerProfile: false,
+      llamaSamplerOrder: false,
       llamaMinP: false,
       llamaTypicalP: false,
       ollamaNumCtx: true,
@@ -528,6 +805,8 @@ export const PROVIDER_PARAMETER_SUPPORT = {
       reasoningEnabled: true,
       reasoningEffort: false, // Uses budget-based thinking instead
       reasoningBudgetTokens: true,
+      promptCachingEnabled: true,
+      promptCachingTtl: true,
       llamaGpuLayers: false,
       llamaThreads: false,
       llamaThreadsBatch: false,
@@ -543,6 +822,7 @@ export const PROVIDER_PARAMETER_SUPPORT = {
       llamaChatTemplatePreset: false,
       llamaRawCompletionFallback: false,
       llamaSamplerProfile: false,
+      llamaSamplerOrder: false,
       llamaMinP: false,
       llamaTypicalP: false,
       ollamaNumCtx: false,
@@ -577,6 +857,8 @@ export const PROVIDER_PARAMETER_SUPPORT = {
       reasoningEnabled: true,
       reasoningEffort: true,
       reasoningBudgetTokens: true,
+      promptCachingEnabled: true,
+      promptCachingTtl: true,
       llamaGpuLayers: false,
       llamaThreads: false,
       llamaThreadsBatch: false,
@@ -592,6 +874,7 @@ export const PROVIDER_PARAMETER_SUPPORT = {
       llamaChatTemplatePreset: false,
       llamaRawCompletionFallback: false,
       llamaSamplerProfile: false,
+      llamaSamplerOrder: false,
       llamaMinP: false,
       llamaTypicalP: false,
       ollamaNumCtx: false,
@@ -641,6 +924,7 @@ export const PROVIDER_PARAMETER_SUPPORT = {
       llamaChatTemplatePreset: false,
       llamaRawCompletionFallback: false,
       llamaSamplerProfile: false,
+      llamaSamplerOrder: false,
       llamaMinP: false,
       llamaTypicalP: false,
       ollamaNumCtx: false,
@@ -690,6 +974,7 @@ export const PROVIDER_PARAMETER_SUPPORT = {
       llamaChatTemplatePreset: false,
       llamaRawCompletionFallback: false,
       llamaSamplerProfile: false,
+      llamaSamplerOrder: false,
       llamaMinP: false,
       llamaTypicalP: false,
       ollamaNumCtx: false,
@@ -739,6 +1024,7 @@ export const PROVIDER_PARAMETER_SUPPORT = {
       llamaChatTemplatePreset: false,
       llamaRawCompletionFallback: false,
       llamaSamplerProfile: false,
+      llamaSamplerOrder: false,
       llamaMinP: false,
       llamaTypicalP: false,
       ollamaNumCtx: false,
@@ -788,6 +1074,7 @@ export const PROVIDER_PARAMETER_SUPPORT = {
       llamaChatTemplatePreset: false,
       llamaRawCompletionFallback: false,
       llamaSamplerProfile: false,
+      llamaSamplerOrder: false,
       llamaMinP: false,
       llamaTypicalP: false,
       ollamaNumCtx: false,
@@ -837,6 +1124,7 @@ export const PROVIDER_PARAMETER_SUPPORT = {
       llamaChatTemplatePreset: false,
       llamaRawCompletionFallback: false,
       llamaSamplerProfile: false,
+      llamaSamplerOrder: false,
       llamaMinP: false,
       llamaTypicalP: false,
       ollamaNumCtx: false,
@@ -886,6 +1174,7 @@ export const PROVIDER_PARAMETER_SUPPORT = {
       llamaChatTemplatePreset: false,
       llamaRawCompletionFallback: false,
       llamaSamplerProfile: false,
+      llamaSamplerOrder: false,
       llamaMinP: false,
       llamaTypicalP: false,
       ollamaNumCtx: false,
@@ -935,6 +1224,7 @@ export const PROVIDER_PARAMETER_SUPPORT = {
       llamaChatTemplatePreset: false,
       llamaRawCompletionFallback: false,
       llamaSamplerProfile: false,
+      llamaSamplerOrder: false,
       llamaMinP: false,
       llamaTypicalP: false,
       ollamaNumCtx: false,
@@ -984,6 +1274,7 @@ export const PROVIDER_PARAMETER_SUPPORT = {
       llamaChatTemplatePreset: false,
       llamaRawCompletionFallback: false,
       llamaSamplerProfile: false,
+      llamaSamplerOrder: false,
       llamaMinP: false,
       llamaTypicalP: false,
       ollamaNumCtx: false,
@@ -1033,6 +1324,7 @@ export const PROVIDER_PARAMETER_SUPPORT = {
       llamaChatTemplatePreset: false,
       llamaRawCompletionFallback: false,
       llamaSamplerProfile: false,
+      llamaSamplerOrder: false,
       llamaMinP: false,
       llamaTypicalP: false,
       ollamaNumCtx: false,
@@ -1082,6 +1374,7 @@ export const PROVIDER_PARAMETER_SUPPORT = {
       llamaChatTemplatePreset: false,
       llamaRawCompletionFallback: false,
       llamaSamplerProfile: false,
+      llamaSamplerOrder: false,
       llamaMinP: false,
       llamaTypicalP: false,
       ollamaNumCtx: false,
@@ -1131,6 +1424,7 @@ export const PROVIDER_PARAMETER_SUPPORT = {
       llamaChatTemplatePreset: false,
       llamaRawCompletionFallback: false,
       llamaSamplerProfile: false,
+      llamaSamplerOrder: false,
       llamaMinP: false,
       llamaTypicalP: false,
       ollamaNumCtx: false,
@@ -1180,6 +1474,7 @@ export const PROVIDER_PARAMETER_SUPPORT = {
       llamaChatTemplatePreset: false,
       llamaRawCompletionFallback: false,
       llamaSamplerProfile: false,
+      llamaSamplerOrder: false,
       llamaMinP: false,
       llamaTypicalP: false,
       ollamaNumCtx: false,
@@ -1229,6 +1524,7 @@ export const PROVIDER_PARAMETER_SUPPORT = {
       llamaChatTemplatePreset: false,
       llamaRawCompletionFallback: false,
       llamaSamplerProfile: false,
+      llamaSamplerOrder: false,
       llamaMinP: false,
       llamaTypicalP: false,
       ollamaNumCtx: false,
@@ -1278,6 +1574,7 @@ export const PROVIDER_PARAMETER_SUPPORT = {
       llamaChatTemplatePreset: false,
       llamaRawCompletionFallback: false,
       llamaSamplerProfile: false,
+      llamaSamplerOrder: false,
       llamaMinP: false,
       llamaTypicalP: false,
       ollamaNumCtx: false,
@@ -1300,7 +1597,7 @@ export const PROVIDER_PARAMETER_SUPPORT = {
   llamacpp: {
     providerId: "llamacpp",
     displayName: "llama.cpp",
-    reasoningSupport: "none" as ReasoningSupport,
+    reasoningSupport: "dynamic" as ReasoningSupport,
     supportedParameters: {
       temperature: true,
       topP: true,
@@ -1323,12 +1620,14 @@ export const PROVIDER_PARAMETER_SUPPORT = {
       llamaMmprojPath: true,
       llamaChatTemplatePreset: true,
       llamaRawCompletionFallback: true,
+      llamaStrictMode: true,
       llamaSamplerProfile: true,
+      llamaSamplerOrder: true,
       llamaMinP: true,
       llamaTypicalP: true,
-      reasoningEnabled: false,
-      reasoningEffort: false,
-      reasoningBudgetTokens: false,
+      reasoningEnabled: true,
+      reasoningEffort: true,
+      reasoningBudgetTokens: true,
       ollamaNumCtx: false,
       ollamaNumPredict: false,
       ollamaNumKeep: false,
@@ -1376,6 +1675,57 @@ export const PROVIDER_PARAMETER_SUPPORT = {
       llamaChatTemplatePreset: false,
       llamaRawCompletionFallback: false,
       llamaSamplerProfile: false,
+      llamaSamplerOrder: false,
+      llamaMinP: false,
+      llamaTypicalP: false,
+      ollamaNumCtx: false,
+      ollamaNumPredict: false,
+      ollamaNumKeep: false,
+      ollamaNumBatch: false,
+      ollamaNumGpu: false,
+      ollamaNumThread: false,
+      ollamaTfsZ: false,
+      ollamaTypicalP: false,
+      ollamaMinP: false,
+      ollamaMirostat: false,
+      ollamaMirostatTau: false,
+      ollamaMirostatEta: false,
+      ollamaRepeatPenalty: false,
+      ollamaSeed: false,
+      ollamaStop: false,
+    },
+  },
+  "lettuce-host": {
+    providerId: "lettuce-host",
+    displayName: "Lettuce Host",
+    reasoningSupport: "effort" as ReasoningSupport,
+    supportedParameters: {
+      temperature: true,
+      topP: true,
+      maxOutputTokens: true,
+      contextLength: false,
+      frequencyPenalty: true,
+      presencePenalty: true,
+      topK: true,
+      reasoningEnabled: true,
+      reasoningEffort: true,
+      reasoningBudgetTokens: true,
+      llamaGpuLayers: false,
+      llamaThreads: false,
+      llamaThreadsBatch: false,
+      llamaSeed: false,
+      llamaRopeFreqBase: false,
+      llamaRopeFreqScale: false,
+      llamaOffloadKqv: false,
+      llamaBatchSize: false,
+      llamaKvType: false,
+      llamaFlashAttention: false,
+      llamaChatTemplateOverride: false,
+      llamaMmprojPath: false,
+      llamaChatTemplatePreset: false,
+      llamaRawCompletionFallback: false,
+      llamaSamplerProfile: false,
+      llamaSamplerOrder: false,
       llamaMinP: false,
       llamaTypicalP: false,
       ollamaNumCtx: false,
@@ -1425,6 +1775,7 @@ export const PROVIDER_PARAMETER_SUPPORT = {
       llamaChatTemplatePreset: false,
       llamaRawCompletionFallback: false,
       llamaSamplerProfile: false,
+      llamaSamplerOrder: false,
       llamaMinP: false,
       llamaTypicalP: false,
       ollamaNumCtx: false,
@@ -1459,6 +1810,8 @@ export const PROVIDER_PARAMETER_SUPPORT = {
       reasoningEnabled: true,
       reasoningEffort: false,
       reasoningBudgetTokens: true,
+      promptCachingEnabled: true,
+      promptCachingTtl: true,
       llamaGpuLayers: false,
       llamaThreads: false,
       llamaThreadsBatch: false,
@@ -1474,6 +1827,7 @@ export const PROVIDER_PARAMETER_SUPPORT = {
       llamaChatTemplatePreset: false,
       llamaRawCompletionFallback: false,
       llamaSamplerProfile: false,
+      llamaSamplerOrder: false,
       llamaMinP: false,
       llamaTypicalP: false,
       ollamaNumCtx: false,
@@ -1514,7 +1868,11 @@ export function providerSupportsParameter(
     (providerId === "z.ai" ? PROVIDER_PARAMETER_SUPPORT.zai : null);
 
   if (!provider) return false;
-  return provider.supportedParameters[parameter] ?? false;
+  return (
+    (provider.supportedParameters as Partial<Record<keyof AdvancedModelSettings, boolean>>)[
+      parameter
+    ] ?? false
+  );
 }
 
 /**
@@ -1540,10 +1898,37 @@ export function getProviderReasoningSupport(providerId: string): ReasoningSuppor
 export function getSupportedParameters(providerId: string): (keyof AdvancedModelSettings)[] {
   const provider = PROVIDER_PARAMETER_SUPPORT[providerId as ProviderId];
   if (!provider) return ["temperature", "topP", "maxOutputTokens"];
+  const supportedParameters = provider.supportedParameters as Partial<
+    Record<keyof AdvancedModelSettings, boolean>
+  >;
 
-  return Object.entries(provider.supportedParameters)
+  return Object.entries(supportedParameters)
     .filter(([_, supported]) => supported)
     .map(([param]) => param as keyof AdvancedModelSettings);
+}
+
+/**
+ * Caching Support Types
+ */
+export type CachingSupport = "none" | "supported";
+
+/**
+ * Gets the caching support type for a specific provider
+ */
+export function getProviderCachingSupport(providerId: string): CachingSupport {
+  const provider =
+    PROVIDER_PARAMETER_SUPPORT[providerId as ProviderId] ||
+    (providerId === "google-gemini" ? PROVIDER_PARAMETER_SUPPORT.gemini : null) ||
+    (providerId === "google" ? PROVIDER_PARAMETER_SUPPORT.gemini : null) ||
+    (providerId === "chutes.ai" ? PROVIDER_PARAMETER_SUPPORT.chutes : null) ||
+    (providerId === "moonshot-ai" ? PROVIDER_PARAMETER_SUPPORT.moonshot : null) ||
+    (providerId === "z.ai" ? PROVIDER_PARAMETER_SUPPORT.zai : null);
+
+  if (!provider) return "none";
+
+  // Cast to check if it exists in the support matrix
+  const isSupported = (provider.supportedParameters as any).promptCachingEnabled;
+  return isSupported ? "supported" : "none";
 }
 
 export const ImageAttachmentSchema = z.object({
@@ -1655,16 +2040,23 @@ export type ChatTemplate = z.infer<typeof ChatTemplateSchema>;
 export const DynamicMemorySettingsSchema = z.object({
   enabled: z.boolean().default(false),
   summaryMessageInterval: z.number().min(1).default(20),
-  maxEntries: z.number().min(10).max(200).default(50),
+  maxEntries: z.number().min(10).max(500).default(50),
   minSimilarityThreshold: z.number().min(0).max(1).default(0.35),
   retrievalLimit: z.number().min(1).max(20).default(5),
   retrievalStrategy: z.enum(["smart", "cosine"]).default("smart"),
-  hotMemoryTokenBudget: z.number().min(500).max(10000).default(2000),
+  hotMemoryTokenBudget: z.number().min(500).max(16384).default(2000),
   decayRate: z.number().min(0.01).max(0.3).default(0.08),
   coldThreshold: z.number().min(0.1).max(0.5).default(0.3),
+  deleteConfidenceDefault: z.number().min(0).max(1).default(0.5),
+  maxHardDeleteRatioPerCycle: z.number().min(0.1).max(1).default(0.5),
   contextEnrichmentEnabled: z.boolean().default(true),
 });
 export type DynamicMemorySettings = z.infer<typeof DynamicMemorySettingsSchema>;
+
+export const DynamicMemoryStructuredFallbackFormatSchema = z.enum(["json", "xml"]);
+export type DynamicMemoryStructuredFallbackFormat = z.infer<
+  typeof DynamicMemoryStructuredFallbackFormatSchema
+>;
 
 export const GroupSessionSchema = z.object({
   id: z.string().uuid(),
@@ -1700,35 +2092,41 @@ export const GroupSessionSchema = z.object({
   /** Memory tool events tracking (for dynamic memory cycle gating) */
   memoryToolEvents: z
     .array(
-      z.object({
-        type: z.string().optional(),
-        windowEnd: z.number().int().optional(),
-        timestamp: z.number().int().optional(),
-        memoriesCount: z.number().int().optional(),
-        // Also support the full format used in normal sessions
-        id: z.string().optional(),
-        windowStart: z.number().int().optional(),
-        summary: z.string().optional(),
-        error: z.string().optional(),
-        status: z.string().optional(),
-        stage: z.string().optional(),
-        windowMessageIds: z.array(z.string()).optional(),
-        actions: z
-          .array(
-            z.object({
-              name: z.string(),
-              arguments: z.any().optional(),
-              timestamp: z.number().int().optional(),
-              updatedMemories: z.array(z.string()).optional(),
-            }),
-          )
-          .optional(),
-        createdAt: z.number().int().optional(),
-      }),
+      z
+        .object({
+          type: z.string().optional(),
+          windowEnd: z.number().int().optional(),
+          timestamp: z.number().int().optional(),
+          memoriesCount: z.number().int().optional(),
+          // Also support the full format used in normal sessions
+          id: z.string().optional(),
+          windowStart: z.number().int().optional(),
+          summary: z.string().optional(),
+          error: z.string().optional(),
+          status: z.string().optional(),
+          stage: z.string().optional(),
+          windowMessageIds: z.array(z.string()).optional(),
+          revertedAt: z.number().int().optional(),
+          actions: z
+            .array(
+              z
+                .object({
+                  name: z.string(),
+                  arguments: z.any().optional(),
+                  timestamp: z.number().int().optional(),
+                  updatedMemories: z.array(z.string()).optional(),
+                })
+                .passthrough(),
+            )
+            .optional(),
+          createdAt: z.number().int().optional(),
+        })
+        .passthrough(),
     )
     .default([]),
   memoryStatus: z.string().nullish().optional().default("idle"),
   memoryError: z.string().nullish().optional(),
+  memoryProgressStep: z.number().int().nullish().optional(),
 });
 export type GroupSession = z.infer<typeof GroupSessionSchema>;
 
@@ -1953,6 +2351,23 @@ export const AppStateSchema = z.object({
 });
 export type AppState = z.infer<typeof AppStateSchema>;
 
+export const HostApiExposedModelSchema = z.object({
+  id: z.string().min(1),
+  modelId: z.string().uuid(),
+  enabled: z.boolean().default(true),
+  label: z.string().optional(),
+});
+export type HostApiExposedModel = z.infer<typeof HostApiExposedModelSchema>;
+
+export const HostApiSettingsSchema = z.object({
+  enabled: z.boolean().default(false),
+  bindAddress: z.string().default("0.0.0.0"),
+  port: z.number().int().min(1).max(65535).default(3333),
+  token: z.string().default(""),
+  exposedModels: z.array(HostApiExposedModelSchema).default([]),
+});
+export type HostApiSettings = z.infer<typeof HostApiSettingsSchema>;
+
 export const AccessibilitySoundSchema = z.object({
   enabled: z.boolean().default(false),
   volume: z.number().min(0).max(1).default(0.6),
@@ -2005,6 +2420,7 @@ export const ChatAppearanceSettingsSchema = z.object({
   plainTextColorHex: z.string().optional(),
   italicTextColorHex: z.string().optional(),
   quotedTextColorHex: z.string().optional(),
+  inlineCodeTextColorHex: z.string().optional(),
 
   // Background handling (only active when character has a background image)
   backgroundDim: z.number().min(0).max(80).default(0),
@@ -2037,6 +2453,7 @@ export function createDefaultChatAppearanceSettings(): ChatAppearanceSettings {
     plainTextColorHex: undefined,
     italicTextColorHex: undefined,
     quotedTextColorHex: undefined,
+    inlineCodeTextColorHex: undefined,
     backgroundDim: 0,
     backgroundBlur: 0,
     bubbleBlur: "none",
@@ -2083,10 +2500,17 @@ export const SettingsSchema = z.object({
   advancedSettings: z
     .object({
       summarisationModelId: z.string().optional(),
+      dynamicMemoryStructuredFallbackFormat:
+        DynamicMemoryStructuredFallbackFormatSchema.optional(),
+      dynamicMemoryLlamaSamplerOverwriteEnabled: z.boolean().optional(),
       avatarGenerationEnabled: z.boolean().optional(),
       avatarGenerationModelId: z.string().optional(),
       sceneGenerationEnabled: z.boolean().optional(),
+      sceneGenerationMode: z.enum(["auto", "askFirst", "manual"]).optional(),
       sceneGenerationModelId: z.string().optional(),
+      sceneWriterModelId: z.string().optional(),
+      appUpdateChecksEnabled: z.boolean().optional(),
+      developerModeEnabled: z.boolean().optional(),
       creationHelperEnabled: z.boolean().optional(),
       creationHelperModelId: z.string().optional(),
       creationHelperStreaming: z.boolean().optional(),
@@ -2102,6 +2526,7 @@ export const SettingsSchema = z.object({
       embeddingMaxTokens: z.number().optional(), // 1024, 2048, or 4096
       embeddingModelVersion: z.enum(["v2", "v3"]).optional(),
       embeddingKeepModelLoaded: z.boolean().optional(),
+      hostApi: HostApiSettingsSchema.optional(),
       dynamicMemory: DynamicMemorySettingsSchema.optional(),
       groupDynamicMemory: DynamicMemorySettingsSchema.optional(),
       accessibility: AccessibilitySettingsSchema.optional(),
@@ -2123,10 +2548,22 @@ export function createDefaultSettings(): Settings {
     models: [],
     appState: createDefaultAppState(),
     advancedSettings: {
+      dynamicMemoryStructuredFallbackFormat: "xml",
+      dynamicMemoryLlamaSamplerOverwriteEnabled: true,
       avatarGenerationEnabled: true,
       creationHelperEnabled: false,
       helpMeReplyEnabled: true,
       sceneGenerationEnabled: true,
+      sceneGenerationMode: "auto",
+      appUpdateChecksEnabled: true,
+      developerModeEnabled: false,
+      hostApi: {
+        enabled: false,
+        bindAddress: "0.0.0.0",
+        port: 3333,
+        token: "",
+        exposedModels: [],
+      },
       accessibility: createDefaultAccessibilitySettings(),
     },
     promptTemplateId: null,
@@ -2139,6 +2576,9 @@ export const LorebookSchema = z.object({
   id: z.string().uuid(),
   name: z.string().min(1),
   avatarPath: z.string().nullish().optional(),
+  keywordDetectionMode: z
+    .enum(["recentMessageWindow", "latestUserMessage"])
+    .default("recentMessageWindow"),
   createdAt: z.number().int(),
   updatedAt: z.number().int(),
 });
@@ -2225,6 +2665,7 @@ export const SessionSchema = z.object({
   id: z.string().uuid(),
   characterId: z.string().uuid(),
   title: z.string(),
+  backgroundImagePath: z.string().nullish().optional(),
   selectedSceneId: z.string().uuid().nullish(), // ID of the scene from character.scenes array
   promptTemplateId: z.string().nullish().optional(),
   personaId: z.union([z.string().uuid(), z.literal(""), z.null(), z.undefined()]).optional(),
@@ -2253,31 +2694,37 @@ export const SessionSchema = z.object({
   memorySummaryTokenCount: z.number().default(0),
   memoryToolEvents: z
     .array(
-      z.object({
-        id: z.string(),
-        windowStart: z.number().int(),
-        windowEnd: z.number().int(),
-        windowMessageIds: z.array(z.string()).optional(),
-        summary: z.string(),
-        error: z.string().optional(),
-        status: z.string().optional(),
-        stage: z.string().optional(),
-        actions: z.array(
-          z.object({
-            name: z.string(),
-            arguments: z.any().optional(),
-            timestamp: z.number().int().optional(),
-            updatedMemories: z.array(z.string()).optional(),
-          }),
-        ),
-        createdAt: z.number().int(),
-      }),
+      z
+        .object({
+          id: z.string(),
+          windowStart: z.number().int(),
+          windowEnd: z.number().int(),
+          windowMessageIds: z.array(z.string()).optional(),
+          summary: z.string(),
+          error: z.string().optional(),
+          status: z.string().optional(),
+          stage: z.string().optional(),
+          revertedAt: z.number().int().optional(),
+          actions: z.array(
+            z
+              .object({
+                name: z.string(),
+                arguments: z.any().optional(),
+                timestamp: z.number().int().optional(),
+                updatedMemories: z.array(z.string()).optional(),
+              })
+              .passthrough(),
+          ),
+          createdAt: z.number().int(),
+        })
+        .passthrough(),
     )
     .default([])
     .optional(),
   messages: z.array(MessageSchema),
   memoryStatus: z.string().nullish().optional().default("idle"),
   memoryError: z.string().nullish().optional(),
+  memoryProgressStep: z.number().int().nullish().optional(),
   archived: z.boolean().default(false),
   createdAt: z.number().int(),
   updatedAt: z.number().int(),
@@ -2302,5 +2749,15 @@ export type Persona = z.infer<typeof PersonaSchema>;
 export function createDefaultAdvancedModelSettings(): AdvancedModelSettings {
   return {
     maxOutputTokens: 2048,
+    llamaLastRuntimeReport: null,
+    llamaStrictMode: null,
+    llamaSamplerOrder: null,
+    sdSteps: null,
+    sdCfgScale: null,
+    sdSampler: null,
+    sdSeed: null,
+    sdNegativePrompt: null,
+    sdDenoisingStrength: null,
+    sdSize: null,
   };
 }

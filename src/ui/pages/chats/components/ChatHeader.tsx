@@ -7,6 +7,11 @@ import { useAvatar } from "../../../hooks/useAvatar";
 import { listen } from "@tauri-apps/api/event";
 import { Routes } from "../../../navigation";
 import { cn } from "../../../design-tokens";
+import {
+  WindowControlButtons,
+  useDragRegionProps,
+  hasCustomWindowControls,
+} from "../../../components/App/TopNav";
 import { useI18n } from "../../../../core/i18n/context";
 import { isRenderableImageUrl } from "../../../../core/utils/image";
 
@@ -19,6 +24,8 @@ interface ChatHeaderProps {
   hasBackgroundImage?: boolean;
   headerOverlayClassName?: string;
   onSessionUpdate?: () => void;
+  onBeforeSettingsOpen?: () => void;
+  onSettingsOpen?: () => void;
 }
 
 function isImageLike(value?: string) {
@@ -34,6 +41,8 @@ export function ChatHeader({
   hasBackgroundImage,
   headerOverlayClassName,
   onSessionUpdate,
+  onBeforeSettingsOpen,
+  onSettingsOpen,
 }: ChatHeaderProps) {
   const navigate = useNavigate();
   const { characterId } = useParams<{ characterId: string }>();
@@ -44,6 +53,7 @@ export function ChatHeader({
     swapPlaces ? persona?.avatarPath : character?.avatarPath,
     "round",
   );
+  const dragRegionProps = useDragRegionProps();
   const [memoryBusy, setMemoryBusy] = useState(false);
   const [memoryError, setMemoryError] = useState<string | null>(null);
   const isDynamic = useMemo(() => character?.memoryType === "dynamic", [character?.memoryType]);
@@ -136,7 +146,7 @@ export function ChatHeader({
   }, [character, persona, swapPlaces]);
 
   const avatarFallback = (
-    <div className="flex h-full w-full items-center justify-center rounded-full bg-white/10 text-xs font-semibold text-white">
+    <div className="flex h-full w-full items-center justify-center rounded-full bg-fg/10 text-xs font-semibold text-fg">
       {initials}
     </div>
   );
@@ -153,33 +163,42 @@ export function ChatHeader({
     <>
       <header
         className={cn(
-          "z-20 shrink-0 border-b border-white/10 px-3 lg:px-8",
+          "z-20 shrink-0 border-b border-fg/10 pl-3 lg:pl-8",
+          hasCustomWindowControls ? "pr-0" : "pr-3 lg:pr-8",
           hasBackgroundImage ? headerOverlayClassName || "bg-surface/40" : "bg-surface",
         )}
         style={{
           paddingTop: "calc(env(safe-area-inset-top) + 12px)",
           paddingBottom: "12px",
         }}
+        {...dragRegionProps}
       >
-        <div className="flex items-center h-10">
-          <button
-            onClick={() => navigate("/chat")}
-            className="flex px-[0.6em] py-[0.3em] shrink-0 items-center justify-center -ml-2 text-white transition hover:text-white/80"
-            aria-label={t("chats.header.back")}
-          >
-            <ArrowLeft size={18} strokeWidth={2.5} />
-          </button>
+        <div className="flex items-center justify-between h-10" {...dragRegionProps}>
+          <div className="flex items-center min-w-0">
+            <button
+              onClick={() => navigate("/chat")}
+              className="flex shrink-0 items-center justify-center -ml-2 px-[0.6em] py-[0.3em] text-fg transition hover:text-fg/80"
+              aria-label={t("chats.header.back")}
+            >
+              <ArrowLeft size={18} strokeWidth={2.5} />
+            </button>
 
-          <button
-            onClick={() => {
-              if (!characterId) return;
-              navigate(Routes.chatSettingsSession(characterId, sessionId));
-            }}
-            className="min-w-0 flex-1 text-left truncate text-xl font-bold text-white/90 p-0 hover:opacity-80 transition-opacity"
-            aria-label={t("chats.header.openSettings")}
-          >
-            {headerTitle}
-          </button>
+            <button
+              onPointerDown={() => onBeforeSettingsOpen?.()}
+              onClick={() => {
+                if (onSettingsOpen) {
+                  onSettingsOpen();
+                  return;
+                }
+                if (!characterId) return;
+                navigate(Routes.chatSettingsSession(characterId, sessionId));
+              }}
+              className="min-w-0 shrink truncate p-0 text-left text-xl font-bold text-fg/90 transition-opacity hover:opacity-80"
+              aria-label={t("chats.header.openSettings")}
+            >
+              {headerTitle}
+            </button>
+          </div>
 
           <div className="flex shrink-0 items-center gap-1.5">
             {/* Memory Button */}
@@ -201,7 +220,7 @@ export function ChatHeader({
                         ),
                       );
                     }}
-                    className="relative flex px-[0.6em] py-[0.3em] h-10 w-10 items-center justify-center text-white/80 transition hover:text-white"
+                    className="relative flex h-10 w-10 items-center justify-center px-[0.6em] py-[0.3em] text-fg/80 transition hover:text-fg"
                     aria-label={t("chats.header.manageMemories")}
                   >
                     {isBusy ? (
@@ -216,7 +235,7 @@ export function ChatHeader({
                       <Brain size={18} strokeWidth={2.5} />
                     )}
                     {!isBusy && !isError && session.memories && session.memories.length > 0 && (
-                      <span className="absolute right-0.5 top-0.5 inline-flex min-w-4 h-4 items-center justify-center rounded-full bg-emerald-500 px-1 text-[10px] font-bold leading-none text-white shadow-md ring-1 ring-emerald-200/40">
+                      <span className="absolute right-0.5 top-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-emerald-500 px-1 text-[10px] font-bold leading-none text-white shadow-md ring-1 ring-emerald-200/40">
                         {session.memories.length > 99 ? "99+" : session.memories.length}
                       </span>
                     )}
@@ -231,7 +250,7 @@ export function ChatHeader({
                   if (!characterId || !sessionId) return;
                   navigate(Routes.chatSearch(characterId, sessionId));
                 }}
-                className="flex items-center px-[0.6em] py-[0.3em] justify-center text-white/80 transition hover:text-white"
+                className="flex items-center justify-center px-[0.6em] py-[0.3em] text-fg/80 transition hover:text-fg"
                 aria-label={t("chats.header.searchMessages")}
               >
                 <Search size={18} strokeWidth={2.5} />
@@ -244,7 +263,7 @@ export function ChatHeader({
                 if (!characterId) return;
                 navigate(Routes.characterLorebook(characterId));
               }}
-              className="flex items-center px-[0.6em] py-[0.3em] justify-center text-white/80 transition hover:text-white"
+              className="flex items-center justify-center px-[0.6em] py-[0.3em] text-fg/80 transition hover:text-fg"
               aria-label={t("chats.header.manageLorebooks")}
             >
               <BookOpen size={18} strokeWidth={2.5} />
@@ -252,11 +271,16 @@ export function ChatHeader({
 
             {/* Avatar (Settings) Button */}
             <button
+              onPointerDown={() => onBeforeSettingsOpen?.()}
               onClick={() => {
+                if (onSettingsOpen) {
+                  onSettingsOpen();
+                  return;
+                }
                 if (!characterId) return;
                 navigate(Routes.chatSettingsSession(characterId, sessionId));
               }}
-              className="relative shrink-0 rounded-full overflow-hidden ring-1 ring-white/20 transition hover:ring-white/40"
+              className="relative shrink-0 overflow-hidden rounded-full ring-1 ring-fg/20 transition hover:ring-fg/40"
               style={{
                 width: "36px",
                 height: "36px",
@@ -278,6 +302,7 @@ export function ChatHeader({
                 avatarFallback
               )}
             </button>
+            <WindowControlButtons />
           </div>
         </div>
       </header>

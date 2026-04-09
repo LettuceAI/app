@@ -371,7 +371,7 @@ const GroupSessionCard = memo(
               key={character.id}
               className={cn(
                 "flex h-10 w-10 items-center justify-center overflow-hidden rounded-full",
-                "border border-fg/10 bg-linear-to-br from-white/10 to-white/5",
+                "border border-fg/10 bg-linear-to-br from-fg/8 to-fg/4",
               )}
             >
               <CharacterMiniAvatar character={character} />

@@ -22,12 +22,13 @@ import {
 import { convertFilePathToDataUrl } from "../../../core/storage/images";
 import {
   buildBackgroundLibrarySelectionKey,
+  buildCharacterCreateLibraryReturnKey,
   type BackgroundLibrarySelectionPayload,
 } from "../../components/AvatarPicker/librarySelection";
 
 const CREATE_CHARACTER_DRAFT_KEY = "create-character-draft";
 
-function loadCreateCharacterDraft(locationState: unknown) {
+function loadCreateCharacterDraft(locationState: unknown, returnPath: string) {
   if (
     locationState &&
     typeof locationState === "object" &&
@@ -40,6 +41,14 @@ function loadCreateCharacterDraft(locationState: unknown) {
   if (typeof window === "undefined") {
     return undefined;
   }
+
+  const resumeKey = buildCharacterCreateLibraryReturnKey(returnPath);
+  if (sessionStorage.getItem(resumeKey) !== "true") {
+    sessionStorage.removeItem(CREATE_CHARACTER_DRAFT_KEY);
+    return undefined;
+  }
+
+  sessionStorage.removeItem(resumeKey);
 
   const raw = sessionStorage.getItem(CREATE_CHARACTER_DRAFT_KEY);
   if (!raw) {
@@ -59,9 +68,10 @@ export function CreateCharacterPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { t } = useI18n();
+  const returnPath = `${location.pathname}${location.search}`;
   const initialDraft = React.useMemo(
-    () => loadCreateCharacterDraft(location.state),
-    [location.state],
+    () => loadCreateCharacterDraft(location.state, returnPath),
+    [location.state, returnPath],
   );
   const { state, actions, computed } = useCharacterForm(initialDraft);
 
@@ -71,7 +81,9 @@ export function CreateCharacterPage() {
   const [loadingVoices, setLoadingVoices] = React.useState(false);
   const [voiceError, setVoiceError] = React.useState<string | null>(null);
   const [hasLoadedVoices, setHasLoadedVoices] = React.useState(false);
-  const returnPath = `${location.pathname}${location.search}`;
+  const markDraftForLibraryReturn = React.useCallback(() => {
+    sessionStorage.setItem(buildCharacterCreateLibraryReturnKey(returnPath), "true");
+  }, [returnPath]);
 
   const loadVoices = React.useCallback(async () => {
     setLoadingVoices(true);
@@ -186,6 +198,19 @@ export function CreateCharacterPage() {
   ]);
 
   React.useEffect(() => {
+    return () => {
+      if (typeof window === "undefined") {
+        return;
+      }
+
+      const resumeKey = buildCharacterCreateLibraryReturnKey(returnPath);
+      if (sessionStorage.getItem(resumeKey) !== "true") {
+        sessionStorage.removeItem(CREATE_CHARACTER_DRAFT_KEY);
+      }
+    };
+  }, [returnPath]);
+
+  React.useEffect(() => {
     if (state.loadingModels || state.loadingTemplates) return;
 
     const storageKey = buildBackgroundLibrarySelectionKey(returnPath);
@@ -217,13 +242,14 @@ export function CreateCharacterPage() {
   }, [actions, returnPath, state.loadingModels, state.loadingTemplates]);
 
   const handleChooseBackgroundFromLibrary = React.useCallback(() => {
+    markDraftForLibraryReturn();
     navigate("/library/images/pick", {
       state: {
         returnPath,
         selectionKind: "background",
       },
     });
-  }, [navigate, returnPath]);
+  }, [markDraftForLibraryReturn, navigate, returnPath]);
 
   const handleBack = () => {
     if (state.step === Step.Extras) {
@@ -241,6 +267,7 @@ export function CreateCharacterPage() {
     const success = await actions.handleSave();
     if (success) {
       sessionStorage.removeItem(CREATE_CHARACTER_DRAFT_KEY);
+      sessionStorage.removeItem(buildCharacterCreateLibraryReturnKey(returnPath));
       navigate("/chat");
     }
   };
@@ -268,6 +295,7 @@ export function CreateCharacterPage() {
               onNameChange={actions.setName}
               avatarPath={state.avatarPath}
               onAvatarChange={actions.setAvatarPath}
+              onBeforeChooseAvatarFromLibrary={markDraftForLibraryReturn}
               avatarCrop={state.avatarCrop}
               onAvatarCropChange={actions.setAvatarCrop}
               avatarRoundPath={state.avatarRoundPath}

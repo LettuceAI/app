@@ -16,6 +16,13 @@ export interface QueuedDownload {
   speedBytesPerSec: number;
   error: string | null;
   resultPath: string | null;
+  createModelWhenFinished: boolean;
+  mmprojFile: string | false;
+  installId: string | null;
+  displayName: string | null;
+  contextLength: number | null;
+  kvType: string | null;
+  downloadRole: "model" | "mmproj" | null;
 }
 
 interface DownloadQueueContextValue {
@@ -145,7 +152,7 @@ export function DownloadQueueProvider({ children }: { children: ReactNode }) {
 
   const queueDownload = useCallback(async (modelId: string, filename: string) => {
     try {
-      await invoke<string>("hf_queue_download", { modelId, filename });
+      await invoke<string>("hf_queue_download", { modelId, filename, metadata: null });
     } catch (err: any) {
       toast.error(
         "Download failed",

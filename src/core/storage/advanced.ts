@@ -5,6 +5,12 @@ export interface AdvancedSettings {
   summarisationModelId?: string;
   creationHelperEnabled?: boolean;
   creationHelperModelId?: string;
+  sceneGenerationEnabled?: boolean;
+  sceneGenerationMode?: "auto" | "askFirst" | "manual";
+  sceneGenerationModelId?: string;
+  sceneWriterModelId?: string;
+  appUpdateChecksEnabled?: boolean;
+  developerModeEnabled?: boolean;
   helpMeReplyEnabled?: boolean;
   manualModeContextWindow?: number;
   embeddingMaxTokens?: number; // 1024, 2048, or 4096

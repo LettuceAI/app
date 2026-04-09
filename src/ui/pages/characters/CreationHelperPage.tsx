@@ -1305,7 +1305,7 @@ export function CreationHelperPage() {
       }
     }
 
-    navigate(`/settings/personas/${personaId}/edit`);
+    navigate(`/personas/${personaId}/edit`);
   }, [
     navigate,
     previewPersona?.id,

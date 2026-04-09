@@ -57,15 +57,15 @@ export function ConfirmBottomMenuHost() {
       title={options?.title ?? t("components.confirmDialog.defaultTitle")}
     >
       <div className="space-y-4">
-        <p className="text-sm text-white/70">{options?.message}</p>
+        <p className="text-sm text-fg/70">{options?.message}</p>
         <div className="flex gap-3">
           <button
             onClick={() => close(false)}
             className={cn(
               "flex-1 py-3 text-sm font-medium",
               radius.lg,
-              "border border-white/10 bg-white/5 text-white",
-              "transition hover:border-white/20 hover:bg-white/10",
+              "border border-fg/10 bg-fg/5 text-fg",
+              "transition hover:border-fg/20 hover:bg-fg/10",
             )}
           >
             {cancelLabel}

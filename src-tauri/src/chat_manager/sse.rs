@@ -1,12 +1,26 @@
 use serde_json::Value;
 
+use crate::chat_manager::thinking::{
+    normalize_thinking_content, ThinkingSplit, ThinkingTagStreamParser,
+};
 use crate::chat_manager::tooling::ToolCall;
 
 use super::tooling::parse_tool_calls;
 use super::types::{NormalizedEvent, UsageSummary};
 
 pub fn accumulate_text_from_sse(raw: &str, provider_id: Option<&str>) -> Option<String> {
-    let mut out = String::new();
+    let split = accumulate_thinking_split_from_sse(raw, provider_id);
+    (!split.content.is_empty()).then_some(split.content)
+}
+
+pub fn accumulate_reasoning_from_sse(raw: &str, provider_id: Option<&str>) -> Option<String> {
+    let split = accumulate_thinking_split_from_sse(raw, provider_id);
+    (!split.reasoning.is_empty()).then_some(split.reasoning)
+}
+
+fn accumulate_thinking_split_from_sse(raw: &str, provider_id: Option<&str>) -> ThinkingSplit {
+    let mut split = ThinkingSplit::default();
+    let mut parser = ThinkingTagStreamParser::default();
 
     for line in raw.lines() {
         let l = line.trim();
@@ -31,52 +45,21 @@ pub fn accumulate_text_from_sse(raw: &str, provider_id: Option<&str>) -> Option<
         }
 
         if let Some(piece) = extract_text_from_value(&v) {
-            out.push_str(&piece);
+            let parsed = parser.feed(&piece);
+            split.content.push_str(&parsed.content);
+            split.reasoning.push_str(&parsed.reasoning);
         }
-    }
-
-    if out.is_empty() {
-        None
-    } else {
-        Some(out)
-    }
-}
-
-pub fn accumulate_reasoning_from_sse(raw: &str, provider_id: Option<&str>) -> Option<String> {
-    let mut out = String::new();
-
-    for line in raw.lines() {
-        let l = line.trim();
-        if !l.starts_with("data:") {
-            continue;
-        }
-
-        let payload = l[5..].trim();
-        if payload.is_empty() || payload == "[DONE]" {
-            continue;
-        }
-
-        let Ok(v) = serde_json::from_str::<Value>(payload) else {
-            continue;
-        };
-
-        // HARD FILTER
-        if let Some(pid) = provider_id {
-            if !parse_tool_calls(pid, &v).is_empty() {
-                continue;
-            }
-        }
-
         if let Some(piece) = extract_reasoning_from_value(&v) {
-            out.push_str(&piece);
+            split.reasoning.push_str(&piece);
         }
     }
 
-    if out.is_empty() {
-        None
-    } else {
-        Some(out)
-    }
+    let tail = parser.finish();
+    split.content.push_str(&tail.content);
+    split.reasoning.push_str(&tail.reasoning);
+    split.content = split.content.trim().to_string();
+    split.reasoning = split.reasoning.trim().to_string();
+    split
 }
 
 pub fn accumulate_image_data_urls_from_sse(raw: &str) -> Vec<String> {
@@ -168,12 +151,14 @@ pub fn usage_from_sse(raw: &str) -> Option<UsageSummary> {
 #[derive(Default)]
 pub struct SseDecoder {
     buffer: String,
+    thinking_parser: ThinkingTagStreamParser,
 }
 
 impl SseDecoder {
     pub fn new() -> Self {
         Self {
             buffer: String::new(),
+            thinking_parser: ThinkingTagStreamParser::default(),
         }
     }
 
@@ -213,6 +198,15 @@ impl SseDecoder {
             }
 
             if payload == "[DONE]" {
+                let tail = self.thinking_parser.finish();
+                if !tail.content.is_empty() {
+                    events.push(NormalizedEvent::Delta { text: tail.content });
+                }
+                if !tail.reasoning.is_empty() {
+                    events.push(NormalizedEvent::Reasoning {
+                        text: tail.reasoning,
+                    });
+                }
                 events.push(NormalizedEvent::Done);
                 continue;
             }
@@ -249,8 +243,16 @@ impl SseDecoder {
 
             // 3. Text
             if let Some(piece) = extract_text_from_value(&v) {
-                if !piece.is_empty() {
-                    events.push(NormalizedEvent::Delta { text: piece });
+                let parsed = self.thinking_parser.feed(&piece);
+                if !parsed.content.is_empty() {
+                    events.push(NormalizedEvent::Delta {
+                        text: parsed.content,
+                    });
+                }
+                if !parsed.reasoning.is_empty() {
+                    events.push(NormalizedEvent::Reasoning {
+                        text: parsed.reasoning,
+                    });
                 }
             }
 
@@ -267,6 +269,15 @@ impl SseDecoder {
             }
 
             if is_done {
+                let tail = self.thinking_parser.finish();
+                if !tail.content.is_empty() {
+                    events.push(NormalizedEvent::Delta { text: tail.content });
+                }
+                if !tail.reasoning.is_empty() {
+                    events.push(NormalizedEvent::Reasoning {
+                        text: tail.reasoning,
+                    });
+                }
                 events.push(NormalizedEvent::Done);
             }
         }
@@ -383,7 +394,8 @@ fn extract_reasoning_from_value(v: &Value) -> Option<String> {
         .and_then(|m| m.get("reasoning"))
         .and_then(|t| t.as_str())
     {
-        return Some(s.to_string());
+        let split = normalize_thinking_content(None, Some(s));
+        return (!split.reasoning.is_empty()).then_some(split.reasoning);
     }
     // Check message.reasoning_content for non-streaming responses
     if let Some(s) = v
@@ -393,7 +405,16 @@ fn extract_reasoning_from_value(v: &Value) -> Option<String> {
         .and_then(|m| m.get("reasoning_content"))
         .and_then(|t| t.as_str())
     {
-        return Some(s.to_string());
+        let split = normalize_thinking_content(None, Some(s));
+        return (!split.reasoning.is_empty()).then_some(split.reasoning);
+    }
+    if let Some(s) = v
+        .get("message")
+        .and_then(|m| m.get("thinking"))
+        .and_then(|t| t.as_str())
+    {
+        let split = normalize_thinking_content(None, Some(s));
+        return (!split.reasoning.is_empty()).then_some(split.reasoning);
     }
     // Gemini-style: candidates[].content.parts[] with thought=true
     if let Some(candidates) = v.get("candidates").and_then(|c| c.as_array()) {
@@ -418,8 +439,27 @@ fn extract_reasoning_from_value(v: &Value) -> Option<String> {
             }
         }
         if !combined.is_empty() {
-            return Some(combined);
+            let split = normalize_thinking_content(None, Some(&combined));
+            return (!split.reasoning.is_empty()).then_some(split.reasoning);
         }
+    }
+
+    let fallback_text = v
+        .get("choices")
+        .and_then(|c| c.get(0))
+        .and_then(|c| c.get("message"))
+        .and_then(|m| m.get("content"))
+        .and_then(|t| t.as_str())
+        .or_else(|| {
+            v.get("message")
+                .and_then(|m| m.get("content"))
+                .and_then(|t| t.as_str())
+        })
+        .or_else(|| v.get("content").and_then(|t| t.as_str()))
+        .or_else(|| v.get("text").and_then(|t| t.as_str()));
+    if let Some(text) = fallback_text {
+        let split = normalize_thinking_content(Some(text), None);
+        return (!split.reasoning.is_empty()).then_some(split.reasoning);
     }
     None
 }

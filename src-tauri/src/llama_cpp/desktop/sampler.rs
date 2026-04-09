@@ -1,6 +1,15 @@
 use super::*;
 
 pub(super) const DEFAULT_LLAMA_SAMPLER_PROFILE: &str = "balanced";
+pub(super) const DEFAULT_LLAMA_SAMPLER_ORDER: [&str; 7] = [
+    "penalties",
+    "grammar",
+    "top_k",
+    "top_p",
+    "min_p",
+    "typical",
+    "temp",
+];
 
 #[derive(Clone, Copy)]
 pub(super) struct SamplerProfileDefaults {
@@ -16,6 +25,7 @@ pub(super) struct SamplerProfileDefaults {
 
 pub(super) struct ResolvedSamplerConfig {
     pub(super) profile: &'static str,
+    pub(super) order: Option<Vec<String>>,
     pub(super) temperature: f64,
     pub(super) top_p: f64,
     pub(super) top_k: Option<u32>,
@@ -125,6 +135,63 @@ fn regex_escape(value: &str) -> String {
     out
 }
 
+fn anchor_pattern(value: &str) -> String {
+    if value.is_empty() {
+        return "^$".to_string();
+    }
+
+    let mut anchored = String::new();
+    if !value.starts_with('^') {
+        anchored.push('^');
+    }
+    anchored.push_str(value);
+    if !value.ends_with('$') {
+        anchored.push('$');
+    }
+    anchored
+}
+
+fn normalize_sampler_stage(value: &str) -> Option<&'static str> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "penalties" => Some("penalties"),
+        "grammar" => Some("grammar"),
+        "top_k" | "topk" => Some("top_k"),
+        "top_p" | "topp" => Some("top_p"),
+        "min_p" | "minp" => Some("min_p"),
+        "typical" | "typ_p" | "typical_p" => Some("typical"),
+        "temp" | "temperature" => Some("temp"),
+        _ => None,
+    }
+}
+
+fn normalize_sampler_order(value: Option<&[String]>) -> Vec<&'static str> {
+    let mut seen = std::collections::HashSet::new();
+    let mut order = Vec::new();
+
+    if let Some(value) = value {
+        for stage in value {
+            let Some(stage) = normalize_sampler_stage(stage) else {
+                continue;
+            };
+            if seen.insert(stage) {
+                order.push(stage);
+            }
+        }
+    }
+
+    if order.is_empty() {
+        return DEFAULT_LLAMA_SAMPLER_ORDER.to_vec();
+    }
+
+    for stage in DEFAULT_LLAMA_SAMPLER_ORDER {
+        if seen.insert(stage) {
+            order.push(stage);
+        }
+    }
+
+    order
+}
+
 pub(super) fn build_sampler(
     model: &LlamaModel,
     config: &ResolvedSamplerConfig,
@@ -134,6 +201,8 @@ pub(super) fn build_sampler(
     let mut order = Vec::new();
     let mut active_params = serde_json::Map::new();
     active_params.insert("profile".to_string(), json!(config.profile));
+    let requested_order = normalize_sampler_order(config.order.as_deref());
+    active_params.insert("sampler_order".to_string(), json!(requested_order));
     active_params.insert("temperature".to_string(), json!(config.temperature));
     active_params.insert("top_p".to_string(), json!(config.top_p));
     if let Some(seed) = config.seed {
@@ -141,50 +210,41 @@ pub(super) fn build_sampler(
     }
     let penalty_freq = config.frequency_penalty.unwrap_or(0.0);
     let penalty_present = config.presence_penalty.unwrap_or(0.0);
-    if penalty_freq != 0.0 || penalty_present != 0.0 {
-        order.push("penalties");
-        samplers.push(LlamaSampler::penalties(
+    let mut penalties_sampler = if penalty_freq != 0.0 || penalty_present != 0.0 {
+        active_params.insert("frequency_penalty".to_string(), json!(penalty_freq));
+        active_params.insert("presence_penalty".to_string(), json!(penalty_present));
+        Some(LlamaSampler::penalties(
             -1,
             1.0,
             penalty_freq as f32,
             penalty_present as f32,
-        ));
-        active_params.insert("frequency_penalty".to_string(), json!(penalty_freq));
-        active_params.insert("presence_penalty".to_string(), json!(penalty_present));
-    }
-
-    let k = config.top_k.unwrap_or(40) as i32;
-    order.push("top_k");
-    samplers.push(LlamaSampler::top_k(k));
-    active_params.insert("top_k".to_string(), json!(k));
-
-    let p = if config.top_p > 0.0 {
-        config.top_p
+        ))
     } else {
-        1.0
+        None
     };
-    order.push("top_p");
-    samplers.push(LlamaSampler::top_p(p as f32, 1));
-    if let Some(mp) = config.min_p {
-        if mp > 0.0 {
-            order.push("min_p");
-            samplers.push(LlamaSampler::min_p(mp as f32, 1));
-            active_params.insert("min_p".to_string(), json!(mp));
-        }
-    }
-    if let Some(tp) = config.typical_p {
-        if tp > 0.0 && tp < 1.0 {
-            order.push("typical");
-            samplers.push(LlamaSampler::typical(tp as f32, 1));
-            active_params.insert("typical_p".to_string(), json!(tp));
-        }
-    }
 
+    let mut grammar_sampler = None;
     if let Some(template_result) = chat_template_result {
         if let Some(grammar) = template_result.grammar.as_deref() {
-            let grammar_sampler = if template_result.grammar_lazy {
+            grammar_sampler = Some(if template_result.grammar_lazy {
+                let mut preserved = std::collections::HashSet::new();
+                for token_str in &template_result.preserved_tokens {
+                    let tokens = model.str_to_token(token_str, AddBos::Never).map_err(|e| {
+                        crate::utils::err_msg(
+                            module_path!(),
+                            line!(),
+                            format!(
+                                "Failed to tokenize preserved grammar token '{}': {e}",
+                                token_str
+                            ),
+                        )
+                    })?;
+                    if tokens.len() == 1 {
+                        preserved.insert(tokens[0]);
+                    }
+                }
+
                 let mut trigger_patterns = Vec::new();
-                let mut trigger_words = Vec::new();
                 let mut trigger_tokens = Vec::new();
 
                 for trigger in &template_result.grammar_triggers {
@@ -195,42 +255,49 @@ pub(super) fn build_sampler(
                             }
                         }
                         llama_cpp_2::model::GrammarTriggerType::Word => {
-                            trigger_words.push(trigger.value.clone());
-                            trigger_patterns.push(regex_escape(&trigger.value));
+                            let tokens =
+                                model.str_to_token(&trigger.value, AddBos::Never).map_err(|e| {
+                                    crate::utils::err_msg(
+                                        module_path!(),
+                                        line!(),
+                                        format!(
+                                            "Failed to tokenize grammar trigger word '{}': {e}",
+                                            trigger.value
+                                        ),
+                                    )
+                                })?;
+                            if tokens.len() == 1 {
+                                if !preserved.contains(&tokens[0]) {
+                                    return Err(crate::utils::err_msg(
+                                        module_path!(),
+                                        line!(),
+                                        format!(
+                                            "Grammar trigger word '{}' was not preserved as a single token",
+                                            trigger.value
+                                        ),
+                                    ));
+                                }
+                                trigger_tokens.push(tokens[0]);
+                            } else {
+                                trigger_patterns.push(regex_escape(&trigger.value));
+                            }
                         }
                         llama_cpp_2::model::GrammarTriggerType::Pattern => {
                             trigger_patterns.push(trigger.value.clone());
                         }
                         llama_cpp_2::model::GrammarTriggerType::PatternFull => {
-                            let mut pattern = trigger.value.clone();
-                            if !pattern.starts_with('^') {
-                                pattern.insert(0, '^');
-                            }
-                            if !pattern.ends_with('$') {
-                                pattern.push('$');
-                            }
-                            trigger_patterns.push(pattern);
+                            trigger_patterns.push(anchor_pattern(&trigger.value));
                         }
                     }
                 }
 
-                if !trigger_patterns.is_empty() {
-                    LlamaSampler::grammar_lazy_patterns(
-                        model,
-                        grammar,
-                        "root",
-                        &trigger_patterns,
-                        &trigger_tokens,
-                    )
-                } else {
-                    LlamaSampler::grammar_lazy(
-                        model,
-                        grammar,
-                        "root",
-                        &trigger_words,
-                        &trigger_tokens,
-                    )
-                }
+                LlamaSampler::grammar_lazy_patterns(
+                    model,
+                    grammar,
+                    "root",
+                    &trigger_patterns,
+                    &trigger_tokens,
+                )
             } else {
                 LlamaSampler::grammar(model, grammar, "root")
             }
@@ -240,34 +307,100 @@ pub(super) fn build_sampler(
                     line!(),
                     format!("Failed to initialize llama.cpp grammar sampler: {e}"),
                 )
-            })?;
-
-            order.push(if template_result.grammar_lazy {
-                "grammar_lazy"
-            } else {
-                "grammar"
-            });
-            samplers.push(grammar_sampler);
+            })?);
             active_params.insert(
                 "grammar".to_string(),
                 json!({
                     "lazy": template_result.grammar_lazy,
                     "trigger_count": template_result.grammar_triggers.len(),
+                    "preserved_token_count": template_result.preserved_tokens.len(),
                 }),
             );
         }
     }
 
-    if config.temperature > 0.0 {
-        order.push("temp");
-        samplers.push(LlamaSampler::temp(config.temperature as f32));
-        order.push("dist");
-        samplers.push(LlamaSampler::dist(
-            config.seed.unwrap_or_else(rand::random::<u32>),
-        ));
+    let k = config.top_k.unwrap_or(40) as i32;
+    active_params.insert("top_k".to_string(), json!(k));
+    let mut top_k_sampler = Some(LlamaSampler::top_k(k));
+
+    let p = if config.top_p > 0.0 {
+        config.top_p
     } else {
-        order.push("greedy");
-        samplers.push(LlamaSampler::greedy());
+        1.0
+    };
+    let mut top_p_sampler = Some(LlamaSampler::top_p(p as f32, 1));
+    if let Some(mp) = config.min_p {
+        if mp > 0.0 {
+            active_params.insert("min_p".to_string(), json!(mp));
+        }
+    }
+    let mut min_p_sampler = config
+        .min_p
+        .filter(|mp| *mp > 0.0)
+        .map(|mp| LlamaSampler::min_p(mp as f32, 1));
+    if let Some(tp) = config.typical_p {
+        if tp > 0.0 && tp < 1.0 {
+            active_params.insert("typical_p".to_string(), json!(tp));
+        }
+    }
+    let mut typical_sampler = config
+        .typical_p
+        .filter(|tp| *tp > 0.0 && *tp < 1.0)
+        .map(|tp| LlamaSampler::typical(tp as f32, 1));
+
+    for stage in requested_order {
+        match stage {
+            "penalties" => {
+                if let Some(sampler) = penalties_sampler.take() {
+                    order.push("penalties");
+                    samplers.push(sampler);
+                }
+            }
+            "grammar" => {
+                if let Some(sampler) = grammar_sampler.take() {
+                    order.push("grammar");
+                    samplers.push(sampler);
+                }
+            }
+            "top_k" => {
+                if let Some(sampler) = top_k_sampler.take() {
+                    order.push("top_k");
+                    samplers.push(sampler);
+                }
+            }
+            "top_p" => {
+                if let Some(sampler) = top_p_sampler.take() {
+                    order.push("top_p");
+                    samplers.push(sampler);
+                }
+            }
+            "min_p" => {
+                if let Some(sampler) = min_p_sampler.take() {
+                    order.push("min_p");
+                    samplers.push(sampler);
+                }
+            }
+            "typical" => {
+                if let Some(sampler) = typical_sampler.take() {
+                    order.push("typical");
+                    samplers.push(sampler);
+                }
+            }
+            "temp" => {
+                if config.temperature > 0.0 {
+                    order.push("temp");
+                    samplers.push(LlamaSampler::temp(config.temperature as f32));
+                    order.push("dist");
+                    samplers.push(LlamaSampler::dist(
+                        config.seed.unwrap_or_else(rand::random::<u32>),
+                    ));
+                } else {
+                    order.push("greedy");
+                    samplers.push(LlamaSampler::greedy());
+                }
+            }
+            _ => {}
+        }
     }
 
     Ok(BuiltSampler {

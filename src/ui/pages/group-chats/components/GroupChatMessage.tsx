@@ -118,7 +118,7 @@ const MessageAvatar = React.memo(function MessageAvatar({
     return (
       <div
         className={cn(
-          "relative flex shrink-0 items-center justify-center overflow-hidden border border-fg/10 bg-linear-to-br from-white/5 to-white/10",
+          "relative flex shrink-0 items-center justify-center overflow-hidden border border-fg/10 bg-linear-to-br from-fg/5 to-fg/10",
           sizeClass,
           shapeClass,
         )}
@@ -141,7 +141,7 @@ const MessageAvatar = React.memo(function MessageAvatar({
     return (
       <div
         className={cn(
-          "relative flex shrink-0 items-center justify-center overflow-hidden border border-fg/10 bg-linear-to-br from-white/5 to-white/10",
+          "relative flex shrink-0 items-center justify-center overflow-hidden border border-fg/10 bg-linear-to-br from-fg/5 to-fg/10",
           sizeClass,
           shapeClass,
         )}
@@ -655,7 +655,7 @@ function GroupChatMessageInner({
                           height: Math.min(attachment.height || 100, 192),
                         }}
                       >
-                        <div className="h-5 w-5 animate-spin rounded-full border-2 border-fg/20 border-t-white/60" />
+                        <div className="h-5 w-5 animate-spin rounded-full border-2 border-fg/20 border-t-fg/60" />
                       </div>
                     )}
                   </div>

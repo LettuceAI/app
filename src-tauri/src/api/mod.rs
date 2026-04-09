@@ -52,14 +52,25 @@ pub async fn api_request(app: tauri::AppHandle, req: ApiRequest) -> Result<ApiRe
     if llama_cpp::is_llama_cpp(req.provider_id.as_deref()) {
         return llama_cpp::handle_local_request(app, req).await;
     }
+    if crate::ollama::is_ollama_provider(req.provider_id.as_deref()) {
+        return crate::ollama::execute_chat_request(&app, &req).await;
+    }
 
-    let client = match transport::build_client(req.timeout_ms) {
-        Ok(c) => c,
-        Err(e) => {
-            log_error(&app, "api_request", format!("client build error: {}", e));
-            return Err(e.to_string());
+    if req.provider_id.as_deref() == Some("openrouter") {
+        if let Some(api_key) = req
+            .headers
+            .as_ref()
+            .and_then(|headers| headers.get("Authorization"))
+            .and_then(|value| value.strip_prefix("Bearer "))
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            crate::pricing_cache::kick_openrouter_deferred_refreshes(
+                app.clone(),
+                api_key.to_string(),
+            );
         }
-    };
+    }
 
     let method_str = req.method.clone().unwrap_or_else(|| "POST".to_string());
     let url_for_log = req.url.clone();
@@ -87,6 +98,17 @@ pub async fn api_request(app: tauri::AppHandle, req: ApiRequest) -> Result<ApiRe
         .map(|query| query.keys().cloned().collect::<Vec<String>>());
     let body_preview = req.body.as_ref().map(crate::serde_utils::summarize_json);
 
+    let stream = req.stream.unwrap_or(false);
+    let request_id = req.request_id.clone();
+
+    let client = match transport::build_client(req.timeout_ms, stream) {
+        Ok(c) => c,
+        Err(e) => {
+            log_error(&app, "api_request", format!("client build error: {}", e));
+            return Err(e.to_string());
+        }
+    };
+
     let mut request_builder = client.request(method.clone(), &req.url);
 
     log_info(
@@ -98,9 +120,6 @@ pub async fn api_request(app: tauri::AppHandle, req: ApiRequest) -> Result<ApiRe
     request_builder = apply_query_params(&app, request_builder, &req);
     request_builder = apply_headers(&app, request_builder, &req);
     request_builder = apply_body(&app, request_builder, &req);
-
-    let stream = req.stream.unwrap_or(false);
-    let request_id = req.request_id.clone();
 
     log_info(
         &app,
@@ -177,7 +196,13 @@ pub async fn api_request(app: tauri::AppHandle, req: ApiRequest) -> Result<ApiRe
                 emit_abort();
                 return Err("Request was cancelled by user".to_string());
             }
-            response = transport::send_with_retries(&app, "api_request", request_builder, 2) => {
+            response = transport::send_with_retries(
+                &app,
+                "api_request",
+                request_builder,
+                2,
+                request_id.as_deref(),
+            ) => {
                 match response {
                     Ok(resp) => {
                         log_info(
@@ -204,7 +229,15 @@ pub async fn api_request(app: tauri::AppHandle, req: ApiRequest) -> Result<ApiRe
             }
         }
     } else {
-        match transport::send_with_retries(&app, "api_request", request_builder, 2).await {
+        match transport::send_with_retries(
+            &app,
+            "api_request",
+            request_builder,
+            2,
+            request_id.as_deref(),
+        )
+        .await
+        {
             Ok(resp) => {
                 log_info(
                     &app,

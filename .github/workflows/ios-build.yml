@@ -1,4 +1,6 @@
-name: iOS Build (Tauri)
+name: Build / Release / iOS
+
+run-name: iOS release build by @${{ github.actor }}
 
 on:
   workflow_dispatch:
@@ -12,6 +14,11 @@ on:
           - development
           - ad-hoc
           - app-store
+      version_override:
+        description: "Optional Tauri/app version override for this release build"
+        required: false
+        default: ""
+        type: string
 
 concurrency:
   group: ios-build-${{ github.ref }}
@@ -57,6 +64,13 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Write Tauri version override
+        if: ${{ inputs.version_override != '' }}
+        env:
+          VERSION_OVERRIDE: ${{ inputs.version_override }}
+        run: |
+          node -e "require('fs').writeFileSync('tauri-version-override.json', JSON.stringify({ version: process.env.VERSION_OVERRIDE }))"
+
       - name: Prepare ONNX Runtime iOS libs
         env:
           IOS_ORT_LIBS_URL: ${{ secrets.IOS_ORT_LIBS_URL }}
@@ -90,7 +104,12 @@ jobs:
           echo "Using ORT_LIB_LOCATION=$ORT_LIB_LOCATION"
 
       - name: Init iOS project
-        run: bun run tauri ios init
+        run: |
+          INIT_ARGS=(ios init)
+          if [ -f tauri-version-override.json ]; then
+            INIT_ARGS+=(--config tauri-version-override.json)
+          fi
+          bun run tauri "${INIT_ARGS[@]}"
 
       - name: Import iOS signing assets
         env:

@@ -190,15 +190,19 @@ fn load_lorebooks_for_ids(
     for lorebook_id in lorebook_ids {
         if let Some(lorebook) = conn
             .query_row(
-                "SELECT id, name, avatar_path, created_at, updated_at FROM lorebooks WHERE id = ?1",
+                "SELECT id, name, avatar_path, keyword_detection_mode, created_at, updated_at FROM lorebooks WHERE id = ?1",
                 params![lorebook_id],
                 |row| {
                     Ok(Lorebook {
                         id: row.get(0)?,
                         name: row.get(1)?,
                         avatar_path: row.get(2)?,
-                        created_at: row.get(3)?,
-                        updated_at: row.get(4)?,
+                        keyword_detection_mode:
+                            crate::storage_manager::lorebook::LorebookKeywordDetectionMode::from_db_value(
+                                row.get(3)?,
+                            ),
+                        created_at: row.get(4)?,
+                        updated_at: row.get(5)?,
                     })
                 },
             )

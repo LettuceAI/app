@@ -22,6 +22,7 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
       convertFiles: "파일 변환",
       usageAnalytics: "사용 분석",
       changelog: "변경 로그",
+      about: "정보",
       createSystemPrompt: "시스템 프롬프트 만들기",
       editSystemPrompt: "시스템 프롬프트 편집",
       systemPrompts: "시스템 프롬프트",
@@ -58,6 +59,7 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
       embeddingDownload: "임베딩 다운로드",
       embeddingTest: "임베딩 테스트",
       editModel: "모델 편집",
+      messageDebug: "메시지 디버그",
     },
     bottomNav: {
       chats: "채팅",
@@ -145,6 +147,7 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
     items: {
       providers: { title: "제공자", subtitle: "AI 서비스 연결" },
       models: { title: "모델", subtitle: "AI 모델 설정" },
+      imageGeneration: { title: "이미지 생성", subtitle: "이미지 생성 및 테스트" },
       voices: { title: "음성", subtitle: "텍스트 음성 변환" },
       accessibility: { title: "접근성", subtitle: "소리 및 햅틱" },
       prompts: { title: "시스템 프롬프트", subtitle: "AI 성격 형성" },
@@ -159,6 +162,7 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
       docs: { title: "문서", subtitle: "가이드 및 참조" },
       github: { title: "문제 보고", subtitle: "버그 및 피드백 • v{{version}}" },
       discord: { title: "디스코드 참여", subtitle: "커뮤니티 및 도움" },
+      about: { title: "정보", subtitle: "버전, 업데이트 및 링크" },
       changelog: { title: "변경 로그", subtitle: "새로운 기능" },
       reset: { title: "초기화", subtitle: "모든 것 삭제" },
       developer: { title: "개발자 도구", subtitle: "디버그 및 테스트" },
@@ -218,6 +222,63 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
     save: "저장",
   },
 
+  updates: {
+    available: {
+      title: "새 버전 사용 가능",
+      description:
+        "v{{latestVersion}} 버전을 사용할 수 있습니다. 현재 버전은 v{{currentVersion}}입니다.",
+      actions: {
+        view: "릴리스 보기",
+      },
+    },
+  },
+
+  about: {
+    kicker: "앱 정보",
+    appName: "LettuceAI",
+    description: "버전 정보, 업데이트 확인 및 유용한 링크.",
+    info: {
+      version: "버전",
+      channel: "채널",
+      platform: "플랫폼",
+    },
+    buildChannel: {
+      dev: "개발 빌드",
+      release: "안정 릴리스",
+    },
+    update: {
+      sectionTitle: "업데이트",
+      title: "앱 업데이트",
+      description: "새 릴리스를 수동으로 확인하거나 시작 시 자동 확인을 끌 수 있습니다.",
+      autoChecks: "자동 업데이트 확인",
+      autoChecksDescription: "활성화하면 LettuceAI가 앱을 열 때 새 버전을 확인합니다.",
+      checkNow: "업데이트 확인",
+      checking: "업데이트 확인 중...",
+      upToDateTitle: "최신 버전입니다",
+      upToDateDescription: "현재 이 기기에서 사용할 수 있는 더 새로운 릴리스가 없습니다.",
+      failedTitle: "업데이트 확인 실패",
+      failedDescription: "지금은 업데이트를 확인할 수 없습니다. 잠시 후 다시 시도하세요.",
+    },
+    links: {
+      sectionTitle: "링크",
+      website: "웹사이트",
+      websiteDescription: "다운로드 페이지 및 릴리스 정보",
+      github: "GitHub",
+      githubDescription: "소스 코드, 이슈 및 개발",
+      discord: "Discord",
+      discordDescription: "커뮤니티 서버 및 지원",
+      reddit: "Reddit",
+      redditDescription: "커뮤니티 토론, 피드백 및 업데이트",
+    },
+    developerMode: {
+      enable: "개발자 모드 활성화",
+      enabled: "개발자 모드 활성화됨",
+    },
+    errors: {
+      saveTitle: "환경설정을 저장할 수 없습니다",
+      saveDescription: "업데이트 확인 환경설정이 변경되지 않았습니다.",
+    },
+  },
   components: {
     tooltip: {
       dismissHint: "아무 곳이나 탭하여 닫기",
@@ -235,6 +296,14 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
       chooseImage: "이미지 선택",
       chooseImageDesc: "기기에서 선택",
     },
+    avatarCurrentEdit: {
+      title: "현재 편집",
+      reposition: "정복",
+      repositionDesc: "현재 아바타 이동 또는 자르기",
+      editWithAI: "AI로 편집",
+      editWithAIDesc: "현재 아바타에 대한 AI 편집 열기",
+      noImageModels: "사용 가능한 이미지 모델이 없습니다.",
+    },
     avatarGeneration: {
       modelsLoadError: "이미지 생성 모델을 불러오지 못했습니다",
       title: "아바타 생성",
@@ -244,6 +313,19 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
       describe: "아바타를 설명하세요",
       describePlaceholder: "다채로운 머리카락에 따뜻하게 미소짓는 친근한 애니메이션 소녀...",
       inProgress: "아바타 생성 중...",
+      editingInProgress: "아바타 수정을 적용하는 중...",
+      previousVariant: "이전 변형",
+      nextVariant: "다음 변종",
+      variantCounter: "{{current}} / {{total}}",
+      editRequest: "요청 수정",
+      editRequestPlaceholder: "머리를 더 어둡게 하고, 안경을 쓰고, 얼굴은 그대로 유지하세요...",
+      applyEdit: "적용 편집",
+      editImageLoadError: "편집을 위해 생성된 아바타를 준비하지 못했습니다.",
+      aiAssistant: "AI 어시스턴트",
+      backToResults: "프롬프트로 돌아가기",
+      magicInTheWorks: "마법 작업 중...",
+      refine: "구체화",
+      apply: "적용하다",
       alt: "생성된 아바타",
       regenerate: "재생성",
       useThis: "이것 사용",
@@ -273,6 +355,9 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
       searchPlaceholder: "모델 검색...",
       noResults: "모델을 찾을 수 없습니다",
       noResultsHint: "다른 검색어를 시도하세요",
+    },
+    localeSelector: {
+      title: "언어 선택",
     },
     promptTemplate: {
       nameContentRequired: "이름과 내용은 필수입니다",
@@ -495,6 +580,29 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
     swapPlacesOn: "위치 교환 (켜기)",
     uploadImage: "이미지 업로드",
     helpMeReply: "답장 도우미",
+    sceneImage: {
+      modeTitle: "장면 이미지",
+      modeDescription:
+        "장면을 직접 작성할 것인지 아니면 AI가 먼저 초안을 작성하도록 할 것인지 선택하세요.",
+      writePrompt: "프롬프트 작성",
+      writePromptDesc: "사용하려는 정확한 장면 이미지 프롬프트를 입력하세요.",
+      askAi: "AI에게 물어보세요",
+      askAiDesc: "현재 채팅 모델이 선택한 순간부터 장면 프롬프트 초안을 작성하도록 합니다.",
+      generateTitle: "장면 이미지 생성",
+      regenerateTitle: "장면 이미지 재생성",
+      aiTitle: "AI 장면 프롬프트",
+      promptLabel: "장면 프롬프트",
+      promptPlaceholder:
+        "장면, 캐릭터, 분위기, 조명, 카메라 프레임 및 중요한 세부 사항을 설명합니다.",
+      suggestedPrompt: "제안된 프롬프트",
+      regeneratePrompt: "재생성",
+      editPrompt: "프롬프트 편집",
+      reviewTitle: "장면 프롬프트 검토",
+      denyPrompt: "거부",
+      acceptPrompt: "수락",
+      generateImage: "이미지 생성",
+      updateImage: "이미지 업데이트",
+    },
     useMyTextAsBase: "내 텍스트를 기반으로 사용",
     writeNewReply: "새로운 내용 작성",
     suggestedReply: "추천 답장",
@@ -628,8 +736,11 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
       branchFromHere: "여기서 분기",
       branchToGroupChat: "그룹 채팅으로 분기",
       branchToCharacter: "캐릭터로 분기",
+      generateSceneImage: "장면 이미지 생성",
+      regenerateSceneImage: "장면 이미지 재생성",
       chatAppearance: "채팅 외관",
       delete: "삭제",
+      debug: "디버그",
       unpinToDelete: "삭제하려면 고정 해제",
       editPlaceholder: "메시지를 편집하세요...",
       memoriesUsed: "{{count}}개 기억 사용됨",
@@ -917,7 +1028,8 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
       minTwoRequired: "최소 2명의 캐릭터 필요",
       removeCharacter: "캐릭터 제거",
       groupMinCharacters: "그룹에는 최소 2명의 캐릭터가 필요합니다",
-      mutedCharactersNote: "음소거된 캐릭터는 자동 화자 선택에서 건너뛰지만, 명시적인 `@멘션`으로 응답할 수 있습니다.",
+      mutedCharactersNote:
+        "음소거된 캐릭터는 자동 화자 선택에서 건너뛰지만, 명시적인 `@멘션`으로 응답할 수 있습니다.",
       addCharacterTitle: "캐릭터 추가",
       allCharactersInGroup: "모든 캐릭터가 이미 이 그룹에 있습니다.",
       removeCharacterTitle: "캐릭터를 제거하시겠습니까?",
@@ -960,7 +1072,8 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
       minTwoRequired: "최소 2명의 캐릭터 필요",
       removeCharacter: "캐릭터 제거",
       groupMinCharacters: "그룹 채팅에는 최소 2명의 캐릭터가 필요합니다",
-      mutedCharactersNote: "음소거된 캐릭터는 자동 화자 선택에서 건너뛰지만, 명시적인 `@멘션`으로 응답할 수 있습니다.",
+      mutedCharactersNote:
+        "음소거된 캐릭터는 자동 화자 선택에서 건너뛰지만, 명시적인 `@멘션`으로 응답할 수 있습니다.",
       data: "데이터",
       dataSubtitle: "대화 내보내기 또는 가져오기",
       export: "내보내기",
@@ -988,7 +1101,8 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
       withoutMessages: "메시지 제외",
       withoutMessagesDesc: "설정만 복제 (캐릭터, 시작 장면)",
       branchWithCharacterTitle: "캐릭터로 분기",
-      branchWithCharacterDesc: "1대1 대화로 계속할 캐릭터를 선택하세요. 이 그룹의 모든 메시지가 변환됩니다.",
+      branchWithCharacterDesc:
+        "1대1 대화로 계속할 캐릭터를 선택하세요. 이 그룹의 모든 메시지가 변환됩니다.",
       continueWith: "{{name}}과(와) 대화 계속",
       exportChatPackageTitle: "채팅 패키지 내보내기",
       includeCharacterSnapshots: "캐릭터 스냅샷 포함",
@@ -1559,6 +1673,7 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
       plainTextHex: "Plain Text Color",
       italicTextHex: "Italic Text Color",
       quotedTextHex: "블록 인용 색상",
+      inlineCodeTextHex: "인라인 코드 색상",
     },
     backgroundTransparency: {
       label: "배경 및 투명도",
@@ -1616,8 +1731,7 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
     previewLabel: "미리보기",
     settingsCardsLabel: "설정 카드",
     settingsCardsOpacity: "카드 불투명도",
-    settingsCardsOpacityDesc:
-      "설정 카드와 목록 행이 얼마나 투명하게 보일지 조절합니다.",
+    settingsCardsOpacityDesc: "설정 카드와 목록 행이 얼마나 투명하게 보일지 조절합니다.",
     importButton: "가져오기",
     exportButton: "내보내기",
     resetAllButton: "전체 초기화",
@@ -1771,10 +1885,45 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
       size: "크기",
       quality: "품질",
       style: "스타일",
+      searchModels: "모델 검색...",
+      selectAvatarModel: "아바타 모델 선택",
+      selectSceneModel: "장면 모델 선택",
+      selectWriterModel: "장면 작성 모델 선택",
+      useFirstAvailable: "사용 가능한 첫 번째 모델 사용",
+      useFirstCompatible: "첫 번째 호환 작성 모델 사용",
+    },
+    mode: {
+      title: "동작 방식",
+      description: "모델 출력에서 감지된 장면 프롬프트를 어떻게 처리할지 선택합니다.",
+      auto: "자동",
+      autoDescription: "모델이 장면 프롬프트를 제공하면 즉시 장면 이미지를 생성합니다.",
+      askFirst: "먼저 확인",
+      askFirstDescription:
+        "감지된 장면 프롬프트를 먼저 보여 주고, 이미지 생성 전에 승인을 기다립니다.",
+      manual: "수동",
+      manualDescription:
+        "모델 응답의 장면 프롬프트는 무시합니다. 사용자가 직접 실행한 작업만 사용합니다.",
     },
     empty: {
       title: "이미지 모델 없음",
       description: "이미지 생성을 시작하려면 모델 페이지에서 이미지 생성 모델을 추가하세요.",
+    },
+    sections: {
+      avatar: {
+        title: "아바타 생성",
+        description:
+          "아바타 선택기 또는 관련 프로필 이미지 흐름에서 아바타를 생성할 때 사용되는 기본 모델입니다.",
+      },
+      scene: {
+        title: "장면 생성",
+        description:
+          "대화 컨텍스트 또는 장면 프롬프트에서 생성된 장면 이미지용으로 예약된 모델입니다.",
+      },
+      writer: {
+        title: "장면 작성기",
+        description:
+          "채팅 맥락, 아바타, 참조 이미지를 바탕으로 장면 프롬프트와 디자인 참조 설명을 작성하는 전용 멀티모달 텍스트 모델입니다.",
+      },
     },
   },
 
@@ -1791,6 +1940,7 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
       testDataGenerators: "테스트 데이터 생성기",
       storageMaintenance: "스토리지 유지보수",
       usageTracking: "사용량 추적",
+      crashTesting: "충돌 테스트",
       environmentInfo: "환경 정보",
     },
     testData: {
@@ -1812,6 +1962,11 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
     usageTracking: {
       recalculateAll: "모든 사용 비용 재계산",
       recalculateAllDesc: "모든 OpenRouter 사용 기록의 가격을 다시 가져오고 비용을 재계산",
+    },
+    crashTesting: {
+      forceCrash: "지금 크래시 앱",
+      forceCrashDesc: "충돌 감지를 테스트하기 위해 기본 앱 프로세스를 즉시 종료합니다.",
+      forceCrashConfirm: "그러면 충돌 감지기를 테스트하기 위해 앱이 즉시 중단됩니다. 계속하다?",
     },
     environmentInfo: {
       mode: "모드",
@@ -2301,6 +2456,45 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
       deleteLorebook: "로어북 삭제",
       importLorebook: "로어북 가져오기",
     },
+    imageLibrary: {
+      filters: {
+        all: "전체",
+        backgrounds: "배경",
+        avatars: "아바타",
+        attachments: "첨부파일",
+        other: "기타",
+      },
+      searchPlaceholder: "파일명, 경로, 세션 ID 또는 엔티티 ID로 검색",
+      empty: {
+        title: "이 보기와 일치하는 이미지가 없습니다",
+        description:
+          "다른 필터나 검색어를 시도해 보세요. 라이브러리에는 앱의 로컬 저장소에 이미 저장된 이미지만 표시됩니다.",
+      },
+      actions: {
+        sort: "정렬",
+        useThis: "이 이미지 사용",
+        using: "사용 중...",
+        copyPath: "경로 복사",
+        saving: "저장 중...",
+        download: "다운로드",
+        delete: "이미지 삭제",
+        deleting: "삭제 중...",
+      },
+      active: "활성",
+      messages: {
+        loadFailed: "이미지 라이브러리를 불러오지 못했습니다",
+        saved: "이미지가 저장되었습니다",
+        downloadFailed: "다운로드에 실패했습니다",
+        useFailed: "이 이미지를 사용할 수 없습니다",
+        deleted: "이미지가 삭제되었습니다",
+        deleteFailed: "이미지를 삭제하지 못했습니다",
+      },
+      deleteConfirm: {
+        title: "이미지를 삭제할까요?",
+        message:
+          '"{{filename}}"을(를) 정말 삭제하시겠습니까? 아직 이 파일을 사용하는 아바타, 채팅 배경 또는 메시지 첨부가 깨질 수 있습니다.',
+      },
+    },
     deleteConfirm: {
       title: "{{itemType}}을(를) 삭제하시겠습니까?",
       message: "정말 삭제하시겠습니까",
@@ -2450,6 +2644,8 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
     status: {
       connecting: "연결 중...",
       connected: "연결됨",
+      waitingConfirmation: "확인을 기다리는 중",
+      waitingConfirmationDesc: "계속하려면 호스트 장치에서 연결을 승인하세요.",
       syncing: "동기화 중...",
       transferringData: "데이터 전송 중",
       syncInProgress: "동기화 진행 중",

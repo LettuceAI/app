@@ -1,4 +1,6 @@
-name: iOS Init + PR
+name: Maintenance / iOS Init PR
+
+run-name: iOS init PR by @${{ github.actor }}
 
 on:
   workflow_dispatch:

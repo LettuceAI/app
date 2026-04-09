@@ -18,11 +18,13 @@ export const enMessages = {
       convertFiles: "Convert Files",
       usageAnalytics: "Usage Analytics",
       changelog: "Changelog",
+      about: "About",
       createSystemPrompt: "Create System Prompt",
       editSystemPrompt: "Edit System Prompt",
       systemPrompts: "System Prompts",
       developer: "Developer",
       advanced: "Advanced",
+      hostApi: "API Server",
       characters: "Characters",
       lorebooks: "Lorebooks",
       personas: "Personas",
@@ -54,6 +56,7 @@ export const enMessages = {
       embeddingDownload: "Embedding Download",
       embeddingTest: "Embedding Test",
       editModel: "Edit Model",
+      messageDebug: "Message Debug",
     },
     bottomNav: {
       chats: "Chats",
@@ -156,6 +159,7 @@ export const enMessages = {
       docs: { title: "Documentation", subtitle: "Guides & reference" },
       github: { title: "Report Issues", subtitle: "Bugs & feedback • v{{version}}" },
       discord: { title: "Join Discord", subtitle: "Community & help" },
+      about: { title: "About", subtitle: "Version, updates & links" },
       changelog: { title: "Changelog", subtitle: "What's new" },
       reset: { title: "Reset", subtitle: "Erase everything" },
       developer: { title: "Developer Tools", subtitle: "Debug & testing" },
@@ -213,6 +217,63 @@ export const enMessages = {
     add: "Add",
     openFilters: "Open filters",
     save: "Save",
+  },
+
+  updates: {
+    available: {
+      title: "New version available",
+      description: "v{{latestVersion}} is available. You are on v{{currentVersion}}.",
+      actions: {
+        view: "View release",
+      },
+    },
+  },
+
+  about: {
+    kicker: "App Info",
+    appName: "LettuceAI",
+    description: "Version details, update checks, and useful links.",
+    info: {
+      version: "Version",
+      channel: "Channel",
+      platform: "Platform",
+    },
+    buildChannel: {
+      dev: "Development build",
+      release: "Stable release",
+    },
+    update: {
+      sectionTitle: "Updates",
+      title: "App updates",
+      description: "Check for new releases manually or disable automatic startup checks.",
+      autoChecks: "Automatic update checks",
+      autoChecksDescription: "When enabled, LettuceAI checks for new versions when the app opens.",
+      checkNow: "Check for updates",
+      checking: "Checking for updates...",
+      upToDateTitle: "You're up to date",
+      upToDateDescription: "No newer release is available for this device right now.",
+      failedTitle: "Update check failed",
+      failedDescription: "Couldn't check for updates right now. Try again in a moment.",
+    },
+    links: {
+      sectionTitle: "Links",
+      website: "Website",
+      websiteDescription: "Download page and release information",
+      github: "GitHub",
+      githubDescription: "Source code, issues, and development",
+      discord: "Discord",
+      discordDescription: "Community server and support",
+      reddit: "Reddit",
+      redditDescription: "Community discussions, feedback, and updates",
+    },
+    developerMode: {
+      enable: "Enable Developer Mode",
+      enabled: "Developer Mode Enabled",
+    },
+    errors: {
+      saveTitle: "Couldn't save preference",
+      saveDescription: "Your update-check preference was not changed.",
+    },
   },
 
   components: {
@@ -528,7 +589,7 @@ export const enMessages = {
       writePrompt: "Write prompt",
       writePromptDesc: "Type the exact scene image prompt you want to use.",
       askAi: "Ask AI",
-      askAiDesc: "Let the current chat model draft a scene prompt from the selected moment.",
+      askAiDesc: "Let the scene writer model draft a scene prompt from the selected moment.",
       generateTitle: "Generate Scene Image",
       regenerateTitle: "Regenerate Scene Image",
       aiTitle: "AI Scene Prompt",
@@ -538,6 +599,9 @@ export const enMessages = {
       suggestedPrompt: "Suggested prompt",
       regeneratePrompt: "Regenerate",
       editPrompt: "Edit prompt",
+      reviewTitle: "Review Scene Prompt",
+      denyPrompt: "Deny",
+      acceptPrompt: "Accept",
       generateImage: "Generate Image",
       updateImage: "Update Image",
     },
@@ -678,6 +742,7 @@ export const enMessages = {
       regenerateSceneImage: "Regenerate scene image",
       chatAppearance: "Chat Appearance",
       delete: "Delete",
+      debug: "Debug",
       unpinToDelete: "Unpin to delete",
       editPlaceholder: "Edit your message...",
       memoriesUsed: "{{count}} memories used",
@@ -1170,6 +1235,12 @@ export const enMessages = {
       enterNamePlaceholder: "Enter lorebook name...",
       lorebookExplanation:
         "Lorebooks contain lore entries that are injected into prompts when keywords match.",
+      keywordDetectionMode: "KEYWORD DETECTION",
+      keywordDetectionRecentWindow: "Recent 10 messages",
+      keywordDetectionRecentWindowDesc:
+        "Matches against the recent 10-message conversation window.",
+      keywordDetectionLatestUser: "Latest user message only",
+      keywordDetectionLatestUserDesc: "Matches only against the most recent user-sent message.",
       viewEntries: "View Entries",
       editEntriesDesc: "Edit lorebook entries",
       disableForCharacter: "Disable for Character",
@@ -1613,6 +1684,7 @@ export const enMessages = {
       plainTextHex: "Plain Text Color",
       italicTextHex: "Italic Text Color",
       quotedTextHex: "Block Quote Color",
+      inlineCodeTextHex: "Inline Code Color",
     },
     backgroundTransparency: {
       label: "Background & Transparency",
@@ -1830,7 +1902,21 @@ export const enMessages = {
       searchModels: "Search models...",
       selectAvatarModel: "Select Avatar Model",
       selectSceneModel: "Select Scene Model",
+      selectWriterModel: "Select Scene Writer Model",
       useFirstAvailable: "Use first available model",
+      useFirstCompatible: "Use first compatible writer model",
+    },
+    mode: {
+      title: "Mode",
+      description: "Choose how scene prompts detected in model output should be handled.",
+      auto: "Automatic",
+      autoDescription: "Generate the scene image as soon as the model provides a scene prompt.",
+      askFirst: "Ask first",
+      askFirstDescription:
+        "Show the detected scene prompt and wait for your approval before generating an image.",
+      manual: "Manual",
+      manualDescription:
+        "Ignore scene prompts in model responses. Only use actions you trigger yourself.",
     },
     empty: {
       title: "No Image Models",
@@ -1846,6 +1932,11 @@ export const enMessages = {
         title: "Scene Generation",
         description:
           "Reserved model for scene images generated from conversation context or scene prompts.",
+      },
+      writer: {
+        title: "Scene Writer",
+        description:
+          "Reserved multimodal text model for drafting scene prompts and design reference descriptions from chat context, avatars, and reference images.",
       },
     },
   },
@@ -2384,6 +2475,45 @@ export const enMessages = {
       deletePersona: "Delete Persona",
       deleteLorebook: "Delete Lorebook",
       importLorebook: "Import Lorebook",
+    },
+    imageLibrary: {
+      filters: {
+        all: "All",
+        backgrounds: "Backgrounds",
+        avatars: "Avatars",
+        attachments: "Attachments",
+        other: "Other",
+      },
+      searchPlaceholder: "Search by filename, path, session id, or entity id",
+      empty: {
+        title: "No images match this view",
+        description:
+          "Try a different filter or search term. The library only lists images already stored in the app's local storage.",
+      },
+      actions: {
+        sort: "Sort",
+        useThis: "Use this",
+        using: "Using...",
+        copyPath: "Copy path",
+        saving: "Saving...",
+        download: "Download",
+        delete: "Delete image",
+        deleting: "Deleting...",
+      },
+      active: "Active",
+      messages: {
+        loadFailed: "Failed to load image library",
+        saved: "Image saved",
+        downloadFailed: "Download failed",
+        useFailed: "Could not use this image",
+        deleted: "Image deleted",
+        deleteFailed: "Failed to delete image",
+      },
+      deleteConfirm: {
+        title: "Delete image?",
+        message:
+          'Are you sure you want to delete "{{filename}}"? This may break avatars, chat backgrounds, or message attachments that still use it.',
+      },
     },
     deleteConfirm: {
       title: "Delete {{itemType}}?",

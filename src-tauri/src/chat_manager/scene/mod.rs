@@ -3,8 +3,14 @@ use tauri::AppHandle;
 
 use crate::api::{api_request, ApiRequest};
 use crate::chat_manager::attachments::{cleanup_attachments, persist_attachments};
-use crate::chat_manager::execution::{find_model_with_credential, prepare_sampling_request};
+use crate::chat_manager::execution::{
+    find_model_with_credential, prepare_default_sampling_request, prepare_sampling_request,
+};
+use crate::chat_manager::prompting::entry_conditions::{
+    entry_is_active, PromptEntryConditionContext,
+};
 use crate::chat_manager::prompts;
+use crate::chat_manager::provider_adapter::adapter_for;
 use crate::chat_manager::request::extract_text;
 use crate::chat_manager::service::{require_api_key, ChatContext};
 use crate::chat_manager::storage::{
@@ -14,9 +20,10 @@ use crate::chat_manager::turn_builder::{
     partition_prompt_entries, should_insert_in_chat_prompt_entry,
 };
 use crate::chat_manager::types::{
-    Character, ChatGenerateSceneImageArgs, ChatGenerateScenePromptArgs, ImageAttachment, Model,
-    Persona, PromptEntryPosition, ProviderCredential, Session, Settings, StoredMessage,
-    SystemPromptEntry,
+    Character, ChatGenerateDesignReferenceDescriptionArgs, ChatGenerateSceneImageArgs,
+    ChatGenerateScenePromptArgs, ImageAttachment, Model, Persona, PromptEntryChatMode,
+    PromptEntryImageSlot, PromptEntryPayload, PromptEntryPosition, ProviderCredential, Session,
+    Settings, StoredMessage, SystemPromptEntry,
 };
 use crate::image_generator::types::ImageGenerationRequest;
 use crate::storage_manager::media::{storage_load_avatar, storage_read_image_data};
@@ -71,12 +78,76 @@ fn resolve_image_generation_target<'a>(
         .ok_or_else(|| "No image generation model is configured".to_string())
 }
 
+fn supports_scene_writer_model(model: &Model) -> bool {
+    model
+        .input_scopes
+        .iter()
+        .any(|scope| scope.eq_ignore_ascii_case("text"))
+        && model
+            .input_scopes
+            .iter()
+            .any(|scope| scope.eq_ignore_ascii_case("image"))
+        && model
+            .output_scopes
+            .iter()
+            .any(|scope| scope.eq_ignore_ascii_case("text"))
+}
+
+fn resolve_scene_writer_target<'a>(
+    settings: &'a Settings,
+    preferred_model_id: Option<&str>,
+) -> Result<(&'a Model, &'a ProviderCredential), String> {
+    if let Some(model_id) = preferred_model_id.filter(|id| !id.trim().is_empty()) {
+        let (model, credential) = find_model_with_credential(settings, model_id)
+            .ok_or_else(|| "Configured scene writer model could not be resolved".to_string())?;
+        if !supports_scene_writer_model(model) {
+            return Err(
+                "Configured scene writer model must support text and image input with text output"
+                    .to_string(),
+            );
+        }
+        return Ok((model, credential));
+    }
+
+    settings
+        .models
+        .iter()
+        .find_map(|model| {
+            if !supports_scene_writer_model(model) {
+                return None;
+            }
+            let credential = resolve_credential_for_model(settings, model)?;
+            Some((model, credential))
+        })
+        .ok_or_else(|| {
+            "No compatible scene writer model is configured. Add an image-text-to-text model in Settings > Image Generation."
+                .to_string()
+        })
+}
+
 fn scene_generation_enabled(settings: &Settings) -> bool {
     settings
         .advanced_settings
         .as_ref()
         .and_then(|advanced| advanced.scene_generation_enabled)
         .unwrap_or(true)
+}
+
+fn avatar_generation_enabled(settings: &Settings) -> bool {
+    settings
+        .advanced_settings
+        .as_ref()
+        .and_then(|advanced| advanced.avatar_generation_enabled)
+        .unwrap_or(true)
+}
+
+fn model_supports_vision(model: &Model) -> bool {
+    model.input_scopes.iter().any(|scope| {
+        matches!(
+            scope.trim().to_ascii_lowercase().as_str(),
+            "image" | "vision"
+        )
+    })
 }
 
 fn resolve_avatar_reference_data(
@@ -113,6 +184,7 @@ struct SceneReferenceImages {
     character_images: Vec<String>,
     character_reference_count: usize,
     character_reference_source: SceneReferenceSource,
+    chat_background_images: Vec<String>,
     persona_images: Vec<String>,
     persona_reference_count: usize,
     persona_reference_source: SceneReferenceSource,
@@ -131,6 +203,19 @@ fn resolve_design_reference_images(app: &AppHandle, image_ids: &[String]) -> Vec
         .collect()
 }
 
+fn resolve_chat_background_image(app: &AppHandle, background_image_path: Option<&str>) -> Vec<String> {
+    let Some(image_id) = background_image_path
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return Vec::new();
+    };
+
+    storage_read_image_data(app, image_id)
+        .map(|image| vec![image])
+        .unwrap_or_default()
+}
+
 fn build_scene_reference_images(
     app: &AppHandle,
     character: &Character,
@@ -138,6 +223,8 @@ fn build_scene_reference_images(
 ) -> SceneReferenceImages {
     let character_design_images =
         resolve_design_reference_images(app, &character.design_reference_image_ids);
+    let chat_background_images =
+        resolve_chat_background_image(app, character.background_image_path.as_deref());
     let (character_images, character_reference_count, character_reference_source) =
         if !character_design_images.is_empty() {
             let count = character_design_images.len();
@@ -187,6 +274,7 @@ fn build_scene_reference_images(
         character_images,
         character_reference_count,
         character_reference_source,
+        chat_background_images,
         persona_images,
         persona_reference_count,
         persona_reference_source,
@@ -264,6 +352,19 @@ fn build_scene_prompt_reference_text(
     sections.join("\n\n")
 }
 
+fn build_chat_background_reference_hint() -> &'static str {
+    "The image model will receive the chat background image as an environment reference."
+}
+
+fn build_chat_background_reference_text() -> String {
+    [
+        "# Chat Background Notes",
+        "The attached chat background image represents the intended environment or backdrop for this chat.",
+        "Use it as the scene's environmental anchor when it fits the current moment, preserving major location cues, palette, lighting mood, architecture, and large background features unless the recent messages clearly establish a different setting.",
+    ]
+    .join("\n")
+}
+
 fn build_scene_prompt_image_parts(images: &[String]) -> Vec<Value> {
     images
         .iter()
@@ -280,34 +381,115 @@ fn build_scene_prompt_image_parts(images: &[String]) -> Vec<Value> {
         .collect()
 }
 
-fn build_scene_prompt_content_with_images(
-    content: &str,
-    reference_images: &SceneReferenceImages,
-) -> Option<Value> {
-    const CHARACTER_TOKEN: &str = "{{image[character]}}";
-    const PERSONA_TOKEN: &str = "{{image[persona]}}";
+const SCENE_CHARACTER_TOKEN: &str = "{{image[character]}}";
+const SCENE_PERSONA_TOKEN: &str = "{{image[persona]}}";
+const SCENE_CHAT_BACKGROUND_TOKEN: &str = "{{image[chatBackground]}}";
+const SCENE_CHAT_BACKGROUND_LEGACY_TOKEN: &str = "{{image[chat_background]}}";
+const DESIGN_REFERENCE_AVATAR_TOKEN: &str = "{{image[avatar]}}";
+const DESIGN_REFERENCE_REFERENCES_TOKEN: &str = "{{image[references]}}";
 
-    if !content.contains(CHARACTER_TOKEN) && !content.contains(PERSONA_TOKEN) {
+fn legacy_prompt_entry_image_slot(content: &str) -> Option<PromptEntryImageSlot> {
+    if content.contains(SCENE_CHARACTER_TOKEN) {
+        Some(PromptEntryImageSlot::Character)
+    } else if content.contains(SCENE_PERSONA_TOKEN) {
+        Some(PromptEntryImageSlot::Persona)
+    } else if content.contains(SCENE_CHAT_BACKGROUND_TOKEN)
+        || content.contains(SCENE_CHAT_BACKGROUND_LEGACY_TOKEN)
+    {
+        Some(PromptEntryImageSlot::ChatBackground)
+    } else if content.contains(DESIGN_REFERENCE_AVATAR_TOKEN) {
+        Some(PromptEntryImageSlot::Avatar)
+    } else if content.contains(DESIGN_REFERENCE_REFERENCES_TOKEN) {
+        Some(PromptEntryImageSlot::References)
+    } else {
+        None
+    }
+}
+
+fn prompt_entry_image_slot(entry: &SystemPromptEntry) -> Option<PromptEntryImageSlot> {
+    match &entry.prompt_entry_payload {
+        Some(PromptEntryPayload::ImageSlot { slot }) => Some(slot.clone()),
+        None => None,
+    }
+}
+
+fn prompt_entry_has_image_binding(entry: &SystemPromptEntry) -> bool {
+    entry.prompt_entry_payload.is_some() || legacy_prompt_entry_image_slot(&entry.content).is_some()
+}
+
+fn cleaned_image_entry_text(content: &str) -> Option<String> {
+    let stripped = content
+        .replace(SCENE_CHARACTER_TOKEN, "")
+        .replace(SCENE_PERSONA_TOKEN, "")
+        .replace(SCENE_CHAT_BACKGROUND_TOKEN, "")
+        .replace(SCENE_CHAT_BACKGROUND_LEGACY_TOKEN, "")
+        .replace(DESIGN_REFERENCE_AVATAR_TOKEN, "")
+        .replace(DESIGN_REFERENCE_REFERENCES_TOKEN, "");
+    let cleaned = condense_prompt_whitespace(stripped);
+    if cleaned.trim().is_empty() {
+        None
+    } else {
+        Some(cleaned)
+    }
+}
+
+fn build_multimodal_image_content(text: Option<String>, image_parts: Vec<Value>) -> Option<Value> {
+    if image_parts.is_empty() {
         return None;
     }
 
+    let mut parts = Vec::new();
+    if let Some(text) = text.filter(|value| !value.trim().is_empty()) {
+        parts.push(json!({
+            "type": "text",
+            "text": text,
+        }));
+    }
+    parts.extend(image_parts);
+
+    Some(Value::Array(parts))
+}
+
+fn build_scene_prompt_content_with_images(
+    entry: &SystemPromptEntry,
+    reference_images: &SceneReferenceImages,
+) -> Option<Value> {
+    if let Some(slot) = prompt_entry_image_slot(entry) {
+        let parts = match slot {
+            PromptEntryImageSlot::Character => {
+                build_scene_prompt_image_parts(&reference_images.character_images)
+            }
+            PromptEntryImageSlot::ChatBackground => {
+                build_scene_prompt_image_parts(&reference_images.chat_background_images)
+            }
+            PromptEntryImageSlot::Persona => {
+                build_scene_prompt_image_parts(&reference_images.persona_images)
+            }
+            PromptEntryImageSlot::Avatar | PromptEntryImageSlot::References => Vec::new(),
+        };
+        return build_multimodal_image_content(cleaned_image_entry_text(&entry.content), parts);
+    }
+
     let mut parts: Vec<Value> = Vec::new();
-    if content.contains(CHARACTER_TOKEN) {
+    if entry.content.contains(SCENE_CHARACTER_TOKEN) {
         parts.extend(build_scene_prompt_image_parts(
             &reference_images.character_images,
         ));
     }
-    if content.contains(PERSONA_TOKEN) {
+    if entry.content.contains(SCENE_PERSONA_TOKEN) {
         parts.extend(build_scene_prompt_image_parts(
             &reference_images.persona_images,
         ));
     }
-
-    if parts.is_empty() {
-        None
-    } else {
-        Some(Value::Array(parts))
+    if entry.content.contains(SCENE_CHAT_BACKGROUND_TOKEN)
+        || entry.content.contains(SCENE_CHAT_BACKGROUND_LEGACY_TOKEN)
+    {
+        parts.extend(build_scene_prompt_image_parts(
+            &reference_images.chat_background_images,
+        ));
     }
+
+    build_multimodal_image_content(cleaned_image_entry_text(&entry.content), parts)
 }
 
 fn build_scene_generation_request(
@@ -322,14 +504,17 @@ fn build_scene_generation_request(
         character_images,
         character_reference_count,
         character_reference_source,
+        chat_background_images,
         persona_images,
         persona_reference_count,
         persona_reference_source,
     } = reference_images;
     let mut prompt_sections = Vec::new();
     let mut input_images = character_images.clone();
+    input_images.extend(chat_background_images.clone());
     input_images.extend(persona_images.clone());
     let has_character_reference = character_reference_count > 0;
+    let has_chat_background_reference = !chat_background_images.is_empty();
     let has_persona_reference = persona_reference_count > 0;
 
     if let Some(design_description) = character
@@ -359,7 +544,7 @@ fn build_scene_generation_request(
         }
     }
 
-    if has_character_reference || has_persona_reference {
+    if has_character_reference || has_chat_background_reference || has_persona_reference {
         let mut reference_lines = Vec::new();
         let mut next_image_index = 1;
         if has_character_reference {
@@ -375,6 +560,15 @@ fn build_scene_generation_request(
                 range_label, source_label, character.name, character.name
             ));
             next_image_index += character_reference_count;
+        }
+        if has_chat_background_reference {
+            let range_label =
+                format_scene_reference_range(next_image_index, chat_background_images.len());
+            reference_lines.push(format!(
+                "The {} is the chat background environment reference. Use it for setting, palette, lighting mood, architecture, and large backdrop elements. Do not treat it as a character identity reference.",
+                range_label
+            ));
+            next_image_index += chat_background_images.len();
         }
         if has_persona_reference {
             let persona_name = persona_scene_name(persona);
@@ -434,12 +628,17 @@ fn build_scene_generation_request(
         model: model.name.clone(),
         provider_id: model.provider_id.clone(),
         credential_id: credential.id.clone(),
+        advanced_model_settings: model.advanced_model_settings.clone(),
         input_images: if input_images.is_empty() {
             None
         } else {
             Some(input_images)
         },
-        size: Some("1024x1024".to_string()),
+        size: model
+            .advanced_model_settings
+            .as_ref()
+            .and_then(|settings| settings.sd_size.clone())
+            .or_else(|| Some("1024x1024".to_string())),
         quality: None,
         style: None,
         n: Some(1),
@@ -525,6 +724,7 @@ fn render_scene_generation_prompt_content(
     character: &Character,
     persona: Option<&Persona>,
     recent_messages_text: &str,
+    has_chat_background: bool,
 ) -> String {
     let mut prompt = template_content.to_string();
     let char_name = character.name.as_str();
@@ -592,6 +792,11 @@ fn render_scene_generation_prompt_content(
     } else {
         String::new()
     };
+    let chat_background_reference_text = if has_chat_background {
+        build_chat_background_reference_text()
+    } else {
+        String::new()
+    };
     prompt = prompt.replace("{{char.name}}", char_name);
     prompt = prompt.replace("{{char}}", char_name);
     prompt = prompt.replace("{{user}}", persona_name);
@@ -614,40 +819,296 @@ fn render_scene_generation_prompt_content(
     prompt = prompt.replace("{{scene_request}}", &scene_request);
     prompt = prompt.replace("{{reference[character]}}", &character_reference_text);
     prompt = prompt.replace("{{reference[persona]}}", &persona_reference_text);
+    prompt = prompt.replace("{{reference[chatBackground]}}", &chat_background_reference_text);
+    prompt = prompt.replace("{{reference[chat_background]}}", &chat_background_reference_text);
 
     condense_prompt_whitespace(prompt)
 }
 
 fn condense_scene_generation_entries(entries: Vec<SystemPromptEntry>) -> Vec<SystemPromptEntry> {
-    let merged = entries
-        .into_iter()
-        .filter_map(|entry| {
-            let trimmed = entry.content.trim();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed.to_string())
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n\n");
+    let mut merged_sections = Vec::new();
+    let mut image_entries = Vec::new();
 
-    if merged.trim().is_empty() {
-        return Vec::new();
+    for entry in entries {
+        if prompt_entry_has_image_binding(&entry) {
+            image_entries.push(entry);
+            continue;
+        }
+
+        let trimmed = entry.content.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        merged_sections.push(trimmed.to_string());
     }
 
-    vec![SystemPromptEntry {
-        id: "scene_gen_condensed_system".to_string(),
-        name: "Condensed Scene Generation Prompt".to_string(),
-        role: super::types::PromptEntryRole::System,
-        content: merged,
-        enabled: true,
-        injection_position: PromptEntryPosition::Relative,
-        injection_depth: 0,
-        conditional_min_messages: None,
-        interval_turns: None,
-        system_prompt: true,
-    }]
+    let merged = merged_sections.join("\n\n");
+
+    let mut condensed = Vec::new();
+    if !merged.trim().is_empty() {
+        condensed.push(SystemPromptEntry {
+            id: "scene_gen_condensed_system".to_string(),
+            name: "Condensed Scene Generation Prompt".to_string(),
+            role: super::types::PromptEntryRole::System,
+            content: merged,
+            enabled: true,
+            injection_position: PromptEntryPosition::Relative,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: true,
+            conditions: None,
+            prompt_entry_payload: None,
+        });
+    }
+
+    condensed.extend(image_entries);
+    condensed
+}
+
+fn render_design_reference_prompt_content(
+    template_content: &str,
+    subject_name: &str,
+    subject_description: Option<&str>,
+    current_description: Option<&str>,
+) -> String {
+    let mut prompt = template_content.to_string();
+    prompt = prompt.replace("{{subject_name}}", subject_name);
+    prompt = prompt.replace("{{subject_description}}", subject_description.unwrap_or(""));
+    prompt = prompt.replace("{{current_description}}", current_description.unwrap_or(""));
+    condense_prompt_whitespace(prompt)
+}
+
+fn condense_design_reference_entries(entries: Vec<SystemPromptEntry>) -> Vec<SystemPromptEntry> {
+    let mut merged_sections = Vec::new();
+    let mut image_entries = Vec::new();
+
+    for entry in entries {
+        if prompt_entry_has_image_binding(&entry) {
+            image_entries.push(entry);
+            continue;
+        }
+
+        let trimmed = entry.content.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        merged_sections.push(trimmed.to_string());
+    }
+
+    let mut condensed = Vec::new();
+    if !merged_sections.is_empty() {
+        condensed.push(SystemPromptEntry {
+            id: "design_ref_condensed_system".to_string(),
+            name: "Condensed Design Reference Prompt".to_string(),
+            role: super::types::PromptEntryRole::System,
+            content: merged_sections.join("\n\n"),
+            enabled: true,
+            injection_position: PromptEntryPosition::Relative,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: true,
+            conditions: None,
+            prompt_entry_payload: None,
+        });
+    }
+    condensed.extend(image_entries);
+    condensed
+}
+
+fn load_design_reference_prompt_entries(app: &AppHandle) -> (Vec<SystemPromptEntry>, bool) {
+    match prompts::get_template(app, prompts::APP_DESIGN_REFERENCE_TEMPLATE_ID) {
+        Ok(Some(template)) => {
+            if !template.entries.is_empty() {
+                (template.entries, template.condense_prompt_entries)
+            } else if !template.content.trim().is_empty() {
+                (
+                    vec![SystemPromptEntry {
+                        id: "design_ref_single_entry".to_string(),
+                        name: "Design Reference Prompt".to_string(),
+                        role: super::types::PromptEntryRole::System,
+                        content: template.content,
+                        enabled: true,
+                        injection_position: PromptEntryPosition::Relative,
+                        injection_depth: 0,
+                        conditional_min_messages: None,
+                        interval_turns: None,
+                        system_prompt: true,
+                        conditions: None,
+                        prompt_entry_payload: None,
+                    }],
+                    template.condense_prompt_entries,
+                )
+            } else {
+                (
+                    get_base_prompt_entries(PromptType::DesignReferencePrompt),
+                    false,
+                )
+            }
+        }
+        _ => (
+            get_base_prompt_entries(PromptType::DesignReferencePrompt),
+            false,
+        ),
+    }
+}
+
+fn render_design_reference_prompt_entries(
+    app: &AppHandle,
+    settings: &Settings,
+    model: &Model,
+    subject_name: &str,
+    subject_description: Option<&str>,
+    current_description: Option<&str>,
+) -> Vec<SystemPromptEntry> {
+    let (template_entries, condense_prompt_entries) = load_design_reference_prompt_entries(app);
+    let mut rendered_entries = Vec::new();
+    let recent_text = [
+        subject_name,
+        subject_description.unwrap_or(""),
+        current_description.unwrap_or(""),
+    ]
+    .into_iter()
+    .filter(|value| !value.trim().is_empty())
+    .collect::<Vec<_>>()
+    .join("\n");
+    let condition_context = PromptEntryConditionContext {
+        chat_mode: PromptEntryChatMode::Direct,
+        scene_generation_enabled: scene_generation_enabled(settings),
+        avatar_generation_enabled: avatar_generation_enabled(settings),
+        has_scene: false,
+        has_scene_direction: false,
+        has_persona: false,
+        message_count: 0,
+        participant_count: 1,
+        recent_text: &recent_text,
+        dynamic_memory_enabled: false,
+        has_memory_summary: false,
+        has_key_memories: false,
+        has_lorebook_content: false,
+        has_subject_description: subject_description.is_some(),
+        has_current_description: current_description.is_some(),
+        has_character_reference_images: false,
+        has_chat_background: false,
+        has_persona_reference_images: false,
+        has_character_reference_text: false,
+        has_persona_reference_text: false,
+        input_scopes: &model.input_scopes,
+        output_scopes: &model.output_scopes,
+        provider_id: Some(model.provider_id.as_str()),
+        reasoning_enabled: model
+            .advanced_model_settings
+            .as_ref()
+            .and_then(|cfg| cfg.reasoning_enabled)
+            .unwrap_or(false),
+        vision_enabled: model_supports_vision(model),
+    };
+
+    for entry in template_entries {
+        if !entry_is_active(&entry, &condition_context) {
+            continue;
+        }
+        let rendered = render_design_reference_prompt_content(
+            &entry.content,
+            subject_name,
+            subject_description,
+            current_description,
+        );
+        if rendered.trim().is_empty() && entry.prompt_entry_payload.is_none() {
+            continue;
+        }
+        let mut next_entry = entry.clone();
+        next_entry.content = rendered;
+        rendered_entries.push(next_entry);
+    }
+
+    if condense_prompt_entries {
+        condense_design_reference_entries(rendered_entries)
+    } else {
+        rendered_entries
+    }
+}
+
+fn build_design_reference_prompt_content_with_images(
+    entry: &SystemPromptEntry,
+    avatar_image: Option<&str>,
+    reference_images: &[String],
+) -> Option<Value> {
+    if let Some(slot) = entry
+        .prompt_entry_payload
+        .as_ref()
+        .and_then(|payload| match payload {
+            PromptEntryPayload::ImageSlot { slot } => Some(slot.clone()),
+        })
+    {
+        let parts = match slot {
+            PromptEntryImageSlot::Avatar => avatar_image
+                .filter(|value| !value.trim().is_empty())
+                .map(|image| build_scene_prompt_image_parts(&[image.to_string()]))
+                .unwrap_or_default(),
+            PromptEntryImageSlot::References => build_scene_prompt_image_parts(reference_images),
+            PromptEntryImageSlot::Character
+            | PromptEntryImageSlot::Persona
+            | PromptEntryImageSlot::ChatBackground => Vec::new(),
+        };
+        return build_multimodal_image_content(cleaned_image_entry_text(&entry.content), parts);
+    }
+
+    if !entry.content.contains(DESIGN_REFERENCE_AVATAR_TOKEN)
+        && !entry.content.contains(DESIGN_REFERENCE_REFERENCES_TOKEN)
+    {
+        return None;
+    }
+
+    let mut parts: Vec<Value> = Vec::new();
+    if entry.content.contains(DESIGN_REFERENCE_AVATAR_TOKEN) {
+        if let Some(image) = avatar_image.filter(|value| !value.trim().is_empty()) {
+            parts.extend(build_scene_prompt_image_parts(&[image.to_string()]));
+        }
+    }
+    if entry.content.contains(DESIGN_REFERENCE_REFERENCES_TOKEN) && !reference_images.is_empty() {
+        parts.extend(build_scene_prompt_image_parts(reference_images));
+    }
+
+    build_multimodal_image_content(cleaned_image_entry_text(&entry.content), parts)
+}
+
+fn design_reference_prompt_entry_to_message(
+    entry: &SystemPromptEntry,
+    system_role: &str,
+    avatar_image: Option<&str>,
+    reference_images: &[String],
+) -> Option<Value> {
+    if let Some(content) =
+        build_design_reference_prompt_content_with_images(entry, avatar_image, reference_images)
+    {
+        return Some(json!({ "role": "user", "content": content }));
+    }
+
+    let contains_legacy_image_tokens = entry.content.contains(DESIGN_REFERENCE_AVATAR_TOKEN)
+        || entry.content.contains(DESIGN_REFERENCE_REFERENCES_TOKEN);
+    if entry.prompt_entry_payload.is_some()
+        || (contains_legacy_image_tokens
+            && matches!(entry.role, super::types::PromptEntryRole::User))
+    {
+        return None;
+    }
+
+    let role = match entry.role {
+        super::types::PromptEntryRole::System => system_role,
+        super::types::PromptEntryRole::User => "user",
+        super::types::PromptEntryRole::Assistant => "assistant",
+    };
+
+    let trimmed = entry.content.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    Some(json!({ "role": role, "content": trimmed }))
 }
 
 fn load_scene_generation_prompt_entries(app: &AppHandle) -> (Vec<SystemPromptEntry>, bool) {
@@ -668,6 +1129,8 @@ fn load_scene_generation_prompt_entries(app: &AppHandle) -> (Vec<SystemPromptEnt
                         conditional_min_messages: None,
                         interval_turns: None,
                         system_prompt: true,
+                        conditions: None,
+                        prompt_entry_payload: None,
                     }],
                     template.condense_prompt_entries,
                 )
@@ -687,15 +1150,86 @@ fn load_scene_generation_prompt_entries(app: &AppHandle) -> (Vec<SystemPromptEnt
 
 fn render_scene_generation_prompt_entries(
     app: &AppHandle,
+    settings: &Settings,
+    model: &Model,
+    session: &Session,
     character: &Character,
     persona: Option<&Persona>,
     recent_messages_text: &str,
+    reference_images: &SceneReferenceImages,
 ) -> Vec<SystemPromptEntry> {
     let (template_entries, condense_prompt_entries) = load_scene_generation_prompt_entries(app);
     let mut rendered_entries = Vec::new();
+    let has_scene = session.selected_scene_id.is_some() || character.default_scene_id.is_some();
+    let has_scene_direction = if let Some(scene_id) = session
+        .selected_scene_id
+        .as_ref()
+        .or(character.default_scene_id.as_ref())
+    {
+        character
+            .scenes
+            .iter()
+            .find(|scene| &scene.id == scene_id)
+            .and_then(|scene| scene.direction.as_deref())
+            .map(|direction| !direction.trim().is_empty())
+            .unwrap_or(false)
+    } else {
+        false
+    };
+    let has_character_reference_text = !build_scene_prompt_reference_text(
+        character.name.as_str(),
+        character.design_description.as_deref(),
+        reference_images.character_reference_count,
+        reference_images.character_reference_source,
+    )
+    .trim()
+    .is_empty();
+    let has_persona_reference_text = if let Some(persona) = persona {
+        !build_scene_prompt_reference_text(
+            &persona_scene_name(Some(persona)),
+            persona.design_description.as_deref(),
+            reference_images.persona_reference_count,
+            reference_images.persona_reference_source,
+        )
+        .trim()
+        .is_empty()
+    } else {
+        false
+    };
+    let condition_context = PromptEntryConditionContext {
+        chat_mode: PromptEntryChatMode::Direct,
+        scene_generation_enabled: scene_generation_enabled(settings),
+        avatar_generation_enabled: avatar_generation_enabled(settings),
+        has_scene,
+        has_scene_direction,
+        has_persona: persona.is_some(),
+        message_count: session.messages.len(),
+        participant_count: 2,
+        recent_text: recent_messages_text,
+        dynamic_memory_enabled: false,
+        has_memory_summary: false,
+        has_key_memories: false,
+        has_lorebook_content: false,
+        has_subject_description: false,
+        has_current_description: false,
+        has_character_reference_images: !reference_images.character_images.is_empty(),
+        has_chat_background: !reference_images.chat_background_images.is_empty(),
+        has_persona_reference_images: !reference_images.persona_images.is_empty(),
+        has_character_reference_text,
+        has_persona_reference_text,
+        input_scopes: &model.input_scopes,
+        output_scopes: &model.output_scopes,
+        provider_id: Some(model.provider_id.as_str()),
+        reasoning_enabled: model
+            .advanced_model_settings
+            .as_ref()
+            .and_then(|cfg| cfg.reasoning_enabled)
+            .unwrap_or(false),
+        vision_enabled: model_supports_vision(model),
+    };
 
     for entry in template_entries {
-        if !entry.enabled && !entry.system_prompt {
+        if !entry_is_active(&entry, &condition_context) {
             continue;
         }
         let rendered = render_scene_generation_prompt_content(
@@ -703,8 +1237,9 @@ fn render_scene_generation_prompt_entries(
             character,
             persona,
             recent_messages_text,
+            !reference_images.chat_background_images.is_empty(),
         );
-        if rendered.trim().is_empty() {
+        if rendered.trim().is_empty() && entry.prompt_entry_payload.is_none() {
             continue;
         }
         let mut next_entry = entry.clone();
@@ -726,9 +1261,19 @@ fn scene_prompt_entry_to_message(
     character: &Character,
     persona: Option<&Persona>,
 ) -> Option<Value> {
-    if let Some(content) = build_scene_prompt_content_with_images(&entry.content, reference_images)
-    {
+    if let Some(content) = build_scene_prompt_content_with_images(entry, reference_images) {
         return Some(json!({ "role": "user", "content": content }));
+    }
+
+    let contains_legacy_image_tokens = entry.content.contains(SCENE_CHARACTER_TOKEN)
+        || entry.content.contains(SCENE_PERSONA_TOKEN)
+        || entry.content.contains(SCENE_CHAT_BACKGROUND_TOKEN)
+        || entry.content.contains(SCENE_CHAT_BACKGROUND_LEGACY_TOKEN);
+    if entry.prompt_entry_payload.is_some()
+        || (contains_legacy_image_tokens
+            && matches!(entry.role, super::types::PromptEntryRole::User))
+    {
+        return None;
     }
 
     let role = match entry.role {
@@ -739,7 +1284,7 @@ fn scene_prompt_entry_to_message(
 
     let content = if role == system_role {
         Value::String(content_with_scene_image_hints(
-            &entry.content,
+            entry,
             reference_images,
             character,
             persona,
@@ -752,28 +1297,81 @@ fn scene_prompt_entry_to_message(
 }
 
 fn content_with_scene_image_hints(
-    content: &str,
+    entry: &SystemPromptEntry,
     reference_images: &SceneReferenceImages,
     character: &Character,
     persona: Option<&Persona>,
 ) -> String {
-    content
-        .replace(
-            "{{image[character]}}",
-            &build_scene_prompt_reference_hint(
-                character.name.as_str(),
-                reference_images.character_reference_count,
-                reference_images.character_reference_source,
-            ),
-        )
-        .replace(
-            "{{image[persona]}}",
-            &build_scene_prompt_reference_hint(
-                &persona_scene_name(persona),
-                reference_images.persona_reference_count,
-                reference_images.persona_reference_source,
-            ),
-        )
+    let character_hint = build_scene_prompt_reference_hint(
+        character.name.as_str(),
+        reference_images.character_reference_count,
+        reference_images.character_reference_source,
+    );
+    let persona_hint = build_scene_prompt_reference_hint(
+        &persona_scene_name(persona),
+        reference_images.persona_reference_count,
+        reference_images.persona_reference_source,
+    );
+    let chat_background_hint = if reference_images.chat_background_images.is_empty() {
+        String::new()
+    } else {
+        build_chat_background_reference_hint().to_string()
+    };
+
+    match entry
+        .prompt_entry_payload
+        .as_ref()
+        .and_then(|payload| match payload {
+            PromptEntryPayload::ImageSlot { slot } => Some(slot.clone()),
+        }) {
+        Some(PromptEntryImageSlot::Character) => {
+            let replaced = entry
+                .content
+                .replace(SCENE_CHARACTER_TOKEN, &character_hint);
+            if replaced == entry.content && !character_hint.trim().is_empty() {
+                if entry.content.trim().is_empty() {
+                    character_hint
+                } else {
+                    format!("{}\n{}", entry.content.trim(), character_hint)
+                }
+            } else {
+                replaced
+            }
+        }
+        Some(PromptEntryImageSlot::Persona) => {
+            let replaced = entry.content.replace(SCENE_PERSONA_TOKEN, &persona_hint);
+            if replaced == entry.content && !persona_hint.trim().is_empty() {
+                if entry.content.trim().is_empty() {
+                    persona_hint
+                } else {
+                    format!("{}\n{}", entry.content.trim(), persona_hint)
+                }
+            } else {
+                replaced
+            }
+        }
+        Some(PromptEntryImageSlot::ChatBackground) => {
+            let replaced = entry
+                .content
+                .replace(SCENE_CHAT_BACKGROUND_TOKEN, &chat_background_hint)
+                .replace(SCENE_CHAT_BACKGROUND_LEGACY_TOKEN, &chat_background_hint);
+            if replaced == entry.content && !chat_background_hint.trim().is_empty() {
+                if entry.content.trim().is_empty() {
+                    chat_background_hint
+                } else {
+                    format!("{}\n{}", entry.content.trim(), chat_background_hint)
+                }
+            } else {
+                replaced
+            }
+        }
+        _ => entry
+            .content
+            .replace(SCENE_CHARACTER_TOKEN, &character_hint)
+            .replace(SCENE_PERSONA_TOKEN, &persona_hint)
+            .replace(SCENE_CHAT_BACKGROUND_TOKEN, &chat_background_hint)
+            .replace(SCENE_CHAT_BACKGROUND_LEGACY_TOKEN, &chat_background_hint),
+    }
 }
 
 fn insert_scene_in_chat_prompt_entries(
@@ -964,13 +1562,27 @@ pub async fn chat_generate_scene_prompt(
         .ok_or_else(|| "Session not found".to_string())?;
     let character = context.find_character(&session.character_id)?;
     let persona = context.choose_persona(resolve_persona_id(&session, None));
-    let (model, credential) = context.select_model_with_credential(&character)?;
+    let (model, credential) = resolve_scene_writer_target(
+        settings,
+        settings
+            .advanced_settings
+            .as_ref()
+            .and_then(|advanced| advanced.scene_writer_model_id.as_deref()),
+    )?;
     let api_key = require_api_key(&app, credential, "scene_prompt")?;
 
     let recent_messages_text = build_scene_prompt_context_messages(&session, &message_id)?;
     let reference_images = build_scene_reference_images(&app, &character, persona);
-    let prompt_entries =
-        render_scene_generation_prompt_entries(&app, &character, persona, &recent_messages_text);
+    let prompt_entries = render_scene_generation_prompt_entries(
+        &app,
+        settings,
+        model,
+        &session,
+        &character,
+        persona,
+        &recent_messages_text,
+        &reference_images,
+    );
     if prompt_entries.is_empty() {
         return Err("Scene generation prompt template rendered no usable entries".to_string());
     }
@@ -1023,6 +1635,7 @@ pub async fn chat_generate_scene_prompt(
         request_settings.reasoning_enabled,
         request_settings.reasoning_effort.clone(),
         request_settings.reasoning_budget,
+        request_settings.prompt_caching_enabled.unwrap_or(false),
         extra_body_fields,
     );
 
@@ -1032,7 +1645,7 @@ pub async fn chat_generate_scene_prompt(
         headers: Some(built.headers),
         query: None,
         body: Some(built.body),
-        timeout_ms: Some(60_000),
+        timeout_ms: Some(crate::transport::DEFAULT_REQUEST_TIMEOUT_MS),
         stream: Some(false),
         request_id: None,
         provider_id: Some(credential.provider_id.clone()),
@@ -1080,6 +1693,191 @@ pub async fn chat_generate_scene_prompt(
 
     if cleaned.is_empty() {
         return Err("Scene prompt generation returned an empty result".to_string());
+    }
+
+    Ok(cleaned)
+}
+
+pub async fn chat_generate_design_reference_description(
+    app: AppHandle,
+    args: ChatGenerateDesignReferenceDescriptionArgs,
+) -> Result<String, String> {
+    let ChatGenerateDesignReferenceDescriptionArgs {
+        subject_name,
+        subject_description,
+        current_description,
+        avatar_image,
+        reference_images,
+        request_id,
+        stream,
+    } = args;
+
+    let context = ChatContext::initialize(app.clone())?;
+    let settings = &context.settings;
+    let (model, credential) = resolve_scene_writer_target(
+        settings,
+        settings
+            .advanced_settings
+            .as_ref()
+            .and_then(|advanced| advanced.scene_writer_model_id.as_deref()),
+    )?;
+    let api_key = require_api_key(&app, credential, "design_reference_writer")?;
+
+    let subject_name = subject_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("Unnamed subject");
+    let subject_description = subject_description
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let current_description = current_description
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+
+    let avatar_input = avatar_image
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string());
+    let reference_inputs = reference_images
+        .into_iter()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>();
+
+    if avatar_input.is_none() && reference_inputs.is_empty() {
+        return Err("At least one avatar or reference image is required".to_string());
+    }
+
+    let system_role = adapter_for(credential).system_role().into_owned();
+    let streaming_enabled =
+        super::request_builder::effective_streaming_enabled(credential, stream.unwrap_or(true));
+    let prompt_entries = render_design_reference_prompt_entries(
+        &app,
+        settings,
+        model,
+        subject_name,
+        subject_description,
+        current_description,
+    );
+    let (relative_entries, in_chat_entries) = partition_prompt_entries(prompt_entries);
+    let messages_for_api = relative_entries
+        .into_iter()
+        .chain(in_chat_entries.into_iter())
+        .filter_map(|entry| {
+            design_reference_prompt_entry_to_message(
+                &entry,
+                &system_role,
+                avatar_input.as_deref(),
+                &reference_inputs,
+            )
+        })
+        .collect::<Vec<_>>();
+
+    if messages_for_api.is_empty() {
+        return Err("Design reference template rendered no prompt content".to_string());
+    }
+
+    let preview_session = Session {
+        id: "scene-writer-preview".to_string(),
+        character_id: String::new(),
+        title: "Scene writer preview".to_string(),
+        background_image_path: None,
+        system_prompt: None,
+        selected_scene_id: None,
+        prompt_template_id: None,
+        persona_id: None,
+        persona_disabled: false,
+        voice_autoplay: None,
+        advanced_model_settings: None,
+        memories: Vec::new(),
+        memory_embeddings: Vec::new(),
+        memory_summary: None,
+        memory_summary_token_count: 0,
+        memory_tool_events: Vec::new(),
+        memory_status: None,
+        memory_error: None,
+        memory_progress_step: None,
+        messages: Vec::new(),
+        archived: false,
+        created_at: 0,
+        updated_at: 0,
+    };
+
+    let (request_settings, extra_body_fields) = prepare_default_sampling_request(
+        &credential.provider_id,
+        &preview_session,
+        model,
+        settings,
+        0.4,
+        1.0,
+        None,
+        None,
+        None,
+    );
+
+    let built = super::request_builder::build_chat_request(
+        credential,
+        &api_key,
+        &model.name,
+        &messages_for_api,
+        None,
+        request_settings.temperature,
+        request_settings.top_p,
+        request_settings.max_tokens,
+        request_settings.context_length,
+        streaming_enabled,
+        request_id.clone(),
+        None,
+        None,
+        None,
+        None,
+        request_settings.reasoning_enabled,
+        request_settings.reasoning_effort.clone(),
+        request_settings.reasoning_budget,
+        request_settings.prompt_caching_enabled.unwrap_or(false),
+        extra_body_fields,
+    );
+
+    let api_request_payload = ApiRequest {
+        url: built.url,
+        method: Some("POST".into()),
+        headers: Some(built.headers),
+        query: None,
+        body: Some(built.body),
+        timeout_ms: Some(crate::transport::DEFAULT_REQUEST_TIMEOUT_MS),
+        stream: Some(built.stream),
+        request_id: built.request_id.clone(),
+        provider_id: Some(credential.provider_id.clone()),
+    };
+
+    let api_response = api_request(app.clone(), api_request_payload).await?;
+    if !api_response.ok {
+        return Err(format!(
+            "API request failed with status {}",
+            api_response.status
+        ));
+    }
+
+    let generated_text = extract_text(&api_response.data, Some(&credential.provider_id))
+        .ok_or_else(|| "Failed to extract text from response".to_string())?;
+
+    let cleaned = condense_prompt_whitespace(
+        generated_text
+            .trim()
+            .trim_matches('"')
+            .trim()
+            .trim_start_matches("```")
+            .trim_end_matches("```")
+            .trim()
+            .to_string(),
+    );
+
+    if cleaned.is_empty() {
+        return Err("Design reference generation returned an empty result".to_string());
     }
 
     Ok(cleaned)

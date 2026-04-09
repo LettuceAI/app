@@ -7,6 +7,7 @@ export type ModelsState = {
   providers: ProviderCredential[];
   models: Model[];
   defaultModelId: string | null;
+  loading: boolean;
 };
 
 export type ModelsAction =
@@ -26,6 +27,7 @@ export const initialModelsState: ModelsState = {
   providers: [],
   models: [],
   defaultModelId: null,
+  loading: true,
 };
 
 export function modelsReducer(
@@ -39,6 +41,7 @@ export function modelsReducer(
         providers: action.payload.providers,
         models: action.payload.models,
         defaultModelId: action.payload.defaultModelId,
+        loading: false,
       };
     case "set_models":
       return {

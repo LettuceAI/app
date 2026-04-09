@@ -23,6 +23,7 @@ import { BottomMenu, MenuButton } from "../../components/BottomMenu";
 import { cn, colors, interactive, radius } from "../../design-tokens";
 import { getPlatform } from "../../../core/utils/platform";
 import { useI18n } from "../../../core/i18n/context";
+import { Switch } from "../../components/Switch";
 
 type ProviderTab = "llm" | "audio";
 
@@ -52,6 +53,7 @@ export function ProvidersPage() {
       validationError,
       capabilities,
       engineSetupResult,
+      loading,
     },
     openEditor,
     closeEditor,
@@ -78,20 +80,34 @@ export function ProvidersPage() {
   };
 
   const isEngineProvider = !!editorProvider && editorProvider.providerId === "lettuce-engine";
+  const isHostProvider = !!editorProvider && editorProvider.providerId === "lettuce-host";
   const isLocalProvider =
-    !!editorProvider && ["ollama", "lmstudio", "intenserp"].includes(editorProvider.providerId);
+    !!editorProvider &&
+    ["ollama", "lmstudio", "intenserp", "automatic1111"].includes(editorProvider.providerId);
   const isCustomProvider =
     !!editorProvider &&
     (editorProvider.providerId === "custom" || editorProvider.providerId === "custom-anthropic");
-  const showBaseUrl = !!editorProvider && (isLocalProvider || isCustomProvider || isEngineProvider);
+  const showBaseUrl =
+    !!editorProvider && (isLocalProvider || isCustomProvider || isEngineProvider || isHostProvider);
   const customConfig = (editorProvider?.config ?? {}) as Record<string, any>;
   const customFetchModelsEnabled = customConfig.fetchModelsEnabled === true;
+  const providerStreamingEnabled = customConfig.streamingEnabled !== false;
   const customAuthMode = (customConfig.authMode ?? "header") as
     | "bearer"
     | "header"
     | "query"
     | "none";
-  const showApiKeyInput = !(isCustomProvider && customAuthMode === "none") && !isEngineProvider;
+  const selectedCapability = editorProvider
+    ? capabilities.find((provider) => provider.id === editorProvider.providerId)
+    : null;
+  const providerRequiresApiKey = isCustomProvider
+    ? customAuthMode !== "none"
+    : selectedCapability
+      ? selectedCapability.requiresApiKey
+      : true;
+  const showApiKeyInput = providerRequiresApiKey && !isEngineProvider;
+  const showOfficialProviderStreamingToggle =
+    !!editorProvider && !isCustomProvider && selectedCapability?.supportsStream === true;
   const visibleCapabilities = isMobile
     ? capabilities.filter((provider) => provider.id !== "llamacpp")
     : capabilities;
@@ -139,7 +155,7 @@ export function ProvidersPage() {
             tabIndex={0}
             className="space-y-2"
           >
-            {providers.length === 0 && <EmptyState onCreate={() => openEditor()} />}
+            {!loading && providers.length === 0 && <EmptyState onCreate={() => openEditor()} />}
             {providers.map((provider) => {
               const cap: ProviderCapabilitiesCamel | undefined = capabilities.find(
                 (p) => p.id === provider.providerId,
@@ -301,7 +317,7 @@ export function ProvidersPage() {
                       });
                       setValidationError(null);
                     }}
-                    className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fgfocus:border-fg/30 focus:outline-none"
+                    className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fg focus:border-fg/30 focus:outline-none"
                   >
                     {visibleCapabilities.map((p) => (
                       <option key={p.id} value={p.id} className="bg-surface-el">
@@ -317,7 +333,7 @@ export function ProvidersPage() {
                     value={editorProvider.label}
                     onChange={(e) => updateEditorProvider({ label: e.target.value })}
                     placeholder={`My ${visibleCapabilities.find((p) => p.id === editorProvider.providerId)?.name || "Provider"}`}
-                    className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fgplaceholder-fg/40 focus:border-fg/30 focus:outline-none"
+                    className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fg placeholder-fg/40 focus:border-fg/30 focus:outline-none"
                   />
                 </div>
                 {showApiKeyInput && (
@@ -331,7 +347,7 @@ export function ProvidersPage() {
                         if (validationError) setValidationError(null);
                       }}
                       placeholder="Enter your API key"
-                      className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fgplaceholder-fg/40 focus:border-fg/30 focus:outline-none"
+                      className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fg placeholder-fg/40 focus:border-fg/30 focus:outline-none"
                     />
                   </div>
                 )}
@@ -350,13 +366,15 @@ export function ProvidersPage() {
                       placeholder={
                         isEngineProvider
                           ? "http://localhost:8000"
-                          : editorProvider.providerId === "intenserp"
-                            ? "http://127.0.0.1:7777/v1"
-                            : isLocalProvider
-                              ? "http://localhost:11434"
-                              : "https://api.provider.com"
+                          : isHostProvider
+                            ? "http://192.168.1.10:3333"
+                            : editorProvider.providerId === "intenserp"
+                              ? "http://127.0.0.1:7777/v1"
+                              : isLocalProvider
+                                ? "http://localhost:11434"
+                                : "https://api.provider.com"
                       }
-                      className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fgplaceholder-fg/40 focus:border-fg/30 focus:outline-none"
+                      className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fg placeholder-fg/40 focus:border-fg/30 focus:outline-none"
                     />
                   </div>
                 )}
@@ -373,8 +391,32 @@ export function ProvidersPage() {
                         if (validationError) setValidationError(null);
                       }}
                       placeholder="Bearer token for auth"
-                      className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fgplaceholder-fg/40 focus:border-fg/30 focus:outline-none"
+                      className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fg placeholder-fg/40 focus:border-fg/30 focus:outline-none"
                     />
+                  </div>
+                )}
+                {showOfficialProviderStreamingToggle && (
+                  <div className="rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-fg/80">Streaming</p>
+                        <p className="text-[11px] text-fg/45">
+                          Stream responses for this provider when a feature allows it
+                        </p>
+                      </div>
+                      <Switch
+                        id="providerStreamingEnabled"
+                        checked={providerStreamingEnabled}
+                        onChange={(next) =>
+                          updateEditorProvider({
+                            config: {
+                              ...editorProvider.config,
+                              streamingEnabled: next,
+                            },
+                          })
+                        }
+                      />
+                    </div>
                   </div>
                 )}
                 {isCustomProvider && (
@@ -395,7 +437,7 @@ export function ProvidersPage() {
                           })
                         }
                         placeholder="/v1/chat/completions"
-                        className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fgplaceholder-fg/40 focus:border-fg/30 focus:outline-none"
+                        className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fg placeholder-fg/40 focus:border-fg/30 focus:outline-none"
                       />
                     </div>
                     <div className="rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2">
@@ -406,34 +448,18 @@ export function ProvidersPage() {
                             Enable model discovery for this custom endpoint
                           </p>
                         </div>
-                        <div className="flex items-center">
-                          <input
-                            id="fetchModelsEnabled"
-                            type="checkbox"
-                            checked={customFetchModelsEnabled}
-                            onChange={(e) =>
-                              updateEditorProvider({
-                                config: {
-                                  ...editorProvider.config,
-                                  fetchModelsEnabled: e.target.checked,
-                                },
-                              })
-                            }
-                            className="peer sr-only"
-                          />
-                          <label
-                            htmlFor="fetchModelsEnabled"
-                            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-all duration-200 ease-in-out ${
-                              customFetchModelsEnabled ? "bg-accent" : "bg-fg/20"
-                            }`}
-                          >
-                            <span
-                              className={`inline-block h-5 w-5 transform rounded-full bg-fg shadow ring-0 transition duration-200 ease-in-out ${
-                                customFetchModelsEnabled ? "translate-x-5" : "translate-x-0"
-                              }`}
-                            />
-                          </label>
-                        </div>
+                        <Switch
+                          id="fetchModelsEnabled"
+                          checked={customFetchModelsEnabled}
+                          onChange={(next) =>
+                            updateEditorProvider({
+                              config: {
+                                ...editorProvider.config,
+                                fetchModelsEnabled: next,
+                              },
+                            })
+                          }
+                        />
                       </div>
                     </div>
                     <div>
@@ -450,7 +476,7 @@ export function ProvidersPage() {
                             },
                           })
                         }
-                        className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fgfocus:border-fg/30 focus:outline-none"
+                        className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fg focus:border-fg/30 focus:outline-none"
                       >
                         <option value="bearer" className="bg-surface-el">
                           Bearer Token
@@ -481,7 +507,7 @@ export function ProvidersPage() {
                               },
                             })
                           }
-                          className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fgfocus:border-fg/30 focus:outline-none"
+                          className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fg focus:border-fg/30 focus:outline-none"
                         >
                           <option value="auto" className="bg-surface-el">
                             Auto
@@ -515,7 +541,7 @@ export function ProvidersPage() {
                             })
                           }
                           placeholder="x-api-key"
-                          className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fgplaceholder-fg/40 focus:border-fg/30 focus:outline-none"
+                          className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fg placeholder-fg/40 focus:border-fg/30 focus:outline-none"
                         />
                       </div>
                     )}
@@ -538,7 +564,7 @@ export function ProvidersPage() {
                             })
                           }
                           placeholder="api_key"
-                          className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fgplaceholder-fg/40 focus:border-fg/30 focus:outline-none"
+                          className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fg placeholder-fg/40 focus:border-fg/30 focus:outline-none"
                         />
                       </div>
                     )}
@@ -560,7 +586,7 @@ export function ProvidersPage() {
                               })
                             }
                             placeholder="/v1/models"
-                            className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fgplaceholder-fg/40 focus:border-fg/30 focus:outline-none"
+                            className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fg placeholder-fg/40 focus:border-fg/30 focus:outline-none"
                           />
                         </div>
                         <div className="grid grid-cols-2 gap-3">
@@ -580,7 +606,7 @@ export function ProvidersPage() {
                                 })
                               }
                               placeholder="data"
-                              className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fgplaceholder-fg/40 focus:border-fg/30 focus:outline-none"
+                              className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fg placeholder-fg/40 focus:border-fg/30 focus:outline-none"
                             />
                           </div>
                           <div>
@@ -599,7 +625,7 @@ export function ProvidersPage() {
                                 })
                               }
                               placeholder="id"
-                              className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fgplaceholder-fg/40 focus:border-fg/30 focus:outline-none"
+                              className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fg placeholder-fg/40 focus:border-fg/30 focus:outline-none"
                             />
                           </div>
                         </div>
@@ -622,7 +648,7 @@ export function ProvidersPage() {
                                 })
                               }
                               placeholder="name"
-                              className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fgplaceholder-fg/40 focus:border-fg/30 focus:outline-none"
+                              className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fg placeholder-fg/40 focus:border-fg/30 focus:outline-none"
                             />
                           </div>
                           <div>
@@ -644,7 +670,7 @@ export function ProvidersPage() {
                                 })
                               }
                               placeholder="description"
-                              className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fgplaceholder-fg/40 focus:border-fg/30 focus:outline-none"
+                              className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fg placeholder-fg/40 focus:border-fg/30 focus:outline-none"
                             />
                           </div>
                         </div>
@@ -666,7 +692,7 @@ export function ProvidersPage() {
                               })
                             }
                             placeholder="context_length"
-                            className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fgplaceholder-fg/40 focus:border-fg/30 focus:outline-none"
+                            className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fg placeholder-fg/40 focus:border-fg/30 focus:outline-none"
                           />
                         </div>
                       </>
@@ -684,7 +710,7 @@ export function ProvidersPage() {
                           })
                         }
                         placeholder="system"
-                        className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fgplaceholder-fg/40 focus:border-fg/30 focus:outline-none"
+                        className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fg placeholder-fg/40 focus:border-fg/30 focus:outline-none"
                       />
                     </div>
                     <div className="grid grid-cols-2 gap-3">
@@ -701,7 +727,7 @@ export function ProvidersPage() {
                             })
                           }
                           placeholder="user"
-                          className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fgplaceholder-fg/40 focus:border-fg/30 focus:outline-none"
+                          className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fg placeholder-fg/40 focus:border-fg/30 focus:outline-none"
                         />
                       </div>
                       <div>
@@ -717,7 +743,7 @@ export function ProvidersPage() {
                             })
                           }
                           placeholder="assistant"
-                          className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fgplaceholder-fg/40 focus:border-fg/30 focus:outline-none"
+                          className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm text-fg placeholder-fg/40 focus:border-fg/30 focus:outline-none"
                         />
                       </div>
                     </div>
@@ -725,77 +751,37 @@ export function ProvidersPage() {
                       <span className="text-sm font-medium text-fg/70">
                         Supports Streaming (SSE/Delta)
                       </span>
-                      <div className="flex items-center">
-                        <input
-                          id="supportsStream"
-                          type="checkbox"
-                          checked={(customConfig.supportsStream as boolean | undefined) ?? true}
-                          onChange={(e) =>
-                            updateEditorProvider({
-                              config: {
-                                ...editorProvider.config,
-                                supportsStream: e.target.checked,
-                              },
-                            })
-                          }
-                          className="peer sr-only"
-                        />
-                        <label
-                          htmlFor="supportsStream"
-                          className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-all duration-200 ease-in-out ${
-                            ((customConfig.supportsStream as boolean | undefined) ?? true)
-                              ? "bg-accent"
-                              : "bg-fg/20"
-                          }`}
-                        >
-                          <span
-                            className={`inline-block h-5 w-5 transform rounded-full bg-fg shadow ring-0 transition duration-200 ease-in-out ${
-                              ((customConfig.supportsStream as boolean | undefined) ?? true)
-                                ? "translate-x-5"
-                                : "translate-x-0"
-                            }`}
-                          />
-                        </label>
-                      </div>
+                      <Switch
+                        id="supportsStream"
+                        checked={(customConfig.supportsStream as boolean | undefined) ?? true}
+                        onChange={(next) =>
+                          updateEditorProvider({
+                            config: {
+                              ...editorProvider.config,
+                              supportsStream: next,
+                            },
+                          })
+                        }
+                      />
                     </div>
                     <div className="flex items-center justify-between pt-1">
                       <span className="text-sm font-medium text-fg/70">
                         Merge Same-role Messages
                       </span>
-                      <div className="flex items-center">
-                        <input
-                          id="mergeSameRoleMessages"
-                          type="checkbox"
-                          checked={
-                            (customConfig.mergeSameRoleMessages as boolean | undefined) ?? true
-                          }
-                          onChange={(e) =>
-                            updateEditorProvider({
-                              config: {
-                                ...editorProvider.config,
-                                mergeSameRoleMessages: e.target.checked,
-                              },
-                            })
-                          }
-                          className="peer sr-only"
-                        />
-                        <label
-                          htmlFor="mergeSameRoleMessages"
-                          className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-all duration-200 ease-in-out ${
-                            ((customConfig.mergeSameRoleMessages as boolean | undefined) ?? true)
-                              ? "bg-accent"
-                              : "bg-fg/20"
-                          }`}
-                        >
-                          <span
-                            className={`inline-block h-5 w-5 transform rounded-full bg-fg shadow ring-0 transition duration-200 ease-in-out ${
-                              ((customConfig.mergeSameRoleMessages as boolean | undefined) ?? true)
-                                ? "translate-x-5"
-                                : "translate-x-0"
-                            }`}
-                          />
-                        </label>
-                      </div>
+                      <Switch
+                        id="mergeSameRoleMessages"
+                        checked={
+                          (customConfig.mergeSameRoleMessages as boolean | undefined) ?? true
+                        }
+                        onChange={(next) =>
+                          updateEditorProvider({
+                            config: {
+                              ...editorProvider.config,
+                              mergeSameRoleMessages: next,
+                            },
+                          })
+                        }
+                      />
                     </div>
                   </>
                 )}

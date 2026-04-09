@@ -11,6 +11,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { BottomMenu, MenuButton, MenuButtonGroup } from "../../components/BottomMenu";
 import { useI18n } from "../../../core/i18n/context";
+import { Switch } from "../../components/Switch";
 
 interface FilterLogEntry {
   timestamp_ms: number;
@@ -322,27 +323,11 @@ export function SecurityPage() {
                       Disable the shake-triggered visuals
                     </div>
                   </div>
-                  <div className="flex items-center">
-                    <input
-                      id="glitch-effects"
-                      type="checkbox"
-                      checked={isGlitchEnabled}
-                      onChange={handleGlitchToggle}
-                      className="peer sr-only"
-                    />
-                    <label
-                      htmlFor="glitch-effects"
-                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-all duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-info/40 ${
-                        isGlitchEnabled ? "bg-info shadow-lg shadow-info/30" : "bg-fg/20"
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-5 w-5 transform rounded-full bg-fg shadow ring-0 transition duration-200 ease-in-out ${
-                          isGlitchEnabled ? "translate-x-5" : "translate-x-0"
-                        }`}
-                      />
-                    </label>
-                  </div>
+                  <Switch
+                    id="glitch-effects"
+                    checked={isGlitchEnabled}
+                    onChange={() => handleGlitchToggle()}
+                  />
                 </div>
                 <div className="mt-2 text-[11px] text-fg/45 leading-relaxed">
                   Keeps the app stable on shake
@@ -384,29 +369,11 @@ export function SecurityPage() {
                         Auto-download avatar images from HTTPS URLs during character card import
                       </div>
                     </div>
-                    <div className="flex items-center">
-                      <input
-                        id="remote-avatar-download"
-                        type="checkbox"
-                        checked={autoDownloadCharacterCardAvatars}
-                        onChange={handleAutoDownloadCharacterCardAvatarsToggle}
-                        className="peer sr-only"
-                      />
-                      <label
-                        htmlFor="remote-avatar-download"
-                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-all duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent/40 ${
-                          autoDownloadCharacterCardAvatars
-                            ? "bg-accent shadow-lg shadow-accent/30"
-                            : "bg-fg/20"
-                        }`}
-                      >
-                        <span
-                          className={`inline-block h-5 w-5 transform rounded-full bg-fg shadow ring-0 transition duration-200 ease-in-out ${
-                            autoDownloadCharacterCardAvatars ? "translate-x-5" : "translate-x-0"
-                          }`}
-                        />
-                      </label>
-                    </div>
+                    <Switch
+                      id="remote-avatar-download"
+                      checked={autoDownloadCharacterCardAvatars}
+                      onChange={() => void handleAutoDownloadCharacterCardAvatarsToggle()}
+                    />
                   </div>
                   <div className="mt-2 text-[11px] text-fg/45 leading-relaxed">
                     Disable this to prevent network avatar fetches when importing character cards
@@ -445,34 +412,12 @@ export function SecurityPage() {
                           : "Requires an analytics API key"}
                       </div>
                     </div>
-                    <div className="flex items-center">
-                      <input
-                        id="analytics-tracking"
-                        type="checkbox"
-                        checked={isAnalyticsEnabled}
-                        onChange={handleAnalyticsToggle}
-                        disabled={!isAnalyticsAvailableState}
-                        className="peer sr-only"
-                      />
-                      <label
-                        htmlFor="analytics-tracking"
-                        className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-all duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent/40 ${
-                          isAnalyticsAvailableState
-                            ? "cursor-pointer"
-                            : "cursor-not-allowed opacity-60"
-                        } ${
-                          isAnalyticsEnabled
-                            ? "bg-accent shadow-lg shadow-accent/30"
-                            : "bg-fg/20"
-                        }`}
-                      >
-                        <span
-                          className={`inline-block h-5 w-5 transform rounded-full bg-fg shadow ring-0 transition duration-200 ease-in-out ${
-                            isAnalyticsEnabled ? "translate-x-5" : "translate-x-0"
-                          }`}
-                        />
-                      </label>
-                    </div>
+                    <Switch
+                      id="analytics-tracking"
+                      checked={isAnalyticsEnabled}
+                      disabled={!isAnalyticsAvailableState}
+                      onChange={() => void handleAnalyticsToggle()}
+                    />
                   </div>
                   <div className="mt-2 text-[11px] text-fg/45 leading-relaxed">
                     {isAnalyticsAvailableState

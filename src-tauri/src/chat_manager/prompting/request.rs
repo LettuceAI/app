@@ -2,6 +2,7 @@ use serde_json::{Map, Value};
 use uuid::Uuid;
 
 use crate::chat_manager::sse;
+use crate::chat_manager::thinking::normalize_thinking_content;
 use crate::chat_manager::types::ProviderId;
 use crate::chat_manager::types::{MessageVariant, ProviderCredential, StoredMessage, UsageSummary};
 use crate::providers;
@@ -40,35 +41,13 @@ pub fn extract_reasoning(data: &Value, provider_id: Option<&str>) -> Option<Stri
             }
             None
         }
-        Value::Object(map) => {
-            // Check choices[0].message.reasoning or reasoning_content for non-streaming responses
-            if let Some(choices) = map.get("choices").and_then(|c| c.as_array()) {
-                if let Some(first) = choices.first() {
-                    // Try reasoning field first
-                    if let Some(reasoning) = first
-                        .get("message")
-                        .and_then(|m| m.get("reasoning"))
-                        .and_then(|r| r.as_str())
-                    {
-                        if !reasoning.is_empty() {
-                            return Some(reasoning.to_string());
-                        }
-                    }
-                    // Try reasoning_content field (used by some models like ZhipuAI GLM)
-                    if let Some(reasoning) = first
-                        .get("message")
-                        .and_then(|m| m.get("reasoning_content"))
-                        .and_then(|r| r.as_str())
-                    {
-                        if !reasoning.is_empty() {
-                            return Some(reasoning.to_string());
-                        }
-                    }
-                }
-            }
-            None
+        _ => {
+            let raw_text = extract_raw_text(data, provider_id);
+            let explicit_reasoning = extract_explicit_reasoning(data);
+            let split =
+                normalize_thinking_content(raw_text.as_deref(), explicit_reasoning.as_deref());
+            (!split.reasoning.is_empty()).then_some(split.reasoning)
         }
-        _ => None,
     }
 }
 
@@ -104,20 +83,60 @@ pub fn extract_text(data: &Value, provider_id: Option<&str>) -> Option<String> {
                 }
                 return None;
             }
-            Some(s.clone())
+            let split = normalize_thinking_content(Some(s), None);
+            (!split.content.is_empty()).then_some(split.content)
         }
+        _ => {
+            let split =
+                normalize_thinking_content(extract_raw_text(data, provider_id).as_deref(), None);
+            (!split.content.is_empty()).then_some(split.content)
+        }
+    }
+}
+
+fn extract_explicit_reasoning(data: &Value) -> Option<String> {
+    match data {
+        Value::Object(map) => {
+            if let Some(choices) = map.get("choices").and_then(|c| c.as_array()) {
+                if let Some(first) = choices.first() {
+                    if let Some(reasoning) = first
+                        .get("message")
+                        .and_then(|m| m.get("reasoning"))
+                        .and_then(|r| r.as_str())
+                        .filter(|value| !value.trim().is_empty())
+                    {
+                        return Some(reasoning.to_string());
+                    }
+                    if let Some(reasoning) = first
+                        .get("message")
+                        .and_then(|m| m.get("reasoning_content"))
+                        .and_then(|r| r.as_str())
+                        .filter(|value| !value.trim().is_empty())
+                    {
+                        return Some(reasoning.to_string());
+                    }
+                }
+            }
+            map.get("message")
+                .and_then(|message| message.get("thinking"))
+                .and_then(|thinking| thinking.as_str())
+                .filter(|value| !value.trim().is_empty())
+                .map(|value| value.to_string())
+        }
+        _ => None,
+    }
+}
+
+fn extract_raw_text(data: &Value, provider_id: Option<&str>) -> Option<String> {
+    match data {
         Value::Array(items) => {
             let mut combined = String::new();
             for item in items {
-                if let Some(part) = extract_text(item, provider_id) {
+                if let Some(part) = extract_raw_text(item, provider_id) {
                     combined.push_str(&part);
                 }
             }
-            if combined.is_empty() {
-                None
-            } else {
-                Some(combined)
-            }
+            (!combined.trim().is_empty()).then_some(combined)
         }
         Value::Object(map) => {
             if let Some(Value::Array(choices)) = map.get("choices") {

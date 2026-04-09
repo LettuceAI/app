@@ -89,7 +89,9 @@ export function ChatLayout() {
     setLoadCount((c) => c + 1);
   }, []);
 
-  const backgroundImageData = useImageData(character?.backgroundImagePath);
+  const effectiveBackgroundImagePath =
+    chatController.session?.backgroundImagePath ?? character?.backgroundImagePath;
+  const backgroundImageData = useImageData(effectiveBackgroundImagePath);
 
   useEffect(() => {
     let mounted = true;

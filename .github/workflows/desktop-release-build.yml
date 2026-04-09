@@ -1,8 +1,15 @@
-name: Desktop Release Build (Tauri)
+name: Build / Release / Desktop
+
+run-name: Desktop release build by @${{ github.actor }}
 
 on:
   workflow_dispatch:
     inputs:
+      version_override:
+        description: "Optional Tauri/app version override for this release build"
+        required: false
+        default: ""
+        type: string
       build_llama_cuda_linux:
         description: "Also build Linux desktop with llama.cpp CUDA support"
         required: false
@@ -70,8 +77,22 @@ jobs:
         id: meta
         run: |
           SHORT_SHA="${GITHUB_SHA::7}"
-          TAG="desktop-release-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}-${SHORT_SHA}"
-          NAME="Desktop Release Build #${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT} (${SHORT_SHA})"
+          VERSION_OVERRIDE='${{ inputs.version_override }}'
+
+          if [[ -n "${VERSION_OVERRIDE}" ]]; then
+            SAFE_VERSION="$(printf '%s' "${VERSION_OVERRIDE}" | tr -cs '[:alnum:]._-' '-')"
+            SAFE_VERSION="${SAFE_VERSION#-}"
+            SAFE_VERSION="${SAFE_VERSION%-}"
+            TAG="desktop-release-${SAFE_VERSION}"
+            NAME="Desktop Release ${VERSION_OVERRIDE}"
+            if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+              TAG="${TAG}-${GITHUB_RUN_ATTEMPT}-${SHORT_SHA}"
+              NAME="${NAME} (${SHORT_SHA}, attempt ${GITHUB_RUN_ATTEMPT})"
+            fi
+          else
+            TAG="desktop-release-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}-${SHORT_SHA}"
+            NAME="Desktop Release Build #${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT} (${SHORT_SHA})"
+          fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "name=$NAME" >> "$GITHUB_OUTPUT"
 
@@ -201,13 +222,13 @@ jobs:
             echo "${BODY_DELIM}"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Create prerelease
+      - name: Create release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.meta.outputs.tag }}
           target_commitish: ${{ github.sha }}
           name: ${{ steps.meta.outputs.name }}
-          prerelease: true
+          prerelease: false
           generate_release_notes: false
           body: ${{ steps.release_body.outputs.body }}
 
@@ -257,12 +278,31 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Write Tauri version override
+        if: ${{ inputs.version_override != '' }}
+        env:
+          VERSION_OVERRIDE: ${{ inputs.version_override }}
+        run: |
+          node -e "require('fs').writeFileSync('tauri-version-override.json', JSON.stringify({ version: process.env.VERSION_OVERRIDE }))"
+
       - name: Build Tauri binary (Linux, CPU)
-        run: bun run tauri build --no-bundle
+        run: |
+          BUILD_ARGS=(build)
+          if [ -f tauri-version-override.json ]; then
+            BUILD_ARGS+=(--config tauri-version-override.json)
+          fi
+          BUILD_ARGS+=(--no-bundle)
+          bun run tauri "${BUILD_ARGS[@]}"
 
       - name: Bundle Linux CPU deb
         timeout-minutes: 20
-        run: bun run tauri bundle --bundles deb
+        run: |
+          BUNDLE_ARGS=(bundle)
+          if [ -f tauri-version-override.json ]; then
+            BUNDLE_ARGS+=(--config tauri-version-override.json)
+          fi
+          BUNDLE_ARGS+=(--bundles deb)
+          bun run tauri "${BUNDLE_ARGS[@]}"
 
       - name: Package Linux CPU bundle zip
         run: |
@@ -337,6 +377,13 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Write Tauri version override
+        if: ${{ inputs.version_override != '' }}
+        env:
+          VERSION_OVERRIDE: ${{ inputs.version_override }}
+        run: |
+          node -e "require('fs').writeFileSync('tauri-version-override.json', JSON.stringify({ version: process.env.VERSION_OVERRIDE }))"
+
       - name: Build Tauri binary (Linux, llama.cpp CUDA)
         env:
           CARGO_TARGET_DIR: target-cuda
@@ -344,7 +391,13 @@ jobs:
           CMAKE_C_FLAGS: "-fPIC"
           CMAKE_CXX_FLAGS: "-fPIC"
           CMAKE_CUDA_FLAGS: "--compiler-options=-fPIC"
-        run: bun run tauri build --features llama-gpu-cuda --no-bundle
+        run: |
+          BUILD_ARGS=(build)
+          if [ -f tauri-version-override.json ]; then
+            BUILD_ARGS+=(--config tauri-version-override.json)
+          fi
+          BUILD_ARGS+=(--features llama-gpu-cuda --no-bundle)
+          bun run tauri "${BUILD_ARGS[@]}"
 
       - name: Bundle Linux CUDA deb
         timeout-minutes: 20
@@ -354,7 +407,13 @@ jobs:
           CMAKE_C_FLAGS: "-fPIC"
           CMAKE_CXX_FLAGS: "-fPIC"
           CMAKE_CUDA_FLAGS: "--compiler-options=-fPIC"
-        run: bun run tauri bundle --features llama-gpu-cuda --bundles deb
+        run: |
+          BUNDLE_ARGS=(bundle)
+          if [ -f tauri-version-override.json ]; then
+            BUNDLE_ARGS+=(--config tauri-version-override.json)
+          fi
+          BUNDLE_ARGS+=(--features llama-gpu-cuda --bundles deb)
+          bun run tauri "${BUNDLE_ARGS[@]}"
 
       - name: Package Linux CUDA bundle zip
         run: |
@@ -429,13 +488,26 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Write Tauri version override
+        if: ${{ inputs.version_override != '' }}
+        env:
+          VERSION_OVERRIDE: ${{ inputs.version_override }}
+        run: |
+          node -e "require('fs').writeFileSync('tauri-version-override.json', JSON.stringify({ version: process.env.VERSION_OVERRIDE }))"
+
       - name: Build Tauri binary (Linux, llama.cpp Vulkan)
         env:
           CARGO_TARGET_DIR: target-vulkan
           CMAKE_POSITION_INDEPENDENT_CODE: "ON"
           CMAKE_C_FLAGS: "-fPIC"
           CMAKE_CXX_FLAGS: "-fPIC"
-        run: bun run tauri build --features llama-gpu-vulkan --no-bundle
+        run: |
+          BUILD_ARGS=(build)
+          if [ -f tauri-version-override.json ]; then
+            BUILD_ARGS+=(--config tauri-version-override.json)
+          fi
+          BUILD_ARGS+=(--features llama-gpu-vulkan --no-bundle)
+          bun run tauri "${BUILD_ARGS[@]}"
 
       - name: Bundle Linux Vulkan deb
         timeout-minutes: 20
@@ -444,7 +516,13 @@ jobs:
           CMAKE_POSITION_INDEPENDENT_CODE: "ON"
           CMAKE_C_FLAGS: "-fPIC"
           CMAKE_CXX_FLAGS: "-fPIC"
-        run: bun run tauri bundle --features llama-gpu-vulkan --bundles deb
+        run: |
+          BUNDLE_ARGS=(bundle)
+          if [ -f tauri-version-override.json ]; then
+            BUNDLE_ARGS+=(--config tauri-version-override.json)
+          fi
+          BUNDLE_ARGS+=(--features llama-gpu-vulkan --bundles deb)
+          bun run tauri "${BUNDLE_ARGS[@]}"
 
       - name: Package Linux Vulkan bundle zip
         run: |
@@ -512,13 +590,24 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Write Tauri version override
+        if: ${{ inputs.version_override != '' }}
+        env:
+          VERSION_OVERRIDE: ${{ inputs.version_override }}
+        run: |
+          node -e "require('fs').writeFileSync('tauri-version-override.json', JSON.stringify({ version: process.env.VERSION_OVERRIDE }))"
+
       - name: Build Tauri (Windows, CPU)
         env:
           CMAKE_MSVC_RUNTIME_LIBRARY: "MultiThreadedDLL"
           CARGO_TARGET_DIR: C:\t
         run: |
           mkdir C:\t -ErrorAction SilentlyContinue | Out-Null
-          bun run tauri build
+          $tauriArgs = @('run', 'tauri', 'build')
+          if (Test-Path tauri-version-override.json) {
+            $tauriArgs += @('--config', 'tauri-version-override.json')
+          }
+          & bun $tauriArgs
 
       - name: Package Windows CPU zip
         shell: pwsh
@@ -602,13 +691,25 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Write Tauri version override
+        if: ${{ inputs.version_override != '' }}
+        env:
+          VERSION_OVERRIDE: ${{ inputs.version_override }}
+        run: |
+          node -e "require('fs').writeFileSync('tauri-version-override.json', JSON.stringify({ version: process.env.VERSION_OVERRIDE }))"
+
       - name: Build Tauri (Windows, llama.cpp CUDA)
         env:
           CMAKE_MSVC_RUNTIME_LIBRARY: "MultiThreadedDLL"
           CARGO_TARGET_DIR: C:\t
         run: |
           mkdir C:\t -ErrorAction SilentlyContinue | Out-Null
-          bun run tauri build --features llama-gpu-cuda
+          $tauriArgs = @('run', 'tauri', 'build')
+          if (Test-Path tauri-version-override.json) {
+            $tauriArgs += @('--config', 'tauri-version-override.json')
+          }
+          $tauriArgs += @('--features', 'llama-gpu-cuda')
+          & bun $tauriArgs
 
       - name: Package Windows CUDA zip
         shell: pwsh
@@ -757,6 +858,13 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Write Tauri version override
+        if: ${{ inputs.version_override != '' }}
+        env:
+          VERSION_OVERRIDE: ${{ inputs.version_override }}
+        run: |
+          node -e "require('fs').writeFileSync('tauri-version-override.json', JSON.stringify({ version: process.env.VERSION_OVERRIDE }))"
+
       - name: Build with Vulkan
         env:
           CMAKE_MSVC_RUNTIME_LIBRARY: "MultiThreadedDLL"
@@ -797,7 +905,12 @@ jobs:
             Write-Warning "vulkaninfo failed: $($_.Exception.Message)"
             Write-Warning "Continuing because Vulkan runtime diagnostics are optional on CI runners."
           }
-          bun run tauri build --features llama-gpu-vulkan
+          $tauriArgs = @('run', 'tauri', 'build')
+          if (Test-Path tauri-version-override.json) {
+            $tauriArgs += @('--config', 'tauri-version-override.json')
+          }
+          $tauriArgs += @('--features', 'llama-gpu-vulkan')
+          & bun $tauriArgs
 
       - name: Package Windows Vulkan zip
         shell: pwsh
@@ -813,10 +926,20 @@ jobs:
           fail_on_unmatched_files: true
 
   macos_cpu:
-    name: macOS Build (CPU)
+    name: macOS Build (CPU, ${{ matrix.arch_label }})
     needs: prepare_release
     if: ${{ inputs.build_llama_cpu_macos == true }}
     runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch_label: Apple Silicon
+            target: aarch64-apple-darwin
+            artifact_suffix: arm64
+          - arch_label: Intel
+            target: x86_64-apple-darwin
+            artifact_suffix: x64
     env:
       APTABASE_KEY: ${{ secrets.APTABASE_KEY }}
 
@@ -840,38 +963,64 @@ jobs:
           toolchain: stable
           cache: true
 
+      - name: Install Rust target
+        run: rustup target add ${{ matrix.target }}
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Write Tauri version override
+        if: ${{ inputs.version_override != '' }}
+        env:
+          VERSION_OVERRIDE: ${{ inputs.version_override }}
+        run: |
+          node -e "require('fs').writeFileSync('tauri-version-override.json', JSON.stringify({ version: process.env.VERSION_OVERRIDE }))"
+
       - name: Build and bundle Tauri (macOS, CPU)
-        run: bun run tauri build --bundles app,dmg
+        run: |
+          BUILD_ARGS=(build)
+          if [ -f tauri-version-override.json ]; then
+            BUILD_ARGS+=(--config tauri-version-override.json)
+          fi
+          BUILD_ARGS+=(--target ${{ matrix.target }} --bundles app,dmg)
+          bun run tauri "${BUILD_ARGS[@]}"
 
       - name: Package macOS artifacts
         run: |
           mkdir -p dist-artifacts
-          ditto -c -k --sequesterRsrc --keepParent src-tauri/target/release/bundle/macos/*.app dist-artifacts/macos-app.zip
-          CPU_DMG=$(ls src-tauri/target/release/bundle/dmg/*.dmg | head -n 1)
-          cp "$CPU_DMG" dist-artifacts/macos-cpu.dmg
+          ditto -c -k --sequesterRsrc --keepParent src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app dist-artifacts/macos-${{ matrix.artifact_suffix }}-app.zip
+          CPU_DMG=$(ls src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg | head -n 1)
+          cp "$CPU_DMG" dist-artifacts/macos-${{ matrix.artifact_suffix }}-cpu.dmg
 
       - name: Upload macOS app zip to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.prepare_release.outputs.tag }}
-          files: dist-artifacts/macos-app.zip
+          files: dist-artifacts/macos-${{ matrix.artifact_suffix }}-app.zip
           fail_on_unmatched_files: true
 
       - name: Upload macOS dmg to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.prepare_release.outputs.tag }}
-          files: dist-artifacts/macos-cpu.dmg
+          files: dist-artifacts/macos-${{ matrix.artifact_suffix }}-cpu.dmg
           fail_on_unmatched_files: true
 
   macos_metal:
-    name: macOS Build (Metal)
+    name: macOS Build (Metal, ${{ matrix.arch_label }})
     needs: prepare_release
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_llama_metal_macos == true }}
     runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch_label: Apple Silicon
+            target: aarch64-apple-darwin
+            artifact_suffix: arm64
+          - arch_label: Intel
+            target: x86_64-apple-darwin
+            artifact_suffix: x64
     env:
       APTABASE_KEY: ${{ secrets.APTABASE_KEY }}
 
@@ -895,33 +1044,49 @@ jobs:
           toolchain: stable
           cache: true
 
+      - name: Install Rust target
+        run: rustup target add ${{ matrix.target }}
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      - name: Write Tauri version override
+        if: ${{ inputs.version_override != '' }}
+        env:
+          VERSION_OVERRIDE: ${{ inputs.version_override }}
+        run: |
+          node -e "require('fs').writeFileSync('tauri-version-override.json', JSON.stringify({ version: process.env.VERSION_OVERRIDE }))"
 
       - name: Build and bundle Tauri (macOS, Metal)
         env:
           CARGO_TARGET_DIR: target-metal
-        run: bun run tauri build --features llama-gpu-metal --bundles app,dmg
+        run: |
+          BUILD_ARGS=(build)
+          if [ -f tauri-version-override.json ]; then
+            BUILD_ARGS+=(--config tauri-version-override.json)
+          fi
+          BUILD_ARGS+=(--target ${{ matrix.target }} --features llama-gpu-metal --bundles app,dmg)
+          bun run tauri "${BUILD_ARGS[@]}"
 
       - name: Package macOS Metal artifacts
         run: |
           mkdir -p dist-artifacts
-          ditto -c -k --sequesterRsrc --keepParent src-tauri/target-metal/release/bundle/macos/*.app dist-artifacts/macos-metal-app.zip
-          METAL_DMG=$(ls src-tauri/target-metal/release/bundle/dmg/*.dmg | head -n 1)
-          cp "$METAL_DMG" dist-artifacts/macos-metal.dmg
+          ditto -c -k --sequesterRsrc --keepParent src-tauri/target-metal/${{ matrix.target }}/release/bundle/macos/*.app dist-artifacts/macos-${{ matrix.artifact_suffix }}-metal-app.zip
+          METAL_DMG=$(ls src-tauri/target-metal/${{ matrix.target }}/release/bundle/dmg/*.dmg | head -n 1)
+          cp "$METAL_DMG" dist-artifacts/macos-${{ matrix.artifact_suffix }}-metal.dmg
 
       - name: Upload macOS Metal app zip to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.prepare_release.outputs.tag }}
-          files: dist-artifacts/macos-metal-app.zip
+          files: dist-artifacts/macos-${{ matrix.artifact_suffix }}-metal-app.zip
           fail_on_unmatched_files: true
 
       - name: Upload macOS Metal dmg to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.prepare_release.outputs.tag }}
-          files: dist-artifacts/macos-metal.dmg
+          files: dist-artifacts/macos-${{ matrix.artifact_suffix }}-metal.dmg
           fail_on_unmatched_files: true
 
   cleanup_release_on_failure:

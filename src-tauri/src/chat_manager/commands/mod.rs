@@ -1,7 +1,21 @@
-use serde_json::Value;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
-use crate::chat_manager::storage::{get_base_prompt, PromptType};
+use crate::chat_manager::attachments::load_attachment_data;
+use crate::chat_manager::execution::{build_provider_extra_fields, RequestSettings};
+use crate::chat_manager::messages::{
+    push_prompt_entry_message, push_user_or_assistant_message_with_context,
+    sanitize_placeholders_in_api_messages,
+};
+use crate::chat_manager::storage::{
+    get_base_prompt, recent_messages, resolve_credential_for_model, PromptType,
+};
+use crate::chat_manager::turn_builder::{
+    append_image_directive_instructions, conversation_window_with_pinned,
+    insert_in_chat_prompt_entries, manual_window_size, maybe_swap_message_for_api,
+    partition_prompt_entries,
+};
 use crate::utils::now_millis;
 
 use super::attachments::persist_attachments;
@@ -11,12 +25,341 @@ use super::service::ChatContext;
 
 use super::storage::default_character_rules;
 use super::types::{
-    ChatAddMessageAttachmentArgs, ChatCompletionArgs, ChatContinueArgs, ChatGenerateSceneImageArgs,
+    ChatAddMessageAttachmentArgs, ChatCompletionArgs, ChatContinueArgs,
+    ChatGenerateDesignReferenceDescriptionArgs, ChatGenerateSceneImageArgs,
     ChatGenerateScenePromptArgs, ChatRegenerateArgs, ChatTurnResult, ContinueResult,
     ImageAttachment, PromptScope, RegenerateResult, Session, Settings, StoredMessage,
     SystemPromptEntry, SystemPromptTemplate,
 };
 use crate::storage_manager::sessions::{messages_upsert_batch_typed, session_upsert_meta_typed};
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatMessageDebugSnapshotArgs {
+    pub session_id: String,
+    pub message_id: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatMessageDebugSnapshot {
+    pub source: String,
+    pub session_id: String,
+    pub message_id: String,
+    pub role: String,
+    pub operation: String,
+    pub provider_id: String,
+    pub credential_id: String,
+    pub model_id: String,
+    pub model: String,
+    pub model_display_name: String,
+    pub endpoint: String,
+    pub stream: bool,
+    pub request_settings: Value,
+    pub prompt_template_source: String,
+    pub prompt_template_id: Option<String>,
+    pub prompt_template_name: Option<String>,
+    pub prompt_entries: Vec<SystemPromptEntry>,
+    pub relative_prompt_entries: Vec<SystemPromptEntry>,
+    pub in_chat_prompt_entries: Vec<SystemPromptEntry>,
+    pub request_messages: Vec<Value>,
+    pub request_body: Value,
+    pub notes: Vec<String>,
+}
+
+#[derive(Clone, Copy)]
+enum DebugMessageOperation {
+    Completion,
+    Regenerate,
+    Continue,
+}
+
+impl DebugMessageOperation {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Completion => "completion",
+            Self::Regenerate => "regenerate",
+            Self::Continue => "continue",
+        }
+    }
+}
+
+fn infer_debug_operation(session: &Session, message_index: usize) -> DebugMessageOperation {
+    let message = &session.messages[message_index];
+    if !message.variants.is_empty() || message.selected_variant_id.is_some() {
+        return DebugMessageOperation::Regenerate;
+    }
+
+    let previous_non_scene = session.messages[..message_index]
+        .iter()
+        .rev()
+        .find(|item| item.role == "user" || item.role == "assistant");
+
+    if previous_non_scene
+        .map(|item| item.role.eq_ignore_ascii_case("assistant"))
+        .unwrap_or(false)
+    {
+        DebugMessageOperation::Continue
+    } else {
+        DebugMessageOperation::Completion
+    }
+}
+
+fn request_settings_json(request_settings: &RequestSettings) -> Value {
+    json!({
+        "temperature": request_settings.temperature,
+        "topP": request_settings.top_p,
+        "maxTokens": request_settings.max_tokens,
+        "contextLength": request_settings.context_length,
+        "frequencyPenalty": request_settings.frequency_penalty,
+        "presencePenalty": request_settings.presence_penalty,
+        "topK": request_settings.top_k,
+        "reasoningEnabled": request_settings.reasoning_enabled,
+        "reasoningEffort": request_settings.reasoning_effort,
+        "reasoningBudget": request_settings.reasoning_budget,
+    })
+}
+
+fn resolve_debug_prompt_template(
+    app: &AppHandle,
+    session: &Session,
+    character: &super::types::Character,
+    settings: &Settings,
+) -> (String, Option<String>, Option<String>) {
+    if let Some(session_template_id) = &session.prompt_template_id {
+        if let Ok(Some(template)) = prompts::get_template(app, session_template_id) {
+            return (
+                "session_template".to_string(),
+                Some(template.id),
+                Some(template.name),
+            );
+        }
+        if let Some(character_template_id) = &character.prompt_template_id {
+            if let Ok(Some(template)) = prompts::get_template(app, character_template_id) {
+                return (
+                    "character_template".to_string(),
+                    Some(template.id),
+                    Some(template.name),
+                );
+            }
+        }
+    } else if let Some(character_template_id) = &character.prompt_template_id {
+        if let Ok(Some(template)) = prompts::get_template(app, character_template_id) {
+            return (
+                "character_template".to_string(),
+                Some(template.id),
+                Some(template.name),
+            );
+        }
+    }
+
+    if let Some(app_template_id) = &settings.prompt_template_id {
+        if let Ok(Some(template)) = prompts::get_template(app, app_template_id) {
+            return (
+                "app_wide_template".to_string(),
+                Some(template.id),
+                Some(template.name),
+            );
+        }
+    }
+
+    if let Ok(Some(template)) = prompts::get_template(app, prompts::APP_DEFAULT_TEMPLATE_ID) {
+        return (
+            "app_default_template".to_string(),
+            Some(template.id),
+            Some(template.name),
+        );
+    }
+
+    (
+        "emergency_hardcoded_fallback".to_string(),
+        None,
+        Some("Hardcoded Fallback".to_string()),
+    )
+}
+
+fn build_debug_completion_messages(
+    app: &AppHandle,
+    session: &Session,
+    settings: &Settings,
+    character_name: &str,
+    persona_name: &str,
+    allow_image_input: bool,
+    system_role: &str,
+    relative_entries: &[SystemPromptEntry],
+    in_chat_entries: &[SystemPromptEntry],
+) -> Vec<Value> {
+    let mut out = Vec::new();
+    for entry in relative_entries {
+        push_prompt_entry_message(&mut out, system_role, entry);
+    }
+
+    let dynamic_memory_enabled = settings
+        .advanced_settings
+        .as_ref()
+        .and_then(|advanced| advanced.dynamic_memory.as_ref())
+        .map(|dynamic| dynamic.enabled)
+        .unwrap_or(false);
+
+    let (pinned_msgs, recent_msgs) = if dynamic_memory_enabled {
+        conversation_window_with_pinned(
+            &session.messages,
+            crate::chat_manager::memory::dynamic::dynamic_window_size(settings),
+        )
+    } else {
+        (
+            Vec::new(),
+            recent_messages(session, manual_window_size(settings)),
+        )
+    };
+
+    let mut chat_messages = Vec::new();
+    for msg in &pinned_msgs {
+        let msg_with_data = load_attachment_data(app, msg);
+        let msg_with_data = maybe_swap_message_for_api(&msg_with_data, false);
+        push_user_or_assistant_message_with_context(
+            &mut chat_messages,
+            &msg_with_data,
+            character_name,
+            persona_name,
+            allow_image_input,
+        );
+    }
+
+    for msg in &recent_msgs {
+        let msg_with_data = load_attachment_data(app, msg);
+        let msg_with_data = maybe_swap_message_for_api(&msg_with_data, false);
+        push_user_or_assistant_message_with_context(
+            &mut chat_messages,
+            &msg_with_data,
+            character_name,
+            persona_name,
+            allow_image_input,
+        );
+    }
+
+    insert_in_chat_prompt_entries(&mut chat_messages, system_role, in_chat_entries);
+    out.extend(chat_messages);
+    sanitize_placeholders_in_api_messages(&mut out, character_name, persona_name);
+    out
+}
+
+fn build_debug_regenerate_messages(
+    app: &AppHandle,
+    session: &Session,
+    target_index: usize,
+    settings: &Settings,
+    character_name: &str,
+    persona_name: &str,
+    allow_image_input: bool,
+    system_role: &str,
+    relative_entries: &[SystemPromptEntry],
+    in_chat_entries: &[SystemPromptEntry],
+) -> Vec<Value> {
+    let mut out = Vec::new();
+    for entry in relative_entries {
+        push_prompt_entry_message(&mut out, system_role, entry);
+    }
+
+    let dynamic_memory_enabled = settings
+        .advanced_settings
+        .as_ref()
+        .and_then(|advanced| advanced.dynamic_memory.as_ref())
+        .map(|dynamic| dynamic.enabled)
+        .unwrap_or(false);
+
+    let messages_before_target: Vec<StoredMessage> = session
+        .messages
+        .iter()
+        .enumerate()
+        .filter(|(idx, _)| *idx < target_index)
+        .map(|(_, message)| message.clone())
+        .collect();
+
+    let mut chat_messages = Vec::new();
+    if dynamic_memory_enabled {
+        let (pinned_msgs, recent_msgs) = conversation_window_with_pinned(
+            &messages_before_target,
+            crate::chat_manager::memory::dynamic::dynamic_window_size(settings),
+        );
+        for msg in &pinned_msgs {
+            let msg_with_data = load_attachment_data(app, msg);
+            let msg_with_data = maybe_swap_message_for_api(&msg_with_data, false);
+            push_user_or_assistant_message_with_context(
+                &mut chat_messages,
+                &msg_with_data,
+                character_name,
+                persona_name,
+                allow_image_input,
+            );
+        }
+        for msg in &recent_msgs {
+            let msg_with_data = load_attachment_data(app, msg);
+            let msg_with_data = maybe_swap_message_for_api(&msg_with_data, false);
+            push_user_or_assistant_message_with_context(
+                &mut chat_messages,
+                &msg_with_data,
+                character_name,
+                persona_name,
+                allow_image_input,
+            );
+        }
+    } else {
+        let start_index = target_index.saturating_sub(manual_window_size(settings));
+        for (idx, msg) in session.messages.iter().enumerate() {
+            if idx < start_index {
+                continue;
+            }
+            if idx >= target_index {
+                break;
+            }
+            let msg_with_data = load_attachment_data(app, msg);
+            let msg_with_data = maybe_swap_message_for_api(&msg_with_data, false);
+            push_user_or_assistant_message_with_context(
+                &mut chat_messages,
+                &msg_with_data,
+                character_name,
+                persona_name,
+                allow_image_input,
+            );
+        }
+    }
+
+    insert_in_chat_prompt_entries(&mut chat_messages, system_role, in_chat_entries);
+    out.extend(chat_messages);
+    sanitize_placeholders_in_api_messages(&mut out, character_name, persona_name);
+    out
+}
+
+fn build_debug_continue_messages(
+    app: &AppHandle,
+    session: &Session,
+    settings: &Settings,
+    character_name: &str,
+    persona_name: &str,
+    allow_image_input: bool,
+    system_role: &str,
+    relative_entries: &[SystemPromptEntry],
+    in_chat_entries: &[SystemPromptEntry],
+) -> Vec<Value> {
+    let mut out = build_debug_completion_messages(
+        app,
+        session,
+        settings,
+        character_name,
+        persona_name,
+        allow_image_input,
+        system_role,
+        relative_entries,
+        in_chat_entries,
+    );
+    out.push(json!({
+        "role": "user",
+        "content": "[CONTINUE] You were in the middle of a response. Continue writing from exactly where you left off. Do NOT restart, regenerate, or rewrite what you already said. Simply pick up the narrative thread and continue the scene forward with new content."
+    }));
+    out
+}
+
 fn resolve_persona_id<'a>(session: &'a Session, explicit: Option<&'a str>) -> Option<&'a str> {
     if explicit.is_some() {
         return explicit;
@@ -74,6 +417,188 @@ pub async fn chat_continue(
     super::flows::continuation::ContinueFlow::new(app)
         .execute(args)
         .await
+}
+
+#[tauri::command]
+pub fn chat_message_debug_snapshot(
+    app: AppHandle,
+    args: ChatMessageDebugSnapshotArgs,
+) -> Result<ChatMessageDebugSnapshot, String> {
+    let context = ChatContext::initialize(app.clone())?;
+    let session = context
+        .load_session(&args.session_id)?
+        .ok_or_else(|| "Session not found".to_string())?;
+
+    let target_index = session
+        .messages
+        .iter()
+        .position(|message| message.id == args.message_id)
+        .ok_or_else(|| "Message not found".to_string())?;
+    let target_message = session
+        .messages
+        .get(target_index)
+        .cloned()
+        .ok_or_else(|| "Message not found".to_string())?;
+
+    if target_message.role != "assistant" {
+        return Err("Debug snapshot currently supports assistant messages only".to_string());
+    }
+
+    let character = context.find_character(&session.character_id)?;
+    let persona = context
+        .choose_persona(resolve_persona_id(&session, None))
+        .cloned();
+
+    let (model, credential) = if let Some(model_id) = target_message.model_id.as_ref() {
+        let model = context
+            .settings
+            .models
+            .iter()
+            .find(|candidate| candidate.id == *model_id)
+            .ok_or_else(|| "Stored model not found".to_string())?;
+        let credential = resolve_credential_for_model(&context.settings, model)
+            .ok_or_else(|| "Provider credential not found".to_string())?;
+        (model.clone(), credential.clone())
+    } else {
+        let (model, credential) = context.select_model_with_credential(&character)?;
+        (model.clone(), credential.clone())
+    };
+
+    let operation = infer_debug_operation(&session, target_index);
+    let prompt_session = match operation {
+        DebugMessageOperation::Regenerate => session.clone(),
+        DebugMessageOperation::Completion | DebugMessageOperation::Continue => {
+            let mut cloned = session.clone();
+            cloned.messages.truncate(target_index);
+            cloned
+        }
+    };
+
+    let prompt_entries = append_image_directive_instructions(
+        context.build_system_prompt(&character, &model, persona.as_ref(), &prompt_session),
+        &context.settings,
+    );
+    let (prompt_template_source, prompt_template_id, prompt_template_name) =
+        resolve_debug_prompt_template(&app, &prompt_session, &character, &context.settings);
+    let (relative_entries, in_chat_entries) = partition_prompt_entries(prompt_entries.clone());
+
+    let system_role = crate::chat_manager::request_builder::system_role_for(&credential);
+    let character_name = character.name.as_str();
+    let persona_name = persona
+        .as_ref()
+        .map(|item| item.title.as_str())
+        .unwrap_or("");
+    let allow_image_input = model
+        .input_scopes
+        .iter()
+        .any(|scope| scope.eq_ignore_ascii_case("image"));
+
+    let request_messages = match operation {
+        DebugMessageOperation::Completion => build_debug_completion_messages(
+            &app,
+            &prompt_session,
+            &context.settings,
+            character_name,
+            persona_name,
+            allow_image_input,
+            &system_role,
+            &relative_entries,
+            &in_chat_entries,
+        ),
+        DebugMessageOperation::Regenerate => build_debug_regenerate_messages(
+            &app,
+            &session,
+            target_index,
+            &context.settings,
+            character_name,
+            persona_name,
+            allow_image_input,
+            &system_role,
+            &relative_entries,
+            &in_chat_entries,
+        ),
+        DebugMessageOperation::Continue => build_debug_continue_messages(
+            &app,
+            &prompt_session,
+            &context.settings,
+            character_name,
+            persona_name,
+            allow_image_input,
+            &system_role,
+            &relative_entries,
+            &in_chat_entries,
+        ),
+    };
+
+    let request_settings = RequestSettings::resolve(&prompt_session, &model, &context.settings);
+    let extra_body_fields = build_provider_extra_fields(
+        &credential.provider_id,
+        &prompt_session,
+        &model,
+        &context.settings,
+        &request_settings,
+    );
+    let built = crate::chat_manager::request_builder::build_chat_request(
+        &credential,
+        "",
+        &model.name,
+        &request_messages,
+        None,
+        request_settings.temperature,
+        request_settings.top_p,
+        request_settings.max_tokens,
+        request_settings.context_length,
+        true,
+        None,
+        request_settings.frequency_penalty,
+        request_settings.presence_penalty,
+        request_settings.top_k,
+        None,
+        request_settings.reasoning_enabled,
+        request_settings.reasoning_effort.clone(),
+        request_settings.reasoning_budget,
+        request_settings.prompt_caching_enabled.unwrap_or(false),
+        extra_body_fields,
+    );
+
+    let mut notes = vec!["Reconstructed from current session state; live retry timing and exact provider response still come from the in-memory trace.".to_string()];
+    if target_message.model_id.is_none() {
+        notes.push("This message had no stored model id, so the current character/default model configuration was used for reconstruction.".to_string());
+    }
+    match operation {
+        DebugMessageOperation::Regenerate => notes.push(
+            "Regenerate reconstruction uses the current session for prompt rendering and conversation up to the target message for the request body.".to_string(),
+        ),
+        DebugMessageOperation::Continue => notes.push(
+            "Continue reconstruction appends the synthetic [CONTINUE] instruction used by the app.".to_string(),
+        ),
+        DebugMessageOperation::Completion => {}
+    }
+
+    Ok(ChatMessageDebugSnapshot {
+        source: "reconstructed".to_string(),
+        session_id: args.session_id,
+        message_id: args.message_id,
+        role: target_message.role,
+        operation: operation.as_str().to_string(),
+        provider_id: credential.provider_id,
+        credential_id: credential.id,
+        model_id: model.id,
+        model: model.name,
+        model_display_name: model.display_name,
+        endpoint: built.url,
+        stream: built.stream,
+        request_settings: request_settings_json(&request_settings),
+        prompt_template_source,
+        prompt_template_id,
+        prompt_template_name,
+        prompt_entries,
+        relative_prompt_entries: relative_entries,
+        in_chat_prompt_entries: in_chat_entries,
+        request_messages,
+        request_body: built.body,
+        notes,
+    })
 }
 
 #[tauri::command]
@@ -264,6 +789,11 @@ pub fn reset_app_default_template(app: AppHandle) -> Result<SystemPromptTemplate
 }
 
 #[tauri::command]
+pub fn reset_local_roleplay_template(app: AppHandle) -> Result<SystemPromptTemplate, String> {
+    prompts::reset_local_roleplay_template(&app)
+}
+
+#[tauri::command]
 pub fn reset_dynamic_summary_template(app: AppHandle) -> Result<SystemPromptTemplate, String> {
     prompts::reset_dynamic_summary_template(&app)
 }
@@ -298,6 +828,11 @@ pub fn reset_avatar_edit_template(app: AppHandle) -> Result<SystemPromptTemplate
 #[tauri::command]
 pub fn reset_scene_generation_template(app: AppHandle) -> Result<SystemPromptTemplate, String> {
     prompts::reset_scene_generation_template(&app)
+}
+
+#[tauri::command]
+pub fn reset_design_reference_template(app: AppHandle) -> Result<SystemPromptTemplate, String> {
+    prompts::reset_design_reference_template(&app)
 }
 
 #[tauri::command]
@@ -357,6 +892,7 @@ pub fn render_prompt_preview(
             id: "preview".to_string(),
             character_id: character.id.clone(),
             title: "Preview".to_string(),
+            background_image_path: None,
             system_prompt: None,
             selected_scene_id: None,
             prompt_template_id: None,
@@ -370,6 +906,7 @@ pub fn render_prompt_preview(
             updated_at: now,
             memory_status: None,
             memory_error: None,
+            memory_progress_step: None,
             memories: vec![
                 "Memory 1 (Preview): The user prefers direct communication.".to_string(),
                 "Memory 2 (Preview): We met in the tavern last night.".to_string(),
@@ -503,6 +1040,14 @@ pub async fn chat_generate_scene_prompt(
     args: ChatGenerateScenePromptArgs,
 ) -> Result<String, String> {
     super::scene::chat_generate_scene_prompt(app, args).await
+}
+
+#[tauri::command]
+pub async fn chat_generate_design_reference_description(
+    app: AppHandle,
+    args: ChatGenerateDesignReferenceDescriptionArgs,
+) -> Result<String, String> {
+    super::scene::chat_generate_design_reference_description(app, args).await
 }
 
 #[tauri::command]

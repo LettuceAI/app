@@ -188,6 +188,8 @@ pub struct UscLorebookPayload {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub keyword_detection_mode: Option<String>,
     pub entries: Vec<UscLorebookEntry>,
     pub created_at: i64,
     pub updated_at: i64,
@@ -493,6 +495,14 @@ pub fn create_lorebook_usc(lorebook: &Lorebook, entries: &[LorebookEntry]) -> Us
             id: lorebook.id.clone(),
             name: lorebook.name.clone(),
             description: None,
+            keyword_detection_mode: Some(match lorebook.keyword_detection_mode {
+                crate::storage_manager::lorebook::LorebookKeywordDetectionMode::RecentMessageWindow => {
+                    "recentMessageWindow".to_string()
+                }
+                crate::storage_manager::lorebook::LorebookKeywordDetectionMode::LatestUserMessage => {
+                    "latestUserMessage".to_string()
+                }
+            }),
             entries: entries
                 .iter()
                 .map(|entry| UscLorebookEntry {
@@ -752,6 +762,8 @@ mod tests {
             id: "lorebook-1".into(),
             name: "World".into(),
             avatar_path: None,
+            keyword_detection_mode:
+                crate::storage_manager::lorebook::LorebookKeywordDetectionMode::RecentMessageWindow,
             created_at: 1,
             updated_at: 2,
         };

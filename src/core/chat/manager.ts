@@ -25,6 +25,31 @@ export interface ChatContinueResult {
   assistantMessage: StoredMessage;
 }
 
+export interface ChatMessageDebugSnapshot {
+  source: string;
+  sessionId: string;
+  messageId: string;
+  role: string;
+  operation: string;
+  providerId: string;
+  credentialId: string;
+  modelId: string;
+  model: string;
+  modelDisplayName: string;
+  endpoint: string;
+  stream: boolean;
+  requestSettings: unknown;
+  promptTemplateSource: string;
+  promptTemplateId?: string | null;
+  promptTemplateName?: string | null;
+  promptEntries: unknown[];
+  relativePromptEntries: unknown[];
+  inChatPromptEntries: unknown[];
+  requestMessages: unknown[];
+  requestBody: unknown;
+  notes: string[];
+}
+
 export async function sendChatTurn(params: {
   sessionId: string;
   characterId: string;
@@ -182,6 +207,46 @@ export async function generateScenePromptForMessage(params: {
   messageId: string;
 }): Promise<string> {
   return invoke<string>("chat_generate_scene_prompt", {
+    args: {
+      sessionId: params.sessionId,
+      messageId: params.messageId,
+    },
+  });
+}
+
+export async function generateDesignReferenceDescription(params: {
+  subjectName?: string | null;
+  subjectDescription?: string | null;
+  currentDescription?: string | null;
+  avatarImage?: string | null;
+  referenceImages?: string[];
+  requestId?: string | null;
+  stream?: boolean;
+}): Promise<string> {
+  const requestId = params.requestId ?? null;
+  if (requestId) beginAsyncAction(requestId, "design_reference_writer");
+  try {
+    return await invoke<string>("chat_generate_design_reference_description", {
+      args: {
+        subjectName: params.subjectName ?? null,
+        subjectDescription: params.subjectDescription ?? null,
+        currentDescription: params.currentDescription ?? null,
+        avatarImage: params.avatarImage ?? null,
+        referenceImages: params.referenceImages ?? [],
+        requestId,
+        stream: params.stream ?? true,
+      },
+    });
+  } finally {
+    if (requestId) endAsyncAction(requestId);
+  }
+}
+
+export async function getMessageDebugSnapshot(params: {
+  sessionId: string;
+  messageId: string;
+}): Promise<ChatMessageDebugSnapshot> {
+  return invoke<ChatMessageDebugSnapshot>("chat_message_debug_snapshot", {
     args: {
       sessionId: params.sessionId,
       messageId: params.messageId,

@@ -5,6 +5,7 @@ import {
   Copy,
   RotateCcw,
   Trash2,
+  Bug,
   Pin,
   PinOff,
   Brain,
@@ -21,6 +22,7 @@ import type { StoredMessage, Settings, Model } from "../../../../core/storage/sc
 import { cn, radius } from "../../../design-tokens";
 import { readSettings } from "../../../../core/storage/repo";
 import { useI18n } from "../../../../core/i18n/context";
+import { isDevelopmentMode } from "../../../../core/utils/env";
 
 interface MessageActionState {
   message: StoredMessage;
@@ -52,6 +54,7 @@ interface MessageActionsBottomSheetProps {
   characterMemoryType?: string | null;
   characterDefaultModelId?: string | null;
   characterId?: string;
+  sessionId?: string | null;
 }
 
 // Action row component
@@ -122,10 +125,11 @@ export function MessageActionsBottomSheet({
   setMessageAction,
   onOpenSceneImageFlow,
   hasSceneImage = false,
-  sceneGenerationEnabled = true,
+  sceneGenerationEnabled = false,
   characterMemoryType,
   characterDefaultModelId,
   characterId,
+  sessionId,
 }: MessageActionsBottomSheetProps) {
   const navigate = useNavigate();
   const { t } = useI18n();
@@ -172,6 +176,10 @@ export function MessageActionsBottomSheet({
   const isLlamaMessage = modelProviderId === "llamacpp";
   const firstTokenMs = messageAction?.message.usage?.firstTokenMs;
   const tokensPerSecond = messageAction?.message.usage?.tokensPerSecond;
+  const canOpenDebug =
+    isDevelopmentMode() &&
+    Boolean(characterId && sessionId) &&
+    messageAction?.message.role === "assistant";
 
   const handleCopy = async () => {
     if (!messageAction) return;
@@ -448,6 +456,18 @@ export function MessageActionsBottomSheet({
                   onClick={() => void handleDeleteMessage(messageAction.message)}
                   disabled={actionBusy || messageAction.message.isPinned}
                   variant="danger"
+                />
+              )}
+
+              {canOpenDebug && messageAction && characterId && sessionId && (
+                <ActionRow
+                  icon={Bug}
+                  label={t("chats.actions.debug")}
+                  iconBg="bg-white/10"
+                  onClick={() => {
+                    closeMessageActions(true);
+                    navigate(`/chat/${characterId}/debug/${sessionId}/${messageAction.message.id}`);
+                  }}
                 />
               )}
             </div>

@@ -19,6 +19,7 @@ use specs::*;
 
 const MAX_SEQ_LENGTH_V1: usize = 512;
 const MAX_SEQ_LENGTH_V2: usize = 4096;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub(crate) const ORT_VERSION: &str = "1.22.0";
 const EMBEDDING_DIM: usize = 512;
 const EMBEDDING_TEST_TIMEOUT_SECS: u64 = 90;

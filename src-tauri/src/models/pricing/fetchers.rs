@@ -2,11 +2,12 @@ use crate::api::{api_request, ApiRequest};
 use crate::models::ModelPricing;
 use crate::pricing_cache;
 use crate::utils::{log_error, log_info, log_warn};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use tauri::AppHandle;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpenRouterProviderPricing {
     pub provider_name: String,
     pub provider_display_name: Option<String>,
@@ -49,18 +50,58 @@ fn build_openrouter_auth_headers(api_key: &str) -> HashMap<String, String> {
     headers
 }
 
-pub async fn fetch_openrouter_provider_pricings(
+fn parse_provider_pricings(endpoints: &[Value]) -> Vec<OpenRouterProviderPricing> {
+    let mut out = Vec::new();
+    for endpoint in endpoints {
+        let Some(pricing_obj) = endpoint.get("pricing") else {
+            continue;
+        };
+        let Some(provider_name) = endpoint.get("provider_name").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let Some(pricing) = parse_model_pricing(pricing_obj) else {
+            continue;
+        };
+
+        out.push(OpenRouterProviderPricing {
+            provider_name: provider_name.to_string(),
+            provider_display_name: endpoint
+                .get("provider_display_name")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            pricing,
+        });
+    }
+    out
+}
+
+fn is_retryable_pricing_failure(status: Option<u16>, err: Option<&str>) -> bool {
+    if status == Some(408) {
+        return true;
+    }
+
+    err.map(|message| {
+        let lower = message.to_ascii_lowercase();
+        lower.contains("408")
+            || lower.contains("timeout")
+            || lower.contains("timed out")
+            || lower.contains("deadline has elapsed")
+    })
+    .unwrap_or(false)
+}
+
+pub async fn refresh_openrouter_endpoint_caches(
     app: AppHandle,
     api_key: &str,
     model_id: &str,
-) -> Result<Vec<OpenRouterProviderPricing>, String> {
+) -> Result<(Option<ModelPricing>, Vec<OpenRouterProviderPricing>), String> {
     let request = ApiRequest {
         url: format!("https://openrouter.ai/api/v1/models/{}/endpoints", model_id),
         method: Some("GET".to_string()),
         headers: Some(build_openrouter_auth_headers(api_key)),
         query: None,
         body: None,
-        timeout_ms: Some(30_000),
+        timeout_ms: Some(crate::transport::DEFAULT_REQUEST_TIMEOUT_MS),
         stream: None,
         request_id: None,
         provider_id: Some("openrouter".to_string()),
@@ -91,29 +132,65 @@ pub async fn fetch_openrouter_provider_pricings(
             )
         })?;
 
-    let mut out = Vec::new();
-    for endpoint in endpoints {
-        let Some(pricing_obj) = endpoint.get("pricing") else {
-            continue;
-        };
-        let Some(provider_name) = endpoint.get("provider_name").and_then(|v| v.as_str()) else {
-            continue;
-        };
-        let Some(pricing) = parse_model_pricing(pricing_obj) else {
-            continue;
-        };
+    let provider_pricings = parse_provider_pricings(endpoints);
+    let cheapest_pricing = get_cheapest_endpoint_pricing(endpoints);
 
-        out.push(OpenRouterProviderPricing {
-            provider_name: provider_name.to_string(),
-            provider_display_name: endpoint
-                .get("provider_display_name")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string()),
-            pricing,
-        });
+    pricing_cache::cache_openrouter_provider_pricings(&app, model_id, &provider_pricings)?;
+    pricing_cache::cache_model_pricing(&app, model_id, cheapest_pricing.clone())?;
+    let _ = pricing_cache::clear_openrouter_endpoints_refresh(&app, model_id);
+
+    Ok((cheapest_pricing, provider_pricings))
+}
+
+pub async fn fetch_openrouter_provider_pricings(
+    app: AppHandle,
+    api_key: &str,
+    model_id: &str,
+) -> Result<Vec<OpenRouterProviderPricing>, String> {
+    if let Ok(Some(cached)) = pricing_cache::get_cached_openrouter_provider_pricings(&app, model_id)
+    {
+        log_info(
+            &app,
+            "cost_calculator",
+            format!("Using cached OpenRouter provider pricing for {}", model_id),
+        );
+        return Ok(cached);
     }
 
-    Ok(out)
+    match refresh_openrouter_endpoint_caches(app.clone(), api_key, model_id).await {
+        Ok((_, provider_pricings)) => Ok(provider_pricings),
+        Err(err) => {
+            if is_retryable_pricing_failure(None, Some(&err)) {
+                let _ = pricing_cache::schedule_openrouter_endpoints_refresh(&app, model_id, &err);
+
+                if let Ok(Some(cached)) =
+                    pricing_cache::get_any_cached_openrouter_provider_pricings(&app, model_id)
+                {
+                    log_warn(
+                        &app,
+                        "cost_calculator",
+                        format!(
+                            "OpenRouter provider pricing refresh failed for {}; using stale cache: {}",
+                            model_id, err
+                        ),
+                    );
+                    return Ok(cached);
+                }
+
+                log_warn(
+                    &app,
+                    "cost_calculator",
+                    format!(
+                        "OpenRouter provider pricing refresh failed for {}; deferring retry: {}",
+                        model_id, err
+                    ),
+                );
+                return Ok(Vec::new());
+            }
+
+            Err(err)
+        }
+    }
 }
 
 pub async fn fetch_openrouter_generation_details(
@@ -131,7 +208,7 @@ pub async fn fetch_openrouter_generation_details(
             query
         }),
         body: None,
-        timeout_ms: Some(30_000),
+        timeout_ms: Some(crate::transport::DEFAULT_REQUEST_TIMEOUT_MS),
         stream: None,
         request_id: None,
         provider_id: Some("openrouter".to_string()),
@@ -227,75 +304,56 @@ pub async fn fetch_openrouter_model_pricing(
         format!("Fetching pricing for OpenRouter model: {}", model_id),
     );
 
-    let request = ApiRequest {
-        url: format!("https://openrouter.ai/api/v1/models/{}/endpoints", model_id),
-        method: Some("GET".to_string()),
-        headers: Some(build_openrouter_auth_headers(api_key)),
-        query: None,
-        body: None,
-        timeout_ms: Some(30_000),
-        stream: None,
-        request_id: None,
-        provider_id: Some("openrouter".to_string()),
-    };
-
-    match api_request(app.clone(), request).await {
-        Ok(response) => {
-            if !response.ok {
-                log_error(
+    match refresh_openrouter_endpoint_caches(app.clone(), api_key, model_id).await {
+        Ok((pricing, _)) => {
+            if let Some(ref pricing) = pricing {
+                log_info(
                     &app,
                     "cost_calculator",
                     format!(
-                        "Failed to fetch OpenRouter model endpoints: status {}",
-                        response.status
+                        "Found pricing for {}: prompt={} completion={}",
+                        model_id, pricing.prompt, pricing.completion
                     ),
                 );
-                return Err(crate::utils::err_msg(
-                    module_path!(),
-                    line!(),
-                    format!("OpenRouter API error: {}", response.status),
-                ));
+            } else {
+                log_warn(
+                    &app,
+                    "cost_calculator",
+                    format!(
+                        "No pricing found for model {} in OpenRouter API response",
+                        model_id
+                    ),
+                );
             }
-
-            if let Ok(data) = serde_json::from_value::<serde_json::Value>(response.data.clone()) {
-                if let Some(endpoints_array) = data
-                    .get("data")
-                    .and_then(|d| d.get("endpoints"))
-                    .and_then(|e| e.as_array())
-                {
-                    if let Some(pricing) = get_cheapest_endpoint_pricing(endpoints_array) {
-                        let _ = pricing_cache::cache_model_pricing(
-                            &app,
-                            model_id,
-                            Some(pricing.clone()),
-                        );
-
-                        log_info(
-                            &app,
-                            "cost_calculator",
-                            format!(
-                                "Found pricing for {}: prompt={} completion={}",
-                                model_id, pricing.prompt, pricing.completion
-                            ),
-                        );
-
-                        return Ok(Some(pricing));
-                    }
-                }
-            }
-
-            log_warn(
-                &app,
-                "cost_calculator",
-                format!(
-                    "No pricing found for model {} in OpenRouter API response",
-                    model_id
-                ),
-            );
-
-            Ok(None)
+            Ok(pricing)
         }
         Err(err) => {
+            if is_retryable_pricing_failure(None, Some(&err)) {
+                let _ = pricing_cache::schedule_openrouter_endpoints_refresh(&app, model_id, &err);
+
+                if let Ok(Some(cached)) = pricing_cache::get_any_cached_pricing(&app, model_id) {
+                    log_warn(
+                        &app,
+                        "cost_calculator",
+                        format!(
+                            "OpenRouter model pricing refresh failed for {}; using stale cache: {}",
+                            model_id, err
+                        ),
+                    );
+                    return Ok(Some(cached));
+                }
+
+                log_warn(
+                    &app,
+                    "cost_calculator",
+                    format!(
+                        "OpenRouter model pricing refresh failed for {}; deferring retry: {}",
+                        model_id, err
+                    ),
+                );
+                return Ok(None);
+            }
+
             log_error(
                 &app,
                 "cost_calculator",

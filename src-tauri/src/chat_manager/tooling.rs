@@ -298,6 +298,39 @@ pub fn parse_tool_calls(provider_id: &str, payload: &Value) -> Vec<ToolCall> {
     calls
 }
 
+fn extract_openai_legacy_function_call(node: &Value, out: &mut Vec<ToolCall>) {
+    let Some(function_call) = node
+        .get("function_call")
+        .or_else(|| node.get("functionCall"))
+    else {
+        return;
+    };
+
+    let Some(name) = function_call.get("name").and_then(|v| v.as_str()) else {
+        return;
+    };
+
+    let (arguments, raw_arguments) = match function_call.get("arguments") {
+        Some(Value::String(raw)) => arguments_value_from_str(raw),
+        Some(other) => (other.clone(), None),
+        None => (Value::Null, None),
+    };
+    let id = function_call
+        .get("id")
+        .or_else(|| function_call.get("call_id"))
+        .or_else(|| function_call.get("callId"))
+        .and_then(|v| v.as_str())
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| format!("function_call_{}", out.len() + 1));
+
+    out.push(ToolCall {
+        id,
+        name: name.to_string(),
+        arguments,
+        raw_arguments,
+    });
+}
+
 fn extract_openai_calls(node: &Value, out: &mut Vec<ToolCall>) {
     if let Some(tool_calls) = node.get("tool_calls").and_then(|v| v.as_array()) {
         for raw_call in tool_calls {
@@ -321,5 +354,122 @@ fn extract_openai_calls(node: &Value, out: &mut Vec<ToolCall>) {
                 }
             }
         }
+    }
+
+    extract_openai_legacy_function_call(node, out);
+
+    if let Some(message) = node.get("message") {
+        extract_openai_calls(message, out);
+    }
+
+    if let Some(delta) = node.get("delta") {
+        extract_openai_calls(delta, out);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_tool_calls;
+    use serde_json::json;
+
+    #[test]
+    fn parses_ollama_non_streaming_tool_calls_from_message() {
+        let payload = json!({
+            "model": "qwen3",
+            "message": {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [{
+                    "function": {
+                        "name": "get_weather",
+                        "arguments": {
+                            "city": "Istanbul"
+                        }
+                    }
+                }]
+            },
+            "done": true
+        });
+
+        let calls = parse_tool_calls("ollama", &payload);
+
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name, "get_weather");
+        assert_eq!(calls[0].arguments, json!({ "city": "Istanbul" }));
+    }
+
+    #[test]
+    fn parses_ollama_streaming_tool_calls_from_message() {
+        let payload = json!({
+            "message": {
+                "role": "assistant",
+                "tool_calls": [{
+                    "id": "call_1",
+                    "function": {
+                        "name": "add_two_numbers",
+                        "arguments": {
+                            "a": 3,
+                            "b": 1
+                        }
+                    }
+                }]
+            },
+            "done": false
+        });
+
+        let calls = parse_tool_calls("ollama", &payload);
+
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].id, "call_1");
+        assert_eq!(calls[0].name, "add_two_numbers");
+        assert_eq!(calls[0].arguments, json!({ "a": 3, "b": 1 }));
+    }
+
+    #[test]
+    fn parses_openai_legacy_function_call_from_message() {
+        let payload = json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": null,
+                    "function_call": {
+                        "name": "write_summary",
+                        "arguments": "{\"summary\":\"short recap\"}"
+                    }
+                }
+            }]
+        });
+
+        let calls = parse_tool_calls("openai", &payload);
+
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name, "write_summary");
+        assert_eq!(calls[0].arguments, json!({ "summary": "short recap" }));
+        assert_eq!(calls[0].raw_arguments.as_deref(), Some("{\"summary\":\"short recap\"}"));
+    }
+
+    #[test]
+    fn parses_openai_legacy_function_call_camel_case() {
+        let payload = json!({
+            "message": {
+                "role": "assistant",
+                "functionCall": {
+                    "name": "create_memory",
+                    "arguments": {
+                        "text": "Likes tea",
+                        "category": "preference"
+                    }
+                }
+            }
+        });
+
+        let calls = parse_tool_calls("local", &payload);
+
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name, "create_memory");
+        assert_eq!(
+            calls[0].arguments,
+            json!({ "text": "Likes tea", "category": "preference" })
+        );
     }
 }

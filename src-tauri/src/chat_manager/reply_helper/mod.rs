@@ -246,6 +246,7 @@ pub async fn chat_generate_user_reply(
         request_settings.reasoning_enabled,
         request_settings.reasoning_effort.clone(),
         request_settings.reasoning_budget,
+        request_settings.prompt_caching_enabled.unwrap_or(false),
         extra_body_fields,
     );
 
@@ -261,9 +262,9 @@ pub async fn chat_generate_user_reply(
         headers: Some(built.headers),
         query: None,
         body: Some(built.body),
-        timeout_ms: Some(60_000),
-        stream: Some(streaming_enabled),
-        request_id: request_id.clone(),
+        timeout_ms: Some(crate::transport::DEFAULT_REQUEST_TIMEOUT_MS),
+        stream: Some(built.stream),
+        request_id: built.request_id.clone(),
         provider_id: Some(credential.provider_id.clone()),
     };
 

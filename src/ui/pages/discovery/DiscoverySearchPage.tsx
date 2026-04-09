@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { Search, ArrowLeft, X, Loader2, TrendingUp, Clock, Sparkles } from "lucide-react";
-import { cn, typography, interactive } from "../../design-tokens";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { Search, X, Loader2, TrendingUp, Clock, Sparkles } from "lucide-react";
+import { cn, typography } from "../../design-tokens";
 import { useI18n } from "../../../core/i18n/context";
 import { DiscoveryCard, DiscoveryGridSkeleton } from "./components";
-import { resolveBackTarget, Routes, useNavigationManager } from "../../navigation";
+import { Routes, useNavigationManager } from "../../navigation";
 import {
   searchDiscoveryCards,
   type DiscoveryCard as DiscoveryCardType,
@@ -54,8 +54,7 @@ function clearRecentSearches() {
 
 export function DiscoverySearchPage() {
   const navigate = useNavigate();
-  const location = useLocation();
-  const { go, backOrReplace } = useNavigationManager();
+  const { } = useNavigationManager();
   const { t } = useI18n();
 
   const TRENDING_SEARCHES = [
@@ -70,7 +69,6 @@ export function DiscoverySearchPage() {
   ];
   const [searchParams] = useSearchParams();
   const inputRef = useRef<HTMLInputElement>(null);
-  const headerRef = useRef<HTMLDivElement>(null);
 
   const [query, setQuery] = useState(searchParams.get("q") || "");
   const [debouncedQuery, setDebouncedQuery] = useState(query);
@@ -81,29 +79,12 @@ export function DiscoverySearchPage() {
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [recentSearches, setRecentSearches] = useState<RecentSearch[]>([]);
-  const [headerHeight, setHeaderHeight] = useState(0);
 
   // Load recent searches on mount
   useEffect(() => {
     setRecentSearches(loadRecentSearches());
     // Auto-focus search input
     inputRef.current?.focus();
-  }, []);
-
-  useEffect(() => {
-    const header = headerRef.current;
-    if (!header) return;
-    const update = () => setHeaderHeight(header.getBoundingClientRect().height);
-    update();
-
-    if (typeof ResizeObserver === "undefined") {
-      window.addEventListener("resize", update);
-      return () => window.removeEventListener("resize", update);
-    }
-
-    const observer = new ResizeObserver(() => update());
-    observer.observe(header);
-    return () => observer.disconnect();
   }, []);
 
   // Debounce search query
@@ -206,15 +187,7 @@ export function DiscoverySearchPage() {
     [navigate, location.pathname, location.search, query],
   );
 
-  const handleBack = useCallback(() => {
-    const currentPath = location.pathname + location.search;
-    const target = resolveBackTarget(currentPath);
-    if (target) {
-      go(target, { replace: true });
-      return;
-    }
-    backOrReplace(Routes.discover);
-  }, [location.pathname, location.search, go, backOrReplace]);
+
 
   const handleClearQuery = () => {
     setQuery("");
@@ -240,56 +213,30 @@ export function DiscoverySearchPage() {
   const showNoResults = !loading && results && results.hits.length === 0;
 
   return (
-    <div className="flex h-screen min-h-0 flex-col bg-surface">
-      {/* Search Section */}
-      <div
-        ref={headerRef}
-        className="fixed top-0 left-0 right-0 z-50 border-b border-fg/10 bg-surface-el/95 backdrop-blur-md"
-        style={{
-          paddingTop: "calc(env(safe-area-inset-top) + 12px)",
-          paddingBottom: "12px",
-        }}
-      >
-        <div className="mx-auto flex w-full max-w-md items-center gap-3 px-4 lg:max-w-none lg:px-8">
-          {/* Back button */}
-          <button
-            onClick={handleBack}
-            className={cn(
-              "flex shrink-0 items-center justify-center rounded-full p-2",
-              "text-fg/70 hover:bg-fg/10 hover:text-fg",
-              interactive.transition.fast,
-              interactive.active.scale,
-            )}
-            aria-label={t("common.buttons.goBack")}
-          >
-            <ArrowLeft size={20} strokeWidth={2.5} />
-          </button>
-
-          {/* Search input */}
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg/40" />
-            <input
-              ref={inputRef}
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={t("discovery.search.placeholder")}
-              className="w-full rounded-xl border border-fg/10 bg-fg/5 py-2.5 pl-10 pr-10 text-sm text-fg placeholder-fg/40 transition-all focus:border-fg/20 focus:bg-fg/[0.07] focus:outline-none"
-            />
-            {query && (
-              <button
-                onClick={handleClearQuery}
-                className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-fg/40 hover:bg-fg/10 hover:text-fg"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            )}
-          </div>
+    <div className="flex h-full min-h-0 flex-col bg-surface">
+      {/* Search bar */}
+      <div className="shrink-0 border-b border-fg/10 bg-surface-el/95 px-4 py-3 lg:px-8">
+        <div className="relative mx-auto max-w-md lg:max-w-none">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg/40" />
+          <input
+            ref={inputRef}
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={t("discovery.search.placeholder")}
+            className="w-full rounded-xl border border-fg/10 bg-fg/5 py-2.5 pl-10 pr-10 text-sm text-fg placeholder-fg/40 transition-all focus:border-fg/20 focus:bg-fg/[0.07] focus:outline-none"
+          />
+          {query && (
+            <button
+              onClick={handleClearQuery}
+              className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-fg/40 hover:bg-fg/10 hover:text-fg"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
         </div>
-
-        {/* Results count */}
         {results && (
-          <div className="mx-auto mt-3 max-w-md px-4 lg:max-w-none lg:px-8">
+          <div className="mx-auto mt-2 max-w-md lg:max-w-none">
             <p className="text-xs text-fg/50">
               {results.totalHits !== undefined
                 ? `${results.totalHits.toLocaleString()} ${t("discovery.search.resultsUnit")}`
@@ -306,7 +253,6 @@ export function DiscoverySearchPage() {
       <main
         className="flex-1 min-h-0 overflow-y-auto"
         style={{
-          paddingTop: headerHeight ? `${headerHeight}px` : undefined,
           paddingBottom: "calc(env(safe-area-inset-bottom) + 24px)",
         }}
       >

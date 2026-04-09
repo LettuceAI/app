@@ -77,6 +77,10 @@ impl ImageProviderAdapter for GoogleGeminiAdapter {
         base_url.trim_end_matches('/').to_string()
     }
 
+    fn requires_api_key(&self) -> bool {
+        true
+    }
+
     fn required_auth_headers(&self) -> &'static [&'static str] {
         &[]
     }

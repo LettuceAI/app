@@ -179,6 +179,7 @@ pub struct SyncLorebook {
     pub id: String,
     pub name: String,
     pub avatar_path: Option<String>,
+    pub keyword_detection_mode: String,
     pub created_at: i64,
     pub updated_at: i64,
 }
