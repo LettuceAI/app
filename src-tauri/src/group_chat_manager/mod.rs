@@ -88,9 +88,7 @@ fn max_hard_deletes_per_cycle(initial_count: usize, ratio: f32) -> usize {
         return 0;
     }
 
-    ((initial_count as f32) * ratio)
-        .floor()
-        .max(1.0) as usize
+    ((initial_count as f32) * ratio).floor().max(1.0) as usize
 }
 
 fn dynamic_memory_llama_sampler_overwrite_enabled(settings: &Settings) -> bool {
@@ -1507,7 +1505,15 @@ fn sanitize_dynamic_memory_extra_body_fields(
     );
     extra.insert(
         "llamaSamplerOrder".to_string(),
-        json!(["penalties", "grammar", "top_k", "top_p", "temp", "min_p", "typical"]),
+        json!([
+            "penalties",
+            "grammar",
+            "top_k",
+            "top_p",
+            "temp",
+            "min_p",
+            "typical"
+        ]),
     );
     extra.insert("top_k".to_string(), json!(40));
     extra.insert("frequency_penalty".to_string(), json!(0.0));
@@ -1515,7 +1521,11 @@ fn sanitize_dynamic_memory_extra_body_fields(
     extra.insert("min_p".to_string(), json!(0.0));
     extra.insert("typical_p".to_string(), json!(0.0));
 
-    if extra.is_empty() { None } else { Some(extra) }
+    if extra.is_empty() {
+        None
+    } else {
+        Some(extra)
+    }
 }
 
 // ============================================================================
@@ -2887,11 +2897,13 @@ async fn run_group_memory_tool_update(
                             .and_then(|v| v.as_f64())
                             .unwrap_or(dynamic_settings.delete_confidence_default as f64)
                             as f32;
-                        let confidence_defaulted =
-                            call.arguments.get("confidence").and_then(|v| v.as_f64()).is_none();
-                        let force_soft_delete =
-                            confidence >= HARD_DELETE_CONFIDENCE_THRESHOLD
-                                && hard_delete_count >= max_hard_deletes;
+                        let confidence_defaulted = call
+                            .arguments
+                            .get("confidence")
+                            .and_then(|v| v.as_f64())
+                            .is_none();
+                        let force_soft_delete = confidence >= HARD_DELETE_CONFIDENCE_THRESHOLD
+                            && hard_delete_count >= max_hard_deletes;
                         if confidence < HARD_DELETE_CONFIDENCE_THRESHOLD || force_soft_delete {
                             // Soft-delete: move to cold storage instead of removing
                             if idx < session.memory_embeddings.len() {
@@ -3042,7 +3054,7 @@ async fn run_group_memory_tool_update(
             &candidate_texts,
             fallback_format,
         )
-            .await
+        .await
         {
             Ok(repaired) => {
                 log_info(
@@ -3368,13 +3380,11 @@ async fn run_group_memory_tag_repair(
                 if let Some(text) =
                     extract_text(api_response.data(), Some(&provider_cred.provider_id))
                 {
-                    if let Ok(parsed) =
-                        parse_memory_tag_repairs_from_text(
-                            &text,
-                            ALLOWED_MEMORY_CATEGORIES,
-                            fallback_format,
-                        )
-                    {
+                    if let Ok(parsed) = parse_memory_tag_repairs_from_text(
+                        &text,
+                        ALLOWED_MEMORY_CATEGORIES,
+                        fallback_format,
+                    ) {
                         repaired.extend(parsed);
                     }
                 }
@@ -3385,14 +3395,20 @@ async fn run_group_memory_tag_repair(
                 log_warn(
                     app,
                     "group_dynamic_memory",
-                    format!("memory tag repair {} fallback failed: {}", fallback_label, err_message),
+                    format!(
+                        "memory tag repair {} fallback failed: {}",
+                        fallback_label, err_message
+                    ),
                 );
             }
             Err(err) => {
                 log_warn(
                     app,
                     "group_dynamic_memory",
-                    format!("memory tag repair {} fallback errored: {}", fallback_label, err),
+                    format!(
+                        "memory tag repair {} fallback errored: {}",
+                        fallback_label, err
+                    ),
                 );
             }
         }

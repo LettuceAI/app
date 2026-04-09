@@ -7,9 +7,7 @@ use std::time::Duration;
 use super::legacy::storage_root;
 use crate::migrations;
 use crate::sync::db::LOCAL_SYNC_STATE_VERSION;
-use crate::utils::{
-    log_info, log_info_global, log_warn, log_warn_global, now_millis,
-};
+use crate::utils::{log_info, log_info_global, log_warn, log_warn_global, now_millis};
 
 pub fn db_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     Ok(storage_root(app)?.join("app.db"))

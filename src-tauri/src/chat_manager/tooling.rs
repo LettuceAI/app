@@ -149,7 +149,7 @@ pub fn anthropic_tool_choice(choice: Option<&ToolChoice>) -> Option<Value> {
     }
 }
 
-/// Gemini needs a wrapped `tools` list plus a `tool_config.function_calling_config`.
+/// Gemini needs a wrapped `tools` list plus a `toolConfig.functionCallingConfig`.
 pub fn gemini_tools(cfg: &ToolConfig) -> Option<Vec<Value>> {
     if !has_tools(cfg) {
         return None;
@@ -170,25 +170,25 @@ pub fn gemini_tools(cfg: &ToolConfig) -> Option<Vec<Value>> {
     if declarations.is_empty() {
         None
     } else {
-        Some(vec![json!({ "function_declarations": declarations })])
+        Some(vec![json!({ "functionDeclarations": declarations })])
     }
 }
 
 pub fn gemini_tool_config(choice: Option<&ToolChoice>) -> Option<Value> {
     match choice {
         None | Some(ToolChoice::Auto) => Some(json!({
-            "function_calling_config": { "mode": "AUTO" }
+            "functionCallingConfig": { "mode": "AUTO" }
         })),
         Some(ToolChoice::None) => Some(json!({
-            "function_calling_config": { "mode": "NONE" }
+            "functionCallingConfig": { "mode": "NONE" }
         })),
         Some(ToolChoice::Required) | Some(ToolChoice::Any) => Some(json!({
-            "function_calling_config": { "mode": "ANY" }
+            "functionCallingConfig": { "mode": "ANY" }
         })),
         Some(ToolChoice::Tool { name }) => Some(json!({
-            "function_calling_config": {
+            "functionCallingConfig": {
                 "mode": "ANY",
-                "allowed_function_names": [name]
+                "allowedFunctionNames": [name]
             }
         })),
     }
@@ -369,7 +369,9 @@ fn extract_openai_calls(node: &Value, out: &mut Vec<ToolCall>) {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_tool_calls;
+    use super::{
+        gemini_tool_config, gemini_tools, parse_tool_calls, ToolChoice, ToolConfig, ToolDefinition,
+    };
     use serde_json::json;
 
     #[test]
@@ -445,7 +447,10 @@ mod tests {
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].name, "write_summary");
         assert_eq!(calls[0].arguments, json!({ "summary": "short recap" }));
-        assert_eq!(calls[0].raw_arguments.as_deref(), Some("{\"summary\":\"short recap\"}"));
+        assert_eq!(
+            calls[0].raw_arguments.as_deref(),
+            Some("{\"summary\":\"short recap\"}")
+        );
     }
 
     #[test]
@@ -470,6 +475,54 @@ mod tests {
         assert_eq!(
             calls[0].arguments,
             json!({ "text": "Likes tea", "category": "preference" })
+        );
+    }
+
+    #[test]
+    fn gemini_tools_use_camel_case_fields() {
+        let cfg = ToolConfig {
+            tools: vec![ToolDefinition {
+                name: "lookup_weather".to_string(),
+                description: Some("Get current weather".to_string()),
+                parameters: json!({
+                    "type": "object",
+                    "properties": {
+                        "city": { "type": "string" }
+                    }
+                }),
+            }],
+            choice: Some(ToolChoice::Tool {
+                name: "lookup_weather".to_string(),
+            }),
+        };
+
+        let tools = gemini_tools(&cfg).expect("gemini tools");
+        assert_eq!(
+            tools,
+            vec![json!([{
+                "functionDeclarations": [{
+                    "name": "lookup_weather",
+                    "description": "Get current weather",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "city": { "type": "string" }
+                        }
+                    }
+                }]
+            }])[0]
+                .clone()]
+        );
+
+        let tool_config = gemini_tool_config(cfg.choice.as_ref()).expect("gemini tool config");
+        assert_eq!(
+            tool_config,
+            json!({
+                "functionCallingConfig": {
+                    "mode": "ANY",
+                    "allowedFunctionNames": ["lookup_weather"]
+                }
+            })
         );
     }
 }

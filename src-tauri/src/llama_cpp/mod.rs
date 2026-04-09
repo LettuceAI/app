@@ -2265,10 +2265,7 @@ mod desktop {
                     log_warn(
                         &app,
                         "llama_cpp",
-                        format!(
-                            "local inference partial output: {}",
-                            output
-                        ),
+                        format!("local inference partial output: {}", output),
                     );
                     crate::utils::emit_debug(
                         &app,

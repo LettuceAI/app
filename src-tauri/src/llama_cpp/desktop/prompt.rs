@@ -60,8 +60,8 @@ pub(super) fn token_piece_bytes(
         match model.token_to_piece_bytes(token, 8, special, None) {
             Ok(bytes) => Ok(bytes),
             Err(TokenToStringError::InsufficientBufferSpace(needed)) => {
-                let required =
-                    usize::try_from(-needed).map_err(|_| TokenToStringError::InsufficientBufferSpace(needed))?;
+                let required = usize::try_from(-needed)
+                    .map_err(|_| TokenToStringError::InsufficientBufferSpace(needed))?;
                 model.token_to_piece_bytes(token, required, special, None)
             }
             Err(e) => Err(e),
@@ -309,8 +309,9 @@ fn build_oaicompat_prompt(
     tool_choice: Option<&Value>,
     options: &OpenAICompatPromptOptions,
 ) -> Result<BuiltPrompt, String> {
-    let tool_template_diagnostics = (!template_appears_tool_aware(&resolved_template.template_text))
-        .then(|| summarize_tool_template_detection(&resolved_template.template_text));
+    let tool_template_diagnostics =
+        (!template_appears_tool_aware(&resolved_template.template_text))
+            .then(|| summarize_tool_template_detection(&resolved_template.template_text));
 
     let messages_json = serde_json::to_string(messages).map_err(|e| {
         crate::utils::err_msg(
@@ -441,7 +442,9 @@ fn build_plain_templated_prompt(
         parse_tool_calls: false,
     };
 
-    let chat_template_result = match model.apply_chat_template_oaicompat(&resolved_template.template, &params) {
+    let chat_template_result = match model
+        .apply_chat_template_oaicompat(&resolved_template.template, &params)
+    {
         Ok(result) => result,
         Err(oaicompat_err) => {
             match model.apply_chat_template(&resolved_template.template, chat_messages, true) {
@@ -641,13 +644,8 @@ pub(super) fn build_prompt(
         );
     }
 
-    match build_plain_templated_prompt(
-        model,
-        messages,
-        &chat_messages,
-        &resolved_template,
-        options,
-    ) {
+    match build_plain_templated_prompt(model, messages, &chat_messages, &resolved_template, options)
+    {
         Ok(built_prompt) => Ok(built_prompt),
         Err(err) => {
             if allow_raw_completion_fallback {
