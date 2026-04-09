@@ -25,7 +25,9 @@ pub const MEMORY_OPERATIONS_JSON_FALLBACK_PROMPT: &str = r#"Return only JSON. Fo
 
 pub const MEMORY_REPAIRS_JSON_FALLBACK_PROMPT: &str = r#"Return only JSON. Format: {"items":[{"text":"...","category":"other"}]}. Use exactly one item per input text. Do not use markdown."#;
 
-pub fn structured_fallback_format_label(format: DynamicMemoryStructuredFallbackFormat) -> &'static str {
+pub fn structured_fallback_format_label(
+    format: DynamicMemoryStructuredFallbackFormat,
+) -> &'static str {
     match format {
         DynamicMemoryStructuredFallbackFormat::Json => "json",
         DynamicMemoryStructuredFallbackFormat::Xml => "xml",
@@ -127,7 +129,10 @@ fn attr_value(element: &BytesStart<'_>, key: &[u8]) -> Option<String> {
 }
 
 fn insert_if_present(args: &mut Map<String, Value>, key: &str, value: Option<String>) {
-    if let Some(value) = value.map(|v| v.trim().to_string()).filter(|v| !v.is_empty()) {
+    if let Some(value) = value
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+    {
         args.insert(key.to_string(), Value::String(value));
     }
 }
@@ -216,8 +221,8 @@ fn trimmed_option_string(slot: &mut Option<String>) -> Option<String> {
 fn parse_memory_operations_from_json(raw: &str) -> Result<Vec<ToolCall>, String> {
     let normalized = normalize_structured_fallback_text(raw);
     let snippet = extract_json_snippet(&normalized).unwrap_or(normalized.as_str());
-    let value: Value =
-        serde_json::from_str(snippet).map_err(|err| format!("fallback JSON parse error: {}", err))?;
+    let value: Value = serde_json::from_str(snippet)
+        .map_err(|err| format!("fallback JSON parse error: {}", err))?;
 
     let operations = match &value {
         Value::Array(items) => items,
@@ -279,8 +284,8 @@ fn parse_memory_tag_repairs_from_json(
 ) -> Result<HashMap<String, String>, String> {
     let normalized = normalize_structured_fallback_text(raw);
     let snippet = extract_json_snippet(&normalized).unwrap_or(normalized.as_str());
-    let value: Value =
-        serde_json::from_str(snippet).map_err(|err| format!("fallback JSON parse error: {}", err))?;
+    let value: Value = serde_json::from_str(snippet)
+        .map_err(|err| format!("fallback JSON parse error: {}", err))?;
 
     let items = match &value {
         Value::Array(items) => items,
@@ -404,19 +409,22 @@ fn parse_memory_operations_from_xml(raw: &str) -> Result<Vec<ToolCall>, String> 
                 }
             }
             Ok(Event::Text(event)) => {
-                if let (Some(field), Some(_)) = (current_field.as_deref(), current_op_name.as_ref()) {
+                if let (Some(field), Some(_)) = (current_field.as_deref(), current_op_name.as_ref())
+                {
                     let text = decode_xml_text(event.as_ref())?;
                     append_json_string_field(&mut current_args, field, &text);
                 }
             }
             Ok(Event::CData(event)) => {
-                if let (Some(field), Some(_)) = (current_field.as_deref(), current_op_name.as_ref()) {
+                if let (Some(field), Some(_)) = (current_field.as_deref(), current_op_name.as_ref())
+                {
                     let text = String::from_utf8_lossy(event.as_ref());
                     append_json_string_field(&mut current_args, field, &text);
                 }
             }
             Ok(Event::GeneralRef(event)) => {
-                if let (Some(field), Some(_)) = (current_field.as_deref(), current_op_name.as_ref()) {
+                if let (Some(field), Some(_)) = (current_field.as_deref(), current_op_name.as_ref())
+                {
                     let text = decode_xml_general_ref(event)?;
                     append_json_string_field(&mut current_args, field, &text);
                 }
@@ -602,8 +610,9 @@ mod tests {
 </memory_ops>
 ```"#;
 
-        let calls = parse_memory_operations_from_text(raw, DynamicMemoryStructuredFallbackFormat::Xml)
-            .expect("should parse xml");
+        let calls =
+            parse_memory_operations_from_text(raw, DynamicMemoryStructuredFallbackFormat::Xml)
+                .expect("should parse xml");
 
         assert_eq!(calls.len(), 2);
         assert_eq!(calls[0].name, "create_memory");
@@ -643,11 +652,15 @@ mod tests {
     fn parses_attribute_entities() {
         let raw = r#"<memory_ops><done summary="Sam &amp; Elias synced" /></memory_ops>"#;
 
-        let calls = parse_memory_operations_from_text(raw, DynamicMemoryStructuredFallbackFormat::Xml)
-            .expect("should parse xml");
+        let calls =
+            parse_memory_operations_from_text(raw, DynamicMemoryStructuredFallbackFormat::Xml)
+                .expect("should parse xml");
 
         assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0].arguments, json!({ "summary": "Sam & Elias synced" }));
+        assert_eq!(
+            calls[0].arguments,
+            json!({ "summary": "Sam & Elias synced" })
+        );
     }
 
     #[test]

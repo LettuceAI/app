@@ -170,7 +170,6 @@ export function useChatController(
   });
   const { handleAbort } = useChatAbortController({
     context: controllerContext,
-    reloadSessionStateFromStorage,
   });
 
   useEffect(() => {

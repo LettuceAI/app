@@ -16,10 +16,9 @@ use crate::utils::{log_error, log_info, log_warn, now_millis};
 use super::dynamic::{
     apply_memory_decay, calculate_hot_memory_tokens, cosine_similarity, dynamic_cold_threshold,
     dynamic_decay_rate, dynamic_hot_memory_token_budget, dynamic_max_entries,
-    dynamic_memory_structured_fallback_format,
-    enforce_hot_memory_budget, ensure_pinned_hot, generate_memory_id, normalize_query_text,
-    search_cold_memory_indices_by_keyword, select_relevant_memory_indices,
-    select_top_cosine_memory_indices, trim_memories_to_max,
+    dynamic_memory_structured_fallback_format, enforce_hot_memory_budget, ensure_pinned_hot,
+    generate_memory_id, normalize_query_text, search_cold_memory_indices_by_keyword,
+    select_relevant_memory_indices, select_top_cosine_memory_indices, trim_memories_to_max,
 };
 use super::structured_fallback::{
     memory_operations_fallback_prompt, memory_repairs_fallback_prompt,
@@ -56,7 +55,8 @@ const ALLOWED_MEMORY_CATEGORIES: &[&str] = &[
 const HARD_DELETE_CONFIDENCE_THRESHOLD: f32 = 0.7;
 
 fn response_preview(provider_id: &str, value: &Value) -> String {
-    if let Some(text) = extract_text(value, Some(provider_id)).filter(|text| !text.trim().is_empty())
+    if let Some(text) =
+        extract_text(value, Some(provider_id)).filter(|text| !text.trim().is_empty())
     {
         text
     } else {
@@ -70,9 +70,7 @@ fn log_text_parse_failure(app: &AppHandle, phase: &str, text: &str, err: &str) {
         "dynamic_memory",
         format!(
             "{} parse failed: {} | model response preview: {}",
-            phase,
-            err,
-            text
+            phase, err, text
         ),
     );
 }
@@ -82,9 +80,7 @@ fn max_hard_deletes_per_cycle(initial_count: usize, ratio: f32) -> usize {
         return 0;
     }
 
-    ((initial_count as f32) * ratio)
-        .floor()
-        .max(1.0) as usize
+    ((initial_count as f32) * ratio).floor().max(1.0) as usize
 }
 
 fn dynamic_memory_run_key(session_id: &str) -> String {
@@ -1530,7 +1526,15 @@ fn sanitize_dynamic_memory_extra_body_fields(
     );
     extra.insert(
         "llamaSamplerOrder".to_string(),
-        json!(["penalties", "grammar", "top_k", "top_p", "temp", "min_p", "typical"]),
+        json!([
+            "penalties",
+            "grammar",
+            "top_k",
+            "top_p",
+            "temp",
+            "min_p",
+            "typical"
+        ]),
     );
     extra.insert("top_k".to_string(), json!(40));
     extra.insert("frequency_penalty".to_string(), json!(0.0));
@@ -1538,7 +1542,11 @@ fn sanitize_dynamic_memory_extra_body_fields(
     extra.insert("min_p".to_string(), json!(0.0));
     extra.insert("typical_p".to_string(), json!(0.0));
 
-    if extra.is_empty() { None } else { Some(extra) }
+    if extra.is_empty() {
+        None
+    } else {
+        Some(extra)
+    }
 }
 
 async fn run_memory_tool_update(
@@ -2016,11 +2024,13 @@ async fn run_memory_tool_update(
                             .and_then(|v| v.as_f64())
                             .unwrap_or(delete_confidence_default as f64)
                             as f32;
-                        let confidence_defaulted =
-                            call.arguments.get("confidence").and_then(|v| v.as_f64()).is_none();
-                        let force_soft_delete =
-                            confidence >= HARD_DELETE_CONFIDENCE_THRESHOLD
-                                && hard_delete_count >= max_hard_deletes;
+                        let confidence_defaulted = call
+                            .arguments
+                            .get("confidence")
+                            .and_then(|v| v.as_f64())
+                            .is_none();
+                        let force_soft_delete = confidence >= HARD_DELETE_CONFIDENCE_THRESHOLD
+                            && hard_delete_count >= max_hard_deletes;
                         if confidence < HARD_DELETE_CONFIDENCE_THRESHOLD || force_soft_delete {
                             // Soft-delete: move to cold storage instead of removing
                             if idx < session.memory_embeddings.len() {
@@ -2522,13 +2532,11 @@ async fn run_memory_tag_repair(
                 if let Some(text) =
                     extract_text(api_response.data(), Some(&provider_cred.provider_id))
                 {
-                    if let Ok(parsed) =
-                        parse_memory_tag_repairs_from_text(
-                            &text,
-                            ALLOWED_MEMORY_CATEGORIES,
-                            fallback_format,
-                        )
-                    {
+                    if let Ok(parsed) = parse_memory_tag_repairs_from_text(
+                        &text,
+                        ALLOWED_MEMORY_CATEGORIES,
+                        fallback_format,
+                    ) {
                         repaired.extend(parsed);
                     }
                 }
@@ -2539,14 +2547,20 @@ async fn run_memory_tag_repair(
                 log_warn(
                     app,
                     "dynamic_memory",
-                    format!("memory tag repair {} fallback failed: {}", fallback_label, err_message),
+                    format!(
+                        "memory tag repair {} fallback failed: {}",
+                        fallback_label, err_message
+                    ),
                 );
             }
             Err(err) => {
                 log_warn(
                     app,
                     "dynamic_memory",
-                    format!("memory tag repair {} fallback errored: {}", fallback_label, err),
+                    format!(
+                        "memory tag repair {} fallback errored: {}",
+                        fallback_label, err
+                    ),
                 );
             }
         }
