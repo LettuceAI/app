@@ -60,6 +60,47 @@ pub fn template_prompt_type_from_id(id: &str) -> PromptTemplateType {
     }
 }
 
+fn expected_protected_prompt_type(id: &str) -> Option<PromptTemplateType> {
+    if !is_app_default_template(id) {
+        return None;
+    }
+
+    let prompt_type = template_prompt_type_from_id(id);
+    if prompt_type == PromptTemplateType::Undefined {
+        None
+    } else {
+        Some(prompt_type)
+    }
+}
+
+fn maybe_repair_protected_template_prompt_type(
+    conn: &rusqlite::Connection,
+    template: &mut SystemPromptTemplate,
+) -> Result<(), String> {
+    let Some(expected_prompt_type) = expected_protected_prompt_type(&template.id) else {
+        return Ok(());
+    };
+
+    if template.prompt_type == expected_prompt_type {
+        return Ok(());
+    }
+
+    let updated_at = now();
+    conn.execute(
+        "UPDATE prompt_templates SET prompt_type = ?1, updated_at = ?2 WHERE id = ?3",
+        params![
+            prompt_type_to_str(expected_prompt_type),
+            updated_at,
+            template.id
+        ],
+    )
+    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+
+    template.prompt_type = expected_prompt_type;
+    template.updated_at = updated_at;
+    Ok(())
+}
+
 fn supports_entry_prompts(_id: &str) -> bool {
     true
 }
@@ -559,7 +600,10 @@ pub fn load_templates(app: &AppHandle) -> Result<Vec<SystemPromptTemplate>, Stri
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     let mut out = Vec::new();
     for r in rows {
-        out.push(r.map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?);
+        let mut template =
+            r.map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        maybe_repair_protected_template_prompt_type(&conn, &mut template)?;
+        out.push(template);
     }
     if out.is_empty() {
         // Guarantee existence of App Default template even if setup call was skipped
@@ -576,7 +620,10 @@ pub fn load_templates(app: &AppHandle) -> Result<Vec<SystemPromptTemplate>, Stri
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
         out.clear();
         for r in rows2 {
-            out.push(r.map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?);
+            let mut template =
+                r.map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+            maybe_repair_protected_template_prompt_type(&conn, &mut template)?;
+            out.push(template);
         }
     }
     Ok(out)
@@ -716,14 +763,20 @@ pub fn delete_template(app: &AppHandle, id: String) -> Result<(), String> {
 
 pub fn get_template(app: &AppHandle, id: &str) -> Result<Option<SystemPromptTemplate>, String> {
     let conn = open_db(app)?;
-    conn
+    let mut template = conn
         .query_row(
             "SELECT id, name, prompt_type, content, entries, condense_prompt_entries, created_at, updated_at FROM prompt_templates WHERE id = ?1",
             params![id],
             |row| row_to_template(row),
         )
         .optional()
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+
+    if let Some(template_ref) = template.as_mut() {
+        maybe_repair_protected_template_prompt_type(&conn, template_ref)?;
+    }
+
+    Ok(template)
 }
 
 pub fn ensure_app_default_template(app: &AppHandle) -> Result<String, String> {
