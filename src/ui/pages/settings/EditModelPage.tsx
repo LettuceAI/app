@@ -62,7 +62,7 @@ import { toast } from "../../components/toast";
 import { useModelEditorController } from "./hooks/useModelEditorController";
 import { useNavigationManager } from "../../navigation";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { addOrUpdateModel, readSettingsCached } from "../../../core/storage/repo";
+import { addOrUpdateModel } from "../../../core/storage/repo";
 import type { LlamaLastRuntimeReport, ReasoningSupport } from "../../../core/storage/schemas";
 import {
   getProviderReasoningSupport,
@@ -413,6 +413,7 @@ export function EditModelPage() {
       editorModel,
       modelAdvancedDraft,
     },
+    isNew,
     canSave,
     hasUnsavedChanges,
     updateEditorModel,
@@ -4779,10 +4780,9 @@ export function EditModelPage() {
 
       {/* Continue Setup button when coming from onboarding */}
       {returnTo && (() => {
-        const cached = readSettingsCached();
-        const hasModel = cached ? cached.models.some((m) => m.providerId === "llamacpp") : false;
+        const canContinueWithCurrentModel = !isNew && !hasUnsavedChanges;
         const canContinueSetup =
-          !(saving || verifying) && (canSave || (!hasUnsavedChanges && hasModel));
+          !(saving || verifying) && (canSave || canContinueWithCurrentModel);
         return (
           <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
             <button
@@ -4791,7 +4791,7 @@ export function EditModelPage() {
                   void handleSaveWithMoveCheck({ navigateAfterSave: true });
                   return;
                 }
-                if (!hasUnsavedChanges && hasModel) {
+                if (canContinueWithCurrentModel) {
                   editNavigate(returnTo);
                 }
               }}
@@ -4803,7 +4803,9 @@ export function EditModelPage() {
                   : "border border-white/10 bg-white/10 text-white/40 cursor-not-allowed",
               )}
             >
-              {isOnboardingReturnFlow ? "Continue Setup" : hasModel ? "Continue Setup" : "Save a model to continue"}
+              {isOnboardingReturnFlow || canContinueWithCurrentModel
+                ? "Continue Setup"
+                : "Save a model to continue"}
               <ArrowRight size={16} />
             </button>
           </div>
