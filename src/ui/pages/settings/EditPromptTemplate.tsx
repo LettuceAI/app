@@ -17,6 +17,7 @@ import {
   Sparkles,
   Copy,
   Lock,
+  ChevronRight,
   ChevronDown,
   ChevronUp,
   GripVertical,
@@ -24,6 +25,7 @@ import {
   Trash2,
   X,
   Layers,
+  Wand2,
 } from "lucide-react";
 import { cn, radius, interactive } from "../../design-tokens";
 import { MessageStructurePreview } from "./components/MessageStructurePreview";
@@ -33,6 +35,7 @@ import { useI18n } from "../../../core/i18n/context";
 import { Switch } from "../../components/Switch";
 import { useNavigationManager } from "../../navigation";
 import {
+  listPromptTemplates,
   createPromptTemplate,
   updatePromptTemplate,
   getPromptTemplate,
@@ -61,6 +64,7 @@ import type {
   PromptTemplateType,
   PromptTypeDefinition,
   SystemPromptEntry,
+  SystemPromptTemplate,
 } from "../../../core/storage/schemas";
 import {
   APP_DEFAULT_TEMPLATE_ID,
@@ -2179,6 +2183,16 @@ function getPromptTypeName(type: PromptType): string {
   }
 }
 
+function cloneTemplateEntries(entries: SystemPromptEntry[]): SystemPromptEntry[] {
+  return entries.map((entry) => ({
+    ...entry,
+    conditions: entry.conditions ? JSON.parse(JSON.stringify(entry.conditions)) : null,
+    promptEntryPayload: entry.promptEntryPayload
+      ? JSON.parse(JSON.stringify(entry.promptEntryPayload))
+      : null,
+  }));
+}
+
 function LoadingSkeleton() {
   return (
     <div className="flex h-full flex-col pb-16">
@@ -2206,6 +2220,7 @@ export function EditPromptTemplate() {
   const savingRef = useRef(false);
   const initialRef = useRef<{
     name: string;
+    promptType: PromptType;
     content: string;
     entries: string;
     condensePromptEntries: boolean;
@@ -2236,6 +2251,7 @@ export function EditPromptTemplate() {
   const [saving, setSaving] = useState(false);
   const [showVariables, setShowVariables] = useState(false);
   const [showMobilePreview, setShowMobilePreview] = useState(false);
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false);
   const [editorView, setEditorView] = useState<"entries" | "structure">("entries");
   const [mobilePreviewTab, setMobilePreviewTab] = useState<"content" | "structure">("content");
   const [copiedVar, setCopiedVar] = useState<string | null>(null);
@@ -2245,6 +2261,7 @@ export function EditPromptTemplate() {
   const [isAppDefault, setIsAppDefault] = useState(false);
   const [promptType, setPromptType] = useState<PromptType>("undefined");
   const [parameterEngine, setParameterEngine] = useState<PromptParameterEngine | null>(null);
+  const [protectedTemplates, setProtectedTemplates] = useState<SystemPromptTemplate[]>([]);
   const [resetting, setResetting] = useState(false);
   const [requiredVariables, setRequiredVariables] = useState<string[]>([]);
   const [missingVariables, setMissingVariables] = useState<string[]>([]);
@@ -2341,6 +2358,7 @@ export function EditPromptTemplate() {
     !loading &&
     initialRef.current !== null &&
     (name.trim() !== initialRef.current.name ||
+      promptType !== initialRef.current.promptType ||
       content !== initialRef.current.content ||
       serializeEntries(entries) !== initialRef.current.entries ||
       condensePromptEntries !== initialRef.current.condensePromptEntries);
@@ -2349,6 +2367,7 @@ export function EditPromptTemplate() {
     name.trim().length > 0 &&
     (hasEntryContent || hasContent) &&
     conditionValidationErrors.length === 0;
+  const showTemplateEmptyState = !isEditing && usesEntryEditor && entries.length === 0;
 
   // Expose save state to TopNav via window globals
   useEffect(() => {
@@ -2424,14 +2443,18 @@ export function EditPromptTemplate() {
 
   async function loadData() {
     try {
-      const [chars, pers, nextParameterEngine] = await Promise.all([
+      const [chars, pers, nextParameterEngine, promptTemplates] = await Promise.all([
         listCharacters(),
         listPersonas(),
         getPromptParameterEngine(),
+        listPromptTemplates(),
       ]);
       setCharacters(chars);
       setPersonas(pers);
       setParameterEngine(nextParameterEngine);
+      setProtectedTemplates(
+        promptTemplates.filter((template) => isProtectedPromptTemplate(template.id)),
+      );
       setPreviewCharacterId(chars[0]?.id ?? null);
       setPreviewPersonaId(pers.find((p) => p.isDefault)?.id ?? null);
 
@@ -2461,6 +2484,7 @@ export function EditPromptTemplate() {
           );
           initialRef.current = {
             name: template.name,
+            promptType: template.promptType,
             content: template.content,
             entries: serializeEntries(normalizedEntries),
             condensePromptEntries: Boolean(template.condensePromptEntries),
@@ -2483,6 +2507,7 @@ export function EditPromptTemplate() {
         );
         initialRef.current = {
           name: "",
+          promptType: "undefined",
           content: "",
           entries: serializeEntries([]),
           condensePromptEntries: false,
@@ -2530,6 +2555,25 @@ export function EditPromptTemplate() {
         target.scrollIntoView({ behavior: "smooth", block: "center" });
       }
     }, 150);
+  };
+
+  const applyProtectedTemplate = (template: SystemPromptTemplate) => {
+    const nextEntries =
+      template.entries?.length > 0
+        ? cloneTemplateEntries(template.entries)
+        : [createDefaultEntry(template.content)];
+    const normalizedEntries = ensureSystemEntry(nextEntries);
+
+    setName((currentName) => (currentName.trim().length > 0 ? currentName : template.name));
+    setContent(template.content);
+    setPromptType(template.promptType);
+    setEntries(normalizedEntries);
+    setCondensePromptEntries(Boolean(template.condensePromptEntries));
+    setCollapsedEntries(Object.fromEntries(normalizedEntries.map((entry) => [entry.id, true])));
+    setEditorView("entries");
+    setMobileEntryEditorId(null);
+    setDesktopEntryEditorId(null);
+    setShowTemplatePicker(false);
   };
 
   const handleStructureEdit = (entryId: string) => {
@@ -2640,6 +2684,7 @@ export function EditPromptTemplate() {
 
       initialRef.current = {
         name: savedTemplate.name,
+        promptType: savedTemplate.promptType,
         content: savedTemplate.content,
         entries: serializeEntries(normalizedEntries),
         condensePromptEntries: Boolean(savedTemplate.condensePromptEntries),
@@ -2723,6 +2768,7 @@ export function EditPromptTemplate() {
     try {
       const nextEntries = JSON.parse(initialRef.current.entries) as SystemPromptEntry[];
       setName(initialRef.current.name);
+      setPromptType(initialRef.current.promptType);
       setContent(initialRef.current.content);
       setEntries(nextEntries);
       setCondensePromptEntries(initialRef.current.condensePromptEntries);
@@ -3252,43 +3298,95 @@ export function EditPromptTemplate() {
                         transition={{ duration: 0.15 }}
                         className="space-y-3"
                       >
-                        <Reorder.Group
-                          axis="y"
-                          values={entries}
-                          onReorder={setEntries}
-                          className="hidden lg:flex lg:flex-col gap-3"
-                        >
-                          {entries.map((entry) => (
-                            <PromptEntryCard
-                              key={entry.id}
-                              entry={entry}
-                              onUpdate={handleEntryUpdate}
-                              onDelete={handleEntryDelete}
-                              onToggle={handleEntryToggle}
-                              onToggleCollapse={handleToggleEntryCollapse}
-                              collapsed={collapsedEntries[entry.id] ?? true}
-                              highlighted={highlightedEntryId === entry.id}
-                              onOpenEditor={() => setDesktopEntryEditorId(entry.id)}
-                            />
-                          ))}
-                        </Reorder.Group>
+                        {entries.length === 0 ? (
+                          <div
+                            className={cn(
+                              radius.lg,
+                              "border border-dashed border-fg/10 bg-fg/[0.02]",
+                              "px-4 py-8 text-center",
+                            )}
+                          >
+                            <div className="mx-auto max-w-md">
+                              <div className="mb-3 flex justify-center text-fg/35">
+                                <Layers className="h-5 w-5" />
+                              </div>
+                              <p className="text-sm font-medium text-fg/75">No entries yet</p>
+                              <p className="mt-1 text-sm text-fg/45">
+                                Add an entry or start from one of the protected defaults.
+                              </p>
+                              <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                                <button
+                                  onClick={handleAddEntry}
+                                  className={cn(
+                                    "inline-flex items-center gap-2 px-3 py-2",
+                                    radius.lg,
+                                    "border border-fg/10 bg-fg/5 text-sm text-fg/80",
+                                    interactive.transition.fast,
+                                    "hover:bg-fg/10",
+                                  )}
+                                >
+                                  <Plus className="h-4 w-4" />
+                                  Add entry
+                                </button>
+                                {showTemplateEmptyState && protectedTemplates.length > 0 && (
+                                  <button
+                                    onClick={() => setShowTemplatePicker(true)}
+                                    className={cn(
+                                      "inline-flex items-center gap-2 px-3 py-2",
+                                      radius.lg,
+                                      "border border-fg/10 bg-fg/5 text-sm text-fg/80",
+                                      interactive.transition.fast,
+                                      "hover:bg-fg/10",
+                                    )}
+                                  >
+                                    <Wand2 className="h-4 w-4" />
+                                    Use a template
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <Reorder.Group
+                              axis="y"
+                              values={entries}
+                              onReorder={setEntries}
+                              className="hidden lg:flex lg:flex-col gap-3"
+                            >
+                              {entries.map((entry) => (
+                                <PromptEntryCard
+                                  key={entry.id}
+                                  entry={entry}
+                                  onUpdate={handleEntryUpdate}
+                                  onDelete={handleEntryDelete}
+                                  onToggle={handleEntryToggle}
+                                  onToggleCollapse={handleToggleEntryCollapse}
+                                  collapsed={collapsedEntries[entry.id] ?? true}
+                                  highlighted={highlightedEntryId === entry.id}
+                                  onOpenEditor={() => setDesktopEntryEditorId(entry.id)}
+                                />
+                              ))}
+                            </Reorder.Group>
 
-                        <Reorder.Group
-                          axis="y"
-                          values={entries}
-                          onReorder={setEntries}
-                          className="flex flex-col gap-2 lg:hidden"
-                        >
-                          {entries.map((entry) => (
-                            <PromptEntryListItem
-                              key={entry.id}
-                              entry={entry}
-                              onToggle={handleEntryToggle}
-                              onDelete={handleEntryDelete}
-                              onEdit={(id) => setMobileEntryEditorId(id)}
-                            />
-                          ))}
-                        </Reorder.Group>
+                            <Reorder.Group
+                              axis="y"
+                              values={entries}
+                              onReorder={setEntries}
+                              className="flex flex-col gap-2 lg:hidden"
+                            >
+                              {entries.map((entry) => (
+                                <PromptEntryListItem
+                                  key={entry.id}
+                                  entry={entry}
+                                  onToggle={handleEntryToggle}
+                                  onDelete={handleEntryDelete}
+                                  onEdit={(id) => setMobileEntryEditorId(id)}
+                                />
+                              ))}
+                            </Reorder.Group>
+                          </>
+                        )}
 
                         <div className="flex items-center justify-end">
                           <span
@@ -3549,6 +3647,44 @@ export function EditPromptTemplate() {
                     </div>
                   </div>
                 </div>
+              );
+            })}
+          </div>
+        </div>
+      </BottomMenu>
+
+      <BottomMenu
+        isOpen={showTemplatePicker}
+        onClose={() => setShowTemplatePicker(false)}
+        title="Use a Template"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-fg/50">
+            Choose a protected default to preload its prompt type and entry structure.
+          </p>
+
+          <div className="space-y-2">
+            {protectedTemplates.map((template) => {
+              return (
+                <button
+                  key={template.id}
+                  onClick={() => applyProtectedTemplate(template)}
+                  className={cn(
+                    "flex w-full items-center justify-between gap-3 px-4 py-3 text-left",
+                    radius.lg,
+                    "border border-fg/10 bg-fg/5",
+                    interactive.transition.fast,
+                    "hover:bg-fg/10",
+                  )}
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-fg">{template.name}</p>
+                    <p className="mt-1 text-xs text-fg/45">
+                      {getPromptTypeName(template.promptType)}
+                    </p>
+                  </div>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-fg/35" />
+                </button>
               );
             })}
           </div>
