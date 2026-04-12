@@ -184,6 +184,7 @@ export function ChatHeader({
             </button>
 
             <button
+              data-tour-id="chat-title"
               onPointerDown={() => onBeforeSettingsOpen?.()}
               onClick={() => {
                 if (onSettingsOpen) {
@@ -210,6 +211,7 @@ export function ChatHeader({
 
                 return (
                   <button
+                    data-tour-id="chat-memory"
                     onClick={() => {
                       if (!characterId || !sessionId) return;
                       navigate(
@@ -246,6 +248,7 @@ export function ChatHeader({
             {/* Search Button */}
             {session && (
               <button
+                data-tour-id="chat-search"
                 onClick={() => {
                   if (!characterId || !sessionId) return;
                   navigate(Routes.chatSearch(characterId, sessionId));
@@ -259,6 +262,7 @@ export function ChatHeader({
 
             {/* Lorebooks Button */}
             <button
+              data-tour-id="chat-lorebook"
               onClick={() => {
                 if (!characterId) return;
                 navigate(Routes.characterLorebook(characterId));

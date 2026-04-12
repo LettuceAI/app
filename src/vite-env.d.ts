@@ -3,7 +3,9 @@
 declare global {
   interface Window {
     __debug?: {
-      resetFirstRunTour?: () => Promise<void>;
+      tourResets?: Record<string, () => Promise<void>>;
+      resetTour?: (id: string) => Promise<void>;
+      resetAllTours?: () => Promise<void>;
       [key: string]: unknown;
     };
   }

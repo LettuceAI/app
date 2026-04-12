@@ -765,7 +765,8 @@ function AppContent() {
     !isDiscoverySubRoute;
 
   const [showCreateMenu, setShowCreateMenu] = useState(false);
-  const { shouldShow: showGuidedTour, dismiss: dismissGuidedTour } = useGuidedTour();
+  const { shouldShow: showGuidedTour, dismiss: dismissGuidedTour } =
+    useGuidedTour("appShell");
 
   useEffect(() => {
     const globalWindow = window as Window & {
@@ -1263,7 +1264,7 @@ function AppContent() {
       )}
 
       {isChatRoute && showBottomNav && showGuidedTour && (
-        <GuidedTour onDismiss={dismissGuidedTour} />
+        <GuidedTour tour="appShell" onDismiss={dismissGuidedTour} />
       )}
 
       {/* V1 Embedding Model Upgrade Toast */}

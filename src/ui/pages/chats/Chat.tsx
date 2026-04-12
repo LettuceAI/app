@@ -61,7 +61,7 @@ import {
   EmptyState,
   ChatSettingsDrawer,
 } from "./components";
-import { BottomMenu, MenuButton } from "../../components";
+import { BottomMenu, GuidedTour, MenuButton, useGuidedTour } from "../../components";
 import { AvatarImage } from "../../components/AvatarImage";
 import { useAvatar } from "../../hooks/useAvatar";
 import { Image, RefreshCw, Sparkles, Check, PenLine, Lock } from "lucide-react";
@@ -91,6 +91,13 @@ export function ChatConversationPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { t } = useI18n();
+  const { shouldShow: showChatDetailTour, dismiss: dismissChatDetailTour } =
+    useGuidedTour("chatDetail");
+  const {
+    shouldShow: showPostFirstMessageTour,
+    dismiss: dismissPostFirstMessageTour,
+    show: triggerPostFirstMessageTour,
+  } = useGuidedTour("postFirstMessage");
   const sessionId = searchParams.get("sessionId") || undefined;
   const jumpToMessageId = searchParams.get("jumpToMessage");
   const { backgroundImageData, isBackgroundLight, theme, chatAppearance, chatController } =
@@ -1568,6 +1575,16 @@ export function ChatConversationPage() {
   }, [accessibilitySettings, error, isGenerating]);
 
   useEffect(() => {
+    if (wasGeneratingRef.current || isGenerating) return;
+    if (!messages.length) return;
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg?.role !== "assistant" || lastMsg.id.startsWith("placeholder")) return;
+    const timer = setTimeout(() => triggerPostFirstMessageTour(), 600);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isGenerating]);
+
+  useEffect(() => {
     if (!isAtBottom || !isGenerating) return;
     scrollToBottom("auto");
   }, [isAtBottom, isGenerating, scrollToBottom]);
@@ -2603,6 +2620,13 @@ export function ChatConversationPage() {
           onClose={() => setSettingsDrawerOpen(false)}
           character={character}
         />
+      )}
+
+      {showChatDetailTour && character && (
+        <GuidedTour tour="chatDetail" onDismiss={dismissChatDetailTour} />
+      )}
+      {showPostFirstMessageTour && !showChatDetailTour && character && (
+        <GuidedTour tour="postFirstMessage" onDismiss={dismissPostFirstMessageTour} />
       )}
     </div>
   );
