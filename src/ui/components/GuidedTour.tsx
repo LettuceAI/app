@@ -139,6 +139,12 @@ const TOURS: Record<TourId, TourConfig> = {
         title: "Swipe between variants",
         body: "After regenerating, you'll see a variant counter below the message. Swipe left or right on the message bubble to flip through all the different replies.",
       },
+      {
+        id: "chat-long-press",
+        targetAttr: "chat-message-bubble",
+        title: "There's more hiding here",
+        body: "Long-press any message to edit, copy, branch, pin, delete, or rewind the conversation. Right-click works too on desktop.",
+      },
     ],
   },
 };

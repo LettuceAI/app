@@ -561,6 +561,7 @@ function ChatMessageInner({
         )}
 
       <motion.div
+        {...(computed.isLatestAssistant ? { "data-tour-id": "chat-message-bubble" } : {})}
         initial={computed.shouldAnimate ? { opacity: 0, y: 4 } : false}
         animate={computed.shouldAnimate ? { opacity: 1, y: 0 } : { opacity: 1, y: 0 }}
         transition={animTransition}
