@@ -31,6 +31,10 @@ pub fn default_dynamic_memory_prompt() -> String {
     join_entries(&default_dynamic_memory_entries())
 }
 
+pub fn default_dynamic_memory_local_prompt() -> String {
+    join_entries(&default_dynamic_memory_local_entries())
+}
+
 pub fn default_help_me_reply_prompt() -> String {
     join_entries(&default_help_me_reply_entries())
 }
@@ -239,6 +243,110 @@ pub fn default_dynamic_memory_entries() -> Vec<SystemPromptEntry> {
             name: "Tool Usage".to_string(),
             role: PromptEntryRole::System,
             content: "Tool usage:\n- Use `create_memory` only for durable facts worth recalling later. Supply `text` and `category`; add `important: true` only when pinning is justified.\n- Use `delete_memory` for duplicates, contradictions, stale assumptions, or obsolete context.\n- When deleting multiple overlapping memories, first create the merged replacement memories that preserve the important facts.\n- Use `pin_memory` only for identity-defining or continuity-critical memories.\n- Use `unpin_memory` when a previously critical fact no longer needs permanent priority.\n- If nothing should change, call `done` with no extra narration.\n- Output no natural language outside tool calls.".to_string(),
+            enabled: true,
+            injection_position: PromptEntryPosition::Relative,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
+        },
+    ]
+}
+
+pub fn default_dynamic_memory_local_entries() -> Vec<SystemPromptEntry> {
+    vec![
+        SystemPromptEntry {
+            id: "memory_local_task".to_string(),
+            name: "Task".to_string(),
+            role: PromptEntryRole::System,
+            content:
+                "You maintain a long-term memory index for a conversation transcript. Extract durable facts, reconcile them against existing memories, and update the list using tool calls only.".to_string(),
+            enabled: true,
+            injection_position: PromptEntryPosition::Relative,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
+        },
+        SystemPromptEntry {
+            id: "memory_local_budget".to_string(),
+            name: "Token Budget".to_string(),
+            role: PromptEntryRole::System,
+            content: "IMPORTANT - TOKEN BUDGET:\nCurrent hot memory usage: {{current_memory_tokens}}/{{hot_token_budget}} tokens\nDeleted memories are NOT lost; they move to cold storage and can be recalled later.\nMemories decay over time unless accessed or pinned.\n\nWhen OVER BUDGET: aggressively remove lower-value hot memories after preserving the most durable facts.\nWhen UNDER BUDGET: delete only duplicates, direct contradictions, stale assumptions, or obsolete context.".to_string(),
+            enabled: true,
+            injection_position: PromptEntryPosition::Relative,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
+        },
+        SystemPromptEntry {
+            id: "memory_local_what".to_string(),
+            name: "What To Remember".to_string(),
+            role: PromptEntryRole::System,
+            content: "Store facts likely to matter later:\n- Character facts: identity, backstory, traits, fears, goals, secrets, limitations\n- Relationship facts: alliances, conflicts, trust shifts, promises, betrayals, family links\n- Plot facts: decisions, discoveries, injuries, losses, gains, travel, ongoing objectives\n- World facts: rules, places, items, lore, institutions, constraints\n- Preferences and boundaries: explicit requests, dislikes, limits, desired tone or pacing".to_string(),
+            enabled: true,
+            injection_position: PromptEntryPosition::Relative,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
+        },
+        SystemPromptEntry {
+            id: "memory_local_rules".to_string(),
+            name: "Rules".to_string(),
+            role: PromptEntryRole::System,
+            content: "Rules for local models:\n- Each memory must be atomic: exactly one durable fact per entry.\n- Prefer multiple short memory entries over one merged or compound memory.\n- If two clauses could be split into two facts, split them into separate `create_memory` calls.\n- Do not bundle biography, relationship status, and plot outcome into one memory.\n- Write memories as plain factual statements, not dialogue or narration.\n- Prefer explicit names, roles, and outcomes over vague pronouns.\n- Only store what was explicitly stated or clearly shown in the transcript.\n- Do not store transient phrasing, stylistic descriptions, erotic detail, gore detail, or generic chat filler.\n- Avoid duplicates by checking whether the same fact already exists in other words.\n- If a new fact supersedes an old fact, create the replacement first, then delete or demote the old one.\n- Respect the {{max_entries}} limit.\n- When deleting, use the 6-digit memory ID shown in brackets when available.".to_string(),
+            enabled: true,
+            injection_position: PromptEntryPosition::Relative,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
+        },
+        SystemPromptEntry {
+            id: "memory_local_categories".to_string(),
+            name: "Category Guide".to_string(),
+            role: PromptEntryRole::System,
+            content: "Category guide:\n- `character_trait`: stable traits, goals, fears, secrets, identity facts, personal history\n- `relationship`: alliance, hostility, trust, romance, family, loyalty, rivalry, status between people\n- `plot_event`: concrete events, decisions, promises, discoveries, wins, losses, injuries, travel, mission changes\n- `world_detail`: lore, locations, items, rules, organizations, magic systems, political facts\n- `preference`: explicit likes, dislikes, requests, boundaries, tone or pacing preferences\n- `other`: durable facts that do not fit the above".to_string(),
+            enabled: true,
+            injection_position: PromptEntryPosition::Relative,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
+        },
+        SystemPromptEntry {
+            id: "memory_local_priority".to_string(),
+            name: "Priority".to_string(),
+            role: PromptEntryRole::System,
+            content: "Priority:\n1. PIN only facts whose loss would seriously damage continuity.\n2. KEEP stable identity facts, active relationships, unresolved conflicts, and recent decisions with ongoing consequences.\n3. KEEP explicit user preferences and boundaries.\n4. DEMOTE or delete resolved scene beats, routine actions, superseded assumptions, and low-impact repetition.".to_string(),
+            enabled: true,
+            injection_position: PromptEntryPosition::Relative,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
+        },
+        SystemPromptEntry {
+            id: "memory_local_tools".to_string(),
+            name: "Tool Usage".to_string(),
+            role: PromptEntryRole::System,
+            content: "Tool usage:\n- Use `create_memory` only for durable facts worth recalling later. Supply `text` and `category`; add `important: true` only when pinning is justified.\n- For local models, prefer 2-6 separate `create_memory` calls when 2-6 separate durable facts exist.\n- Never merge unrelated facts just to reduce tool calls.\n- Use `delete_memory` for duplicates, contradictions, stale assumptions, or obsolete context.\n- Use `pin_memory` only for identity-defining or continuity-critical memories.\n- Use `unpin_memory` when a previously critical fact no longer needs permanent priority.\n- If nothing should change, call `done` with no extra narration.\n- Output no natural language outside tool calls.".to_string(),
             enabled: true,
             injection_position: PromptEntryPosition::Relative,
             injection_depth: 0,
@@ -2423,6 +2531,8 @@ mod tests {
             fallback_model_id: None,
             memory_type: "manual".into(),
             prompt_template_id: None,
+            group_chat_prompt_template_id: None,
+            group_chat_roleplay_prompt_template_id: None,
             system_prompt: None,
             created_at: 0,
             updated_at: 0,

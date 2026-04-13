@@ -5,7 +5,7 @@ use serde_json::Value as JsonValue;
 
 use crate::{
     chat_manager::types::{
-        AdvancedModelSettings, Model, PromptScope, SystemPromptEntry, SystemPromptTemplate,
+        AdvancedModelSettings, Model, PromptTemplateType, SystemPromptEntry, SystemPromptTemplate,
     },
     storage_manager::lorebook::{Lorebook, LorebookEntry},
     sync::models::{ChatTemplate, ChatTemplateMessage},
@@ -111,9 +111,8 @@ pub struct UscSystemPromptTemplatePayload {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    pub scope: PromptScope,
     #[serde(default)]
-    pub target_ids: Vec<String>,
+    pub prompt_type: PromptTemplateType,
     pub content: String,
     #[serde(default)]
     pub entries: Vec<SystemPromptEntry>,
@@ -471,8 +470,7 @@ pub fn create_system_prompt_template_usc(
             id: template.id.clone(),
             name: template.name.clone(),
             description: None,
-            scope: template.scope.clone(),
-            target_ids: template.target_ids.clone(),
+            prompt_type: template.prompt_type,
             content: template.content.clone(),
             entries: template.entries.clone(),
             condense_prompt_entries: template.condense_prompt_entries,
@@ -697,8 +695,7 @@ mod tests {
                 id: "prompt-1".into(),
                 name: "RP Core".into(),
                 description: None,
-                scope: PromptScope::AppWide,
-                target_ids: vec![],
+                prompt_type: PromptTemplateType::DirectChat,
                 content: "Stay in character.".into(),
                 entries: vec![],
                 condense_prompt_entries: false,

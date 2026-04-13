@@ -8,6 +8,25 @@ use crate::chat_manager::tooling::{gemini_tool_config, gemini_tools, ToolConfig}
 
 pub struct GoogleGeminiAdapter;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GeminiThinkingMode {
+    Level,
+    Budget,
+    Unknown,
+}
+
+fn gemini_thinking_mode(model_name: &str) -> GeminiThinkingMode {
+    let normalized = model_name.trim().to_ascii_lowercase();
+
+    if normalized.contains("gemini-2.5") || normalized.contains("robotics-er-1.5") {
+        GeminiThinkingMode::Budget
+    } else if normalized.contains("gemini-3") {
+        GeminiThinkingMode::Level
+    } else {
+        GeminiThinkingMode::Unknown
+    }
+}
+
 #[derive(Serialize)]
 struct GeminiThinkingConfig {
     #[serde(rename = "includeThoughts")]
@@ -275,11 +294,16 @@ impl ProviderAdapter for GoogleGeminiAdapter {
         }
 
         let thinking_config = if reasoning_enabled {
-            let thinking_level = _reasoning_effort.as_ref().map(|s| s.to_uppercase());
-            let thinking_budget = if thinking_level.is_some() {
-                None
-            } else {
-                Some(reasoning_budget.map(|b| b as i32).unwrap_or(-1))
+            let thinking_mode = gemini_thinking_mode(_model_name);
+            let thinking_level = match thinking_mode {
+                GeminiThinkingMode::Level => _reasoning_effort.as_ref().map(|s| s.to_uppercase()),
+                GeminiThinkingMode::Budget | GeminiThinkingMode::Unknown => None,
+            };
+            let thinking_budget = match thinking_mode {
+                GeminiThinkingMode::Budget => {
+                    Some(reasoning_budget.map(|b| b as i32).unwrap_or(-1))
+                }
+                GeminiThinkingMode::Level | GeminiThinkingMode::Unknown => None,
             };
 
             Some(GeminiThinkingConfig {
@@ -389,7 +413,7 @@ fn parse_jsonish_value(value: &Value) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use super::GoogleGeminiAdapter;
+    use super::{gemini_thinking_mode, GeminiThinkingMode, GoogleGeminiAdapter};
     use crate::chat_manager::provider_adapter::ProviderAdapter;
     use crate::chat_manager::tooling::{ToolChoice, ToolConfig, ToolDefinition};
     use serde_json::json;
@@ -547,6 +571,111 @@ mod tests {
                     }
                 }]
             })
+        );
+    }
+
+    #[test]
+    fn gemini_25_uses_budget_based_thinking() {
+        let adapter = GoogleGeminiAdapter;
+        let body = adapter.body(
+            "gemini-2.5-flash",
+            &vec![json!({ "role": "user", "content": "Think." })],
+            None,
+            None,
+            None,
+            256,
+            None,
+            false,
+            None,
+            None,
+            None,
+            None,
+            true,
+            Some("high".to_string()),
+            Some(8192),
+        );
+
+        assert_eq!(
+            body.pointer("/generationConfig/thinkingConfig"),
+            Some(&json!({
+                "includeThoughts": true,
+                "thinkingBudget": 8192
+            }))
+        );
+    }
+
+    #[test]
+    fn gemini_3_uses_level_based_thinking() {
+        let adapter = GoogleGeminiAdapter;
+        let body = adapter.body(
+            "gemini-3-flash-preview",
+            &vec![json!({ "role": "user", "content": "Think." })],
+            None,
+            None,
+            None,
+            256,
+            None,
+            false,
+            None,
+            None,
+            None,
+            None,
+            true,
+            Some("medium".to_string()),
+            Some(8192),
+        );
+
+        assert_eq!(
+            body.pointer("/generationConfig/thinkingConfig"),
+            Some(&json!({
+                "includeThoughts": true,
+                "thinkingLevel": "MEDIUM"
+            }))
+        );
+    }
+
+    #[test]
+    fn gemini_3_auto_omits_budget() {
+        let adapter = GoogleGeminiAdapter;
+        let body = adapter.body(
+            "gemini-3-flash-preview",
+            &vec![json!({ "role": "user", "content": "Think." })],
+            None,
+            None,
+            None,
+            256,
+            None,
+            false,
+            None,
+            None,
+            None,
+            None,
+            true,
+            None,
+            Some(8192),
+        );
+
+        assert_eq!(
+            body.pointer("/generationConfig/thinkingConfig"),
+            Some(&json!({
+                "includeThoughts": true
+            }))
+        );
+    }
+
+    #[test]
+    fn classifies_gemini_model_thinking_modes() {
+        assert_eq!(
+            gemini_thinking_mode("gemini-2.5-flash"),
+            GeminiThinkingMode::Budget
+        );
+        assert_eq!(
+            gemini_thinking_mode("gemini-3-flash-preview"),
+            GeminiThinkingMode::Level
+        );
+        assert_eq!(
+            gemini_thinking_mode("gemini-pro"),
+            GeminiThinkingMode::Unknown
         );
     }
 }

@@ -16,8 +16,10 @@ import {
 import { storageBridge } from "../../../../core/storage/files";
 import {
   markMemoryToolEventReverted,
-  revertMemoryToolEvent,
+  reconstructMemoryStateFromEvents,
+  summarizeRevertImpact,
 } from "../../../../core/storage/memoryToolEvents";
+import { confirmBottomMenu } from "../../../components/ConfirmBottomMenu";
 import { initUi, uiReducer } from "../reducers/groupChatMemoriesReducer";
 
 type MemoryItem = {
@@ -179,6 +181,17 @@ export function useGroupChatMemoriesController(groupSessionId?: string) {
   const [ui, dispatch] = useReducer(uiReducer, undefined, initUi);
   const [revertingEventId, setRevertingEventId] = useState<string | null>(null);
 
+  const getLatestSessionSnapshot = useCallback(async (): Promise<GroupSession> => {
+    if (!session?.id) {
+      throw new Error("Session not loaded");
+    }
+    const latest = await getGroupSession(session.id);
+    if (!latest) {
+      throw new Error("Session not found");
+    }
+    return latest;
+  }, [session?.id]);
+
   const handleSetColdState = useCallback(
     async (memoryIndex: number, isCold: boolean) => {
       if (!session?.id) return;
@@ -204,18 +217,19 @@ export function useGroupChatMemoriesController(groupSessionId?: string) {
     async (summary: string) => {
       if (!session) return;
       try {
+        const latest = await getLatestSessionSnapshot();
         await storageBridge.groupSessionUpdateMemories(
-          session.id,
-          session.memoryEmbeddings ?? [],
+          latest.id,
+          latest.memoryEmbeddings ?? [],
           summary,
-          session.memorySummaryTokenCount ?? 0,
+          latest.memorySummaryTokenCount ?? 0,
         );
-        setSession({ ...session, memorySummary: summary });
+        setSession({ ...latest, memorySummary: summary });
       } catch (err: any) {
         throw err;
       }
     },
-    [session, setSession],
+    [getLatestSessionSnapshot, session, setSession],
   );
 
   const handleSaveSummaryClick = useCallback(async () => {
@@ -448,15 +462,16 @@ export function useGroupChatMemoriesController(groupSessionId?: string) {
       if (session.memoryStatus === "processing") {
         await storageBridge.groupChatAbortDynamicMemory(session.id);
       }
+      const latest = await getLatestSessionSnapshot();
       await storageBridge.groupSessionUpdateMemories(
-        session.id,
-        session.memoryEmbeddings ?? [],
-        session.memorySummary ?? "",
-        session.memorySummaryTokenCount ?? 0,
+        latest.id,
+        latest.memoryEmbeddings ?? [],
+        latest.memorySummary ?? "",
+        latest.memorySummaryTokenCount ?? 0,
         "idle",
         null,
       );
-      setSession({ ...session, memoryStatus: "idle", memoryError: null });
+      setSession({ ...latest, memoryStatus: "idle", memoryError: null });
       dispatch({ type: "SET_ACTION_ERROR", value: null });
       dispatch({ type: "SET_RETRY_STATUS", value: "idle" });
       dispatch({ type: "SET_MEMORY_STATUS", value: "idle" });
@@ -469,34 +484,52 @@ export function useGroupChatMemoriesController(groupSessionId?: string) {
       dispatch({ type: "SET_MEMORY_STATUS", value: "idle" });
       void reload();
     }
-  }, [reload, session, setSession]);
+  }, [getLatestSessionSnapshot, reload, session, setSession]);
 
   const handleRevertMemoryEvent = useCallback(
     async (event: NonNullable<GroupSession["memoryToolEvents"]>[number]) => {
       if (!session?.id || !event.id || !session.memoryEmbeddings) return;
+
+      const confirmed = await confirmBottomMenu({
+        title: "Revert this cycle?",
+        message: summarizeRevertImpact(event),
+        confirmLabel: "Revert",
+        destructive: true,
+      });
+      if (!confirmed) return;
+
       setRevertingEventId(event.id);
       try {
-        const nextEmbeddings = revertMemoryToolEvent(session.memoryEmbeddings, event);
         const nextEvents = markMemoryToolEventReverted(
           session.memoryToolEvents ?? [],
           event.id,
           Date.now(),
         );
-        await storageBridge.groupSessionUpdateMemoryState(
-          session.id,
-          nextEmbeddings.map((memory) => memory.text),
-          nextEmbeddings,
+        const nextMemoryState = reconstructMemoryStateFromEvents(
+          session.memoryEmbeddings,
           session.memorySummary ?? "",
           session.memorySummaryTokenCount ?? 0,
           nextEvents,
-          session.memoryStatus ?? "idle",
-          session.memoryError ?? null,
+        );
+        await storageBridge.groupSessionUpdateMemoryState(
+          session.id,
+          nextMemoryState.memoryEmbeddings.map((memory) => memory.text),
+          nextMemoryState.memoryEmbeddings,
+          nextMemoryState.memorySummary,
+          nextMemoryState.memorySummaryTokenCount,
+          nextMemoryState.memoryToolEvents,
+          nextMemoryState.memoryStatus,
+          nextMemoryState.memoryError ?? null,
         );
         setSession({
           ...session,
-          memories: nextEmbeddings.map((memory) => memory.text),
-          memoryEmbeddings: nextEmbeddings,
-          memoryToolEvents: nextEvents,
+          memories: nextMemoryState.memoryEmbeddings.map((memory) => memory.text),
+          memoryEmbeddings: nextMemoryState.memoryEmbeddings,
+          memorySummary: nextMemoryState.memorySummary,
+          memorySummaryTokenCount: nextMemoryState.memorySummaryTokenCount,
+          memoryToolEvents: nextMemoryState.memoryToolEvents,
+          memoryStatus: nextMemoryState.memoryStatus,
+          memoryError: nextMemoryState.memoryError ?? undefined,
           updatedAt: Date.now(),
         });
         dispatch({ type: "SET_ACTION_ERROR", value: null });
@@ -523,22 +556,23 @@ export function useGroupChatMemoriesController(groupSessionId?: string) {
   const handleDismissError = useCallback(async () => {
     if (!session?.id || !session) return;
     try {
+      const latest = await getLatestSessionSnapshot();
       await storageBridge.groupSessionUpdateMemories(
-        session.id,
-        session.memoryEmbeddings ?? [],
-        session.memorySummary ?? "",
-        session.memorySummaryTokenCount ?? 0,
+        latest.id,
+        latest.memoryEmbeddings ?? [],
+        latest.memorySummary ?? "",
+        latest.memorySummaryTokenCount ?? 0,
         "idle",
         null,
       );
-      setSession({ ...session, memoryStatus: "idle", memoryError: null });
+      setSession({ ...latest, memoryStatus: "idle", memoryError: null });
       dispatch({ type: "SET_ACTION_ERROR", value: null });
       dispatch({ type: "SET_MEMORY_STATUS", value: "idle" });
       await reload();
     } catch (err: any) {
       dispatch({ type: "SET_ACTION_ERROR", value: err?.message || "Failed to dismiss error" });
     }
-  }, [reload, session, setSession]);
+  }, [getLatestSessionSnapshot, reload, session, setSession]);
 
   const handleTogglePinnedMessage = useCallback(
     async (messageId: string) => {

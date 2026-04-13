@@ -332,6 +332,10 @@ export function CreateCharacterPage() {
               loadingTemplates={state.loadingTemplates}
               systemPromptTemplateId={state.systemPromptTemplateId}
               onSelectSystemPrompt={actions.setSystemPromptTemplateId}
+              groupChatPromptTemplateId={state.groupChatPromptTemplateId}
+              onSelectGroupChatPrompt={actions.setGroupChatPromptTemplateId}
+              groupChatRoleplayPromptTemplateId={state.groupChatRoleplayPromptTemplateId}
+              onSelectGroupChatRoleplayPrompt={actions.setGroupChatRoleplayPromptTemplateId}
               voiceConfig={state.voiceConfig}
               onVoiceConfigChange={actions.setVoiceConfig}
               voiceAutoplay={state.voiceAutoplay}

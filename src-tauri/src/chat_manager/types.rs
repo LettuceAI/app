@@ -4,12 +4,22 @@ use std::collections::HashMap;
 
 use super::tooling::ToolCall;
 
-#[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
+#[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 #[serde(rename_all = "camelCase")]
-pub enum PromptScope {
-    AppWide,
-    ModelSpecific,
-    CharacterSpecific,
+pub enum PromptTemplateType {
+    #[default]
+    Undefined,
+    DirectChat,
+    GroupChatRoleplay,
+    GroupChatConversational,
+    DynamicMemorySummarizer,
+    DynamicMemoryManager,
+    ReplyHelperRoleplay,
+    ReplyHelperConversational,
+    AvatarGeneration,
+    AvatarEditRequest,
+    SceneGeneration,
+    DesignReferenceWriter,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
@@ -183,10 +193,8 @@ pub struct SystemPromptEntry {
 pub struct SystemPromptTemplate {
     pub id: String,
     pub name: String,
-    pub scope: PromptScope,
-    /// Model or Character IDs this template applies to (empty for AppWide)
     #[serde(default)]
-    pub target_ids: Vec<String>,
+    pub prompt_type: PromptTemplateType,
     pub content: String,
     #[serde(default)]
     pub entries: Vec<SystemPromptEntry>,
@@ -277,6 +285,8 @@ pub struct Settings {
 pub struct AdvancedSettings {
     #[serde(default)]
     pub summarisation_model_id: Option<String>,
+    #[serde(default)]
+    pub developer_mode_enabled: Option<bool>,
     #[serde(default)]
     pub dynamic_memory_structured_fallback_format: Option<DynamicMemoryStructuredFallbackFormat>,
     #[serde(default)]
@@ -420,6 +430,10 @@ pub struct DynamicMemorySettings {
     /// v2 exclusive: Use last 2 messages for better memory retrieval
     #[serde(default = "default_context_enrichment")]
     pub context_enrichment_enabled: bool,
+    #[serde(default)]
+    pub recursive_memory_loops: bool,
+    #[serde(default = "default_recursive_memory_loop_hard_cap")]
+    pub recursive_memory_loop_hard_cap: u32,
 }
 
 fn default_min_similarity() -> f32 {
@@ -448,6 +462,10 @@ fn default_cold_threshold() -> f32 {
 
 fn default_delete_confidence() -> f32 {
     0.5 // Omitted confidence should prefer cold storage over hard delete
+}
+
+fn default_recursive_memory_loop_hard_cap() -> u32 {
+    20
 }
 
 fn default_max_hard_delete_ratio_per_cycle() -> f32 {
@@ -806,6 +824,10 @@ pub struct Character {
     /// Reference to a character-specific system prompt template (if any)
     #[serde(default)]
     pub prompt_template_id: Option<String>,
+    #[serde(default)]
+    pub group_chat_prompt_template_id: Option<String>,
+    #[serde(default)]
+    pub group_chat_roleplay_prompt_template_id: Option<String>,
     /// DEPRECATED: Old system prompt field (migrated to templates)
     #[serde(default, skip_serializing)]
     #[allow(dead_code)]

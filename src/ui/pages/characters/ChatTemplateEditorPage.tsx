@@ -832,7 +832,7 @@ export default function ChatTemplateEditorPage() {
               key={template.id}
               icon={<MessageSquare className="h-4 w-4" />}
               title={template.name}
-              description={template.scope}
+              description={template.promptType}
               color="from-blue-500 to-cyan-600"
               rightElement={
                 selectedPromptTemplateId === template.id ? (

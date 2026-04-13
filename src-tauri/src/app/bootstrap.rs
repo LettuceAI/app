@@ -94,9 +94,58 @@ fn initialize_logging(app: &mut tauri::App) {
     if let Err(err) = utils::init_tracing(app.handle().clone()) {
         eprintln!("Failed to initialize tracing: {}", err);
     }
-    std::panic::set_hook(Box::new(|info| {
-        let message = format!("{}", info);
-        utils::log_error_global("panic", message);
+    let previous_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let payload = if let Some(message) = info.payload().downcast_ref::<&str>() {
+            (*message).to_string()
+        } else if let Some(message) = info.payload().downcast_ref::<String>() {
+            message.clone()
+        } else {
+            "unknown panic payload".to_string()
+        };
+        let location = info
+            .location()
+            .map(|location| format!("{}:{}", location.file(), location.line()))
+            .unwrap_or_else(|| "unknown".to_string());
+        let current_thread = std::thread::current();
+        let thread_name = current_thread.name().unwrap_or("unnamed").to_string();
+        let backtrace = std::backtrace::Backtrace::force_capture();
+        let timestamp = chrono::Local::now().to_rfc3339();
+        let report = format!(
+            "timestamp: {timestamp}\nthread: {thread_name}\nlocation: {location}\npayload: {payload}\n\npanic_info: {info}\n\nbacktrace:\n{backtrace}\n"
+        );
+
+        eprintln!("panic report:\n{}", report);
+
+        if let Some(app_handle) = logger::get_global_app_handle() {
+            match logger::write_panic_report(&app_handle, &report) {
+                Ok(path) => {
+                    utils::log_error_global(
+                        "panic",
+                        format!(
+                            "Rust panic captured at {} on thread {}. Report: {}. Payload: {}",
+                            location,
+                            thread_name,
+                            path.display(),
+                            payload
+                        ),
+                    );
+                }
+                Err(err) => {
+                    utils::log_error_global(
+                        "panic",
+                        format!(
+                            "Rust panic captured at {} on thread {}. Failed to write report: {}. Payload: {}",
+                            location, thread_name, err, payload
+                        ),
+                    );
+                }
+            }
+        } else {
+            eprintln!("panic report file skipped: global app handle unavailable");
+        }
+
+        previous_hook(info);
     }));
 }
 
@@ -177,6 +226,22 @@ fn run_bootstrap_tasks(app: &tauri::AppHandle) {
             app,
             "bootstrap",
             format!("Failed to ensure help me reply template: {}", err),
+        );
+    }
+
+    if let Err(err) = chat_manager::prompts::ensure_dynamic_memory_templates(app) {
+        utils::log_error(
+            app,
+            "bootstrap",
+            format!("Failed to ensure dynamic memory templates: {}", err),
+        );
+    }
+
+    if let Err(err) = chat_manager::prompts::ensure_group_chat_templates(app) {
+        utils::log_error(
+            app,
+            "bootstrap",
+            format!("Failed to ensure group chat templates: {}", err),
         );
     }
 

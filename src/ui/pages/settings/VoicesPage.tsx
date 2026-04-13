@@ -30,7 +30,6 @@ import {
   createVoiceFromPreview,
   getTtsCacheStats,
   clearTtsCache,
-  DEVICE_TTS_PROVIDER_ID,
   type AudioProvider,
   type AudioProviderType,
   type AudioModel,
@@ -67,25 +66,20 @@ export function VoicesPage() {
   const [selectedCustomVoice, setSelectedCustomVoice] = useState<
     (CachedVoice & { provider: AudioProvider }) | null
   >(null);
-  const editableProviders = providers.filter((provider) => provider.providerType !== "device_tts");
+  const editableProviders = providers;
   const libraryProviders = editableProviders.filter(
     (provider) => provider.providerType !== "openai_tts",
   );
-  const isDeviceProvider = (provider: AudioProvider | null) =>
-    !!provider &&
-    (provider.providerType === "device_tts" || provider.id === DEVICE_TTS_PROVIDER_ID);
 
   const getProviderTypeLabel = (providerType: AudioProviderType) => {
     if (providerType === "gemini_tts") return "Gemini TTS";
     if (providerType === "openai_tts") return "OpenAI-Compatible TTS";
-    if (providerType === "device_tts") return "Device TTS";
     return "ElevenLabs";
   };
 
   const getProviderBadge = (providerType: AudioProviderType) => {
     if (providerType === "gemini_tts") return "G";
     if (providerType === "openai_tts") return "API";
-    if (providerType === "device_tts") return "OS";
     return "11";
   };
 
@@ -120,17 +114,15 @@ export function VoicesPage() {
       setProviders(loadedProviders);
       setUserVoices(loadedVoices);
 
-      // Load voices for each editable provider
+      // Load voices for each provider
       const voicesMap: Record<string, CachedVoice[]> = {};
       for (const provider of loadedProviders) {
-        if (provider.providerType !== "device_tts") {
-          try {
-            const voices = await getProviderVoices(provider.id);
-            voicesMap[provider.id] = voices;
-          } catch (e) {
-            console.error(`Failed to load voices for ${provider.label}:`, e);
-            voicesMap[provider.id] = [];
-          }
+        try {
+          const voices = await getProviderVoices(provider.id);
+          voicesMap[provider.id] = voices;
+        } catch (e) {
+          console.error(`Failed to load voices for ${provider.label}:`, e);
+          voicesMap[provider.id] = [];
         }
       }
       setProviderVoices(voicesMap);
@@ -201,18 +193,12 @@ export function VoicesPage() {
   }, []);
 
   const handleEditProvider = (provider: AudioProvider) => {
-    if (provider.providerType === "device_tts") {
-      return;
-    }
     setEditingProvider({ ...provider });
     setIsProviderEditorOpen(true);
     setSelectedProvider(null);
   };
 
   const handleDeleteProvider = async (id: string) => {
-    if (id === DEVICE_TTS_PROVIDER_ID) {
-      return;
-    }
     try {
       await deleteAudioProvider(id);
       await loadData();
@@ -598,27 +584,24 @@ export function VoicesPage() {
         onClose={() => setSelectedProvider(null)}
         title={selectedProvider?.label || "Provider"}
       >
-        {selectedProvider &&
-          (isDeviceProvider(selectedProvider) ? (
-            <p className="text-sm text-fg/60">This is a built-in system provider.</p>
-          ) : (
-            <div className="space-y-4">
-              <MenuButton
-                icon={Edit3}
-                title="Edit"
-                description="Modify provider settings"
-                onClick={() => handleEditProvider(selectedProvider)}
-                color="from-info to-info/80"
-              />
-              <MenuButton
-                icon={Trash2}
-                title="Delete"
-                description="Remove this provider"
-                onClick={() => void handleDeleteProvider(selectedProvider.id)}
-                color="from-danger to-danger/80"
-              />
-            </div>
-          ))}
+        {selectedProvider && (
+          <div className="space-y-4">
+            <MenuButton
+              icon={Edit3}
+              title="Edit"
+              description="Modify provider settings"
+              onClick={() => handleEditProvider(selectedProvider)}
+              color="from-info to-info/80"
+            />
+            <MenuButton
+              icon={Trash2}
+              title="Delete"
+              description="Remove this provider"
+              onClick={() => void handleDeleteProvider(selectedProvider.id)}
+              color="from-danger to-danger/80"
+            />
+          </div>
+        )}
       </BottomMenu>
 
       {/* Voice Editor (Voice Designer) */}

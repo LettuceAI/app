@@ -1,5 +1,6 @@
 import { useReducer, useCallback, useEffect } from "react";
 import { storageBridge } from "../../../../core/storage/files";
+import { setTooltipSeen } from "../../../../core/storage/appState";
 
 export interface BackupInfo {
   version: number;
@@ -236,7 +237,11 @@ export function useBackupRestore() {
 
         dispatch({ type: "IMPORT_COMPLETE" });
 
-        // Then check for dynamic memory if not skipping
+        await setTooltipSeen("app_tour_v1");
+        await setTooltipSeen("chat_detail_tour_v1");
+        await setTooltipSeen("post_first_message_tour_v1");
+
+
         if (!skipDynamicMemoryCheck) {
           console.log("[useBackupRestore] Checking for dynamic memory in backup...");
           const hasDynamicMemory = await storageBridge.backupCheckDynamicMemory(

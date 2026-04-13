@@ -241,11 +241,25 @@ jobs:
           toolchain: stable
           cache: true
 
+      - name: Free runner disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: false
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
       - name: Install Linux system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             build-essential \
+            clang \
+            libclang-dev \
+            llvm-dev \
             pkg-config \
             libssl-dev \
             libgtk-3-dev \
@@ -255,6 +269,13 @@ jobs:
             libspeechd-dev \
             patchelf \
             zip
+
+      - name: Configure Linux clang toolchain
+        run: |
+          echo "CLANG_PATH=$(command -v clang)" >> "$GITHUB_ENV"
+          LIBCLANG_PATH="$(dirname "$(find /usr/lib -path '*/libclang.so*' | sort | tail -n1)")"
+          echo "LIBCLANG_PATH=$LIBCLANG_PATH" >> "$GITHUB_ENV"
+          printf '#include <stdbool.h>\n' | clang -E -x c - >/dev/null
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -368,11 +389,25 @@ jobs:
           toolchain: stable
           cache: true
 
+      - name: Free runner disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: false
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
       - name: Install Linux system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             build-essential \
+            clang \
+            libclang-dev \
+            llvm-dev \
             pkg-config \
             libssl-dev \
             libgtk-3-dev \
@@ -382,6 +417,13 @@ jobs:
             libspeechd-dev \
             patchelf \
             zip
+
+      - name: Configure Linux clang toolchain
+        run: |
+          echo "CLANG_PATH=$(command -v clang)" >> "$GITHUB_ENV"
+          LIBCLANG_PATH="$(dirname "$(find /usr/lib -path '*/libclang.so*' | sort | tail -n1)")"
+          echo "LIBCLANG_PATH=$LIBCLANG_PATH" >> "$GITHUB_ENV"
+          printf '#include <stdbool.h>\n' | clang -E -x c - >/dev/null
 
       - name: Setup CUDA Toolkit
         uses: Jimver/cuda-toolkit@v0.2.30
@@ -520,11 +562,25 @@ jobs:
           toolchain: stable
           cache: true
 
+      - name: Free runner disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: false
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
       - name: Install Linux system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             build-essential \
+            clang \
+            libclang-dev \
+            llvm-dev \
             pkg-config \
             libssl-dev \
             libgtk-3-dev \
@@ -536,6 +592,13 @@ jobs:
             glslc \
             patchelf \
             zip
+
+      - name: Configure Linux clang toolchain
+        run: |
+          echo "CLANG_PATH=$(command -v clang)" >> "$GITHUB_ENV"
+          LIBCLANG_PATH="$(dirname "$(find /usr/lib -path '*/libclang.so*' | sort | tail -n1)")"
+          echo "LIBCLANG_PATH=$LIBCLANG_PATH" >> "$GITHUB_ENV"
+          printf '#include <stdbool.h>\n' | clang -E -x c - >/dev/null
 
       - name: Verify Vulkan toolchain
         run: |
@@ -662,6 +725,34 @@ jobs:
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: "latest"
+
+      - name: Free runner disk space
+        shell: pwsh
+        run: |
+          Write-Host "Disk usage before cleanup:"
+          Get-PSDrive -PSProvider FileSystem | Format-Table -AutoSize
+
+          $paths = @(
+            "C:\Android",
+            "C:\Program Files (x86)\Android",
+            "C:\Strawberry",
+            "C:\ghcup",
+            "C:\hostedtoolcache\windows\Ruby",
+            "C:\hostedtoolcache\windows\PyPy",
+            "C:\hostedtoolcache\windows\go",
+            "C:\Program Files\Google\Chrome",
+            "C:\Program Files (x86)\Microsoft\Edge",
+            "C:\Program Files\Mozilla Firefox"
+          )
+          foreach ($p in $paths) {
+            if (Test-Path $p) {
+              Write-Host "Removing $p"
+              Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $p
+            }
+          }
+
+          Write-Host "Disk usage after cleanup:"
+          Get-PSDrive -PSProvider FileSystem | Format-Table -AutoSize
 
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
@@ -794,6 +885,34 @@ jobs:
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: "latest"
+
+      - name: Free runner disk space
+        shell: pwsh
+        run: |
+          Write-Host "Disk usage before cleanup:"
+          Get-PSDrive -PSProvider FileSystem | Format-Table -AutoSize
+
+          $paths = @(
+            "C:\Android",
+            "C:\Program Files (x86)\Android",
+            "C:\Strawberry",
+            "C:\ghcup",
+            "C:\hostedtoolcache\windows\Ruby",
+            "C:\hostedtoolcache\windows\PyPy",
+            "C:\hostedtoolcache\windows\go",
+            "C:\Program Files\Google\Chrome",
+            "C:\Program Files (x86)\Microsoft\Edge",
+            "C:\Program Files\Mozilla Firefox"
+          )
+          foreach ($p in $paths) {
+            if (Test-Path $p) {
+              Write-Host "Removing $p"
+              Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $p
+            }
+          }
+
+          Write-Host "Disk usage after cleanup:"
+          Get-PSDrive -PSProvider FileSystem | Format-Table -AutoSize
 
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
@@ -943,6 +1062,34 @@ jobs:
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: "latest"
+
+      - name: Free runner disk space
+        shell: pwsh
+        run: |
+          Write-Host "Disk usage before cleanup:"
+          Get-PSDrive -PSProvider FileSystem | Format-Table -AutoSize
+
+          $paths = @(
+            "C:\Android",
+            "C:\Program Files (x86)\Android",
+            "C:\Strawberry",
+            "C:\ghcup",
+            "C:\hostedtoolcache\windows\Ruby",
+            "C:\hostedtoolcache\windows\PyPy",
+            "C:\hostedtoolcache\windows\go",
+            "C:\Program Files\Google\Chrome",
+            "C:\Program Files (x86)\Microsoft\Edge",
+            "C:\Program Files\Mozilla Firefox"
+          )
+          foreach ($p in $paths) {
+            if (Test-Path $p) {
+              Write-Host "Removing $p"
+              Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $p
+            }
+          }
+
+          Write-Host "Disk usage after cleanup:"
+          Get-PSDrive -PSProvider FileSystem | Format-Table -AutoSize
 
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1

@@ -13,7 +13,6 @@
     "fs:read-all",
     "fs:write-all",
     "fs:allow-read-file",
-    "tts:default",
     {
       "identifier": "fs:allow-write-file",
       "allow": [

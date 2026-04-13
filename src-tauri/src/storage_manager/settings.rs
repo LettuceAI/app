@@ -5,6 +5,69 @@ use serde_json::{Map as JsonMap, Value as JsonValue};
 use super::{db::now_ms, db::open_db, legacy::read_encrypted_file, legacy::settings_path};
 use crate::utils::{log_error, log_info};
 
+fn summarize_app_state_for_logs(app_state: &JsonValue) -> String {
+    let onboarding = app_state
+        .get("onboarding")
+        .and_then(|value| value.as_object());
+    let completed = onboarding
+        .and_then(|value| value.get("completed"))
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+    let skipped = onboarding
+        .and_then(|value| value.get("skipped"))
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+    let provider_setup_completed = onboarding
+        .and_then(|value| value.get("providerSetupCompleted"))
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+    let model_setup_completed = onboarding
+        .and_then(|value| value.get("modelSetupCompleted"))
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+
+    format!(
+        "onboarding.completed={} onboarding.skipped={} onboarding.providerSetupCompleted={} onboarding.modelSetupCompleted={}",
+        completed, skipped, provider_setup_completed, model_setup_completed
+    )
+}
+
+fn summarize_settings_json_for_logs(json: &JsonValue) -> String {
+    let provider_count = json
+        .get("providerCredentials")
+        .and_then(|value| value.as_array())
+        .map(|value| value.len())
+        .unwrap_or(0);
+    let model_count = json
+        .get("models")
+        .and_then(|value| value.as_array())
+        .map(|value| value.len())
+        .unwrap_or(0);
+    let default_provider = json
+        .get("defaultProviderCredentialId")
+        .and_then(|value| value.as_str())
+        .unwrap_or("none");
+    let default_model = json
+        .get("defaultModelId")
+        .and_then(|value| value.as_str())
+        .unwrap_or("none");
+    let advanced_settings_present = json.get("advancedSettings").is_some();
+    let app_state_summary = json
+        .get("appState")
+        .map(summarize_app_state_for_logs)
+        .unwrap_or_else(|| "appState=missing".to_string());
+
+    format!(
+        "providers={} models={} default_provider={} default_model={} advanced_settings_present={} {}",
+        provider_count,
+        model_count,
+        default_provider,
+        default_model,
+        advanced_settings_present,
+        app_state_summary
+    )
+}
+
 fn pure_mode_level_from_app_state(app_state: &JsonValue) -> crate::content_filter::PureModeLevel {
     crate::content_filter::level_from_app_state(Some(app_state))
 }
@@ -24,7 +87,13 @@ fn db_read_settings_json(app: &tauri::AppHandle) -> Result<Option<String>, Strin
         .query_row("SELECT COUNT(*) FROM settings", [], |r| r.get(0))
         .optional()
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    log_info(
+        app,
+        "settings",
+        format!("settings row count query returned {}", exists.unwrap_or(0)),
+    );
     if exists.unwrap_or(0) == 0 {
+        log_info(app, "settings", "settings table is empty; returning None");
         return Ok(None);
     }
 
@@ -58,6 +127,7 @@ fn db_read_settings_json(app: &tauri::AppHandle) -> Result<Option<String>, Strin
         advanced_settings_json,
     )) = row
     else {
+        log_info(app, "settings", "settings row id=1 not found; returning None");
         return Ok(None);
     };
 
@@ -110,6 +180,11 @@ fn db_read_settings_json(app: &tauri::AppHandle) -> Result<Option<String>, Strin
         provider_credentials
             .push(item.map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?);
     }
+    log_info(
+        app,
+        "settings",
+        format!("loaded {} provider credentials from DB", provider_credentials.len()),
+    );
 
     // Models
     let mut stmt = conn
@@ -171,6 +246,11 @@ fn db_read_settings_json(app: &tauri::AppHandle) -> Result<Option<String>, Strin
     for item in models_iter {
         models.push(item.map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?);
     }
+    log_info(
+        app,
+        "settings",
+        format!("loaded {} models from DB", models.len()),
+    );
 
     let app_state: JsonValue = serde_json::from_str(&app_state_json).unwrap_or_else(|_| serde_json::json!({
         "onboarding": {"completed": false, "skipped": false, "providerSetupCompleted": false, "modelSetupCompleted": false},
@@ -228,8 +308,18 @@ fn db_read_settings_json(app: &tauri::AppHandle) -> Result<Option<String>, Strin
         }
     }
 
+    let root_value = JsonValue::Object(root);
+    log_info(
+        app,
+        "settings",
+        format!(
+            "assembled settings payload from DB: {}",
+            summarize_settings_json_for_logs(&root_value)
+        ),
+    );
+
     Ok(Some(
-        serde_json::to_string(&JsonValue::Object(root))
+        serde_json::to_string(&root_value)
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?,
     ))
 }
@@ -246,6 +336,14 @@ fn db_write_settings_json(app: &tauri::AppHandle, data: String) -> Result<(), St
         );
         e.to_string()
     })?;
+    log_info(
+        app,
+        "settings",
+        format!(
+            "parsed settings JSON for write: {}",
+            summarize_settings_json_for_logs(&json)
+        ),
+    );
 
     let default_provider_credential_id = json
         .get("defaultProviderCredentialId")
@@ -289,7 +387,7 @@ fn db_write_settings_json(app: &tauri::AppHandle, data: String) -> Result<(), St
     let tx = conn
         .transaction()
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-    tx.execute(
+    let settings_rows = tx.execute(
         r#"INSERT INTO settings (id, default_provider_credential_id, default_model_id, app_state, advanced_model_settings, prompt_template_id, system_prompt, migration_version, advanced_settings, created_at, updated_at)
             VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
@@ -315,10 +413,28 @@ fn db_write_settings_json(app: &tauri::AppHandle, data: String) -> Result<(), St
             now,
         ],
     ).map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    log_info(
+        app,
+        "settings",
+        format!("settings table upsert affected {} row(s)", settings_rows),
+    );
 
-    tx.execute("DELETE FROM provider_credentials", [])
+    let deleted_provider_rows = tx.execute("DELETE FROM provider_credentials", [])
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    log_info(
+        app,
+        "settings",
+        format!(
+            "deleted {} existing provider credential row(s) before rewrite",
+            deleted_provider_rows
+        ),
+    );
     if let Some(creds) = json.get("providerCredentials").and_then(|v| v.as_array()) {
+        log_info(
+            app,
+            "settings",
+            format!("rewriting {} provider credential row(s)", creds.len()),
+        );
         for c in creds {
             let id = c.get("id").and_then(|v| v.as_str()).unwrap_or("");
             let provider_id = c.get("providerId").and_then(|v| v.as_str()).unwrap_or("");
@@ -345,12 +461,34 @@ fn db_write_settings_json(app: &tauri::AppHandle, data: String) -> Result<(), St
                 "INSERT INTO provider_credentials (id, provider_id, label, api_key, base_url, default_model, headers, config) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 params![id, provider_id, label, api_key, base_url, default_model, headers, config],
             ).map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+            log_info(
+                app,
+                "settings",
+                format!(
+                    "wrote provider credential id={} provider_id={} label={} has_api_key={} has_base_url={}",
+                    id,
+                    provider_id,
+                    label,
+                    c.get("apiKey").and_then(|v| v.as_str()).is_some(),
+                    c.get("baseUrl").and_then(|v| v.as_str()).is_some()
+                ),
+            );
         }
     }
 
-    tx.execute("DELETE FROM models", [])
+    let deleted_model_rows = tx.execute("DELETE FROM models", [])
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    log_info(
+        app,
+        "settings",
+        format!("deleted {} existing model row(s) before rewrite", deleted_model_rows),
+    );
     if let Some(models) = json.get("models").and_then(|v| v.as_array()) {
+        log_info(
+            app,
+            "settings",
+            format!("rewriting {} model row(s)", models.len()),
+        );
         let normalize_scopes = |value: JsonValue| -> JsonValue {
             let scope_order = ["text", "image", "audio"];
             let mut scopes: Vec<String> = vec![];
@@ -437,10 +575,23 @@ fn db_write_settings_json(app: &tauri::AppHandle, data: String) -> Result<(), St
                     system_prompt
                 ],
             ).map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+            log_info(
+                app,
+                "settings",
+                format!(
+                    "wrote model id={} provider_id={} provider_credential_id={} name={}",
+                    id,
+                    provider_id,
+                    provider_credential_id.as_deref().unwrap_or("none"),
+                    name
+                ),
+            );
         }
     }
     tx.commit()
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    log_info(app, "settings", "settings DB transaction committed successfully");
+    Ok(())
 }
 
 pub fn read_settings_typed<T>(app: &tauri::AppHandle) -> Result<Option<T>, String>

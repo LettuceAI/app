@@ -1,6 +1,7 @@
 pub mod entry_conditions;
 pub mod lorebook_matcher;
 pub mod messages;
+pub mod parameter_engine;
 pub mod prompt_engine;
 pub mod prompts;
 pub mod request;

@@ -2,12 +2,11 @@ use serde_json::Value;
 use tauri::AppHandle;
 
 use crate::chat_manager::prompts;
-use crate::chat_manager::types::PromptScope;
 use crate::storage_manager::settings::{read_settings_typed, write_settings_typed};
 use crate::utils::log_info;
 
 /// Current migration version
-pub const CURRENT_MIGRATION_VERSION: u32 = 50;
+pub const CURRENT_MIGRATION_VERSION: u32 = 52;
 
 pub fn run_migrations(app: &AppHandle) -> Result<(), String> {
     log_info(app, "migrations", "Starting migration check");
@@ -539,6 +538,26 @@ pub fn run_migrations(app: &AppHandle) -> Result<(), String> {
         version = 50;
     }
 
+    if version < 51 {
+        log_info(
+            app,
+            "migrations",
+            "Running migration v50 -> v51: Replace prompt scope with prompt types",
+        );
+        migrate_v50_to_v51(app)?;
+        version = 51;
+    }
+
+    if version < 52 {
+        log_info(
+            app,
+            "migrations",
+            "Running migration v51 -> v52: Add character group chat prompt overrides",
+        );
+        migrate_v51_to_v52(app)?;
+        version = 52;
+    }
+
     // Update the stored version
     set_migration_version(app, version)?;
 
@@ -607,9 +626,14 @@ fn set_migration_version(app: &AppHandle, version: u32) -> Result<(), String> {
     let conn = open_db(app)?;
     let now = now_ms();
 
-    // Ensure row exists (it should)
     conn.execute(
-        "UPDATE settings SET migration_version = ?1, updated_at = ?2 WHERE id = 1",
+        r#"
+        INSERT INTO settings (id, app_state, migration_version, created_at, updated_at)
+        VALUES (1, '{}', ?1, ?2, ?2)
+        ON CONFLICT(id) DO UPDATE
+        SET migration_version = excluded.migration_version,
+            updated_at = excluded.updated_at
+        "#,
         params![version, now],
     )
     .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
@@ -740,7 +764,6 @@ fn migrate_v4_to_v5(app: &AppHandle) -> Result<(), String> {
     use rusqlite::params;
     use std::fs;
 
-    use crate::chat_manager::types::{PromptScope, SystemPromptTemplate};
     use crate::storage_manager::db::open_db;
     use crate::utils::ensure_lettuce_dir;
 
@@ -753,7 +776,21 @@ fn migrate_v4_to_v5(app: &AppHandle) -> Result<(), String> {
     // The JSON file format: { templates: SystemPromptTemplate[] }
     #[derive(serde::Deserialize)]
     struct PromptTemplatesFile {
-        templates: Vec<SystemPromptTemplate>,
+        templates: Vec<LegacyPromptTemplate>,
+    }
+
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct LegacyPromptTemplate {
+        id: String,
+        name: String,
+        content: String,
+        created_at: u64,
+        updated_at: u64,
+        #[serde(default)]
+        entries: Vec<crate::chat_manager::types::SystemPromptEntry>,
+        #[serde(default)]
+        condense_prompt_entries: bool,
     }
 
     let content = fs::read_to_string(&path)
@@ -766,22 +803,18 @@ fn migrate_v4_to_v5(app: &AppHandle) -> Result<(), String> {
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 
     for t in file.templates.iter() {
-        let scope_str = match t.scope {
-            PromptScope::AppWide => "AppWide",
-            PromptScope::ModelSpecific => "ModelSpecific",
-            PromptScope::CharacterSpecific => "CharacterSpecific",
-        };
-        let target_ids_json = serde_json::to_string(&t.target_ids)
+        let entries_json = serde_json::to_string(&t.entries)
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
         tx.execute(
-            "INSERT OR REPLACE INTO prompt_templates (id, name, scope, target_ids, content, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT OR REPLACE INTO prompt_templates (id, name, prompt_type, content, entries, condense_prompt_entries, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 t.id,
                 t.name,
-                scope_str,
-                target_ids_json,
+                "directChat",
                 t.content,
+                entries_json,
+                t.condense_prompt_entries,
                 t.created_at,
                 t.updated_at
             ],
@@ -1050,84 +1083,8 @@ fn migrate_v11_to_v12(app: &AppHandle) -> Result<(), String> {
 
 /// Migration v6 -> v7: move per-credential model list cache from models-cache.json to SQLite table
 // migrate_v6_to_v7 removed (feature dropped)
-// We keep the same storage file/format (no new file), but update all templates so they no longer
-// carry meaningful scope assignments:
-// - Set `scope` to AppWide for all non-default templates
-// - Clear `targetIds` for all templates
-//
-// Notes:
-// - App Default template already uses AppWide scope; we don't change its scope (and updates are
-//   prevented by prompts::update_template anyway)
-// - Character/Model/Settings continue to reference templates by ID; behavior is unchanged because
-//   runtime selection uses explicit references, not scope matching
 fn migrate_v2_to_v3(app: &AppHandle) -> Result<(), String> {
-    use crate::chat_manager::prompts;
-    use crate::chat_manager::types::PromptScope;
-
-    // Ensure App Default exists (idempotent)
-    let _ = prompts::ensure_app_default_template(app);
-
-    let templates = prompts::load_templates(app)?;
-    let mut changed = 0usize;
-
-    for t in templates.iter() {
-        // Skip changing scope for App Default; it is already AppWide
-        if prompts::is_app_default_template(&t.id) {
-            // We still clear target IDs if any lingered (should be empty by design)
-            if !t.target_ids.is_empty() {
-                let _ = prompts::update_template(
-                    app,
-                    t.id.clone(),
-                    None,
-                    None,             // keep scope as-is for App Default
-                    Some(Vec::new()), // clear target ids
-                    None,
-                    None,
-                    None,
-                )?;
-                changed += 1;
-            }
-            continue;
-        }
-
-        let mut need_update = false;
-        let new_scope = if t.scope != PromptScope::AppWide {
-            need_update = true;
-            PromptScope::AppWide
-        } else {
-            t.scope.clone()
-        };
-
-        let new_target_ids = if !t.target_ids.is_empty() {
-            need_update = true;
-            Vec::new()
-        } else {
-            t.target_ids.clone()
-        };
-
-        if need_update {
-            let _ = prompts::update_template(
-                app,
-                t.id.clone(),
-                None,
-                Some(new_scope),
-                Some(new_target_ids),
-                None,
-                None,
-                None,
-            )?;
-            changed += 1;
-        }
-    }
-
-    if changed > 0 {
-        log_info(
-            app,
-            "migrations",
-            format!("Migrated {} templates to AppWide scope", changed),
-        );
-    }
-
+    let _ = prompts::ensure_app_default_template(app)?;
     Ok(())
 }
 
@@ -1137,6 +1094,7 @@ fn migrate_v2_to_v3(app: &AppHandle) -> Result<(), String> {
 /// prompt template system. It creates prompt templates for each unique custom prompt
 /// and updates references in Settings, Models, and Characters.
 fn migrate_v1_to_v2(app: &AppHandle) -> Result<(), String> {
+    use crate::chat_manager::types::PromptTemplateType;
     use std::collections::HashMap;
 
     let mut prompt_map: HashMap<String, String> = HashMap::new(); // content -> template_id
@@ -1159,8 +1117,7 @@ fn migrate_v1_to_v2(app: &AppHandle) -> Result<(), String> {
                         let template = prompts::create_template(
                             app,
                             "App-wide Prompt".to_string(),
-                            PromptScope::AppWide,
-                            vec![],
+                            PromptTemplateType::DirectChat,
                             prompt_content.clone(),
                             None,
                             None,
@@ -1194,8 +1151,7 @@ fn migrate_v1_to_v2(app: &AppHandle) -> Result<(), String> {
                                     let template = prompts::create_template(
                                         app,
                                         format!("Model {} Prompt", model_id),
-                                        PromptScope::ModelSpecific,
-                                        vec![model_id.to_string()],
+                                        PromptTemplateType::DirectChat,
                                         prompt_content.clone(),
                                         None,
                                         None,
@@ -2840,6 +2796,186 @@ fn migrate_v49_to_v50(app: &AppHandle) -> Result<(), String> {
             "ALTER TABLE sessions ADD COLUMN background_image_path TEXT",
             [],
         );
+    }
+
+    Ok(())
+}
+
+fn migrate_v50_to_v51(app: &AppHandle) -> Result<(), String> {
+    use rusqlite::OptionalExtension;
+
+    fn table_exists(conn: &rusqlite::Connection, name: &str) -> Result<bool, String> {
+        conn.query_row(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1 LIMIT 1",
+            [name],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()
+        .map(|value| value.is_some())
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
+    }
+
+    fn prompt_templates_has_legacy_columns(conn: &rusqlite::Connection) -> Result<bool, String> {
+        let mut stmt = conn
+            .prepare("PRAGMA table_info(prompt_templates)")
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        let rows = stmt
+            .query_map([], |row| row.get::<_, String>(1))
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+
+        let mut has_scope = false;
+        let mut has_target_ids = false;
+        for column in rows {
+            let column =
+                column.map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+            if column == "scope" {
+                has_scope = true;
+            }
+            if column == "target_ids" {
+                has_target_ids = true;
+            }
+        }
+
+        Ok(has_scope || has_target_ids)
+    }
+
+    let mut conn = crate::storage_manager::db::open_db(app)?;
+
+    let legacy_exists = table_exists(&conn, "prompt_templates_legacy")?;
+    let prompt_templates_exists = table_exists(&conn, "prompt_templates")?;
+
+    if legacy_exists {
+        let tx = conn
+            .transaction()
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        tx.execute_batch(
+            r#"
+            DROP INDEX IF EXISTS idx_prompt_templates_prompt_type;
+            DROP INDEX IF EXISTS idx_prompt_templates_scope;
+            DROP TABLE IF EXISTS prompt_templates;
+            ALTER TABLE prompt_templates_legacy RENAME TO prompt_templates;
+            "#,
+        )
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        tx.commit()
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    } else if !prompt_templates_exists {
+        return Ok(());
+    }
+
+    if !prompt_templates_has_legacy_columns(&conn)? {
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_prompt_templates_prompt_type ON prompt_templates(prompt_type)",
+            [],
+        )
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        return Ok(());
+    }
+
+    let tx = conn
+        .transaction()
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    tx.execute_batch(
+        r#"
+        DROP INDEX IF EXISTS idx_prompt_templates_prompt_type;
+        DROP INDEX IF EXISTS idx_prompt_templates_scope;
+
+        ALTER TABLE prompt_templates RENAME TO prompt_templates_legacy;
+
+        CREATE TABLE prompt_templates (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          prompt_type TEXT NOT NULL DEFAULT 'undefined',
+          content TEXT NOT NULL,
+          entries TEXT NOT NULL DEFAULT '[]',
+          condense_prompt_entries INTEGER NOT NULL DEFAULT 0,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+
+        INSERT INTO prompt_templates (
+          id,
+          name,
+          prompt_type,
+          content,
+          entries,
+          condense_prompt_entries,
+          created_at,
+          updated_at
+        )
+        SELECT
+          id,
+          name,
+          CASE
+            WHEN id IN ('prompt_app_default', 'prompt_app_local_roleplay') THEN 'directChat'
+            WHEN id = 'prompt_app_group_chat' THEN 'groupChatConversational'
+            WHEN id = 'prompt_app_group_chat_roleplay' THEN 'groupChatRoleplay'
+            WHEN id = 'prompt_app_dynamic_summary' THEN 'dynamicMemorySummarizer'
+            WHEN id = 'prompt_app_dynamic_memory' THEN 'dynamicMemoryManager'
+            WHEN id = 'prompt_app_help_me_reply' THEN 'replyHelperRoleplay'
+            WHEN id = 'prompt_app_help_me_reply_conversational' THEN 'replyHelperConversational'
+            WHEN id = 'prompt_app_avatar_generation' THEN 'avatarGeneration'
+            WHEN id = 'prompt_app_avatar_edit' THEN 'avatarEditRequest'
+            WHEN id = 'prompt_app_scene_generation' THEN 'sceneGeneration'
+            WHEN id = 'prompt_app_design_reference' THEN 'designReferenceWriter'
+            ELSE 'undefined'
+          END,
+          content,
+          COALESCE(entries, '[]'),
+          COALESCE(condense_prompt_entries, 0),
+          created_at,
+          updated_at
+        FROM prompt_templates_legacy;
+
+        DROP TABLE prompt_templates_legacy;
+        CREATE INDEX idx_prompt_templates_prompt_type ON prompt_templates(prompt_type);
+        "#,
+    )
+    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    tx.commit()
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+
+    Ok(())
+}
+
+fn migrate_v51_to_v52(app: &AppHandle) -> Result<(), String> {
+    let conn = crate::storage_manager::db::open_db(app)?;
+
+    let mut has_group_chat_prompt_template_id = false;
+    let mut has_group_chat_roleplay_prompt_template_id = false;
+
+    let mut stmt = conn
+        .prepare("PRAGMA table_info(characters)")
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    let rows = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+
+    for column in rows {
+        let column =
+            column.map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        if column == "group_chat_prompt_template_id" {
+            has_group_chat_prompt_template_id = true;
+        }
+        if column == "group_chat_roleplay_prompt_template_id" {
+            has_group_chat_roleplay_prompt_template_id = true;
+        }
+    }
+
+    if !has_group_chat_prompt_template_id {
+        conn.execute(
+            "ALTER TABLE characters ADD COLUMN group_chat_prompt_template_id TEXT",
+            [],
+        )
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    }
+
+    if !has_group_chat_roleplay_prompt_template_id {
+        conn.execute(
+            "ALTER TABLE characters ADD COLUMN group_chat_roleplay_prompt_template_id TEXT",
+            [],
+        )
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     }
 
     Ok(())

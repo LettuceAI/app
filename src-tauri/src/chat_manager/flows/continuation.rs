@@ -583,6 +583,7 @@ impl ContinueFlow {
 
         let mut assistant_generated_attachments: Vec<ImageAttachment> = Vec::new();
         for data_url in images_from_sse {
+            let data_url: String = data_url;
             let mime_type = data_url
                 .split_once(";base64,")
                 .and_then(|(prefix, _)| prefix.strip_prefix("data:"))

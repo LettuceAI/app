@@ -39,6 +39,10 @@ pub struct Persona {
     pub avatar_crop_x: Option<f64>,
     pub avatar_crop_y: Option<f64>,
     pub avatar_crop_scale: Option<f64>,
+    #[serde(default)]
+    pub design_description: Option<String>,
+    #[serde(default)]
+    pub design_reference_image_ids: Option<String>,
     pub is_default: i64, // Boolean as integer
     pub created_at: i64,
     pub updated_at: i64,
@@ -88,8 +92,7 @@ pub struct ProviderCredential {
 pub struct PromptTemplate {
     pub id: String,
     pub name: String,
-    pub scope: String,
-    pub target_ids: String,
+    pub prompt_type: String,
     pub content: String,
     pub entries: String,
     #[serde(default)]
@@ -210,6 +213,10 @@ pub struct Character {
     pub avatar_crop_x: Option<f64>,
     pub avatar_crop_y: Option<f64>,
     pub avatar_crop_scale: Option<f64>,
+    #[serde(default)]
+    pub design_description: Option<String>,
+    #[serde(default)]
+    pub design_reference_image_ids: Option<String>,
     pub background_image_path: Option<String>,
     pub definition: Option<String>,
     pub description: Option<String>,
@@ -233,6 +240,10 @@ pub struct Character {
     pub fallback_model_id: Option<String>,
     pub memory_type: String,
     pub prompt_template_id: Option<String>,
+    #[serde(default)]
+    pub group_chat_prompt_template_id: Option<String>,
+    #[serde(default)]
+    pub group_chat_roleplay_prompt_template_id: Option<String>,
     pub system_prompt: Option<String>,
     pub voice_config: Option<String>,
     #[serde(default)]
@@ -315,6 +326,8 @@ pub struct Session {
     pub id: String,
     pub character_id: String,
     pub title: String,
+    #[serde(default)]
+    pub background_image_path: Option<String>,
     pub system_prompt: Option<String>,
     pub selected_scene_id: Option<String>,
     #[serde(default)]
@@ -339,6 +352,8 @@ pub struct Session {
     pub updated_at: i64,
     pub memory_status: Option<String>,
     pub memory_error: Option<String>,
+    #[serde(default)]
+    pub memory_progress_step: Option<i64>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -424,11 +439,21 @@ pub struct GroupSession {
     pub chat_type: String,
     pub starting_scene: Option<String>,
     pub background_image_path: Option<String>,
+    #[serde(default)]
+    pub lorebook_ids: String,
+    #[serde(default)]
+    pub disable_character_lorebooks: i64,
     pub memories: String,
     pub memory_embeddings: String,
     pub memory_summary: String,
     pub memory_summary_token_count: i64,
     pub memory_tool_events: String,
+    #[serde(default)]
+    pub memory_status: Option<String>,
+    #[serde(default)]
+    pub memory_error: Option<String>,
+    #[serde(default)]
+    pub memory_progress_step: Option<i64>,
     #[serde(default = "default_speaker_selection_method")]
     pub speaker_selection_method: String,
     #[serde(default = "default_memory_type")]

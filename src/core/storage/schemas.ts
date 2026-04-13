@@ -79,8 +79,21 @@ export function normalizeLlamaSamplerOrder(value: unknown): LlamaSamplerOrderSta
   return normalized;
 }
 
-export const PromptScopeSchema = z.enum(["appWide", "modelSpecific", "characterSpecific"]);
-export type PromptScope = z.infer<typeof PromptScopeSchema>;
+export const PromptTemplateTypeSchema = z.enum([
+  "undefined",
+  "directChat",
+  "groupChatRoleplay",
+  "groupChatConversational",
+  "dynamicMemorySummarizer",
+  "dynamicMemoryManager",
+  "replyHelperRoleplay",
+  "replyHelperConversational",
+  "avatarGeneration",
+  "avatarEditRequest",
+  "sceneGeneration",
+  "designReferenceWriter",
+]);
+export type PromptTemplateType = z.infer<typeof PromptTemplateTypeSchema>;
 
 export const PromptEntryRoleSchema = z.enum(["system", "user", "assistant"]);
 export type PromptEntryRole = z.infer<typeof PromptEntryRoleSchema>;
@@ -198,8 +211,7 @@ export type SystemPromptEntry = z.infer<typeof SystemPromptEntrySchema>;
 export const SystemPromptTemplateSchema = z.object({
   id: z.string(),
   name: z.string().min(1),
-  scope: PromptScopeSchema,
-  targetIds: z.array(z.string()).default([]),
+  promptType: PromptTemplateTypeSchema.default("undefined"),
   content: z.string(),
   entries: z.array(SystemPromptEntrySchema).default([]),
   condensePromptEntries: z.boolean().default(false),
@@ -207,6 +219,29 @@ export const SystemPromptTemplateSchema = z.object({
   updatedAt: z.number().int(),
 });
 export type SystemPromptTemplate = z.infer<typeof SystemPromptTemplateSchema>;
+
+export const PromptVariableDefinitionSchema = z.object({
+  variable: z.string().min(1),
+  label: z.string().min(1),
+  description: z.string().min(1),
+});
+export type PromptVariableDefinition = z.infer<typeof PromptVariableDefinitionSchema>;
+
+export const PromptTypeDefinitionSchema = z.object({
+  promptType: PromptTemplateTypeSchema,
+  label: z.string().min(1),
+  allowedVariables: z.array(PromptVariableDefinitionSchema).default([]),
+  requiredVariables: z.array(z.string()).default([]),
+  allowedImageSlots: z.array(
+    z.enum(["character", "persona", "chatBackground", "avatar", "references"]),
+  ).default([]),
+});
+export type PromptTypeDefinition = z.infer<typeof PromptTypeDefinitionSchema>;
+
+export const PromptParameterEngineSchema = z.object({
+  promptTypes: z.array(PromptTypeDefinitionSchema).default([]),
+});
+export type PromptParameterEngine = z.infer<typeof PromptParameterEngineSchema>;
 
 export const UsageSummarySchema = z.object({
   promptTokens: OptionalTokenCount,
@@ -235,7 +270,7 @@ export const LlamaLastRuntimeReportSchema = z.object({
   failureStage: z.string().trim().min(1).nullable().optional(),
   errorMessage: z.string().trim().min(1).nullable().optional(),
   requestedContext: z.number().int().min(1).nullable().optional(),
-  recommendedContext: z.number().int().min(1).nullable().optional(),
+  recommendedContext: z.number().int().min(0).nullable().optional(),
   initialContextCandidate: z.number().int().min(1).nullable().optional(),
   actualContextUsed: z.number().int().min(1).nullable().optional(),
   requestedGpuLayers: z.number().int().min(0).nullable().optional(),
@@ -246,7 +281,7 @@ export const LlamaLastRuntimeReportSchema = z.object({
   smartGpuLayerFallbackActivated: z.boolean().nullable().optional(),
   kqvFallbackActivated: z.boolean().nullable().optional(),
   smartOffloadPlannedContext: z.number().int().min(1).nullable().optional(),
-  smartOffloadRecommendedContext: z.number().int().min(1).nullable().optional(),
+  smartOffloadRecommendedContext: z.number().int().min(0).nullable().optional(),
   smartOffloadEstimatedGpuLayers: z.number().int().min(0).nullable().optional(),
   smartOffloadCandidateLayers: z.array(z.number().int().min(0)).nullable().optional(),
   smartOffloadKqvVramReserved: z.boolean().nullable().optional(),
@@ -2052,6 +2087,8 @@ export const DynamicMemorySettingsSchema = z.object({
   deleteConfidenceDefault: z.number().min(0).max(1).default(0.5),
   maxHardDeleteRatioPerCycle: z.number().min(0.1).max(1).default(0.5),
   contextEnrichmentEnabled: z.boolean().default(true),
+  recursiveMemoryLoops: z.boolean().default(false),
+  recursiveMemoryLoopHardCap: z.number().min(1).max(100).default(20),
 });
 export type DynamicMemorySettings = z.infer<typeof DynamicMemorySettingsSchema>;
 
@@ -2650,6 +2687,8 @@ export const CharacterSchema = z.object({
   fallbackModelId: z.string().uuid().nullable().optional(),
   memoryType: z.enum(["manual", "dynamic"]).default("manual"),
   promptTemplateId: z.string().nullish().optional(),
+  groupChatPromptTemplateId: z.string().nullish().optional(),
+  groupChatRoleplayPromptTemplateId: z.string().nullish().optional(),
   disableAvatarGradient: z.boolean().default(false).optional(),
   customGradientEnabled: z.boolean().default(false).optional(),
   customGradientColors: z.array(z.string()).optional(), // Array of hex colors, e.g. ["#ff6b6b", "#4ecdc4"]

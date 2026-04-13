@@ -139,8 +139,10 @@ export function useOnboardingController(): OnboardingController {
   const goBack = useCallback(() => {
     if (state.step === OnboardingStep.Memory) {
       dispatch({ type: "SET_STEP", payload: OnboardingStep.Model });
+      navigate("/onboarding/models");
     } else if (state.step === OnboardingStep.Model) {
       dispatch({ type: "SET_STEP", payload: OnboardingStep.Provider });
+      navigate("/onboarding/provider");
     } else {
       navigate("/welcome");
     }
@@ -331,9 +333,23 @@ export function useOnboardingController(): OnboardingController {
 
       const result = await addOrUpdateProviderCredential(credential);
       if (!result) throw new Error("Failed to save provider credential");
+      const nextCredentials = [
+        result,
+        ...state.providerCredentials.filter((existing) => existing.id !== result.id),
+      ];
 
       await setProviderSetupCompleted(true);
+      dispatch({
+        type: "LOAD_CREDENTIALS",
+        payload: {
+          credentials: nextCredentials,
+          selected: result,
+          modelName: getDefaultModelName(result.providerId),
+          displayName: getDefaultModelName(result.providerId),
+        },
+      });
       dispatch({ type: "SET_STEP", payload: OnboardingStep.Model });
+      navigate("/onboarding/models");
     } catch (error: any) {
       dispatch({
         type: "SET_TEST_RESULT",
@@ -405,6 +421,7 @@ export function useOnboardingController(): OnboardingController {
       await addOrUpdateModel(model);
       await setModelSetupCompleted(true);
       dispatch({ type: "SET_STEP", payload: OnboardingStep.Memory });
+      navigate("/onboarding/memory");
     } catch (error: any) {
       dispatch({
         type: "SET_MODEL_ERROR",
@@ -417,7 +434,8 @@ export function useOnboardingController(): OnboardingController {
 
   const handleSkipModel = useCallback(() => {
     dispatch({ type: "SET_STEP", payload: OnboardingStep.Memory });
-  }, []);
+    navigate("/onboarding/memory");
+  }, [navigate]);
 
   const handleSelectMemoryType = useCallback((type: MemoryType) => {
     dispatch({ type: "SET_MEMORY_TYPE", payload: type });

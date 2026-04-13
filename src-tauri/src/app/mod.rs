@@ -16,7 +16,6 @@ pub(crate) fn run() {
     let _aptabase_runtime_guard = aptabase_runtime.as_ref().map(|runtime| runtime.enter());
 
     let mut builder = tauri::Builder::default()
-        .plugin(tauri_plugin_tts::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_process::init())

@@ -355,25 +355,24 @@ fn export_secrets(app: &tauri::AppHandle) -> Result<Vec<JsonValue>, String> {
 fn export_prompt_templates(app: &tauri::AppHandle) -> Result<Vec<JsonValue>, String> {
     let conn = open_db(app)?;
     let mut stmt = conn
-        .prepare("SELECT id, name, scope, target_ids, content, entries, condense_prompt_entries, created_at, updated_at FROM prompt_templates")
+        .prepare("SELECT id, name, prompt_type, content, entries, condense_prompt_entries, created_at, updated_at FROM prompt_templates")
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 
     let rows = stmt
         .query_map([], |r| {
-            let entries_str: String = r.get(5)?;
+            let entries_str: String = r.get(4)?;
             let entries_value = serde_json::from_str::<JsonValue>(&entries_str)
                 .unwrap_or_else(|_| JsonValue::Array(vec![]));
 
             Ok(serde_json::json!({
                 "id": r.get::<_, String>(0)?,
                 "name": r.get::<_, String>(1)?,
-                "scope": r.get::<_, String>(2)?,
-                "target_ids": r.get::<_, String>(3)?,
-                "content": r.get::<_, String>(4)?,
+                "prompt_type": r.get::<_, String>(2)?,
+                "content": r.get::<_, String>(3)?,
                 "entries": entries_value,
-                "condense_prompt_entries": r.get::<_, i64>(6)? != 0,
-                "created_at": r.get::<_, i64>(7)?,
-                "updated_at": r.get::<_, i64>(8)?,
+                "condense_prompt_entries": r.get::<_, i64>(5)? != 0,
+                "created_at": r.get::<_, i64>(6)?,
+                "updated_at": r.get::<_, i64>(7)?,
             }))
         })
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
@@ -385,7 +384,7 @@ fn export_prompt_templates(app: &tauri::AppHandle) -> Result<Vec<JsonValue>, Str
 fn export_personas(app: &tauri::AppHandle) -> Result<Vec<JsonValue>, String> {
     let conn = open_db(app)?;
     let mut stmt = conn
-        .prepare("SELECT id, title, description, nickname, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, is_default, created_at, updated_at FROM personas")
+        .prepare("SELECT id, title, description, nickname, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, design_description, design_reference_image_ids, is_default, created_at, updated_at FROM personas")
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 
     let rows = stmt
@@ -399,9 +398,11 @@ fn export_personas(app: &tauri::AppHandle) -> Result<Vec<JsonValue>, String> {
                 "avatar_crop_x": r.get::<_, Option<f64>>(5)?,
                 "avatar_crop_y": r.get::<_, Option<f64>>(6)?,
                 "avatar_crop_scale": r.get::<_, Option<f64>>(7)?,
-                "is_default": r.get::<_, i64>(8)? != 0,
-                "created_at": r.get::<_, i64>(9)?,
-                "updated_at": r.get::<_, i64>(10)?,
+                "design_description": r.get::<_, Option<String>>(8)?,
+                "design_reference_image_ids": r.get::<_, Option<String>>(9)?,
+                "is_default": r.get::<_, i64>(10)? != 0,
+                "created_at": r.get::<_, i64>(11)?,
+                "updated_at": r.get::<_, i64>(12)?,
             }))
         })
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
@@ -415,7 +416,7 @@ fn export_characters(app: &tauri::AppHandle) -> Result<Vec<JsonValue>, String> {
 
     // Get all characters
     let mut stmt = conn
-        .prepare("SELECT id, name, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, background_image_path, description, definition, nickname, scenario, creator_notes, creator, creator_notes_multilingual, source, tags, default_scene_id, default_model_id, fallback_model_id, memory_type, prompt_template_id, system_prompt, voice_config, voice_autoplay, disable_avatar_gradient, custom_gradient_enabled, custom_gradient_colors, custom_text_color, custom_text_secondary, chat_appearance, default_chat_template_id, created_at, updated_at FROM characters")
+        .prepare("SELECT id, name, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, design_description, design_reference_image_ids, background_image_path, description, definition, nickname, scenario, creator_notes, creator, creator_notes_multilingual, source, tags, default_scene_id, default_model_id, fallback_model_id, memory_type, prompt_template_id, group_chat_prompt_template_id, group_chat_roleplay_prompt_template_id, system_prompt, voice_config, voice_autoplay, disable_avatar_gradient, custom_gradient_enabled, custom_gradient_colors, custom_text_color, custom_text_secondary, chat_appearance, default_chat_template_id, created_at, updated_at FROM characters")
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 
     let characters: Vec<(String, JsonValue)> = stmt
@@ -428,33 +429,37 @@ fn export_characters(app: &tauri::AppHandle) -> Result<Vec<JsonValue>, String> {
                 "avatar_crop_x": r.get::<_, Option<f64>>(3)?,
                 "avatar_crop_y": r.get::<_, Option<f64>>(4)?,
                 "avatar_crop_scale": r.get::<_, Option<f64>>(5)?,
-                "background_image_path": r.get::<_, Option<String>>(6)?,
-                "description": r.get::<_, Option<String>>(7)?,
-                "definition": r.get::<_, Option<String>>(8)?,
-                "nickname": r.get::<_, Option<String>>(9)?,
-                "scenario": r.get::<_, Option<String>>(10)?,
-                "creator_notes": r.get::<_, Option<String>>(11)?,
-                "creator": r.get::<_, Option<String>>(12)?,
-                "creator_notes_multilingual": r.get::<_, Option<String>>(13)?,
-                "source": r.get::<_, Option<String>>(14)?,
-                "tags": r.get::<_, Option<String>>(15)?,
-                "default_scene_id": r.get::<_, Option<String>>(16)?,
-                "default_model_id": r.get::<_, Option<String>>(17)?,
-                "fallback_model_id": r.get::<_, Option<String>>(18)?,
-                "memory_type": r.get::<_, String>(19)?,
-                "prompt_template_id": r.get::<_, Option<String>>(20)?,
-                "system_prompt": r.get::<_, Option<String>>(21)?,
-                "voice_config": r.get::<_, Option<String>>(22)?,
-                "voice_autoplay": r.get::<_, Option<i64>>(23)?.unwrap_or(0) != 0,
-                "disable_avatar_gradient": r.get::<_, i64>(24)? != 0,
-                "custom_gradient_enabled": r.get::<_, i64>(25)? != 0,
-                "custom_gradient_colors": r.get::<_, Option<String>>(26)?,
-                "custom_text_color": r.get::<_, Option<String>>(27)?,
-                "custom_text_secondary": r.get::<_, Option<String>>(28)?,
-                "chat_appearance": r.get::<_, Option<String>>(29)?,
-                "default_chat_template_id": r.get::<_, Option<String>>(30)?,
-                "created_at": r.get::<_, i64>(31)?,
-                "updated_at": r.get::<_, i64>(32)?,
+                "design_description": r.get::<_, Option<String>>(6)?,
+                "design_reference_image_ids": r.get::<_, Option<String>>(7)?,
+                "background_image_path": r.get::<_, Option<String>>(8)?,
+                "description": r.get::<_, Option<String>>(9)?,
+                "definition": r.get::<_, Option<String>>(10)?,
+                "nickname": r.get::<_, Option<String>>(11)?,
+                "scenario": r.get::<_, Option<String>>(12)?,
+                "creator_notes": r.get::<_, Option<String>>(13)?,
+                "creator": r.get::<_, Option<String>>(14)?,
+                "creator_notes_multilingual": r.get::<_, Option<String>>(15)?,
+                "source": r.get::<_, Option<String>>(16)?,
+                "tags": r.get::<_, Option<String>>(17)?,
+                "default_scene_id": r.get::<_, Option<String>>(18)?,
+                "default_model_id": r.get::<_, Option<String>>(19)?,
+                "fallback_model_id": r.get::<_, Option<String>>(20)?,
+                "memory_type": r.get::<_, String>(21)?,
+                "prompt_template_id": r.get::<_, Option<String>>(22)?,
+                "group_chat_prompt_template_id": r.get::<_, Option<String>>(23)?,
+                "group_chat_roleplay_prompt_template_id": r.get::<_, Option<String>>(24)?,
+                "system_prompt": r.get::<_, Option<String>>(25)?,
+                "voice_config": r.get::<_, Option<String>>(26)?,
+                "voice_autoplay": r.get::<_, Option<i64>>(27)?.unwrap_or(0) != 0,
+                "disable_avatar_gradient": r.get::<_, i64>(28)? != 0,
+                "custom_gradient_enabled": r.get::<_, i64>(29)? != 0,
+                "custom_gradient_colors": r.get::<_, Option<String>>(30)?,
+                "custom_text_color": r.get::<_, Option<String>>(31)?,
+                "custom_text_secondary": r.get::<_, Option<String>>(32)?,
+                "chat_appearance": r.get::<_, Option<String>>(33)?,
+                "default_chat_template_id": r.get::<_, Option<String>>(34)?,
+                "created_at": r.get::<_, i64>(35)?,
+                "updated_at": r.get::<_, i64>(36)?,
             });
             Ok((id, json))
         })
@@ -530,10 +535,10 @@ fn export_sessions(app: &tauri::AppHandle) -> Result<Vec<JsonValue>, String> {
 
     // Get all sessions
     let mut stmt = conn
-        .prepare("SELECT id, character_id, title, system_prompt, selected_scene_id, persona_id, persona_disabled, voice_autoplay,
+        .prepare("SELECT id, character_id, title, background_image_path, system_prompt, selected_scene_id, persona_id, persona_disabled, voice_autoplay,
                          prompt_template_id, temperature, top_p, max_output_tokens, frequency_penalty, presence_penalty, top_k,
                          memories, memory_embeddings, memory_summary, memory_summary_token_count, memory_tool_events,
-                         memory_status, memory_error, archived, created_at, updated_at FROM sessions")
+                         memory_status, memory_error, memory_progress_step, archived, created_at, updated_at FROM sessions")
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 
     let sessions: Vec<(String, JsonValue)> = stmt
@@ -543,28 +548,30 @@ fn export_sessions(app: &tauri::AppHandle) -> Result<Vec<JsonValue>, String> {
                 "id": id.clone(),
                 "character_id": r.get::<_, String>(1)?,
                 "title": r.get::<_, String>(2)?,
-                "system_prompt": r.get::<_, Option<String>>(3)?,
-                "selected_scene_id": r.get::<_, Option<String>>(4)?,
-                "persona_id": r.get::<_, Option<String>>(5)?,
-                "persona_disabled": r.get::<_, i64>(6)? != 0,
-                "voice_autoplay": r.get::<_, Option<i64>>(7)?.map(|value| value != 0),
-                "prompt_template_id": r.get::<_, Option<String>>(8)?,
-                "temperature": r.get::<_, Option<f64>>(9)?,
-                "top_p": r.get::<_, Option<f64>>(10)?,
-                "max_output_tokens": r.get::<_, Option<i64>>(11)?,
-                "frequency_penalty": r.get::<_, Option<f64>>(12)?,
-                "presence_penalty": r.get::<_, Option<f64>>(13)?,
-                "top_k": r.get::<_, Option<i64>>(14)?,
-                "memories": r.get::<_, String>(15)?,
-                "memory_embeddings": r.get::<_, String>(16)?,
-                "memory_summary": r.get::<_, Option<String>>(17)?,
-                "memory_summary_token_count": r.get::<_, i64>(18)?,
-                "memory_tool_events": r.get::<_, String>(19)?,
-                "memory_status": r.get::<_, Option<String>>(20)?,
-                "memory_error": r.get::<_, Option<String>>(21)?,
-                "archived": r.get::<_, i64>(22)? != 0,
-                "created_at": r.get::<_, i64>(23)?,
-                "updated_at": r.get::<_, i64>(24)?,
+                "background_image_path": r.get::<_, Option<String>>(3)?,
+                "system_prompt": r.get::<_, Option<String>>(4)?,
+                "selected_scene_id": r.get::<_, Option<String>>(5)?,
+                "persona_id": r.get::<_, Option<String>>(6)?,
+                "persona_disabled": r.get::<_, i64>(7)? != 0,
+                "voice_autoplay": r.get::<_, Option<i64>>(8)?.map(|value| value != 0),
+                "prompt_template_id": r.get::<_, Option<String>>(9)?,
+                "temperature": r.get::<_, Option<f64>>(10)?,
+                "top_p": r.get::<_, Option<f64>>(11)?,
+                "max_output_tokens": r.get::<_, Option<i64>>(12)?,
+                "frequency_penalty": r.get::<_, Option<f64>>(13)?,
+                "presence_penalty": r.get::<_, Option<f64>>(14)?,
+                "top_k": r.get::<_, Option<i64>>(15)?,
+                "memories": r.get::<_, String>(16)?,
+                "memory_embeddings": r.get::<_, String>(17)?,
+                "memory_summary": r.get::<_, Option<String>>(18)?,
+                "memory_summary_token_count": r.get::<_, i64>(19)?,
+                "memory_tool_events": r.get::<_, String>(20)?,
+                "memory_status": r.get::<_, Option<String>>(21)?,
+                "memory_error": r.get::<_, Option<String>>(22)?,
+                "memory_progress_step": r.get::<_, Option<i64>>(23)?,
+                "archived": r.get::<_, i64>(24)? != 0,
+                "created_at": r.get::<_, i64>(25)?,
+                "updated_at": r.get::<_, i64>(26)?,
             });
             Ok((id, json))
         })
@@ -648,7 +655,7 @@ fn export_group_sessions(app: &tauri::AppHandle) -> Result<Vec<JsonValue>, Strin
             "SELECT id, group_character_id, name, character_ids, muted_character_ids, persona_id, created_at, updated_at, archived,
                     chat_type, starting_scene, background_image_path,
                     lorebook_ids, disable_character_lorebooks, memories, memory_embeddings, memory_summary, memory_summary_token_count, memory_tool_events,
-                    memory_status, memory_error, speaker_selection_method, memory_type
+                    memory_status, memory_error, memory_progress_step, speaker_selection_method, memory_type
              FROM group_sessions",
         )
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
@@ -678,8 +685,9 @@ fn export_group_sessions(app: &tauri::AppHandle) -> Result<Vec<JsonValue>, Strin
                 "memory_tool_events": r.get::<_, String>(18)?,
                 "memory_status": r.get::<_, Option<String>>(19)?,
                 "memory_error": r.get::<_, Option<String>>(20)?,
-                "speaker_selection_method": r.get::<_, Option<String>>(21)?,
-                "memory_type": r.get::<_, Option<String>>(22)?,
+                "memory_progress_step": r.get::<_, Option<i64>>(21)?,
+                "speaker_selection_method": r.get::<_, Option<String>>(22)?,
+                "memory_type": r.get::<_, Option<String>>(23)?,
             });
             Ok((id, json))
         })
@@ -1722,13 +1730,15 @@ fn import_prompt_templates(app: &tauri::AppHandle, data: &JsonValue) -> Result<(
             };
 
             conn.execute(
-                "INSERT OR REPLACE INTO prompt_templates (id, name, scope, target_ids, content, entries, condense_prompt_entries, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                "INSERT OR REPLACE INTO prompt_templates (id, name, prompt_type, content, entries, condense_prompt_entries, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 params![
                     id,
                     item.get("name").and_then(|v| v.as_str()),
-                    item.get("scope").and_then(|v| v.as_str()),
-                    item.get("target_ids").and_then(|v| v.as_str()),
+                    item.get("prompt_type")
+                        .or_else(|| item.get("promptType"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("undefined"),
                     item.get("content").and_then(|v| v.as_str()),
                     entries_str,
                     item.get("condense_prompt_entries")
@@ -1751,8 +1761,8 @@ fn import_personas(app: &tauri::AppHandle, data: &JsonValue) -> Result<(), Strin
     if let Some(arr) = data.as_array() {
         for item in arr {
             conn.execute(
-                "INSERT INTO personas (id, title, description, nickname, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, is_default, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                "INSERT INTO personas (id, title, description, nickname, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, design_description, design_reference_image_ids, is_default, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
                 params![
                     item.get("id").and_then(|v| v.as_str()),
                     item.get("title").and_then(|v| v.as_str()),
@@ -1762,6 +1772,8 @@ fn import_personas(app: &tauri::AppHandle, data: &JsonValue) -> Result<(), Strin
                     item.get("avatar_crop_x").and_then(|v| v.as_f64()),
                     item.get("avatar_crop_y").and_then(|v| v.as_f64()),
                     item.get("avatar_crop_scale").and_then(|v| v.as_f64()),
+                    item.get("design_description").and_then(|v| v.as_str()),
+                    item.get("design_reference_image_ids").and_then(|v| v.as_str()),
                     item.get("is_default").and_then(|v| v.as_bool()).unwrap_or(false) as i64,
                     item.get("created_at").and_then(|v| v.as_i64()),
                     item.get("updated_at").and_then(|v| v.as_i64()),
@@ -1806,12 +1818,12 @@ fn import_characters(app: &tauri::AppHandle, data: &JsonValue) -> Result<(), Str
 
             // Insert character
             conn.execute(
-                "INSERT INTO characters (id, name, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, background_image_path, description, definition,
+                "INSERT INTO characters (id, name, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, design_description, design_reference_image_ids, background_image_path, description, definition,
                  nickname, scenario, creator_notes, creator, creator_notes_multilingual, source, tags,
-                 default_scene_id, default_model_id, fallback_model_id, memory_type, prompt_template_id, system_prompt,
+                 default_scene_id, default_model_id, fallback_model_id, memory_type, prompt_template_id, group_chat_prompt_template_id, group_chat_roleplay_prompt_template_id, system_prompt,
                  voice_config, voice_autoplay, disable_avatar_gradient, custom_gradient_enabled, custom_gradient_colors,
                  custom_text_color, custom_text_secondary, chat_appearance, default_chat_template_id, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33)",
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35, ?36, ?37)",
                 params![
                     char_id,
                     item.get("name").and_then(|v| v.as_str()),
@@ -1819,6 +1831,8 @@ fn import_characters(app: &tauri::AppHandle, data: &JsonValue) -> Result<(), Str
                     item.get("avatar_crop_x").and_then(|v| v.as_f64()),
                     item.get("avatar_crop_y").and_then(|v| v.as_f64()),
                     item.get("avatar_crop_scale").and_then(|v| v.as_f64()),
+                    item.get("design_description").and_then(|v| v.as_str()),
+                    item.get("design_reference_image_ids").and_then(|v| v.as_str()),
                     item.get("background_image_path").and_then(|v| v.as_str()),
                     item.get("description").and_then(|v| v.as_str()),
                     item.get("definition")
@@ -1837,6 +1851,10 @@ fn import_characters(app: &tauri::AppHandle, data: &JsonValue) -> Result<(), Str
                     item.get("fallback_model_id").and_then(|v| v.as_str()),
                     item.get("memory_type").and_then(|v| v.as_str()).unwrap_or("manual"),
                     item.get("prompt_template_id").and_then(|v| v.as_str()),
+                    item.get("group_chat_prompt_template_id")
+                        .and_then(|v| v.as_str()),
+                    item.get("group_chat_roleplay_prompt_template_id")
+                        .and_then(|v| v.as_str()),
                     item.get("system_prompt").and_then(|v| v.as_str()),
                     item.get("voice_config").and_then(|v| v.as_str()),
                     item.get("voice_autoplay")
@@ -1966,15 +1984,16 @@ fn import_sessions(app: &tauri::AppHandle, data: &JsonValue) -> Result<(), Strin
                     });
 
             conn.execute(
-                "INSERT INTO sessions (id, character_id, title, system_prompt, selected_scene_id, persona_id, persona_disabled, voice_autoplay,
+                "INSERT INTO sessions (id, character_id, title, background_image_path, system_prompt, selected_scene_id, persona_id, persona_disabled, voice_autoplay,
                  prompt_template_id, temperature, top_p, max_output_tokens, frequency_penalty, presence_penalty, top_k,
                  memories, memory_embeddings, memory_summary, memory_summary_token_count, memory_tool_events,
-                 memory_status, memory_error, archived, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)",
+                 memory_status, memory_error, memory_progress_step, archived, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)",
                 params![
                     session_id,
                     character_id,
                     item.get("title").and_then(|v| v.as_str()),
+                    item.get("background_image_path").and_then(|v| v.as_str()),
                     item.get("system_prompt").and_then(|v| v.as_str()),
                     item.get("selected_scene_id").and_then(|v| v.as_str()),
                     item.get("persona_id").and_then(|v| v.as_str()),
@@ -1996,6 +2015,7 @@ fn import_sessions(app: &tauri::AppHandle, data: &JsonValue) -> Result<(), Strin
                     item.get("memory_tool_events").and_then(|v| v.as_str()).unwrap_or("[]"),
                     item.get("memory_status").and_then(|v| v.as_str()),
                     item.get("memory_error").and_then(|v| v.as_str()),
+                    item.get("memory_progress_step").and_then(|v| v.as_i64()),
                     item.get("archived").and_then(|v| v.as_bool()).unwrap_or(false) as i64,
                     item.get("created_at").and_then(|v| v.as_i64()),
                     item.get("updated_at").and_then(|v| v.as_i64()),
@@ -2108,8 +2128,8 @@ fn import_group_sessions(app: &tauri::AppHandle, data: &JsonValue) -> Result<(),
             conn.execute(
                 "INSERT INTO group_sessions (id, group_character_id, name, character_ids, muted_character_ids, persona_id, created_at, updated_at, archived,
                  chat_type, starting_scene, background_image_path, lorebook_ids, disable_character_lorebooks,
-                 memories, memory_embeddings, memory_summary, memory_summary_token_count, memory_tool_events, memory_status, memory_error, speaker_selection_method, memory_type)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)",
+                 memories, memory_embeddings, memory_summary, memory_summary_token_count, memory_tool_events, memory_status, memory_error, memory_progress_step, speaker_selection_method, memory_type)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)",
                 params![
                     session_id,
                     item.get("group_character_id").and_then(|v| v.as_str()),
@@ -2136,6 +2156,7 @@ fn import_group_sessions(app: &tauri::AppHandle, data: &JsonValue) -> Result<(),
                     item.get("memory_tool_events").and_then(|v| v.as_str()).unwrap_or("[]"),
                     item.get("memory_status").and_then(|v| v.as_str()),
                     item.get("memory_error").and_then(|v| v.as_str()),
+                    item.get("memory_progress_step").and_then(|v| v.as_i64()),
                     item.get("speaker_selection_method")
                         .and_then(|v| v.as_str())
                         .unwrap_or("llm"),

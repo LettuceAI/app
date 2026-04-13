@@ -1,5 +1,5 @@
 import { motion, type PanInfo, AnimatePresence } from "framer-motion";
-import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { RefreshCw, Pin, User, Bot, ChevronDown, Volume2, Loader2, Square } from "lucide-react";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import type { StoredMessage, Character, Persona } from "../../../../core/storage/schemas";
@@ -177,6 +177,7 @@ const MessageActions = React.memo(function MessageActions({
     >
       <button
         type="button"
+        data-tour-id="chat-regenerate"
         onClick={onRegenerate}
         disabled={disabled}
         className={cn(
@@ -385,6 +386,19 @@ function ChatMessageInner({
     isStartingSceneMessage,
   ]);
 
+  const [mockVariantMode, setMockVariantMode] = useState(false);
+
+  useEffect(() => {
+    if (!computed.isLatestAssistant) return;
+
+    const handler = (e: Event) => {
+      const { stepId } = (e as CustomEvent).detail;
+      setMockVariantMode(stepId === "chat-variants");
+    };
+    window.addEventListener("tour:step", handler);
+    return () => window.removeEventListener("tour:step", handler);
+  }, [computed.isLatestAssistant]);
+
   const effectiveCharName = swapPlaces ? (persona?.title ?? "") : (character?.name ?? "");
   const effectivePersonaName = swapPlaces
     ? (character?.name ?? "User")
@@ -547,6 +561,7 @@ function ChatMessageInner({
         )}
 
       <motion.div
+        {...(computed.isLatestAssistant ? { "data-tour-id": "chat-message-bubble" } : {})}
         initial={computed.shouldAnimate ? { opacity: 0, y: 4 } : false}
         animate={computed.shouldAnimate ? { opacity: 1, y: 0 } : { opacity: 1, y: 0 }}
         transition={animTransition}
@@ -710,9 +725,27 @@ function ChatMessageInner({
             )}
           </motion.div>
         )}
+
+        {mockVariantMode && computed.totalVariants <= 1 && (
+          <motion.div
+            data-tour-id="chat-variants"
+            className={cn(
+              "mt-2.5 flex items-center justify-between pr-2",
+              typography.caption.size,
+              typography.caption.weight,
+              "uppercase tracking-wider text-white/40",
+            )}
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2 }}
+          >
+            <span className="text-white">
+              {t("chats.message.variantLabel")} 2 / 3
+            </span>
+          </motion.div>
+        )}
       </motion.div>
 
-      {/* Avatar for user messages (right side) */}
       {message.role === "user" && chatAppearance?.avatarShape !== "hidden" && (
         <MessageAvatar
           role={message.role}

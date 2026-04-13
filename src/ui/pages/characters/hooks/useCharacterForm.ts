@@ -24,10 +24,7 @@ import {
   type CharacterBookImport,
 } from "../../../../core/storage/characterTransfer";
 import { toast } from "../../../components/toast";
-import {
-  APP_DEFAULT_TEMPLATE_ID,
-  isSystemPromptTemplate,
-} from "../../../../core/prompts/constants";
+import { APP_DEFAULT_TEMPLATE_ID } from "../../../../core/prompts/constants";
 export enum Step {
   Identity = 1,
   Description = 2,
@@ -66,6 +63,8 @@ interface CharacterFormState {
   selectedModelId: string | null;
   selectedFallbackModelId: string | null;
   systemPromptTemplateId: string | null;
+  groupChatPromptTemplateId: string | null;
+  groupChatRoleplayPromptTemplateId: string | null;
   memoryType: "manual" | "dynamic";
   dynamicMemoryEnabled: boolean;
   disableAvatarGradient: boolean;
@@ -109,6 +108,8 @@ type CharacterFormAction =
   | { type: "SET_SELECTED_MODEL_ID"; payload: string | null }
   | { type: "SET_SELECTED_FALLBACK_MODEL_ID"; payload: string | null }
   | { type: "SET_SYSTEM_PROMPT_TEMPLATE_ID"; payload: string | null }
+  | { type: "SET_GROUP_CHAT_PROMPT_TEMPLATE_ID"; payload: string | null }
+  | { type: "SET_GROUP_CHAT_ROLEPLAY_PROMPT_TEMPLATE_ID"; payload: string | null }
   | { type: "SET_MEMORY_TYPE"; payload: "manual" | "dynamic" }
   | { type: "SET_DYNAMIC_MEMORY_ENABLED"; payload: boolean }
   | { type: "SET_DISABLE_AVATAR_GRADIENT"; payload: boolean }
@@ -146,6 +147,8 @@ const initialState: CharacterFormState = {
   selectedModelId: null,
   selectedFallbackModelId: null,
   systemPromptTemplateId: null,
+  groupChatPromptTemplateId: null,
+  groupChatRoleplayPromptTemplateId: null,
   memoryType: "manual",
   dynamicMemoryEnabled: false,
   disableAvatarGradient: false,
@@ -208,6 +211,10 @@ function characterFormReducer(
       return { ...state, selectedFallbackModelId: action.payload };
     case "SET_SYSTEM_PROMPT_TEMPLATE_ID":
       return { ...state, systemPromptTemplateId: action.payload };
+    case "SET_GROUP_CHAT_PROMPT_TEMPLATE_ID":
+      return { ...state, groupChatPromptTemplateId: action.payload };
+    case "SET_GROUP_CHAT_ROLEPLAY_PROMPT_TEMPLATE_ID":
+      return { ...state, groupChatRoleplayPromptTemplateId: action.payload };
     case "SET_MEMORY_TYPE":
       return { ...state, memoryType: action.payload };
     case "SET_DYNAMIC_MEMORY_ENABLED":
@@ -330,6 +337,14 @@ export function useCharacterForm(draftCharacter?: any) {
             type: "SET_SYSTEM_PROMPT_TEMPLATE_ID",
             payload: draftCharacter.promptTemplateId || null,
           });
+          dispatch({
+            type: "SET_GROUP_CHAT_PROMPT_TEMPLATE_ID",
+            payload: draftCharacter.groupChatPromptTemplateId || null,
+          });
+          dispatch({
+            type: "SET_GROUP_CHAT_ROLEPLAY_PROMPT_TEMPLATE_ID",
+            payload: draftCharacter.groupChatRoleplayPromptTemplateId || null,
+          });
 
           if (draftCharacter.scenes && draftCharacter.scenes.length > 0) {
             const mappedScenes = draftCharacter.scenes.map((s: any) => ({
@@ -360,10 +375,7 @@ export function useCharacterForm(draftCharacter?: any) {
           dispatch({ type: "SET_MEMORY_TYPE", payload: "manual" });
         }
 
-        const filteredTemplates = templates.filter(
-          (template) =>
-            isSystemPromptTemplate(template.id) && template.id !== APP_DEFAULT_TEMPLATE_ID,
-        );
+        const filteredTemplates = templates.filter((template) => template.id !== APP_DEFAULT_TEMPLATE_ID);
         dispatch({ type: "SET_PROMPT_TEMPLATES", payload: filteredTemplates });
       } catch (err) {
         console.error("Failed to load settings", err);
@@ -481,6 +493,14 @@ export function useCharacterForm(draftCharacter?: any) {
 
   const setSystemPromptTemplateId = useCallback((id: string | null) => {
     dispatch({ type: "SET_SYSTEM_PROMPT_TEMPLATE_ID", payload: id });
+  }, []);
+
+  const setGroupChatPromptTemplateId = useCallback((id: string | null) => {
+    dispatch({ type: "SET_GROUP_CHAT_PROMPT_TEMPLATE_ID", payload: id });
+  }, []);
+
+  const setGroupChatRoleplayPromptTemplateId = useCallback((id: string | null) => {
+    dispatch({ type: "SET_GROUP_CHAT_ROLEPLAY_PROMPT_TEMPLATE_ID", payload: id });
   }, []);
 
   const setMemoryType = useCallback((memoryType: "manual" | "dynamic") => {
@@ -892,6 +912,8 @@ export function useCharacterForm(draftCharacter?: any) {
         defaultModelId: state.selectedModelId,
         fallbackModelId: state.selectedFallbackModelId,
         promptTemplateId: state.systemPromptTemplateId,
+        groupChatPromptTemplateId: state.groupChatPromptTemplateId,
+        groupChatRoleplayPromptTemplateId: state.groupChatRoleplayPromptTemplateId,
         memoryType: state.dynamicMemoryEnabled ? state.memoryType : "manual",
         disableAvatarGradient: state.disableAvatarGradient,
         voiceConfig: state.voiceConfig || undefined,
@@ -967,6 +989,8 @@ export function useCharacterForm(draftCharacter?: any) {
     state.selectedModelId,
     state.selectedFallbackModelId,
     state.systemPromptTemplateId,
+    state.groupChatPromptTemplateId,
+    state.groupChatRoleplayPromptTemplateId,
     state.memoryType,
     state.dynamicMemoryEnabled,
     state.voiceConfig,
@@ -1012,6 +1036,8 @@ export function useCharacterForm(draftCharacter?: any) {
       setSelectedModelId,
       setSelectedFallbackModelId,
       setSystemPromptTemplateId,
+      setGroupChatPromptTemplateId,
+      setGroupChatRoleplayPromptTemplateId,
       setMemoryType,
       setDisableAvatarGradient,
       setVoiceConfig,

@@ -112,6 +112,8 @@ export function EditCharacterPage() {
     newSceneDirection,
     selectedModelId,
     selectedFallbackModelId,
+    groupChatPromptTemplateId,
+    groupChatRoleplayPromptTemplateId,
 
     disableAvatarGradient,
     customGradientEnabled,
@@ -146,6 +148,19 @@ export function EditCharacterPage() {
   } = actions;
 
   const { avatarInitial, canSave } = computed;
+  const directPromptTemplates = promptTemplates.filter(
+    (template) => template.promptType === "undefined" || template.promptType === "directChat",
+  );
+  const groupChatTemplates = promptTemplates.filter(
+    (template) =>
+      template.promptType === "groupChatConversational" &&
+      template.id !== "prompt_app_group_chat",
+  );
+  const groupChatRoleplayTemplates = promptTemplates.filter(
+    (template) =>
+      template.promptType === "groupChatRoleplay" &&
+      template.id !== "prompt_app_group_chat_roleplay",
+  );
 
   const closeNewSceneEditor = React.useCallback(() => {
     setFields({ newSceneContent: "", newSceneDirection: "" });
@@ -1400,7 +1415,7 @@ export function EditCharacterPage() {
                       className="w-full appearance-none rounded-xl border border-fg/10 bg-surface-el/20 px-3.5 py-3 text-sm text-fg transition focus:border-fg/25 focus:outline-none"
                     >
                       <option value="">Use default system prompt</option>
-                      {promptTemplates.map((template) => (
+                      {directPromptTemplates.map((template) => (
                         <option key={template.id} value={template.id}>
                           {template.name}
                         </option>
@@ -1408,14 +1423,102 @@ export function EditCharacterPage() {
                     </select>
                   ) : (
                     <div className="rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3">
-                      <p className="text-sm text-fg/50">No templates available</p>
+                      <p className="text-sm text-fg/50">Using app default</p>
                       <p className="mt-1 text-xs text-fg/40">
-                        Create templates in Settings → Prompts
+                        No custom direct-chat templates yet. Create one in Settings → Prompts.
                       </p>
                     </div>
                   )}
                   <p className="text-xs text-fg/50">
                     Override the default system prompt for this character
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <div className="rounded-lg border border-info/30 bg-info/10 p-1.5">
+                      <BookOpen className="h-4 w-4 text-info" />
+                    </div>
+                    <h3 className="text-sm font-semibold text-fg">Group Chat Prompt</h3>
+                    <span className="ml-auto text-xs text-fg/40">(Conversation)</span>
+                  </div>
+
+                  {loadingTemplates ? (
+                    <div className="flex items-center gap-2 rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3">
+                      <Loader2 className="h-4 w-4 animate-spin text-fg/50" />
+                      <span className="text-sm text-fg/50">Loading templates...</span>
+                    </div>
+                  ) : groupChatTemplates.length > 0 ? (
+                    <select
+                      value={groupChatPromptTemplateId || ""}
+                      onChange={(e) =>
+                        setFields({ groupChatPromptTemplateId: e.target.value || null })
+                      }
+                      className="w-full appearance-none rounded-xl border border-fg/10 bg-surface-el/20 px-3.5 py-3 text-sm text-fg transition focus:border-fg/25 focus:outline-none"
+                    >
+                      <option value="">Use default group conversation prompt</option>
+                      {groupChatTemplates.map((template) => (
+                        <option key={template.id} value={template.id}>
+                          {template.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3">
+                      <p className="text-sm text-fg/50">Using app default</p>
+                      <p className="mt-1 text-xs text-fg/40">
+                        No custom conversation group chat templates yet. Create one in Settings →
+                        Prompts.
+                      </p>
+                    </div>
+                  )}
+                  <p className="text-xs text-fg/50">
+                    Override this character&apos;s conversation prompt in group chats
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <div className="rounded-lg border border-info/30 bg-info/10 p-1.5">
+                      <BookOpen className="h-4 w-4 text-info" />
+                    </div>
+                    <h3 className="text-sm font-semibold text-fg">Group Chat Prompt</h3>
+                    <span className="ml-auto text-xs text-fg/40">(Roleplay)</span>
+                  </div>
+
+                  {loadingTemplates ? (
+                    <div className="flex items-center gap-2 rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3">
+                      <Loader2 className="h-4 w-4 animate-spin text-fg/50" />
+                      <span className="text-sm text-fg/50">Loading templates...</span>
+                    </div>
+                  ) : groupChatRoleplayTemplates.length > 0 ? (
+                    <select
+                      value={groupChatRoleplayPromptTemplateId || ""}
+                      onChange={(e) =>
+                        setFields({
+                          groupChatRoleplayPromptTemplateId: e.target.value || null,
+                        })
+                      }
+                      className="w-full appearance-none rounded-xl border border-fg/10 bg-surface-el/20 px-3.5 py-3 text-sm text-fg transition focus:border-fg/25 focus:outline-none"
+                    >
+                      <option value="">Use default group roleplay prompt</option>
+                      {groupChatRoleplayTemplates.map((template) => (
+                        <option key={template.id} value={template.id}>
+                          {template.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3">
+                      <p className="text-sm text-fg/50">Using app default</p>
+                      <p className="mt-1 text-xs text-fg/40">
+                        No custom roleplay group chat templates yet. Create one in Settings →
+                        Prompts.
+                      </p>
+                    </div>
+                  )}
+                  <p className="text-xs text-fg/50">
+                    Override this character&apos;s roleplay prompt in group chats
                   </p>
                 </div>
               </div>

@@ -1,10 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
-import { speak, stop, getVoices, isSpeaking } from "tauri-plugin-tts-api";
 
-export type AudioProviderType = "gemini_tts" | "elevenlabs" | "openai_tts" | "device_tts";
-
-export const DEVICE_TTS_PROVIDER_ID = "device_tts";
-const DEVICE_TTS_LABEL = "Device TTS";
+export type AudioProviderType = "gemini_tts" | "elevenlabs" | "openai_tts";
 
 export interface AudioProvider {
   id: string;
@@ -53,19 +49,7 @@ export interface TtsPreviewResponse {
 }
 
 export async function listAudioProviders(): Promise<AudioProvider[]> {
-  const providers = await invoke<AudioProvider[]>("audio_provider_list");
-  if (providers.some((provider) => provider.id === DEVICE_TTS_PROVIDER_ID)) {
-    return providers;
-  }
-  return [
-    ...providers,
-    {
-      id: DEVICE_TTS_PROVIDER_ID,
-      providerType: "device_tts",
-      label: DEVICE_TTS_LABEL,
-      isSystem: true,
-    },
-  ];
+  return invoke<AudioProvider[]>("audio_provider_list");
 }
 
 export async function upsertAudioProvider(provider: AudioProvider): Promise<AudioProvider> {
@@ -83,9 +67,6 @@ export async function verifyAudioProvider(
   apiKey: string,
   projectId?: string,
 ): Promise<boolean> {
-  if (providerType === "device_tts") {
-    return true;
-  }
   return invoke<boolean>("audio_provider_verify", {
     providerType,
     apiKey,
@@ -94,42 +75,20 @@ export async function verifyAudioProvider(
 }
 
 export async function listAudioModels(providerType: AudioProviderType): Promise<AudioModel[]> {
-  if (providerType === "device_tts") {
-    return [];
-  }
   return invoke<AudioModel[]>("audio_models_list", { providerType });
 }
 
 export async function listVoiceDesignModels(
   providerType: AudioProviderType,
 ): Promise<AudioModel[]> {
-  if (providerType === "device_tts") {
-    return [];
-  }
   return invoke<AudioModel[]>("audio_voice_design_models_list", { providerType });
 }
 
 export async function getProviderVoices(providerId: string): Promise<CachedVoice[]> {
-  if (providerId === DEVICE_TTS_PROVIDER_ID) {
-    const voices = await getVoices();
-    const now = Date.now();
-    return voices.map((voice) => ({
-      id: `${providerId}:${voice.id}`,
-      providerId,
-      voiceId: voice.id,
-      name: voice.name,
-      previewUrl: undefined,
-      labels: { language: voice.language },
-      cachedAt: now,
-    }));
-  }
   return invoke<CachedVoice[]>("audio_provider_voices", { providerId });
 }
 
 export async function refreshProviderVoices(providerId: string): Promise<CachedVoice[]> {
-  if (providerId === DEVICE_TTS_PROVIDER_ID) {
-    return getProviderVoices(providerId);
-  }
   return invoke<CachedVoice[]>("audio_provider_refresh_voices", { providerId });
 }
 
@@ -175,48 +134,10 @@ export async function abortAudioPreview(requestId: string): Promise<void> {
   return invoke("abort_request", { requestId });
 }
 
-export async function speakDeviceTts(options: {
-  text: string;
-  voiceId?: string;
-  language?: string;
-  rate?: number;
-  pitch?: number;
-  volume?: number;
-}): Promise<void> {
-  await speak({
-    text: options.text,
-    voiceId: options.voiceId ?? null,
-    language: options.language ?? null,
-    rate: options.rate ?? null,
-    pitch: options.pitch ?? null,
-    volume: options.volume ?? null,
-    queueMode: "flush",
-  });
-}
-
-export async function stopDeviceTts(): Promise<void> {
-  await stop();
-}
-
-export async function isDeviceTtsSpeaking(): Promise<boolean> {
-  return isSpeaking();
-}
-
 export async function searchProviderVoices(
   providerId: string,
   search: string,
 ): Promise<CachedVoice[]> {
-  if (providerId === DEVICE_TTS_PROVIDER_ID) {
-    const voices = await getProviderVoices(providerId);
-    const lowered = search.trim().toLowerCase();
-    if (!lowered) return voices;
-    return voices.filter((voice) => {
-      const name = voice.name.toLowerCase();
-      const voiceId = voice.voiceId.toLowerCase();
-      const language = voice.labels?.language?.toLowerCase() ?? "";
-      return name.includes(lowered) || voiceId.includes(lowered) || language.includes(lowered);
-    });
-  }
   return invoke<CachedVoice[]>("audio_provider_search_voices", {
     providerId,
     search,

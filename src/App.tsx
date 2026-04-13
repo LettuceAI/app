@@ -95,7 +95,7 @@ import {
   EngineSettingsConfigPage,
 } from "./ui/pages/engine";
 
-import { CreateMenu, Tooltip, useFirstTimeTooltip } from "./ui/components";
+import { CreateMenu, GuidedTour, useGuidedTour } from "./ui/components";
 import { V1UpgradeToast } from "./ui/components/V1UpgradeToast";
 import { V2UpgradeToast } from "./ui/components/V2UpgradeToast";
 import { ConfirmBottomMenuHost } from "./ui/components/ConfirmBottomMenu";
@@ -114,6 +114,7 @@ import { readSettings, SETTINGS_UPDATED_EVENT } from "./core/storage/repo";
 import { recordChatDebugEvent } from "./core/debug/chatDebugStore";
 
 const chatLog = logManager({ component: "Chat" });
+const FIRST_RUN_TOUR_STORAGE_KEY = "app_tour_v1";
 
 function getPayloadObject(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object") return null;
@@ -764,9 +765,35 @@ function AppContent() {
     !isDiscoverySubRoute;
 
   const [showCreateMenu, setShowCreateMenu] = useState(false);
-  const { isVisible: showCreateTooltip, dismissTooltip: dismissCreateTooltip } =
-    useFirstTimeTooltip("create_button");
-  const [showDelayedTooltip, setShowDelayedTooltip] = useState(false);
+  const { shouldShow: showGuidedTour, dismiss: dismissGuidedTour } =
+    useGuidedTour("appShell");
+
+  useEffect(() => {
+    const globalWindow = window as Window & {
+      __debug?: Record<string, unknown> & {
+        resetFirstRunTour?: () => Promise<void>;
+      };
+    };
+
+    const resetFirstRunTour = async () => {
+      await setTooltipSeen(FIRST_RUN_TOUR_STORAGE_KEY, false);
+      console.info('[debug] First-run tour reset. Open "/chat" to trigger it again.');
+    };
+
+    globalWindow.__debug = {
+      ...(globalWindow.__debug ?? {}),
+      resetFirstRunTour,
+    };
+
+    return () => {
+      if (globalWindow.__debug?.resetFirstRunTour !== resetFirstRunTour) {
+        return;
+      }
+
+      const { resetFirstRunTour: _resetFirstRunTour, ...rest } = globalWindow.__debug;
+      globalWindow.__debug = Object.keys(rest).length > 0 ? rest : undefined;
+    };
+  }, []);
 
   const handleAndroidBack = useCallback(() => {
     const globalWindow = window as any;
@@ -818,21 +845,8 @@ function AppContent() {
 
   useEffect(() => {
     const urlParams = new URLSearchParams(location.search);
-    const firstTime = urlParams.get("firstTime");
-
-    if (firstTime === "true" && isChatRoute) {
+    if (urlParams.get("firstTime") === "true" && isChatRoute) {
       window.history.replaceState({}, document.title, location.pathname);
-
-      const timer = window.setTimeout(() => {
-        setShowDelayedTooltip(true);
-      }, 2000);
-
-      return () => {
-        window.clearTimeout(timer);
-        setShowDelayedTooltip(false);
-      };
-    } else {
-      setShowDelayedTooltip(false);
     }
   }, [location.search, location.pathname, isChatRoute]);
 
@@ -1249,17 +1263,8 @@ function AppContent() {
         <CreateMenu isOpen={showCreateMenu} onClose={() => setShowCreateMenu(false)} />
       )}
 
-      {isChatRoute && showBottomNav && (showDelayedTooltip || showCreateTooltip) && (
-        <Tooltip
-          isVisible={true}
-          message="Create custom AI characters and personas here!"
-          onClose={() => {
-            dismissCreateTooltip();
-            setShowDelayedTooltip(false);
-          }}
-          position="bottom"
-          className="bottom-22 right-4"
-        />
+      {isChatRoute && showBottomNav && showGuidedTour && (
+        <GuidedTour tour="appShell" onDismiss={dismissGuidedTour} />
       )}
 
       {/* V1 Embedding Model Upgrade Toast */}

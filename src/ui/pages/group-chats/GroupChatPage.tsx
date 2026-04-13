@@ -1194,7 +1194,6 @@ export function GroupChatPage() {
       {/* Content layer - on top of background */}
       <div
         className="relative z-10 flex h-full flex-col"
-        style={{ paddingTop: "env(safe-area-inset-top)" }}
       >
         {/* Header */}
         <div className="relative z-20 shrink-0">

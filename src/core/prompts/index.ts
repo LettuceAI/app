@@ -1,5 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { SystemPromptTemplate, PromptScope } from "../storage/schemas";
+import type {
+  PromptParameterEngine,
+  PromptTemplateType,
+  SystemPromptTemplate,
+} from "../storage/schemas";
 
 export async function listPromptTemplates(): Promise<SystemPromptTemplate[]> {
   return await invoke<SystemPromptTemplate[]>("list_prompt_templates");
@@ -7,16 +11,14 @@ export async function listPromptTemplates(): Promise<SystemPromptTemplate[]> {
 
 export async function createPromptTemplate(
   name: string,
-  scope: PromptScope,
-  targetIds: string[],
+  promptType: PromptTemplateType,
   content: string,
   entries?: SystemPromptTemplate["entries"],
   condensePromptEntries?: boolean,
 ): Promise<SystemPromptTemplate> {
   return await invoke<SystemPromptTemplate>("create_prompt_template", {
     name,
-    scope,
-    targetIds,
+    promptType,
     content,
     entries,
     condensePromptEntries,
@@ -27,8 +29,7 @@ export async function updatePromptTemplate(
   id: string,
   updates: {
     name?: string;
-    scope?: PromptScope;
-    targetIds?: string[];
+    promptType?: PromptTemplateType;
     content?: string;
     entries?: SystemPromptTemplate["entries"];
     condensePromptEntries?: boolean;
@@ -37,8 +38,7 @@ export async function updatePromptTemplate(
   return await invoke<SystemPromptTemplate>("update_prompt_template", {
     id,
     name: updates.name,
-    scope: updates.scope,
-    targetIds: updates.targetIds,
+    promptType: updates.promptType,
     content: updates.content,
     entries: updates.entries,
     condensePromptEntries: updates.condensePromptEntries,
@@ -81,6 +81,18 @@ export async function resetDynamicMemoryTemplate(): Promise<SystemPromptTemplate
   return await invoke<SystemPromptTemplate>("reset_dynamic_memory_template");
 }
 
+export async function resetDynamicMemoryLocalTemplate(): Promise<SystemPromptTemplate> {
+  return await invoke<SystemPromptTemplate>("reset_dynamic_memory_local_template");
+}
+
+export async function resetGroupChatTemplate(): Promise<SystemPromptTemplate> {
+  return await invoke<SystemPromptTemplate>("reset_group_chat_template");
+}
+
+export async function resetGroupChatRoleplayTemplate(): Promise<SystemPromptTemplate> {
+  return await invoke<SystemPromptTemplate>("reset_group_chat_roleplay_template");
+}
+
 export async function resetHelpMeReplyTemplate(): Promise<SystemPromptTemplate> {
   return await invoke<SystemPromptTemplate>("reset_help_me_reply_template");
 }
@@ -103,6 +115,10 @@ export async function resetSceneGenerationTemplate(): Promise<SystemPromptTempla
 
 export async function resetDesignReferenceTemplate(): Promise<SystemPromptTemplate> {
   return await invoke<SystemPromptTemplate>("reset_design_reference_template");
+}
+
+export async function getPromptParameterEngine(): Promise<PromptParameterEngine> {
+  return await invoke<PromptParameterEngine>("get_prompt_parameter_engine");
 }
 
 export async function getRequiredTemplateVariables(templateId: string): Promise<string[]> {

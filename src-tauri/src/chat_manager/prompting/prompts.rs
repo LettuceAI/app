@@ -1,7 +1,8 @@
 use crate::chat_manager::prompt_engine;
+use crate::chat_manager::prompting::parameter_engine;
 use crate::chat_manager::types::{
-    PromptEntryImageSlot, PromptEntryPayload, PromptEntryPosition, PromptEntryRole, PromptScope,
-    SystemPromptEntry, SystemPromptTemplate,
+    PromptEntryImageSlot, PromptEntryPayload, PromptEntryPosition, PromptEntryRole,
+    PromptTemplateType, SystemPromptEntry, SystemPromptTemplate,
 };
 use crate::{
     chat_manager::storage::{get_base_prompt, get_base_prompt_entries, PromptType},
@@ -15,6 +16,7 @@ pub const APP_DEFAULT_TEMPLATE_ID: &str = "prompt_app_default";
 pub const APP_LOCAL_ROLEPLAY_TEMPLATE_ID: &str = "prompt_app_local_roleplay";
 pub const APP_DYNAMIC_SUMMARY_TEMPLATE_ID: &str = "prompt_app_dynamic_summary";
 pub const APP_DYNAMIC_MEMORY_TEMPLATE_ID: &str = "prompt_app_dynamic_memory";
+pub const APP_DYNAMIC_MEMORY_LOCAL_TEMPLATE_ID: &str = "prompt_app_dynamic_memory_local";
 pub const APP_HELP_ME_REPLY_TEMPLATE_ID: &str = "prompt_app_help_me_reply";
 pub const APP_HELP_ME_REPLY_CONVERSATIONAL_TEMPLATE_ID: &str =
     "prompt_app_help_me_reply_conversational";
@@ -28,8 +30,11 @@ const APP_DEFAULT_TEMPLATE_NAME: &str = "App Default";
 const APP_LOCAL_ROLEPLAY_TEMPLATE_NAME: &str = "Local RP Default";
 const APP_DYNAMIC_SUMMARY_TEMPLATE_NAME: &str = "Dynamic Memory: Summarizer";
 const APP_DYNAMIC_MEMORY_TEMPLATE_NAME: &str = "Dynamic Memory: Memory Manager";
+const APP_DYNAMIC_MEMORY_LOCAL_TEMPLATE_NAME: &str = "Dynamic Memory: Memory Manager (Local LLM)";
 const APP_HELP_ME_REPLY_TEMPLATE_NAME: &str = "Reply Helper";
 const APP_HELP_ME_REPLY_CONVERSATIONAL_TEMPLATE_NAME: &str = "Reply Helper (Conversational)";
+const APP_GROUP_CHAT_TEMPLATE_NAME: &str = "Group Chat (Conversation)";
+const APP_GROUP_CHAT_ROLEPLAY_TEMPLATE_NAME: &str = "Group Chat (Roleplay)";
 const APP_AVATAR_GENERATION_TEMPLATE_NAME: &str = "Avatar Generation";
 const APP_AVATAR_EDIT_TEMPLATE_NAME: &str = "Avatar Image Edit";
 const APP_SCENE_GENERATION_TEMPLATE_NAME: &str = "Scene Generation";
@@ -37,6 +42,68 @@ const APP_DESIGN_REFERENCE_TEMPLATE_NAME: &str = "Design Reference Writer";
 const LEGACY_AVATAR_GENERATION_PROMPT_V1: &str = "You write a single high-quality image generation prompt for a character avatar. Your job is to turn the request into a clear visual prompt that preserves identity and produces a strong profile image.\n\n# Avatar Subject\nName: {{avatar_subject_name}}\n{{avatar_subject_description}}\n\n# Avatar Request\n{{avatar_request}}\n\nWrite one polished prompt for an image model.\n- Prioritize face, hair, clothing, expression, pose, and overall vibe.\n- Keep the subject centered and suitable for an avatar or profile image.\n- Preserve identity-defining traits from the context.\n- Do not add text, logos, watermarks, frames, UI, or split panels unless explicitly requested.\n- Do not explain your reasoning.\n\nOutput only the final image prompt text.";
 const LEGACY_AVATAR_EDIT_PROMPT_V1: &str = "You revise an existing avatar image prompt. The source image will be provided to you separately. Use that image and the edit request to produce one updated prompt for the next generation.\n\n# Avatar Subject\nName: {{avatar_subject_name}}\n{{avatar_subject_description}}\n\n# Current Avatar Prompt\n{{current_avatar_prompt}}\n\n# Edit Request\n{{edit_request}}\n\nUse the actual source image as the truth for current appearance. Preserve everything that should stay the same and change only what the edit request asks for.\n- Keep the character recognizable.\n- If the old prompt conflicts with the source image, trust the source image.\n- Do not restate unchanged details more than needed.\n- Do not explain what you changed.\n\nOutput only the revised image prompt text.";
 const LEGACY_SCENE_GENERATION_PROMPT_V1: &str = "You write a single high-quality image generation prompt for a roleplay scene. Your job is to convert the current conversation context and scene request into one clear visual prompt for an image model.\n\n# Scene Context\nCharacter: {{char.name}}\n{{char.desc}}\n\nPersona: {{persona.name}}\n{{persona.desc}}\n\nRecent Messages:\n{{recent_messages}}\n\n# Scene Request\n{{scene_request}}\n\nWrite one polished scene prompt for an image model.\n- Focus on who is present, what is happening, where the scene is set, mood, lighting, composition, camera framing, and key visual details.\n- Preserve identity-defining details from the conversation context.\n- Keep character and persona identities separate.\n- Do not swap, merge, or borrow features between them.\n- Prefer concrete visual details over abstract interpretation.\n- Do not add text, logos, watermarks, UI, split panels, or dialogue bubbles unless explicitly requested.\n- Do not explain your reasoning.\n\nOutput only the final image prompt text.";
+
+pub fn template_prompt_type_from_id(id: &str) -> PromptTemplateType {
+    match id {
+        APP_DEFAULT_TEMPLATE_ID | APP_LOCAL_ROLEPLAY_TEMPLATE_ID => PromptTemplateType::DirectChat,
+        APP_GROUP_CHAT_TEMPLATE_ID => PromptTemplateType::GroupChatConversational,
+        APP_GROUP_CHAT_ROLEPLAY_TEMPLATE_ID => PromptTemplateType::GroupChatRoleplay,
+        APP_DYNAMIC_SUMMARY_TEMPLATE_ID => PromptTemplateType::DynamicMemorySummarizer,
+        APP_DYNAMIC_MEMORY_TEMPLATE_ID | APP_DYNAMIC_MEMORY_LOCAL_TEMPLATE_ID => {
+            PromptTemplateType::DynamicMemoryManager
+        }
+        APP_HELP_ME_REPLY_TEMPLATE_ID => PromptTemplateType::ReplyHelperRoleplay,
+        APP_HELP_ME_REPLY_CONVERSATIONAL_TEMPLATE_ID => {
+            PromptTemplateType::ReplyHelperConversational
+        }
+        APP_AVATAR_GENERATION_TEMPLATE_ID => PromptTemplateType::AvatarGeneration,
+        APP_AVATAR_EDIT_TEMPLATE_ID => PromptTemplateType::AvatarEditRequest,
+        APP_SCENE_GENERATION_TEMPLATE_ID => PromptTemplateType::SceneGeneration,
+        APP_DESIGN_REFERENCE_TEMPLATE_ID => PromptTemplateType::DesignReferenceWriter,
+        _ => PromptTemplateType::Undefined,
+    }
+}
+
+fn expected_protected_prompt_type(id: &str) -> Option<PromptTemplateType> {
+    if !is_app_default_template(id) {
+        return None;
+    }
+
+    let prompt_type = template_prompt_type_from_id(id);
+    if prompt_type == PromptTemplateType::Undefined {
+        None
+    } else {
+        Some(prompt_type)
+    }
+}
+
+fn maybe_repair_protected_template_prompt_type(
+    conn: &rusqlite::Connection,
+    template: &mut SystemPromptTemplate,
+) -> Result<(), String> {
+    let Some(expected_prompt_type) = expected_protected_prompt_type(&template.id) else {
+        return Ok(());
+    };
+
+    if template.prompt_type == expected_prompt_type {
+        return Ok(());
+    }
+
+    let updated_at = now();
+    conn.execute(
+        "UPDATE prompt_templates SET prompt_type = ?1, updated_at = ?2 WHERE id = ?3",
+        params![
+            prompt_type_to_str(expected_prompt_type),
+            updated_at,
+            template.id
+        ],
+    )
+    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+
+    template.prompt_type = expected_prompt_type;
+    template.updated_at = updated_at;
+    Ok(())
+}
 
 fn supports_entry_prompts(_id: &str) -> bool {
     true
@@ -133,7 +200,6 @@ fn maybe_migrate_legacy_template_content(
         id.to_string(),
         None,
         None,
-        None,
         Some(next_content),
         Some(next_entries),
         None,
@@ -164,9 +230,33 @@ fn maybe_backfill_entries(
         id.to_string(),
         None,
         None,
-        None,
         Some(template.content),
         Some(entries),
+        None,
+    )?;
+    Ok(())
+}
+
+fn maybe_backfill_template_name(
+    app: &AppHandle,
+    id: &str,
+    expected_name: &str,
+) -> Result<(), String> {
+    let template = match get_template(app, id)? {
+        Some(template) => template,
+        None => return Ok(()),
+    };
+    if template.name == expected_name {
+        return Ok(());
+    }
+
+    let _ = update_template(
+        app,
+        id.to_string(),
+        Some(expected_name.to_string()),
+        None,
+        None,
+        None,
         None,
     )?;
     Ok(())
@@ -198,7 +288,6 @@ fn append_missing_entry(
     let _ = update_template(
         app,
         id.to_string(),
-        None,
         None,
         None,
         Some(next_content),
@@ -250,7 +339,6 @@ fn backfill_missing_entry_conditions(
         id.to_string(),
         None,
         None,
-        None,
         Some(next_content),
         Some(next_entries),
         None,
@@ -297,7 +385,6 @@ fn backfill_missing_entry_payloads(
     let _ = update_template(
         app,
         id.to_string(),
-        None,
         None,
         None,
         Some(next_content),
@@ -357,7 +444,6 @@ fn backfill_legacy_image_entry_content(
         id.to_string(),
         None,
         None,
-        None,
         Some(next_content),
         Some(next_entries),
         None,
@@ -408,7 +494,6 @@ fn migrate_legacy_scene_generation_entry_roles(app: &AppHandle) -> Result<(), St
         APP_SCENE_GENERATION_TEMPLATE_ID.to_string(),
         None,
         None,
-        None,
         Some(content),
         Some(next_entries),
         Some(template.condense_prompt_entries),
@@ -417,95 +502,15 @@ fn migrate_legacy_scene_generation_entry_roles(app: &AppHandle) -> Result<(), St
     Ok(())
 }
 
-/// Get required variables for a specific template ID
 pub fn get_required_variables(template_id: &str) -> Vec<String> {
-    match template_id {
-        APP_DEFAULT_TEMPLATE_ID => vec![
-            "{{scene}}".to_string(),
-            "{{scene_direction}}".to_string(),
-            "{{char.name}}".to_string(),
-            "{{char.desc}}".to_string(),
-            "{{context_summary}}".to_string(),
-            "{{key_memories}}".to_string(),
-        ],
-        APP_LOCAL_ROLEPLAY_TEMPLATE_ID => vec![
-            "{{scene}}".to_string(),
-            "{{scene_direction}}".to_string(),
-            "{{char.name}}".to_string(),
-            "{{char.desc}}".to_string(),
-            "{{persona.name}}".to_string(),
-            "{{persona.desc}}".to_string(),
-            "{{context_summary}}".to_string(),
-            "{{key_memories}}".to_string(),
-        ],
-        APP_DYNAMIC_SUMMARY_TEMPLATE_ID => vec!["{{prev_summary}}".to_string()],
-        APP_DYNAMIC_MEMORY_TEMPLATE_ID => vec!["{{max_entries}}".to_string()],
-        APP_HELP_ME_REPLY_TEMPLATE_ID => vec![
-            "{{char.name}}".to_string(),
-            "{{char.desc}}".to_string(),
-            "{{persona.name}}".to_string(),
-            "{{persona.desc}}".to_string(),
-            "{{current_draft}}".to_string(),
-        ],
-        APP_HELP_ME_REPLY_CONVERSATIONAL_TEMPLATE_ID => vec![
-            "{{char.name}}".to_string(),
-            "{{char.desc}}".to_string(),
-            "{{persona.name}}".to_string(),
-            "{{persona.desc}}".to_string(),
-            "{{current_draft}}".to_string(),
-        ],
-        APP_GROUP_CHAT_TEMPLATE_ID => vec![
-            "{{char.name}}".to_string(),
-            "{{char.desc}}".to_string(),
-            "{{persona.name}}".to_string(),
-            "{{persona.desc}}".to_string(),
-            "{{group_characters}}".to_string(),
-        ],
-        APP_GROUP_CHAT_ROLEPLAY_TEMPLATE_ID => vec![
-            "{{scene}}".to_string(),
-            "{{scene_direction}}".to_string(),
-            "{{char.name}}".to_string(),
-            "{{char.desc}}".to_string(),
-            "{{persona.name}}".to_string(),
-            "{{persona.desc}}".to_string(),
-            "{{group_characters}}".to_string(),
-            "{{context_summary}}".to_string(),
-            "{{key_memories}}".to_string(),
-        ],
-        APP_AVATAR_GENERATION_TEMPLATE_ID => vec!["{{avatar_request}}".to_string()],
-        APP_AVATAR_EDIT_TEMPLATE_ID => vec![
-            "{{current_avatar_prompt}}".to_string(),
-            "{{edit_request}}".to_string(),
-        ],
-        APP_SCENE_GENERATION_TEMPLATE_ID => vec![
-            "{{recent_messages}}".to_string(),
-            "{{scene_request}}".to_string(),
-        ],
-        APP_DESIGN_REFERENCE_TEMPLATE_ID => vec![
-            "{{subject_name}}".to_string(),
-            "{{image[avatar]}}".to_string(),
-        ],
-        _ => vec![],
-    }
+    parameter_engine::required_variables_for_prompt_type(template_prompt_type_from_id(template_id))
 }
 
-/// Validate that all required variables exist in the content
-pub fn validate_required_variables(template_id: &str, content: &str) -> Result<(), Vec<String>> {
-    let required = get_required_variables(template_id);
-    if required.is_empty() {
-        return Ok(());
-    }
-
-    let missing: Vec<String> = required
-        .into_iter()
-        .filter(|var| !content.contains(var))
-        .collect();
-
-    if missing.is_empty() {
-        Ok(())
-    } else {
-        Err(missing)
-    }
+pub fn validate_required_variables(
+    prompt_type: PromptTemplateType,
+    content: &str,
+) -> Result<(), Vec<String>> {
+    parameter_engine::validate_required_variables(prompt_type, content)
 }
 
 fn generate_id() -> String {
@@ -519,23 +524,41 @@ fn now() -> u64 {
         .as_millis() as u64
 }
 
-fn scope_to_str(scope: &PromptScope) -> &'static str {
-    match scope {
-        PromptScope::AppWide => "AppWide",
-        PromptScope::ModelSpecific => "ModelSpecific",
-        PromptScope::CharacterSpecific => "CharacterSpecific",
+fn prompt_type_to_str(prompt_type: PromptTemplateType) -> &'static str {
+    match prompt_type {
+        PromptTemplateType::Undefined => "undefined",
+        PromptTemplateType::DirectChat => "directChat",
+        PromptTemplateType::GroupChatRoleplay => "groupChatRoleplay",
+        PromptTemplateType::GroupChatConversational => "groupChatConversational",
+        PromptTemplateType::DynamicMemorySummarizer => "dynamicMemorySummarizer",
+        PromptTemplateType::DynamicMemoryManager => "dynamicMemoryManager",
+        PromptTemplateType::ReplyHelperRoleplay => "replyHelperRoleplay",
+        PromptTemplateType::ReplyHelperConversational => "replyHelperConversational",
+        PromptTemplateType::AvatarGeneration => "avatarGeneration",
+        PromptTemplateType::AvatarEditRequest => "avatarEditRequest",
+        PromptTemplateType::SceneGeneration => "sceneGeneration",
+        PromptTemplateType::DesignReferenceWriter => "designReferenceWriter",
     }
 }
 
-fn str_to_scope(s: &str) -> Result<PromptScope, String> {
+fn str_to_prompt_type(s: &str) -> Result<PromptTemplateType, String> {
     match s {
-        "AppWide" => Ok(PromptScope::AppWide),
-        "ModelSpecific" => Ok(PromptScope::ModelSpecific),
-        "CharacterSpecific" => Ok(PromptScope::CharacterSpecific),
+        "undefined" => Ok(PromptTemplateType::Undefined),
+        "directChat" => Ok(PromptTemplateType::DirectChat),
+        "groupChatRoleplay" => Ok(PromptTemplateType::GroupChatRoleplay),
+        "groupChatConversational" => Ok(PromptTemplateType::GroupChatConversational),
+        "dynamicMemorySummarizer" => Ok(PromptTemplateType::DynamicMemorySummarizer),
+        "dynamicMemoryManager" => Ok(PromptTemplateType::DynamicMemoryManager),
+        "replyHelperRoleplay" => Ok(PromptTemplateType::ReplyHelperRoleplay),
+        "replyHelperConversational" => Ok(PromptTemplateType::ReplyHelperConversational),
+        "avatarGeneration" => Ok(PromptTemplateType::AvatarGeneration),
+        "avatarEditRequest" => Ok(PromptTemplateType::AvatarEditRequest),
+        "sceneGeneration" => Ok(PromptTemplateType::SceneGeneration),
+        "designReferenceWriter" => Ok(PromptTemplateType::DesignReferenceWriter),
         other => Err(crate::utils::err_msg(
             module_path!(),
             line!(),
-            format!("Unknown prompt scope: {}", other),
+            format!("Unknown prompt type: {}", other),
         )),
     }
 }
@@ -543,23 +566,21 @@ fn str_to_scope(s: &str) -> Result<PromptScope, String> {
 fn row_to_template(row: &rusqlite::Row<'_>) -> Result<SystemPromptTemplate, rusqlite::Error> {
     let id: String = row.get(0)?;
     let name: String = row.get(1)?;
-    let scope_str: String = row.get(2)?;
-    let target_ids_json: String = row.get(3)?;
-    let content: String = row.get(4)?;
-    let entries_json: String = row.get(5)?;
-    let condense_prompt_entries: bool = row.get(6)?;
-    let created_at: u64 = row.get(7)?;
-    let updated_at: u64 = row.get(8)?;
+    let prompt_type_str: String = row.get(2)?;
+    let content: String = row.get(3)?;
+    let entries_json: String = row.get(4)?;
+    let condense_prompt_entries: bool = row.get(5)?;
+    let created_at: u64 = row.get(6)?;
+    let updated_at: u64 = row.get(7)?;
 
-    let scope = str_to_scope(&scope_str).map_err(|_| rusqlite::Error::InvalidQuery)?;
-    let target_ids: Vec<String> = serde_json::from_str(&target_ids_json).unwrap_or_default();
+    let prompt_type =
+        str_to_prompt_type(&prompt_type_str).map_err(|_| rusqlite::Error::InvalidQuery)?;
     let entries: Vec<SystemPromptEntry> = serde_json::from_str(&entries_json).unwrap_or_default();
 
     Ok(SystemPromptTemplate {
         id,
         name,
-        scope,
-        target_ids,
+        prompt_type,
         content,
         entries,
         condense_prompt_entries,
@@ -569,10 +590,14 @@ fn row_to_template(row: &rusqlite::Row<'_>) -> Result<SystemPromptTemplate, rusq
 }
 
 pub fn load_templates(app: &AppHandle) -> Result<Vec<SystemPromptTemplate>, String> {
+    let _ = ensure_app_default_template(app)?;
+    let _ = ensure_local_roleplay_template(app)?;
+    ensure_dynamic_memory_templates(app)?;
+    ensure_group_chat_templates(app)?;
     let conn = open_db(app)?;
     let mut stmt = conn
         .prepare(
-            "SELECT id, name, scope, target_ids, content, entries, condense_prompt_entries, created_at, updated_at FROM prompt_templates ORDER BY created_at ASC",
+            "SELECT id, name, prompt_type, content, entries, condense_prompt_entries, created_at, updated_at FROM prompt_templates ORDER BY created_at ASC",
         )
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     let rows = stmt
@@ -580,7 +605,10 @@ pub fn load_templates(app: &AppHandle) -> Result<Vec<SystemPromptTemplate>, Stri
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     let mut out = Vec::new();
     for r in rows {
-        out.push(r.map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?);
+        let mut template =
+            r.map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        maybe_repair_protected_template_prompt_type(&conn, &mut template)?;
+        out.push(template);
     }
     if out.is_empty() {
         // Guarantee existence of App Default template even if setup call was skipped
@@ -589,7 +617,7 @@ pub fn load_templates(app: &AppHandle) -> Result<Vec<SystemPromptTemplate>, Stri
         // Reload
         let mut stmt2 = conn
             .prepare(
-                "SELECT id, name, scope, target_ids, content, entries, condense_prompt_entries, created_at, updated_at FROM prompt_templates ORDER BY created_at ASC",
+                "SELECT id, name, prompt_type, content, entries, condense_prompt_entries, created_at, updated_at FROM prompt_templates ORDER BY created_at ASC",
             )
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
         let rows2 = stmt2
@@ -597,7 +625,10 @@ pub fn load_templates(app: &AppHandle) -> Result<Vec<SystemPromptTemplate>, Stri
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
         out.clear();
         for r in rows2 {
-            out.push(r.map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?);
+            let mut template =
+                r.map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+            maybe_repair_protected_template_prompt_type(&conn, &mut template)?;
+            out.push(template);
         }
     }
     Ok(out)
@@ -606,8 +637,7 @@ pub fn load_templates(app: &AppHandle) -> Result<Vec<SystemPromptTemplate>, Stri
 pub fn create_template(
     app: &AppHandle,
     name: String,
-    scope: PromptScope,
-    target_ids: Vec<String>,
+    prompt_type: PromptTemplateType,
     content: String,
     entries: Option<Vec<SystemPromptEntry>>,
     condense_prompt_entries: Option<bool>,
@@ -615,8 +645,6 @@ pub fn create_template(
     let conn = open_db(app)?;
     let id = generate_id();
     let now = now();
-    let target_ids_json = serde_json::to_string(&target_ids)
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     let entries = entries.unwrap_or_else(|| {
         if supports_entry_prompts(&id) && !content.is_empty() {
             single_entry_from_content(&content)
@@ -627,13 +655,23 @@ pub fn create_template(
     let entries_json = serde_json::to_string(&entries)
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     let condense_prompt_entries = condense_prompt_entries.unwrap_or(false);
+    let validation_text = if entries.is_empty() {
+        content.clone()
+    } else {
+        template_entries_to_validation_content(&entries)
+    };
+    if let Err(missing) = validate_required_variables(prompt_type, &validation_text) {
+        return Err(format!(
+            "Template must contain required variables: {}",
+            missing.join(", ")
+        ));
+    }
     conn.execute(
-        "INSERT INTO prompt_templates (id, name, scope, target_ids, content, entries, condense_prompt_entries, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
+        "INSERT INTO prompt_templates (id, name, prompt_type, content, entries, condense_prompt_entries, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)",
         params![
             id,
             name,
-            scope_to_str(&scope),
-            target_ids_json,
+            prompt_type_to_str(prompt_type),
             content,
             entries_json,
             condense_prompt_entries,
@@ -648,62 +686,51 @@ pub fn update_template(
     app: &AppHandle,
     id: String,
     name: Option<String>,
-    scope: Option<PromptScope>,
-    target_ids: Option<Vec<String>>,
+    prompt_type: Option<PromptTemplateType>,
     content: Option<String>,
     entries: Option<Vec<SystemPromptEntry>>,
     condense_prompt_entries: Option<bool>,
 ) -> Result<SystemPromptTemplate, String> {
-    // Prevent changing scope of app default
-    if is_app_default_template(&id) {
-        if let Some(s) = &scope {
-            // Need the current template to compare, but keeping restriction consistent
-            if *s != PromptScope::AppWide {
-                return Err(crate::utils::err_msg(
-                    module_path!(),
-                    line!(),
-                    "Cannot change scope of App Default template",
-                ));
-            }
-        }
-    }
-
     let conn = open_db(app)?;
     let current = get_template(app, &id)?.ok_or_else(|| format!("Template not found: {}", id))?;
     let new_name = name.unwrap_or(current.name);
-    let new_scope = scope.unwrap_or(current.scope);
-    let new_target_ids = target_ids.unwrap_or(current.target_ids);
+    let new_prompt_type = prompt_type.unwrap_or(current.prompt_type);
     let new_content = content.unwrap_or(current.content);
     let new_entries = entries.unwrap_or(current.entries);
     let new_condense_prompt_entries =
         condense_prompt_entries.unwrap_or(current.condense_prompt_entries);
 
-    // Validate required variables for protected templates
     if is_app_default_template(&id) {
-        let validation_text = if new_entries.is_empty() {
-            new_content.clone()
-        } else {
-            template_entries_to_validation_content(&new_entries)
-        };
-        if let Err(missing) = validate_required_variables(&id, &validation_text) {
-            return Err(format!(
-                "Protected template must contain required variables: {}",
-                missing.join(", ")
+        let expected_prompt_type = template_prompt_type_from_id(&id);
+        if new_prompt_type != expected_prompt_type {
+            return Err(crate::utils::err_msg(
+                module_path!(),
+                line!(),
+                "Cannot change prompt type of protected template",
             ));
         }
     }
+
+    let validation_text = if new_entries.is_empty() {
+        new_content.clone()
+    } else {
+        template_entries_to_validation_content(&new_entries)
+    };
+    if let Err(missing) = validate_required_variables(new_prompt_type, &validation_text) {
+        return Err(format!(
+            "Template must contain required variables: {}",
+            missing.join(", ")
+        ));
+    }
     let updated_at = now();
-    let target_ids_json = serde_json::to_string(&new_target_ids)
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     let entries_json = serde_json::to_string(&new_entries)
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 
     conn.execute(
-        "UPDATE prompt_templates SET name = ?1, scope = ?2, target_ids = ?3, content = ?4, entries = ?5, condense_prompt_entries = ?6, updated_at = ?7 WHERE id = ?8",
+        "UPDATE prompt_templates SET name = ?1, prompt_type = ?2, content = ?3, entries = ?4, condense_prompt_entries = ?5, updated_at = ?6 WHERE id = ?7",
         params![
             new_name,
-            scope_to_str(&new_scope),
-            target_ids_json,
+            prompt_type_to_str(new_prompt_type),
             new_content,
             entries_json,
             new_condense_prompt_entries,
@@ -741,14 +768,20 @@ pub fn delete_template(app: &AppHandle, id: String) -> Result<(), String> {
 
 pub fn get_template(app: &AppHandle, id: &str) -> Result<Option<SystemPromptTemplate>, String> {
     let conn = open_db(app)?;
-    conn
+    let mut template = conn
         .query_row(
-            "SELECT id, name, scope, target_ids, content, entries, condense_prompt_entries, created_at, updated_at FROM prompt_templates WHERE id = ?1",
+            "SELECT id, name, prompt_type, content, entries, condense_prompt_entries, created_at, updated_at FROM prompt_templates WHERE id = ?1",
             params![id],
             |row| row_to_template(row),
         )
         .optional()
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+
+    if let Some(template_ref) = template.as_mut() {
+        maybe_repair_protected_template_prompt_type(&conn, template_ref)?;
+    }
+
+    Ok(template)
 }
 
 pub fn ensure_app_default_template(app: &AppHandle) -> Result<String, String> {
@@ -778,11 +811,11 @@ pub fn ensure_app_default_template(app: &AppHandle) -> Result<String, String> {
     let entries_json = serde_json::to_string(&prompt_engine::default_modular_prompt_entries())
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     conn.execute(
-        "INSERT OR IGNORE INTO prompt_templates (id, name, scope, target_ids, content, entries, created_at, updated_at) VALUES (?1, ?2, ?3, '[]', ?4, ?5, ?6, ?6)",
+        "INSERT OR IGNORE INTO prompt_templates (id, name, prompt_type, content, entries, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
         params![
             APP_DEFAULT_TEMPLATE_ID,
             APP_DEFAULT_TEMPLATE_NAME,
-            scope_to_str(&PromptScope::AppWide),
+            prompt_type_to_str(PromptTemplateType::DirectChat),
             content,
             entries_json,
             now
@@ -809,11 +842,11 @@ pub fn ensure_local_roleplay_template(app: &AppHandle) -> Result<String, String>
     let entries_json = serde_json::to_string(&prompt_engine::default_local_roleplay_entries())
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     conn.execute(
-        "INSERT OR IGNORE INTO prompt_templates (id, name, scope, target_ids, content, entries, created_at, updated_at) VALUES (?1, ?2, ?3, '[]', ?4, ?5, ?6, ?6)",
+        "INSERT OR IGNORE INTO prompt_templates (id, name, prompt_type, content, entries, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
         params![
             APP_LOCAL_ROLEPLAY_TEMPLATE_ID,
             APP_LOCAL_ROLEPLAY_TEMPLATE_NAME,
-            scope_to_str(&PromptScope::AppWide),
+            prompt_type_to_str(PromptTemplateType::DirectChat),
             content,
             entries_json,
             now
@@ -834,11 +867,11 @@ pub fn ensure_dynamic_memory_templates(app: &AppHandle) -> Result<(), String> {
         let entries_json = serde_json::to_string(&entries)
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
         conn.execute(
-            "INSERT OR IGNORE INTO prompt_templates (id, name, scope, target_ids, content, entries, created_at, updated_at) VALUES (?1, ?2, ?3, '[]', ?4, ?5, ?6, ?6)",
+            "INSERT OR IGNORE INTO prompt_templates (id, name, prompt_type, content, entries, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
             params![
                 APP_DYNAMIC_SUMMARY_TEMPLATE_ID,
                 APP_DYNAMIC_SUMMARY_TEMPLATE_NAME,
-                scope_to_str(&PromptScope::AppWide),
+                prompt_type_to_str(PromptTemplateType::DynamicMemorySummarizer),
                 content,
                 entries_json,
                 now
@@ -861,11 +894,11 @@ pub fn ensure_dynamic_memory_templates(app: &AppHandle) -> Result<(), String> {
         let entries_json = serde_json::to_string(&entries)
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
         conn.execute(
-            "INSERT OR IGNORE INTO prompt_templates (id, name, scope, target_ids, content, entries, created_at, updated_at) VALUES (?1, ?2, ?3, '[]', ?4, ?5, ?6, ?6)",
+            "INSERT OR IGNORE INTO prompt_templates (id, name, prompt_type, content, entries, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
             params![
                 APP_DYNAMIC_MEMORY_TEMPLATE_ID,
                 APP_DYNAMIC_MEMORY_TEMPLATE_NAME,
-                scope_to_str(&PromptScope::AppWide),
+                prompt_type_to_str(PromptTemplateType::DynamicMemoryManager),
                 content,
                 entries_json,
                 now
@@ -879,6 +912,111 @@ pub fn ensure_dynamic_memory_templates(app: &AppHandle) -> Result<(), String> {
             PromptType::DynamicMemoryPrompt,
             get_base_prompt_entries(PromptType::DynamicMemoryPrompt),
         );
+        let _ = maybe_backfill_template_name(
+            app,
+            APP_DYNAMIC_MEMORY_TEMPLATE_ID,
+            APP_DYNAMIC_MEMORY_TEMPLATE_NAME,
+        );
+    }
+
+    if get_template(app, APP_DYNAMIC_MEMORY_LOCAL_TEMPLATE_ID)?.is_none() {
+        let content = get_base_prompt(PromptType::DynamicMemoryLocalPrompt);
+        let entries = get_base_prompt_entries(PromptType::DynamicMemoryLocalPrompt);
+        let entries_json = serde_json::to_string(&entries)
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        conn.execute(
+            "INSERT OR IGNORE INTO prompt_templates (id, name, prompt_type, content, entries, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
+            params![
+                APP_DYNAMIC_MEMORY_LOCAL_TEMPLATE_ID,
+                APP_DYNAMIC_MEMORY_LOCAL_TEMPLATE_NAME,
+                prompt_type_to_str(PromptTemplateType::DynamicMemoryManager),
+                content,
+                entries_json,
+                now
+            ],
+        )
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    } else {
+        let _ = maybe_backfill_entries(
+            app,
+            APP_DYNAMIC_MEMORY_LOCAL_TEMPLATE_ID,
+            PromptType::DynamicMemoryLocalPrompt,
+            get_base_prompt_entries(PromptType::DynamicMemoryLocalPrompt),
+        );
+        let _ = maybe_backfill_template_name(
+            app,
+            APP_DYNAMIC_MEMORY_LOCAL_TEMPLATE_ID,
+            APP_DYNAMIC_MEMORY_LOCAL_TEMPLATE_NAME,
+        );
+    }
+
+    Ok(())
+}
+
+pub fn ensure_group_chat_templates(app: &AppHandle) -> Result<(), String> {
+    let conn = open_db(app)?;
+    let now = now();
+    let group_chat_entries = get_base_prompt_entries(PromptType::GroupChatPrompt);
+    let group_chat_roleplay_entries = get_base_prompt_entries(PromptType::GroupChatRoleplayPrompt);
+
+    if get_template(app, APP_GROUP_CHAT_TEMPLATE_ID)?.is_none() {
+        let content = get_base_prompt(PromptType::GroupChatPrompt);
+        let entries_json = serde_json::to_string(&group_chat_entries)
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        conn.execute(
+            "INSERT OR IGNORE INTO prompt_templates (id, name, prompt_type, content, entries, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
+            params![
+                APP_GROUP_CHAT_TEMPLATE_ID,
+                APP_GROUP_CHAT_TEMPLATE_NAME,
+                prompt_type_to_str(PromptTemplateType::GroupChatConversational),
+                content,
+                entries_json,
+                now
+            ],
+        )
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    } else {
+        let _ = maybe_backfill_entries(
+            app,
+            APP_GROUP_CHAT_TEMPLATE_ID,
+            PromptType::GroupChatPrompt,
+            group_chat_entries,
+        );
+        let _ = maybe_backfill_template_name(
+            app,
+            APP_GROUP_CHAT_TEMPLATE_ID,
+            APP_GROUP_CHAT_TEMPLATE_NAME,
+        );
+    }
+
+    if get_template(app, APP_GROUP_CHAT_ROLEPLAY_TEMPLATE_ID)?.is_none() {
+        let content = get_base_prompt(PromptType::GroupChatRoleplayPrompt);
+        let entries_json = serde_json::to_string(&group_chat_roleplay_entries)
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        conn.execute(
+            "INSERT OR IGNORE INTO prompt_templates (id, name, prompt_type, content, entries, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
+            params![
+                APP_GROUP_CHAT_ROLEPLAY_TEMPLATE_ID,
+                APP_GROUP_CHAT_ROLEPLAY_TEMPLATE_NAME,
+                prompt_type_to_str(PromptTemplateType::GroupChatRoleplay),
+                content,
+                entries_json,
+                now
+            ],
+        )
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    } else {
+        let _ = maybe_backfill_entries(
+            app,
+            APP_GROUP_CHAT_ROLEPLAY_TEMPLATE_ID,
+            PromptType::GroupChatRoleplayPrompt,
+            group_chat_roleplay_entries,
+        );
+        let _ = maybe_backfill_template_name(
+            app,
+            APP_GROUP_CHAT_ROLEPLAY_TEMPLATE_ID,
+            APP_GROUP_CHAT_ROLEPLAY_TEMPLATE_NAME,
+        );
     }
 
     Ok(())
@@ -889,8 +1027,11 @@ pub fn is_app_default_template(id: &str) -> bool {
         || id == APP_LOCAL_ROLEPLAY_TEMPLATE_ID
         || id == APP_DYNAMIC_SUMMARY_TEMPLATE_ID
         || id == APP_DYNAMIC_MEMORY_TEMPLATE_ID
+        || id == APP_DYNAMIC_MEMORY_LOCAL_TEMPLATE_ID
         || id == APP_HELP_ME_REPLY_TEMPLATE_ID
         || id == APP_HELP_ME_REPLY_CONVERSATIONAL_TEMPLATE_ID
+        || id == APP_GROUP_CHAT_TEMPLATE_ID
+        || id == APP_GROUP_CHAT_ROLEPLAY_TEMPLATE_ID
         || id == APP_AVATAR_GENERATION_TEMPLATE_ID
         || id == APP_AVATAR_EDIT_TEMPLATE_ID
         || id == APP_SCENE_GENERATION_TEMPLATE_ID
@@ -904,7 +1045,6 @@ pub fn reset_app_default_template(app: &AppHandle) -> Result<SystemPromptTemplat
         APP_DEFAULT_TEMPLATE_ID.to_string(),
         None,
         None,
-        None,
         Some(content.clone()),
         Some(prompt_engine::default_modular_prompt_entries()),
         None,
@@ -916,7 +1056,6 @@ pub fn reset_local_roleplay_template(app: &AppHandle) -> Result<SystemPromptTemp
     update_template(
         app,
         APP_LOCAL_ROLEPLAY_TEMPLATE_ID.to_string(),
-        None,
         None,
         None,
         Some(content.clone()),
@@ -933,7 +1072,6 @@ pub fn reset_dynamic_summary_template(app: &AppHandle) -> Result<SystemPromptTem
         APP_DYNAMIC_SUMMARY_TEMPLATE_ID.to_string(),
         None,
         None,
-        None,
         Some(content.clone()),
         Some(entries),
         None,
@@ -947,6 +1085,47 @@ pub fn reset_dynamic_memory_template(app: &AppHandle) -> Result<SystemPromptTemp
         app,
         APP_DYNAMIC_MEMORY_TEMPLATE_ID.to_string(),
         None,
+        None,
+        Some(content.clone()),
+        Some(entries),
+        None,
+    )
+}
+
+pub fn reset_dynamic_memory_local_template(app: &AppHandle) -> Result<SystemPromptTemplate, String> {
+    let content = get_base_prompt(PromptType::DynamicMemoryLocalPrompt);
+    let entries = get_base_prompt_entries(PromptType::DynamicMemoryLocalPrompt);
+    update_template(
+        app,
+        APP_DYNAMIC_MEMORY_LOCAL_TEMPLATE_ID.to_string(),
+        None,
+        None,
+        Some(content.clone()),
+        Some(entries),
+        None,
+    )
+}
+
+pub fn reset_group_chat_template(app: &AppHandle) -> Result<SystemPromptTemplate, String> {
+    let content = get_base_prompt(PromptType::GroupChatPrompt);
+    let entries = get_base_prompt_entries(PromptType::GroupChatPrompt);
+    update_template(
+        app,
+        APP_GROUP_CHAT_TEMPLATE_ID.to_string(),
+        None,
+        None,
+        Some(content.clone()),
+        Some(entries),
+        None,
+    )
+}
+
+pub fn reset_group_chat_roleplay_template(app: &AppHandle) -> Result<SystemPromptTemplate, String> {
+    let content = get_base_prompt(PromptType::GroupChatRoleplayPrompt);
+    let entries = get_base_prompt_entries(PromptType::GroupChatRoleplayPrompt);
+    update_template(
+        app,
+        APP_GROUP_CHAT_ROLEPLAY_TEMPLATE_ID.to_string(),
         None,
         None,
         Some(content.clone()),
@@ -964,11 +1143,11 @@ pub fn ensure_help_me_reply_template(app: &AppHandle) -> Result<(), String> {
         let entries_json = serde_json::to_string(&entries)
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
         conn.execute(
-            "INSERT OR IGNORE INTO prompt_templates (id, name, scope, target_ids, content, entries, created_at, updated_at) VALUES (?1, ?2, ?3, '[]', ?4, ?5, ?6, ?6)",
+            "INSERT OR IGNORE INTO prompt_templates (id, name, prompt_type, content, entries, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
             params![
                 APP_HELP_ME_REPLY_TEMPLATE_ID,
                 APP_HELP_ME_REPLY_TEMPLATE_NAME,
-                scope_to_str(&PromptScope::AppWide),
+                prompt_type_to_str(PromptTemplateType::ReplyHelperRoleplay),
                 content,
                 entries_json,
                 now
@@ -993,11 +1172,11 @@ pub fn ensure_help_me_reply_template(app: &AppHandle) -> Result<(), String> {
         let entries_json = serde_json::to_string(&entries)
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
         conn.execute(
-            "INSERT OR IGNORE INTO prompt_templates (id, name, scope, target_ids, content, entries, created_at, updated_at) VALUES (?1, ?2, ?3, '[]', ?4, ?5, ?6, ?6)",
+            "INSERT OR IGNORE INTO prompt_templates (id, name, prompt_type, content, entries, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
             params![
                 APP_HELP_ME_REPLY_CONVERSATIONAL_TEMPLATE_ID,
                 APP_HELP_ME_REPLY_CONVERSATIONAL_TEMPLATE_NAME,
-                scope_to_str(&PromptScope::AppWide),
+                prompt_type_to_str(PromptTemplateType::ReplyHelperConversational),
                 content,
                 entries_json,
                 now
@@ -1026,11 +1205,11 @@ pub fn ensure_avatar_image_templates(app: &AppHandle) -> Result<(), String> {
         let entries_json = serde_json::to_string(&avatar_generation_entries)
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
         conn.execute(
-            "INSERT OR IGNORE INTO prompt_templates (id, name, scope, target_ids, content, entries, created_at, updated_at) VALUES (?1, ?2, ?3, '[]', ?4, ?5, ?6, ?6)",
+            "INSERT OR IGNORE INTO prompt_templates (id, name, prompt_type, content, entries, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
             params![
                 APP_AVATAR_GENERATION_TEMPLATE_ID,
                 APP_AVATAR_GENERATION_TEMPLATE_NAME,
-                scope_to_str(&PromptScope::AppWide),
+                prompt_type_to_str(PromptTemplateType::AvatarGeneration),
                 content,
                 entries_json,
                 now
@@ -1062,11 +1241,11 @@ pub fn ensure_avatar_image_templates(app: &AppHandle) -> Result<(), String> {
         let entries_json = serde_json::to_string(&avatar_edit_entries)
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
         conn.execute(
-            "INSERT OR IGNORE INTO prompt_templates (id, name, scope, target_ids, content, entries, created_at, updated_at) VALUES (?1, ?2, ?3, '[]', ?4, ?5, ?6, ?6)",
+            "INSERT OR IGNORE INTO prompt_templates (id, name, prompt_type, content, entries, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
             params![
                 APP_AVATAR_EDIT_TEMPLATE_ID,
                 APP_AVATAR_EDIT_TEMPLATE_NAME,
-                scope_to_str(&PromptScope::AppWide),
+                prompt_type_to_str(PromptTemplateType::AvatarEditRequest),
                 content,
                 entries_json,
                 now
@@ -1106,11 +1285,11 @@ pub fn ensure_scene_generation_template(app: &AppHandle) -> Result<(), String> {
         let entries_json = serde_json::to_string(&scene_entries)
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
         conn.execute(
-            "INSERT OR IGNORE INTO prompt_templates (id, name, scope, target_ids, content, entries, created_at, updated_at) VALUES (?1, ?2, ?3, '[]', ?4, ?5, ?6, ?6)",
+            "INSERT OR IGNORE INTO prompt_templates (id, name, prompt_type, content, entries, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
             params![
                 APP_SCENE_GENERATION_TEMPLATE_ID,
                 APP_SCENE_GENERATION_TEMPLATE_NAME,
-                scope_to_str(&PromptScope::AppWide),
+                prompt_type_to_str(PromptTemplateType::SceneGeneration),
                 content,
                 entries_json,
                 now
@@ -1194,11 +1373,11 @@ pub fn ensure_design_reference_template(app: &AppHandle) -> Result<(), String> {
         let entries_json = serde_json::to_string(&design_reference_entries)
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
         conn.execute(
-            "INSERT OR IGNORE INTO prompt_templates (id, name, scope, target_ids, content, entries, created_at, updated_at) VALUES (?1, ?2, ?3, '[]', ?4, ?5, ?6, ?6)",
+            "INSERT OR IGNORE INTO prompt_templates (id, name, prompt_type, content, entries, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
             params![
                 APP_DESIGN_REFERENCE_TEMPLATE_ID,
                 APP_DESIGN_REFERENCE_TEMPLATE_NAME,
-                scope_to_str(&PromptScope::AppWide),
+                prompt_type_to_str(PromptTemplateType::DesignReferenceWriter),
                 content,
                 entries_json,
                 now
@@ -1240,7 +1419,6 @@ pub fn reset_help_me_reply_template(app: &AppHandle) -> Result<SystemPromptTempl
         APP_HELP_ME_REPLY_TEMPLATE_ID.to_string(),
         None,
         None,
-        None,
         Some(content.clone()),
         Some(entries),
         None,
@@ -1257,7 +1435,6 @@ pub fn reset_help_me_reply_conversational_template(
         APP_HELP_ME_REPLY_CONVERSATIONAL_TEMPLATE_ID.to_string(),
         None,
         None,
-        None,
         Some(content.clone()),
         Some(entries),
         None,
@@ -1270,7 +1447,6 @@ pub fn reset_avatar_generation_template(app: &AppHandle) -> Result<SystemPromptT
     update_template(
         app,
         APP_AVATAR_GENERATION_TEMPLATE_ID.to_string(),
-        None,
         None,
         None,
         Some(content.clone()),
@@ -1287,7 +1463,6 @@ pub fn reset_avatar_edit_template(app: &AppHandle) -> Result<SystemPromptTemplat
         APP_AVATAR_EDIT_TEMPLATE_ID.to_string(),
         None,
         None,
-        None,
         Some(content.clone()),
         Some(entries),
         None,
@@ -1302,7 +1477,6 @@ pub fn reset_scene_generation_template(app: &AppHandle) -> Result<SystemPromptTe
         APP_SCENE_GENERATION_TEMPLATE_ID.to_string(),
         None,
         None,
-        None,
         Some(content.clone()),
         Some(entries),
         None,
@@ -1315,7 +1489,6 @@ pub fn reset_design_reference_template(app: &AppHandle) -> Result<SystemPromptTe
     update_template(
         app,
         APP_DESIGN_REFERENCE_TEMPLATE_ID.to_string(),
-        None,
         None,
         None,
         Some(content.clone()),
@@ -1354,6 +1527,7 @@ pub fn get_help_me_reply_prompt(app: &AppHandle, style: &str) -> String {
 /// Get the Group Chat template from DB, falling back to default if not found
 #[allow(dead_code)]
 pub fn get_group_chat_prompt(app: &AppHandle) -> String {
+    let _ = ensure_group_chat_templates(app);
     match get_template(app, APP_GROUP_CHAT_TEMPLATE_ID) {
         Ok(Some(template)) => {
             let merged = template_entries_to_content(&template.entries);
@@ -1370,6 +1544,7 @@ pub fn get_group_chat_prompt(app: &AppHandle) -> String {
 /// Get the Group Chat Roleplay template from DB, falling back to default if not found
 #[allow(dead_code)]
 pub fn get_group_chat_roleplay_prompt(app: &AppHandle) -> String {
+    let _ = ensure_group_chat_templates(app);
     match get_template(app, APP_GROUP_CHAT_ROLEPLAY_TEMPLATE_ID) {
         Ok(Some(template)) => {
             let merged = template_entries_to_content(&template.entries);
