@@ -1866,7 +1866,7 @@ mod desktop {
             );
             let mut sampler = built_sampler.sampler;
             let mut streamed_thinking_parser = ThinkingTagStreamParser::default();
-            let mut structured_parser = if stream {
+            let mut structured_parser = if stream && built_prompt.native_tool_parse_supported {
                 built_prompt
                     .chat_template_result
                     .as_ref()
@@ -2143,7 +2143,7 @@ mod desktop {
                                 "using app-level raw tool-call recovery for final llama response",
                             );
                             recovered
-                        } else {
+                        } else if built_prompt.native_tool_parse_supported {
                             match template_result.parse_response_oaicompat(&output, is_partial) {
                                 Ok(parsed_message) => serde_json::from_str(&parsed_message)
                                     .map_err(|e| {
@@ -2166,6 +2166,11 @@ mod desktop {
                                     ));
                                 }
                             }
+                        } else {
+                            json!({
+                                "role": "assistant",
+                                "content": output,
+                            })
                         };
                     ensure_assistant_role(&mut message);
 

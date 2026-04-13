@@ -24,6 +24,7 @@ pub(super) struct BuiltPrompt {
     pub(super) raw_completion_fallback_reason: Option<String>,
     pub(super) prompt_mode: PromptMode,
     pub(super) chat_template_result: Option<llama_cpp_2::model::ChatTemplateResult>,
+    pub(super) native_tool_parse_supported: bool,
     pub(super) additional_stop_sequences: Vec<String>,
     pub(super) tool_template_diagnostics: Option<String>,
 }
@@ -309,7 +310,7 @@ fn build_oaicompat_prompt(
     tool_choice: Option<&Value>,
     options: &OpenAICompatPromptOptions,
 ) -> Result<BuiltPrompt, String> {
-    let tool_template_diagnostics =
+    let mut tool_template_diagnostics =
         (!template_appears_tool_aware(&resolved_template.template_text))
             .then(|| summarize_tool_template_detection(&resolved_template.template_text));
 
@@ -377,21 +378,18 @@ fn build_oaicompat_prompt(
             )
         })?;
 
-    if parse_tool_calls && !oaicompat_result_supports_native_tool_calls(&chat_template_result) {
-        return Err(crate::utils::err_msg(
-            module_path!(),
-            line!(),
-            format!(
-                "Resolved llama.cpp oaicompat template did not expose native tool-call parsing metadata (parse_tool_calls={}, parser_present={}, grammar_present={}){}",
-                chat_template_result.parse_tool_calls,
-                chat_template_result.parser.is_some(),
-                chat_template_result.grammar.is_some(),
-                tool_template_diagnostics
-                    .as_ref()
-                    .map(|diag| format!(" ({diag})"))
-                    .unwrap_or_default()
-            ),
-        ));
+    let native_tool_parse_supported = oaicompat_result_supports_native_tool_calls(&chat_template_result);
+    if parse_tool_calls && !native_tool_parse_supported {
+        let parser_diag = format!(
+            "oaicompat template exposed no native tool parser metadata (parse_tool_calls={}, parser_present={}, grammar_present={})",
+            chat_template_result.parse_tool_calls,
+            chat_template_result.parser.is_some(),
+            chat_template_result.grammar.is_some(),
+        );
+        tool_template_diagnostics = Some(match tool_template_diagnostics {
+            Some(existing) => format!("{existing}; {parser_diag}"),
+            None => parser_diag,
+        });
     }
 
     Ok(BuiltPrompt {
@@ -406,6 +404,7 @@ fn build_oaicompat_prompt(
         prompt_mode: PromptMode::OpenAICompatChat,
         additional_stop_sequences: chat_template_result.additional_stops.clone(),
         chat_template_result: Some(chat_template_result),
+        native_tool_parse_supported,
         tool_template_diagnostics,
     })
 }
@@ -460,6 +459,7 @@ fn build_plain_templated_prompt(
                         raw_completion_fallback_reason: None,
                         prompt_mode: PromptMode::TemplatedChat,
                         chat_template_result: None,
+                        native_tool_parse_supported: false,
                         additional_stop_sequences: Vec::new(),
                         tool_template_diagnostics: None,
                     });
@@ -489,6 +489,7 @@ fn build_plain_templated_prompt(
         raw_completion_fallback_reason: None,
         prompt_mode: PromptMode::TemplatedChat,
         chat_template_result: None,
+        native_tool_parse_supported: false,
         additional_stop_sequences: chat_template_result.additional_stops.clone(),
         tool_template_diagnostics: None,
     })
@@ -625,6 +626,7 @@ pub(super) fn build_prompt(
                         )),
                         prompt_mode: PromptMode::RawCompletion,
                         chat_template_result: None,
+                        native_tool_parse_supported: false,
                         additional_stop_sequences: Vec::new(),
                         tool_template_diagnostics: None,
                     });
@@ -663,6 +665,7 @@ pub(super) fn build_prompt(
                     )),
                     prompt_mode: PromptMode::RawCompletion,
                     chat_template_result: None,
+                    native_tool_parse_supported: false,
                     additional_stop_sequences: Vec::new(),
                     tool_template_diagnostics: None,
                 })
