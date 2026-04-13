@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { readSettings, addOrUpdateModel } from "../../../../core/storage/repo";
 import { setModelSetupCompleted } from "../../../../core/storage/appState";
 import type { ProviderCredential, Model } from "../../../../core/storage/schemas";
+import { isImageOnlyProvider } from "../../../../core/storage/schemas";
 
 import {
   getDefaultModelName,
@@ -135,6 +136,7 @@ export function useModelController(): ControllerReturn {
         }
       }
 
+      const imageOnly = isImageOnlyProvider(selectedProvider.providerId);
       const model: Omit<Model, "id"> = {
         name: modelName.trim(),
         providerId: selectedProvider.providerId,
@@ -143,7 +145,7 @@ export function useModelController(): ControllerReturn {
         displayName: displayName.trim(),
         createdAt: Date.now(),
         inputScopes: ["text"],
-        outputScopes: ["text"],
+        outputScopes: imageOnly ? ["image"] : ["text"],
       };
 
       await addOrUpdateModel(model);

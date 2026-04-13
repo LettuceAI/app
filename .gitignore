@@ -60,3 +60,6 @@ src-tauri/onnxruntime/
 /.vscode
 /.vscode/extensions.json
 
+scripts/test_chutes.mjs
+docs/lorebook_integration.md
+src-tauri/Cargo.lock

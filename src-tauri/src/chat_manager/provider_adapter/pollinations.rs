@@ -11,17 +11,7 @@ use crate::chat_manager::tooling::ToolConfig;
 // ---------------------------------------------------------------------------
 
 pub(crate) fn extract_base_url(base_url: &str) -> String {
-    let mut clean = base_url.trim_end_matches('/');
-    if let Some(stripped) = clean.strip_suffix("/v1") {
-        clean = stripped.trim_end_matches('/');
-    }
-    if let Ok(url) = reqwest::Url::parse(clean) {
-        if let Some(host) = url.host_str() {
-            let port = url.port().map(|p| format!(":{}", p)).unwrap_or_default();
-            return format!("{}://{}{}", url.scheme(), host, port);
-        }
-    }
-    clean.to_string()
+    base_url.trim_end_matches('/').to_string()
 }
 
 fn pollinations_required_auth_headers() -> &'static [&'static str] {

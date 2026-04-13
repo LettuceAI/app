@@ -161,6 +161,45 @@ const guides: Record<string, Guide> = {
     ],
     url: "https://dashboard.anannas.ai/",
   },
+  pollinations: {
+    title: "How to find your Pollinations API key",
+    steps: [
+      "Go to enter.pollinations.ai and sign in.",
+      "Navigate to the API section of your dashboard.",
+      "Create a new key or copy an existing one.",
+      "Paste the key into LettuceAI.",
+    ],
+    url: "https://enter.pollinations.ai",
+  },
+  "pollinations-image": {
+    title: "How to find your Pollinations API key",
+    steps: [
+      "Go to enter.pollinations.ai and sign in.",
+      "Navigate to the API section of your dashboard.",
+      "Create a new key or copy an existing one.",
+      "Paste the key into LettuceAI.",
+    ],
+    url: "https://enter.pollinations.ai",
+  },
+  automatic1111: {
+    title: "How to connect AUTOMATIC1111",
+    steps: [
+      "Launch your local AUTOMATIC1111 WebUI with the --api command line flag.",
+      "No API key is required to connect to a local instance.",
+      "Ensure the Base URL points to your instance (usually http://127.0.0.1:7860).",
+    ],
+    url: "https://github.com/AUTOMATIC1111/stable-diffusion-webui/wiki/API",
+  },
+  stability: {
+    title: "How to find your Stability AI key",
+    steps: [
+      "Go to platform.stability.ai and sign in.",
+      "Navigate to the API Keys page in your account portal.",
+      "Create a new key to access the Stable Diffusion APIs.",
+      "Copy the key and paste it into LettuceAI.",
+    ],
+    url: "https://platform.stability.ai/keys",
+  },
   default: {
     title: "How to find your API key",
     steps: [

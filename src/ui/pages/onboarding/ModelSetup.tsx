@@ -484,6 +484,8 @@ function getProviderDisplayName(providerId: string): string {
       return "OpenRouter";
     case "pollinations":
       return "Pollinations";
+    case "pollinations-image":
+      return "Pollinations Image";
     case "openai-compatible":
       return "OpenAI compatible";
     case "custom":

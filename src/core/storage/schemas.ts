@@ -2286,6 +2286,15 @@ export type ProviderCredential = z.infer<typeof ProviderCredentialSchema>;
 export const ModelScopeSchema = z.enum(["text", "image", "audio"]);
 export type ModelScope = z.infer<typeof ModelScopeSchema>;
 
+/** Providers that only produce image output — used to set model scopes correctly. */
+export function isImageOnlyProvider(providerId?: string | null): boolean {
+  return [
+    "automatic1111",
+    "stability",
+    "pollinations-image",
+  ].includes(providerId ?? "");
+}
+
 function normalizeModelScopes(value: unknown): ModelScope[] {
   const scopeOrder: ModelScope[] = ["text", "image", "audio"];
   const fromValue = Array.isArray(value) ? value : [];
