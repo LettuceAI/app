@@ -7,6 +7,9 @@ import {
   LorebookEntrySchema,
   SessionSchema,
   SettingsSchema,
+  ProviderCredentialSchema,
+  ModelSchema,
+  AppStateSchema,
   PersonaSchema,
   MessageSchema,
   GroupMessageSchema,
@@ -163,6 +166,95 @@ function repairSettingsReferentialIntegrity(input: unknown): { next: unknown; ch
   }
 
   return { next: root, changed };
+}
+
+function salvageSettingsPayload(input: unknown): Settings | null {
+  if (!input || typeof input !== "object") {
+    return null;
+  }
+
+  const root = JSON.parse(JSON.stringify(input)) as Record<string, unknown>;
+  const defaults = createDefaultSettings();
+  const providerCredentials = Array.isArray(root.providerCredentials)
+    ? root.providerCredentials
+        .map((value) => ProviderCredentialSchema.safeParse(value))
+        .flatMap((result) => (result.success ? [result.data] : []))
+    : [];
+
+  const providerById = new Map(providerCredentials.map((provider) => [provider.id, provider]));
+  const models = Array.isArray(root.models)
+    ? root.models
+        .map((value) => {
+          if (!value || typeof value !== "object") {
+            return null;
+          }
+
+          const candidate = { ...(value as Record<string, unknown>) };
+          if (
+            (!candidate.providerLabel || String(candidate.providerLabel).trim().length === 0) &&
+            typeof candidate.providerCredentialId === "string"
+          ) {
+            const provider = providerById.get(candidate.providerCredentialId);
+            if (provider) {
+              candidate.providerLabel = provider.label;
+            }
+          }
+          if (candidate.inputScopes == null) {
+            candidate.inputScopes = ["text"];
+          }
+          if (candidate.outputScopes == null) {
+            candidate.outputScopes = ["text"];
+          }
+
+          const parsed = ModelSchema.safeParse(candidate);
+          if (!parsed.success) {
+            return null;
+          }
+
+          if (
+            parsed.data.providerCredentialId &&
+            !providerById.has(parsed.data.providerCredentialId)
+          ) {
+            return null;
+          }
+
+          return parsed.data;
+        })
+        .flatMap((value) => (value ? [value] : []))
+    : [];
+
+  const appStateResult = AppStateSchema.safeParse(root.appState);
+  const advancedSettingsResult = SettingsSchema.shape.advancedSettings.safeParse(
+    root.advancedSettings,
+  );
+  const defaultProviderCredentialId =
+    typeof root.defaultProviderCredentialId === "string" &&
+    providerById.has(root.defaultProviderCredentialId)
+      ? root.defaultProviderCredentialId
+      : null;
+  const modelIdSet = new Set(models.map((model) => model.id));
+  const defaultModelId =
+    typeof root.defaultModelId === "string" && modelIdSet.has(root.defaultModelId)
+      ? root.defaultModelId
+      : null;
+
+  return {
+    $version: 2,
+    defaultProviderCredentialId,
+    defaultModelId,
+    providerCredentials,
+    models,
+    appState: appStateResult.success ? appStateResult.data : defaults.appState,
+    advancedSettings: advancedSettingsResult.success
+      ? advancedSettingsResult.data
+      : defaults.advancedSettings,
+    promptTemplateId: typeof root.promptTemplateId === "string" ? root.promptTemplateId : null,
+    systemPrompt: typeof root.systemPrompt === "string" ? root.systemPrompt : null,
+    migrationVersion:
+      typeof root.migrationVersion === "number" && Number.isInteger(root.migrationVersion)
+        ? root.migrationVersion
+        : 0,
+  };
 }
 
 function broadcastSettingsUpdated() {
@@ -565,6 +657,12 @@ export async function readSettings(): Promise<Settings> {
   if (repaired.changed && repairedParsed.success) {
     await writeSettings(repairedParsed.data, true);
     return rememberSettings(repairedParsed.data);
+  }
+
+  const salvaged = salvageSettingsPayload(repaired.next);
+  if (salvaged) {
+    console.warn("Salvaged settings payload after validation failure.");
+    return rememberSettings(salvaged);
   }
 
   if (lastKnownGoodSettings) {
