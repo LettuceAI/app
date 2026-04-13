@@ -33,6 +33,7 @@ type ControllerReturn = {
   state: ModelEditorState;
   isNew: boolean;
   canSave: boolean;
+  hasUnsavedChanges: boolean;
   providerDisplay: (prov: ProviderCredential) => string;
   updateEditorModel: (patch: Partial<Model>) => void;
   handleDisplayNameChange: (value: string) => void;
@@ -412,6 +413,18 @@ export function useModelEditorController(): ControllerReturn {
       JSON.stringify(state.modelAdvancedDraft) !==
       JSON.stringify(initial.modelAdvancedDraft ?? null);
     return valid && (editorChanged || draftChanged);
+  }, [state]);
+
+  const hasUnsavedChanges = useMemo(() => {
+    const { editorModel } = state;
+    const initial = initialStateRef.current;
+    if (!editorModel || !initial) return false;
+    const editorChanged =
+      JSON.stringify(editorModel) !== JSON.stringify(initial.editorModel ?? null);
+    const draftChanged =
+      JSON.stringify(state.modelAdvancedDraft) !==
+      JSON.stringify(initial.modelAdvancedDraft ?? null);
+    return editorChanged || draftChanged;
   }, [state]);
 
   const handleDisplayNameChange = useCallback(
@@ -1406,6 +1419,7 @@ export function useModelEditorController(): ControllerReturn {
     state,
     isNew,
     canSave,
+    hasUnsavedChanges,
     providerDisplay,
     updateEditorModel,
     handleDisplayNameChange,

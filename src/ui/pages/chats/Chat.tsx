@@ -23,13 +23,10 @@ import { createDefaultAccessibilitySettings } from "../../../core/storage/schema
 import {
   abortAudioPreview,
   generateTtsForMessage,
-  isDeviceTtsSpeaking,
   listAudioModels,
   listAudioProviders,
   listUserVoices,
   playAudioFromBase64,
-  speakDeviceTts,
-  stopDeviceTts,
   type AudioModel,
   type AudioProvider,
   type AudioProviderType,
@@ -64,7 +61,7 @@ import {
   EmptyState,
   ChatSettingsDrawer,
 } from "./components";
-import { BottomMenu, MenuButton } from "../../components";
+import { BottomMenu, GuidedTour, MenuButton, useGuidedTour } from "../../components";
 import { AvatarImage } from "../../components/AvatarImage";
 import { useAvatar } from "../../hooks/useAvatar";
 import { Image, RefreshCw, Sparkles, Check, PenLine, Lock } from "lucide-react";
@@ -94,6 +91,13 @@ export function ChatConversationPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { t } = useI18n();
+  const { shouldShow: showChatDetailTour, dismiss: dismissChatDetailTour } =
+    useGuidedTour("chatDetail");
+  const {
+    shouldShow: showPostFirstMessageTour,
+    dismiss: dismissPostFirstMessageTour,
+    show: triggerPostFirstMessageTour,
+  } = useGuidedTour("postFirstMessage");
   const sessionId = searchParams.get("sessionId") || undefined;
   const jumpToMessageId = searchParams.get("jumpToMessage");
   const { backgroundImageData, isBackgroundLight, theme, chatAppearance, chatController } =
@@ -138,9 +142,6 @@ export function ChatConversationPage() {
   >({});
   const audioPlaybackRef = useRef<HTMLAudioElement | null>(null);
   const audioPlayingMessageIdRef = useRef<string | null>(null);
-  const deviceTtsMessageIdRef = useRef<string | null>(null);
-  const deviceTtsPollRef = useRef<number | null>(null);
-  const deviceTtsRequestRef = useRef<{ requestId: string; messageId: string } | null>(null);
   const audioRequestRef = useRef<{ requestId: string; messageId: string } | null>(null);
   const cancelledAudioRequestsRef = useRef<Set<string>>(new Set());
   const abortRequestedRef = useRef(false);
@@ -584,100 +585,6 @@ export function ChatConversationPage() {
     });
   }, []);
 
-  const clearDeviceTtsState = useCallback(() => {
-    if (deviceTtsPollRef.current !== null) {
-      window.clearInterval(deviceTtsPollRef.current);
-      deviceTtsPollRef.current = null;
-    }
-    const messageId = deviceTtsMessageIdRef.current;
-    deviceTtsMessageIdRef.current = null;
-    if (messageId) {
-      setAudioStatus(messageId, null);
-    }
-  }, [setAudioStatus]);
-
-  const cancelDeviceTtsRequest = useCallback(
-    async (messageId?: string) => {
-      const pending = deviceTtsRequestRef.current;
-      if (!pending || (messageId && pending.messageId !== messageId)) {
-        return;
-      }
-      deviceTtsRequestRef.current = null;
-      setAudioStatus(pending.messageId, null);
-      try {
-        await stopDeviceTts();
-      } catch (error) {
-        console.warn("Failed to stop device TTS:", error);
-      }
-    },
-    [setAudioStatus],
-  );
-
-  const startDeviceTtsMonitor = useCallback(
-    (messageId: string) => {
-      if (deviceTtsPollRef.current !== null) {
-        window.clearInterval(deviceTtsPollRef.current);
-      }
-      const poll = async () => {
-        try {
-          const speaking = await isDeviceTtsSpeaking();
-          if (!speaking) {
-            clearDeviceTtsState();
-            return;
-          }
-          setAudioStatus(messageId, "playing");
-        } catch (error) {
-          console.warn("Failed to poll device TTS status:", error);
-          clearDeviceTtsState();
-        }
-      };
-      deviceTtsPollRef.current = window.setInterval(() => {
-        void poll();
-      }, 500);
-      void poll();
-    },
-    [clearDeviceTtsState, setAudioStatus],
-  );
-
-  const stopDeviceTtsPlayback = useCallback(async () => {
-    const pending = deviceTtsRequestRef.current;
-    deviceTtsRequestRef.current = null;
-    if (pending) {
-      setAudioStatus(pending.messageId, null);
-    }
-    try {
-      await stopDeviceTts();
-    } catch (error) {
-      console.warn("Failed to stop device TTS:", error);
-    }
-    clearDeviceTtsState();
-  }, [clearDeviceTtsState, setAudioStatus]);
-
-  const playDeviceTts = useCallback(
-    async (messageId: string, text: string, voiceId?: string) => {
-      const requestId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
-      deviceTtsRequestRef.current = { requestId, messageId };
-      setAudioStatus(messageId, "loading");
-      try {
-        await speakDeviceTts({ text, voiceId });
-      } catch (error) {
-        if (deviceTtsRequestRef.current?.requestId === requestId) {
-          deviceTtsRequestRef.current = null;
-        }
-        setAudioStatus(messageId, null);
-        throw error;
-      }
-      if (deviceTtsRequestRef.current?.requestId !== requestId) {
-        return;
-      }
-      deviceTtsRequestRef.current = null;
-      deviceTtsMessageIdRef.current = messageId;
-      setAudioStatus(messageId, "playing");
-      startDeviceTtsMonitor(messageId);
-    },
-    [setAudioStatus, startDeviceTtsMonitor],
-  );
-
   const buildAudioCacheKey = useCallback(
     (params: {
       providerId: string;
@@ -740,8 +647,7 @@ export function ChatConversationPage() {
       audioPlayingMessageIdRef.current = null;
       setAudioStatus(messageId, null);
     }
-    void stopDeviceTtsPlayback();
-  }, [setAudioStatus, stopDeviceTtsPlayback]);
+  }, [setAudioStatus]);
 
   const cancelAudioGeneration = useCallback(async () => {
     const pending = audioRequestRef.current;
@@ -761,9 +667,6 @@ export function ChatConversationPage() {
       if (audioPlayingMessageIdRef.current && audioPlayingMessageIdRef.current !== message.id) {
         return;
       }
-      if (deviceTtsMessageIdRef.current && deviceTtsMessageIdRef.current !== message.id) {
-        return;
-      }
       stopAudioPlayback();
     },
     [stopAudioPlayback],
@@ -774,13 +677,9 @@ export function ChatConversationPage() {
       if (audioRequestRef.current && audioRequestRef.current.messageId !== message.id) {
         return;
       }
-      if (deviceTtsRequestRef.current && deviceTtsRequestRef.current.messageId === message.id) {
-        void cancelDeviceTtsRequest(message.id);
-        return;
-      }
       void cancelAudioGeneration();
     },
-    [cancelAudioGeneration, cancelDeviceTtsRequest],
+    [cancelAudioGeneration],
   );
 
   useEffect(() => {
@@ -817,19 +716,12 @@ export function ChatConversationPage() {
         stopAudioPlayback();
         return;
       }
-      if (deviceTtsMessageIdRef.current === message.id) {
-        await stopDeviceTtsPlayback();
-        return;
-      }
 
       if (audioRequestRef.current) {
         await cancelAudioGeneration();
       }
       if (audioPlaybackRef.current) {
         stopAudioPlayback();
-      }
-      if (deviceTtsMessageIdRef.current || deviceTtsRequestRef.current) {
-        await stopDeviceTtsPlayback();
       }
 
       const requestId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
@@ -864,12 +756,8 @@ export function ChatConversationPage() {
           throw new Error("Assigned voice not found.");
         }
         const provider = providers.find((p) => p.id === voice.providerId);
-        if (provider?.providerType === "device_tts") {
-          if (audioRequestRef.current?.requestId === requestId) {
-            audioRequestRef.current = null;
-          }
-          await playDeviceTts(message.id, trimmedText, voice.voiceId);
-          return;
+        if (!provider) {
+          throw new Error("Assigned provider not found.");
         }
 
         const cacheKey = buildAudioCacheKey({
@@ -940,13 +828,6 @@ export function ChatConversationPage() {
         const provider = providers.find((p) => p.id === providerId);
         if (!provider) {
           throw new Error("Assigned provider not found.");
-        }
-        if (provider.providerType === "device_tts") {
-          if (audioRequestRef.current?.requestId === requestId) {
-            audioRequestRef.current = null;
-          }
-          await playDeviceTts(message.id, trimmedText, voiceId);
-          return;
         }
 
         let modelId = character.voiceConfig.modelId;
@@ -1023,9 +904,7 @@ export function ChatConversationPage() {
       ensureAudioModels,
       ensureAudioProviders,
       ensureUserVoices,
-      playDeviceTts,
       setAudioStatus,
-      stopDeviceTtsPlayback,
       startAudioPlayback,
       stopAudioPlayback,
     ],
@@ -1694,6 +1573,16 @@ export function ChatConversationPage() {
     }
     wasGeneratingRef.current = isGenerating;
   }, [accessibilitySettings, error, isGenerating]);
+
+  useEffect(() => {
+    if (wasGeneratingRef.current || isGenerating) return;
+    if (!messages.length) return;
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg?.role !== "assistant" || lastMsg.id.startsWith("placeholder")) return;
+    const timer = setTimeout(() => triggerPostFirstMessageTour(), 600);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isGenerating]);
 
   useEffect(() => {
     if (!isAtBottom || !isGenerating) return;
@@ -2731,6 +2620,13 @@ export function ChatConversationPage() {
           onClose={() => setSettingsDrawerOpen(false)}
           character={character}
         />
+      )}
+
+      {showChatDetailTour && character && (
+        <GuidedTour tour="chatDetail" onDismiss={dismissChatDetailTour} />
+      )}
+      {showPostFirstMessageTour && !showChatDetailTour && character && (
+        <GuidedTour tour="postFirstMessage" onDismiss={dismissPostFirstMessageTour} />
       )}
     </div>
   );

@@ -62,7 +62,7 @@ import { toast } from "../../components/toast";
 import { useModelEditorController } from "./hooks/useModelEditorController";
 import { useNavigationManager } from "../../navigation";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { addOrUpdateModel, readSettingsCached } from "../../../core/storage/repo";
+import { addOrUpdateModel } from "../../../core/storage/repo";
 import type { LlamaLastRuntimeReport, ReasoningSupport } from "../../../core/storage/schemas";
 import {
   getProviderReasoningSupport,
@@ -372,6 +372,11 @@ export function EditModelPage() {
   const [movePromptSource, setMovePromptSource] = useState<"save" | "browse">("save");
   const [movingModel, setMovingModel] = useState(false);
   const [moveError, setMoveError] = useState<string | null>(null);
+  const [movePromptPath, setMovePromptPath] = useState<string | null>(null);
+  const [skippedMovePromptPath, setSkippedMovePromptPath] = useState<string | null>(null);
+  const [pendingReturnAfterMovePrompt, setPendingReturnAfterMovePrompt] = useState<string | null>(
+    null,
+  );
   const [showLlamaRuntimeReport, setShowLlamaRuntimeReport] = useState(false);
   const [showTemplateOverlay, setShowTemplateOverlay] = useState(false);
   const [templateOverlayDraft, setTemplateOverlayDraft] = useState("");
@@ -408,7 +413,9 @@ export function EditModelPage() {
       editorModel,
       modelAdvancedDraft,
     },
+    isNew,
     canSave,
+    hasUnsavedChanges,
     updateEditorModel,
     handleDisplayNameChange,
     handleModelNameChange,
@@ -461,7 +468,6 @@ export function EditModelPage() {
     handlePromptCachingEnabledChange,
     handlePromptCachingTtlChange,
     applyLlamaRuntimeSuggestion,
-    handleSave,
     saveModel,
     resetToInitial,
     fetchModels,
@@ -470,6 +476,7 @@ export function EditModelPage() {
   const editNavigate = useNavigate();
   const [editSearchParams] = useSearchParams();
   const returnTo = editSearchParams.get("returnTo");
+  const isOnboardingReturnFlow = !!returnTo?.startsWith("/onboarding");
   const isLocalModel = editorModel?.providerId === "llamacpp";
   const isOllamaModel = editorModel?.providerId === "ollama";
   const llamaRuntimeReport = modelAdvancedDraft.llamaLastRuntimeReport ?? null;
@@ -651,8 +658,10 @@ export function EditModelPage() {
       if (!editorModel?.displayName?.trim()) {
         handleDisplayNameChange(deriveDisplayNameFromPath(selected));
       }
-      if (isPathOutsideGgufDir(selected)) {
+      if (isPathOutsideGgufDir(selected) && skippedMovePromptPath !== selected) {
         setMovePromptSource("browse");
+        setMovePromptPath(selected);
+        setPendingReturnAfterMovePrompt(null);
         setMoveError(null);
         setShowMovePrompt(true);
       }
@@ -835,15 +844,22 @@ export function EditModelPage() {
   };
 
   // Intercept save for llamacpp models to check if move prompt is needed
-  const handleSaveWithMoveCheck = async () => {
+  const handleSaveWithMoveCheck = async (options?: { navigateAfterSave?: boolean }) => {
+    const shouldNavigateAfterSave = options?.navigateAfterSave && !!returnTo;
     if (!isLocalModel || !editorModel?.name?.trim()) {
-      handleSave();
+      const success = await saveModel();
+      if (success && shouldNavigateAfterSave) {
+        editNavigate(returnTo!);
+      }
       return;
     }
 
     const modelPath = editorModel.name.trim();
-    if (!isPathOutsideGgufDir(modelPath)) {
-      handleSave();
+    if (!isPathOutsideGgufDir(modelPath) || skippedMovePromptPath === modelPath) {
+      const success = await saveModel();
+      if (success && shouldNavigateAfterSave) {
+        editNavigate(returnTo!);
+      }
       return;
     }
 
@@ -851,6 +867,10 @@ export function EditModelPage() {
     const success = await saveModel();
     if (success) {
       setMovePromptSource("save");
+      setMovePromptPath(modelPath);
+      setPendingReturnAfterMovePrompt(shouldNavigateAfterSave ? returnTo! : null);
+      setSkippedMovePromptPath(null);
+      setMoveError(null);
       setShowMovePrompt(true);
     }
   };
@@ -881,7 +901,14 @@ export function EditModelPage() {
         updateEditorModel({ name: newPath });
       }
 
+      setSkippedMovePromptPath(null);
+      const nextReturnTo = pendingReturnAfterMovePrompt;
+      setPendingReturnAfterMovePrompt(null);
       setShowMovePrompt(false);
+      setMovePromptPath(null);
+      if (nextReturnTo) {
+        editNavigate(nextReturnTo);
+      }
     } catch (err: any) {
       console.error("Failed to move model", err);
       setMoveError(
@@ -893,7 +920,16 @@ export function EditModelPage() {
   };
 
   const handleSkipMove = () => {
+    if (movePromptPath) {
+      setSkippedMovePromptPath(movePromptPath);
+    }
+    const nextReturnTo = pendingReturnAfterMovePrompt;
+    setPendingReturnAfterMovePrompt(null);
     setShowMovePrompt(false);
+    setMovePromptPath(null);
+    if (nextReturnTo) {
+      editNavigate(nextReturnTo);
+    }
   };
   const selectedProviderCredential =
     editorModel &&
@@ -1342,7 +1378,7 @@ export function EditModelPage() {
   // Register window globals for header save button
   useEffect(() => {
     const globalWindow = window as any;
-    globalWindow.__saveModel = handleSaveWithMoveCheck;
+    globalWindow.__saveModel = () => void handleSaveWithMoveCheck();
     globalWindow.__saveModelCanSave = canSave;
     globalWindow.__saveModelSaving = saving || verifying;
     return () => {
@@ -4744,21 +4780,32 @@ export function EditModelPage() {
 
       {/* Continue Setup button when coming from onboarding */}
       {returnTo && (() => {
-        const cached = readSettingsCached();
-        const hasModel = cached ? cached.models.some((m) => m.providerId === "llamacpp") : false;
+        const canContinueWithCurrentModel = !isNew && !hasUnsavedChanges;
+        const canContinueSetup =
+          !(saving || verifying) && (canSave || canContinueWithCurrentModel);
         return (
           <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
             <button
-              onClick={() => editNavigate(returnTo)}
-              disabled={!hasModel}
+              onClick={() => {
+                if (canSave) {
+                  void handleSaveWithMoveCheck({ navigateAfterSave: true });
+                  return;
+                }
+                if (canContinueWithCurrentModel) {
+                  editNavigate(returnTo);
+                }
+              }}
+              disabled={!canContinueSetup}
               className={cn(
                 "flex items-center gap-2 rounded-full px-6 py-3 text-sm font-bold transition active:scale-[0.98]",
-                hasModel
+                canContinueSetup
                   ? "border border-emerald-500/40 bg-emerald-500 text-black shadow-[0_4px_20px_rgba(16,185,129,0.35)] hover:bg-emerald-400"
                   : "border border-white/10 bg-white/10 text-white/40 cursor-not-allowed",
               )}
             >
-              {hasModel ? "Continue Setup" : "Save a model to continue"}
+              {isOnboardingReturnFlow || canContinueWithCurrentModel
+                ? "Continue Setup"
+                : "Save a model to continue"}
               <ArrowRight size={16} />
             </button>
           </div>

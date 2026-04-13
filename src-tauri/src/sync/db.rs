@@ -138,6 +138,7 @@ struct SyncGroupSessionRecord {
     memory_tool_events: String,
     memory_status: Option<String>,
     memory_error: Option<String>,
+    memory_progress_step: Option<i64>,
     speaker_selection_method: String,
     memory_type: String,
 }
@@ -777,6 +778,20 @@ fn collect_asset_records(
             })?;
         }
     }
+    let persona_design_reference_sets = collect_optional_text_values(
+        conn,
+        "SELECT design_reference_image_ids FROM personas WHERE design_reference_image_ids IS NOT NULL AND design_reference_image_ids != ''",
+    )?;
+    for refs in persona_design_reference_sets {
+        add_image_assets_from_json_array(&images_dir, &refs, app, &mut seen, &mut records)?;
+    }
+    let lorebook_avatar_paths = collect_optional_text_values(
+        conn,
+        "SELECT avatar_path FROM lorebooks WHERE avatar_path IS NOT NULL AND avatar_path != ''",
+    )?;
+    for avatar_path in lorebook_avatar_paths {
+        add_image_reference_asset(&images_dir, &avatar_path, app, &mut seen, &mut records)?;
+    }
 
     let character_ids = collect_text_ids(conn, "SELECT id FROM characters")?;
     for id in &character_ids {
@@ -801,7 +816,17 @@ fn collect_asset_records(
             )
             .unwrap_or(None);
         if let Some(bg_id) = bg_path {
-            add_image_asset(&images_dir, &bg_id, app, &mut seen, &mut records)?;
+            add_image_reference_asset(&images_dir, &bg_id, app, &mut seen, &mut records)?;
+        }
+        let design_refs: Option<String> = conn
+            .query_row(
+                "SELECT design_reference_image_ids FROM characters WHERE id = ?1",
+                params![id],
+                |row| row.get(0),
+            )
+            .unwrap_or(None);
+        if let Some(refs) = design_refs {
+            add_image_assets_from_json_array(&images_dir, &refs, app, &mut seen, &mut records)?;
         }
     }
 
@@ -810,7 +835,7 @@ fn collect_asset_records(
         "SELECT background_image_path FROM group_characters WHERE background_image_path IS NOT NULL AND background_image_path != ''",
     )?;
     for bg_id in group_background_ids {
-        add_image_asset(&images_dir, &bg_id, app, &mut seen, &mut records)?;
+        add_image_reference_asset(&images_dir, &bg_id, app, &mut seen, &mut records)?;
     }
 
     let group_session_background_ids = collect_text_ids(
@@ -818,7 +843,15 @@ fn collect_asset_records(
         "SELECT background_image_path FROM group_sessions WHERE background_image_path IS NOT NULL AND background_image_path != ''",
     )?;
     for bg_id in group_session_background_ids {
-        add_image_asset(&images_dir, &bg_id, app, &mut seen, &mut records)?;
+        add_image_reference_asset(&images_dir, &bg_id, app, &mut seen, &mut records)?;
+    }
+
+    let session_background_ids = collect_text_ids(
+        conn,
+        "SELECT background_image_path FROM sessions WHERE background_image_path IS NOT NULL AND background_image_path != ''",
+    )?;
+    for bg_id in session_background_ids {
+        add_image_reference_asset(&images_dir, &bg_id, app, &mut seen, &mut records)?;
     }
 
     let mut stmt = conn
@@ -950,6 +983,35 @@ fn add_image_asset(
         }
     }
 
+    Ok(())
+}
+
+fn add_image_reference_asset(
+    images_dir: &Path,
+    reference: &str,
+    app: &tauri::AppHandle,
+    seen: &mut HashSet<String>,
+    records: &mut Vec<AssetRecord>,
+) -> Result<(), String> {
+    if reference.contains('/') {
+        return add_file_asset(app, reference, seen, records);
+    }
+
+    add_image_asset(images_dir, reference, app, seen, records)
+}
+
+fn add_image_assets_from_json_array(
+    images_dir: &Path,
+    raw_ids: &str,
+    app: &tauri::AppHandle,
+    seen: &mut HashSet<String>,
+    records: &mut Vec<AssetRecord>,
+) -> Result<(), String> {
+    let ids = serde_json::from_str::<Vec<String>>(raw_ids)
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    for id in ids {
+        add_image_reference_asset(images_dir, &id, app, seen, records)?;
+    }
     Ok(())
 }
 
@@ -1498,6 +1560,22 @@ fn collect_text_ids(conn: &DbConnection, sql: &str) -> Result<Vec<String>, Strin
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
 }
 
+fn collect_optional_text_values(conn: &DbConnection, sql: &str) -> Result<Vec<String>, String> {
+    let mut stmt = conn
+        .prepare(sql)
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    let rows = stmt
+        .query_map([], |row| row.get::<_, Option<String>>(0))
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    let values = rows
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+    Ok(values)
+}
+
 fn fetch_group_configs(conn: &DbConnection) -> Result<Vec<SyncGroupConfigRecord>, String> {
     let mut stmt = conn
         .prepare("SELECT id, name, character_ids, muted_character_ids, persona_id, created_at, updated_at, archived, chat_type, starting_scene, background_image_path, COALESCE(lorebook_ids, '[]'), COALESCE(disable_character_lorebooks, 0), COALESCE(speaker_selection_method, 'llm'), COALESCE(memory_type, 'manual') FROM group_characters")
@@ -1553,7 +1631,7 @@ fn fetch_group_sessions_full(
     }
 
     let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-    let sql = format!("SELECT id, group_character_id, name, character_ids, muted_character_ids, persona_id, created_at, updated_at, archived, chat_type, starting_scene, background_image_path, COALESCE(lorebook_ids, '[]'), COALESCE(disable_character_lorebooks, 0), memories, memory_embeddings, memory_summary, memory_summary_token_count, memory_tool_events, memory_status, memory_error, COALESCE(speaker_selection_method, 'llm'), COALESCE(memory_type, 'manual') FROM group_sessions WHERE id IN ({})", placeholders);
+    let sql = format!("SELECT id, group_character_id, name, character_ids, muted_character_ids, persona_id, created_at, updated_at, archived, chat_type, starting_scene, background_image_path, COALESCE(lorebook_ids, '[]'), COALESCE(disable_character_lorebooks, 0), memories, memory_embeddings, memory_summary, memory_summary_token_count, memory_tool_events, memory_status, memory_error, memory_progress_step, COALESCE(speaker_selection_method, 'llm'), COALESCE(memory_type, 'manual') FROM group_sessions WHERE id IN ({})", placeholders);
     let mut stmt = conn
         .prepare(&sql)
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
@@ -1581,8 +1659,9 @@ fn fetch_group_sessions_full(
                 memory_tool_events: r.get(18)?,
                 memory_status: r.get(19)?,
                 memory_error: r.get(20)?,
-                speaker_selection_method: r.get(21)?,
-                memory_type: r.get(22)?,
+                memory_progress_step: r.get(21)?,
+                speaker_selection_method: r.get(22)?,
+                memory_type: r.get(23)?,
             })
         })
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
@@ -1669,8 +1748,8 @@ fn apply_core_snapshot(conn: &mut DbConnection, payload: &[u8]) -> Result<(), St
         .collect::<Vec<_>>();
     for persona in snapshot.personas {
         tx.execute(
-            r#"INSERT OR REPLACE INTO personas (id, title, description, nickname, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, is_default, created_at, updated_at)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)"#,
+            r#"INSERT OR REPLACE INTO personas (id, title, description, nickname, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, design_description, design_reference_image_ids, is_default, created_at, updated_at)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)"#,
             params![
                 persona.id,
                 persona.title,
@@ -1680,6 +1759,8 @@ fn apply_core_snapshot(conn: &mut DbConnection, payload: &[u8]) -> Result<(), St
                 persona.avatar_crop_x,
                 persona.avatar_crop_y,
                 persona.avatar_crop_scale,
+                persona.design_description,
+                persona.design_reference_image_ids,
                 persona.is_default,
                 persona.created_at,
                 persona.updated_at
@@ -1751,13 +1832,12 @@ fn apply_core_snapshot(conn: &mut DbConnection, payload: &[u8]) -> Result<(), St
 
     for template in snapshot.prompt_templates {
         tx.execute(
-            r#"INSERT OR REPLACE INTO prompt_templates (id, name, scope, target_ids, content, entries, condense_prompt_entries, created_at, updated_at)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)"#,
+            r#"INSERT OR REPLACE INTO prompt_templates (id, name, prompt_type, content, entries, condense_prompt_entries, created_at, updated_at)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"#,
             params![
                 template.id,
                 template.name,
-                template.scope,
-                template.target_ids,
+                template.prompt_type,
                 template.content,
                 template.entries,
                 template.condense_prompt_entries,
@@ -1900,8 +1980,8 @@ fn apply_characters_snapshot(conn: &mut DbConnection, payload: &[u8]) -> Result<
         .collect::<Vec<_>>();
     for character in snapshot.characters {
         tx.execute(
-            r#"INSERT OR REPLACE INTO characters (id, name, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, background_image_path, definition, description, nickname, scenario, creator_notes, creator, creator_notes_multilingual, source, tags, default_scene_id, default_model_id, fallback_model_id, memory_type, prompt_template_id, system_prompt, voice_config, voice_autoplay, disable_avatar_gradient, custom_gradient_enabled, custom_gradient_colors, custom_text_color, custom_text_secondary, chat_appearance, default_chat_template_id, created_at, updated_at)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33)"#,
+            r#"INSERT OR REPLACE INTO characters (id, name, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, design_description, design_reference_image_ids, background_image_path, definition, description, nickname, scenario, creator_notes, creator, creator_notes_multilingual, source, tags, default_scene_id, default_model_id, fallback_model_id, memory_type, prompt_template_id, group_chat_prompt_template_id, group_chat_roleplay_prompt_template_id, system_prompt, voice_config, voice_autoplay, disable_avatar_gradient, custom_gradient_enabled, custom_gradient_colors, custom_text_color, custom_text_secondary, chat_appearance, default_chat_template_id, created_at, updated_at)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35, ?36, ?37)"#,
             params![
                 character.id,
                 character.name,
@@ -1909,6 +1989,8 @@ fn apply_characters_snapshot(conn: &mut DbConnection, payload: &[u8]) -> Result<
                 character.avatar_crop_x,
                 character.avatar_crop_y,
                 character.avatar_crop_scale,
+                character.design_description,
+                character.design_reference_image_ids,
                 character.background_image_path,
                 character.definition,
                 character.description,
@@ -1924,6 +2006,8 @@ fn apply_characters_snapshot(conn: &mut DbConnection, payload: &[u8]) -> Result<
                 character.fallback_model_id,
                 character.memory_type,
                 character.prompt_template_id,
+                character.group_chat_prompt_template_id,
+                character.group_chat_roleplay_prompt_template_id,
                 character.system_prompt,
                 character.voice_config,
                 character.voice_autoplay,
@@ -2094,8 +2178,8 @@ fn apply_groups_snapshot(conn: &mut DbConnection, payload: &[u8]) -> Result<(), 
 
     for session in snapshot.group_sessions {
         tx.execute(
-            r#"INSERT OR REPLACE INTO group_sessions (id, group_character_id, name, character_ids, muted_character_ids, persona_id, created_at, updated_at, archived, chat_type, starting_scene, background_image_path, lorebook_ids, disable_character_lorebooks, memories, memory_embeddings, memory_summary, memory_summary_token_count, memory_tool_events, memory_status, memory_error, speaker_selection_method, memory_type)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)"#,
+            r#"INSERT OR REPLACE INTO group_sessions (id, group_character_id, name, character_ids, muted_character_ids, persona_id, created_at, updated_at, archived, chat_type, starting_scene, background_image_path, lorebook_ids, disable_character_lorebooks, memories, memory_embeddings, memory_summary, memory_summary_token_count, memory_tool_events, memory_status, memory_error, memory_progress_step, speaker_selection_method, memory_type)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)"#,
             params![
                 session.id,
                 session.group_character_id,
@@ -2118,6 +2202,7 @@ fn apply_groups_snapshot(conn: &mut DbConnection, payload: &[u8]) -> Result<(), 
                 session.memory_tool_events,
                 session.memory_status,
                 session.memory_error,
+                session.memory_progress_step,
                 session.speaker_selection_method,
                 session.memory_type
             ],
@@ -2270,12 +2355,13 @@ fn apply_sessions_snapshot(conn: &mut DbConnection, payload: &[u8]) -> Result<()
 
     for session in snapshot.sessions {
         tx.execute(
-            r#"INSERT OR REPLACE INTO sessions (id, character_id, title, system_prompt, selected_scene_id, prompt_template_id, persona_id, persona_disabled, voice_autoplay, temperature, top_p, max_output_tokens, frequency_penalty, presence_penalty, top_k, memories, memory_embeddings, memory_summary, memory_summary_token_count, memory_tool_events, archived, created_at, updated_at, memory_status, memory_error)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)"#,
+            r#"INSERT OR REPLACE INTO sessions (id, character_id, title, background_image_path, system_prompt, selected_scene_id, prompt_template_id, persona_id, persona_disabled, voice_autoplay, temperature, top_p, max_output_tokens, frequency_penalty, presence_penalty, top_k, memories, memory_embeddings, memory_summary, memory_summary_token_count, memory_tool_events, archived, created_at, updated_at, memory_status, memory_error, memory_progress_step)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)"#,
             params![
                 session.id,
                 session.character_id,
                 session.title,
+                session.background_image_path,
                 session.system_prompt,
                 session.selected_scene_id,
                 session.prompt_template_id,
@@ -2297,7 +2383,8 @@ fn apply_sessions_snapshot(conn: &mut DbConnection, payload: &[u8]) -> Result<()
                 session.created_at,
                 session.updated_at,
                 session.memory_status,
-                session.memory_error
+                session.memory_error,
+                session.memory_progress_step
             ],
         )
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
@@ -2502,7 +2589,7 @@ fn fetch_global_core(conn: &DbConnection) -> Result<GlobalCoreData, String> {
 
     // Personas
     let mut stmt = conn
-        .prepare("SELECT id, title, description, nickname, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, is_default, created_at, updated_at FROM personas")
+        .prepare("SELECT id, title, description, nickname, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, design_description, design_reference_image_ids, is_default, created_at, updated_at FROM personas")
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     let personas: Vec<Persona> = stmt
         .query_map([], |r| {
@@ -2515,9 +2602,11 @@ fn fetch_global_core(conn: &DbConnection) -> Result<GlobalCoreData, String> {
                 avatar_crop_x: r.get(5)?,
                 avatar_crop_y: r.get(6)?,
                 avatar_crop_scale: r.get(7)?,
-                is_default: r.get(8)?,
-                created_at: r.get(9)?,
-                updated_at: r.get(10)?,
+                design_description: r.get(8)?,
+                design_reference_image_ids: r.get(9)?,
+                is_default: r.get(10)?,
+                created_at: r.get(11)?,
+                updated_at: r.get(12)?,
             })
         })
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
@@ -2587,19 +2676,18 @@ fn fetch_global_core(conn: &DbConnection) -> Result<GlobalCoreData, String> {
         .collect();
 
     // Prompt Templates
-    let mut stmt = conn.prepare("SELECT id, name, scope, target_ids, content, entries, condense_prompt_entries, created_at, updated_at FROM prompt_templates").map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    let mut stmt = conn.prepare("SELECT id, name, prompt_type, content, entries, condense_prompt_entries, created_at, updated_at FROM prompt_templates").map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     let templates: Vec<PromptTemplate> = stmt
         .query_map([], |r| {
             Ok(PromptTemplate {
                 id: r.get(0)?,
                 name: r.get(1)?,
-                scope: r.get(2)?,
-                target_ids: r.get(3)?,
-                content: r.get(4)?,
-                entries: r.get(5)?,
-                condense_prompt_entries: r.get(6)?,
-                created_at: r.get(7)?,
-                updated_at: r.get(8)?,
+                prompt_type: r.get(2)?,
+                content: r.get(3)?,
+                entries: r.get(4)?,
+                condense_prompt_entries: r.get(5)?,
+                created_at: r.get(6)?,
+                updated_at: r.get(7)?,
             })
         })
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
@@ -2750,7 +2838,7 @@ fn fetch_characters_data(
     let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
 
     // Characters
-    let sql = format!("SELECT id, name, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, background_image_path, definition, description, nickname, scenario, creator_notes, creator, creator_notes_multilingual, source, tags, default_scene_id, default_model_id, fallback_model_id, memory_type, prompt_template_id, system_prompt, voice_config, voice_autoplay, disable_avatar_gradient, custom_gradient_enabled, custom_gradient_colors, custom_text_color, custom_text_secondary, chat_appearance, default_chat_template_id, created_at, updated_at FROM characters WHERE id IN ({})", placeholders);
+    let sql = format!("SELECT id, name, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, design_description, design_reference_image_ids, background_image_path, definition, description, nickname, scenario, creator_notes, creator, creator_notes_multilingual, source, tags, default_scene_id, default_model_id, fallback_model_id, memory_type, prompt_template_id, group_chat_prompt_template_id, group_chat_roleplay_prompt_template_id, system_prompt, voice_config, voice_autoplay, disable_avatar_gradient, custom_gradient_enabled, custom_gradient_colors, custom_text_color, custom_text_secondary, chat_appearance, default_chat_template_id, created_at, updated_at FROM characters WHERE id IN ({})", placeholders);
     let mut stmt = conn
         .prepare(&sql)
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
@@ -2763,33 +2851,37 @@ fn fetch_characters_data(
                 avatar_crop_x: r.get(3)?,
                 avatar_crop_y: r.get(4)?,
                 avatar_crop_scale: r.get(5)?,
-                background_image_path: r.get(6)?,
-                definition: r.get(7)?,
-                description: r.get(8)?,
-                nickname: r.get(9)?,
-                scenario: r.get(10)?,
-                creator_notes: r.get(11)?,
-                creator: r.get(12)?,
-                creator_notes_multilingual: r.get(13)?,
-                source: r.get(14)?,
-                tags: r.get(15)?,
-                default_scene_id: r.get(16)?,
-                default_model_id: r.get(17)?,
-                fallback_model_id: r.get(18)?,
-                memory_type: r.get(19)?,
-                prompt_template_id: r.get(20)?,
-                system_prompt: r.get(21)?,
-                voice_config: r.get(22)?,
-                voice_autoplay: r.get(23)?,
-                disable_avatar_gradient: r.get(24)?,
-                custom_gradient_enabled: r.get(25)?,
-                custom_gradient_colors: r.get(26)?,
-                custom_text_color: r.get(27)?,
-                custom_text_secondary: r.get(28)?,
-                chat_appearance: r.get(29)?,
-                default_chat_template_id: r.get(30)?,
-                created_at: r.get(31)?,
-                updated_at: r.get(32)?,
+                design_description: r.get(6)?,
+                design_reference_image_ids: r.get(7)?,
+                background_image_path: r.get(8)?,
+                definition: r.get(9)?,
+                description: r.get(10)?,
+                nickname: r.get(11)?,
+                scenario: r.get(12)?,
+                creator_notes: r.get(13)?,
+                creator: r.get(14)?,
+                creator_notes_multilingual: r.get(15)?,
+                source: r.get(16)?,
+                tags: r.get(17)?,
+                default_scene_id: r.get(18)?,
+                default_model_id: r.get(19)?,
+                fallback_model_id: r.get(20)?,
+                memory_type: r.get(21)?,
+                prompt_template_id: r.get(22)?,
+                group_chat_prompt_template_id: r.get(23)?,
+                group_chat_roleplay_prompt_template_id: r.get(24)?,
+                system_prompt: r.get(25)?,
+                voice_config: r.get(26)?,
+                voice_autoplay: r.get(27)?,
+                disable_avatar_gradient: r.get(28)?,
+                custom_gradient_enabled: r.get(29)?,
+                custom_gradient_colors: r.get(30)?,
+                custom_text_color: r.get(31)?,
+                custom_text_secondary: r.get(32)?,
+                chat_appearance: r.get(33)?,
+                default_chat_template_id: r.get(34)?,
+                created_at: r.get(35)?,
+                updated_at: r.get(36)?,
             })
         })
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
@@ -2949,7 +3041,7 @@ fn fetch_sessions_data(
     let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
 
     // Sessions
-    let sql = format!("SELECT id, character_id, title, system_prompt, selected_scene_id, prompt_template_id, persona_id, persona_disabled, voice_autoplay, temperature, top_p, max_output_tokens, frequency_penalty, presence_penalty, top_k, memories, memory_embeddings, memory_summary, memory_summary_token_count, memory_tool_events, archived, created_at, updated_at, memory_status, memory_error FROM sessions WHERE id IN ({})", placeholders);
+    let sql = format!("SELECT id, character_id, title, background_image_path, system_prompt, selected_scene_id, prompt_template_id, persona_id, persona_disabled, voice_autoplay, temperature, top_p, max_output_tokens, frequency_penalty, presence_penalty, top_k, memories, memory_embeddings, memory_summary, memory_summary_token_count, memory_tool_events, archived, created_at, updated_at, memory_status, memory_error, memory_progress_step FROM sessions WHERE id IN ({})", placeholders);
     let mut stmt = conn
         .prepare(&sql)
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
@@ -2959,28 +3051,30 @@ fn fetch_sessions_data(
                 id: r.get(0)?,
                 character_id: r.get(1)?,
                 title: r.get(2)?,
-                system_prompt: r.get(3)?,
-                selected_scene_id: r.get(4)?,
-                prompt_template_id: r.get(5)?,
-                persona_id: r.get(6)?,
-                persona_disabled: r.get(7)?,
-                voice_autoplay: r.get(8)?,
-                temperature: r.get(9)?,
-                top_p: r.get(10)?,
-                max_output_tokens: r.get(11)?,
-                frequency_penalty: r.get(12)?,
-                presence_penalty: r.get(13)?,
-                top_k: r.get(14)?,
-                memories: r.get(15)?,
-                memory_embeddings: r.get(16)?,
-                memory_summary: r.get(17)?,
-                memory_summary_token_count: r.get(18)?,
-                memory_tool_events: r.get(19)?,
-                archived: r.get(20)?,
-                created_at: r.get(21)?,
-                updated_at: r.get(22)?,
-                memory_status: r.get(23)?,
-                memory_error: r.get(24)?,
+                background_image_path: r.get(3)?,
+                system_prompt: r.get(4)?,
+                selected_scene_id: r.get(5)?,
+                prompt_template_id: r.get(6)?,
+                persona_id: r.get(7)?,
+                persona_disabled: r.get(8)?,
+                voice_autoplay: r.get(9)?,
+                temperature: r.get(10)?,
+                top_p: r.get(11)?,
+                max_output_tokens: r.get(12)?,
+                frequency_penalty: r.get(13)?,
+                presence_penalty: r.get(14)?,
+                top_k: r.get(15)?,
+                memories: r.get(16)?,
+                memory_embeddings: r.get(17)?,
+                memory_summary: r.get(18)?,
+                memory_summary_token_count: r.get(19)?,
+                memory_tool_events: r.get(20)?,
+                archived: r.get(21)?,
+                created_at: r.get(22)?,
+                updated_at: r.get(23)?,
+                memory_status: r.get(24)?,
+                memory_error: r.get(25)?,
+                memory_progress_step: r.get(26)?,
             })
         })
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
@@ -3120,7 +3214,7 @@ fn fetch_group_sessions_data(
     }
     let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
 
-    let sql = format!("SELECT id, group_character_id, name, character_ids, muted_character_ids, persona_id, created_at, updated_at, archived, chat_type, starting_scene, background_image_path, memories, memory_embeddings, memory_summary, memory_summary_token_count, memory_tool_events, COALESCE(speaker_selection_method, 'llm'), COALESCE(memory_type, 'manual') FROM group_sessions WHERE id IN ({})", placeholders);
+    let sql = format!("SELECT id, group_character_id, name, character_ids, muted_character_ids, persona_id, created_at, updated_at, archived, chat_type, starting_scene, background_image_path, COALESCE(lorebook_ids, '[]'), COALESCE(disable_character_lorebooks, 0), memories, memory_embeddings, memory_summary, memory_summary_token_count, memory_tool_events, memory_status, memory_error, memory_progress_step, COALESCE(speaker_selection_method, 'llm'), COALESCE(memory_type, 'manual') FROM group_sessions WHERE id IN ({})", placeholders);
     let mut stmt = conn
         .prepare(&sql)
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
@@ -3139,13 +3233,18 @@ fn fetch_group_sessions_data(
                 chat_type: r.get(9)?,
                 starting_scene: r.get(10)?,
                 background_image_path: r.get(11)?,
-                memories: r.get(12)?,
-                memory_embeddings: r.get(13)?,
-                memory_summary: r.get(14)?,
-                memory_summary_token_count: r.get(15)?,
-                memory_tool_events: r.get(16)?,
-                speaker_selection_method: r.get(17)?,
-                memory_type: r.get(18)?,
+                lorebook_ids: r.get(12)?,
+                disable_character_lorebooks: r.get(13)?,
+                memories: r.get(14)?,
+                memory_embeddings: r.get(15)?,
+                memory_summary: r.get(16)?,
+                memory_summary_token_count: r.get(17)?,
+                memory_tool_events: r.get(18)?,
+                memory_status: r.get(19)?,
+                memory_error: r.get(20)?,
+                memory_progress_step: r.get(21)?,
+                speaker_selection_method: r.get(22)?,
+                memory_type: r.get(23)?,
             })
         })
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?

@@ -386,7 +386,8 @@ fn extract_reasoning_from_value(v: &Value) -> Option<String> {
     {
         return Some(s.to_string());
     }
-    // Also check message.reasoning for non-streaming responses
+    // Streaming decoders must preserve per-chunk whitespace. Do not trim these direct
+    // reasoning fields, because providers like Ollama emit leading spaces in later chunks.
     if let Some(s) = v
         .get("choices")
         .and_then(|c| c.get(0))
@@ -394,10 +395,8 @@ fn extract_reasoning_from_value(v: &Value) -> Option<String> {
         .and_then(|m| m.get("reasoning"))
         .and_then(|t| t.as_str())
     {
-        let split = normalize_thinking_content(None, Some(s));
-        return (!split.reasoning.is_empty()).then_some(split.reasoning);
+        return Some(s.to_string());
     }
-    // Check message.reasoning_content for non-streaming responses
     if let Some(s) = v
         .get("choices")
         .and_then(|c| c.get(0))
@@ -405,16 +404,14 @@ fn extract_reasoning_from_value(v: &Value) -> Option<String> {
         .and_then(|m| m.get("reasoning_content"))
         .and_then(|t| t.as_str())
     {
-        let split = normalize_thinking_content(None, Some(s));
-        return (!split.reasoning.is_empty()).then_some(split.reasoning);
+        return Some(s.to_string());
     }
     if let Some(s) = v
         .get("message")
         .and_then(|m| m.get("thinking"))
         .and_then(|t| t.as_str())
     {
-        let split = normalize_thinking_content(None, Some(s));
-        return (!split.reasoning.is_empty()).then_some(split.reasoning);
+        return Some(s.to_string());
     }
     // Gemini-style: candidates[].content.parts[] with thought=true
     if let Some(candidates) = v.get("candidates").and_then(|c| c.as_array()) {
@@ -439,8 +436,7 @@ fn extract_reasoning_from_value(v: &Value) -> Option<String> {
             }
         }
         if !combined.is_empty() {
-            let split = normalize_thinking_content(None, Some(&combined));
-            return (!split.reasoning.is_empty()).then_some(split.reasoning);
+            return Some(combined);
         }
     }
 
@@ -462,6 +458,38 @@ fn extract_reasoning_from_value(v: &Value) -> Option<String> {
         return (!split.reasoning.is_empty()).then_some(split.reasoning);
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SseDecoder;
+    use crate::chat_manager::types::NormalizedEvent;
+
+    #[test]
+    fn ollama_reasoning_stream_preserves_leading_spaces() {
+        let mut decoder = SseDecoder::new();
+
+        let first = decoder.feed(
+            "{\"message\":{\"thinking\":\"ThinkingProcess: 1.\"},\"done\":false}\n",
+            Some("ollama"),
+        );
+        let second = decoder.feed(
+            "{\"message\":{\"thinking\":\" Analyze the Request\"},\"done\":false}\n",
+            Some("ollama"),
+        );
+
+        assert_eq!(first.len(), 1);
+        match &first[0] {
+            NormalizedEvent::Reasoning { text } => assert_eq!(text, "ThinkingProcess: 1."),
+            other => panic!("unexpected first event: {other:?}"),
+        }
+
+        assert_eq!(second.len(), 1);
+        match &second[0] {
+            NormalizedEvent::Reasoning { text } => assert_eq!(text, " Analyze the Request"),
+            other => panic!("unexpected second event: {other:?}"),
+        }
+    }
 }
 
 fn extract_image_data_urls_from_value(v: &Value, out: &mut Vec<String>) {

@@ -365,16 +365,24 @@ export function TopNav({
     () => /^\/settings\/characters\/[^/]+\/templates\/[^/]+$/.test(basePath),
     [basePath],
   );
+  const isOnboardingModelEditor = useMemo(
+    () =>
+      (isModelEdit || isModelNew) &&
+      (currentPath.includes("returnTo=/onboarding") ||
+        currentPath.includes("returnTo=%2Fonboarding")),
+    [currentPath, isModelEdit, isModelNew],
+  );
   const showSaveButton =
-    isCharacterEdit ||
-    isPersonaEdit ||
-    isModelEdit ||
-    isModelNew ||
-    isPromptEdit ||
-    isPromptNew ||
-    isChatAppearanceEdit ||
-    isColorCustomizationEdit ||
-    isTemplateEdit;
+    !isOnboardingModelEditor &&
+    (isCharacterEdit ||
+      isPersonaEdit ||
+      isModelEdit ||
+      isModelNew ||
+      isPromptEdit ||
+      isPromptNew ||
+      isChatAppearanceEdit ||
+      isColorCustomizationEdit ||
+      isTemplateEdit);
 
   const [isMobileViewport, setIsMobileViewport] = useState(() =>
     typeof window !== "undefined" ? window.matchMedia("(max-width: 1023px)").matches : false,
@@ -655,6 +663,7 @@ export function TopNav({
           {showSearchButton && (
             <button
               onClick={() => navigate("/search")}
+              data-tour-id="top-search"
               className={cn(
                 "flex items-center px-[0.6em] py-[0.3em] justify-center rounded-full",
                 "text-fg/70 hover:text-fg hover:bg-fg/10",
@@ -669,6 +678,7 @@ export function TopNav({
           {showSettingsButton && (
             <button
               onClick={() => navigate("/settings")}
+              data-tour-id="top-settings"
               className={cn(
                 "flex items-center px-[0.6em] py-[0.3em] justify-center rounded-full",
                 "text-fg/70 hover:text-fg hover:bg-fg/10",

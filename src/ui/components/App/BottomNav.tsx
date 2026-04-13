@@ -50,6 +50,7 @@ export function BottomNav({ onCreateClick }: { onCreateClick: () => void }) {
           label={t("common.bottomNav.chats")}
           active={pathname === "/" || pathname.startsWith("/chat")}
           className="flex-1 h-12 text-sm"
+          dataTourId="nav-chats"
         />
 
         <TabItem
@@ -58,10 +59,12 @@ export function BottomNav({ onCreateClick }: { onCreateClick: () => void }) {
           label={t("common.bottomNav.groups")}
           active={pathname.startsWith("/group-chats")}
           className="flex-1 h-12 text-sm"
+          dataTourId="nav-groups"
         />
 
         <button
           onClick={handleCreateClick}
+          data-tour-id="nav-create"
           className="flex flex-1 h-12 items-center justify-center rounded-xl border border-fg/15 bg-fg/10 text-fg shadow-[0_8px_20px_rgba(0,0,0,0.25)] transition hover:border-fg/25 hover:bg-fg/20"
           aria-label={t("common.bottomNav.create")}
         >
@@ -74,6 +77,7 @@ export function BottomNav({ onCreateClick }: { onCreateClick: () => void }) {
           label={t("common.bottomNav.discover")}
           active={pathname.startsWith("/discover")}
           className="flex-1 h-12 text-sm"
+          dataTourId="nav-discover"
         />
 
         <TabItem
@@ -82,6 +86,7 @@ export function BottomNav({ onCreateClick }: { onCreateClick: () => void }) {
           label={t("common.bottomNav.library")}
           active={pathname.startsWith("/library")}
           className="flex-1 h-12 text-sm"
+          dataTourId="nav-library"
         />
       </div>
     </div>

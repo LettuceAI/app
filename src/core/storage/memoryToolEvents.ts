@@ -7,6 +7,15 @@ type AnyMemoryToolEvent =
   | NonNullable<Session["memoryToolEvents"]>[number]
   | NonNullable<GroupSession["memoryToolEvents"]>[number];
 
+type ReconstructedMemoryState<T extends AnyMemory, E extends AnyMemoryToolEvent> = {
+  memoryEmbeddings: T[];
+  memorySummary: string;
+  memorySummaryTokenCount: number;
+  memoryToolEvents: E[];
+  memoryStatus: string;
+  memoryError?: string | null;
+};
+
 function cloneMemory<T extends AnyMemory>(memory: T): T {
   return {
     ...memory,
@@ -103,6 +112,155 @@ export function revertMemoryToolEvent<T extends AnyMemory>(
   }
 
   return next;
+}
+
+function buildMemoryFromCreateAction<T extends AnyMemory>(
+  action: Record<string, unknown>,
+  sourceMemoryById: Map<string, T>,
+): T | null {
+  const args = (action.arguments as Record<string, unknown> | undefined) ?? {};
+  const memoryId =
+    (typeof action.memoryId === "string" ? action.memoryId : null) ??
+    (typeof args.id === "string" ? args.id : null);
+  const text =
+    (typeof args.text === "string" ? args.text.trim() : "") ||
+    (typeof action.deletedText === "string" ? action.deletedText.trim() : "");
+
+  if (!memoryId || !text) return null;
+
+  const existing = sourceMemoryById.get(memoryId);
+  if (existing) {
+    return cloneMemory(existing);
+  }
+
+  const createdAt = typeof action.timestamp === "number" ? action.timestamp : 0;
+  return {
+    id: memoryId,
+    text,
+    embedding: [],
+    createdAt,
+    tokenCount: 0,
+    isCold: false,
+    importanceScore: 1,
+    lastAccessedAt: createdAt,
+    isPinned: Boolean(args.important),
+    category: typeof args.category === "string" ? args.category : null,
+  } as unknown as T;
+}
+
+export function reconstructMemoryStateFromEvents<T extends AnyMemory, E extends AnyMemoryToolEvent>(
+  currentMemories: T[],
+  currentSummary: string,
+  currentSummaryTokenCount: number,
+  events: E[],
+): ReconstructedMemoryState<T, E> {
+  const nextEvents = events.map((event) => ({ ...event })) as E[];
+  const activeEvents = nextEvents.filter((event) => !event.revertedAt);
+
+  if (!activeEvents.length) {
+    return {
+      memoryEmbeddings: [],
+      memorySummary: "",
+      memorySummaryTokenCount: 0,
+      memoryToolEvents: nextEvents,
+      memoryStatus: "idle",
+      memoryError: undefined,
+    };
+  }
+
+  const sourceMemoryById = new Map(currentMemories.map((memory) => [memory.id, memory] as const));
+  const activeMemories = new Map<string, T>();
+
+  for (const event of activeEvents) {
+    const actions = ((event.actions ?? []) as Array<Record<string, unknown> & { name?: string }>).filter(
+      (action) => action.name && action.name !== "done" && !action.skipped,
+    );
+
+    for (const action of actions) {
+      if (action.name === "create_memory") {
+        const memory = buildMemoryFromCreateAction<T>(action, sourceMemoryById);
+        if (memory) {
+          activeMemories.set(memory.id, memory);
+        }
+        continue;
+      }
+
+      if (action.name === "delete_memory") {
+        const memoryId = resolveMemoryId(action);
+        if (!memoryId) continue;
+
+        if (action.softDelete) {
+          const memory = activeMemories.get(memoryId);
+          if (memory) {
+            activeMemories.set(memoryId, {
+              ...memory,
+              isCold: true,
+            });
+          }
+        } else {
+          activeMemories.delete(memoryId);
+        }
+        continue;
+      }
+
+      if (action.name === "pin_memory" || action.name === "unpin_memory") {
+        const memoryId = resolveMemoryId(action);
+        if (!memoryId) continue;
+        const memory = activeMemories.get(memoryId);
+        if (!memory) continue;
+        activeMemories.set(memoryId, {
+          ...memory,
+          isPinned: action.name === "pin_memory",
+        });
+      }
+    }
+  }
+
+  const lastActiveEvent = activeEvents[activeEvents.length - 1];
+  const memorySummary = typeof lastActiveEvent.summary === "string" ? lastActiveEvent.summary : "";
+  const memorySummaryTokenCount =
+    memorySummary === currentSummary ? currentSummaryTokenCount : 0;
+
+  return {
+    memoryEmbeddings: Array.from(activeMemories.values()),
+    memorySummary,
+    memorySummaryTokenCount,
+    memoryToolEvents: nextEvents,
+    memoryStatus: lastActiveEvent.error ? "failed" : "idle",
+    memoryError: typeof lastActiveEvent.error === "string" ? lastActiveEvent.error : undefined,
+  };
+}
+
+export function summarizeRevertImpact(event: AnyMemoryToolEvent): string {
+  const counts = { create: 0, delete: 0, pin: 0, unpin: 0 };
+  for (const action of event.actions ?? []) {
+    if (action.name === "create_memory") counts.create++;
+    else if (action.name === "delete_memory") counts.delete++;
+    else if (action.name === "pin_memory") counts.pin++;
+    else if (action.name === "unpin_memory") counts.unpin++;
+  }
+
+  const parts: string[] = [];
+  if (counts.create) {
+    parts.push(`remove ${counts.create} created ${counts.create === 1 ? "memory" : "memories"}`);
+  }
+  if (counts.delete) {
+    parts.push(`restore ${counts.delete} deleted ${counts.delete === 1 ? "memory" : "memories"}`);
+  }
+  if (counts.pin) {
+    parts.push(`unpin ${counts.pin} ${counts.pin === 1 ? "memory" : "memories"}`);
+  }
+  if (counts.unpin) {
+    parts.push(`re-pin ${counts.unpin} ${counts.unpin === 1 ? "memory" : "memories"}`);
+  }
+
+  if (!parts.length) return "This will mark the cycle as reverted with no memory changes.";
+
+  const joined =
+    parts.length === 1
+      ? parts[0]
+      : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+  return `This will ${joined}.`;
 }
 
 export function markMemoryToolEventReverted<

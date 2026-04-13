@@ -19,7 +19,9 @@ use crate::chat_manager::provider_adapter::{
 #[cfg(not(mobile))]
 use crate::chat_manager::thinking::{normalize_thinking_content, ThinkingTagStreamParser};
 #[cfg(not(mobile))]
-use crate::chat_manager::tooling::{parse_tool_calls, ToolCall};
+use crate::chat_manager::tooling::{
+    parse_tool_calls, parse_tool_calls_from_text, strip_tool_call_blocks, ToolCall,
+};
 #[cfg(not(mobile))]
 use crate::chat_manager::types::{ErrorEnvelope, NormalizedEvent, UsageSummary};
 #[cfg(not(mobile))]
@@ -144,6 +146,25 @@ mod desktop {
 
     fn is_aborted_request_error(message: &str) -> bool {
         message.to_ascii_lowercase().contains("aborted")
+    }
+
+    fn check_abort_signal(
+        abort_rx: Option<&mut tokio::sync::oneshot::Receiver<()>>,
+    ) -> Result<(), String> {
+        if let Some(rx) = abort_rx {
+            match rx.try_recv() {
+                Ok(()) => {
+                    return Err(crate::utils::err_msg(
+                        module_path!(),
+                        line!(),
+                        "llama.cpp request aborted by user",
+                    ));
+                }
+                Err(TryRecvError::Closed) | Err(TryRecvError::Empty) => {}
+            }
+        }
+
+        Ok(())
     }
 
     fn parse_flash_attention_policy(body: &Value) -> Option<llama_flash_attn_type> {
@@ -496,6 +517,34 @@ mod desktop {
         }
     }
 
+    fn recover_message_from_raw_tool_output(output: &str) -> Option<Value> {
+        let tool_calls = parse_tool_calls_from_text(output);
+        if tool_calls.is_empty() {
+            return None;
+        }
+
+        let content = strip_tool_call_blocks(output);
+        let tool_calls_value = tool_calls
+            .iter()
+            .map(|call| {
+                json!({
+                    "id": call.id,
+                    "type": "function",
+                    "function": {
+                        "name": call.name,
+                        "arguments": call.raw_arguments.clone().unwrap_or_else(|| call.arguments.to_string()),
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+
+        Some(json!({
+            "role": "assistant",
+            "content": content,
+            "tool_calls": tool_calls_value,
+        }))
+    }
+
     fn decode_mtmd_bitmap(
         mtmd_ctx: &llama_cpp_2::mtmd::MtmdContext,
         bytes: &[u8],
@@ -796,6 +845,7 @@ mod desktop {
         });
 
         let result = (|| -> Result<(), String> {
+            check_abort_signal(abort_rx.as_mut())?;
             let resolved_offload_kqv = if llama_offload_kqv.is_some() {
                 llama_offload_kqv
             } else if using_rocm_backend() {
@@ -1680,6 +1730,7 @@ mod desktop {
             );
 
             failure_stage = "prompt_evaluation";
+            check_abort_signal(abort_rx.as_mut())?;
             let batch_size = n_batch as usize;
             let mut batch = LlamaBatch::new(batch_size, 1);
             let mut global_pos: i32 = 0;
@@ -1688,6 +1739,7 @@ mod desktop {
                     let tokens_len = tokens.len();
                     let mut chunk_start = 0usize;
                     while chunk_start < tokens_len {
+                        check_abort_signal(abort_rx.as_mut())?;
                         let chunk_end = (chunk_start + batch_size).min(tokens_len);
                         batch.clear();
                         for (offset, token) in
@@ -1713,12 +1765,14 @@ mod desktop {
                                 format!("llama_decode failed during prompt evaluation: {e}"),
                             )
                         })?;
+                        check_abort_signal(abort_rx.as_mut())?;
                         global_pos += (chunk_end - chunk_start) as i32;
                         chunk_start = chunk_end;
                     }
                     batch.n_tokens().saturating_sub(1)
                 }
                 PreparedPrompt::Vision(chunks) => {
+                    check_abort_signal(abort_rx.as_mut())?;
                     let mtmd_ctx = mtmd_ctx.ok_or_else(|| {
                         crate::utils::err_msg(
                             module_path!(),
@@ -1735,6 +1789,7 @@ mod desktop {
                                 format!("llama.cpp multimodal prompt evaluation failed: {}", e),
                             )
                         })?;
+                    check_abort_signal(abort_rx.as_mut())?;
                     -1
                 }
             };
@@ -1769,6 +1824,7 @@ mod desktop {
                 presence_penalty,
                 seed: llama_seed,
             };
+            check_abort_signal(abort_rx.as_mut())?;
             let built_sampler = build_sampler(
                 model,
                 &sampler_config,
@@ -1810,23 +1866,27 @@ mod desktop {
             );
             let mut sampler = built_sampler.sampler;
             let mut streamed_thinking_parser = ThinkingTagStreamParser::default();
-            let mut structured_parser = built_prompt
-                .chat_template_result
-                .as_ref()
-                .map(|result| result.streaming_state_oaicompat())
-                .transpose()
-                .map_err(|e| {
-                    structured_output_failure(
-                        &app,
-                        request_id.as_ref(),
-                        model_path,
-                        tool_choice,
-                        &openai_compat_options,
-                        &built_prompt,
-                        "structured_parser_init",
-                        e,
-                    )
-                })?;
+            let mut structured_parser = if stream && built_prompt.native_tool_parse_supported {
+                built_prompt
+                    .chat_template_result
+                    .as_ref()
+                    .map(|result| result.streaming_state_oaicompat())
+                    .transpose()
+                    .map_err(|e| {
+                        structured_output_failure(
+                            &app,
+                            request_id.as_ref(),
+                            model_path,
+                            tool_choice,
+                            &openai_compat_options,
+                            &built_prompt,
+                            "structured_parser_init",
+                            e,
+                        )
+                    })?
+            } else {
+                None
+            };
             let mut streamed_structured_text = String::new();
             let mut structured_parsed_len = 0usize;
 
@@ -1837,18 +1897,7 @@ mod desktop {
             let mut sample_index = prompt_last_logits_index;
             failure_stage = "generation";
             while n_cur < target_len {
-                if let Some(rx) = abort_rx.as_mut() {
-                    match rx.try_recv() {
-                        Ok(()) => {
-                            return Err(crate::utils::err_msg(
-                                module_path!(),
-                                line!(),
-                                "llama.cpp request aborted by user",
-                            ));
-                        }
-                        Err(TryRecvError::Closed) | Err(TryRecvError::Empty) => {}
-                    }
-                }
+                check_abort_signal(abort_rx.as_mut())?;
 
                 let token = sample_generated_token(&mut sampler, &ctx, sample_index);
 
@@ -2083,81 +2132,97 @@ mod desktop {
             };
 
             let mut final_tool_calls: Vec<ToolCall> = Vec::new();
-            let parsed_final_message = if let Some(template_result) =
-                built_prompt.chat_template_result.as_ref()
-            {
-                let is_partial = finish_reason == "length";
-                let parsed_message = template_result
-                    .parse_response_oaicompat(&output, is_partial)
-                    .map_err(|e| {
-                        structured_output_failure(
-                            &app,
-                            request_id.as_ref(),
-                            model_path,
-                            tool_choice,
-                            &openai_compat_options,
-                            &built_prompt,
-                            "structured_response_parse",
-                            e,
-                        )
-                    })?;
-                let mut message: Value = serde_json::from_str(&parsed_message).map_err(|e| {
-                    crate::utils::err_msg(
-                        module_path!(),
-                        line!(),
-                        format!("Failed to deserialize llama.cpp structured message: {e}"),
-                    )
-                })?;
-                ensure_assistant_role(&mut message);
+            let parsed_final_message =
+                if let Some(template_result) = built_prompt.chat_template_result.as_ref() {
+                    let is_partial = finish_reason == "length";
+                    let mut message: Value =
+                        if let Some(recovered) = recover_message_from_raw_tool_output(&output) {
+                            log_info(
+                                &app,
+                                "llama_cpp",
+                                "using app-level raw tool-call recovery for final llama response",
+                            );
+                            recovered
+                        } else if built_prompt.native_tool_parse_supported {
+                            match template_result.parse_response_oaicompat(&output, is_partial) {
+                                Ok(parsed_message) => serde_json::from_str(&parsed_message)
+                                    .map_err(|e| {
+                                        crate::utils::err_msg(
+                                module_path!(),
+                                line!(),
+                                format!("Failed to deserialize llama.cpp structured message: {e}"),
+                            )
+                                    })?,
+                                Err(native_err) => {
+                                    return Err(structured_output_failure(
+                                        &app,
+                                        request_id.as_ref(),
+                                        model_path,
+                                        tool_choice,
+                                        &openai_compat_options,
+                                        &built_prompt,
+                                        "structured_response_parse",
+                                        native_err,
+                                    ));
+                                }
+                            }
+                        } else {
+                            json!({
+                                "role": "assistant",
+                                "content": output,
+                            })
+                        };
+                    ensure_assistant_role(&mut message);
 
-                let full_text = extract_text_content(message.get("content")).unwrap_or_default();
-                if stream
-                    && full_text.starts_with(&streamed_structured_text)
-                    && full_text.len() > streamed_structured_text.len()
-                {
-                    if let Some(ref id) = request_id {
-                        transport::emit_normalized(
-                            &app,
-                            id,
-                            NormalizedEvent::Delta {
-                                text: full_text[streamed_structured_text.len()..].to_string(),
-                            },
-                        );
+                    let full_text =
+                        extract_text_content(message.get("content")).unwrap_or_default();
+                    if stream
+                        && full_text.starts_with(&streamed_structured_text)
+                        && full_text.len() > streamed_structured_text.len()
+                    {
+                        if let Some(ref id) = request_id {
+                            transport::emit_normalized(
+                                &app,
+                                id,
+                                NormalizedEvent::Delta {
+                                    text: full_text[streamed_structured_text.len()..].to_string(),
+                                },
+                            );
+                        }
                     }
-                }
 
-                final_tool_calls = parse_tool_calls(LOCAL_PROVIDER_ID, &message);
-                if !final_tool_calls.is_empty() && finish_reason != "length" {
-                    finish_reason = "tool_calls";
-                }
-                crate::utils::emit_debug(
-                    &app,
-                    "llama_response",
-                    json!({
-                        "requestId": request_id,
-                        "modelPath": model_path,
-                        "structured": true,
-                        "rawOutput": output,
-                        "parsedMessage": message,
-                        "toolCallCount": final_tool_calls.len(),
-                        "finishReason": finish_reason,
-                    }),
-                );
-                message
-            } else {
-                crate::utils::emit_debug(
-                    &app,
-                    "llama_response",
-                    json!({
-                        "requestId": request_id,
-                        "modelPath": model_path,
-                        "structured": false,
-                        "rawOutput": output,
-                        "finishReason": finish_reason,
-                    }),
-                );
-                json!({ "role": "assistant", "content": output })
-            };
+                    final_tool_calls = parse_tool_calls(LOCAL_PROVIDER_ID, &message);
+                    if !final_tool_calls.is_empty() && finish_reason != "length" {
+                        finish_reason = "tool_calls";
+                    }
+                    crate::utils::emit_debug(
+                        &app,
+                        "llama_response",
+                        json!({
+                            "requestId": request_id,
+                            "modelPath": model_path,
+                            "structured": true,
+                            "rawOutput": output,
+                            "parsedMessage": message,
+                            "toolCallCount": final_tool_calls.len(),
+                            "finishReason": finish_reason,
+                        }),
+                    );
+                    message
+                } else {
+                    crate::utils::emit_debug(
+                        &app,
+                        "llama_response",
+                        json!({
+                            "requestId": request_id,
+                            "modelPath": model_path,
+                            "structured": false,
+                            "rawOutput": output,
+                            "finishReason": finish_reason,
+                        }),
+                    );
+                    json!({ "role": "assistant", "content": output })
+                };
 
             if stream && !final_tool_calls.is_empty() {
                 if let Some(ref id) = request_id {

@@ -7,6 +7,7 @@ import {
   Calculator,
   FlaskConical,
   AlertTriangle,
+  RotateCcw,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { typography, radius, interactive, cn } from "../../design-tokens";
@@ -20,6 +21,7 @@ import {
 } from "../../../core/storage/repo";
 import type { Character, StoredMessage } from "../../../core/storage/schemas";
 import { storageBridge } from "../../../core/storage/files";
+import { clearTooltipState } from "../../../core/storage/appState";
 
 export function DeveloperPage() {
   const { t } = useI18n();
@@ -663,6 +665,20 @@ export function DeveloperPage() {
     }
   };
 
+  const resetAllTours = async () => {
+    try {
+      await clearTooltipState();
+
+      if (window.__debug?.resetAllTours) {
+        await window.__debug.resetAllTours();
+      }
+
+      showStatus("✓ All guided tours reset — they will show again on next visit");
+    } catch (err) {
+      showError(`Failed to reset tours: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
   const forceCrash = async () => {
     const confirmed = window.confirm(t("developer.crashTesting.forceCrashConfirm"));
     if (!confirmed) {
@@ -793,6 +809,16 @@ export function DeveloperPage() {
             description={t("developer.usageTracking.recalculateAllDesc")}
             onClick={recalculateUsageCosts}
             variant="primary"
+          />
+
+          <h2 className={cn(typography.h2.size, typography.h2.weight, "text-fg mb-3 mt-6")}>
+            Onboarding
+          </h2>
+          <ActionButton
+            icon={<RotateCcw />}
+            title="Reset all guided tours"
+            description="Clears seen-state for every onboarding tour so they replay on next visit."
+            onClick={resetAllTours}
           />
 
           <h2 className={cn(typography.h2.size, typography.h2.weight, "text-fg mb-3 mt-6")}>

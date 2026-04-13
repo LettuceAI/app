@@ -7,18 +7,21 @@ export function TabItem({
   label,
   active,
   className = "",
+  dataTourId,
 }: {
   to: string;
   icon: any;
   label: string;
   active: boolean;
   className?: string;
+  dataTourId?: string;
 }) {
   return (
     <Link
       to={to}
       aria-label={label}
       aria-current={active ? "page" : undefined}
+      data-tour-id={dataTourId}
       className={`relative block ${className}`}
     >
       <motion.div

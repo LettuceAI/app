@@ -16,11 +16,28 @@ import {
   type ChatControllerPagingContext,
   normalizeStartingSceneMessage,
 } from "./chatControllerShared";
-import { getLiveChatState, subscribeToLiveChatState } from "./chatLiveState";
+import { getLiveChatState, setLiveChatState, subscribeToLiveChatState } from "./chatLiveState";
 import type { ChatState } from "./chatReducer";
 
 const INITIAL_MESSAGE_LIMIT = 50;
 const OLDER_MESSAGE_PAGE = 50;
+
+function sortMessages(messages: StoredMessage[]): StoredMessage[] {
+  return [...messages].sort((left, right) =>
+    left.createdAt === right.createdAt
+      ? left.id.localeCompare(right.id)
+      : left.createdAt - right.createdAt,
+  );
+}
+
+function hasTransientLiveSnapshot(snapshot: ChatState): boolean {
+  return (
+    snapshot.sending ||
+    Boolean(snapshot.activeRequestId) ||
+    Boolean(snapshot.regeneratingMessageId) ||
+    snapshot.messages.some((message) => message.id.startsWith("placeholder-"))
+  );
+}
 
 interface UseChatSessionControllerArgs {
   context: ChatControllerPagingContext;
@@ -84,9 +101,34 @@ export function useChatSessionController({
         if (!latest || cancelled) return;
         if (state.character && latest.characterId !== state.character.id) return;
 
+        const currentUpdatedAt = state.session?.updatedAt ?? 0;
+        if (latest.updatedAt <= currentUpdatedAt) {
+          return;
+        }
+
+        const messageLimit = Math.max(
+          INITIAL_MESSAGE_LIMIT,
+          messagesRef.current.filter((message) => !message.id.startsWith("placeholder-")).length,
+        );
+        const storedMessages = await listMessages(state.session!.id, {
+          limit: messageLimit,
+        }).catch((err) => {
+          console.warn("ChatSessionController: failed to reload messages after session update", err);
+          return [] as StoredMessage[];
+        });
+        let orderedMessages = sortMessages(storedMessages);
+        if (state.character) {
+          orderedMessages = normalizeStartingSceneMessage(
+            orderedMessages,
+            state.character,
+            latest.selectedSceneId,
+          );
+        }
+        messagesRef.current = orderedMessages;
+
         const normalizedSession: Session = {
           ...latest,
-          messages: messagesRef.current,
+          messages: orderedMessages,
         };
         const personaDisabled =
           normalizedSession.personaDisabled || normalizedSession.personaId === "";
@@ -110,6 +152,7 @@ export function useChatSessionController({
           actions: [
             { type: "SET_PERSONA", payload: selectedPersona },
             { type: "SET_SESSION", payload: normalizedSession },
+            { type: "SET_MESSAGES", payload: orderedMessages },
           ],
         });
       } catch (err) {
@@ -289,6 +332,20 @@ export function useChatSessionController({
 
     const applySnapshot = (snapshot: ChatState | null) => {
       if (!snapshot) return;
+      const loadedUpdatedAt = state.session?.updatedAt ?? 0;
+      const snapshotUpdatedAt = snapshot.session?.updatedAt ?? 0;
+      const transientSnapshot = hasTransientLiveSnapshot(snapshot);
+
+      if (snapshotUpdatedAt < loadedUpdatedAt) {
+        setLiveChatState(liveSessionId, null);
+        return;
+      }
+
+      if (snapshotUpdatedAt === loadedUpdatedAt && !transientSnapshot) {
+        setLiveChatState(liveSessionId, null);
+        return;
+      }
+
       messagesRef.current = snapshot.messages;
       dispatch({
         type: "BATCH",
@@ -308,7 +365,7 @@ export function useChatSessionController({
 
     applySnapshot(getLiveChatState(liveSessionId) ?? null);
     return subscribeToLiveChatState(liveSessionId, applySnapshot);
-  }, [dispatch, messagesRef, sessionId, state.session?.id]);
+  }, [dispatch, messagesRef, sessionId, state.session?.id, state.session?.updatedAt]);
 
   const reloadSessionStateFromStorage = useCallback(
     async (targetSessionId: string) => {

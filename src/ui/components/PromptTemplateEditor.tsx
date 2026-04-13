@@ -64,7 +64,7 @@ export function PromptTemplateEditor({ template, onClose, onSave }: PromptTempla
           content: content.trim(),
         });
       } else {
-        await createPromptTemplate(name.trim(), "appWide" as any, [], content.trim());
+        await createPromptTemplate(name.trim(), "undefined", content.trim());
       }
 
       onSave();
@@ -333,4 +333,3 @@ export function PromptTemplateEditor({ template, onClose, onSave }: PromptTempla
     </>
   );
 }
-

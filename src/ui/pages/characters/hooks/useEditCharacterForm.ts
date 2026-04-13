@@ -20,10 +20,7 @@ import {
   generateExportFilenameWithFormat,
   type CharacterFileFormat,
 } from "../../../../core/storage/characterTransfer";
-import {
-  APP_DEFAULT_TEMPLATE_ID,
-  isSystemPromptTemplate,
-} from "../../../../core/prompts/constants";
+import { APP_DEFAULT_TEMPLATE_ID } from "../../../../core/prompts/constants";
 import { isRenderableImageUrl } from "../../../../core/utils/image";
 
 type EditCharacterState = {
@@ -56,6 +53,8 @@ type EditCharacterState = {
   selectedModelId: string | null;
   selectedFallbackModelId: string | null;
   systemPromptTemplateId: string | null;
+  groupChatPromptTemplateId: string | null;
+  groupChatRoleplayPromptTemplateId: string | null;
   voiceConfig: CharacterVoiceConfig | null;
   voiceAutoplay: boolean;
 
@@ -112,6 +111,8 @@ const initialState: EditCharacterState = {
   selectedModelId: null,
   selectedFallbackModelId: null,
   systemPromptTemplateId: null,
+  groupChatPromptTemplateId: null,
+  groupChatRoleplayPromptTemplateId: null,
   voiceConfig: null,
   voiceAutoplay: false,
 
@@ -178,6 +179,8 @@ export function useEditCharacterForm(characterId: string | undefined) {
     selectedModelId: string | null;
     selectedFallbackModelId: string | null;
     systemPromptTemplateId: string | null;
+    groupChatPromptTemplateId: string | null;
+    groupChatRoleplayPromptTemplateId: string | null;
     disableAvatarGradient: boolean;
     customGradientEnabled: boolean;
     customGradientColors: string;
@@ -310,6 +313,9 @@ export function useEditCharacterForm(characterId: string | undefined) {
         selectedModelId: character.defaultModelId || null,
         selectedFallbackModelId: character.fallbackModelId || null,
         systemPromptTemplateId: character.promptTemplateId || null,
+        groupChatPromptTemplateId: character.groupChatPromptTemplateId || null,
+        groupChatRoleplayPromptTemplateId:
+          character.groupChatRoleplayPromptTemplateId || null,
         voiceConfig: character.voiceConfig ?? null,
         voiceAutoplay: character.voiceAutoplay ?? false,
 
@@ -348,6 +354,9 @@ export function useEditCharacterForm(characterId: string | undefined) {
         selectedModelId: character.defaultModelId || null,
         selectedFallbackModelId: character.fallbackModelId || null,
         systemPromptTemplateId: character.promptTemplateId || null,
+        groupChatPromptTemplateId: character.groupChatPromptTemplateId || null,
+        groupChatRoleplayPromptTemplateId:
+          character.groupChatRoleplayPromptTemplateId || null,
         disableAvatarGradient: character.disableAvatarGradient || false,
         customGradientEnabled: character.customGradientEnabled || false,
         customGradientColors: JSON.stringify(character.customGradientColors || []),
@@ -385,10 +394,7 @@ export function useEditCharacterForm(characterId: string | undefined) {
       setFields({ loadingTemplates: true });
       // Global list (scopes removed)
       const templates = await listPromptTemplates();
-      const filtered = templates.filter(
-        (template) =>
-          isSystemPromptTemplate(template.id) && template.id !== APP_DEFAULT_TEMPLATE_ID,
-      );
+      const filtered = templates.filter((template) => template.id !== APP_DEFAULT_TEMPLATE_ID);
       setFields({ promptTemplates: filtered });
     } catch (err) {
       console.error("Failed to load prompt templates:", err);
@@ -513,6 +519,8 @@ export function useEditCharacterForm(characterId: string | undefined) {
         defaultModelId: state.selectedModelId,
         fallbackModelId: state.selectedFallbackModelId,
         promptTemplateId: state.systemPromptTemplateId,
+        groupChatPromptTemplateId: state.groupChatPromptTemplateId,
+        groupChatRoleplayPromptTemplateId: state.groupChatRoleplayPromptTemplateId,
         voiceConfig: state.voiceConfig ?? undefined,
         voiceAutoplay: state.voiceAutoplay,
 
@@ -566,6 +574,8 @@ export function useEditCharacterForm(characterId: string | undefined) {
         selectedModelId: state.selectedModelId,
         selectedFallbackModelId: state.selectedFallbackModelId,
         systemPromptTemplateId: state.systemPromptTemplateId,
+        groupChatPromptTemplateId: state.groupChatPromptTemplateId,
+        groupChatRoleplayPromptTemplateId: state.groupChatRoleplayPromptTemplateId,
         disableAvatarGradient: state.disableAvatarGradient,
         customGradientEnabled: state.customGradientEnabled,
         customGradientColors: JSON.stringify(state.customGradientColors),
@@ -764,6 +774,8 @@ export function useEditCharacterForm(characterId: string | undefined) {
       selectedModelId: initial.selectedModelId,
       selectedFallbackModelId: initial.selectedFallbackModelId,
       systemPromptTemplateId: initial.systemPromptTemplateId,
+      groupChatPromptTemplateId: initial.groupChatPromptTemplateId,
+      groupChatRoleplayPromptTemplateId: initial.groupChatRoleplayPromptTemplateId,
       disableAvatarGradient: initial.disableAvatarGradient,
       customGradientEnabled: initial.customGradientEnabled,
       customGradientColors: JSON.parse(initial.customGradientColors) as string[],
@@ -829,6 +841,9 @@ export function useEditCharacterForm(characterId: string | undefined) {
           state.selectedModelId !== initial.selectedModelId ||
           state.selectedFallbackModelId !== initial.selectedFallbackModelId ||
           state.systemPromptTemplateId !== initial.systemPromptTemplateId ||
+          state.groupChatPromptTemplateId !== initial.groupChatPromptTemplateId ||
+          state.groupChatRoleplayPromptTemplateId !==
+            initial.groupChatRoleplayPromptTemplateId ||
           state.disableAvatarGradient !== initial.disableAvatarGradient ||
           state.customGradientEnabled !== initial.customGradientEnabled ||
           JSON.stringify(state.customGradientColors) !== initial.customGradientColors ||

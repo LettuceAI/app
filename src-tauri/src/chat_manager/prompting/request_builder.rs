@@ -14,6 +14,16 @@ pub struct BuiltRequest {
     pub request_id: Option<String>,
 }
 
+fn should_force_local_parallel_tool_calls(
+    credential: &ProviderCredential,
+    tool_config: Option<&ToolConfig>,
+) -> bool {
+    credential.provider_id == "llamacpp"
+        && tool_config
+            .map(|config| !config.tools.is_empty())
+            .unwrap_or(false)
+}
+
 pub fn provider_streaming_enabled(credential: &ProviderCredential) -> bool {
     credential
         .config
@@ -130,11 +140,17 @@ pub fn build_chat_request(
         reasoning_budget,
     );
 
+    let mut extra_body_fields = extra_body_fields.unwrap_or_default();
+    if should_force_local_parallel_tool_calls(credential, tool_config)
+        && !extra_body_fields.contains_key("parallel_tool_calls")
+    {
+        extra_body_fields.insert("parallel_tool_calls".to_string(), json!(true));
+    }
+
     if prompt_caching_enabled && supports_explicit_prompt_caching(credential) {
         // Extract TTL safely using the updated camelCase key
         let ttl_val = extra_body_fields
-            .as_ref()
-            .and_then(|fields| fields.get("promptCachingTtl"))
+            .get("promptCachingTtl")
             .and_then(|val| val.as_str())
             .unwrap_or("5min");
 
@@ -173,8 +189,8 @@ pub fn build_chat_request(
         }
     }
 
-    if let (Some(extra), Some(map)) = (extra_body_fields, body.as_object_mut()) {
-        for (key, mut value) in extra {
+    if let Some(map) = body.as_object_mut() {
+        for (key, mut value) in extra_body_fields {
             if key == "promptCachingTtl" {
                 continue;
             }
@@ -197,7 +213,7 @@ pub fn build_chat_request(
         headers,
         body,
         stream: effective_stream,
-        request_id: if effective_stream { request_id } else { None },
+        request_id,
     }
 }
 

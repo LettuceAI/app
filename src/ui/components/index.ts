@@ -6,6 +6,7 @@ export * from "./ModelExportMenu";
 export * from "./ModelSelectionBottomMenu";
 export * from "./PromptTemplateExportMenu";
 export * from "./Tooltip";
+export * from "./GuidedTour";
 export * from "./CreateMenus/CreateMenu";
 export * from "./AdvancedModelSettingsForm";
 export * from "./PromptTemplateEditor";

@@ -2,6 +2,7 @@ export const APP_DEFAULT_TEMPLATE_ID = "prompt_app_default";
 export const APP_LOCAL_ROLEPLAY_TEMPLATE_ID = "prompt_app_local_roleplay";
 export const APP_DYNAMIC_SUMMARY_TEMPLATE_ID = "prompt_app_dynamic_summary";
 export const APP_DYNAMIC_MEMORY_TEMPLATE_ID = "prompt_app_dynamic_memory";
+export const APP_DYNAMIC_MEMORY_LOCAL_TEMPLATE_ID = "prompt_app_dynamic_memory_local";
 export const APP_HELP_ME_REPLY_TEMPLATE_ID = "prompt_app_help_me_reply";
 export const APP_HELP_ME_REPLY_CONVERSATIONAL_TEMPLATE_ID =
   "prompt_app_help_me_reply_conversational";
@@ -17,6 +18,7 @@ const PROTECTED_TEMPLATE_IDS = new Set([
   APP_LOCAL_ROLEPLAY_TEMPLATE_ID,
   APP_DYNAMIC_SUMMARY_TEMPLATE_ID,
   APP_DYNAMIC_MEMORY_TEMPLATE_ID,
+  APP_DYNAMIC_MEMORY_LOCAL_TEMPLATE_ID,
   APP_HELP_ME_REPLY_TEMPLATE_ID,
   APP_HELP_ME_REPLY_CONVERSATIONAL_TEMPLATE_ID,
   APP_GROUP_CHAT_TEMPLATE_ID,
@@ -30,6 +32,7 @@ const PROTECTED_TEMPLATE_IDS = new Set([
 const NON_SYSTEM_TEMPLATE_IDS = new Set([
   APP_DYNAMIC_SUMMARY_TEMPLATE_ID,
   APP_DYNAMIC_MEMORY_TEMPLATE_ID,
+  APP_DYNAMIC_MEMORY_LOCAL_TEMPLATE_ID,
   APP_HELP_ME_REPLY_TEMPLATE_ID,
   APP_HELP_ME_REPLY_CONVERSATIONAL_TEMPLATE_ID,
   APP_GROUP_CHAT_TEMPLATE_ID,
@@ -56,14 +59,16 @@ export function getPromptTypeLabel(id: string): string {
       return "Dynamic Summary";
     case APP_DYNAMIC_MEMORY_TEMPLATE_ID:
       return "Dynamic Memory";
+    case APP_DYNAMIC_MEMORY_LOCAL_TEMPLATE_ID:
+      return "Dynamic Memory (Local LLM)";
     case APP_HELP_ME_REPLY_TEMPLATE_ID:
       return "Reply Helper";
     case APP_HELP_ME_REPLY_CONVERSATIONAL_TEMPLATE_ID:
       return "Reply Helper (Conversational)";
     case APP_GROUP_CHAT_TEMPLATE_ID:
-      return "Group Chat";
+      return "Group Chat (Conversation)";
     case APP_GROUP_CHAT_ROLEPLAY_TEMPLATE_ID:
-      return "Group Chat RP";
+      return "Group Chat (Roleplay)";
     case APP_AVATAR_GENERATION_TEMPLATE_ID:
       return "Avatar Generation";
     case APP_AVATAR_EDIT_TEMPLATE_ID:

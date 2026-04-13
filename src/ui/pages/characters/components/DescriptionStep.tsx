@@ -19,6 +19,10 @@ import { ModelSelectionBottomMenu } from "../../../components/ModelSelectionBott
 import { Switch } from "../../../components/Switch";
 import { getProviderIcon } from "../../../../core/utils/providerIcons";
 import { useI18n } from "../../../../core/i18n/context";
+import {
+  APP_GROUP_CHAT_ROLEPLAY_TEMPLATE_ID,
+  APP_GROUP_CHAT_TEMPLATE_ID,
+} from "../../../../core/prompts/constants";
 
 interface DescriptionStepProps {
   definition: string;
@@ -38,6 +42,10 @@ interface DescriptionStepProps {
   loadingTemplates: boolean;
   systemPromptTemplateId: string | null;
   onSelectSystemPrompt: (value: string | null) => void;
+  groupChatPromptTemplateId: string | null;
+  onSelectGroupChatPrompt: (value: string | null) => void;
+  groupChatRoleplayPromptTemplateId: string | null;
+  onSelectGroupChatRoleplayPrompt: (value: string | null) => void;
   voiceConfig: any | null;
   onVoiceConfigChange: (value: any | null) => void;
   voiceAutoplay: boolean;
@@ -72,6 +80,10 @@ export function DescriptionStep({
   loadingTemplates,
   systemPromptTemplateId,
   onSelectSystemPrompt,
+  groupChatPromptTemplateId,
+  onSelectGroupChatPrompt,
+  groupChatRoleplayPromptTemplateId,
+  onSelectGroupChatRoleplayPrompt,
   voiceConfig,
   onVoiceConfigChange,
   voiceAutoplay,
@@ -94,6 +106,19 @@ export function DescriptionStep({
   const [showFallbackModelMenu, setShowFallbackModelMenu] = useState(false);
   const [showVoiceMenu, setShowVoiceMenu] = useState(false);
   const [voiceSearchQuery, setVoiceSearchQuery] = useState("");
+  const directPromptTemplates = promptTemplates.filter(
+    (template) => template.promptType === "undefined" || template.promptType === "directChat",
+  );
+  const groupChatTemplates = promptTemplates.filter(
+    (template) =>
+      template.promptType === "groupChatConversational" &&
+      template.id !== APP_GROUP_CHAT_TEMPLATE_ID,
+  );
+  const groupChatRoleplayTemplates = promptTemplates.filter(
+    (template) =>
+      template.promptType === "groupChatRoleplay" &&
+      template.id !== APP_GROUP_CHAT_ROLEPLAY_TEMPLATE_ID,
+  );
 
   const buildUserVoiceValue = (id: string) => `user:${id}`;
   const buildProviderVoiceValue = (providerId: string, voiceId: string) =>
@@ -487,13 +512,11 @@ export function DescriptionStep({
                   <option value="" className="bg-surface-el text-fg">
                     Use app default
                   </option>
-                  {promptTemplates
-                    .filter((t) => t.name !== "App Default")
-                    .map((template) => (
-                      <option key={template.id} value={template.id} className="bg-surface-el text-fg">
-                        {template.name}
-                      </option>
-                    ))}
+                  {directPromptTemplates.map((template) => (
+                    <option key={template.id} value={template.id} className="bg-surface-el text-fg">
+                      {template.name}
+                    </option>
+                  ))}
                 </select>
                 {/* Custom dropdown icon */}
                 <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
@@ -503,6 +526,112 @@ export function DescriptionStep({
             )}
             <p className={cn(typography.bodySmall.size, "text-fg/40")}>
               Choose a custom system prompt or use the default
+            </p>
+          </div>
+
+          <div className={spacing.field}>
+            <label
+              className={cn(
+                typography.label.size,
+                typography.label.weight,
+                typography.label.tracking,
+                "uppercase text-fg/70",
+              )}
+            >
+              Group Chat Prompt (Conversation)
+            </label>
+            {loadingTemplates ? (
+              <div
+                className={cn(
+                  "flex items-center gap-3 border border-fg/10 bg-surface-el/20 px-4 py-3 backdrop-blur-xl",
+                  radius.md,
+                )}
+              >
+                <Loader2 className="h-4 w-4 animate-spin text-fg/60" />
+                <span className={cn(typography.body.size, "text-fg/60")}>Loading templates...</span>
+              </div>
+            ) : (
+              <div className="relative">
+                <select
+                  value={groupChatPromptTemplateId ?? ""}
+                  onChange={(e) => onSelectGroupChatPrompt(e.target.value || null)}
+                  className={cn(
+                    "w-full appearance-none border bg-surface-el/20 px-4 py-3.5 pr-10 text-sm text-fg backdrop-blur-xl",
+                    radius.md,
+                    interactive.transition.default,
+                    "focus:border-fg/30 focus:bg-surface-el/30 focus:outline-none",
+                    groupChatPromptTemplateId ? "border-fg/20" : "border-fg/10",
+                  )}
+                >
+                  <option value="" className="bg-surface-el text-fg">
+                    Use app default
+                  </option>
+                  {groupChatTemplates.map((template) => (
+                    <option key={template.id} value={template.id} className="bg-surface-el text-fg">
+                      {template.name}
+                    </option>
+                  ))}
+                </select>
+                <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
+                  <FileText className="h-4 w-4 text-fg/40" />
+                </div>
+              </div>
+            )}
+            <p className={cn(typography.bodySmall.size, "text-fg/40")}>
+              Override this character&apos;s conversation prompt in group chats
+            </p>
+          </div>
+
+          <div className={spacing.field}>
+            <label
+              className={cn(
+                typography.label.size,
+                typography.label.weight,
+                typography.label.tracking,
+                "uppercase text-fg/70",
+              )}
+            >
+              Group Chat Prompt (Roleplay)
+            </label>
+            {loadingTemplates ? (
+              <div
+                className={cn(
+                  "flex items-center gap-3 border border-fg/10 bg-surface-el/20 px-4 py-3 backdrop-blur-xl",
+                  radius.md,
+                )}
+              >
+                <Loader2 className="h-4 w-4 animate-spin text-fg/60" />
+                <span className={cn(typography.body.size, "text-fg/60")}>Loading templates...</span>
+              </div>
+            ) : (
+              <div className="relative">
+                <select
+                  value={groupChatRoleplayPromptTemplateId ?? ""}
+                  onChange={(e) => onSelectGroupChatRoleplayPrompt(e.target.value || null)}
+                  className={cn(
+                    "w-full appearance-none border bg-surface-el/20 px-4 py-3.5 pr-10 text-sm text-fg backdrop-blur-xl",
+                    radius.md,
+                    interactive.transition.default,
+                    "focus:border-fg/30 focus:bg-surface-el/30 focus:outline-none",
+                    groupChatRoleplayPromptTemplateId ? "border-fg/20" : "border-fg/10",
+                  )}
+                >
+                  <option value="" className="bg-surface-el text-fg">
+                    Use app default
+                  </option>
+                  {groupChatRoleplayTemplates.map((template) => (
+                    <option key={template.id} value={template.id} className="bg-surface-el text-fg">
+                      {template.name}
+                    </option>
+                  ))}
+                </select>
+                <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
+                  <FileText className="h-4 w-4 text-fg/40" />
+                </div>
+              </div>
+            )}
+            <p className={cn(typography.bodySmall.size, "text-fg/40")}>
+              Override this character&apos;s roleplay prompt in group chats
             </p>
           </div>
 

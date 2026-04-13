@@ -281,6 +281,8 @@ pub fn effective_dynamic_memory_settings(
         delete_confidence_default: 0.5,
         max_hard_delete_ratio_per_cycle: 0.5,
         context_enrichment_enabled: true,
+        recursive_memory_loops: false,
+        recursive_memory_loop_hard_cap: 20,
     }
 }
 
@@ -343,6 +345,57 @@ pub fn extract_keywords(text: &str) -> Vec<String> {
     }
 
     keywords
+}
+
+fn lexical_overlap_ratio(a: &str, b: &str) -> f32 {
+    let a_keywords: HashSet<String> = extract_keywords(a).into_iter().collect();
+    let b_keywords: HashSet<String> = extract_keywords(b).into_iter().collect();
+
+    if a_keywords.is_empty() || b_keywords.is_empty() {
+        return 0.0;
+    }
+
+    let shared = a_keywords.intersection(&b_keywords).count() as f32;
+    let largest = a_keywords.len().max(b_keywords.len()) as f32;
+    if largest <= 0.0 {
+        0.0
+    } else {
+        shared / largest
+    }
+}
+
+pub fn find_duplicate_memory_reason<E: MemoryEntry>(
+    candidate_text: &str,
+    candidate_embedding: Option<&[f32]>,
+    memories: &[E],
+) -> Option<String> {
+    let normalized_candidate = normalize_query_text(candidate_text);
+    let candidate_word_count = normalized_candidate.split_whitespace().count();
+
+    for existing in memories {
+        let normalized_existing = normalize_query_text(existing.text());
+
+        if !normalized_candidate.is_empty() && normalized_candidate == normalized_existing {
+            return Some("duplicate (normalized text match)".to_string());
+        }
+
+        if candidate_word_count >= 3 {
+            let overlap = lexical_overlap_ratio(candidate_text, existing.text());
+            if overlap >= 0.9 {
+                return Some("duplicate (high lexical overlap)".to_string());
+            }
+        }
+
+        if let Some(new_emb) = candidate_embedding {
+            if !existing.embedding().is_empty()
+                && cosine_similarity(new_emb, existing.embedding()) > 0.85
+            {
+                return Some("duplicate (cosine > 0.85)".to_string());
+            }
+        }
+    }
+
+    None
 }
 
 pub fn calculate_hot_memory_tokens<E: MemoryEntry>(memories: &[E]) -> u32 {

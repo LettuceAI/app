@@ -49,6 +49,9 @@ function detectSupportedLocale(value: string | null | undefined): Locale | null 
   if (isSupportedLocale(value)) return value;
 
   const normalized = value.toLowerCase();
+  if (normalized === "zh-cn" || normalized === "zh") {
+    return "zh-Hans";
+  }
   if (normalized === "zh-tw" || normalized === "zh-hk" || normalized === "zh-mo") {
     return "zh-Hant";
   }

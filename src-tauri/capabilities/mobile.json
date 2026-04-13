@@ -4,7 +4,6 @@
   "windows": ["main"],
   "permissions": [
     "barcode-scanner:default",
-    "tts:default",
     "fs:allow-read-file",
     "aptabase:allow-track-event",
     "haptics:allow-impact-feedback",

@@ -27,7 +27,7 @@ import {
   exportPromptTemplateAsUsc,
 } from "../../../core/prompts/service";
 import type {
-  PromptScope,
+  PromptTemplateType,
   SystemPromptEntry,
   SystemPromptTemplate,
 } from "../../../core/storage/schemas";
@@ -109,8 +109,7 @@ type ExternalPromptExport = {
 
 type ImportedPromptTemplatePayload = {
   name: string;
-  scope: PromptScope;
-  targetIds: string[];
+  promptType: PromptTemplateType;
   content: string;
   entries: SystemPromptEntry[];
   condensePromptEntries: boolean;
@@ -192,6 +191,7 @@ function normalizeImportedSystemEntry(
 
 function normalizeImportedPromptTemplatePayload(input: {
   name?: unknown;
+  promptType?: unknown;
   scope?: unknown;
   targetIds?: unknown;
   content?: unknown;
@@ -203,17 +203,21 @@ function normalizeImportedPromptTemplatePayload(input: {
     throw new Error("System prompt template name is required.");
   }
 
-  const scope: PromptScope =
-    input.scope === "modelSpecific" ||
-    input.scope === "characterSpecific" ||
-    input.scope === "appWide"
-      ? input.scope
-      : "appWide";
-  const targetIds = Array.isArray(input.targetIds)
-    ? input.targetIds.filter(
-        (value): value is string => typeof value === "string" && value.trim().length > 0,
-      )
-    : [];
+  const promptType: PromptTemplateType =
+    input.promptType === "directChat" ||
+    input.promptType === "groupChatRoleplay" ||
+    input.promptType === "groupChatConversational" ||
+    input.promptType === "dynamicMemorySummarizer" ||
+    input.promptType === "dynamicMemoryManager" ||
+    input.promptType === "replyHelperRoleplay" ||
+    input.promptType === "replyHelperConversational" ||
+    input.promptType === "avatarGeneration" ||
+    input.promptType === "avatarEditRequest" ||
+    input.promptType === "sceneGeneration" ||
+    input.promptType === "designReferenceWriter" ||
+    input.promptType === "undefined"
+      ? input.promptType
+      : "undefined";
   const content = typeof input.content === "string" ? input.content : "";
   const entries = (Array.isArray(input.entries) ? input.entries : [])
     .map((entry, index) => normalizeImportedSystemEntry(entry, index))
@@ -221,8 +225,7 @@ function normalizeImportedPromptTemplatePayload(input: {
 
   return {
     name,
-    scope,
-    targetIds,
+    promptType,
     content,
     entries,
     condensePromptEntries: Boolean(input.condensePromptEntries),
@@ -775,8 +778,7 @@ export function SystemPromptsPage() {
         const imported = normalizeImportedPromptTemplatePayload((parsed as any).payload);
         await createPromptTemplate(
           imported.name,
-          imported.scope,
-          imported.targetIds,
+          imported.promptType,
           imported.content,
           imported.entries,
           imported.condensePromptEntries,
@@ -838,7 +840,7 @@ export function SystemPromptsPage() {
       }
 
       const baseName = file.name.replace(/\.[^/.]+$/, "") || "Imported Prompt Set";
-      await createPromptTemplate(baseName, "appWide", [], "", importedEntries, false);
+      await createPromptTemplate(baseName, "undefined", "", importedEntries, false);
       await loadData();
       toast.success("Imported successfully", `Prompt set "${baseName}" was imported.`);
     } catch (error) {
@@ -917,8 +919,7 @@ export function SystemPromptsPage() {
         : getTemplatePreviewText(template);
       await createPromptTemplate(
         name,
-        "appWide",
-        [],
+        template.promptType,
         contentToSave,
         template.entries,
         Boolean(template.condensePromptEntries),

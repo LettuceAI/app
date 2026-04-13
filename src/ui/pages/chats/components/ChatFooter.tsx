@@ -197,6 +197,7 @@ export function ChatFooter({
         {/* Plus button */}
         {(onOpenPlusMenu || onAddAttachment) && (
           <button
+            data-tour-id="chat-plus"
             onClick={handlePlusClick}
             disabled={sending}
             className={cn(
@@ -219,6 +220,7 @@ export function ChatFooter({
 
         <textarea
           ref={textareaRef}
+          data-tour-id="chat-composer"
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={handleKeyDown}
@@ -249,6 +251,7 @@ export function ChatFooter({
           </span>
         )}
         <button
+          data-tour-id="chat-send"
           onClick={sending && onAbort ? onAbort : onSendMessage}
           disabled={sending && !onAbort}
           className={cn(

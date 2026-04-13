@@ -11,8 +11,10 @@ use crate::{
     api::{ApiRequest, ApiResponse},
     chat_manager::{
         provider_adapter::ModelInfo,
+        sse::SseDecoder,
         types::{ErrorEnvelope, NormalizedEvent, ProviderCredential},
     },
+    infra::abort_manager::AbortRegistry,
     transport::{self, DEFAULT_REQUEST_TIMEOUT_MS},
 };
 
@@ -76,14 +78,7 @@ pub async fn execute_chat_request(
         return execute_streaming_chat_request(app, &client, &chat_body, req, &request_id).await;
     }
 
-    execute_non_streaming_chat_request(
-        app,
-        &client,
-        &req.url,
-        &chat_body,
-        req.request_id.as_deref(),
-    )
-    .await
+    execute_non_streaming_chat_request(app, &client, &req.url, &chat_body, req).await
 }
 
 fn credential_runtime_headers(credential: &ProviderCredential) -> HashMap<String, String> {
@@ -398,6 +393,7 @@ async fn execute_streaming_chat_request(
     let mut raw = String::new();
     let mut saw_done = false;
     let mut buffer = String::new();
+    let mut decoder = SseDecoder::new();
 
     loop {
         let next_item = tokio::select! {
@@ -458,12 +454,15 @@ async fn execute_streaming_chat_request(
             raw.push_str(&line);
             raw.push_str("\n\n");
 
-            emit_normalized_events(app, request_id, &value);
-
-            if value.get("done").and_then(Value::as_bool).unwrap_or(false) {
-                transport::emit_normalized(app, request_id, NormalizedEvent::Done);
+            saw_done |= emit_normalized_events(
+                app,
+                request_id,
+                &mut decoder,
+                &serde_json::to_string(&value)
+                    .map_err(|err| crate::utils::err_to_string(module_path!(), line!(), err))?,
+            );
+            if saw_done {
                 raw.push_str("data: [DONE]\n\n");
-                saw_done = true;
             }
         }
     }
@@ -476,11 +475,15 @@ async fn execute_streaming_chat_request(
         raw.push_str("data: ");
         raw.push_str(trailing);
         raw.push_str("\n\n");
-        emit_normalized_events(app, request_id, &value);
-        if value.get("done").and_then(Value::as_bool).unwrap_or(false) {
-            transport::emit_normalized(app, request_id, NormalizedEvent::Done);
+        saw_done |= emit_normalized_events(
+            app,
+            request_id,
+            &mut decoder,
+            &serde_json::to_string(&value)
+                .map_err(|err| crate::utils::err_to_string(module_path!(), line!(), err))?,
+        );
+        if saw_done {
             raw.push_str("data: [DONE]\n\n");
-            saw_done = true;
         }
     }
 
@@ -503,18 +506,71 @@ async fn execute_non_streaming_chat_request(
     client: &reqwest::Client,
     url: &str,
     chat_body: &Value,
-    request_id: Option<&str>,
+    req: &ApiRequest,
 ) -> Result<ApiResponse, String> {
+    let request_id = req.request_id.as_deref();
     let request = client.post(url).json(chat_body);
-    let response = transport::send_with_retries(app, "ollama_chat", request, 2, request_id)
-        .await
-        .map_err(|err| err.to_string())?;
+    let mut abort_rx = request_id.map(|req_id| {
+        let registry = app.state::<AbortRegistry>();
+        registry.register(req_id.to_string())
+    });
+
+    let emit_abort = || {
+        if let Some(req_id) = request_id {
+            let envelope = ErrorEnvelope {
+                code: Some("ABORTED".to_string()),
+                message: "Request was cancelled by user".to_string(),
+                provider_id: req.provider_id.clone(),
+                request_id: Some(req_id.to_string()),
+                retryable: Some(false),
+                status: None,
+            };
+            transport::emit_normalized(app, req_id, NormalizedEvent::Error { envelope });
+        }
+    };
+
+    let response = if let Some(abort_rx) = abort_rx.as_mut() {
+        tokio::select! {
+            _ = abort_rx => {
+                unregister_abort(app, request_id);
+                emit_abort();
+                return Err("Request was cancelled by user".to_string());
+            }
+            response = transport::send_with_retries(app, "ollama_chat", request, 2, request_id) => {
+                match response {
+                    Ok(response) => response,
+                    Err(err) => {
+                        unregister_abort(app, request_id);
+                        return Err(err.to_string());
+                    }
+                }
+            }
+        }
+    } else {
+        transport::send_with_retries(app, "ollama_chat", request, 2, request_id)
+            .await
+            .map_err(|err| err.to_string())?
+    };
     let status = response.status();
     let status_code = status.as_u16();
-    let text = response
-        .text()
-        .await
-        .map_err(|err| crate::utils::err_to_string(module_path!(), line!(), err))?;
+    let text = if let Some(abort_rx) = abort_rx.as_mut() {
+        tokio::select! {
+            _ = abort_rx => {
+                unregister_abort(app, request_id);
+                emit_abort();
+                return Err("Request was cancelled by user".to_string());
+            }
+            text = response.text() => {
+                text.map_err(|err| crate::utils::err_to_string(module_path!(), line!(), err))?
+            }
+        }
+    } else {
+        response
+            .text()
+            .await
+            .map_err(|err| crate::utils::err_to_string(module_path!(), line!(), err))?
+    };
+    unregister_abort(app, request_id);
 
     if !status.is_success() {
         let payload =
@@ -539,29 +595,28 @@ async fn execute_non_streaming_chat_request(
     })
 }
 
-fn emit_normalized_events(app: &tauri::AppHandle, request_id: &str, value: &Value) {
-    let calls = crate::chat_manager::tooling::parse_tool_calls("ollama", value);
-    if !calls.is_empty() {
-        transport::emit_normalized(app, request_id, NormalizedEvent::ToolCall { calls });
-    }
+fn unregister_abort(app: &tauri::AppHandle, request_id: Option<&str>) {
+    let Some(request_id) = request_id else {
+        return;
+    };
+    let registry = app.state::<AbortRegistry>();
+    registry.unregister(request_id);
+}
 
-    if let Some(text) = crate::chat_manager::request::extract_text(value, Some("ollama")) {
-        if !text.is_empty() {
-            transport::emit_normalized(app, request_id, NormalizedEvent::Delta { text });
+fn emit_normalized_events(
+    app: &tauri::AppHandle,
+    request_id: &str,
+    decoder: &mut SseDecoder,
+    line: &str,
+) -> bool {
+    let mut saw_done = false;
+    for event in decoder.feed(&format!("{line}\n"), Some("ollama")) {
+        if matches!(event, NormalizedEvent::Done) {
+            saw_done = true;
         }
+        transport::emit_normalized(app, request_id, event);
     }
-
-    if let Some(text) = crate::chat_manager::request::extract_reasoning(value, Some("ollama")) {
-        if !text.is_empty() {
-            transport::emit_normalized(app, request_id, NormalizedEvent::Reasoning { text });
-        }
-    }
-
-    if value.get("done").and_then(Value::as_bool).unwrap_or(false) {
-        if let Some(usage) = crate::chat_manager::request::extract_usage(value) {
-            transport::emit_normalized(app, request_id, NormalizedEvent::Usage { usage });
-        }
-    }
+    saw_done
 }
 
 async fn error_response_from_http(
@@ -636,6 +691,7 @@ fn parse_models_list(payload: &Value) -> Vec<ModelInfo> {
 #[cfg(test)]
 mod tests {
     use super::{normalize_assistant_tool_calls, normalize_base_url, normalize_request_body};
+    use crate::chat_manager::{sse::SseDecoder, types::NormalizedEvent};
     use serde_json::json;
     use std::collections::HashMap;
 
@@ -719,5 +775,44 @@ mod tests {
                 .and_then(|value| value.as_str()),
             Some("get_weather")
         );
+    }
+
+    #[test]
+    fn ollama_stream_decoder_preserves_leading_spaces_in_deltas() {
+        let mut decoder = SseDecoder::new();
+
+        let first = decoder.feed(
+            "{\"message\":{\"role\":\"assistant\",\"content\":\"Mirelle\"},\"done\":false}\n",
+            Some("ollama"),
+        );
+        let second = decoder.feed(
+            "{\"message\":{\"role\":\"assistant\",\"content\":\"'s eyes return to yours\"},\"done\":false}\n",
+            Some("ollama"),
+        );
+        let third = decoder.feed(
+            "{\"message\":{\"role\":\"assistant\",\"content\":\" as she presses her seal into each corner.\"},\"done\":true}\n",
+            Some("ollama"),
+        );
+
+        assert_eq!(first.len(), 1);
+        match &first[0] {
+            NormalizedEvent::Delta { text } => assert_eq!(text, "Mirelle"),
+            other => panic!("unexpected first event: {other:?}"),
+        }
+
+        assert_eq!(second.len(), 1);
+        match &second[0] {
+            NormalizedEvent::Delta { text } => assert_eq!(text, "'s eyes return to yours"),
+            other => panic!("unexpected second event: {other:?}"),
+        }
+
+        assert_eq!(third.len(), 2);
+        match &third[0] {
+            NormalizedEvent::Delta { text } => {
+                assert_eq!(text, " as she presses her seal into each corner.")
+            }
+            other => panic!("unexpected third delta: {other:?}"),
+        }
+        assert!(matches!(third[1], NormalizedEvent::Done));
     }
 }

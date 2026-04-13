@@ -23,10 +23,17 @@ export function OnboardingPage() {
   const { state } = controller;
 
   useEffect(() => {
-    if (location.pathname === "/onboarding/memory" && state.step !== OnboardingStep.Memory) {
-      controller.setStep(OnboardingStep.Memory);
+    const nextStep =
+      location.pathname === "/onboarding/models"
+        ? OnboardingStep.Model
+        : location.pathname === "/onboarding/memory"
+          ? OnboardingStep.Memory
+          : OnboardingStep.Provider;
+
+    if (state.step !== nextStep) {
+      controller.setStep(nextStep);
     }
-  }, [location.pathname]);
+  }, [controller, location.pathname, state.step]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {

@@ -28,7 +28,7 @@ use super::types::{
     ChatAddMessageAttachmentArgs, ChatCompletionArgs, ChatContinueArgs,
     ChatGenerateDesignReferenceDescriptionArgs, ChatGenerateSceneImageArgs,
     ChatGenerateScenePromptArgs, ChatRegenerateArgs, ChatTurnResult, ContinueResult,
-    ImageAttachment, PromptScope, RegenerateResult, Session, Settings, StoredMessage,
+    ImageAttachment, PromptTemplateType, RegenerateResult, Session, Settings, StoredMessage,
     SystemPromptEntry, SystemPromptTemplate,
 };
 use crate::storage_manager::sessions::{messages_upsert_batch_typed, session_upsert_meta_typed};
@@ -622,8 +622,7 @@ pub fn list_prompt_templates(app: AppHandle) -> Result<Vec<SystemPromptTemplate>
 pub fn create_prompt_template(
     app: AppHandle,
     name: String,
-    scope: PromptScope,
-    target_ids: Vec<String>,
+    prompt_type: PromptTemplateType,
     content: String,
     entries: Option<Vec<SystemPromptEntry>>,
     condense_prompt_entries: Option<bool>,
@@ -631,8 +630,7 @@ pub fn create_prompt_template(
     prompts::create_template(
         &app,
         name,
-        scope,
-        target_ids,
+        prompt_type,
         content,
         entries,
         condense_prompt_entries,
@@ -644,8 +642,7 @@ pub fn update_prompt_template(
     app: AppHandle,
     id: String,
     name: Option<String>,
-    scope: Option<PromptScope>,
-    target_ids: Option<Vec<String>>,
+    prompt_type: Option<PromptTemplateType>,
     content: Option<String>,
     entries: Option<Vec<SystemPromptEntry>>,
     condense_prompt_entries: Option<bool>,
@@ -654,8 +651,7 @@ pub fn update_prompt_template(
         &app,
         id,
         name,
-        scope,
-        target_ids,
+        prompt_type,
         content,
         entries,
         condense_prompt_entries,
@@ -804,6 +800,21 @@ pub fn reset_dynamic_memory_template(app: AppHandle) -> Result<SystemPromptTempl
 }
 
 #[tauri::command]
+pub fn reset_dynamic_memory_local_template(app: AppHandle) -> Result<SystemPromptTemplate, String> {
+    prompts::reset_dynamic_memory_local_template(&app)
+}
+
+#[tauri::command]
+pub fn reset_group_chat_template(app: AppHandle) -> Result<SystemPromptTemplate, String> {
+    prompts::reset_group_chat_template(&app)
+}
+
+#[tauri::command]
+pub fn reset_group_chat_roleplay_template(app: AppHandle) -> Result<SystemPromptTemplate, String> {
+    prompts::reset_group_chat_roleplay_template(&app)
+}
+
+#[tauri::command]
 pub fn reset_help_me_reply_template(app: AppHandle) -> Result<SystemPromptTemplate, String> {
     prompts::reset_help_me_reply_template(&app)
 }
@@ -836,12 +847,21 @@ pub fn reset_design_reference_template(app: AppHandle) -> Result<SystemPromptTem
 }
 
 #[tauri::command]
-pub fn get_required_template_variables(template_id: String) -> Vec<String> {
-    prompts::get_required_variables(&template_id)
+pub fn get_required_template_variables(app: AppHandle, template_id: String) -> Vec<String> {
+    prompts::get_template(&app, &template_id)
+        .ok()
+        .flatten()
+        .map(|template| {
+            crate::chat_manager::prompting::parameter_engine::required_variables_for_prompt_type(
+                template.prompt_type,
+            )
+        })
+        .unwrap_or_else(|| prompts::get_required_variables(&template_id))
 }
 
 #[tauri::command]
 pub fn validate_template_variables(
+    app: AppHandle,
     template_id: String,
     content: String,
     entries: Option<Vec<SystemPromptEntry>>,
@@ -859,7 +879,10 @@ pub fn validate_template_variables(
     } else {
         content
     };
-    prompts::validate_required_variables(&template_id, &validation_text)
+    let prompt_type = prompts::get_template(&app, &template_id)?
+        .map(|template| template.prompt_type)
+        .unwrap_or_else(|| prompts::template_prompt_type_from_id(&template_id));
+    prompts::validate_required_variables(prompt_type, &validation_text)
         .map_err(|missing| format!("Missing required variables: {}", missing.join(", ")))
 }
 
@@ -1104,4 +1127,9 @@ pub async fn chat_generate_user_reply(
         swap_places,
     )
     .await
+}
+#[tauri::command]
+pub fn get_prompt_parameter_engine(
+) -> crate::chat_manager::prompting::parameter_engine::PromptParameterEngine {
+    crate::chat_manager::prompting::parameter_engine::build_parameter_engine()
 }

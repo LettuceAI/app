@@ -15,7 +15,9 @@ import { noMessages, noMetadata } from "./no";
 import { plMessages, plMetadata } from "./pl";
 import { ptMessages, ptMetadata } from "./pt";
 import { ruMessages, ruMetadata } from "./ru";
+import { trMessages, trMetadata } from "./tr";
 import { viMessages, viMetadata } from "./vi";
+import { zhHansMessages, zhHansMetadata } from "./zh-Hans";
 import { zhHantMessages, zhHantMetadata } from "./zh-Hant";
 
 export interface LocaleMetadata {
@@ -41,6 +43,8 @@ export const localeRegistry = {
   vi: { messages: viMessages, metadata: viMetadata },
   ru: { messages: ruMessages, metadata: ruMetadata },
   ko: { messages: koMessages, metadata: koMetadata },
+  tr: { messages: trMessages, metadata: trMetadata },
+  "zh-Hans": { messages: zhHansMessages, metadata: zhHansMetadata },
   "zh-Hant": { messages: zhHantMessages, metadata: zhHantMetadata },
 } as const satisfies Record<
   string,
@@ -72,6 +76,8 @@ export const SUPPORTED_LOCALES: readonly Locale[] = [
   "vi",
   "ru",
   "ko",
+  "tr",
+  "zh-Hans",
   "zh-Hant",
 ];
 

@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 use tauri::{AppHandle, Manager};
 
@@ -47,6 +48,7 @@ struct AndroidLogExportDirConfig {
 }
 
 static GLOBAL_APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
+static PANIC_REPORT_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 pub fn set_global_app_handle(app_handle: AppHandle) {
     let _ = GLOBAL_APP_HANDLE.set(app_handle);
@@ -54,6 +56,66 @@ pub fn set_global_app_handle(app_handle: AppHandle) {
 
 pub fn get_global_app_handle() -> Option<AppHandle> {
     GLOBAL_APP_HANDLE.get().cloned()
+}
+
+fn sanitize_report_name_segment(value: &str) -> String {
+    let sanitized: String = value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let trimmed = sanitized.trim_matches('_');
+    if trimmed.is_empty() {
+        "unnamed".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+pub fn write_panic_report(app_handle: &AppHandle, report: &str) -> Result<PathBuf, String> {
+    let log_dir = app_handle.path().app_log_dir().map_err(|e| {
+        crate::utils::err_msg(
+            module_path!(),
+            line!(),
+            format!("Failed to get log directory: {}", e),
+        )
+    })?;
+    fs::create_dir_all(&log_dir).map_err(|e| {
+        crate::utils::err_msg(
+            module_path!(),
+            line!(),
+            format!("Failed to create log directory: {}", e),
+        )
+    })?;
+
+    let now = chrono::Local::now();
+    let timestamp = now.format("%Y-%m-%d_%H-%M-%S%.3f");
+    let pid = std::process::id();
+    let counter = PANIC_REPORT_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let thread_name = std::thread::current()
+        .name()
+        .map(sanitize_report_name_segment)
+        .unwrap_or_else(|| "unnamed".to_string());
+    let filename = format!(
+        "panic-{}-p{}-{}-{}.log",
+        timestamp, pid, thread_name, counter
+    );
+    let path = log_dir.join(filename);
+
+    fs::write(&path, report).map_err(|e| {
+        crate::utils::err_msg(
+            module_path!(),
+            line!(),
+            format!("Failed to write panic report: {}", e),
+        )
+    })?;
+
+    Ok(path)
 }
 
 impl LogManager {
