@@ -81,6 +81,10 @@ export async function resetDynamicMemoryTemplate(): Promise<SystemPromptTemplate
   return await invoke<SystemPromptTemplate>("reset_dynamic_memory_template");
 }
 
+export async function resetDynamicMemoryLocalTemplate(): Promise<SystemPromptTemplate> {
+  return await invoke<SystemPromptTemplate>("reset_dynamic_memory_local_template");
+}
+
 export async function resetGroupChatTemplate(): Promise<SystemPromptTemplate> {
   return await invoke<SystemPromptTemplate>("reset_group_chat_template");
 }

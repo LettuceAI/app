@@ -626,9 +626,14 @@ fn set_migration_version(app: &AppHandle, version: u32) -> Result<(), String> {
     let conn = open_db(app)?;
     let now = now_ms();
 
-    // Ensure row exists (it should)
     conn.execute(
-        "UPDATE settings SET migration_version = ?1, updated_at = ?2 WHERE id = 1",
+        r#"
+        INSERT INTO settings (id, app_state, migration_version, created_at, updated_at)
+        VALUES (1, '{}', ?1, ?2, ?2)
+        ON CONFLICT(id) DO UPDATE
+        SET migration_version = excluded.migration_version,
+            updated_at = excluded.updated_at
+        "#,
         params![version, now],
     )
     .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
@@ -2935,13 +2940,43 @@ fn migrate_v50_to_v51(app: &AppHandle) -> Result<(), String> {
 
 fn migrate_v51_to_v52(app: &AppHandle) -> Result<(), String> {
     let conn = crate::storage_manager::db::open_db(app)?;
-    conn.execute_batch(
-        r#"
-        ALTER TABLE characters ADD COLUMN group_chat_prompt_template_id TEXT;
-        ALTER TABLE characters ADD COLUMN group_chat_roleplay_prompt_template_id TEXT;
-        "#,
-    )
-    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+
+    let mut has_group_chat_prompt_template_id = false;
+    let mut has_group_chat_roleplay_prompt_template_id = false;
+
+    let mut stmt = conn
+        .prepare("PRAGMA table_info(characters)")
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    let rows = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+
+    for column in rows {
+        let column =
+            column.map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        if column == "group_chat_prompt_template_id" {
+            has_group_chat_prompt_template_id = true;
+        }
+        if column == "group_chat_roleplay_prompt_template_id" {
+            has_group_chat_roleplay_prompt_template_id = true;
+        }
+    }
+
+    if !has_group_chat_prompt_template_id {
+        conn.execute(
+            "ALTER TABLE characters ADD COLUMN group_chat_prompt_template_id TEXT",
+            [],
+        )
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    }
+
+    if !has_group_chat_roleplay_prompt_template_id {
+        conn.execute(
+            "ALTER TABLE characters ADD COLUMN group_chat_roleplay_prompt_template_id TEXT",
+            [],
+        )
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    }
 
     Ok(())
 }

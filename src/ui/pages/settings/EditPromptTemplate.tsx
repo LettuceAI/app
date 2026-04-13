@@ -44,6 +44,7 @@ import {
   resetLocalRoleplayTemplate,
   resetDynamicSummaryTemplate,
   resetDynamicMemoryTemplate,
+  resetDynamicMemoryLocalTemplate,
   resetGroupChatTemplate,
   resetGroupChatRoleplayTemplate,
   resetHelpMeReplyTemplate,
@@ -71,6 +72,7 @@ import {
   APP_LOCAL_ROLEPLAY_TEMPLATE_ID,
   APP_DYNAMIC_SUMMARY_TEMPLATE_ID,
   APP_DYNAMIC_MEMORY_TEMPLATE_ID,
+  APP_DYNAMIC_MEMORY_LOCAL_TEMPLATE_ID,
   APP_HELP_ME_REPLY_TEMPLATE_ID,
   APP_HELP_ME_REPLY_CONVERSATIONAL_TEMPLATE_ID,
   APP_GROUP_CHAT_TEMPLATE_ID,
@@ -2726,6 +2728,8 @@ export function EditPromptTemplate() {
         updated = await resetDynamicSummaryTemplate();
       } else if (id === APP_DYNAMIC_MEMORY_TEMPLATE_ID) {
         updated = await resetDynamicMemoryTemplate();
+      } else if (id === APP_DYNAMIC_MEMORY_LOCAL_TEMPLATE_ID) {
+        updated = await resetDynamicMemoryLocalTemplate();
       } else if (id === APP_GROUP_CHAT_TEMPLATE_ID) {
         updated = await resetGroupChatTemplate();
       } else if (id === APP_GROUP_CHAT_ROLEPLAY_TEMPLATE_ID) {

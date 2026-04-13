@@ -60,6 +60,7 @@ const DEFAULT_DYNAMIC_MEMORY_SETTINGS: DynamicMemorySettings = {
   deleteConfidenceDefault: 0.5,
   maxHardDeleteRatioPerCycle: 0.5,
   contextEnrichmentEnabled: true,
+  recursiveMemoryLoops: false,
 };
 
 type MemoryPreset = "minimal" | "balanced" | "comprehensive" | "custom";
@@ -70,6 +71,7 @@ const PRESETS: Record<
     DynamicMemorySettings,
     | "enabled"
     | "contextEnrichmentEnabled"
+    | "recursiveMemoryLoops"
     | "deleteConfidenceDefault"
     | "maxHardDeleteRatioPerCycle"
   >
@@ -132,6 +134,8 @@ const hydrateDynamicMemorySettings = (settings?: DynamicMemorySettings): Dynamic
   ...settings,
   contextEnrichmentEnabled:
     settings?.contextEnrichmentEnabled ?? DEFAULT_DYNAMIC_MEMORY_SETTINGS.contextEnrichmentEnabled,
+  recursiveMemoryLoops:
+    settings?.recursiveMemoryLoops ?? DEFAULT_DYNAMIC_MEMORY_SETTINGS.recursiveMemoryLoops,
 });
 
 const ensureAdvancedSettings = (settings: Settings): NonNullable<Settings["advancedSettings"]> => {
@@ -150,6 +154,9 @@ const ensureAdvancedSettings = (settings: Settings): NonNullable<Settings["advan
   }
   if (!advanced.dynamicMemory) {
     advanced.dynamicMemory = { ...DEFAULT_DYNAMIC_MEMORY_SETTINGS };
+  }
+  if (advanced.groupDynamicMemory) {
+    advanced.groupDynamicMemory = hydrateDynamicMemorySettings(advanced.groupDynamicMemory);
   }
   if (advanced.dynamicMemoryLlamaSamplerOverwriteEnabled === undefined) {
     advanced.dynamicMemoryLlamaSamplerOverwriteEnabled = true;
@@ -687,6 +694,39 @@ export function DynamicMemoryPage() {
                             handleDirectSettingChange("contextEnrichmentEnabled", next);
                           } else {
                             handleGroupSettingChange("contextEnrichmentEnabled", next);
+                          }
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {currentEnabled && (
+                  <div className={cn("rounded-xl border border-fg/10 bg-fg/5 px-4 py-3")}>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-sm font-medium text-fg">
+                            Recursive Memory Loops
+                          </span>
+                          <span className="rounded-md border border-info/30 bg-info/10 px-1.5 py-0.5 text-[10px] font-medium text-info/80">
+                            {t("dynamicMemory.page.experimental")}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-fg/45 leading-relaxed">
+                          When enabled, Dynamic Memory sends tool results back to the model and
+                          keeps looping until it calls <span className="font-mono">done</span>.
+                          This can help weaker models extract multiple memories, but increases
+                          latency and token usage.
+                        </div>
+                      </div>
+                      <Switch
+                        checked={currentSettings.recursiveMemoryLoops}
+                        onChange={(next) => {
+                          if (activeTab === "direct") {
+                            handleDirectSettingChange("recursiveMemoryLoops", next);
+                          } else {
+                            handleGroupSettingChange("recursiveMemoryLoops", next);
                           }
                         }}
                       />

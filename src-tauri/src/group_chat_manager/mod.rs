@@ -30,11 +30,11 @@ use crate::chat_manager::lorebook_matcher::{
     activate_lorebook_entries, format_lorebook_for_prompt, get_active_lorebook_entries,
 };
 use crate::chat_manager::memory::dynamic::{
-    apply_memory_decay, calculate_hot_memory_tokens, cosine_similarity,
-    dynamic_memory_structured_fallback_format, effective_group_dynamic_memory_settings,
-    enforce_hot_memory_budget, ensure_pinned_hot, generate_memory_id, mark_memories_accessed,
-    normalize_query_text, promote_cold_memories, search_cold_memory_indices_by_keyword,
-    select_relevant_memory_indices, select_top_cosine_memory_indices, trim_memories_to_max,
+    apply_memory_decay, calculate_hot_memory_tokens, dynamic_memory_structured_fallback_format,
+    effective_group_dynamic_memory_settings, enforce_hot_memory_budget, ensure_pinned_hot,
+    find_duplicate_memory_reason, generate_memory_id, mark_memories_accessed, normalize_query_text,
+    promote_cold_memories, search_cold_memory_indices_by_keyword, select_relevant_memory_indices,
+    select_top_cosine_memory_indices, trim_memories_to_max,
 };
 use crate::chat_manager::memory::manual::{has_manual_memories, render_manual_memory_lines};
 use crate::chat_manager::memory::structured_fallback::{
@@ -46,7 +46,8 @@ use crate::chat_manager::prompting::entry_conditions::{
     entry_is_active, PromptEntryConditionContext,
 };
 use crate::chat_manager::prompts::{
-    self, APP_DYNAMIC_MEMORY_TEMPLATE_ID, APP_DYNAMIC_SUMMARY_TEMPLATE_ID,
+    self, APP_DYNAMIC_MEMORY_LOCAL_TEMPLATE_ID, APP_DYNAMIC_MEMORY_TEMPLATE_ID,
+    APP_DYNAMIC_SUMMARY_TEMPLATE_ID,
 };
 use crate::chat_manager::request::{
     extract_error_message, extract_reasoning, extract_text, extract_usage,
@@ -84,6 +85,7 @@ const ALLOWED_MEMORY_CATEGORIES: &[&str] = &[
     "other",
 ];
 const HARD_DELETE_CONFIDENCE_THRESHOLD: f32 = 0.7;
+const MAX_RECURSIVE_MEMORY_TOOL_LOOPS: usize = 6;
 fn max_hard_deletes_per_cycle(initial_count: usize, ratio: f32) -> usize {
     if initial_count == 0 {
         return 0;
@@ -92,12 +94,83 @@ fn max_hard_deletes_per_cycle(initial_count: usize, ratio: f32) -> usize {
     ((initial_count as f32) * ratio).floor().max(1.0) as usize
 }
 
+fn log_raw_group_memory_tool_calls(app: &AppHandle, source: &str, calls: &[ToolCall]) {
+    let payload = serde_json::to_string(calls).unwrap_or_else(|_| "<serialize failed>".to_string());
+    log_info(
+        app,
+        "group_dynamic_memory",
+        format!(
+            "raw memory tool calls source={} count={} payload={}",
+            source,
+            calls.len(),
+            payload
+        ),
+    );
+}
+
 fn dynamic_memory_llama_sampler_overwrite_enabled(settings: &Settings) -> bool {
     settings
         .advanced_settings
         .as_ref()
         .and_then(|advanced| advanced.dynamic_memory_llama_sampler_overwrite_enabled)
         .unwrap_or(true)
+}
+
+fn group_memory_tool_call_payload(provider_id: &str, call: &ToolCall, index: usize) -> Value {
+    let is_ollama = crate::ollama::is_ollama_provider(Some(provider_id));
+    let arguments = if is_ollama {
+        call.arguments.clone()
+    } else {
+        Value::String(
+            call.raw_arguments
+                .clone()
+                .unwrap_or_else(|| serde_json::to_string(&call.arguments).unwrap_or_default()),
+        )
+    };
+
+    if is_ollama {
+        json!({
+            "type": "function",
+            "function": {
+                "index": index,
+                "name": call.name,
+                "arguments": arguments
+            }
+        })
+    } else {
+        json!({
+            "id": call.id,
+            "type": "function",
+            "function": {
+                "name": call.name,
+                "arguments": arguments
+            }
+        })
+    }
+}
+
+fn group_memory_tool_result_message(
+    provider_id: &str,
+    tool_call_id: &str,
+    tool_name: Option<&str>,
+    result: &Value,
+) -> Value {
+    let mut message = json!({
+        "role": "tool",
+        "content": serde_json::to_string(result).unwrap_or_default()
+    });
+
+    if let Some(obj) = message.as_object_mut() {
+        if crate::ollama::is_ollama_provider(Some(provider_id)) {
+            if let Some(name) = tool_name {
+                obj.insert("tool_name".to_string(), json!(name));
+            }
+        } else {
+            obj.insert("tool_call_id".to_string(), json!(tool_call_id));
+        }
+    }
+
+    message
 }
 
 // ============================================================================
@@ -2518,7 +2591,13 @@ async fn run_group_memory_tool_update(
     let mut messages_for_api = Vec::new();
     let system_role = crate::chat_manager::request_builder::system_role_for(provider_cred);
 
-    let base_template = prompts::get_template(app, APP_DYNAMIC_MEMORY_TEMPLATE_ID)
+    let template_id = if uses_local_dynamic_memory_model(provider_cred, model) {
+        APP_DYNAMIC_MEMORY_LOCAL_TEMPLATE_ID
+    } else {
+        APP_DYNAMIC_MEMORY_TEMPLATE_ID
+    };
+
+    let base_template = prompts::get_template(app, template_id)
         .ok()
         .flatten()
         .map(|t| t.content)
@@ -2591,86 +2670,60 @@ async fn run_group_memory_tool_update(
     let fallback_format = dynamic_memory_structured_fallback_format(settings);
     let fallback_label = structured_fallback_format_label(fallback_format);
 
-    let calls = match send_dynamic_memory_request(
-        app,
-        provider_cred,
-        model,
-        overwrite_llama_sampler_config,
-        api_key,
-        &messages_for_api,
-        max_tokens,
-        context_length,
-        extra_body_fields.clone(),
-        Some(&tool_config),
-        request_id,
-        cancel_token,
-    )
-    .await
-    {
-        Ok(api_response) => {
-            if !api_response.ok {
-                let fallback = format!("Provider returned status {}", api_response.status);
-                let err_message = extract_error_message(api_response.data()).unwrap_or(fallback);
-                log_warn(
-                    app,
-                    "group_dynamic_memory",
-                    format!(
-                        "memory tool request failed; retrying with {} fallback: {}",
-                        fallback_label, err_message
-                    ),
-                );
-                if cancel_token.is_some_and(|token| token.is_cancelled()) {
-                    return Err("Request was cancelled by user".to_string());
-                }
-                let mut fallback_messages = messages_for_api.clone();
-                fallback_messages.push(json!({
-                    "role": "user",
-                    "content": memory_operations_fallback_prompt(fallback_format)
-                }));
+    let mut actions_log: Vec<Value> = Vec::new();
+    let mut untagged_candidates: Vec<(String, bool)> = Vec::new();
+    let initial_memory_count = session.memory_embeddings.len();
+    let max_hard_deletes = max_hard_deletes_per_cycle(
+        initial_memory_count,
+        dynamic_settings.max_hard_delete_ratio_per_cycle,
+    );
+    let mut hard_delete_count = 0usize;
+    let recursive_loops_enabled = dynamic_settings.recursive_memory_loops;
+    let max_loop_iterations = if recursive_loops_enabled {
+        MAX_RECURSIVE_MEMORY_TOOL_LOOPS
+    } else {
+        1
+    };
 
-                let api_response = send_dynamic_memory_request(
-                    app,
-                    provider_cred,
-                    model,
-                    overwrite_llama_sampler_config,
-                    api_key,
-                    &fallback_messages,
-                    max_tokens,
-                    context_length,
-                    extra_body_fields,
-                    None,
-                    request_id,
-                    cancel_token,
-                )
-                .await?;
+    for iteration in 0..max_loop_iterations {
+        if cancel_token.is_some_and(|token| token.is_cancelled()) {
+            return Err("Request was cancelled by user".to_string());
+        }
 
+        let iteration_request_id = request_id.map(|id| {
+            if recursive_loops_enabled {
+                format!("{}:loop-{}", id, iteration + 1)
+            } else {
+                id.to_string()
+            }
+        });
+
+        let (calls, call_source) = match send_dynamic_memory_request(
+            app,
+            provider_cred,
+            model,
+            overwrite_llama_sampler_config,
+            api_key,
+            &messages_for_api,
+            max_tokens,
+            context_length,
+            extra_body_fields.clone(),
+            Some(&tool_config),
+            iteration_request_id.as_deref(),
+            cancel_token,
+        )
+        .await
+        {
+            Ok(api_response) => {
                 if !api_response.ok {
                     let fallback = format!("Provider returned status {}", api_response.status);
-                    let err_message =
-                        extract_error_message(api_response.data()).unwrap_or(fallback.clone());
-                    return Err(if err_message == fallback {
-                        err_message
-                    } else {
-                        format!("{} (status {})", err_message, api_response.status)
-                    });
-                }
-
-                let text = extract_text(api_response.data(), Some(&provider_cred.provider_id))
-                    .ok_or_else(|| {
-                        "memory fallback returned neither tool calls nor text output".to_string()
-                    })?;
-                parse_memory_operations_from_text(&text, fallback_format)?
-            } else {
-                let tool_calls = parse_tool_calls(&provider_cred.provider_id, api_response.data());
-                if !tool_calls.is_empty() {
-                    tool_calls
-                } else {
+                    let err_message = extract_error_message(api_response.data()).unwrap_or(fallback);
                     log_warn(
                         app,
                         "group_dynamic_memory",
                         format!(
-                            "memory tool request returned no tool usage; retrying with {} fallback",
-                            fallback_label
+                            "memory tool request failed; retrying with {} fallback: {}",
+                            fallback_label, err_message
                         ),
                     );
                     if cancel_token.is_some_and(|token| token.is_cancelled()) {
@@ -2691,9 +2744,9 @@ async fn run_group_memory_tool_update(
                         &fallback_messages,
                         max_tokens,
                         context_length,
-                        extra_body_fields,
+                        extra_body_fields.clone(),
                         None,
-                        request_id,
+                        iteration_request_id.as_deref(),
                         cancel_token,
                     )
                     .await?;
@@ -2714,72 +2767,152 @@ async fn run_group_memory_tool_update(
                             "memory fallback returned neither tool calls nor text output"
                                 .to_string()
                         })?;
-                    parse_memory_operations_from_text(&text, fallback_format)?
+                    (
+                        parse_memory_operations_from_text(&text, fallback_format)?,
+                        "text_fallback_after_http_error",
+                    )
+                } else {
+                    let tool_calls = parse_tool_calls(&provider_cred.provider_id, api_response.data());
+                    if !tool_calls.is_empty() {
+                        (tool_calls, "provider_tool_calls")
+                    } else {
+                        log_warn(
+                            app,
+                            "group_dynamic_memory",
+                            format!(
+                                "memory tool request returned no tool usage; retrying with {} fallback",
+                                fallback_label
+                            ),
+                        );
+                        if cancel_token.is_some_and(|token| token.is_cancelled()) {
+                            return Err("Request was cancelled by user".to_string());
+                        }
+                        let mut fallback_messages = messages_for_api.clone();
+                        fallback_messages.push(json!({
+                            "role": "user",
+                            "content": memory_operations_fallback_prompt(fallback_format)
+                        }));
+
+                        let api_response = send_dynamic_memory_request(
+                            app,
+                            provider_cred,
+                            model,
+                            overwrite_llama_sampler_config,
+                            api_key,
+                            &fallback_messages,
+                            max_tokens,
+                            context_length,
+                            extra_body_fields.clone(),
+                            None,
+                            iteration_request_id.as_deref(),
+                            cancel_token,
+                        )
+                        .await?;
+
+                        if !api_response.ok {
+                            let fallback = format!("Provider returned status {}", api_response.status);
+                            let err_message =
+                                extract_error_message(api_response.data()).unwrap_or(fallback.clone());
+                            return Err(if err_message == fallback {
+                                err_message
+                            } else {
+                                format!("{} (status {})", err_message, api_response.status)
+                            });
+                        }
+
+                        let text = extract_text(api_response.data(), Some(&provider_cred.provider_id))
+                            .ok_or_else(|| {
+                                "memory fallback returned neither tool calls nor text output"
+                                    .to_string()
+                            })?;
+                        (
+                            parse_memory_operations_from_text(&text, fallback_format)?,
+                            "text_fallback_after_empty_tool_calls",
+                        )
+                    }
                 }
             }
-        }
-        Err(err) => {
+            Err(err) => {
+                log_warn(
+                    app,
+                    "group_dynamic_memory",
+                    format!(
+                        "memory tool request errored; retrying with {} fallback: {}",
+                        fallback_label, err
+                    ),
+                );
+                if cancel_token.is_some_and(|token| token.is_cancelled()) {
+                    return Err("Request was cancelled by user".to_string());
+                }
+                let mut fallback_messages = messages_for_api.clone();
+                fallback_messages.push(json!({
+                    "role": "user",
+                    "content": memory_operations_fallback_prompt(fallback_format)
+                }));
+
+                let api_response = send_dynamic_memory_request(
+                    app,
+                    provider_cred,
+                    model,
+                    overwrite_llama_sampler_config,
+                    api_key,
+                    &fallback_messages,
+                    max_tokens,
+                    context_length,
+                    extra_body_fields.clone(),
+                    None,
+                    iteration_request_id.as_deref(),
+                    cancel_token,
+                )
+                .await?;
+
+                if !api_response.ok {
+                    let fallback = format!("Provider returned status {}", api_response.status);
+                    let err_message =
+                        extract_error_message(api_response.data()).unwrap_or(fallback.clone());
+                    return Err(if err_message == fallback {
+                        err_message
+                    } else {
+                        format!("{} (status {})", err_message, api_response.status)
+                    });
+                }
+
+                let text = extract_text(api_response.data(), Some(&provider_cred.provider_id))
+                    .ok_or_else(|| {
+                        "memory fallback returned neither tool calls nor text output".to_string()
+                    })?;
+                (
+                    parse_memory_operations_from_text(&text, fallback_format)?,
+                    "text_fallback_after_request_error",
+                )
+            }
+        };
+
+        log_raw_group_memory_tool_calls(app, call_source, &calls);
+
+        if calls.is_empty() {
             log_warn(
                 app,
                 "group_dynamic_memory",
                 format!(
-                    "memory tool request errored; retrying with {} fallback: {}",
-                    fallback_label, err
+                    "memory tool loop iteration {} returned no tool calls; stopping",
+                    iteration + 1
                 ),
             );
-            if cancel_token.is_some_and(|token| token.is_cancelled()) {
-                return Err("Request was cancelled by user".to_string());
-            }
-            let mut fallback_messages = messages_for_api.clone();
-            fallback_messages.push(json!({
-                "role": "user",
-                "content": memory_operations_fallback_prompt(fallback_format)
-            }));
-
-            let api_response = send_dynamic_memory_request(
-                app,
-                provider_cred,
-                model,
-                overwrite_llama_sampler_config,
-                api_key,
-                &fallback_messages,
-                max_tokens,
-                context_length,
-                extra_body_fields,
-                None,
-                request_id,
-                cancel_token,
-            )
-            .await?;
-
-            if !api_response.ok {
-                let fallback = format!("Provider returned status {}", api_response.status);
-                let err_message =
-                    extract_error_message(api_response.data()).unwrap_or(fallback.clone());
-                return Err(if err_message == fallback {
-                    err_message
-                } else {
-                    format!("{} (status {})", err_message, api_response.status)
-                });
-            }
-
-            let text = extract_text(api_response.data(), Some(&provider_cred.provider_id))
-                .ok_or_else(|| {
-                    "memory fallback returned neither tool calls nor text output".to_string()
-                })?;
-            parse_memory_operations_from_text(&text, fallback_format)?
+            break;
         }
-    };
 
-    let mut actions_log: Vec<Value> = Vec::new();
-    let mut untagged_candidates: Vec<(String, bool)> = Vec::new();
-    let initial_memory_count = session.memory_embeddings.len();
-    let max_hard_deletes = max_hard_deletes_per_cycle(
-        initial_memory_count,
-        dynamic_settings.max_hard_delete_ratio_per_cycle,
-    );
-    let mut hard_delete_count = 0usize;
-    for call in calls {
+        let tool_calls_json: Vec<Value> = calls
+            .iter()
+            .enumerate()
+            .map(|(index, call)| {
+                group_memory_tool_call_payload(&provider_cred.provider_id, call, index)
+            })
+            .collect();
+        let mut tool_results: Vec<Value> = Vec::new();
+        let mut saw_done = false;
+
+        for call in calls {
         match call.name.as_str() {
             "create_memory" => {
                 if let Some(raw_text) = extract_text_argument(&call) {
@@ -2798,6 +2931,12 @@ async fn run_group_memory_tool_update(
                                 "reason": reason,
                                 "timestamp": now_millis().unwrap_or_default(),
                             }));
+                            tool_results.push(json!({
+                                "status": "skipped",
+                                "name": "create_memory",
+                                "reason": reason,
+                                "arguments": call.arguments,
+                            }));
                             continue;
                         }
                     };
@@ -2814,26 +2953,30 @@ async fn run_group_memory_tool_update(
                                 None
                             }
                         };
-                    if let Some(ref new_emb) = embedding {
-                        let is_duplicate = session.memory_embeddings.iter().any(|existing| {
-                            !existing.embedding.is_empty()
-                                && cosine_similarity(new_emb, &existing.embedding) > 0.85
-                        });
-                        if is_duplicate {
-                            log_info(
-                                app,
-                                "group_dynamic_memory",
-                                format!("Skipping duplicate memory (cosine > 0.85): {}", &text),
-                            );
-                            actions_log.push(json!({
-                                "name": "create_memory",
-                                "arguments": call.arguments,
-                                "skipped": true,
-                                "reason": "duplicate (cosine > 0.85)",
-                                "timestamp": now_millis().unwrap_or_default(),
-                            }));
-                            continue;
-                        }
+                    if let Some(reason) = find_duplicate_memory_reason(
+                        &text,
+                        embedding.as_deref(),
+                        &session.memory_embeddings,
+                    ) {
+                        log_info(
+                            app,
+                            "group_dynamic_memory",
+                            format!("Skipping duplicate memory ({}): {}", reason, &text),
+                        );
+                        actions_log.push(json!({
+                            "name": "create_memory",
+                            "arguments": call.arguments,
+                            "skipped": true,
+                            "reason": reason,
+                            "timestamp": now_millis().unwrap_or_default(),
+                        }));
+                        tool_results.push(json!({
+                            "status": "skipped",
+                            "name": "create_memory",
+                            "reason": reason,
+                            "arguments": call.arguments,
+                        }));
+                        continue;
                     }
                     let token_count =
                         crate::embedding::tokenizer::count_tokens(app, &text).unwrap_or(0);
@@ -2866,6 +3009,13 @@ async fn run_group_memory_tool_update(
                                 ),
                             );
                             untagged_candidates.push((text, is_pinned));
+                            tool_results.push(json!({
+                                "status": "skipped",
+                                "name": "create_memory",
+                                "reason": reason,
+                                "repairQueued": true,
+                                "arguments": call.arguments,
+                            }));
                             continue;
                         }
                     };
@@ -2884,13 +3034,20 @@ async fn run_group_memory_tool_update(
                         category: Some(category),
                     });
 
-                    actions_log.push(json!({
+                    let action = json!({
                         "name": "create_memory",
                         "arguments": call.arguments,
                         "memoryId": mem_id,
                         "timestamp": now_millis().unwrap_or_default(),
                         "updatedMemories": format_memories_with_ids(session),
+                    });
+                    tool_results.push(json!({
+                        "status": "created",
+                        "name": "create_memory",
+                        "memoryId": action.get("memoryId").cloned().unwrap_or(Value::Null),
+                        "updatedMemories": action.get("updatedMemories").cloned().unwrap_or(Value::Null),
                     }));
+                    actions_log.push(action);
 
                     log_info(
                         app,
@@ -2973,6 +3130,13 @@ async fn run_group_memory_tool_update(
                                 "timestamp": now_millis().unwrap_or_default(),
                                 "updatedMemories": format_memories_with_ids(session),
                             }));
+                            tool_results.push(json!({
+                                "status": "soft_deleted",
+                                "name": "delete_memory",
+                                "deletedMemoryId": target_memory.as_ref().map(|m| m.id.clone()),
+                                "deletedText": target_memory.as_ref().map(|m| m.text.clone()),
+                                "updatedMemories": format_memories_with_ids(session),
+                            }));
                         } else {
                             let removed_memory = if idx < session.memory_embeddings.len() {
                                 let removed = session.memory_embeddings.remove(idx);
@@ -2999,6 +3163,13 @@ async fn run_group_memory_tool_update(
                                 "timestamp": now_millis().unwrap_or_default(),
                                 "updatedMemories": format_memories_with_ids(session),
                             }));
+                            tool_results.push(json!({
+                                "status": "deleted",
+                                "name": "delete_memory",
+                                "deletedMemoryId": removed_memory.as_ref().map(|m| m.id.clone()),
+                                "deletedText": removed_memory.as_ref().map(|m| m.text.clone()),
+                                "updatedMemories": format_memories_with_ids(session),
+                            }));
                         }
                     } else {
                         log_warn(
@@ -3006,6 +3177,12 @@ async fn run_group_memory_tool_update(
                             "group_dynamic_memory",
                             format!("delete_memory could not find: {}", text),
                         );
+                        tool_results.push(json!({
+                            "status": "skipped",
+                            "name": "delete_memory",
+                            "reason": "target_not_found",
+                            "arguments": call.arguments,
+                        }));
                     }
                 }
             }
@@ -3019,6 +3196,11 @@ async fn run_group_memory_tool_update(
                             "name": "pin_memory",
                             "arguments": call.arguments,
                             "timestamp": now_millis().unwrap_or_default(),
+                        }));
+                        tool_results.push(json!({
+                            "status": "pinned",
+                            "name": "pin_memory",
+                            "memoryId": id,
                         }));
                         log_info(app, "group_dynamic_memory", format!("Pinned memory {}", id));
                     }
@@ -3034,6 +3216,11 @@ async fn run_group_memory_tool_update(
                             "arguments": call.arguments,
                             "timestamp": now_millis().unwrap_or_default(),
                         }));
+                        tool_results.push(json!({
+                            "status": "unpinned",
+                            "name": "unpin_memory",
+                            "memoryId": id,
+                        }));
                         log_info(
                             app,
                             "group_dynamic_memory",
@@ -3048,9 +3235,64 @@ async fn run_group_memory_tool_update(
                     "arguments": call.arguments,
                     "timestamp": now_millis().unwrap_or_default(),
                 }));
+                saw_done = true;
                 break;
             }
-            _ => {}
+            _ => {
+                tool_results.push(json!({
+                    "status": "skipped",
+                    "name": call.name,
+                    "reason": "unsupported_tool",
+                    "arguments": call.arguments,
+                }));
+            }
+        }
+    }
+
+        if saw_done || !recursive_loops_enabled {
+            break;
+        }
+
+        if tool_results.is_empty() {
+            log_warn(
+                app,
+                "group_dynamic_memory",
+                format!(
+                    "memory tool loop iteration {} produced no executable tool results; stopping",
+                    iteration + 1
+                ),
+            );
+            break;
+        }
+
+        messages_for_api.push(json!({
+            "role": "assistant",
+            "content": Value::Null,
+            "tool_calls": tool_calls_json,
+        }));
+        for (call, result) in tool_calls_json.iter().zip(tool_results.iter()) {
+            let tool_call_id = call.get("id").and_then(Value::as_str).unwrap_or_default();
+            let tool_name = call
+                .get("function")
+                .and_then(|value| value.get("name"))
+                .and_then(Value::as_str);
+            messages_for_api.push(group_memory_tool_result_message(
+                &provider_cred.provider_id,
+                tool_call_id,
+                tool_name,
+                result,
+            ));
+        }
+
+        if iteration + 1 == max_loop_iterations {
+            log_warn(
+                app,
+                "group_dynamic_memory",
+                format!(
+                    "recursive memory loops reached hard cap of {}; stopping without done",
+                    max_loop_iterations
+                ),
+            );
         }
     }
 
@@ -3136,26 +3378,24 @@ async fn run_group_memory_tool_update(
                                 None
                             }
                         };
-                    if let Some(ref new_emb) = embedding {
-                        let is_duplicate = session.memory_embeddings.iter().any(|existing| {
-                            !existing.embedding.is_empty()
-                                && cosine_similarity(new_emb, &existing.embedding) > 0.85
-                        });
-                        if is_duplicate {
-                            actions_log.push(json!({
-                                "name": "create_memory",
-                                "repaired": true,
-                                "arguments": {
-                                    "text": text,
-                                    "category": category,
-                                    "important": is_pinned,
-                                },
-                                "skipped": true,
-                                "reason": "duplicate (cosine > 0.85)",
-                                "timestamp": now_millis().unwrap_or_default(),
-                            }));
-                            continue;
-                        }
+                    if let Some(reason) = find_duplicate_memory_reason(
+                        &text,
+                        embedding.as_deref(),
+                        &session.memory_embeddings,
+                    ) {
+                        actions_log.push(json!({
+                            "name": "create_memory",
+                            "repaired": true,
+                            "arguments": {
+                                "text": text,
+                                "category": category,
+                                "important": is_pinned,
+                            },
+                            "skipped": true,
+                            "reason": reason,
+                            "timestamp": now_millis().unwrap_or_default(),
+                        }));
+                        continue;
                     }
 
                     let token_count =

@@ -182,6 +182,14 @@ fn run_bootstrap_tasks(app: &tauri::AppHandle) {
         );
     }
 
+    if let Err(err) = chat_manager::prompts::ensure_dynamic_memory_templates(app) {
+        utils::log_error(
+            app,
+            "bootstrap",
+            format!("Failed to ensure dynamic memory templates: {}", err),
+        );
+    }
+
     if let Err(err) = chat_manager::prompts::ensure_group_chat_templates(app) {
         utils::log_error(
             app,

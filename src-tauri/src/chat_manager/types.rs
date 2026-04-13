@@ -428,6 +428,8 @@ pub struct DynamicMemorySettings {
     /// v2 exclusive: Use last 2 messages for better memory retrieval
     #[serde(default = "default_context_enrichment")]
     pub context_enrichment_enabled: bool,
+    #[serde(default)]
+    pub recursive_memory_loops: bool,
 }
 
 fn default_min_similarity() -> f32 {

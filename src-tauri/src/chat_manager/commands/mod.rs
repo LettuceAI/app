@@ -800,6 +800,11 @@ pub fn reset_dynamic_memory_template(app: AppHandle) -> Result<SystemPromptTempl
 }
 
 #[tauri::command]
+pub fn reset_dynamic_memory_local_template(app: AppHandle) -> Result<SystemPromptTemplate, String> {
+    prompts::reset_dynamic_memory_local_template(&app)
+}
+
+#[tauri::command]
 pub fn reset_group_chat_template(app: AppHandle) -> Result<SystemPromptTemplate, String> {
     prompts::reset_group_chat_template(&app)
 }

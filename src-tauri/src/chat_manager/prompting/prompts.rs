@@ -16,6 +16,7 @@ pub const APP_DEFAULT_TEMPLATE_ID: &str = "prompt_app_default";
 pub const APP_LOCAL_ROLEPLAY_TEMPLATE_ID: &str = "prompt_app_local_roleplay";
 pub const APP_DYNAMIC_SUMMARY_TEMPLATE_ID: &str = "prompt_app_dynamic_summary";
 pub const APP_DYNAMIC_MEMORY_TEMPLATE_ID: &str = "prompt_app_dynamic_memory";
+pub const APP_DYNAMIC_MEMORY_LOCAL_TEMPLATE_ID: &str = "prompt_app_dynamic_memory_local";
 pub const APP_HELP_ME_REPLY_TEMPLATE_ID: &str = "prompt_app_help_me_reply";
 pub const APP_HELP_ME_REPLY_CONVERSATIONAL_TEMPLATE_ID: &str =
     "prompt_app_help_me_reply_conversational";
@@ -29,6 +30,7 @@ const APP_DEFAULT_TEMPLATE_NAME: &str = "App Default";
 const APP_LOCAL_ROLEPLAY_TEMPLATE_NAME: &str = "Local RP Default";
 const APP_DYNAMIC_SUMMARY_TEMPLATE_NAME: &str = "Dynamic Memory: Summarizer";
 const APP_DYNAMIC_MEMORY_TEMPLATE_NAME: &str = "Dynamic Memory: Memory Manager";
+const APP_DYNAMIC_MEMORY_LOCAL_TEMPLATE_NAME: &str = "Dynamic Memory: Memory Manager (Local LLM)";
 const APP_HELP_ME_REPLY_TEMPLATE_NAME: &str = "Reply Helper";
 const APP_HELP_ME_REPLY_CONVERSATIONAL_TEMPLATE_NAME: &str = "Reply Helper (Conversational)";
 const APP_GROUP_CHAT_TEMPLATE_NAME: &str = "Group Chat (Conversation)";
@@ -47,7 +49,9 @@ pub fn template_prompt_type_from_id(id: &str) -> PromptTemplateType {
         APP_GROUP_CHAT_TEMPLATE_ID => PromptTemplateType::GroupChatConversational,
         APP_GROUP_CHAT_ROLEPLAY_TEMPLATE_ID => PromptTemplateType::GroupChatRoleplay,
         APP_DYNAMIC_SUMMARY_TEMPLATE_ID => PromptTemplateType::DynamicMemorySummarizer,
-        APP_DYNAMIC_MEMORY_TEMPLATE_ID => PromptTemplateType::DynamicMemoryManager,
+        APP_DYNAMIC_MEMORY_TEMPLATE_ID | APP_DYNAMIC_MEMORY_LOCAL_TEMPLATE_ID => {
+            PromptTemplateType::DynamicMemoryManager
+        }
         APP_HELP_ME_REPLY_TEMPLATE_ID => PromptTemplateType::ReplyHelperRoleplay,
         APP_HELP_ME_REPLY_CONVERSATIONAL_TEMPLATE_ID => {
             PromptTemplateType::ReplyHelperConversational
@@ -588,6 +592,7 @@ fn row_to_template(row: &rusqlite::Row<'_>) -> Result<SystemPromptTemplate, rusq
 pub fn load_templates(app: &AppHandle) -> Result<Vec<SystemPromptTemplate>, String> {
     let _ = ensure_app_default_template(app)?;
     let _ = ensure_local_roleplay_template(app)?;
+    ensure_dynamic_memory_templates(app)?;
     ensure_group_chat_templates(app)?;
     let conn = open_db(app)?;
     let mut stmt = conn
@@ -907,6 +912,42 @@ pub fn ensure_dynamic_memory_templates(app: &AppHandle) -> Result<(), String> {
             PromptType::DynamicMemoryPrompt,
             get_base_prompt_entries(PromptType::DynamicMemoryPrompt),
         );
+        let _ = maybe_backfill_template_name(
+            app,
+            APP_DYNAMIC_MEMORY_TEMPLATE_ID,
+            APP_DYNAMIC_MEMORY_TEMPLATE_NAME,
+        );
+    }
+
+    if get_template(app, APP_DYNAMIC_MEMORY_LOCAL_TEMPLATE_ID)?.is_none() {
+        let content = get_base_prompt(PromptType::DynamicMemoryLocalPrompt);
+        let entries = get_base_prompt_entries(PromptType::DynamicMemoryLocalPrompt);
+        let entries_json = serde_json::to_string(&entries)
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        conn.execute(
+            "INSERT OR IGNORE INTO prompt_templates (id, name, prompt_type, content, entries, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
+            params![
+                APP_DYNAMIC_MEMORY_LOCAL_TEMPLATE_ID,
+                APP_DYNAMIC_MEMORY_LOCAL_TEMPLATE_NAME,
+                prompt_type_to_str(PromptTemplateType::DynamicMemoryManager),
+                content,
+                entries_json,
+                now
+            ],
+        )
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    } else {
+        let _ = maybe_backfill_entries(
+            app,
+            APP_DYNAMIC_MEMORY_LOCAL_TEMPLATE_ID,
+            PromptType::DynamicMemoryLocalPrompt,
+            get_base_prompt_entries(PromptType::DynamicMemoryLocalPrompt),
+        );
+        let _ = maybe_backfill_template_name(
+            app,
+            APP_DYNAMIC_MEMORY_LOCAL_TEMPLATE_ID,
+            APP_DYNAMIC_MEMORY_LOCAL_TEMPLATE_NAME,
+        );
     }
 
     Ok(())
@@ -986,6 +1027,7 @@ pub fn is_app_default_template(id: &str) -> bool {
         || id == APP_LOCAL_ROLEPLAY_TEMPLATE_ID
         || id == APP_DYNAMIC_SUMMARY_TEMPLATE_ID
         || id == APP_DYNAMIC_MEMORY_TEMPLATE_ID
+        || id == APP_DYNAMIC_MEMORY_LOCAL_TEMPLATE_ID
         || id == APP_HELP_ME_REPLY_TEMPLATE_ID
         || id == APP_HELP_ME_REPLY_CONVERSATIONAL_TEMPLATE_ID
         || id == APP_GROUP_CHAT_TEMPLATE_ID
@@ -1042,6 +1084,20 @@ pub fn reset_dynamic_memory_template(app: &AppHandle) -> Result<SystemPromptTemp
     update_template(
         app,
         APP_DYNAMIC_MEMORY_TEMPLATE_ID.to_string(),
+        None,
+        None,
+        Some(content.clone()),
+        Some(entries),
+        None,
+    )
+}
+
+pub fn reset_dynamic_memory_local_template(app: &AppHandle) -> Result<SystemPromptTemplate, String> {
+    let content = get_base_prompt(PromptType::DynamicMemoryLocalPrompt);
+    let entries = get_base_prompt_entries(PromptType::DynamicMemoryLocalPrompt);
+    update_template(
+        app,
+        APP_DYNAMIC_MEMORY_LOCAL_TEMPLATE_ID.to_string(),
         None,
         None,
         Some(content.clone()),

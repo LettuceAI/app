@@ -414,6 +414,7 @@ export function AdvancedPage() {
           deleteConfidenceDefault: 0.5,
           maxHardDeleteRatioPerCycle: 0.5,
           contextEnrichmentEnabled: true,
+          recursiveMemoryLoops: false,
         };
       }
 

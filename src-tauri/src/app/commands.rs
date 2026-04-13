@@ -166,6 +166,7 @@ macro_rules! invoke_handler {
             crate::chat_manager::reset_local_roleplay_template,
             crate::chat_manager::reset_dynamic_summary_template,
             crate::chat_manager::reset_dynamic_memory_template,
+            crate::chat_manager::reset_dynamic_memory_local_template,
             crate::chat_manager::reset_group_chat_template,
             crate::chat_manager::reset_group_chat_roleplay_template,
             crate::chat_manager::reset_help_me_reply_template,
