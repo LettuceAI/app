@@ -381,8 +381,13 @@ pub(super) fn load_engine(
             );
         }
     }
-    let requested_gpu_layers_key = if auto_gpu_layer_candidates.is_some() {
-        "smart:auto".to_string()
+    let requested_gpu_layers_key = if let Some(candidates) = auto_gpu_layer_candidates {
+        let candidate_key = candidates
+            .iter()
+            .map(|value| value.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        format!("smart:{candidate_key}")
     } else {
         requested_gpu_layers
             .map(|v| v.to_string())
