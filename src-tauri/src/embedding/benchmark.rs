@@ -2,6 +2,7 @@ use super::*;
 use crate::utils::log_info;
 use ort::session::{builder::GraphOptimizationLevel, Session};
 use std::collections::HashMap;
+use std::fs;
 use std::path::{Path, PathBuf};
 use tokenizers::Tokenizer;
 
@@ -198,6 +199,18 @@ pub async fn run_embedding_dev_benchmark(app: AppHandle) -> Result<DevBenchmarkR
                  model_path: PathBuf,
                  tokenizer_path: PathBuf|
                  -> Result<(BenchmarkVariantResult, HashMap<String, f32>), String> {
+                    let model_bytes = fs::read(&model_path).map_err(|e| {
+                        crate::utils::err_msg(
+                            module_path!(),
+                            line!(),
+                            format!(
+                                "Failed to read {} model {}: {}",
+                                version,
+                                model_path.display(),
+                                e
+                            ),
+                        )
+                    })?;
                     let mut session = Session::builder()
                         .map_err(|e| {
                             crate::utils::err_msg(
@@ -214,7 +227,7 @@ pub async fn run_embedding_dev_benchmark(app: AppHandle) -> Result<DevBenchmarkR
                                 format!("Failed to set {} optimization level: {}", version, e),
                             )
                         })?
-                        .commit_from_file(&model_path)
+                        .commit_from_memory(&model_bytes)
                         .map_err(|e| {
                             crate::utils::err_msg(
                                 module_path!(),

@@ -45,6 +45,17 @@ async function exists(pathname) {
   }
 }
 
+async function hasArArchiveMagic(pathname) {
+  if (!(await exists(pathname))) {
+    return false;
+  }
+  const header = await readFile(pathname);
+  if (header.length < 8) {
+    return false;
+  }
+  return header.subarray(0, 8).toString("utf8") === "!<arch>\n";
+}
+
 async function ensureArchive() {
   if (await exists(archivePath)) {
     return;
@@ -66,7 +77,7 @@ async function installSlice(slice) {
 
   if ((await exists(libPath)) && (await exists(versionFile))) {
     const currentVersion = (await readFile(versionFile, "utf8")).trim();
-    if (currentVersion === ORT_VERSION) {
+    if (currentVersion === ORT_VERSION && (await hasArArchiveMagic(libPath))) {
       console.log(`[ios-ort] Using existing ${slice} install at ${sliceRoot}`);
       return sliceRoot;
     }
@@ -92,7 +103,26 @@ async function installSlice(slice) {
       fail(`Expected ONNX Runtime binary is missing from archive for slice ${slice}`);
     }
 
-    await copyFile(frameworkBinary, libPath);
+    const thinArchCandidates = slice === "ios-arm64" ? ["arm64"] : ["arm64", "x86_64"];
+    let thinned = false;
+    for (const arch of thinArchCandidates) {
+      const result = spawnSync("lipo", ["-thin", arch, frameworkBinary, "-output", libPath], {
+        stdio: "inherit",
+        cwd: repoRoot,
+      });
+      if (!result.error && result.status === 0) {
+        thinned = true;
+        break;
+      }
+    }
+    if (!thinned) {
+      await copyFile(frameworkBinary, libPath);
+    }
+
+    if (!(await hasArArchiveMagic(libPath))) {
+      fail(`Installed library for ${slice} is not an ar archive: ${libPath}`);
+    }
+
     await writeFile(versionFile, `${ORT_VERSION}\n`, "utf8");
     console.log(`[ios-ort] Installed ${slice} to ${sliceRoot}`);
     return sliceRoot;

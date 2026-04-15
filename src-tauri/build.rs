@@ -44,6 +44,8 @@ fn macos_archive_candidates(target_arch: &str) -> Vec<(String, String)> {
 }
 
 fn main() {
+    println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=tauri.conf.json");
     println!("cargo:rerun-if-env-changed=ORT_LIB_LOCATION");
 
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();

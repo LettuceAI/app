@@ -72,36 +72,7 @@ jobs:
           node -e "require('fs').writeFileSync('tauri-version-override.json', JSON.stringify({ version: process.env.VERSION_OVERRIDE }))"
 
       - name: Prepare ONNX Runtime iOS libs
-        env:
-          IOS_ORT_LIBS_URL: ${{ secrets.IOS_ORT_LIBS_URL }}
-          IOS_ORT_LIBS_TGZ_BASE64: ${{ secrets.IOS_ORT_LIBS_TGZ_BASE64 }}
-        run: |
-          set -euo pipefail
-
-          ARCHIVE="$RUNNER_TEMP/ort-ios.tgz"
-          EXTRACT_ROOT="$RUNNER_TEMP/ort-ios"
-          mkdir -p "$EXTRACT_ROOT"
-
-          if [ -n "${IOS_ORT_LIBS_URL:-}" ]; then
-            curl -fsSL "$IOS_ORT_LIBS_URL" -o "$ARCHIVE"
-          elif [ -n "${IOS_ORT_LIBS_TGZ_BASE64:-}" ]; then
-            printf '%s' "$IOS_ORT_LIBS_TGZ_BASE64" | base64 --decode > "$ARCHIVE"
-          else
-            echo "Missing iOS ONNX Runtime source. Set IOS_ORT_LIBS_URL or IOS_ORT_LIBS_TGZ_BASE64."
-            exit 1
-          fi
-
-          tar -xzf "$ARCHIVE" -C "$EXTRACT_ROOT"
-
-          CHILD_COUNT=$(find "$EXTRACT_ROOT" -mindepth 1 -maxdepth 1 | wc -l | tr -d ' ')
-          if [ "$CHILD_COUNT" -eq 1 ] && [ -d "$(find "$EXTRACT_ROOT" -mindepth 1 -maxdepth 1 | head -1)" ]; then
-            ORT_LIB_LOCATION="$(find "$EXTRACT_ROOT" -mindepth 1 -maxdepth 1 | head -1)"
-          else
-            ORT_LIB_LOCATION="$EXTRACT_ROOT"
-          fi
-
-          echo "ORT_LIB_LOCATION=$ORT_LIB_LOCATION" >> "$GITHUB_ENV"
-          echo "Using ORT_LIB_LOCATION=$ORT_LIB_LOCATION"
+        run: bun run tauri:ios:prepare-onnxruntime
 
       - name: Init iOS project
         run: |
@@ -173,13 +144,13 @@ jobs:
           import json, os
           path = os.path.join(os.environ["RUNNER_TEMP"], "xcode-list.json")
           with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            schemes = data.get("workspace", {}).get("schemes", [])
-            if not schemes:
+              data = json.load(f)
+          schemes = data.get("workspace", {}).get("schemes", [])
+          if not schemes:
               raise SystemExit("No schemes found in workspace.")
-              print(schemes[0])
-              PY
-              )
+          print(schemes[0])
+          PY
+          )
 
           DERIVED_DATA="$RUNNER_TEMP/ios-derived-data"
           ARCHIVE_PATH="$RUNNER_TEMP/LettuceAI.xcarchive"
@@ -233,9 +204,30 @@ jobs:
           echo "IOS_IPA_PATH=$IPA_PATH" >> "$GITHUB_ENV"
           echo "Built IPA at: $IPA_PATH"
 
+      - name: Generate AltStore metadata
+        run: |
+          set -euo pipefail
+
+          if [ -z "${IOS_IPA_PATH:-}" ]; then
+            echo "IOS_IPA_PATH is empty."
+            exit 1
+          fi
+
+          ALTSTORE_METADATA_PATH="$RUNNER_TEMP/altstore-metadata.json"
+          node scripts/generate-altstore-metadata.mjs "$IOS_IPA_PATH" "$ALTSTORE_METADATA_PATH"
+          echo "ALTSTORE_METADATA_PATH=$ALTSTORE_METADATA_PATH" >> "$GITHUB_ENV"
+          echo "Generated AltStore metadata at: $ALTSTORE_METADATA_PATH"
+
       - name: Upload iOS IPA
         uses: actions/upload-artifact@v4
         with:
           name: ios-ipa
           if-no-files-found: error
           path: ${{ env.IOS_IPA_PATH }}
+
+      - name: Upload AltStore metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-altstore-metadata
+          if-no-files-found: error
+          path: ${{ env.ALTSTORE_METADATA_PATH }}
