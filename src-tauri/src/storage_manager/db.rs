@@ -522,6 +522,7 @@ pub fn init_db(_app: &tauri::AppHandle, conn: &Connection) -> Result<(), String>
           role TEXT NOT NULL,
           content TEXT NOT NULL,
           created_at INTEGER NOT NULL,
+          scene_edited INTEGER NOT NULL DEFAULT 0,
           prompt_tokens INTEGER,
           completion_tokens INTEGER,
           total_tokens INTEGER,
@@ -1104,6 +1105,32 @@ pub fn init_db(_app: &tauri::AppHandle, conn: &Connection) -> Result<(), String>
     }
     if !has_reasoning {
         let _ = conn.execute("ALTER TABLE messages ADD COLUMN reasoning TEXT", []);
+    }
+
+    let mut has_scene_edited = false;
+    let mut stmt_scene_edited = conn
+        .prepare("PRAGMA table_info(messages)")
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    let mut rows_scene_edited = stmt_scene_edited
+        .query([])
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    while let Some(row) = rows_scene_edited
+        .next()
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
+    {
+        let col_name: String = row
+            .get(1)
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        if col_name == "scene_edited" {
+            has_scene_edited = true;
+            break;
+        }
+    }
+    if !has_scene_edited {
+        let _ = conn.execute(
+            "ALTER TABLE messages ADD COLUMN scene_edited INTEGER NOT NULL DEFAULT 0",
+            [],
+        );
     }
 
     let mut has_variant_reasoning = false;

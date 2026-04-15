@@ -6,7 +6,7 @@ use crate::storage_manager::settings::{read_settings_typed, write_settings_typed
 use crate::utils::log_info;
 
 /// Current migration version
-pub const CURRENT_MIGRATION_VERSION: u32 = 52;
+pub const CURRENT_MIGRATION_VERSION: u32 = 53;
 
 pub fn run_migrations(app: &AppHandle) -> Result<(), String> {
     log_info(app, "migrations", "Starting migration check");
@@ -556,6 +556,16 @@ pub fn run_migrations(app: &AppHandle) -> Result<(), String> {
         );
         migrate_v51_to_v52(app)?;
         version = 52;
+    }
+
+    if version < 53 {
+        log_info(
+            app,
+            "migrations",
+            "Running migration v52 -> v53: Persist edited session scene messages",
+        );
+        migrate_v52_to_v53(app)?;
+        version = 53;
     }
 
     // Update the stored version
@@ -2973,6 +2983,37 @@ fn migrate_v51_to_v52(app: &AppHandle) -> Result<(), String> {
     if !has_group_chat_roleplay_prompt_template_id {
         conn.execute(
             "ALTER TABLE characters ADD COLUMN group_chat_roleplay_prompt_template_id TEXT",
+            [],
+        )
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    }
+
+    Ok(())
+}
+
+fn migrate_v52_to_v53(app: &AppHandle) -> Result<(), String> {
+    let conn = crate::storage_manager::db::open_db(app)?;
+
+    let mut has_scene_edited = false;
+    let mut stmt = conn
+        .prepare("PRAGMA table_info(messages)")
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    let rows = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+
+    for column in rows {
+        let column =
+            column.map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        if column == "scene_edited" {
+            has_scene_edited = true;
+            break;
+        }
+    }
+
+    if !has_scene_edited {
+        conn.execute(
+            "ALTER TABLE messages ADD COLUMN scene_edited INTEGER NOT NULL DEFAULT 0",
             [],
         )
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;

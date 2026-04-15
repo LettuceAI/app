@@ -619,6 +619,7 @@ impl ContinueFlow {
             role: "assistant".into(),
             content: text.clone(),
             created_at: assistant_created_at,
+            scene_edited: false,
             usage: usage.clone(),
             variants: vec![variant],
             selected_variant_id: Some(variant_id),

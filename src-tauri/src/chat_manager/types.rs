@@ -644,6 +644,8 @@ pub struct StoredMessage {
     pub content: String,
     pub created_at: u64,
     #[serde(default)]
+    pub scene_edited: bool,
+    #[serde(default)]
     pub usage: Option<UsageSummary>,
     #[serde(default)]
     pub variants: Vec<MessageVariant>,

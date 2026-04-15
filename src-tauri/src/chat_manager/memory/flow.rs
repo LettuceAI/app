@@ -772,6 +772,7 @@ fn fetch_conversation_messages_range(
                 role: r.get(1)?,
                 content: r.get(2)?,
                 created_at: created_at.max(0) as u64,
+                scene_edited: false,
                 usage: None,
                 variants: Vec::new(),
                 selected_variant_id: None,
