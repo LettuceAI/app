@@ -64,7 +64,7 @@ mod desktop {
     };
     use engine::{
         consume_kqv_fallback_toast, emit_model_load_complete, emit_model_load_failed,
-        emit_model_load_finalizing, load_engine, using_rocm_backend,
+        emit_model_load_finalizing, load_engine, shared_backend, using_rocm_backend,
     };
     use offload::{context_bucket_upper, merge_cached_candidate_layers, plan_smart_gpu_offload};
     use prompt::{
@@ -870,7 +870,9 @@ mod desktop {
                     .ok()
                     .flatten();
 
-            if llama_gpu_layers.is_none() && !llama_strict_mode {
+            let backend_supports_gpu_offload = shared_backend()?.supports_gpu_offload();
+
+            if llama_gpu_layers.is_none() && !llama_strict_mode && backend_supports_gpu_offload {
                 let mut smart_offload_plan = plan_smart_gpu_offload(
                     model_path,
                     available_memory_bytes,
@@ -1007,6 +1009,12 @@ mod desktop {
                         smart_offload_plan.estimated_runtime_reserve_bytes,
                         smart_offload_plan.effective_vram_budget_bytes,
                     ),
+                );
+            } else if llama_gpu_layers.is_none() && !llama_strict_mode {
+                log_info(
+                    &app,
+                    "llama_cpp",
+                    "skipping smart gpu offload planning because this backend has no GPU offload support",
                 );
             }
 
