@@ -70,7 +70,7 @@ export interface ChatController {
   applyVariantSelection: (messageId: string, variantId: string) => Promise<void>;
   handleVariantSwipe: (messageId: string, direction: "prev" | "next") => Promise<void>;
   handleVariantDrag: (messageId: string, offsetX: number) => Promise<void>;
-  handleSaveEdit: () => Promise<void>;
+  handleSaveEdit: (attachments?: ImageAttachment[]) => Promise<void>;
   handleDeleteMessage: (message: StoredMessage) => Promise<void>;
   handleRewindToMessage: (message: StoredMessage) => Promise<void>;
   handleBranchFromMessage: (message: StoredMessage) => Promise<string | null>;

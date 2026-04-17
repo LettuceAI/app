@@ -5,6 +5,7 @@ import {
   Copy,
   RotateCcw,
   Trash2,
+  X,
   Bug,
   Pin,
   PinOff,
@@ -18,11 +19,17 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { BottomMenu } from "../../../components/BottomMenu";
-import type { StoredMessage, Settings, Model } from "../../../../core/storage/schemas";
+import type {
+  StoredMessage,
+  Settings,
+  Model,
+  ImageAttachment,
+} from "../../../../core/storage/schemas";
 import { cn, radius } from "../../../design-tokens";
 import { readSettings } from "../../../../core/storage/repo";
 import { useI18n } from "../../../../core/i18n/context";
 import { isDevelopmentMode } from "../../../../core/utils/env";
+import { useSessionAttachments } from "../../../hooks/useSessionAttachment";
 
 interface MessageActionState {
   message: StoredMessage;
@@ -40,7 +47,7 @@ interface MessageActionsBottomSheetProps {
   closeMessageActions: (force?: boolean) => void;
   setActionError: (value: string | null) => void;
   setActionStatus: (value: string | null) => void;
-  handleSaveEdit: () => Promise<void>;
+  handleSaveEdit: (attachments?: ImageAttachment[]) => Promise<void>;
   handleDeleteMessage: (message: StoredMessage) => Promise<void>;
   handleRewindToMessage: (message: StoredMessage) => Promise<void>;
   handleBranchFromMessage: (message: StoredMessage) => Promise<string | null>;
@@ -136,6 +143,7 @@ export function MessageActionsBottomSheet({
   const [settings, setSettings] = useState<Settings | null>(null);
   const [modelName, setModelName] = useState<string | null>(null);
   const [modelProviderId, setModelProviderId] = useState<string | null>(null);
+  const [editAttachments, setEditAttachments] = useState<ImageAttachment[]>([]);
   const isSceneMessage = messageAction?.message.role === "scene";
   const isAssistantLikeMessage =
     messageAction?.message.role === "assistant" || messageAction?.message.role === "scene";
@@ -153,6 +161,14 @@ export function MessageActionsBottomSheet({
   useEffect(() => {
     readSettings().then(setSettings).catch(console.error);
   }, []);
+
+  useEffect(() => {
+    if (messageAction?.mode === "edit") {
+      setEditAttachments([...(messageAction.message.attachments ?? [])]);
+    } else if (!messageAction) {
+      setEditAttachments([]);
+    }
+  }, [messageAction]);
 
   useEffect(() => {
     const messageModelId = messageAction?.message.modelId ?? null;
@@ -176,6 +192,7 @@ export function MessageActionsBottomSheet({
   const isLlamaMessage = modelProviderId === "llamacpp";
   const firstTokenMs = messageAction?.message.usage?.firstTokenMs;
   const tokensPerSecond = messageAction?.message.usage?.tokensPerSecond;
+  const loadedEditAttachments = useSessionAttachments(editAttachments);
   const canOpenDebug =
     isDevelopmentMode() &&
     Boolean(characterId && sessionId) &&
@@ -342,6 +359,7 @@ export function MessageActionsBottomSheet({
                     setActionStatus(null);
                     setMessageAction({ message: messageAction.message, mode: "edit" });
                     setEditDraft(messageAction.message.content);
+                    setEditAttachments([...(messageAction.message.attachments ?? [])]);
                   }}
                 />
               )}
@@ -487,6 +505,60 @@ export function MessageActionsBottomSheet({
                 disabled={actionBusy}
                 autoFocus
               />
+              {loadedEditAttachments.length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-xs font-medium uppercase tracking-wide text-white/50">
+                    Attachments
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {loadedEditAttachments.map((attachment) => (
+                      <div
+                        key={attachment.id}
+                        className={cn(
+                          radius.md,
+                          "relative overflow-hidden border border-white/15 bg-black/20",
+                        )}
+                      >
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setEditAttachments((prev) =>
+                              prev.filter((candidate) => candidate.id !== attachment.id),
+                            )
+                          }
+                          className="absolute right-2 top-2 z-10 flex h-7 w-7 items-center justify-center rounded-full border border-white/15 bg-black/75 text-white/80 transition hover:bg-black hover:text-white"
+                          aria-label={`Remove ${attachment.filename || "attachment"}`}
+                        >
+                          <X size={14} />
+                        </button>
+                        {attachment.data ? (
+                          <img
+                            src={attachment.data}
+                            alt={attachment.filename || t("chats.message.attachedImage")}
+                            className="max-h-36 max-w-full object-contain"
+                            style={{
+                              maxWidth:
+                                attachment.width && attachment.width > 220
+                                  ? 220
+                                  : attachment.width || 220,
+                            }}
+                          />
+                        ) : (
+                          <div
+                            className="flex items-center justify-center bg-white/5"
+                            style={{
+                              width: Math.min(attachment.width || 150, 220),
+                              height: Math.min(attachment.height || 100, 144),
+                            }}
+                          >
+                            <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/20 border-t-white/60" />
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="flex gap-3">
                 <button
                   onClick={() => {
@@ -494,6 +566,7 @@ export function MessageActionsBottomSheet({
                     setActionStatus(null);
                     setMessageAction({ message: messageAction.message, mode: "view" });
                     setEditDraft(messageAction.message.content);
+                    setEditAttachments([...(messageAction.message.attachments ?? [])]);
                   }}
                   className={cn(
                     "flex-1 px-4 py-3 text-sm font-medium text-white/70 transition",
@@ -506,7 +579,7 @@ export function MessageActionsBottomSheet({
                   {t("common.buttons.cancel")}
                 </button>
                 <button
-                  onClick={() => void handleSaveEdit()}
+                  onClick={() => void handleSaveEdit(editAttachments)}
                   disabled={actionBusy}
                   className={cn(
                     "flex-1 px-4 py-3 text-sm font-semibold text-white transition",

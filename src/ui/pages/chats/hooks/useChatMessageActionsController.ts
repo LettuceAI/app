@@ -8,7 +8,7 @@ import {
   getSession,
   toggleMessagePin,
 } from "../../../../core/storage/repo";
-import type { Session, StoredMessage } from "../../../../core/storage/schemas";
+import type { ImageAttachment, Session, StoredMessage } from "../../../../core/storage/schemas";
 import { confirmBottomMenu } from "../../../components/ConfirmBottomMenu";
 import {
   type ChatControllerModuleContext,
@@ -198,7 +198,7 @@ export function useChatMessageActionsController({ context }: UseChatMessageActio
     [handleVariantSwipe],
   );
 
-  const handleSaveEdit = useCallback(async () => {
+  const handleSaveEdit = useCallback(async (attachmentsOverride?: ImageAttachment[]) => {
     if (!state.session || !state.messageAction) return;
 
     const updatedContent = state.editDraft.trim();
@@ -229,6 +229,7 @@ export function useChatMessageActionsController({ context }: UseChatMessageActio
           ? {
               ...message,
               content: updatedContent,
+              attachments: attachmentsOverride ?? message.attachments,
               ...(message.role === "scene" ? { sceneEdited: true } : {}),
               variants: (message.variants ?? []).map((variant) =>
                 variant.id === (message.selectedVariantId ?? variant.id)
