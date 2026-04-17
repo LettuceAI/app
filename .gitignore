@@ -50,3 +50,16 @@ docs/sync-current-system.md
 docs/sync-old-architecture.mmd
 docs/sync-old-architecture.svg
 src-tauri/target-check/
+.vscode/
+.qlty/
+.vs/
+src-tauri/onnxruntime/
+.vs/
+.vscode/**/*
+.qlty/
+/.vscode
+/.vscode/extensions.json
+
+scripts/test_chutes.mjs
+docs/lorebook_integration.md
+src-tauri/Cargo.lock

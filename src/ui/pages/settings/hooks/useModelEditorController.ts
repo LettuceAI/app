@@ -20,7 +20,7 @@ import {
   toCamel,
   type ProviderCapabilitiesCamel,
 } from "../../../../core/providers/capabilities";
-import { createDefaultAdvancedModelSettings } from "../../../../core/storage/schemas";
+import { createDefaultAdvancedModelSettings, isImageOnlyProvider } from "../../../../core/storage/schemas";
 import { sanitizeAdvancedModelSettings } from "../../../components/AdvancedModelSettingsForm";
 import {
   initialModelEditorState,
@@ -110,12 +110,14 @@ function getHardCappedScopes(
       outputScopes: ["image"],
     };
   }
+  if (providerId === "pollinations-image") {
+    return {
+      inputScopes: ["text"],
+      outputScopes: ["image"],
+    };
+  }
 
   return null;
-}
-
-function isImageOnlyProvider(providerId?: string | null): boolean {
-  return providerId === "automatic1111" || providerId === "stability";
 }
 
 function cloneSnapshot<T>(value: T): T {

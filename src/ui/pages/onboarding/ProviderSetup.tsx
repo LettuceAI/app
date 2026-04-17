@@ -436,6 +436,7 @@ function getProviderDescription(providerId: string): string {
     case "nanogpt":
     case "featherless":
     case "openrouter":
+    case "pollinations":
       return "Access models like GPT-5, Claude 4.5, Grok-3, Mixtral, and more";
     case "openai-compatible":
       return "Use any OpenAI-style API endpoint";
@@ -455,6 +456,12 @@ function getProviderDescription(providerId: string): string {
       return "Qwen3-VL and newer Qwen models";
     case "custom":
       return "Point LettuceAI to any custom model endpoint";
+    case "pollinations-image":
+      return "Free image generation powered by Pollinations.ai";
+    case "automatic1111":
+      return "Local Stable Diffusion models via AUTOMATIC1111 API";
+    case "stability":
+      return "Stable Diffusion 3, Core, and ultra-fast generative models";
     default:
       return "AI model provider";
   }
@@ -473,6 +480,7 @@ function getProviderDescriptionShort(providerId: string): string {
     case "nanogpt":
     case "featherless":
     case "openrouter":
+    case "pollinations":
       return "Multi-model aggregator";
     case "openai-compatible":
       return "Custom OpenAI endpoint";
@@ -492,6 +500,12 @@ function getProviderDescriptionShort(providerId: string): string {
       return "Qwen3-VL models";
     case "custom":
       return "Custom endpoint";
+    case "pollinations-image":
+      return "Free image generator";
+    case "automatic1111":
+      return "Local Stable Diffusion";
+    case "stability":
+      return "Stable Diffusion 3";
     default:
       return "AI provider";
   }

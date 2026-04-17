@@ -128,6 +128,7 @@ pub fn build_verify_url(provider_id: &ProviderId, base_url: &str) -> String {
                 format!("{}/v1/llm", trimmed)
             }
         }
+        "pollinations-image" => format!("{}/image/models", trimmed),
         _ => {
             if trimmed.ends_with("/v1") || trimmed.ends_with("/v1beta") {
                 format!("{}/models", trimmed)

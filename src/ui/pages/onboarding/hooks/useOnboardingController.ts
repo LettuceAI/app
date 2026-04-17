@@ -16,6 +16,7 @@ import {
 import { storageBridge } from "../../../../core/storage/files";
 import { checkEmbeddingModel } from "../../../../core/storage/repo";
 import type { ProviderCredential, Model, Settings } from "../../../../core/storage/schemas";
+import { isImageOnlyProvider } from "../../../../core/storage/schemas";
 
 import {
   OnboardingStep,
@@ -407,6 +408,7 @@ export function useOnboardingController(): OnboardingController {
         }
       }
 
+      const imageOnly = isImageOnlyProvider(selectedCredential.providerId);
       const model: Omit<Model, "id"> = {
         name: modelName.trim(),
         providerId: selectedCredential.providerId,
@@ -415,7 +417,7 @@ export function useOnboardingController(): OnboardingController {
         displayName: displayName.trim(),
         createdAt: Date.now(),
         inputScopes: ["text"],
-        outputScopes: ["text"],
+        outputScopes: imageOnly ? ["image"] : ["text"],
       };
 
       await addOrUpdateModel(model);

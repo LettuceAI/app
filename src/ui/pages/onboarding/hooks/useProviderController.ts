@@ -156,6 +156,8 @@ export function useProviderController(): ControllerReturn {
         "openrouter",
         "gemini",
         "lettuce-host",
+        "pollinations",
+        "pollinations-image",
       ].includes(selectedProviderId);
 
       if (requiresBaseUrl && !baseUrl?.trim()) {

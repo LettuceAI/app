@@ -90,6 +90,8 @@ fn get_all_provider_configs_internal() -> Vec<ProviderConfig> {
         ("lettuce-engine", "Lettuce Engine", ""),
         ("custom", "Custom (OpenAI-format)", ""),
         ("custom-anthropic", "Custom (Anthropic-format)", ""),
+        ("pollinations", "Pollinations (Text)", "https://gen.pollinations.ai"),
+        ("pollinations-image", "Pollinations (Image)", "https://gen.pollinations.ai"),
     ];
 
     base_configs

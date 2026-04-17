@@ -62,6 +62,8 @@ if (process.platform === "linux") {
 
 const child = spawn("bun", ["run", "tauri", mode, "--features", "llama-gpu-cuda"], {
   stdio: "inherit",
+  // Use shell only on Windows for PATH resolution; avoid shell on other platforms for safety and portability
+  shell: process.platform === "win32",
   env,
 });
 
