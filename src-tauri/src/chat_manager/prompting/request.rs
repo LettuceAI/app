@@ -676,16 +676,8 @@ pub fn new_assistant_variant(
     }
 }
 
-const MAX_ASSISTANT_VARIANTS_PER_MESSAGE: usize = 8;
-
 pub fn push_assistant_variant(message: &mut StoredMessage, variant: MessageVariant) {
     message.variants.push(variant);
-
-    // Keep a bounded history to avoid unbounded session growth on mobile.
-    if message.variants.len() > MAX_ASSISTANT_VARIANTS_PER_MESSAGE {
-        let overflow = message.variants.len() - MAX_ASSISTANT_VARIANTS_PER_MESSAGE;
-        message.variants.drain(0..overflow);
-    }
 
     if let Some(last) = message.variants.last() {
         message.selected_variant_id = Some(last.id.clone());
