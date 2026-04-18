@@ -785,6 +785,31 @@ export function ProvidersPage() {
                     </div>
                   </>
                 )}
+                {isCustomProvider && (
+                  <div className="flex items-center justify-between pt-1">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-fg/70">Sync Reasoning State</p>
+                      <p className="text-[10px] text-fg/40 leading-tight">
+                        Send template kwargs to synchronize internal thinking state
+                      </p>
+                    </div>
+                    <Switch
+                      id="sendChatTemplateKwargs"
+                      checked={
+                        (editorProvider.config?.sendChatTemplateKwargs as boolean | undefined) ??
+                        false
+                      }
+                      onChange={(next) =>
+                        updateEditorProvider({
+                          config: {
+                            ...editorProvider.config,
+                            sendChatTemplateKwargs: next,
+                          },
+                        })
+                      }
+                    />
+                  </div>
+                )}
                 {validationError && (
                   <p className="text-xs font-medium text-danger/80">{validationError}</p>
                 )}
