@@ -1,6 +1,16 @@
 import { useEffect, useState, useMemo, useRef } from "react";
-import { useParams, useSearchParams, useLocation } from "react-router-dom";
-import { BookOpen, Trash2, ChevronRight, Star, Edit2, Search, GripVertical, X } from "lucide-react";
+import { useNavigate, useParams, useSearchParams, useLocation } from "react-router-dom";
+import {
+  BookOpen,
+  Trash2,
+  ChevronRight,
+  Star,
+  Edit2,
+  Search,
+  GripVertical,
+  TestTube2,
+  X,
+} from "lucide-react";
 import { motion, AnimatePresence, type PanInfo, useDragControls } from "framer-motion";
 import type { Lorebook, LorebookEntry } from "../../../core/storage/schemas";
 import {
@@ -627,6 +637,7 @@ function EntryListView({
   onToggleEntry,
   onDeleteEntry,
   onReorderEntries,
+  onOpenPreview,
 }: {
   entries: LorebookEntry[];
   loading: boolean;
@@ -635,6 +646,7 @@ function EntryListView({
   onToggleEntry: (entry: LorebookEntry, enabled: boolean) => void;
   onDeleteEntry: (id: string) => void;
   onReorderEntries: (entries: LorebookEntry[]) => void;
+  onOpenPreview: (() => void) | null;
 }) {
   const { t } = useI18n();
   const [selectedEntry, setSelectedEntry] = useState<LorebookEntry | null>(null);
@@ -724,8 +736,8 @@ function EntryListView({
   return (
     <div className="flex h-full flex-col text-fg/80 overflow-hidden">
       {entries.length > 0 && (
-        <div className="px-4 py-3">
-          <div className="relative">
+        <div className="flex items-center gap-2 px-4 py-3">
+          <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg/40" />
             <input
               value={searchQuery}
@@ -734,6 +746,17 @@ function EntryListView({
               className="w-full rounded-xl border border-fg/10 bg-surface-el/20 pl-9 pr-4 py-2 text-sm text-fg placeholder-fg/40 transition focus:border-fg/30 focus:outline-none"
             />
           </div>
+          {onOpenPreview && (
+            <button
+              type="button"
+              onClick={onOpenPreview}
+              className="flex shrink-0 items-center gap-1.5 rounded-xl border border-fg/10 bg-surface-el/20 px-3 py-2 text-xs font-medium text-fg/70 transition hover:border-fg/25 hover:text-fg"
+              title={t("characters.lorebook.preview.openButton")}
+            >
+              <TestTube2 className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">{t("characters.lorebook.preview.openButton")}</span>
+            </button>
+          )}
         </div>
       )}
 
@@ -846,7 +869,7 @@ function EntryListView({
   );
 }
 
-function EntryEditorMenu({
+export function EntryEditorMenu({
   entry,
   isOpen,
   onClose,
@@ -958,6 +981,7 @@ export function LorebookEditor() {
   } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
+  const navigate = useNavigate();
   const { backOrReplace } = useNavigationManager();
   const characterId = characterIdParam ?? searchParams.get("characterId");
   const groupId = groupIdParam ?? searchParams.get("groupId");
@@ -1205,6 +1229,23 @@ export function LorebookEditor() {
               onToggleEntry={handleToggleEntry}
               onDeleteEntry={handleDeleteEntry}
               onReorderEntries={handleReorderEntries}
+              onOpenPreview={
+                entries.length > 0
+                  ? () => {
+                      if (target.type === "character") {
+                        navigate(
+                          Routes.characterLorebookPreview(target.id, activeLorebook.id),
+                        );
+                      } else if (target.type === "group") {
+                        navigate(Routes.groupLorebookPreview(target.id, activeLorebook.id));
+                      } else {
+                        navigate(
+                          Routes.groupChatLorebookPreview(target.id, activeLorebook.id),
+                        );
+                      }
+                    }
+                  : null
+              }
             />
             <EntryEditorMenu
               entry={editingEntry}

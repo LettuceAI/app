@@ -8,6 +8,7 @@ import {
   Edit2,
   Search,
   GripVertical,
+  TestTube2,
   X,
   Download,
   Loader2,
@@ -36,6 +37,7 @@ import { TopNav } from "../../components/App";
 import { LorebookAvatar } from "../../components/LorebookAvatar";
 import { Switch } from "../../components/Switch";
 import { useI18n } from "../../../core/i18n/context";
+import { Routes } from "../../navigation";
 import { toast } from "../../components/toast";
 import type { LorebookExportFormat } from "../../components/LorebookExportMenu";
 
@@ -761,8 +763,8 @@ export function StandaloneLorebookEditor() {
       <div className="flex h-full flex-col text-fg/80 overflow-hidden pb-6 pt-[calc(72px+env(safe-area-inset-top))]">
         {/* Search */}
         {entries.length > 0 && (
-          <div className="px-4 py-3">
-            <div className="relative">
+          <div className="flex items-center gap-2 px-4 py-3">
+            <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg/40" />
               <input
                 value={searchQuery}
@@ -771,6 +773,15 @@ export function StandaloneLorebookEditor() {
                 className="w-full rounded-xl border border-fg/10 bg-surface-el/20 pl-9 pr-4 py-2 text-sm text-fg placeholder-fg/40 transition focus:border-fg/30 focus:outline-none"
               />
             </div>
+            <button
+              type="button"
+              onClick={() => navigate(Routes.libraryLorebookPreview(lorebook.id))}
+              className="flex shrink-0 items-center gap-1.5 rounded-xl border border-fg/10 bg-surface-el/20 px-3 py-2 text-xs font-medium text-fg/70 transition hover:border-fg/25 hover:text-fg"
+              title={t("characters.lorebook.preview.openButton")}
+            >
+              <TestTube2 className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">{t("characters.lorebook.preview.openButton")}</span>
+            </button>
           </div>
         )}
 
