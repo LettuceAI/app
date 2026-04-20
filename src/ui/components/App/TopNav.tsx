@@ -325,7 +325,7 @@ export function TopNav({
 
   const isCenteredTitle = useMemo(() => {
     return (
-      basePath.startsWith("/settings") ||
+      (basePath.startsWith("/settings") && !basePath.includes("/lorebook")) ||
       (basePath.startsWith("/personas/") && basePath.endsWith("/edit"))
     );
   }, [basePath]);

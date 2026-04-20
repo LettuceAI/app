@@ -6,6 +6,8 @@ import {
   ChevronRight,
   Star,
   Edit2,
+  Download,
+  Loader2,
   Search,
   GripVertical,
   TestTube2,
@@ -29,14 +31,22 @@ import {
   setGroupSessionLorebooks,
   reorderLorebookEntries,
 } from "../../../core/storage/repo";
-import { deleteImageRef } from "../../../core/storage";
-import { BottomMenu, MenuButton } from "../../components";
+import { convertToImageRef, deleteImageRef } from "../../../core/storage";
+import {
+  exportLorebook,
+  exportLorebookAsUsc,
+  downloadJson,
+  generateLorebookExportFilenameWithFormat,
+} from "../../../core/storage/lorebookTransfer";
+import { BottomMenu, LorebookExportMenu, MenuButton } from "../../components";
 import { LorebookAvatar } from "../../components/LorebookAvatar";
 import { Switch } from "../../components/Switch";
 import { confirmBottomMenu } from "../../components/ConfirmBottomMenu";
 import { TopNav } from "../../components/App";
+import { toast } from "../../components/toast";
 import { useI18n } from "../../../core/i18n/context";
 import { Routes, useNavigationManager } from "../../navigation";
+import type { LorebookExportFormat } from "../../components/LorebookExportMenu";
 
 const DRAG_HOLD_MS = 450;
 
@@ -1037,6 +1047,14 @@ export function LorebookEditor() {
   const [isEntriesLoading, setIsEntriesLoading] = useState(false);
 
   const [editingEntry, setEditingEntry] = useState<LorebookEntry | null>(null);
+  const [showLorebookSettingsMenu, setShowLorebookSettingsMenu] = useState(false);
+  const [lorebookNameDraft, setLorebookNameDraft] = useState("");
+  const [avatarDraftPath, setAvatarDraftPath] = useState<string | null>(null);
+  const [keywordDetectionModeDraft, setKeywordDetectionModeDraft] =
+    useState<Lorebook["keywordDetectionMode"]>("recentMessageWindow");
+  const [isExporting, setIsExporting] = useState(false);
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement | null>(null);
 
   const activeLorebook = useMemo(
     () => lorebooks.find((l) => l.id === activeLorebookId) ?? null,
@@ -1176,6 +1194,101 @@ export function LorebookEditor() {
     setSearchParams({ lorebookId });
   };
 
+  const openLorebookSettings = () => {
+    if (!activeLorebook) return;
+    setLorebookNameDraft(activeLorebook.name);
+    setAvatarDraftPath(activeLorebook.avatarPath ?? null);
+    setKeywordDetectionModeDraft(activeLorebook.keywordDetectionMode);
+    setShowLorebookSettingsMenu(true);
+  };
+
+  const closeLorebookSettings = () => {
+    setShowLorebookSettingsMenu(false);
+    if (!activeLorebook) return;
+    setLorebookNameDraft(activeLorebook.name);
+    setAvatarDraftPath(activeLorebook.avatarPath ?? null);
+    setKeywordDetectionModeDraft(activeLorebook.keywordDetectionMode);
+  };
+
+  const handleAvatarFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setAvatarDraftPath(typeof reader.result === "string" ? reader.result : null);
+    };
+    reader.readAsDataURL(file);
+    event.target.value = "";
+  };
+
+  const handleSaveLorebookSettings = async () => {
+    if (!activeLorebook || !lorebookNameDraft.trim()) return;
+    let replacementAvatarPath: string | undefined;
+
+    try {
+      let nextAvatarPath = activeLorebook.avatarPath;
+
+      if (!avatarDraftPath) {
+        nextAvatarPath = undefined;
+      } else if (avatarDraftPath.startsWith("data:")) {
+        const storedAvatarPath = await convertToImageRef(avatarDraftPath);
+        if (!storedAvatarPath) {
+          throw new Error("Failed to save lorebook image");
+        }
+        nextAvatarPath = storedAvatarPath;
+        replacementAvatarPath = storedAvatarPath;
+      } else {
+        nextAvatarPath = avatarDraftPath;
+      }
+
+      const saved = await saveLorebook({
+        ...activeLorebook,
+        name: lorebookNameDraft.trim(),
+        avatarPath: nextAvatarPath,
+        keywordDetectionMode: keywordDetectionModeDraft,
+      });
+
+      if (activeLorebook.avatarPath && activeLorebook.avatarPath !== saved.avatarPath) {
+        await deleteImageRef(activeLorebook.avatarPath);
+      }
+
+      setLorebooks((prev) => prev.map((item) => (item.id === saved.id ? saved : item)));
+      setLorebookNameDraft(saved.name);
+      setAvatarDraftPath(saved.avatarPath ?? null);
+      setKeywordDetectionModeDraft(saved.keywordDetectionMode);
+      setShowLorebookSettingsMenu(false);
+    } catch (error) {
+      if (replacementAvatarPath) {
+        await deleteImageRef(replacementAvatarPath);
+      }
+      console.error("Failed to save lorebook settings:", error);
+    }
+  };
+
+  const handleExportLorebook = async (format: LorebookExportFormat) => {
+    if (!activeLorebook || isExporting) return;
+
+    try {
+      setIsExporting(true);
+      const exportJson =
+        format === "usc"
+          ? await exportLorebookAsUsc(activeLorebook.id)
+          : await exportLorebook(activeLorebook.id);
+
+      await downloadJson(
+        exportJson,
+        generateLorebookExportFilenameWithFormat(activeLorebook.name, format),
+      );
+      setShowExportMenu(false);
+    } catch (error) {
+      console.error("Failed to export lorebook:", error);
+      toast.error("Export failed", String(error));
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const handleCreateEntry = async () => {
     if (!activeLorebookId) return;
     try {
@@ -1257,6 +1370,35 @@ export function LorebookEditor() {
         currentPath={location.pathname + location.search}
         titleOverride={pageTitle}
         onBackOverride={handleBack}
+        rightAction={
+          activeLorebook ? (
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={openLorebookSettings}
+                className="flex items-center px-[0.6em] py-[0.3em] justify-center rounded-full text-fg/70 hover:text-fg hover:bg-fg/10 transition"
+                aria-label={t("common.buttons.edit")}
+                title={t("common.buttons.edit")}
+              >
+                <Edit2 size={18} className="text-fg" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowExportMenu(true)}
+                disabled={isExporting}
+                className="flex items-center px-[0.6em] py-[0.3em] justify-center rounded-full text-fg/70 hover:text-fg hover:bg-fg/10 transition disabled:cursor-not-allowed disabled:opacity-50"
+                aria-label="Export lorebook"
+                title="Export lorebook"
+              >
+                {isExporting ? (
+                  <Loader2 size={18} className="animate-spin text-fg" />
+                ) : (
+                  <Download size={18} className="text-fg" />
+                )}
+              </button>
+            </div>
+          ) : null
+        }
       />
       <div className="flex-1 min-h-0 overflow-visible">
         {activeLorebookId && activeLorebook ? (
@@ -1310,6 +1452,132 @@ export function LorebookEditor() {
           />
         )}
       </div>
+
+      <LorebookExportMenu
+        isOpen={showExportMenu}
+        onClose={() => {
+          if (isExporting) return;
+          setShowExportMenu(false);
+        }}
+        onSelect={(format) => {
+          void handleExportLorebook(format);
+        }}
+        exporting={isExporting}
+      />
+
+      {activeLorebook && (
+        <BottomMenu
+          isOpen={showLorebookSettingsMenu}
+          onClose={closeLorebookSettings}
+          title={t("library.actions.renameLorebook")}
+        >
+          <div className="space-y-4">
+            <div className="flex items-center gap-4">
+              <div className="h-20 w-20 shrink-0 overflow-hidden rounded-2xl border border-fg/10 bg-fg/5">
+                <LorebookAvatar
+                  avatarPath={avatarDraftPath}
+                  name={lorebookNameDraft.trim() || activeLorebook.name}
+                  iconClassName="h-8 w-8 text-fg/55"
+                  fallbackClassName="bg-fg/5"
+                />
+              </div>
+              <div className="flex min-w-0 flex-1 flex-col gap-2">
+                <input
+                  ref={avatarInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleAvatarFileChange}
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  onClick={() => avatarInputRef.current?.click()}
+                  className="rounded-xl border border-fg/10 bg-fg/5 px-3 py-2 text-sm font-medium text-fg transition hover:border-fg/20 hover:bg-fg/10"
+                >
+                  {avatarDraftPath ? t("common.buttons.edit") : t("common.buttons.add")}
+                </button>
+                {avatarDraftPath && (
+                  <button
+                    type="button"
+                    onClick={() => setAvatarDraftPath(null)}
+                    className="rounded-xl border border-danger/25 bg-danger/10 px-3 py-2 text-sm font-medium text-danger transition hover:border-danger/40 hover:bg-danger/15"
+                  >
+                    {t("common.buttons.remove")}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[11px] font-medium text-fg/70">
+                {t("characters.lorebook.nameLabel")}
+              </label>
+              <input
+                value={lorebookNameDraft}
+                onChange={(e) => setLorebookNameDraft(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSaveLorebookSettings()}
+                placeholder={t("characters.lorebook.enterNamePlaceholder")}
+                autoFocus
+                className="w-full rounded-xl border border-fg/10 bg-surface-el/20 px-3 py-2 text-fg placeholder-fg/40 transition focus:border-fg/30 focus:outline-none"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[11px] font-medium text-fg/70">
+                {t("characters.lorebook.keywordDetectionMode")}
+              </label>
+              <div className="grid gap-2">
+                <button
+                  type="button"
+                  onClick={() => setKeywordDetectionModeDraft("recentMessageWindow")}
+                  className={`rounded-xl border px-3 py-3 text-left transition ${
+                    keywordDetectionModeDraft === "recentMessageWindow"
+                      ? "border-accent/45 bg-accent/15 text-fg"
+                      : "border-fg/10 bg-fg/5 text-fg/75 hover:border-fg/20 hover:bg-fg/10"
+                  }`}
+                >
+                  <div className="text-sm font-medium">
+                    {t("characters.lorebook.keywordDetectionRecentWindow")}
+                  </div>
+                  <div className="mt-1 text-xs text-fg/55">
+                    {t("characters.lorebook.keywordDetectionRecentWindowDesc")}
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setKeywordDetectionModeDraft("latestUserMessage")}
+                  className={`rounded-xl border px-3 py-3 text-left transition ${
+                    keywordDetectionModeDraft === "latestUserMessage"
+                      ? "border-accent/45 bg-accent/15 text-fg"
+                      : "border-fg/10 bg-fg/5 text-fg/75 hover:border-fg/20 hover:bg-fg/10"
+                  }`}
+                >
+                  <div className="text-sm font-medium">
+                    {t("characters.lorebook.keywordDetectionLatestUser")}
+                  </div>
+                  <div className="mt-1 text-xs text-fg/55">
+                    {t("characters.lorebook.keywordDetectionLatestUserDesc")}
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            <button
+              onClick={handleSaveLorebookSettings}
+              disabled={
+                !lorebookNameDraft.trim() ||
+                (lorebookNameDraft.trim() === activeLorebook.name &&
+                  (avatarDraftPath ?? "") === (activeLorebook.avatarPath ?? "") &&
+                  keywordDetectionModeDraft === activeLorebook.keywordDetectionMode)
+              }
+              className="w-full rounded-xl border border-accent/40 bg-accent/20 px-4 py-3.5 text-sm font-semibold text-accent/70 transition hover:bg-accent/30 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {t("common.buttons.save")}
+            </button>
+          </div>
+        </BottomMenu>
+      )}
     </div>
   );
 }
