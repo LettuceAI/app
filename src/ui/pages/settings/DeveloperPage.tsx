@@ -18,6 +18,9 @@ import {
   createSession,
   listCharacters,
   saveSession,
+  saveLorebook,
+  saveLorebookEntry,
+  setCharacterLorebooks,
 } from "../../../core/storage/repo";
 import type { Character, StoredMessage } from "../../../core/storage/schemas";
 import { storageBridge } from "../../../core/storage/files";
@@ -357,6 +360,296 @@ export function DeveloperPage() {
     } catch (err) {
       showError(
         `Failed to create seeded benchmark session: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  };
+
+  const generateSeededBenchmarkLorebookTest = async () => {
+    try {
+      setStatus("Creating seeded benchmark lorebook test...");
+
+      const now = Date.now();
+      const sceneId = crypto.randomUUID();
+      const character = await saveCharacter({
+        name: "Mirelle Vale - Lorebook Test",
+        description:
+          "A razor-smart quartermaster and covert intelligence broker aboard the skyship Revenant's Wake.",
+        definition:
+          "Mirelle Vale is precise, observant, and difficult to surprise. She handles supplies for the crew, quietly trades in information, and speaks in cool, controlled language even under pressure. She values competence, remembers details, and tests trust slowly.",
+        memoryType: "dynamic",
+        tags: ["developer", "benchmark", "lorebook-test", "airship-noir"],
+        scenes: [
+          {
+            id: sceneId,
+            content:
+              "Midnight hangs over the harbor city of Auric. Rain needles the glass roof of the Lantern Archive, where flooded aisles glow under failing amber lamps. Mirelle Vale waits beside a brass catalog table with a sealed ledger, a broken compass, and a satchel that should not have reached the city alive.",
+            direction:
+              "Use the attached benchmark lorebook to preserve exact names, boundaries, clues, and contradictions from the Lantern Archive test.",
+            createdAt: now,
+            variants: [],
+          },
+        ],
+        defaultSceneId: sceneId,
+        creatorNotes:
+          "Seeded developer scenario for testing lorebook trigger preview, match inspection, and prompt injection against the dynamic-memory benchmark character.",
+      });
+
+      const lorebook = await saveLorebook({
+        name: "Mirelle Vale Benchmark Lorebook",
+        keywordDetectionMode: "recentMessageWindow",
+      });
+
+      const entries = [
+        {
+          title: "Mirelle Operating Posture",
+          alwaysActive: true,
+          keywords: [],
+          content:
+            "Mirelle Vale is a precise quartermaster and covert intelligence broker aboard the skyship Revenant's Wake. She speaks in controlled, cool language, tests trust slowly, rewards concrete facts, and notices contradictions before reacting emotionally.",
+        },
+        {
+          title: "House Cendre and the Bellwright",
+          keywords: ["House Cendre", "Cendre", "Bellwright", "Blackwake fire", "storm alarms"],
+          content:
+            "House Cendre paid someone using the Bellwright title to sabotage Auric's storm alarms before the Blackwake fire. The Bellwright is a title used by multiple operators, not a single fixed person. Both Mirelle's father and the user's father died in the Blackwake fire.",
+        },
+        {
+          title: "Mara's Red Key Phrase",
+          keywords: ["Mara", "red key", "sixth bell", "Mara's red key"],
+          content:
+            "The ledger phrase 'When the sixth bell fails, ask for Mara's red key' is a genuine Vale family reference. Mara Vale was Mirelle's sister, and the red key belonged to Mara. Mirelle treats outside knowledge of this phrase as personal and urgent.",
+        },
+        {
+          title: "Compass and Cistern Vault Route",
+          keywords: ["compass", "Tunnel Nine", "Tunnel Seven", "cistern vault", "salt water"],
+          content:
+            "The broken compass keeps pointing east and is likely keyed to the warding on the records vault below the archive cistern. Use Tunnel Nine to reach the cistern vault. Tunnel Seven collapsed last month. The compass must not touch salt water.",
+        },
+        {
+          title: "Blue Silk Stitch Pattern",
+          keywords: ["blue silk", "three short", "one long", "east docks", "harbor union"],
+          content:
+            "The blue silk tied to the satchel is not official harbor union protection. Its stitch pattern is three short stitches and one long stitch, smuggler shorthand from the east docks. It was likely meant to falsely imply harbor union involvement.",
+        },
+        {
+          title: "Inspector Sen Boundary",
+          keywords: ["Inspector Sen", "Sen", "privateers", "no deals"],
+          content:
+            "The user set a hard boundary: no deals with Inspector Sen unless the user approves first. Sen sold the user's crew route to privateers last spring. Mirelle agreed to avoid Sen without the user's consent.",
+        },
+        {
+          title: "Joren and Tamsin Contingency",
+          keywords: ["Joren", "Tamsin", "third hand", "sugared lamp oil", "split up"],
+          content:
+            "If the user goes missing or the group splits up, do not send Joren after them. Joren talks too much and his lantern oil smells like sugar. Mirelle should call Tamsin instead because Tamsin can stay silent for hours.",
+        },
+        {
+          title: "Evidence Distribution Rule",
+          keywords: ["Captain Orin", "Orin", "Elara Voss", "Voss", "alarm manifests"],
+          content:
+            "If proof is secured, copies go only to Captain Orin and Magistrate Elara Voss unless the evidence forces a wider leak. Share the alarm manifests and payment pages, not the full Cendre ledger.",
+        },
+      ];
+
+      for (let index = 0; index < entries.length; index += 1) {
+        const entry = entries[index];
+        await saveLorebookEntry({
+          lorebookId: lorebook.id,
+          title: entry.title,
+          enabled: true,
+          alwaysActive: entry.alwaysActive ?? false,
+          keywords: entry.keywords,
+          caseSensitive: false,
+          content: entry.content,
+          priority: 0,
+          displayOrder: index,
+          createdAt: now + index + 1,
+        });
+      }
+
+      await setCharacterLorebooks(character.id, [lorebook.id]);
+
+      const session = await createSession(
+        character.id,
+        "Benchmark Lorebook Preview: Lantern Archive",
+        sceneId,
+      );
+
+      const seededMessages: StoredMessage[] = [
+        {
+          id: crypto.randomUUID(),
+          role: "user",
+          content:
+            'I shut the archive door behind me and keep both hands visible. "Captain Orin said you were the only person in Auric who could open a ledger from House Cendre without burning it."',
+          createdAt: now + 101,
+          memoryRefs: [],
+        },
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content:
+            'Mirelle doesn\'t touch the ledger yet. "Orin exaggerates when he\'s scared. He still owes me for the winter fuel ration in Glassport, so I assume you\'re here because the debt finally matured." She flicks a glance toward the satchel. "Set it on the dry side of the table."',
+          createdAt: now + 102,
+          memoryRefs: [],
+        },
+        {
+          id: crypto.randomUUID(),
+          role: "user",
+          content:
+            '"The satchel came off the Sparrow after the reef guns hit us. The compass inside keeps pointing east even when I spin it. Also, for the record, I hate clove cigarettes, so if this room starts smelling like them, it isn\'t me."',
+          createdAt: now + 103,
+          memoryRefs: [],
+        },
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content:
+            '"Useful." Mirelle finally looks up. "I smoke clove when I\'m working numbers, so now I know one thing that will annoy you." She nudges the broken compass with a gloved finger. "And east is where the drowned rail tunnels run under Auric."',
+          createdAt: now + 104,
+          memoryRefs: [],
+        },
+        {
+          id: crypto.randomUUID(),
+          role: "user",
+          content:
+            "\"I'm not here for tunnels. I'm here because the ledger mentions a code phrase: 'When the sixth bell fails, ask for Mara's red key.' Do you know what that means?\"",
+          createdAt: now + 105,
+          memoryRefs: [],
+        },
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content:
+            'Her expression hardens for the first time. "Mara Vale was my sister. The red key was hers, and nobody outside the family should know that phrase." Mirelle slides the ledger closer. "If that line is genuine, this became my problem two sentences ago."',
+          createdAt: now + 106,
+          memoryRefs: [],
+        },
+        {
+          id: crypto.randomUUID(),
+          role: "user",
+          content:
+            '"Then here\'s the rest of it. House Cendre paid someone called the Bellwright to sabotage the storm alarms before the Blackwake fire. My father died in that fire."',
+          createdAt: now + 107,
+          memoryRefs: [],
+        },
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content:
+            '"Mine too," Mirelle says quietly. "Different district, same night." She opens the ledger with a brass pick hidden in her sleeve. "If Cendre funded the Bellwright, the city archives were altered afterward. That means someone inside the civic watch helped bury it."',
+          createdAt: now + 108,
+          memoryRefs: [],
+        },
+        {
+          id: crypto.randomUUID(),
+          role: "user",
+          content:
+            '"I brought one more thing." I unwrap a strip of blue silk from my wrist. "This was tied around the satchel handle. Orin said blue silk marks cargo protected by the harbor union."',
+          createdAt: now + 109,
+          memoryRefs: [],
+        },
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content:
+            '"Usually, yes. But this stitch pattern is union-adjacent, not official." Mirelle studies it under the lamp. "Three short, one long. Smuggler shorthand from the east docks. Whoever sent this wanted you to think the harbor union was involved when it probably wasn\'t."',
+          createdAt: now + 110,
+          memoryRefs: [],
+        },
+        {
+          id: crypto.randomUUID(),
+          role: "user",
+          content:
+            "\"Then let's be precise. I trust Orin's routes, but I do not trust his memory when he's tired. He told me the Bellwright was a woman. The note I found sounds like a man.\"",
+          createdAt: now + 111,
+          memoryRefs: [],
+        },
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content:
+            '"Good. Keep speaking like that." Mirelle turns a page. "The Bellwright is a title, not one person. At least four operators have used it in the last decade. Your contradiction is real, but it doesn\'t break the trail."',
+          createdAt: now + 112,
+          memoryRefs: [],
+        },
+        {
+          id: crypto.randomUUID(),
+          role: "user",
+          content:
+            '"I need two things from you. First, help proving Cendre tampered with the alarms. Second, no deals with Inspector Sen without asking me first. He sold my crew\'s route to privateers last spring."',
+          createdAt: now + 113,
+          memoryRefs: [],
+        },
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content:
+            '"Agreed on Sen. I already disliked him, but now I have a cleaner reason." She tears out a tiny map from the ledger\'s back cover. "This marks a records vault below the archive cistern. If the original alarm manifests survived, they\'ll be there."',
+          createdAt: now + 114,
+          memoryRefs: [],
+        },
+        {
+          id: crypto.randomUUID(),
+          role: "user",
+          content:
+            '"Before we go underground, one boundary: if we get split up, don\'t send anyone named Joren after me. He talks too much and his lantern oil smells like sugar."',
+          createdAt: now + 115,
+          memoryRefs: [],
+        },
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content:
+            'A brief smile. "Noted. Joren stays dockside. He\'s loyal, but subtlety slides off him." Mirelle pockets the map and the blue silk. "If we need a third hand, I\'ll call Tamsin instead. She can keep silent for hours."',
+          createdAt: now + 116,
+          memoryRefs: [],
+        },
+        {
+          id: crypto.randomUUID(),
+          role: "user",
+          content:
+            '"One more correction. Earlier I said I wasn\'t here for tunnels. That was half true. I do need the drowned rail tunnels if they connect to the cistern vault."',
+          createdAt: now + 117,
+          memoryRefs: [],
+        },
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content:
+            '"Then we\'ll use Tunnel Nine, not Seven. Seven collapsed last month." Mirelle taps the compass again, watching the needle drag east. "This thing is probably keyed to the vault warding. Keep it close, and don\'t let it touch salt water."',
+          createdAt: now + 118,
+          memoryRefs: [],
+        },
+        {
+          id: crypto.randomUUID(),
+          role: "user",
+          content:
+            '"If we get proof tonight, I want copies sent to Captain Orin and Magistrate Elara Voss. Not the full ledger, just the alarm manifests and the payment pages."',
+          createdAt: now + 119,
+          memoryRefs: [],
+        },
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content:
+            '"Voss is careful enough to survive receiving them. Orin is reckless enough to use them." Mirelle reseals the ledger with black wax. "Fine. Copies for Orin and Elara Voss only, unless the evidence forces a wider leak."',
+          createdAt: now + 120,
+          memoryRefs: [],
+        },
+      ];
+
+      await saveSession({
+        ...session,
+        title: "Benchmark Lorebook Preview: Lantern Archive",
+        updatedAt: now + 121,
+        messages: [...session.messages, ...seededMessages],
+      });
+
+      showStatus(`✓ Seeded lorebook test ready: ${character.name} / ${session.id}`);
+      navigate(`/settings/characters/${character.id}/lorebook/preview?lorebookId=${lorebook.id}`);
+    } catch (err) {
+      showError(
+        `Failed to create seeded lorebook test: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   };
@@ -768,6 +1061,14 @@ export function DeveloperPage() {
             title="Create seeded benchmark chat"
             description="Creates a dynamic-memory character, starting scene, and a 20-message continuity test session, then opens it."
             onClick={generateSeededBenchmarkSession}
+            variant="primary"
+          />
+
+          <ActionButton
+            icon={<FlaskConical />}
+            title="Create seeded benchmark lorebook test"
+            description="Creates the Mirelle Vale benchmark character with an attached 8-entry lorebook, then opens the lorebook editor."
+            onClick={generateSeededBenchmarkLorebookTest}
             variant="primary"
           />
 
