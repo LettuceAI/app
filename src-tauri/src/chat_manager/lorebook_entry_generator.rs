@@ -6,13 +6,17 @@ use std::collections::{HashMap, HashSet};
 use tauri::AppHandle;
 
 use crate::api::{api_request, ApiRequest, ApiResponse};
-use crate::chat_manager::execution::{find_model_with_credential, prepare_default_sampling_request};
+use crate::chat_manager::execution::{
+    find_model_with_credential, prepare_default_sampling_request,
+};
 use crate::chat_manager::prompting::entry_conditions::{
     entry_is_active, PromptEntryConditionContext,
 };
 use crate::chat_manager::prompting::request::{extract_error_message, extract_text, extract_usage};
 use crate::chat_manager::service::{record_usage_if_available, require_api_key, ChatContext};
-use crate::chat_manager::storage::{get_base_prompt_entries, resolve_credential_for_model, PromptType};
+use crate::chat_manager::storage::{
+    get_base_prompt_entries, resolve_credential_for_model, PromptType,
+};
 use crate::chat_manager::tooling::{
     parse_tool_calls, parse_tool_calls_from_text, ToolCall, ToolChoice, ToolConfig, ToolDefinition,
 };
@@ -50,9 +54,10 @@ fn resolve_lorebook_entry_writer_target<'a>(
     preferred_model_id: Option<&str>,
 ) -> Result<(&'a Model, &'a ProviderCredential), String> {
     if let Some(model_id) = preferred_model_id.filter(|id| !id.trim().is_empty()) {
-        let (model, credential) = find_model_with_credential(settings, model_id).ok_or_else(|| {
-            "Configured lorebook entry generator model could not be resolved".to_string()
-        })?;
+        let (model, credential) =
+            find_model_with_credential(settings, model_id).ok_or_else(|| {
+                "Configured lorebook entry generator model could not be resolved".to_string()
+            })?;
         if !supports_lorebook_entry_writer_model(model) {
             return Err(
                 "Configured lorebook entry generator model must support text input and text output"
@@ -118,12 +123,19 @@ fn selected_prompt_template_id(settings: &Settings) -> &str {
     settings
         .advanced_settings
         .as_ref()
-        .and_then(|advanced| advanced.lorebook_entry_generator_prompt_template_id.as_deref())
+        .and_then(|advanced| {
+            advanced
+                .lorebook_entry_generator_prompt_template_id
+                .as_deref()
+        })
         .filter(|value| !value.trim().is_empty())
         .unwrap_or(crate::chat_manager::prompts::APP_LOREBOOK_ENTRY_WRITER_TEMPLATE_ID)
 }
 
-fn load_lorebook_entry_prompt_entries(app: &AppHandle, template_id: &str) -> (Vec<SystemPromptEntry>, bool) {
+fn load_lorebook_entry_prompt_entries(
+    app: &AppHandle,
+    template_id: &str,
+) -> (Vec<SystemPromptEntry>, bool) {
     match crate::chat_manager::prompts::get_template(app, template_id) {
         Ok(Some(template)) => {
             if !template.entries.is_empty() {
@@ -147,10 +159,16 @@ fn load_lorebook_entry_prompt_entries(app: &AppHandle, template_id: &str) -> (Ve
                     template.condense_prompt_entries,
                 )
             } else {
-                (get_base_prompt_entries(PromptType::LorebookEntryWriterPrompt), false)
+                (
+                    get_base_prompt_entries(PromptType::LorebookEntryWriterPrompt),
+                    false,
+                )
             }
         }
-        _ => (get_base_prompt_entries(PromptType::LorebookEntryWriterPrompt), false),
+        _ => (
+            get_base_prompt_entries(PromptType::LorebookEntryWriterPrompt),
+            false,
+        ),
     }
 }
 
@@ -204,12 +222,7 @@ fn render_lorebook_entry_prompt_content(
     selected_messages: &str,
 ) -> String {
     let rendered = crate::chat_manager::prompt_engine::render_with_context(
-        app,
-        content,
-        character,
-        persona,
-        session,
-        settings,
+        app, content, character, persona, session, settings,
     );
     let rendered = replace_custom_placeholder(&rendered, "{{lorebook_name}}", lorebook_name);
     let rendered = replace_custom_placeholder(&rendered, "{{character_name}}", &character.name);
@@ -252,6 +265,11 @@ fn render_lorebook_entry_prompt_entries(
             .unwrap_or(false),
         has_key_memories: !session.memories.is_empty() || !session.memory_embeddings.is_empty(),
         has_lorebook_content: !existing_entries.trim().is_empty(),
+        does_author_note_exists: session
+            .author_note
+            .as_deref()
+            .map(|value| !value.trim().is_empty())
+            .unwrap_or(false),
         has_subject_description: false,
         has_current_description: false,
         has_character_reference_images: false,
@@ -650,8 +668,8 @@ fn extract_json_snippet(raw: &str) -> Option<&str> {
 fn parse_fallback_json_result(raw: &str) -> Result<LorebookEntryDraftResult, String> {
     let normalized = normalize_structured_fallback_text(raw);
     let snippet = extract_json_snippet(&normalized).unwrap_or(normalized.as_str());
-    let value: Value =
-        serde_json::from_str(snippet).map_err(|err| format!("fallback JSON parse error: {}", err))?;
+    let value: Value = serde_json::from_str(snippet)
+        .map_err(|err| format!("fallback JSON parse error: {}", err))?;
 
     let node = value
         .get("result")
@@ -694,7 +712,10 @@ fn parse_fallback_json_result(raw: &str) -> Result<LorebookEntryDraftResult, Str
                     .to_string(),
             ),
         }),
-        other => Err(format!("fallback JSON returned unsupported result '{}'", other)),
+        other => Err(format!(
+            "fallback JSON returned unsupported result '{}'",
+            other
+        )),
     }
 }
 
@@ -754,7 +775,12 @@ fn parse_fallback_xml_result(raw: &str) -> Result<LorebookEntryDraftResult, Stri
                     if tag == "write_lorebook_entry" {
                         always_active = attr_value(&event, b"alwaysActive")
                             .or_else(|| attr_value(&event, b"always_active"))
-                            .map(|value| matches!(value.trim().to_ascii_lowercase().as_str(), "true" | "1" | "yes"))
+                            .map(|value| {
+                                matches!(
+                                    value.trim().to_ascii_lowercase().as_str(),
+                                    "true" | "1" | "yes"
+                                )
+                            })
                             .unwrap_or(false);
                     }
                     current_operation = Some(tag);
@@ -767,7 +793,12 @@ fn parse_fallback_xml_result(raw: &str) -> Result<LorebookEntryDraftResult, Stri
                 if current_operation.is_none() && tag == "write_lorebook_entry" {
                     always_active = attr_value(&event, b"alwaysActive")
                         .or_else(|| attr_value(&event, b"always_active"))
-                        .map(|value| matches!(value.trim().to_ascii_lowercase().as_str(), "true" | "1" | "yes"))
+                        .map(|value| {
+                            matches!(
+                                value.trim().to_ascii_lowercase().as_str(),
+                                "true" | "1" | "yes"
+                            )
+                        })
                         .unwrap_or(false);
                     current_operation = Some(tag);
                 } else if current_operation.is_none() && tag == "no_entry" {
@@ -1091,23 +1122,18 @@ fn load_selected_messages(
                 selected_variant_id: row.get::<_, Option<String>>(8)?,
                 is_pinned: row.get::<_, i64>(9)? != 0,
                 memory_refs: serde_json::from_str::<Vec<String>>(
-                    row.get::<_, Option<String>>(10)?
-                        .as_deref()
-                        .unwrap_or("[]"),
+                    row.get::<_, Option<String>>(10)?.as_deref().unwrap_or("[]"),
                 )
                 .unwrap_or_default(),
                 used_lorebook_entries: serde_json::from_str::<Vec<String>>(
-                    row.get::<_, Option<String>>(11)?
-                        .as_deref()
-                        .unwrap_or("[]"),
+                    row.get::<_, Option<String>>(11)?.as_deref().unwrap_or("[]"),
                 )
                 .unwrap_or_default(),
-                attachments: serde_json::from_str::<Vec<crate::chat_manager::types::ImageAttachment>>(
-                    row.get::<_, Option<String>>(12)?
-                        .as_deref()
-                        .unwrap_or("[]"),
-                )
-                .unwrap_or_default(),
+                attachments:
+                    serde_json::from_str::<Vec<crate::chat_manager::types::ImageAttachment>>(
+                        row.get::<_, Option<String>>(12)?.as_deref().unwrap_or("[]"),
+                    )
+                    .unwrap_or_default(),
                 reasoning: row.get::<_, Option<String>>(13)?,
                 model_id: None,
                 fallback_from_model_id: None,
@@ -1163,8 +1189,8 @@ pub async fn chat_generate_lorebook_entry_draft(
     let persona = context.choose_persona(effective_persona_id);
 
     let conn = open_db(&app)?;
-    let lorebook = get_lorebook(&conn, &lorebook_id)?
-        .ok_or_else(|| "Lorebook not found".to_string())?;
+    let lorebook =
+        get_lorebook(&conn, &lorebook_id)?.ok_or_else(|| "Lorebook not found".to_string())?;
     let existing_entries = get_lorebook_entries(&conn, &lorebook_id)?;
 
     let direction_prompt_text = direction_prompt
@@ -1197,7 +1223,9 @@ pub async fn chat_generate_lorebook_entry_draft(
         &selected_messages_text,
     );
     if prompt_entries.is_empty() {
-        return Err("Lorebook entry generator prompt template rendered no usable entries".to_string());
+        return Err(
+            "Lorebook entry generator prompt template rendered no usable entries".to_string(),
+        );
     }
 
     let messages_for_api = prompt_entries_to_messages(credential, &prompt_entries, force);
@@ -1249,7 +1277,8 @@ pub async fn chat_generate_lorebook_entry_draft(
             if api_response.ok {
                 let mut calls = parse_tool_calls(&credential.provider_id, api_response.data());
                 if calls.is_empty() {
-                    if let Some(text) = extract_text(api_response.data(), Some(&credential.provider_id))
+                    if let Some(text) =
+                        extract_text(api_response.data(), Some(&credential.provider_id))
                     {
                         calls = parse_tool_calls_from_text(&text);
                     }
@@ -1260,8 +1289,10 @@ pub async fn chat_generate_lorebook_entry_draft(
                 }
 
                 let response_text =
-                    extract_text(api_response.data(), Some(&credential.provider_id)).unwrap_or_default();
-                if let Some(result) = result_from_tool_calls(&parse_tool_calls_from_text(&response_text))?
+                    extract_text(api_response.data(), Some(&credential.provider_id))
+                        .unwrap_or_default();
+                if let Some(result) =
+                    result_from_tool_calls(&parse_tool_calls_from_text(&response_text))?
                 {
                     return Ok(result);
                 }

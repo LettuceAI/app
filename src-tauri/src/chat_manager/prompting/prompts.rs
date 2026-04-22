@@ -585,8 +585,7 @@ fn row_to_template(row: &rusqlite::Row<'_>) -> Result<SystemPromptTemplate, rusq
     let created_at: u64 = row.get(6)?;
     let updated_at: u64 = row.get(7)?;
 
-    let prompt_type =
-        str_to_prompt_type(&prompt_type_str).unwrap_or(PromptTemplateType::Undefined);
+    let prompt_type = str_to_prompt_type(&prompt_type_str).unwrap_or(PromptTemplateType::Undefined);
     let entries: Vec<SystemPromptEntry> = serde_json::from_str(&entries_json).unwrap_or_default();
 
     Ok(SystemPromptTemplate {
@@ -805,6 +804,15 @@ pub fn ensure_app_default_template(app: &AppHandle) -> Result<String, String> {
             APP_DEFAULT_TEMPLATE_ID,
             PromptType::SystemPrompt,
             prompt_engine::default_modular_prompt_entries(),
+        );
+        let _ = append_missing_entry(
+            app,
+            APP_DEFAULT_TEMPLATE_ID,
+            "entry_author_note",
+            prompt_engine::default_modular_prompt_entries()
+                .into_iter()
+                .find(|entry| entry.id == "entry_author_note")
+                .expect("author note entry should exist"),
         );
         let _ = append_missing_entry(
             app,

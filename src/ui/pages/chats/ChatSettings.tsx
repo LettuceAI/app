@@ -12,6 +12,7 @@ import {
   Sparkles,
   TriangleAlert,
   Upload,
+  NotebookPen,
 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { motion } from "framer-motion";
@@ -51,6 +52,7 @@ import { Routes, useNavigationManager } from "../../navigation";
 import { PersonaSelector } from "../group-chats/components/settings";
 import { storageBridge } from "../../../core/storage/files";
 import { ChatTemplateSelector } from "./components/ChatTemplateSelector";
+import { AuthorNoteBottomMenu } from "./components/AuthorNoteBottomMenu";
 import { useI18n } from "../../../core/i18n/context";
 import { isRenderableImageUrl } from "../../../core/utils/image";
 
@@ -265,10 +267,12 @@ export function ChatSettingsContent({
   character,
   mode = "page",
   onClose,
+  onOpenAuthorNote,
 }: {
   character: Character;
   mode?: "page" | "drawer";
   onClose?: () => void;
+  onOpenAuthorNote?: () => void;
 }) {
   const navigate = useNavigate();
   const { backOrReplace } = useNavigationManager();
@@ -301,6 +305,7 @@ export function ChatSettingsContent({
   const [sessionOverrideEnabled, setSessionOverrideEnabled] = useState<boolean>(false);
   const [showPersonaActions, setShowPersonaActions] = useState(false);
   const [showTemplateSelector, setShowTemplateSelector] = useState(false);
+  const [showAuthorNoteMenu, setShowAuthorNoteMenu] = useState(false);
   const [selectedPersonaForActions, setSelectedPersonaForActions] = useState<Persona | null>(null);
   const [messageCount, setMessageCount] = useState<number>(0);
   const [pendingChatpkgImport, setPendingChatpkgImport] = useState<{
@@ -578,6 +583,14 @@ export function ChatSettingsContent({
     }
     navigate(base);
   }, [characterId, currentSession?.id, navigate]);
+
+  const handleOpenAuthorNote = useCallback(() => {
+    if (onOpenAuthorNote) {
+      onOpenAuthorNote();
+      return;
+    }
+    setShowAuthorNoteMenu(true);
+  }, [onOpenAuthorNote]);
 
   const handleOpenImportChatpkg = useCallback(async () => {
     if (!characterId) return;
@@ -1097,6 +1110,17 @@ export function ChatSettingsContent({
             />
             <div className={spacing.field}>
               <SettingsButton
+                icon={<NotebookPen className="h-4 w-4" />}
+                title="Author Note"
+                subtitle={
+                  currentSession?.authorNote?.trim()
+                    ? "Active for this chat"
+                    : "Private direction for replies"
+                }
+                onClick={handleOpenAuthorNote}
+                disabled={!currentSession}
+              />
+              <SettingsButton
                 icon={<MessageSquarePlus className="h-4 w-4" />}
                 title={t("chats.settings.newChat")}
                 subtitle={t("chats.settings.newChatDesc")}
@@ -1132,6 +1156,13 @@ export function ChatSettingsContent({
           setSelectedPersonaForActions(persona);
           setShowPersonaActions(true);
         }}
+      />
+
+      <AuthorNoteBottomMenu
+        isOpen={showAuthorNoteMenu}
+        onClose={() => setShowAuthorNoteMenu(false)}
+        session={currentSession}
+        onSaved={setCurrentSession}
       />
 
       {/* Model Selection */}

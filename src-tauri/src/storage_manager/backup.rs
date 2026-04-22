@@ -536,7 +536,7 @@ fn export_sessions(app: &tauri::AppHandle) -> Result<Vec<JsonValue>, String> {
 
     // Get all sessions
     let mut stmt = conn
-        .prepare("SELECT id, character_id, title, background_image_path, system_prompt, selected_scene_id, persona_id, persona_disabled, voice_autoplay,
+        .prepare("SELECT id, character_id, title, background_image_path, system_prompt, selected_scene_id, author_note, persona_id, persona_disabled, voice_autoplay,
                          prompt_template_id, lorebook_ids_override, temperature, top_p, max_output_tokens, frequency_penalty, presence_penalty, top_k,
                          memories, memory_embeddings, memory_summary, memory_summary_token_count, memory_tool_events,
                          memory_status, memory_error, memory_progress_step, archived, created_at, updated_at FROM sessions")
@@ -552,28 +552,29 @@ fn export_sessions(app: &tauri::AppHandle) -> Result<Vec<JsonValue>, String> {
                 "background_image_path": r.get::<_, Option<String>>(3)?,
                 "system_prompt": r.get::<_, Option<String>>(4)?,
                 "selected_scene_id": r.get::<_, Option<String>>(5)?,
-                "persona_id": r.get::<_, Option<String>>(6)?,
-                "persona_disabled": r.get::<_, i64>(7)? != 0,
-                "voice_autoplay": r.get::<_, Option<i64>>(8)?.map(|value| value != 0),
-                "prompt_template_id": r.get::<_, Option<String>>(9)?,
-                "lorebook_ids_override": r.get::<_, Option<String>>(10)?,
-                "temperature": r.get::<_, Option<f64>>(11)?,
-                "top_p": r.get::<_, Option<f64>>(12)?,
-                "max_output_tokens": r.get::<_, Option<i64>>(13)?,
-                "frequency_penalty": r.get::<_, Option<f64>>(14)?,
-                "presence_penalty": r.get::<_, Option<f64>>(15)?,
-                "top_k": r.get::<_, Option<i64>>(16)?,
-                "memories": r.get::<_, String>(17)?,
-                "memory_embeddings": r.get::<_, String>(18)?,
-                "memory_summary": r.get::<_, Option<String>>(19)?,
-                "memory_summary_token_count": r.get::<_, i64>(20)?,
-                "memory_tool_events": r.get::<_, String>(21)?,
-                "memory_status": r.get::<_, Option<String>>(22)?,
-                "memory_error": r.get::<_, Option<String>>(23)?,
-                "memory_progress_step": r.get::<_, Option<i64>>(24)?,
-                "archived": r.get::<_, i64>(25)? != 0,
-                "created_at": r.get::<_, i64>(26)?,
-                "updated_at": r.get::<_, i64>(27)?,
+                "author_note": r.get::<_, Option<String>>(6)?,
+                "persona_id": r.get::<_, Option<String>>(7)?,
+                "persona_disabled": r.get::<_, i64>(8)? != 0,
+                "voice_autoplay": r.get::<_, Option<i64>>(9)?.map(|value| value != 0),
+                "prompt_template_id": r.get::<_, Option<String>>(10)?,
+                "lorebook_ids_override": r.get::<_, Option<String>>(11)?,
+                "temperature": r.get::<_, Option<f64>>(12)?,
+                "top_p": r.get::<_, Option<f64>>(13)?,
+                "max_output_tokens": r.get::<_, Option<i64>>(14)?,
+                "frequency_penalty": r.get::<_, Option<f64>>(15)?,
+                "presence_penalty": r.get::<_, Option<f64>>(16)?,
+                "top_k": r.get::<_, Option<i64>>(17)?,
+                "memories": r.get::<_, String>(18)?,
+                "memory_embeddings": r.get::<_, String>(19)?,
+                "memory_summary": r.get::<_, Option<String>>(20)?,
+                "memory_summary_token_count": r.get::<_, i64>(21)?,
+                "memory_tool_events": r.get::<_, String>(22)?,
+                "memory_status": r.get::<_, Option<String>>(23)?,
+                "memory_error": r.get::<_, Option<String>>(24)?,
+                "memory_progress_step": r.get::<_, Option<i64>>(25)?,
+                "archived": r.get::<_, i64>(26)? != 0,
+                "created_at": r.get::<_, i64>(27)?,
+                "updated_at": r.get::<_, i64>(28)?,
             });
             Ok((id, json))
         })
@@ -1956,11 +1957,11 @@ fn import_sessions(app: &tauri::AppHandle, data: &JsonValue) -> Result<(), Strin
                     });
 
             conn.execute(
-                "INSERT INTO sessions (id, character_id, title, background_image_path, system_prompt, selected_scene_id, persona_id, persona_disabled, voice_autoplay,
+                "INSERT INTO sessions (id, character_id, title, background_image_path, system_prompt, selected_scene_id, author_note, persona_id, persona_disabled, voice_autoplay,
                  prompt_template_id, lorebook_ids_override, temperature, top_p, max_output_tokens, frequency_penalty, presence_penalty, top_k,
                  memories, memory_embeddings, memory_summary, memory_summary_token_count, memory_tool_events,
                  memory_status, memory_error, memory_progress_step, archived, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28)",
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29)",
                 params![
                     session_id,
                     character_id,
@@ -1968,6 +1969,7 @@ fn import_sessions(app: &tauri::AppHandle, data: &JsonValue) -> Result<(), Strin
                     item.get("background_image_path").and_then(|v| v.as_str()),
                     item.get("system_prompt").and_then(|v| v.as_str()),
                     item.get("selected_scene_id").and_then(|v| v.as_str()),
+                    item.get("author_note").and_then(|v| v.as_str()),
                     item.get("persona_id").and_then(|v| v.as_str()),
                     item.get("persona_disabled")
                         .and_then(|v| v.as_bool())

@@ -8,9 +8,15 @@ interface ChatSettingsDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   character: Character;
+  onOpenAuthorNote?: () => void;
 }
 
-export function ChatSettingsDrawer({ isOpen, onClose, character }: ChatSettingsDrawerProps) {
+export function ChatSettingsDrawer({
+  isOpen,
+  onClose,
+  character,
+  onOpenAuthorNote,
+}: ChatSettingsDrawerProps) {
   const dragRegionProps = useDragRegionProps();
   // Close on Escape
   useEffect(() => {
@@ -61,6 +67,7 @@ export function ChatSettingsDrawer({ isOpen, onClose, character }: ChatSettingsD
                 character={character}
                 mode="drawer"
                 onClose={onClose}
+                onOpenAuthorNote={onOpenAuthorNote}
               />
             </div>
           </motion.aside>

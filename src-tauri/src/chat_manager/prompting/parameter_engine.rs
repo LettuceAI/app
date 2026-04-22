@@ -68,6 +68,11 @@ fn direct_chat_variables() -> Vec<PromptVariableDefinition> {
             "Relevant long-term memory facts.",
         ),
         variable("{{lorebook}}", "Lorebook", "Matched lorebook content."),
+        variable(
+            "{{author_note}}",
+            "Author Note",
+            "Private session note for the current chat.",
+        ),
         variable("{{rules}}", "Rules", "Legacy behavioral rules block."),
         variable(
             "{{content_rules}}",

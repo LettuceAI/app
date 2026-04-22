@@ -9,7 +9,7 @@ import {
 } from "react";
 import { useParams, useSearchParams, useNavigate } from "react-router-dom";
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
-import { ArrowLeftRight, ChevronDown, User, X } from "lucide-react";
+import { ArrowLeftRight, ChevronDown, NotebookPen, User, X } from "lucide-react";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import type {
   AccessibilitySettings,
@@ -60,6 +60,7 @@ import {
   LoadingSpinner,
   EmptyState,
   ChatSettingsDrawer,
+  AuthorNoteBottomMenu,
 } from "./components";
 import { BottomMenu, GuidedTour, MenuButton, useGuidedTour } from "../../components";
 import { AvatarImage } from "../../components/AvatarImage";
@@ -159,6 +160,7 @@ export function ChatConversationPage() {
   const [showChoiceMenu, setShowChoiceMenu] = useState(false);
   const [showResultMenu, setShowResultMenu] = useState(false);
   const [showPersonaSelector, setShowPersonaSelector] = useState(false);
+  const [showAuthorNoteMenu, setShowAuthorNoteMenu] = useState(false);
   const [showBackgroundMenu, setShowBackgroundMenu] = useState(false);
   const [showBackgroundLibraryMenu, setShowBackgroundLibraryMenu] = useState(false);
   const [generatedReply, setGeneratedReply] = useState<string | null>(null);
@@ -211,6 +213,12 @@ export function ChatConversationPage() {
     },
     [chatController.session?.id],
   );
+
+  const handleOpenAuthorNoteMenu = useCallback(() => {
+    setShowPlusMenu(false);
+    setSettingsDrawerOpen(false);
+    setShowAuthorNoteMenu(true);
+  }, []);
 
   const handleSessionBackgroundUpload = useCallback(
     async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -2067,6 +2075,16 @@ export function ChatConversationPage() {
             }}
           />
           <MenuButton
+            icon={NotebookPen}
+            title="Author Note"
+            description={
+              (sessionForHeader?.authorNote ?? chatController.session?.authorNote)?.trim()
+                ? "Active for this chat"
+                : "Private direction for replies"
+            }
+            onClick={handleOpenAuthorNoteMenu}
+          />
+          <MenuButton
             icon={Image}
             title="Chat Background"
             description={
@@ -2115,6 +2133,13 @@ export function ChatConversationPage() {
           )}
         </div>
       </BottomMenu>
+
+      <AuthorNoteBottomMenu
+        isOpen={showAuthorNoteMenu}
+        onClose={() => setShowAuthorNoteMenu(false)}
+        session={sessionForHeader ?? chatController.session}
+        onSaved={setSessionForHeader}
+      />
 
       <PersonaSelector
         isOpen={showPersonaSelector}
@@ -2650,6 +2675,7 @@ export function ChatConversationPage() {
           isOpen={settingsDrawerOpen}
           onClose={() => setSettingsDrawerOpen(false)}
           character={character}
+          onOpenAuthorNote={handleOpenAuthorNoteMenu}
         />
       )}
 

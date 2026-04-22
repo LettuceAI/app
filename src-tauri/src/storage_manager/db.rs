@@ -495,6 +495,7 @@ pub fn init_db(_app: &tauri::AppHandle, conn: &Connection) -> Result<(), String>
           selected_scene_id TEXT,
           prompt_template_id TEXT,
           lorebook_ids_override TEXT,
+          author_note TEXT,
           persona_id TEXT,
           persona_disabled INTEGER NOT NULL DEFAULT 0,
           voice_autoplay INTEGER,
@@ -1665,6 +1666,7 @@ pub fn init_db(_app: &tauri::AppHandle, conn: &Connection) -> Result<(), String>
         .prepare("PRAGMA table_info(sessions)")
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     let mut has_lorebook_ids_override = false;
+    let mut has_author_note = false;
     let mut rows_sessions = stmt_sessions
         .query([])
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
@@ -1677,7 +1679,9 @@ pub fn init_db(_app: &tauri::AppHandle, conn: &Connection) -> Result<(), String>
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
         if col_name == "lorebook_ids_override" {
             has_lorebook_ids_override = true;
-            break;
+        }
+        if col_name == "author_note" {
+            has_author_note = true;
         }
     }
     if !has_lorebook_ids_override {
@@ -1685,6 +1689,9 @@ pub fn init_db(_app: &tauri::AppHandle, conn: &Connection) -> Result<(), String>
             "ALTER TABLE sessions ADD COLUMN lorebook_ids_override TEXT",
             [],
         );
+    }
+    if !has_author_note {
+        let _ = conn.execute("ALTER TABLE sessions ADD COLUMN author_note TEXT", []);
     }
 
     let mut stmt_chat_templates = conn

@@ -307,6 +307,8 @@ export const storageBridge = {
     invoke("session_archive", { id, archived }) as Promise<void>,
   sessionUpdateTitle: (id: string, title: string) =>
     invoke("session_update_title", { id, title }) as Promise<void>,
+  sessionUpdateAuthorNote: (id: string, authorNote: string | null) =>
+    invoke("session_update_author_note", { id, authorNote }) as Promise<void>,
   messageTogglePin: (sessionId: string, messageId: string) =>
     invoke<boolean | null>("message_toggle_pin_state", { sessionId, messageId }),
   sessionAddMemory: (sessionId: string, memory: string, memoryCategory?: string) =>

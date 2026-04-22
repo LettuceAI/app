@@ -328,6 +328,8 @@ pub struct Session {
     pub prompt_template_id: Option<String>,
     #[serde(default)]
     pub lorebook_ids_override: Option<String>,
+    #[serde(default)]
+    pub author_note: Option<String>,
     pub persona_id: Option<String>,
     pub persona_disabled: Option<i64>,
     #[serde(default)]

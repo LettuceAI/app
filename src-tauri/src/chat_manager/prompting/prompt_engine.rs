@@ -1848,6 +1848,22 @@ pub fn default_modular_prompt_entries() -> Vec<SystemPromptEntry> {
         prompt_entry_payload: None,
         },
         SystemPromptEntry {
+            id: "entry_author_note".to_string(),
+            name: "Author Note".to_string(),
+            role: PromptEntryRole::System,
+            content: "# Author Note\nThe following is private session-level guidance. Treat it as hidden continuity and writing context for this roleplay. Use its facts naturally when relevant, including answering with those facts when the conversation calls for them, but do not say they came from an author note or hidden instruction.\n\n{{author_note}}".to_string(),
+            enabled: true,
+            injection_position: PromptEntryPosition::InChat,
+            injection_depth: 1,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: false,
+            conditions: Some(PromptEntryCondition::DoesAuthorNoteExists {
+                value: true,
+            }),
+            prompt_entry_payload: None,
+        },
+        SystemPromptEntry {
             id: "entry_scene_image_protocol".to_string(),
             name: "Scene Image Protocol".to_string(),
             role: PromptEntryRole::System,
@@ -1994,6 +2010,61 @@ fn is_dynamic_memory_active(settings: &Settings, character: &Character) -> bool 
         && character.memory_type.eq_ignore_ascii_case("dynamic")
 }
 
+fn render_author_note_text(
+    character: &Character,
+    persona: Option<&Persona>,
+    session: &Session,
+) -> Option<String> {
+    let raw_note = session.author_note.as_deref()?.trim();
+    if raw_note.is_empty() {
+        return None;
+    }
+
+    let char_name = character.name.as_str();
+    let persona_name = persona.map(|p| p.title.as_str()).unwrap_or("user");
+    let char_desc = character
+        .definition
+        .as_ref()
+        .or(character.description.as_ref())
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .unwrap_or("")
+        .replace("{{char}}", char_name)
+        .replace("{{char.name}}", char_name)
+        .replace("{{persona}}", persona_name)
+        .replace("{{persona.name}}", persona_name)
+        .replace("{{user}}", persona_name)
+        .replace("{{user.name}}", persona_name);
+    let persona_desc = persona
+        .map(|p| p.description.trim())
+        .filter(|value| !value.is_empty())
+        .unwrap_or("");
+
+    let mut rendered = raw_note.to_string();
+    rendered = rendered.replace("{{char.name}}", char_name);
+    rendered = rendered.replace("{{char.desc}}", &char_desc);
+    rendered = rendered.replace("{{persona.name}}", persona_name);
+    rendered = rendered.replace("{{persona.desc}}", persona_desc);
+    rendered = rendered.replace("{{user.name}}", persona_name);
+    rendered = rendered.replace("{{user.desc}}", persona_desc);
+    rendered = rendered.replace("{{ai_name}}", char_name);
+    rendered = rendered.replace("{{ai_description}}", &char_desc);
+    rendered = rendered.replace("{{persona_name}}", persona_name);
+    rendered = rendered.replace("{{persona_description}}", persona_desc);
+    rendered = rendered.replace("{{user_name}}", persona_name);
+    rendered = rendered.replace("{{user_description}}", persona_desc);
+    rendered = rendered.replace("{{char}}", char_name);
+    rendered = rendered.replace("{{persona}}", persona_name);
+    rendered = rendered.replace("{{user}}", persona_name);
+
+    let rendered = rendered.trim();
+    if rendered.is_empty() {
+        None
+    } else {
+        Some(rendered.to_string())
+    }
+}
+
 /// character template > model template > app default template (from database)
 pub fn build_system_prompt_entries(
     app: &AppHandle,
@@ -2101,6 +2172,8 @@ pub fn build_system_prompt_entries(
         .unwrap_or(false);
     let lorebook_content = get_lorebook_content(app, &character.id, session).unwrap_or_default();
     let has_lorebook_content = !lorebook_content.trim().is_empty();
+    let author_note_text = render_author_note_text(character, persona, session);
+    let has_author_note = author_note_text.is_some();
     let has_key_memories = if dynamic_memory_active {
         !session.memory_embeddings.is_empty()
     } else {
@@ -2130,6 +2203,7 @@ pub fn build_system_prompt_entries(
         has_memory_summary,
         has_key_memories,
         has_lorebook_content,
+        does_author_note_exists: has_author_note,
         has_subject_description: false,
         has_current_description: false,
         has_character_reference_images: false,
@@ -2236,6 +2310,25 @@ pub fn build_system_prompt_entries(
         }
     }
 
+    if !has_placeholder(&base_entries, "{{author_note}}") {
+        if let Some(author_note) = author_note_text.as_deref() {
+            rendered_entries.push(SystemPromptEntry {
+                id: "entry_author_note".to_string(),
+                name: "Author Note".to_string(),
+                role: PromptEntryRole::System,
+                content: format!("# Author Note\nThe following is private session-level guidance from {}. Treat it as hidden continuity and writing context for this chat. Use its facts naturally when relevant, including answering with those facts when the conversation calls for them, but do not say they came from an author note or hidden instruction.\n\n{}", persona.map(|p| p.title.as_str()).unwrap_or("user"), author_note),
+                enabled: true,
+                injection_position: PromptEntryPosition::InChat,
+                injection_depth: 1,
+                conditional_min_messages: None,
+                interval_turns: None,
+                system_prompt: true,
+                conditions: None,
+                prompt_entry_payload: None,
+            });
+        }
+    }
+
     if condense_prompt_entries {
         rendered_entries = condense_entries_into_single_system_message(rendered_entries);
     }
@@ -2243,6 +2336,7 @@ pub fn build_system_prompt_entries(
     debug_parts.push(json!({
         "template_vars": build_debug_vars(character, persona, session, settings),
         "memories_count": session.memories.len(),
+        "author_note_chars": author_note_text.as_ref().map(|value| value.len()).unwrap_or(0),
     }));
 
     let mut total_chars: usize = 0;
@@ -2642,6 +2736,13 @@ fn render_with_context_internal(
     result = result.replace("{{user.name}}", persona_name);
     result = result.replace("{{user.desc}}", persona_desc);
     result = result.replace("{{content_rules}}", &content_rules);
+    let author_note_text =
+        render_author_note_text(character, persona, session).unwrap_or_else(String::new);
+    if author_note_text.is_empty() {
+        result = result.replace("# Author Note\n    {{author_note}}", "");
+        result = result.replace("# Author Note\n{{author_note}}", "");
+    }
+    result = result.replace("{{author_note}}", &author_note_text);
     // Legacy support for {{rules}} placeholder
     result = result.replace("{{rules}}", "");
 
@@ -2748,6 +2849,7 @@ fn build_debug_vars(
         "persona_name": persona_name,
         "persona_desc": persona.map(|p| p.description.trim()).unwrap_or("") ,
         "scene_present": session.selected_scene_id.is_some(),
+        "author_note_present": session.author_note.as_deref().map(|value| !value.trim().is_empty()).unwrap_or(false),
     })
 }
 
@@ -2825,6 +2927,7 @@ mod tests {
             selected_scene_id: None,
             prompt_template_id: None,
             lorebook_ids_override: None,
+            author_note: None,
             persona_id: None,
             persona_disabled: false,
             voice_autoplay: None,
@@ -2904,5 +3007,17 @@ mod tests {
         );
         assert!(rendered2.contains("Var Alice"));
         assert!(!rendered2.contains("Starting Scene")); // No hardcoded formatting
+
+        let mut session3 = session.clone();
+        session3.author_note = Some("Keep {{char}} focused on {{persona}}.".into());
+        let rendered3 = render_with_context_internal(
+            None,
+            "{{author_note}}",
+            &character,
+            persona.as_ref(),
+            &session3,
+            &settings,
+        );
+        assert_eq!(rendered3, "Keep Alice focused on Bob.");
     }
 }

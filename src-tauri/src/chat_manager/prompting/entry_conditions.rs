@@ -16,6 +16,7 @@ pub(crate) struct PromptEntryConditionContext<'a> {
     pub(crate) has_memory_summary: bool,
     pub(crate) has_key_memories: bool,
     pub(crate) has_lorebook_content: bool,
+    pub(crate) does_author_note_exists: bool,
     pub(crate) has_subject_description: bool,
     pub(crate) has_current_description: bool,
     pub(crate) has_character_reference_images: bool,
@@ -82,6 +83,9 @@ pub(crate) fn matches_condition(
         PromptEntryCondition::HasKeyMemories { value } => context.has_key_memories == *value,
         PromptEntryCondition::HasLorebookContent { value } => {
             context.has_lorebook_content == *value
+        }
+        PromptEntryCondition::DoesAuthorNoteExists { value } => {
+            context.does_author_note_exists == *value
         }
         PromptEntryCondition::HasSubjectDescription { value } => {
             context.has_subject_description == *value
@@ -183,6 +187,7 @@ mod tests {
             has_memory_summary: true,
             has_key_memories: false,
             has_lorebook_content: true,
+            does_author_note_exists: true,
             has_subject_description: false,
             has_current_description: false,
             has_character_reference_images: false,

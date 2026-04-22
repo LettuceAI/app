@@ -1002,6 +1002,7 @@ fn render_design_reference_prompt_entries(
         has_memory_summary: false,
         has_key_memories: false,
         has_lorebook_content: false,
+        does_author_note_exists: false,
         has_subject_description: subject_description.is_some(),
         has_current_description: current_description.is_some(),
         has_character_reference_images: false,
@@ -1223,6 +1224,11 @@ fn render_scene_generation_prompt_entries(
         has_memory_summary: false,
         has_key_memories: false,
         has_lorebook_content: false,
+        does_author_note_exists: session
+            .author_note
+            .as_deref()
+            .map(|value| !value.trim().is_empty())
+            .unwrap_or(false),
         has_subject_description: false,
         has_current_description: false,
         has_character_reference_images: !reference_images.character_images.is_empty(),
@@ -1803,6 +1809,7 @@ pub async fn chat_generate_design_reference_description(
         selected_scene_id: None,
         prompt_template_id: None,
         lorebook_ids_override: None,
+        author_note: None,
         persona_id: None,
         persona_disabled: false,
         voice_autoplay: None,

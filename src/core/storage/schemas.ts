@@ -122,6 +122,7 @@ export type PromptEntryCondition =
   | { type: "hasMemorySummary"; value: boolean }
   | { type: "hasKeyMemories"; value: boolean }
   | { type: "hasLorebookContent"; value: boolean }
+  | { type: "doesAuthorNoteExists"; value: boolean }
   | { type: "hasSubjectDescription"; value: boolean }
   | { type: "hasCurrentDescription"; value: boolean }
   | { type: "hasCharacterReferenceImages"; value: boolean }
@@ -155,6 +156,7 @@ export const PromptEntryConditionSchema: z.ZodType<PromptEntryCondition> = z.laz
     z.object({ type: z.literal("hasMemorySummary"), value: z.boolean() }),
     z.object({ type: z.literal("hasKeyMemories"), value: z.boolean() }),
     z.object({ type: z.literal("hasLorebookContent"), value: z.boolean() }),
+    z.object({ type: z.literal("doesAuthorNoteExists"), value: z.boolean() }),
     z.object({ type: z.literal("hasSubjectDescription"), value: z.boolean() }),
     z.object({ type: z.literal("hasCurrentDescription"), value: z.boolean() }),
     z.object({ type: z.literal("hasCharacterReferenceImages"), value: z.boolean() }),
@@ -2717,6 +2719,7 @@ export const SessionSchema = z.object({
   selectedSceneId: z.string().uuid().nullish(), // ID of the scene from character.scenes array
   promptTemplateId: z.string().nullish().optional(),
   lorebookIdsOverride: z.array(z.string().uuid()).nullable().optional(),
+  authorNote: z.string().nullish().optional(),
   personaId: z.union([z.string().uuid(), z.literal(""), z.null(), z.undefined()]).optional(),
   personaDisabled: z.boolean().optional().default(false),
   voiceAutoplay: z.boolean().nullable().optional(),

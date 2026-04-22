@@ -1231,6 +1231,16 @@ export async function updateSessionTitle(id: string, title: string): Promise<Ses
   return getSession(id);
 }
 
+export async function updateSessionAuthorNote(
+  id: string,
+  authorNote: string | null,
+): Promise<Session | null> {
+  const nextAuthorNote = authorNote?.trim() || null;
+  await storageBridge.sessionUpdateAuthorNote(id, nextAuthorNote);
+  broadcastSessionUpdated();
+  return getSessionMeta(id);
+}
+
 export async function deleteSession(id: string): Promise<void> {
   await storageBridge.sessionDelete(id);
 }

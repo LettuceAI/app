@@ -7,7 +7,7 @@ use crate::storage_manager::settings::{read_settings_typed, write_settings_typed
 use crate::utils::log_info;
 
 /// Current migration version
-pub const CURRENT_MIGRATION_VERSION: u32 = 55;
+pub const CURRENT_MIGRATION_VERSION: u32 = 56;
 
 pub fn run_migrations(app: &AppHandle) -> Result<(), String> {
     log_info(app, "migrations", "Starting migration check");
@@ -587,6 +587,16 @@ pub fn run_migrations(app: &AppHandle) -> Result<(), String> {
         );
         migrate_v54_to_v55(app)?;
         version = 55;
+    }
+
+    if version < 56 {
+        log_info(
+            app,
+            "migrations",
+            "Running migration v55 -> v56: Add session author notes",
+        );
+        migrate_v55_to_v56(app)?;
+        version = 56;
     }
 
     // Update the stored version
@@ -3167,6 +3177,32 @@ fn migrate_v54_to_v55(app: &AppHandle) -> Result<(), String> {
             [],
         )
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    }
+
+    Ok(())
+}
+
+fn migrate_v55_to_v56(app: &AppHandle) -> Result<(), String> {
+    let conn = crate::storage_manager::db::open_db(app)?;
+
+    let mut has_author_note = false;
+    let mut stmt = conn
+        .prepare("PRAGMA table_info(sessions)")
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    let rows = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    for column in rows {
+        let column = column.map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        if column == "author_note" {
+            has_author_note = true;
+            break;
+        }
+    }
+
+    if !has_author_note {
+        conn.execute("ALTER TABLE sessions ADD COLUMN author_note TEXT", [])
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     }
 
     Ok(())

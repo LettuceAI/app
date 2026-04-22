@@ -82,6 +82,7 @@ macro_rules! invoke_handler {
             crate::storage_manager::sessions::session_delete,
             crate::storage_manager::sessions::session_archive,
             crate::storage_manager::sessions::session_update_title,
+            crate::storage_manager::sessions::session_update_author_note,
             crate::storage_manager::sessions::message_toggle_pin,
             crate::storage_manager::sessions::message_toggle_pin_state,
             crate::storage_manager::sessions::session_add_memory,

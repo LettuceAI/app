@@ -937,6 +937,7 @@ pub fn render_prompt_preview(
             selected_scene_id: None,
             prompt_template_id: None,
             lorebook_ids_override: None,
+            author_note: None,
             persona_id: None,
             persona_disabled: false,
             voice_autoplay: None,

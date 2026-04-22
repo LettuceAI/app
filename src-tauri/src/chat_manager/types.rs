@@ -118,6 +118,9 @@ pub enum PromptEntryCondition {
     HasLorebookContent {
         value: bool,
     },
+    DoesAuthorNoteExists {
+        value: bool,
+    },
     HasSubjectDescription {
         value: bool,
     },
@@ -773,6 +776,8 @@ pub struct Session {
     pub prompt_template_id: Option<String>,
     #[serde(default)]
     pub lorebook_ids_override: Option<Vec<String>>,
+    #[serde(default)]
+    pub author_note: Option<String>,
     #[serde(default)]
     pub persona_id: Option<String>,
     #[serde(default)]

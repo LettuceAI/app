@@ -275,6 +275,7 @@ const SIMPLE_CONDITION_OPTIONS: Array<{
   { value: "hasMemorySummary", label: "Has memory summary", kind: "boolean" },
   { value: "hasKeyMemories", label: "Has key memories", kind: "boolean" },
   { value: "hasLorebookContent", label: "Has lorebook content", kind: "boolean" },
+  { value: "doesAuthorNoteExists", label: "Author note exists", kind: "boolean" },
   { value: "hasSubjectDescription", label: "Has subject description", kind: "boolean" },
   { value: "hasCurrentDescription", label: "Has current description", kind: "boolean" },
   {
@@ -516,6 +517,8 @@ function describeSimpleCondition(condition: SimplePromptEntryCondition): string 
       return condition.value ? "key memories exist" : "key memories missing";
     case "hasLorebookContent":
       return condition.value ? "lorebook content exists" : "lorebook content missing";
+    case "doesAuthorNoteExists":
+      return condition.value ? "author note exists" : "author note missing";
     case "hasSubjectDescription":
       return condition.value ? "subject description exists" : "subject description missing";
     case "hasCurrentDescription":
