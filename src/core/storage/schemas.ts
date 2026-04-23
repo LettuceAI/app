@@ -2822,6 +2822,20 @@ export const CompanionEmotionVectorSchema = z.object({
 });
 export type CompanionEmotionVector = z.infer<typeof CompanionEmotionVectorSchema>;
 
+export const SignedCompanionEmotionVectorSchema = z.object({
+  warmth: z.number().min(-1).max(1).default(0),
+  trust: z.number().min(-1).max(1).default(0),
+  calm: z.number().min(-1).max(1).default(0),
+  vulnerability: z.number().min(-1).max(1).default(0),
+  longing: z.number().min(-1).max(1).default(0),
+  hurt: z.number().min(-1).max(1).default(0),
+  tension: z.number().min(-1).max(1).default(0),
+  irritation: z.number().min(-1).max(1).default(0),
+  affectionIntensity: z.number().min(-1).max(1).default(0),
+  reassuranceNeed: z.number().min(-1).max(1).default(0),
+});
+export type SignedCompanionEmotionVector = z.infer<typeof SignedCompanionEmotionVectorSchema>;
+
 const DEFAULT_COMPANION_EMOTION_VECTOR: CompanionEmotionVector = {
   warmth: 0,
   trust: 0,
@@ -2839,7 +2853,7 @@ export const CompanionEmotionalStateSchema = z.object({
   felt: CompanionEmotionVectorSchema.default(DEFAULT_COMPANION_EMOTION_VECTOR),
   expressed: CompanionEmotionVectorSchema.default(DEFAULT_COMPANION_EMOTION_VECTOR),
   blocked: CompanionEmotionVectorSchema.default(DEFAULT_COMPANION_EMOTION_VECTOR),
-  momentum: CompanionEmotionVectorSchema.default(DEFAULT_COMPANION_EMOTION_VECTOR),
+  momentum: SignedCompanionEmotionVectorSchema.default(DEFAULT_COMPANION_EMOTION_VECTOR),
   activeDrivers: z.array(z.string()).default([]),
   confidence: z.number().min(0).max(1).default(0.5),
   updatedAt: z.number().int().default(0),
@@ -2884,6 +2898,15 @@ export const CompanionSessionStateSchema = z.object({
   updatedAt: z.number().int().default(0),
 });
 export type CompanionSessionState = z.infer<typeof CompanionSessionStateSchema>;
+
+export const MemoryEntityAnchorSchema = z.object({
+  label: z.string(),
+  surface: z.string(),
+  canonicalKey: z.string(),
+  canonicalName: z.string(),
+  confidence: z.number().default(0),
+});
+export type MemoryEntityAnchor = z.infer<typeof MemoryEntityAnchorSchema>;
 
 export const CharacterSchema = z.object({
   id: z.string().uuid(),
@@ -2955,9 +2978,21 @@ export const SessionSchema = z.object({
         tokenCount: z.number().int().nonnegative().default(0),
         isCold: z.boolean().default(false),
         importanceScore: z.number().default(1.0),
+        persistenceImportance: z.number().default(1.0),
+        promptImportance: z.number().default(1.0),
+        volatility: z.number().default(0.4),
         lastAccessedAt: z.number().int().default(0),
         isPinned: z.boolean().default(false),
+        accessCount: z.number().int().nonnegative().default(0),
+        matchScore: z.number().nullable().optional(),
         category: z.string().nullable().optional(),
+        canonicalEntities: z.array(MemoryEntityAnchorSchema).default([]),
+        factSignature: z.string().nullable().optional(),
+        factPolarity: z.number().int().nullable().optional(),
+        sourceRole: z.string().nullable().optional(),
+        supersededBy: z.string().nullable().optional(),
+        supersededAt: z.number().int().nullable().optional(),
+        supersedes: z.array(z.string()).default([]),
       }),
     )
     .default([])
