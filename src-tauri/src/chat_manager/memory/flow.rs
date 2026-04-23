@@ -26,6 +26,7 @@ use super::structured_fallback::{
     parse_memory_operations_from_text, parse_memory_tag_repairs_from_text,
     structured_fallback_format_label,
 };
+use crate::chat_manager::companion;
 use crate::chat_manager::execution::{
     find_model_with_credential, prepare_default_sampling_request,
 };
@@ -1080,6 +1081,18 @@ async fn process_dynamic_memory_cycle_with_model(
             ),
         );
         return Ok(());
+    }
+
+    if companion::memory::is_enabled(settings, session, character) {
+        log_info(
+            app,
+            "companion_memory",
+            format!(
+                "redirecting session {} to companion memory pipeline",
+                session.id
+            ),
+        );
+        return companion::memory::process_turn(app, session, settings, character).await;
     }
 
     let window_size = dynamic.summary_message_interval.max(1) as usize;

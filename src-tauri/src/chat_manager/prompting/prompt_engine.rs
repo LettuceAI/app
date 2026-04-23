@@ -2299,7 +2299,14 @@ pub fn build_system_prompt_entries(
         .unwrap_or(false);
     let has_author_note = author_note_text.is_some();
     let has_key_memories = if dynamic_memory_active {
-        !session.memory_embeddings.is_empty()
+        if companion::memory::is_enabled(settings, session, character) {
+            !companion::memory::prompt_memory_lines(session, character).is_empty()
+        } else {
+            session
+                .memory_embeddings
+                .iter()
+                .any(|memory| !memory.is_cold || memory.is_pinned)
+        }
     } else {
         has_manual_memories(&session.memories)
     };
@@ -2386,16 +2393,37 @@ pub fn build_system_prompt_entries(
         }
     }
 
+    let rendered_key_memories = if dynamic_memory_active {
+        if companion::memory::is_enabled(settings, session, character) {
+            companion::memory::prompt_memory_lines(session, character)
+        } else {
+            session
+                .memory_embeddings
+                .iter()
+                .filter(|mem| !mem.is_cold || mem.is_pinned)
+                .map(|mem| format!("- {}", mem.text))
+                .collect::<Vec<_>>()
+        }
+    } else if has_manual_memories(&session.memories) {
+        render_manual_memory_lines(&session.memories)
+            .lines()
+            .map(|line| line.to_string())
+            .collect()
+    } else {
+        Vec::new()
+    };
+
     if !has_placeholder(&base_entries, "{{key_memories}}") {
         if has_key_memories {
             let mut content = String::from("# Key Memories\n");
             content.push_str("Important facts to remember in this conversation:\n");
             if dynamic_memory_active {
-                for mem in &session.memory_embeddings {
-                    content.push_str(&format!("- {}\n", mem.text));
+                for line in &rendered_key_memories {
+                    content.push_str(line);
+                    content.push('\n');
                 }
             } else {
-                content.push_str(&render_manual_memory_lines(&session.memories));
+                content.push_str(&rendered_key_memories.join("\n"));
                 content.push('\n');
             }
             rendered_entries.push(SystemPromptEntry {
@@ -2936,12 +2964,17 @@ fn render_with_context_internal(
     }
 
     let key_memories_text = if dynamic_memory_active && !session.memory_embeddings.is_empty() {
-        session
-            .memory_embeddings
-            .iter()
-            .map(|m| format!("- {}", m.text))
-            .collect::<Vec<_>>()
-            .join("\n")
+        if companion::memory::is_enabled(settings, session, character) {
+            companion::memory::prompt_memory_lines(session, character).join("\n")
+        } else {
+            session
+                .memory_embeddings
+                .iter()
+                .filter(|memory| !memory.is_cold || memory.is_pinned)
+                .map(|memory| format!("- {}", memory.text))
+                .collect::<Vec<_>>()
+                .join("\n")
+        }
     } else if !has_manual_memories(&session.memories) {
         String::new()
     } else {

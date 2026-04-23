@@ -7,6 +7,7 @@ use crate::chat_manager::attachments::{
     cleanup_attachments, load_attachment_data, persist_attachments,
 };
 use crate::chat_manager::commands::take_aborted_request;
+use crate::chat_manager::companion;
 use crate::chat_manager::execution::{
     build_model_attempts, build_provider_extra_fields, emit_fallback_retry_toast, RequestSettings,
 };
@@ -171,9 +172,31 @@ impl RegenerateFlow {
         );
 
         let dynamic_memory_enabled = is_dynamic_memory_active(settings, &character);
+        let companion_memory_enabled =
+            companion::memory::is_enabled(settings, &session, &character);
         let dynamic_window = dynamic_window_size(settings);
 
-        let relevant_memories = if dynamic_memory_enabled && !session.memory_embeddings.is_empty() {
+        let relevant_memories = if companion_memory_enabled && !session.memory_embeddings.is_empty()
+        {
+            let messages_up_to: Vec<StoredMessage> = session
+                .messages
+                .iter()
+                .take(target_index + 1)
+                .cloned()
+                .collect();
+            let search_query = if context_enrichment_enabled(&context.settings) {
+                build_enriched_query(&messages_up_to)
+            } else {
+                messages_up_to
+                    .iter()
+                    .rev()
+                    .find(|m| m.role == "user")
+                    .map(|m| m.content.clone())
+                    .unwrap_or_default()
+            };
+            companion::memory::select_relevant_memories(&app, &session, &character, &search_query)
+                .await
+        } else if dynamic_memory_enabled && !session.memory_embeddings.is_empty() {
             let fixed = ensure_pinned_hot(&mut session.memory_embeddings);
             if fixed > 0 {
                 log_info(
