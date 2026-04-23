@@ -2565,6 +2565,13 @@ async fn run_memory_tool_update(
                             access_count: 0,
                             match_score: None,
                             category: Some(category),
+                            canonical_entities: Vec::new(),
+                            fact_signature: None,
+                            fact_polarity: None,
+                            source_role: None,
+                            superseded_by: None,
+                            superseded_at: None,
+                            supersedes: Vec::new(),
                         });
                         let action = json!({
                             "name": "create_memory",
@@ -3004,6 +3011,13 @@ async fn run_memory_tool_update(
                         access_count: 0,
                         match_score: None,
                         category: Some(category.clone()),
+                        canonical_entities: Vec::new(),
+                        fact_signature: None,
+                        fact_polarity: None,
+                        source_role: None,
+                        superseded_by: None,
+                        superseded_at: None,
+                        supersedes: Vec::new(),
                     });
                     actions_log.push(json!({
                         "name": "create_memory",

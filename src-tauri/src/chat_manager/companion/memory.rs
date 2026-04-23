@@ -11,7 +11,9 @@ use crate::chat_manager::memory::dynamic::{
     normalize_query_text, search_cold_memory_indices_by_keyword,
 };
 use crate::chat_manager::storage::save_session;
-use crate::chat_manager::types::{Character, MemoryEmbedding, Session, Settings, StoredMessage};
+use crate::chat_manager::types::{
+    Character, MemoryEmbedding, MemoryEntityAnchor, Session, Settings, StoredMessage,
+};
 use crate::embedding;
 use crate::embedding::emotion::{classify_text, EmotionClassification};
 use crate::embedding::ner::{extract_entities, NamedEntitySpan};
@@ -37,6 +39,10 @@ struct CompanionMemoryCandidate {
     category: &'static str,
     pinned: bool,
     importance: f32,
+    canonical_entities: Vec<MemoryEntityAnchor>,
+    fact_signature: Option<String>,
+    fact_polarity: Option<i8>,
+    source_role: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,6 +50,16 @@ enum PrototypeSpeaker {
     User,
     Assistant,
     Any,
+}
+
+impl PrototypeSpeaker {
+    fn as_role_name(self) -> &'static str {
+        match self {
+            PrototypeSpeaker::User => "user",
+            PrototypeSpeaker::Assistant => "assistant",
+            PrototypeSpeaker::Any => "any",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -69,8 +85,36 @@ struct SentenceChunk {
     end: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CandidateDisposition {
+    Create,
+    SkipDuplicate,
+}
+
 fn config(character: &Character) -> super::CompanionMemoryConfig {
     companion_config(character).memory
+}
+
+fn memory_is_active(memory: &MemoryEmbedding) -> bool {
+    memory.superseded_by.is_none()
+}
+
+fn active_memories(session: &Session) -> Vec<MemoryEmbedding> {
+    session
+        .memory_embeddings
+        .iter()
+        .filter(|memory| memory_is_active(memory))
+        .cloned()
+        .collect()
+}
+
+fn active_memory_texts(session: &Session) -> Vec<String> {
+    session
+        .memory_embeddings
+        .iter()
+        .filter(|memory| memory_is_active(memory))
+        .map(|memory| memory.text.clone())
+        .collect()
 }
 
 pub fn is_enabled(settings: &Settings, session: &Session, character: &Character) -> bool {
@@ -97,6 +141,7 @@ pub fn prompt_memory_lines(session: &Session, character: &Character) -> Vec<Stri
     let mut scored = session
         .memory_embeddings
         .iter()
+        .filter(|memory| memory_is_active(memory))
         .filter(|memory| !memory.is_cold || memory.is_pinned)
         .map(|memory| {
             (
@@ -153,6 +198,7 @@ pub async fn select_relevant_memories(
         .memory_embeddings
         .iter()
         .enumerate()
+        .filter(|(_, memory)| memory_is_active(memory))
         .filter(|(_, memory)| !memory.is_cold || memory.is_pinned)
         .filter_map(|(index, memory)| {
             let cosine = query_embedding
@@ -207,14 +253,11 @@ pub async fn select_relevant_memories(
     }
 
     let normalized_query = normalize_query_text(&query);
-    search_cold_memory_indices_by_keyword(
-        &session.memory_embeddings,
-        &normalized_query,
-        cfg.retrieval_limit as usize,
-    )
-    .into_iter()
-    .filter_map(|index| session.memory_embeddings.get(index).cloned())
-    .collect()
+    let active = active_memories(session);
+    search_cold_memory_indices_by_keyword(&active, &normalized_query, cfg.retrieval_limit as usize)
+        .into_iter()
+        .filter_map(|index| active.get(index).cloned())
+        .collect()
 }
 
 pub async fn process_turn(
@@ -246,11 +289,7 @@ pub async fn process_turn(
     if candidates.is_empty() {
         demote_over_budget(session, settings, &cfg);
         trim_to_max_entries(session, &cfg);
-        session.memories = session
-            .memory_embeddings
-            .iter()
-            .map(|memory| memory.text.clone())
-            .collect();
+        session.memories = active_memory_texts(session);
         session.updated_at = now;
         save_session(app, session)?;
         return Ok(());
@@ -284,26 +323,38 @@ pub async fn process_turn(
                 }
             };
 
-        if let Some(reason) = find_duplicate_memory_reason(
-            &candidate.text,
-            embedding.as_deref(),
-            &session.memory_embeddings,
-        ) {
+        let decision =
+            resolve_candidate_write(&candidate, embedding.as_deref(), &session.memory_embeddings);
+
+        if decision == CandidateDisposition::SkipDuplicate {
             log_info(
                 app,
                 "companion_memory",
                 format!(
-                    "skipping duplicate companion memory category={} reason={} text='{}'",
-                    candidate.category, reason, candidate.text
+                    "skipping duplicate companion memory category={} text='{}'",
+                    candidate.category, candidate.text
                 ),
             );
             continue;
         }
 
+        let superseded_indices = detect_superseded_memories(
+            &candidate,
+            embedding.as_deref(),
+            &session.memory_embeddings,
+        );
+
+        let new_memory_id = generate_memory_id();
+        let supersedes = superseded_indices
+            .iter()
+            .filter_map(|index| session.memory_embeddings.get(*index))
+            .map(|memory| memory.id.clone())
+            .collect::<Vec<_>>();
+
         let token_count =
             crate::embedding::tokenizer::count_tokens(app, &candidate.text).unwrap_or(0);
         session.memory_embeddings.push(MemoryEmbedding {
-            id: generate_memory_id(),
+            id: new_memory_id.clone(),
             text: candidate.text,
             embedding: embedding.unwrap_or_default(),
             created_at: now,
@@ -315,18 +366,23 @@ pub async fn process_turn(
             access_count: 0,
             match_score: None,
             category: Some(candidate.category.to_string()),
+            canonical_entities: candidate.canonical_entities,
+            fact_signature: candidate.fact_signature,
+            fact_polarity: candidate.fact_polarity,
+            source_role: Some(candidate.source_role),
+            superseded_by: None,
+            superseded_at: None,
+            supersedes: supersedes.clone(),
         });
+
+        mark_memories_superseded(session, &superseded_indices, &new_memory_id, now);
         created += 1;
     }
 
     trim_to_max_entries(session, &cfg);
     demote_over_budget(session, settings, &cfg);
 
-    session.memories = session
-        .memory_embeddings
-        .iter()
-        .map(|memory| memory.text.clone())
-        .collect();
+    session.memories = active_memory_texts(session);
     session.updated_at = now;
     save_session(app, session)?;
 
@@ -359,6 +415,7 @@ fn top_prompt_memories(session: &Session, character: &Character) -> Vec<MemoryEm
     let mut scored = session
         .memory_embeddings
         .iter()
+        .filter(|memory| memory_is_active(memory))
         .filter(|memory| !memory.is_cold || memory.is_pinned)
         .cloned()
         .map(|memory| (prompt_retention_score(&memory, &cfg, now), memory))
@@ -437,6 +494,10 @@ fn prompt_retention_score(
     cfg: &super::CompanionMemoryConfig,
     now: u64,
 ) -> f32 {
+    if !memory_is_active(memory) {
+        return 0.01;
+    }
+
     let mut score = memory.importance_score;
     if memory.is_pinned {
         score += 2.0;
@@ -522,13 +583,14 @@ async fn build_candidates(
         for sentence in split_sentences(&message.content) {
             let sentence_entities =
                 entities_for_sentence(&message_entities, sentence.start, sentence.end);
+            let canonical_entities = canonicalize_candidate_entities(session, &sentence_entities);
             let features = SentenceFeatures::new(&sentence.text, &sentence_entities);
             if let Some(candidate) = route_sentence_candidate(
                 app,
                 speaker,
                 &sentence.text,
                 &features,
-                &sentence_entities,
+                &canonical_entities,
             )
             .await
             {
@@ -632,6 +694,112 @@ fn entities_for_sentence(
         .filter(|entity| entity.start < end && entity.end > start)
         .cloned()
         .collect()
+}
+
+fn canonicalize_candidate_entities(
+    session: &Session,
+    entities: &[NamedEntitySpan],
+) -> Vec<MemoryEntityAnchor> {
+    let existing = session
+        .memory_embeddings
+        .iter()
+        .flat_map(|memory| memory.canonical_entities.iter())
+        .cloned()
+        .collect::<Vec<_>>();
+
+    let mut seen = HashSet::new();
+    let mut canonical = Vec::new();
+    for entity in entities {
+        let normalized_surface = normalize_entity_surface(&entity.text);
+        if normalized_surface.is_empty() {
+            continue;
+        }
+
+        let matched = existing
+            .iter()
+            .filter(|anchor| anchor.label.eq_ignore_ascii_case(&entity.label))
+            .filter_map(|anchor| {
+                let score = entity_alias_score(&normalized_surface, &anchor.surface);
+                (score >= 0.78).then_some((anchor, score))
+            })
+            .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        let (canonical_key, canonical_name) = if let Some((anchor, _)) = matched {
+            (
+                anchor.canonical_key.clone(),
+                choose_canonical_name(&entity.text, &anchor.canonical_name),
+            )
+        } else {
+            (
+                build_entity_canonical_key(&entity.label, &normalized_surface),
+                collapse_whitespace(entity.text.trim()),
+            )
+        };
+
+        let dedupe_key = format!("{}::{}", entity.label.to_uppercase(), canonical_key);
+        if !seen.insert(dedupe_key) {
+            continue;
+        }
+
+        canonical.push(MemoryEntityAnchor {
+            label: entity.label.to_uppercase(),
+            surface: collapse_whitespace(entity.text.trim()),
+            canonical_key,
+            canonical_name,
+            confidence: entity.score,
+        });
+    }
+
+    canonical
+}
+
+fn normalize_entity_surface(text: &str) -> String {
+    normalize_query_text(text)
+        .split_whitespace()
+        .filter(|token| !matches!(*token, "a" | "an" | "the" | "my" | "our" | "their"))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn build_entity_canonical_key(label: &str, normalized_surface: &str) -> String {
+    format!(
+        "{}:{}",
+        label.to_lowercase(),
+        normalized_surface.replace(' ', "_")
+    )
+}
+
+fn entity_alias_score(a: &str, b: &str) -> f32 {
+    let normalized_b = normalize_entity_surface(b);
+    if a == normalized_b {
+        return 1.0;
+    }
+
+    let a_tokens = a.split_whitespace().collect::<HashSet<_>>();
+    let b_tokens = normalized_b.split_whitespace().collect::<HashSet<_>>();
+    if a_tokens.is_empty() || b_tokens.is_empty() {
+        return 0.0;
+    }
+
+    let overlap = a_tokens.intersection(&b_tokens).count() as f32;
+    let union = a_tokens.union(&b_tokens).count() as f32;
+    let jaccard = if union > 0.0 { overlap / union } else { 0.0 };
+
+    if (a.contains(&normalized_b) || normalized_b.contains(a)) && jaccard >= 0.5 {
+        return 0.88;
+    }
+
+    jaccard
+}
+
+fn choose_canonical_name(candidate: &str, existing: &str) -> String {
+    let candidate = collapse_whitespace(candidate.trim());
+    let existing = collapse_whitespace(existing.trim());
+    if candidate.len() > existing.len() {
+        candidate
+    } else {
+        existing
+    }
 }
 
 fn collapse_whitespace(text: &str) -> String {
@@ -799,7 +967,7 @@ async fn route_sentence_candidate(
     speaker: PrototypeSpeaker,
     sentence: &str,
     features: &SentenceFeatures,
-    entities: &[NamedEntitySpan],
+    entities: &[MemoryEntityAnchor],
 ) -> Option<CompanionMemoryCandidate> {
     let sentence_embedding =
         match embedding::compute_embedding(app.clone(), sentence.to_string()).await {
@@ -871,6 +1039,10 @@ async fn route_sentence_candidate(
         format_memory_text(prototype.category, speaker, sentence, entities),
         pinned,
         importance,
+        entities.to_vec(),
+        derive_fact_signature(prototype.category, sentence, entities),
+        derive_fact_polarity(prototype.category, sentence),
+        speaker.as_role_name().to_string(),
     ))
 }
 
@@ -939,6 +1111,127 @@ fn entity_signal_bonus(
     }
 }
 
+fn derive_fact_signature(
+    category: &str,
+    sentence: &str,
+    entities: &[MemoryEntityAnchor],
+) -> Option<String> {
+    match category {
+        CATEGORY_BOUNDARY | CATEGORY_PREFERENCE | CATEGORY_PROFILE | CATEGORY_ROUTINE => {
+            let topic = normalized_topic_key(sentence);
+            if topic.is_empty() {
+                None
+            } else {
+                Some(format!("{}::{}", category, topic))
+            }
+        }
+        CATEGORY_EPISODIC | CATEGORY_MILESTONE => {
+            let entity_key = entities
+                .iter()
+                .map(|entity| entity.canonical_key.clone())
+                .take(3)
+                .collect::<Vec<_>>()
+                .join("|");
+            let topic = normalized_topic_key(sentence);
+            if entity_key.is_empty() && topic.is_empty() {
+                None
+            } else if entity_key.is_empty() {
+                Some(format!("{}::{}", category, topic))
+            } else if topic.is_empty() {
+                Some(format!("{}::{}", category, entity_key))
+            } else {
+                Some(format!("{}::{}::{}", category, entity_key, topic))
+            }
+        }
+        _ => None,
+    }
+}
+
+fn normalized_topic_key(sentence: &str) -> String {
+    normalize_query_text(sentence)
+        .split_whitespace()
+        .filter(|token| {
+            !matches!(
+                *token,
+                "i" | "im"
+                    | "ive"
+                    | "ill"
+                    | "me"
+                    | "my"
+                    | "mine"
+                    | "you"
+                    | "your"
+                    | "yours"
+                    | "we"
+                    | "our"
+                    | "us"
+                    | "the"
+                    | "a"
+                    | "an"
+                    | "to"
+                    | "for"
+                    | "of"
+                    | "and"
+                    | "but"
+                    | "that"
+                    | "this"
+                    | "it"
+                    | "is"
+                    | "are"
+                    | "was"
+                    | "were"
+                    | "be"
+                    | "been"
+                    | "being"
+                    | "do"
+                    | "does"
+                    | "did"
+                    | "have"
+                    | "has"
+                    | "had"
+                    | "would"
+                    | "could"
+                    | "should"
+                    | "can"
+                    | "will"
+                    | "just"
+                    | "really"
+                    | "very"
+            )
+        })
+        .take(8)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn derive_fact_polarity(category: &str, sentence: &str) -> Option<i8> {
+    match category {
+        CATEGORY_BOUNDARY | CATEGORY_PREFERENCE | CATEGORY_PROFILE | CATEGORY_ROUTINE
+        | CATEGORY_EPISODIC => {
+            let normalized = normalize_query_text(sentence);
+            let has_negative = normalized.split_whitespace().any(|token| {
+                matches!(
+                    token,
+                    "not"
+                        | "dont"
+                        | "never"
+                        | "no"
+                        | "cant"
+                        | "wont"
+                        | "dislike"
+                        | "hate"
+                        | "avoid"
+                        | "stop"
+                        | "against"
+                        | "refuse"
+                )
+            });
+            Some(if has_negative { -1 } else { 1 })
+        }
+        _ => None,
+    }
+}
+
 fn relationship_emotion_strength(emotion: Option<&EmotionClassification>) -> f32 {
     emotion
         .map(|emotion| {
@@ -975,7 +1268,7 @@ fn format_memory_text(
     category: &str,
     speaker: PrototypeSpeaker,
     sentence: &str,
-    entities: &[NamedEntitySpan],
+    entities: &[MemoryEntityAnchor],
 ) -> String {
     let label = match (category, speaker) {
         (CATEGORY_BOUNDARY, _) => "User boundary",
@@ -999,12 +1292,12 @@ fn format_memory_text(
     text
 }
 
-fn summarize_entities(entities: &[NamedEntitySpan]) -> Option<String> {
+fn summarize_entities(entities: &[MemoryEntityAnchor]) -> Option<String> {
     let mut seen = HashSet::new();
     let mut ranked = entities
         .iter()
         .filter_map(|entity| {
-            let normalized = collapse_whitespace(entity.text.trim());
+            let normalized = collapse_whitespace(entity.canonical_name.trim());
             if normalized.is_empty() {
                 return None;
             }
@@ -1012,7 +1305,7 @@ fn summarize_entities(entities: &[NamedEntitySpan]) -> Option<String> {
             if !seen.insert(dedupe) {
                 return None;
             }
-            Some((entity.score, entity.label.as_str(), normalized))
+            Some((entity.confidence, entity.label.as_str(), normalized))
         })
         .collect::<Vec<_>>();
 
@@ -1057,6 +1350,10 @@ fn emotional_snapshot_candidate(
         format!("Recent emotional tone: {}.", fragments.join(", ")),
         false,
         0.72,
+        Vec::new(),
+        None,
+        None,
+        "system".to_string(),
     ))
 }
 
@@ -1065,12 +1362,214 @@ fn candidate(
     text: String,
     pinned: bool,
     importance: f32,
+    canonical_entities: Vec<MemoryEntityAnchor>,
+    fact_signature: Option<String>,
+    fact_polarity: Option<i8>,
+    source_role: String,
 ) -> CompanionMemoryCandidate {
     CompanionMemoryCandidate {
         text: clamp_memory_text(&text),
         category,
         pinned,
         importance,
+        canonical_entities,
+        fact_signature,
+        fact_polarity,
+        source_role,
+    }
+}
+
+fn resolve_candidate_write(
+    candidate: &CompanionMemoryCandidate,
+    embedding: Option<&[f32]>,
+    existing_memories: &[MemoryEmbedding],
+) -> CandidateDisposition {
+    if let Some(reason) = find_duplicate_memory_reason(
+        &candidate.text,
+        embedding,
+        &active_memory_slice(existing_memories),
+    ) {
+        let _ = reason;
+        return CandidateDisposition::SkipDuplicate;
+    }
+
+    let candidate_signature = candidate.fact_signature.as_deref();
+    let candidate_topic = normalized_topic_key(&candidate.text);
+    let candidate_polarity = candidate.fact_polarity;
+
+    for memory in existing_memories
+        .iter()
+        .filter(|memory| memory_is_active(memory))
+    {
+        if memory.category.as_deref() != Some(candidate.category) {
+            continue;
+        }
+
+        let existing_signature = memory_signature(memory);
+        let exact_signature_match = candidate_signature
+            .zip(existing_signature.as_deref())
+            .is_some_and(|(a, b)| a == b);
+        let topic_overlap = fact_topic_overlap(memory, &candidate_topic);
+        let entity_overlap = canonical_entity_overlap(memory, &candidate.canonical_entities);
+        let cosine = embedding
+            .filter(|_| !memory.embedding.is_empty())
+            .map(|value| cosine_similarity(value, &memory.embedding))
+            .unwrap_or(0.0);
+
+        if exact_signature_match
+            && candidate_polarity == memory.fact_polarity
+            && (cosine >= 0.74 || topic_overlap >= 0.72 || entity_overlap >= 0.8)
+        {
+            return CandidateDisposition::SkipDuplicate;
+        }
+    }
+
+    CandidateDisposition::Create
+}
+
+fn detect_superseded_memories(
+    candidate: &CompanionMemoryCandidate,
+    embedding: Option<&[f32]>,
+    existing_memories: &[MemoryEmbedding],
+) -> Vec<usize> {
+    let mut superseded = Vec::new();
+    let candidate_signature = candidate.fact_signature.as_deref();
+    let candidate_topic = normalized_topic_key(&candidate.text);
+    let candidate_polarity = candidate.fact_polarity;
+
+    for (index, memory) in existing_memories.iter().enumerate() {
+        if !memory_is_active(memory) || memory.category.as_deref() != Some(candidate.category) {
+            continue;
+        }
+
+        let existing_signature = memory_signature(memory);
+        let exact_signature_match = candidate_signature
+            .zip(existing_signature.as_deref())
+            .is_some_and(|(a, b)| a == b);
+        let polarity_conflict = candidate_polarity
+            .zip(memory.fact_polarity)
+            .is_some_and(|(a, b)| a != b);
+        let topic_overlap = fact_topic_overlap(memory, &candidate_topic);
+        let entity_overlap = canonical_entity_overlap(memory, &candidate.canonical_entities);
+        let cosine = embedding
+            .filter(|_| !memory.embedding.is_empty())
+            .map(|value| cosine_similarity(value, &memory.embedding))
+            .unwrap_or(0.0);
+
+        let should_supersede = if exact_signature_match && polarity_conflict {
+            true
+        } else if exact_signature_match
+            && cosine >= 0.64
+            && candidate.text.len() > memory.text.len()
+        {
+            true
+        } else {
+            polarity_conflict && (topic_overlap >= 0.72 || entity_overlap >= 0.75) && cosine >= 0.52
+        };
+
+        if should_supersede {
+            superseded.push(index);
+        }
+    }
+
+    superseded
+}
+
+fn mark_memories_superseded(
+    session: &mut Session,
+    indices: &[usize],
+    replacement_id: &str,
+    now: u64,
+) {
+    for index in indices {
+        if let Some(memory) = session.memory_embeddings.get_mut(*index) {
+            memory.superseded_by = Some(replacement_id.to_string());
+            memory.superseded_at = Some(now);
+            memory.is_cold = true;
+            memory.importance_score = memory.importance_score.min(0.08);
+        }
+    }
+}
+
+fn active_memory_slice(memories: &[MemoryEmbedding]) -> Vec<MemoryEmbedding> {
+    memories
+        .iter()
+        .filter(|memory| memory_is_active(memory))
+        .cloned()
+        .collect()
+}
+
+fn memory_signature(memory: &MemoryEmbedding) -> Option<String> {
+    memory.fact_signature.clone().or_else(|| {
+        memory
+            .category
+            .as_deref()
+            .and_then(|category| derive_fact_signature(category, &memory_content_text(memory), &[]))
+    })
+}
+
+fn memory_content_text(memory: &MemoryEmbedding) -> String {
+    let without_entities = memory
+        .text
+        .split(" Key entities:")
+        .next()
+        .unwrap_or(memory.text.as_str())
+        .trim();
+
+    without_entities
+        .split_once(':')
+        .map(|(_, content)| content.trim().to_string())
+        .unwrap_or_else(|| without_entities.to_string())
+}
+
+fn fact_topic_overlap(memory: &MemoryEmbedding, candidate_topic: &str) -> f32 {
+    if candidate_topic.is_empty() {
+        return 0.0;
+    }
+
+    let existing_topic = normalized_topic_key(&memory_content_text(memory));
+    if existing_topic.is_empty() {
+        return 0.0;
+    }
+
+    let candidate_tokens = candidate_topic.split_whitespace().collect::<HashSet<_>>();
+    let existing_tokens = existing_topic.split_whitespace().collect::<HashSet<_>>();
+    if candidate_tokens.is_empty() || existing_tokens.is_empty() {
+        return 0.0;
+    }
+
+    let overlap = candidate_tokens.intersection(&existing_tokens).count() as f32;
+    let union = candidate_tokens.union(&existing_tokens).count() as f32;
+    if union == 0.0 {
+        0.0
+    } else {
+        overlap / union
+    }
+}
+
+fn canonical_entity_overlap(
+    memory: &MemoryEmbedding,
+    candidate_entities: &[MemoryEntityAnchor],
+) -> f32 {
+    if memory.canonical_entities.is_empty() || candidate_entities.is_empty() {
+        return 0.0;
+    }
+
+    let existing = memory
+        .canonical_entities
+        .iter()
+        .map(|entity| format!("{}::{}", entity.label, entity.canonical_key))
+        .collect::<HashSet<_>>();
+    let candidate = candidate_entities
+        .iter()
+        .map(|entity| format!("{}::{}", entity.label, entity.canonical_key))
+        .collect::<HashSet<_>>();
+    let overlap = existing.intersection(&candidate).count() as f32;
+    let union = existing.union(&candidate).count() as f32;
+    if union == 0.0 {
+        0.0
+    } else {
+        overlap / union
     }
 }
 
@@ -1093,6 +1592,12 @@ fn trim_trailing_punctuation(text: &str) -> String {
 
 fn apply_companion_decay(memories: &mut [MemoryEmbedding]) {
     for memory in memories.iter_mut() {
+        if !memory_is_active(memory) {
+            memory.is_cold = true;
+            memory.importance_score = memory.importance_score.min(0.05);
+            continue;
+        }
+
         if memory.is_pinned || memory.is_cold {
             continue;
         }
@@ -1184,13 +1689,68 @@ mod tests {
 
     #[test]
     fn user_boundary_sentence_creates_boundary_candidate() {
-        let features =
-            SentenceFeatures::new("Please don't call me by my full name when I'm stressed");
+        let features = SentenceFeatures::new(
+            "Please don't call me by my full name when I'm stressed",
+            &[],
+        );
         assert!(prototype_matches_structure(
             CATEGORY_BOUNDARY,
             &features,
             PrototypeSpeaker::User
         ));
+    }
+
+    #[test]
+    fn fact_signature_normalizes_preference_topic() {
+        let signature = derive_fact_signature(
+            CATEGORY_PREFERENCE,
+            "I really like quiet cafes in the evening",
+            &[],
+        );
+
+        assert_eq!(
+            signature.as_deref(),
+            Some("preference::like quiet cafes in evening")
+        );
+    }
+
+    #[test]
+    fn contradiction_detector_supersedes_opposite_preference() {
+        let existing = MemoryEmbedding {
+            id: "old".to_string(),
+            text: "User preference: I like quiet cafes.".to_string(),
+            embedding: vec![1.0, 0.0],
+            created_at: 0,
+            token_count: 0,
+            is_cold: false,
+            last_accessed_at: 0,
+            importance_score: 1.0,
+            is_pinned: false,
+            access_count: 0,
+            match_score: None,
+            category: Some(CATEGORY_PREFERENCE.to_string()),
+            canonical_entities: Vec::new(),
+            fact_signature: Some("preference::like quiet cafes".to_string()),
+            fact_polarity: Some(1),
+            source_role: Some("user".to_string()),
+            superseded_by: None,
+            superseded_at: None,
+            supersedes: Vec::new(),
+        };
+
+        let candidate = CompanionMemoryCandidate {
+            text: "User preference: I do not like quiet cafes.".to_string(),
+            category: CATEGORY_PREFERENCE,
+            pinned: false,
+            importance: 0.9,
+            canonical_entities: Vec::new(),
+            fact_signature: Some("preference::like quiet cafes".to_string()),
+            fact_polarity: Some(-1),
+            source_role: "user".to_string(),
+        };
+
+        let superseded = detect_superseded_memories(&candidate, Some(&[0.96, 0.04]), &[existing]);
+        assert_eq!(superseded, vec![0]);
     }
 
     #[test]

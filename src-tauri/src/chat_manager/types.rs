@@ -700,6 +700,17 @@ pub struct MessageVariant {
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
+pub struct MemoryEntityAnchor {
+    pub label: String,
+    pub surface: String,
+    pub canonical_key: String,
+    pub canonical_name: String,
+    #[serde(default)]
+    pub confidence: f32,
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct MemoryEmbedding {
     pub id: String,
     pub text: String,
@@ -729,6 +740,27 @@ pub struct MemoryEmbedding {
     /// Category tag for clustering (e.g. character_trait, relationship, plot_event)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub category: Option<String>,
+    /// Canonicalized named entities and anchors used by companion memory.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub canonical_entities: Vec<MemoryEntityAnchor>,
+    /// Stable signature for contradiction/supersession checks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fact_signature: Option<String>,
+    /// Coarse memory polarity for contradiction handling (-1 negative, 1 positive).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fact_polarity: Option<i8>,
+    /// Message role that produced the memory, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_role: Option<String>,
+    /// If present, this memory has been superseded by a newer one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub superseded_by: Option<String>,
+    /// When the memory was superseded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub superseded_at: Option<u64>,
+    /// IDs of older memories this memory replaced.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub supersedes: Vec<String>,
 }
 
 fn default_importance_score() -> f32 {
