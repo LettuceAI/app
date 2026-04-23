@@ -10,6 +10,7 @@ pub enum PromptTemplateType {
     #[default]
     Undefined,
     DirectChat,
+    CompanionChat,
     GroupChatRoleplay,
     GroupChatConversational,
     DynamicMemorySummarizer,
@@ -770,6 +771,8 @@ pub struct Session {
     #[serde(default, skip_serializing)]
     #[allow(dead_code)]
     pub system_prompt: Option<String>,
+    #[serde(default = "default_character_mode")]
+    pub mode: String,
     #[serde(default)]
     pub selected_scene_id: Option<String>,
     #[serde(default)]
@@ -786,6 +789,8 @@ pub struct Session {
     pub voice_autoplay: Option<bool>,
     #[serde(default)]
     pub advanced_model_settings: Option<AdvancedModelSettings>,
+    #[serde(default)]
+    pub companion_state: Option<Value>,
     #[serde(default)]
     pub memories: Vec<String>,
     #[serde(default)]
@@ -837,6 +842,10 @@ pub struct Character {
     pub default_model_id: Option<String>,
     #[serde(default)]
     pub fallback_model_id: Option<String>,
+    #[serde(default = "default_character_mode")]
+    pub mode: String,
+    #[serde(default)]
+    pub companion: Option<Value>,
     #[serde(default = "default_memory_type")]
     pub memory_type: String,
     #[serde(default)]
@@ -858,6 +867,10 @@ pub struct Character {
 
 fn default_memory_type() -> String {
     "manual".to_string()
+}
+
+fn default_character_mode() -> String {
+    "roleplay".to_string()
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug)]

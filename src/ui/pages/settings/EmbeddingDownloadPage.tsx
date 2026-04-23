@@ -267,7 +267,7 @@ export function EmbeddingDownloadPage() {
     : testStatus === "idle"
       ? preStepStatus === "preparing"
         ? "Preparing download..."
-        : "Dynamic Memory requires a local embedding model to function"
+        : "Dynamic Memory now installs local memory and companion-analysis models"
       : testStatus === "testing"
         ? "Verifying model functionality..."
         : testStatus === "passed"

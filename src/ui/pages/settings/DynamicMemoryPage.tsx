@@ -225,6 +225,8 @@ export function DynamicMemoryPage() {
   const [modelVersion, setModelVersion] = useState<string | null>(null);
   const [modelSourceVersion, setModelSourceVersion] = useState<string | null>(null);
   const [availableEmbeddingVersions, setAvailableEmbeddingVersions] = useState<string[]>([]);
+  const [companionEmotionInstalled, setCompanionEmotionInstalled] = useState(false);
+  const [installBundleComplete, setInstallBundleComplete] = useState(false);
   const [selectedEmbeddingVersion, setSelectedEmbeddingVersion] = useState<string | null>(null);
   const [showDownloadModelMenu, setShowDownloadModelMenu] = useState(false);
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
@@ -273,6 +275,8 @@ export function DynamicMemoryPage() {
         setEmbeddingMaxTokens(settings.advancedSettings?.embeddingMaxTokens ?? 2048);
         setEmbeddingKeepModelLoaded(settings.advancedSettings?.embeddingKeepModelLoaded ?? false);
         setModels(settings.models);
+        setCompanionEmotionInstalled(modelInfo.companionEmotionInstalled ?? false);
+        setInstallBundleComplete(modelInfo.installBundleComplete ?? modelInfo.installed);
 
         if (modelInfo.installed) {
           setModelVersion(modelInfo.version);
@@ -430,6 +434,12 @@ export function DynamicMemoryPage() {
     }, "Failed to save keep-model-loaded setting:");
   };
 
+  const navigateToBundleDownload = (version?: "v2" | "v3") => {
+    const targetVersion =
+      version ?? (selectedEmbeddingVersion === "v2" || modelSourceVersion === "v2" ? "v2" : "v3");
+    navigate(`/settings/embedding-download?version=${targetVersion}`);
+  };
+
   const handleDeleteSelectedEmbeddingModel = async () => {
     const version = selectedEmbeddingVersion === "v2" ? "v2" : "v3";
     const confirmed = await confirmBottomMenu({
@@ -454,6 +464,8 @@ export function DynamicMemoryPage() {
       setModelSourceVersion(sourceVersion);
       setAvailableEmbeddingVersions(available);
       setSelectedEmbeddingVersion(sourceVersion);
+      setCompanionEmotionInstalled(modelInfo.companionEmotionInstalled ?? false);
+      setInstallBundleComplete(modelInfo.installBundleComplete ?? modelInfo.installed);
     } catch (err) {
       console.error("Failed to delete model version:", err);
     }
@@ -1149,7 +1161,7 @@ export function DynamicMemoryPage() {
                         <RefreshCw className="h-4 w-4" />
                         {t("dynamicMemory.page.testModel")}
                       </button>
-                      {!hasBothMajorEmbeddingVersionsInstalled && (
+                      {(!hasBothMajorEmbeddingVersionsInstalled || !installBundleComplete) && (
                         <button
                           onClick={() => setShowDownloadModelMenu(true)}
                           className={cn(
@@ -1280,6 +1292,61 @@ export function DynamicMemoryPage() {
                       })}
                     </div>
                   )}
+
+                  <div
+                    className={cn(
+                      "rounded-xl border px-4 py-3",
+                      companionEmotionInstalled
+                        ? "border-accent/20 bg-accent/5"
+                        : "border-warning/20 bg-warning/5",
+                    )}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div
+                        className={cn(
+                          "rounded-lg border p-1.5",
+                          companionEmotionInstalled
+                            ? "border-accent/30 bg-accent/10"
+                            : "border-warning/30 bg-warning/10",
+                        )}
+                      >
+                        <Brain
+                          className={cn(
+                            "h-4 w-4",
+                            companionEmotionInstalled ? "text-accent" : "text-warning",
+                          )}
+                        />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-sm font-medium text-fg">Companion analysis model</p>
+                          <span
+                            className={cn(
+                              "rounded-md border px-2 py-0.5 text-[10px] font-medium",
+                              companionEmotionInstalled
+                                ? "border-accent/25 bg-accent/10 text-accent"
+                                : "border-warning/25 bg-warning/10 text-warning",
+                            )}
+                          >
+                            {companionEmotionInstalled ? "Installed" : "Missing"}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-[11px] leading-relaxed text-fg/50">
+                          Local GoEmotions classifier used for companion emotion regulation. It is
+                          downloaded with the Dynamic Memory model bundle.
+                        </p>
+                        {!installBundleComplete && (
+                          <button
+                            type="button"
+                            onClick={() => navigateToBundleDownload()}
+                            className="mt-3 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs font-medium text-warning transition hover:bg-warning/15"
+                          >
+                            Download complete bundle
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1306,7 +1373,7 @@ export function DynamicMemoryPage() {
                   <RefreshCw className="h-4 w-4" />
                   {t("dynamicMemory.page.testModel")}
                 </button>
-                {!hasBothMajorEmbeddingVersionsInstalled && (
+                {(!hasBothMajorEmbeddingVersionsInstalled || !installBundleComplete) && (
                   <button
                     onClick={() => setShowDownloadModelMenu(true)}
                     className={cn(
@@ -1353,12 +1420,12 @@ export function DynamicMemoryPage() {
           <button
             onClick={() => {
               setShowDownloadModelMenu(false);
-              navigate("/settings/embedding-download?version=v2");
+              navigateToBundleDownload("v2");
             }}
-            disabled={hasV2Installed}
+            disabled={hasV2Installed && installBundleComplete}
             className={cn(
               "flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left transition",
-              hasV2Installed
+              hasV2Installed && installBundleComplete
                 ? "cursor-not-allowed border-fg/10 bg-fg/5 text-fg/35"
                 : "border-fg/10 bg-fg/5 text-fg hover:bg-fg/10",
             )}
@@ -1376,7 +1443,7 @@ export function DynamicMemoryPage() {
                 </div>
               </div>
             </div>
-            {hasV2Installed && (
+            {hasV2Installed && installBundleComplete && (
               <span className="flex items-center gap-1 text-xs text-fg/45">
                 <Check className="h-3.5 w-3.5" />
                 {t("dynamicMemory.page.installed")}
@@ -1386,12 +1453,12 @@ export function DynamicMemoryPage() {
           <button
             onClick={() => {
               setShowDownloadModelMenu(false);
-              navigate("/settings/embedding-download?version=v3");
+              navigateToBundleDownload("v3");
             }}
-            disabled={hasV3Installed}
+            disabled={hasV3Installed && installBundleComplete}
             className={cn(
               "flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left transition",
-              hasV3Installed
+              hasV3Installed && installBundleComplete
                 ? "cursor-not-allowed border-fg/10 bg-fg/5 text-fg/35"
                 : "border-fg/10 bg-fg/5 text-fg hover:bg-fg/10",
             )}
@@ -1409,7 +1476,7 @@ export function DynamicMemoryPage() {
                 </div>
               </div>
             </div>
-            {hasV3Installed && (
+            {hasV3Installed && installBundleComplete && (
               <span className="flex items-center gap-1 text-xs text-fg/45">
                 <Check className="h-3.5 w-3.5" />
                 {t("dynamicMemory.page.installed")}

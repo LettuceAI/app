@@ -7,7 +7,7 @@ use crate::storage_manager::settings::{read_settings_typed, write_settings_typed
 use crate::utils::log_info;
 
 /// Current migration version
-pub const CURRENT_MIGRATION_VERSION: u32 = 56;
+pub const CURRENT_MIGRATION_VERSION: u32 = 58;
 
 pub fn run_migrations(app: &AppHandle) -> Result<(), String> {
     log_info(app, "migrations", "Starting migration check");
@@ -597,6 +597,26 @@ pub fn run_migrations(app: &AppHandle) -> Result<(), String> {
         );
         migrate_v55_to_v56(app)?;
         version = 56;
+    }
+
+    if version < 57 {
+        log_info(
+            app,
+            "migrations",
+            "Running migration v56 -> v57: Add companion character/session fields",
+        );
+        migrate_v56_to_v57(app)?;
+        version = 57;
+    }
+
+    if version < 58 {
+        log_info(
+            app,
+            "migrations",
+            "Running migration v57 -> v58: Add companion session state",
+        );
+        migrate_v57_to_v58(app)?;
+        version = 58;
     }
 
     // Update the stored version
@@ -3148,6 +3168,95 @@ fn migrate_v53_to_v54(app: &AppHandle) -> Result<(), String> {
             [&lorebook_ids_json, &character_id],
         )
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    }
+
+    Ok(())
+}
+
+fn migrate_v56_to_v57(app: &AppHandle) -> Result<(), String> {
+    let conn = crate::storage_manager::db::open_db(app)?;
+
+    let mut has_character_mode = false;
+    let mut has_character_companion = false;
+    let mut has_session_mode = false;
+
+    let mut stmt = conn
+        .prepare("PRAGMA table_info(characters)")
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    let rows = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    for column in rows {
+        let column = column.map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        if column == "mode" {
+            has_character_mode = true;
+        }
+        if column == "companion" {
+            has_character_companion = true;
+        }
+    }
+
+    if !has_character_mode {
+        conn.execute(
+            "ALTER TABLE characters ADD COLUMN mode TEXT NOT NULL DEFAULT 'roleplay'",
+            [],
+        )
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    }
+
+    if !has_character_companion {
+        conn.execute("ALTER TABLE characters ADD COLUMN companion TEXT", [])
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    }
+
+    let mut stmt = conn
+        .prepare("PRAGMA table_info(sessions)")
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    let rows = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    for column in rows {
+        let column = column.map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        if column == "mode" {
+            has_session_mode = true;
+            break;
+        }
+    }
+
+    if !has_session_mode {
+        conn.execute(
+            "ALTER TABLE sessions ADD COLUMN mode TEXT NOT NULL DEFAULT 'roleplay'",
+            [],
+        )
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    }
+
+    Ok(())
+}
+
+fn migrate_v57_to_v58(app: &AppHandle) -> Result<(), String> {
+    let conn = crate::storage_manager::db::open_db(app)?;
+
+    let has_companion_state = conn
+        .prepare("PRAGMA table_info(sessions)")
+        .and_then(|mut stmt| {
+            stmt.query_map([], |row| row.get::<_, String>(1))
+                .and_then(|rows| {
+                    let mut found = false;
+                    for row in rows {
+                        if row? == "companion_state" {
+                            found = true;
+                            break;
+                        }
+                    }
+                    Ok(found)
+                })
+        })
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+
+    if !has_companion_state {
+        conn.execute("ALTER TABLE sessions ADD COLUMN companion_state TEXT", [])
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     }
 
     Ok(())

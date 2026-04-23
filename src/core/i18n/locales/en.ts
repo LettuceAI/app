@@ -413,9 +413,9 @@ export const enMessages = {
       downloadRequired: "Download Required",
       modelRequired: "Embedding Model Required",
       description:
-        "Dynamic Memory requires downloading a local embedding model (~260 MB) to function.",
+        "Dynamic Memory now downloads local memory and companion-analysis models (~265 MB for the default bundle).",
       localStorage: "\u2022 Model will be stored locally on your device",
-      downloadSize: "\u2022 Download size: approximately 260 MB",
+      downloadSize: "\u2022 Download size: approximately 265 MB for the default bundle",
       summarization: "\u2022 Required for conversation summarization",
     },
     embeddingUpgrade: {

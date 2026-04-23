@@ -10,6 +10,8 @@ import { saveAvatar } from "../../../../core/storage/avatars";
 import { convertToImageRef, convertToImageUrl } from "../../../../core/storage/images";
 import type {
   AvatarCrop,
+  CharacterMode,
+  CompanionConfig,
   Model,
   Scene,
   SystemPromptTemplate,
@@ -25,6 +27,10 @@ import {
 } from "../../../../core/storage/characterTransfer";
 import { toast } from "../../../components/toast";
 import { APP_DEFAULT_TEMPLATE_ID } from "../../../../core/prompts/constants";
+import {
+  createDefaultCompanionConfig,
+  withCompanionPromptTemplate,
+} from "../utils/companionDefaults";
 export enum Step {
   Identity = 1,
   Description = 2,
@@ -63,6 +69,7 @@ interface CharacterFormState {
   selectedModelId: string | null;
   selectedFallbackModelId: string | null;
   systemPromptTemplateId: string | null;
+  companionPromptTemplateId: string | null;
   groupChatPromptTemplateId: string | null;
   groupChatRoleplayPromptTemplateId: string | null;
   activeLorebookIds: string[];
@@ -71,6 +78,8 @@ interface CharacterFormState {
   disableAvatarGradient: boolean;
   voiceConfig: CharacterVoiceConfig | null;
   voiceAutoplay: boolean;
+  mode: CharacterMode;
+  companion: CompanionConfig | null;
 
   // Models
   models: Model[];
@@ -109,6 +118,7 @@ type CharacterFormAction =
   | { type: "SET_SELECTED_MODEL_ID"; payload: string | null }
   | { type: "SET_SELECTED_FALLBACK_MODEL_ID"; payload: string | null }
   | { type: "SET_SYSTEM_PROMPT_TEMPLATE_ID"; payload: string | null }
+  | { type: "SET_COMPANION_PROMPT_TEMPLATE_ID"; payload: string | null }
   | { type: "SET_GROUP_CHAT_PROMPT_TEMPLATE_ID"; payload: string | null }
   | { type: "SET_GROUP_CHAT_ROLEPLAY_PROMPT_TEMPLATE_ID"; payload: string | null }
   | { type: "SET_ACTIVE_LOREBOOK_IDS"; payload: string[] }
@@ -117,6 +127,8 @@ type CharacterFormAction =
   | { type: "SET_DISABLE_AVATAR_GRADIENT"; payload: boolean }
   | { type: "SET_VOICE_CONFIG"; payload: CharacterVoiceConfig | null }
   | { type: "SET_VOICE_AUTOPLAY"; payload: boolean }
+  | { type: "SET_MODE"; payload: CharacterMode }
+  | { type: "SET_COMPANION"; payload: CompanionConfig | null }
   | { type: "SET_MODELS"; payload: Model[] }
   | { type: "SET_LOADING_MODELS"; payload: boolean }
   | { type: "SET_PROMPT_TEMPLATES"; payload: SystemPromptTemplate[] }
@@ -149,6 +161,7 @@ const initialState: CharacterFormState = {
   selectedModelId: null,
   selectedFallbackModelId: null,
   systemPromptTemplateId: null,
+  companionPromptTemplateId: null,
   groupChatPromptTemplateId: null,
   groupChatRoleplayPromptTemplateId: null,
   activeLorebookIds: [],
@@ -157,6 +170,8 @@ const initialState: CharacterFormState = {
   disableAvatarGradient: false,
   voiceConfig: null,
   voiceAutoplay: false,
+  mode: "roleplay",
+  companion: null,
   models: [],
   loadingModels: true,
   promptTemplates: [],
@@ -214,6 +229,8 @@ function characterFormReducer(
       return { ...state, selectedFallbackModelId: action.payload };
     case "SET_SYSTEM_PROMPT_TEMPLATE_ID":
       return { ...state, systemPromptTemplateId: action.payload };
+    case "SET_COMPANION_PROMPT_TEMPLATE_ID":
+      return { ...state, companionPromptTemplateId: action.payload };
     case "SET_GROUP_CHAT_PROMPT_TEMPLATE_ID":
       return { ...state, groupChatPromptTemplateId: action.payload };
     case "SET_GROUP_CHAT_ROLEPLAY_PROMPT_TEMPLATE_ID":
@@ -230,6 +247,10 @@ function characterFormReducer(
       return { ...state, voiceConfig: action.payload };
     case "SET_VOICE_AUTOPLAY":
       return { ...state, voiceAutoplay: action.payload };
+    case "SET_MODE":
+      return { ...state, mode: action.payload };
+    case "SET_COMPANION":
+      return { ...state, companion: action.payload };
     case "SET_MODELS":
       return { ...state, models: action.payload };
     case "SET_LOADING_MODELS":
@@ -281,6 +302,13 @@ export function useCharacterForm(draftCharacter?: any) {
                 : Step.Identity,
           });
           dispatch({ type: "SET_NAME", payload: draftCharacter.name || "" });
+          const draftMode: CharacterMode =
+            draftCharacter.mode === "companion" ? "companion" : "roleplay";
+          dispatch({ type: "SET_MODE", payload: draftMode });
+          dispatch({
+            type: "SET_COMPANION",
+            payload: draftCharacter.companion ?? null,
+          });
           dispatch({
             type: "SET_DEFINITION",
             payload: draftCharacter.definition || draftCharacter.description || "",
@@ -341,6 +369,10 @@ export function useCharacterForm(draftCharacter?: any) {
           dispatch({
             type: "SET_SYSTEM_PROMPT_TEMPLATE_ID",
             payload: draftCharacter.promptTemplateId || null,
+          });
+          dispatch({
+            type: "SET_COMPANION_PROMPT_TEMPLATE_ID",
+            payload: draftCharacter.companion?.prompting?.promptTemplateId || null,
           });
           dispatch({
             type: "SET_GROUP_CHAT_PROMPT_TEMPLATE_ID",
@@ -506,6 +538,10 @@ export function useCharacterForm(draftCharacter?: any) {
     dispatch({ type: "SET_SYSTEM_PROMPT_TEMPLATE_ID", payload: id });
   }, []);
 
+  const setCompanionPromptTemplateId = useCallback((id: string | null) => {
+    dispatch({ type: "SET_COMPANION_PROMPT_TEMPLATE_ID", payload: id });
+  }, []);
+
   const setGroupChatPromptTemplateId = useCallback((id: string | null) => {
     dispatch({ type: "SET_GROUP_CHAT_PROMPT_TEMPLATE_ID", payload: id });
   }, []);
@@ -532,6 +568,14 @@ export function useCharacterForm(draftCharacter?: any) {
 
   const setVoiceAutoplay = useCallback((value: boolean) => {
     dispatch({ type: "SET_VOICE_AUTOPLAY", payload: value });
+  }, []);
+
+  const setMode = useCallback((mode: CharacterMode) => {
+    dispatch({ type: "SET_MODE", payload: mode });
+  }, []);
+
+  const setCompanionConfig = useCallback((companion: CompanionConfig | null) => {
+    dispatch({ type: "SET_COMPANION", payload: companion });
   }, []);
 
   const handleAvatarUpload = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
@@ -635,6 +679,13 @@ export function useCharacterForm(draftCharacter?: any) {
         : newScenes;
 
       dispatch({ type: "SET_NAME", payload: characterData.name });
+      const importedMode =
+        (characterData as { mode?: CharacterMode }).mode === "companion" ? "companion" : "roleplay";
+      dispatch({ type: "SET_MODE", payload: importedMode });
+      dispatch({
+        type: "SET_COMPANION",
+        payload: (characterData as { companion?: CompanionConfig | null }).companion ?? null,
+      });
       dispatch({
         type: "SET_DEFINITION",
         payload: characterData.definition || characterData.description || "",
@@ -678,6 +729,12 @@ export function useCharacterForm(draftCharacter?: any) {
       dispatch({
         type: "SET_SYSTEM_PROMPT_TEMPLATE_ID",
         payload: characterData.promptTemplateId || null,
+      });
+      dispatch({
+        type: "SET_COMPANION_PROMPT_TEMPLATE_ID",
+        payload:
+          (characterData as { companion?: { prompting?: { promptTemplateId?: string | null } } })
+            .companion?.prompting?.promptTemplateId || null,
       });
       const importedActiveLorebookIds = (characterData as { activeLorebookIds?: string[] })
         .activeLorebookIds;
@@ -798,11 +855,12 @@ export function useCharacterForm(draftCharacter?: any) {
   }, []);
 
   const handleSave = useCallback(async () => {
+    const requiresScene = state.mode !== "companion";
     if (
       state.definition.trim().length === 0 ||
       state.selectedModelId === null ||
       state.saving ||
-      state.scenes.length === 0
+      (requiresScene && state.scenes.length === 0)
     ) {
       return;
     }
@@ -909,6 +967,13 @@ export function useCharacterForm(draftCharacter?: any) {
 
       console.log("[CreateCharacter] Avatar filename:", avatarFilename || "none");
       console.log("[CreateCharacter] Background image ID:", backgroundImageId || "none");
+      const companionConfig =
+        state.mode === "companion"
+          ? withCompanionPromptTemplate(
+              state.companion ?? createDefaultCompanionConfig(),
+              state.companionPromptTemplateId,
+            )
+          : null;
 
       const characterData = {
         id: characterId,
@@ -921,6 +986,8 @@ export function useCharacterForm(draftCharacter?: any) {
         backgroundImagePath: backgroundImageId || undefined,
         definition: state.definition.trim(),
         description: state.description.trim() || undefined,
+        mode: state.mode,
+        companion: companionConfig,
         nickname: state.nickname.trim() || undefined,
         creator: state.creator.trim() || undefined,
         creatorNotes: state.creatorNotes.trim() || undefined,
@@ -1005,6 +1072,8 @@ export function useCharacterForm(draftCharacter?: any) {
     state.defaultSceneId,
     state.definition,
     state.description,
+    state.mode,
+    state.companion,
     state.nickname,
     state.creator,
     state.creatorNotes,
@@ -1014,6 +1083,7 @@ export function useCharacterForm(draftCharacter?: any) {
     state.selectedModelId,
     state.selectedFallbackModelId,
     state.systemPromptTemplateId,
+    state.companionPromptTemplateId,
     state.groupChatPromptTemplateId,
     state.groupChatRoleplayPromptTemplateId,
     state.activeLorebookIds,
@@ -1027,7 +1097,8 @@ export function useCharacterForm(draftCharacter?: any) {
   // Computed values
   const canContinueIdentity =
     state.name.trim().length > 0 && !state.saving && !state.importingAvatar;
-  const canContinueStartingScene = state.scenes.length > 0 && !state.saving;
+  const canContinueStartingScene =
+    (state.mode === "companion" || state.scenes.length > 0) && !state.saving;
   const canSaveDescription =
     state.definition.trim().length > 0 && state.selectedModelId !== null && !state.saving;
   const progress =
@@ -1062,6 +1133,7 @@ export function useCharacterForm(draftCharacter?: any) {
       setSelectedModelId,
       setSelectedFallbackModelId,
       setSystemPromptTemplateId,
+      setCompanionPromptTemplateId,
       setGroupChatPromptTemplateId,
       setGroupChatRoleplayPromptTemplateId,
       setActiveLorebookIds,
@@ -1069,6 +1141,8 @@ export function useCharacterForm(draftCharacter?: any) {
       setDisableAvatarGradient,
       setVoiceConfig,
       setVoiceAutoplay,
+      setMode,
+      setCompanionConfig,
       handleAvatarUpload,
       handleBackgroundImageUpload,
       handleImport,

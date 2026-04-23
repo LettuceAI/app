@@ -211,10 +211,10 @@ fn read_session_meta_typed_internal(
 ) -> Result<Option<Session>, String> {
     let row = conn
         .query_row(
-            "SELECT character_id, title, background_image_path, system_prompt, selected_scene_id, persona_id, persona_disabled, voice_autoplay, temperature, top_p, max_output_tokens, frequency_penalty, presence_penalty, top_k, memories, memory_embeddings, memory_summary, memory_summary_token_count, memory_tool_events, memory_status, memory_error, archived, created_at, updated_at, prompt_template_id, lorebook_ids_override, memory_progress_step, author_note FROM sessions WHERE id = ?",
+            "SELECT character_id, title, background_image_path, system_prompt, mode, selected_scene_id, persona_id, persona_disabled, voice_autoplay, temperature, top_p, max_output_tokens, frequency_penalty, presence_penalty, top_k, companion_state, memories, memory_embeddings, memory_summary, memory_summary_token_count, memory_tool_events, memory_status, memory_error, archived, created_at, updated_at, prompt_template_id, lorebook_ids_override, memory_progress_step, author_note FROM sessions WHERE id = ?",
             params![id],
             |r| Ok((
-                r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, Option<String>>(2)?, r.get::<_, Option<String>>(3)?, r.get::<_, Option<String>>(4)?, r.get::<_, Option<String>>(5)?, r.get::<_, Option<i64>>(6)?, r.get::<_, Option<i64>>(7)?, r.get::<_, Option<f64>>(8)?, r.get::<_, Option<f64>>(9)?, r.get::<_, Option<i64>>(10)?, r.get::<_, Option<f64>>(11)?, r.get::<_, Option<f64>>(12)?, r.get::<_, Option<i64>>(13)?, r.get::<_, String>(14)?, r.get::<_, String>(15)?, r.get::<_, Option<String>>(16)?, r.get::<_, i64>(17)?, r.get::<_, String>(18)?, r.get::<_, Option<String>>(19)?, r.get::<_, Option<String>>(20)?, r.get::<_, i64>(21)?, r.get::<_, i64>(22)?, r.get::<_, i64>(23)?, r.get::<_, Option<String>>(24)?, r.get::<_, Option<String>>(25)?, r.get::<_, Option<i64>>(26)?, r.get::<_, Option<String>>(27)?
+                r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, Option<String>>(2)?, r.get::<_, Option<String>>(3)?, r.get::<_, String>(4)?, r.get::<_, Option<String>>(5)?, r.get::<_, Option<String>>(6)?, r.get::<_, Option<i64>>(7)?, r.get::<_, Option<i64>>(8)?, r.get::<_, Option<f64>>(9)?, r.get::<_, Option<f64>>(10)?, r.get::<_, Option<i64>>(11)?, r.get::<_, Option<f64>>(12)?, r.get::<_, Option<f64>>(13)?, r.get::<_, Option<i64>>(14)?, r.get::<_, Option<String>>(15)?, r.get::<_, String>(16)?, r.get::<_, String>(17)?, r.get::<_, Option<String>>(18)?, r.get::<_, i64>(19)?, r.get::<_, String>(20)?, r.get::<_, Option<String>>(21)?, r.get::<_, Option<String>>(22)?, r.get::<_, i64>(23)?, r.get::<_, i64>(24)?, r.get::<_, i64>(25)?, r.get::<_, Option<String>>(26)?, r.get::<_, Option<String>>(27)?, r.get::<_, Option<i64>>(28)?, r.get::<_, Option<String>>(29)?
             )),
         )
         .optional()
@@ -225,6 +225,7 @@ fn read_session_meta_typed_internal(
         title,
         background_image_path,
         system_prompt,
+        mode,
         selected_scene_id,
         persona_id,
         persona_disabled,
@@ -235,6 +236,7 @@ fn read_session_meta_typed_internal(
         frequency_penalty,
         presence_penalty,
         top_k,
+        companion_state_json,
         memories_json,
         memory_embeddings_json,
         memory_summary,
@@ -260,6 +262,7 @@ fn read_session_meta_typed_internal(
         title,
         background_image_path,
         system_prompt,
+        mode,
         selected_scene_id,
         prompt_template_id,
         lorebook_ids_override: parse_optional_json_or_default(
@@ -277,6 +280,9 @@ fn read_session_meta_typed_internal(
             presence_penalty,
             top_k,
         ),
+        companion_state: companion_state_json
+            .as_deref()
+            .and_then(|value| serde_json::from_str(value).ok()),
         memories: parse_json_or_default(&memories_json),
         memory_embeddings: parse_json_or_default::<Vec<MemoryEmbedding>>(&memory_embeddings_json),
         memory_summary,
@@ -672,6 +678,12 @@ fn upsert_session_meta_value(app: &tauri::AppHandle, s: &JsonValue) -> Result<()
         .get("systemPrompt")
         .and_then(|v| v.as_str())
         .map(|x| x.to_string());
+    let mode = s
+        .get("mode")
+        .and_then(|v| v.as_str())
+        .map(|value| value.to_string())
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| "roleplay".to_string());
     let selected_scene_id = s
         .get("selectedSceneId")
         .and_then(|v| v.as_str())
@@ -721,6 +733,12 @@ fn upsert_session_meta_value(app: &tauri::AppHandle, s: &JsonValue) -> Result<()
         Some(v) => serde_json::to_string(v).unwrap_or_else(|_| "[]".to_string()),
         None => "[]".to_string(),
     };
+    let companion_state_json = match s.get("companionState") {
+        Some(v) if !v.is_null() => {
+            Some(serde_json::to_string(v).unwrap_or_else(|_| "{}".to_string()))
+        }
+        _ => None,
+    };
     let memory_status = s
         .get("memoryStatus")
         .and_then(|v| v.as_str())
@@ -748,13 +766,14 @@ fn upsert_session_meta_value(app: &tauri::AppHandle, s: &JsonValue) -> Result<()
     let top_k = adv.and_then(|v| v.get("topK")).and_then(|v| v.as_i64());
 
     conn.execute(
-        r#"INSERT INTO sessions (id, character_id, title, background_image_path, system_prompt, selected_scene_id, prompt_template_id, lorebook_ids_override, author_note, persona_id, persona_disabled, voice_autoplay, temperature, top_p, max_output_tokens, frequency_penalty, presence_penalty, top_k, memories, memory_embeddings, memory_summary, memory_summary_token_count, memory_tool_events, memory_status, memory_error, memory_progress_step, archived, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        r#"INSERT INTO sessions (id, character_id, title, background_image_path, system_prompt, mode, selected_scene_id, prompt_template_id, lorebook_ids_override, author_note, persona_id, persona_disabled, voice_autoplay, temperature, top_p, max_output_tokens, frequency_penalty, presence_penalty, top_k, companion_state, memories, memory_embeddings, memory_summary, memory_summary_token_count, memory_tool_events, memory_status, memory_error, memory_progress_step, archived, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
               character_id=excluded.character_id,
               title=excluded.title,
               background_image_path=excluded.background_image_path,
               system_prompt=excluded.system_prompt,
+              mode=excluded.mode,
               selected_scene_id=excluded.selected_scene_id,
               prompt_template_id=excluded.prompt_template_id,
               lorebook_ids_override=excluded.lorebook_ids_override,
@@ -768,6 +787,7 @@ fn upsert_session_meta_value(app: &tauri::AppHandle, s: &JsonValue) -> Result<()
               frequency_penalty=excluded.frequency_penalty,
               presence_penalty=excluded.presence_penalty,
               top_k=excluded.top_k,
+              companion_state=excluded.companion_state,
               memories=excluded.memories,
               memory_embeddings=excluded.memory_embeddings,
               memory_summary=excluded.memory_summary,
@@ -784,6 +804,7 @@ fn upsert_session_meta_value(app: &tauri::AppHandle, s: &JsonValue) -> Result<()
             title,
             background_image_path,
             system_prompt,
+            mode,
             selected_scene_id,
             prompt_template_id,
             lorebook_ids_override_json,
@@ -797,6 +818,7 @@ fn upsert_session_meta_value(app: &tauri::AppHandle, s: &JsonValue) -> Result<()
             frequency_penalty,
             presence_penalty,
             top_k,
+            companion_state_json,
             &memories_json,
             &memory_embeddings_json,
             memory_summary,
@@ -1030,10 +1052,10 @@ pub fn messages_upsert_batch_internal(
 fn read_session_meta(conn: &rusqlite::Connection, id: &str) -> Result<Option<JsonValue>, String> {
     let row = conn
         .query_row(
-            "SELECT character_id, title, background_image_path, system_prompt, selected_scene_id, persona_id, persona_disabled, voice_autoplay, temperature, top_p, max_output_tokens, frequency_penalty, presence_penalty, top_k, memories, memory_embeddings, memory_summary, memory_summary_token_count, memory_tool_events, memory_status, memory_error, archived, created_at, updated_at, prompt_template_id, lorebook_ids_override, memory_progress_step, author_note FROM sessions WHERE id = ?",
+            "SELECT character_id, title, background_image_path, system_prompt, mode, selected_scene_id, persona_id, persona_disabled, voice_autoplay, temperature, top_p, max_output_tokens, frequency_penalty, presence_penalty, top_k, companion_state, memories, memory_embeddings, memory_summary, memory_summary_token_count, memory_tool_events, memory_status, memory_error, archived, created_at, updated_at, prompt_template_id, lorebook_ids_override, memory_progress_step, author_note FROM sessions WHERE id = ?",
             params![id],
             |r| Ok((
-                r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, Option<String>>(2)?, r.get::<_, Option<String>>(3)?, r.get::<_, Option<String>>(4)?, r.get::<_, Option<String>>(5)?, r.get::<_, Option<i64>>(6)?, r.get::<_, Option<i64>>(7)?, r.get::<_, Option<f64>>(8)?, r.get::<_, Option<f64>>(9)?, r.get::<_, Option<i64>>(10)?, r.get::<_, Option<f64>>(11)?, r.get::<_, Option<f64>>(12)?, r.get::<_, Option<i64>>(13)?, r.get::<_, String>(14)?, r.get::<_, String>(15)?, r.get::<_, Option<String>>(16)?, r.get::<_, i64>(17)?, r.get::<_, String>(18)?, r.get::<_, Option<String>>(19)?, r.get::<_, Option<String>>(20)?, r.get::<_, i64>(21)?, r.get::<_, i64>(22)?, r.get::<_, i64>(23)?, r.get::<_, Option<String>>(24)?, r.get::<_, Option<String>>(25)?, r.get::<_, Option<i64>>(26)?, r.get::<_, Option<String>>(27)?
+                r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, Option<String>>(2)?, r.get::<_, Option<String>>(3)?, r.get::<_, String>(4)?, r.get::<_, Option<String>>(5)?, r.get::<_, Option<String>>(6)?, r.get::<_, Option<i64>>(7)?, r.get::<_, Option<i64>>(8)?, r.get::<_, Option<f64>>(9)?, r.get::<_, Option<f64>>(10)?, r.get::<_, Option<i64>>(11)?, r.get::<_, Option<f64>>(12)?, r.get::<_, Option<f64>>(13)?, r.get::<_, Option<i64>>(14)?, r.get::<_, Option<String>>(15)?, r.get::<_, String>(16)?, r.get::<_, String>(17)?, r.get::<_, Option<String>>(18)?, r.get::<_, i64>(19)?, r.get::<_, String>(20)?, r.get::<_, Option<String>>(21)?, r.get::<_, Option<String>>(22)?, r.get::<_, i64>(23)?, r.get::<_, i64>(24)?, r.get::<_, i64>(25)?, r.get::<_, Option<String>>(26)?, r.get::<_, Option<String>>(27)?, r.get::<_, Option<i64>>(28)?, r.get::<_, Option<String>>(29)?
             )),
         )
         .optional()
@@ -1043,6 +1065,7 @@ fn read_session_meta(conn: &rusqlite::Connection, id: &str) -> Result<Option<Jso
         title,
         background_image_path,
         system_prompt,
+        mode,
         selected_scene_id,
         persona_id,
         persona_disabled,
@@ -1053,6 +1076,7 @@ fn read_session_meta(conn: &rusqlite::Connection, id: &str) -> Result<Option<Jso
         frequency_penalty,
         presence_penalty,
         top_k,
+        companion_state_json,
         memories_json,
         memory_embeddings_json,
         memory_summary,
@@ -1104,6 +1128,7 @@ fn read_session_meta(conn: &rusqlite::Connection, id: &str) -> Result<Option<Jso
         "title": title,
         "backgroundImagePath": background_image_path,
         "systemPrompt": system_prompt,
+        "mode": mode,
         "selectedSceneId": selected_scene_id,
         "promptTemplateId": prompt_template_id,
         "lorebookIdsOverride": lorebook_ids_override_json.as_deref().and_then(|value| serde_json::from_str::<JsonValue>(value).ok()),
@@ -1112,6 +1137,7 @@ fn read_session_meta(conn: &rusqlite::Connection, id: &str) -> Result<Option<Jso
         "personaDisabled": persona_disabled.unwrap_or(0) != 0,
         "voiceAutoplay": voice_autoplay.map(|value| value != 0),
         "advancedModelSettings": advanced,
+        "companionState": companion_state_json.as_deref().and_then(|value| serde_json::from_str::<JsonValue>(value).ok()),
         "memories": memories,
         "memoryEmbeddings": memory_embeddings,
         "memorySummary": memory_summary.unwrap_or_default(),
@@ -1131,10 +1157,10 @@ fn read_session_meta(conn: &rusqlite::Connection, id: &str) -> Result<Option<Jso
 fn read_session(conn: &rusqlite::Connection, id: &str) -> Result<Option<JsonValue>, String> {
     let row = conn
         .query_row(
-            "SELECT character_id, title, background_image_path, system_prompt, selected_scene_id, persona_id, persona_disabled, voice_autoplay, temperature, top_p, max_output_tokens, frequency_penalty, presence_penalty, top_k, memories, memory_embeddings, memory_summary, memory_summary_token_count, memory_tool_events, memory_status, memory_error, archived, created_at, updated_at, prompt_template_id, lorebook_ids_override, memory_progress_step, author_note FROM sessions WHERE id = ?",
+            "SELECT character_id, title, background_image_path, system_prompt, mode, selected_scene_id, persona_id, persona_disabled, voice_autoplay, temperature, top_p, max_output_tokens, frequency_penalty, presence_penalty, top_k, companion_state, memories, memory_embeddings, memory_summary, memory_summary_token_count, memory_tool_events, memory_status, memory_error, archived, created_at, updated_at, prompt_template_id, lorebook_ids_override, memory_progress_step, author_note FROM sessions WHERE id = ?",
             params![id],
             |r| Ok((
-                r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, Option<String>>(2)?, r.get::<_, Option<String>>(3)?, r.get::<_, Option<String>>(4)?, r.get::<_, Option<String>>(5)?, r.get::<_, Option<i64>>(6)?, r.get::<_, Option<i64>>(7)?, r.get::<_, Option<f64>>(8)?, r.get::<_, Option<f64>>(9)?, r.get::<_, Option<i64>>(10)?, r.get::<_, Option<f64>>(11)?, r.get::<_, Option<f64>>(12)?, r.get::<_, Option<i64>>(13)?, r.get::<_, String>(14)?, r.get::<_, String>(15)?, r.get::<_, Option<String>>(16)?, r.get::<_, i64>(17)?, r.get::<_, String>(18)?, r.get::<_, Option<String>>(19)?, r.get::<_, Option<String>>(20)?, r.get::<_, i64>(21)?, r.get::<_, i64>(22)?, r.get::<_, i64>(23)?, r.get::<_, Option<String>>(24)?, r.get::<_, Option<String>>(25)?, r.get::<_, Option<i64>>(26)?, r.get::<_, Option<String>>(27)?
+                r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, Option<String>>(2)?, r.get::<_, Option<String>>(3)?, r.get::<_, String>(4)?, r.get::<_, Option<String>>(5)?, r.get::<_, Option<String>>(6)?, r.get::<_, Option<i64>>(7)?, r.get::<_, Option<i64>>(8)?, r.get::<_, Option<f64>>(9)?, r.get::<_, Option<f64>>(10)?, r.get::<_, Option<i64>>(11)?, r.get::<_, Option<f64>>(12)?, r.get::<_, Option<f64>>(13)?, r.get::<_, Option<i64>>(14)?, r.get::<_, Option<String>>(15)?, r.get::<_, String>(16)?, r.get::<_, String>(17)?, r.get::<_, Option<String>>(18)?, r.get::<_, i64>(19)?, r.get::<_, String>(20)?, r.get::<_, Option<String>>(21)?, r.get::<_, Option<String>>(22)?, r.get::<_, i64>(23)?, r.get::<_, i64>(24)?, r.get::<_, i64>(25)?, r.get::<_, Option<String>>(26)?, r.get::<_, Option<String>>(27)?, r.get::<_, Option<i64>>(28)?, r.get::<_, Option<String>>(29)?
             )),
         )
         .optional()
@@ -1144,6 +1170,7 @@ fn read_session(conn: &rusqlite::Connection, id: &str) -> Result<Option<JsonValu
         title,
         background_image_path,
         system_prompt,
+        mode,
         selected_scene_id,
         persona_id,
         persona_disabled,
@@ -1154,6 +1181,7 @@ fn read_session(conn: &rusqlite::Connection, id: &str) -> Result<Option<JsonValu
         frequency_penalty,
         presence_penalty,
         top_k,
+        companion_state_json,
         memories_json,
         memory_embeddings_json,
         memory_summary,
@@ -1317,6 +1345,7 @@ fn read_session(conn: &rusqlite::Connection, id: &str) -> Result<Option<JsonValu
         "title": title,
         "backgroundImagePath": background_image_path,
         "systemPrompt": system_prompt,
+        "mode": mode,
         "selectedSceneId": selected_scene_id,
         "promptTemplateId": prompt_template_id,
         "lorebookIdsOverride": lorebook_ids_override_json.as_deref().and_then(|value| serde_json::from_str::<JsonValue>(value).ok()),
@@ -1325,6 +1354,7 @@ fn read_session(conn: &rusqlite::Connection, id: &str) -> Result<Option<JsonValu
         "personaDisabled": persona_disabled.unwrap_or(0) != 0,
         "voiceAutoplay": voice_autoplay.map(|value| value != 0),
         "advancedModelSettings": advanced,
+        "companionState": companion_state_json.as_deref().and_then(|value| serde_json::from_str::<JsonValue>(value).ok()),
         "memories": memories,
         "memoryEmbeddings": memory_embeddings,
         "memorySummary": memory_summary.unwrap_or_default(),
@@ -2020,6 +2050,12 @@ pub fn session_upsert_meta(app: tauri::AppHandle, session_json: String) -> Resul
         .get("systemPrompt")
         .and_then(|v| v.as_str())
         .map(|x| x.to_string());
+    let mode = s
+        .get("mode")
+        .and_then(|v| v.as_str())
+        .map(|x| x.to_string())
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| "roleplay".to_string());
     let selected_scene_id = s
         .get("selectedSceneId")
         .and_then(|v| v.as_str())
@@ -2069,6 +2105,12 @@ pub fn session_upsert_meta(app: tauri::AppHandle, session_json: String) -> Resul
         Some(v) => serde_json::to_string(v).unwrap_or_else(|_| "[]".to_string()),
         None => "[]".to_string(),
     };
+    let companion_state_json = match s.get("companionState") {
+        Some(v) if !v.is_null() => {
+            Some(serde_json::to_string(v).unwrap_or_else(|_| "{}".to_string()))
+        }
+        _ => None,
+    };
     let memory_status = s
         .get("memoryStatus")
         .and_then(|v| v.as_str())
@@ -2096,13 +2138,14 @@ pub fn session_upsert_meta(app: tauri::AppHandle, session_json: String) -> Resul
     let top_k = adv.and_then(|v| v.get("topK")).and_then(|v| v.as_i64());
 
     conn.execute(
-        r#"INSERT INTO sessions (id, character_id, title, background_image_path, system_prompt, selected_scene_id, prompt_template_id, lorebook_ids_override, author_note, persona_id, persona_disabled, voice_autoplay, temperature, top_p, max_output_tokens, frequency_penalty, presence_penalty, top_k, memories, memory_embeddings, memory_summary, memory_summary_token_count, memory_tool_events, memory_status, memory_error, memory_progress_step, archived, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        r#"INSERT INTO sessions (id, character_id, title, background_image_path, system_prompt, mode, selected_scene_id, prompt_template_id, lorebook_ids_override, author_note, persona_id, persona_disabled, voice_autoplay, temperature, top_p, max_output_tokens, frequency_penalty, presence_penalty, top_k, companion_state, memories, memory_embeddings, memory_summary, memory_summary_token_count, memory_tool_events, memory_status, memory_error, memory_progress_step, archived, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
               character_id=excluded.character_id,
               title=excluded.title,
               background_image_path=excluded.background_image_path,
               system_prompt=excluded.system_prompt,
+              mode=excluded.mode,
               selected_scene_id=excluded.selected_scene_id,
               prompt_template_id=excluded.prompt_template_id,
               lorebook_ids_override=excluded.lorebook_ids_override,
@@ -2116,6 +2159,7 @@ pub fn session_upsert_meta(app: tauri::AppHandle, session_json: String) -> Resul
               frequency_penalty=excluded.frequency_penalty,
               presence_penalty=excluded.presence_penalty,
               top_k=excluded.top_k,
+              companion_state=excluded.companion_state,
               memories=excluded.memories,
               memory_embeddings=excluded.memory_embeddings,
               memory_summary=excluded.memory_summary,
@@ -2132,6 +2176,7 @@ pub fn session_upsert_meta(app: tauri::AppHandle, session_json: String) -> Resul
             title,
             background_image_path,
             system_prompt,
+            mode,
             selected_scene_id,
             prompt_template_id,
             lorebook_ids_override_json,
@@ -2145,6 +2190,7 @@ pub fn session_upsert_meta(app: tauri::AppHandle, session_json: String) -> Resul
             frequency_penalty,
             presence_penalty,
             top_k,
+            companion_state_json,
             &memories_json,
             &memory_embeddings_json,
             memory_summary,
@@ -2454,6 +2500,12 @@ pub fn session_upsert(app: tauri::AppHandle, session_json: String) -> Result<(),
         .get("systemPrompt")
         .and_then(|v| v.as_str())
         .map(|x| x.to_string());
+    let mode = s
+        .get("mode")
+        .and_then(|v| v.as_str())
+        .map(|x| x.to_string())
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| "roleplay".to_string());
     let selected_scene_id = s
         .get("selectedSceneId")
         .and_then(|v| v.as_str())
@@ -2520,6 +2572,12 @@ pub fn session_upsert(app: tauri::AppHandle, session_json: String) -> Result<(),
         Some(v) => serde_json::to_string(v).unwrap_or_else(|_| "[]".to_string()),
         None => "[]".to_string(),
     };
+    let companion_state_json = match s.get("companionState") {
+        Some(v) if !v.is_null() => {
+            Some(serde_json::to_string(v).unwrap_or_else(|_| "{}".to_string()))
+        }
+        _ => None,
+    };
 
     let adv = s.get("advancedModelSettings");
     let temperature = adv
@@ -2541,13 +2599,14 @@ pub fn session_upsert(app: tauri::AppHandle, session_json: String) -> Result<(),
         .transaction()
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     tx.execute(
-        r#"INSERT INTO sessions (id, character_id, title, background_image_path, system_prompt, selected_scene_id, prompt_template_id, lorebook_ids_override, author_note, persona_id, persona_disabled, voice_autoplay, temperature, top_p, max_output_tokens, frequency_penalty, presence_penalty, top_k, memories, memory_embeddings, memory_summary, memory_summary_token_count, memory_tool_events, archived, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        r#"INSERT INTO sessions (id, character_id, title, background_image_path, system_prompt, mode, selected_scene_id, prompt_template_id, lorebook_ids_override, author_note, persona_id, persona_disabled, voice_autoplay, temperature, top_p, max_output_tokens, frequency_penalty, presence_penalty, top_k, companion_state, memories, memory_embeddings, memory_summary, memory_summary_token_count, memory_tool_events, archived, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
               character_id=excluded.character_id,
               title=excluded.title,
               background_image_path=excluded.background_image_path,
               system_prompt=excluded.system_prompt,
+              mode=excluded.mode,
               selected_scene_id=excluded.selected_scene_id,
               prompt_template_id=excluded.prompt_template_id,
               lorebook_ids_override=excluded.lorebook_ids_override,
@@ -2561,6 +2620,7 @@ pub fn session_upsert(app: tauri::AppHandle, session_json: String) -> Result<(),
               frequency_penalty=excluded.frequency_penalty,
               presence_penalty=excluded.presence_penalty,
               top_k=excluded.top_k,
+              companion_state=excluded.companion_state,
               memories=excluded.memories,
               memory_embeddings=excluded.memory_embeddings,
               memory_summary=excluded.memory_summary,
@@ -2568,7 +2628,7 @@ pub fn session_upsert(app: tauri::AppHandle, session_json: String) -> Result<(),
               memory_tool_events=excluded.memory_tool_events,
               archived=excluded.archived,
               updated_at=excluded.updated_at"#,
-        params![&id, character_id, title, background_image_path, system_prompt, selected_scene_id, prompt_template_id, lorebook_ids_override_json, author_note, persona_id, persona_disabled, voice_autoplay, temperature, top_p, max_output_tokens, frequency_penalty, presence_penalty, top_k, &memories_json, &memory_embeddings_json, memory_summary, memory_summary_token_count, &memory_tool_events_json, archived, created_at, updated_at],
+        params![&id, character_id, title, background_image_path, system_prompt, mode, selected_scene_id, prompt_template_id, lorebook_ids_override_json, author_note, persona_id, persona_disabled, voice_autoplay, temperature, top_p, max_output_tokens, frequency_penalty, presence_penalty, top_k, companion_state_json, &memories_json, &memory_embeddings_json, memory_summary, memory_summary_token_count, &memory_tool_events_json, archived, created_at, updated_at],
     ).map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 
     if let Some(msgs) = s.get("messages").and_then(|v| v.as_array()) {

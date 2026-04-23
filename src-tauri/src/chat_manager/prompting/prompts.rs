@@ -14,6 +14,7 @@ use tauri::AppHandle;
 
 pub const APP_DEFAULT_TEMPLATE_ID: &str = "prompt_app_default";
 pub const APP_LOCAL_ROLEPLAY_TEMPLATE_ID: &str = "prompt_app_local_roleplay";
+pub const APP_COMPANION_TEMPLATE_ID: &str = "prompt_app_companion";
 pub const APP_DYNAMIC_SUMMARY_TEMPLATE_ID: &str = "prompt_app_dynamic_summary";
 pub const APP_DYNAMIC_MEMORY_TEMPLATE_ID: &str = "prompt_app_dynamic_memory";
 pub const APP_DYNAMIC_MEMORY_LOCAL_TEMPLATE_ID: &str = "prompt_app_dynamic_memory_local";
@@ -30,6 +31,7 @@ pub const APP_SCENE_PROMPT_WRITER_TEMPLATE_ID: &str = "prompt_app_scene_prompt_w
 pub const APP_DESIGN_REFERENCE_TEMPLATE_ID: &str = "prompt_app_design_reference";
 const APP_DEFAULT_TEMPLATE_NAME: &str = "App Default";
 const APP_LOCAL_ROLEPLAY_TEMPLATE_NAME: &str = "Local RP Default";
+const APP_COMPANION_TEMPLATE_NAME: &str = "Companion Default";
 const APP_DYNAMIC_SUMMARY_TEMPLATE_NAME: &str = "Dynamic Memory: Summarizer";
 const APP_DYNAMIC_MEMORY_TEMPLATE_NAME: &str = "Dynamic Memory: Memory Manager";
 const APP_DYNAMIC_MEMORY_LOCAL_TEMPLATE_NAME: &str = "Dynamic Memory: Memory Manager (Local LLM)";
@@ -50,6 +52,7 @@ const LEGACY_SCENE_GENERATION_PROMPT_V1: &str = "You write a single high-quality
 pub fn template_prompt_type_from_id(id: &str) -> PromptTemplateType {
     match id {
         APP_DEFAULT_TEMPLATE_ID | APP_LOCAL_ROLEPLAY_TEMPLATE_ID => PromptTemplateType::DirectChat,
+        APP_COMPANION_TEMPLATE_ID => PromptTemplateType::CompanionChat,
         APP_GROUP_CHAT_TEMPLATE_ID => PromptTemplateType::GroupChatConversational,
         APP_GROUP_CHAT_ROLEPLAY_TEMPLATE_ID => PromptTemplateType::GroupChatRoleplay,
         APP_DYNAMIC_SUMMARY_TEMPLATE_ID => PromptTemplateType::DynamicMemorySummarizer,
@@ -534,6 +537,7 @@ fn prompt_type_to_str(prompt_type: PromptTemplateType) -> &'static str {
     match prompt_type {
         PromptTemplateType::Undefined => "undefined",
         PromptTemplateType::DirectChat => "directChat",
+        PromptTemplateType::CompanionChat => "companionChat",
         PromptTemplateType::GroupChatRoleplay => "groupChatRoleplay",
         PromptTemplateType::GroupChatConversational => "groupChatConversational",
         PromptTemplateType::DynamicMemorySummarizer => "dynamicMemorySummarizer",
@@ -553,6 +557,7 @@ fn str_to_prompt_type(s: &str) -> Result<PromptTemplateType, String> {
     match s {
         "undefined" => Ok(PromptTemplateType::Undefined),
         "directChat" => Ok(PromptTemplateType::DirectChat),
+        "companionChat" => Ok(PromptTemplateType::CompanionChat),
         "groupChatRoleplay" => Ok(PromptTemplateType::GroupChatRoleplay),
         "groupChatConversational" => Ok(PromptTemplateType::GroupChatConversational),
         "dynamicMemorySummarizer" => Ok(PromptTemplateType::DynamicMemorySummarizer),
@@ -603,6 +608,7 @@ fn row_to_template(row: &rusqlite::Row<'_>) -> Result<SystemPromptTemplate, rusq
 pub fn load_templates(app: &AppHandle) -> Result<Vec<SystemPromptTemplate>, String> {
     let _ = ensure_app_default_template(app)?;
     let _ = ensure_local_roleplay_template(app)?;
+    let _ = ensure_companion_template(app)?;
     ensure_dynamic_memory_templates(app)?;
     ensure_lorebook_entry_writer_template(app)?;
     ensure_group_chat_templates(app)?;
@@ -626,6 +632,7 @@ pub fn load_templates(app: &AppHandle) -> Result<Vec<SystemPromptTemplate>, Stri
         // Guarantee existence of App Default template even if setup call was skipped
         let _ = ensure_app_default_template(app)?;
         let _ = ensure_local_roleplay_template(app)?;
+        let _ = ensure_companion_template(app)?;
         // Reload
         let mut stmt2 = conn
             .prepare(
@@ -877,6 +884,37 @@ pub fn ensure_local_roleplay_template(app: &AppHandle) -> Result<String, String>
     Ok(APP_LOCAL_ROLEPLAY_TEMPLATE_ID.to_string())
 }
 
+pub fn ensure_companion_template(app: &AppHandle) -> Result<String, String> {
+    if let Some(existing) = get_template(app, APP_COMPANION_TEMPLATE_ID)? {
+        let _ = maybe_backfill_entries(
+            app,
+            APP_COMPANION_TEMPLATE_ID,
+            PromptType::CompanionPrompt,
+            prompt_engine::default_companion_entries(),
+        );
+        return Ok(existing.id);
+    }
+
+    let conn = open_db(app)?;
+    let now = now();
+    let content = get_base_prompt(PromptType::CompanionPrompt);
+    let entries_json = serde_json::to_string(&prompt_engine::default_companion_entries())
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    conn.execute(
+        "INSERT OR IGNORE INTO prompt_templates (id, name, prompt_type, content, entries, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
+        params![
+            APP_COMPANION_TEMPLATE_ID,
+            APP_COMPANION_TEMPLATE_NAME,
+            prompt_type_to_str(PromptTemplateType::CompanionChat),
+            content,
+            entries_json,
+            now
+        ],
+    )
+    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    Ok(APP_COMPANION_TEMPLATE_ID.to_string())
+}
+
 pub fn ensure_dynamic_memory_templates(app: &AppHandle) -> Result<(), String> {
     let conn = open_db(app)?;
     let now = now();
@@ -1046,6 +1084,7 @@ pub fn ensure_group_chat_templates(app: &AppHandle) -> Result<(), String> {
 pub fn is_app_default_template(id: &str) -> bool {
     id == APP_DEFAULT_TEMPLATE_ID
         || id == APP_LOCAL_ROLEPLAY_TEMPLATE_ID
+        || id == APP_COMPANION_TEMPLATE_ID
         || id == APP_DYNAMIC_SUMMARY_TEMPLATE_ID
         || id == APP_DYNAMIC_MEMORY_TEMPLATE_ID
         || id == APP_DYNAMIC_MEMORY_LOCAL_TEMPLATE_ID
@@ -1083,6 +1122,19 @@ pub fn reset_local_roleplay_template(app: &AppHandle) -> Result<SystemPromptTemp
         None,
         Some(content.clone()),
         Some(prompt_engine::default_local_roleplay_entries()),
+        None,
+    )
+}
+
+pub fn reset_companion_template(app: &AppHandle) -> Result<SystemPromptTemplate, String> {
+    let content = get_base_prompt(PromptType::CompanionPrompt);
+    update_template(
+        app,
+        APP_COMPANION_TEMPLATE_ID.to_string(),
+        None,
+        None,
+        Some(content.clone()),
+        Some(prompt_engine::default_companion_entries()),
         None,
     )
 }

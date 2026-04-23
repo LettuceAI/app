@@ -28,18 +28,28 @@ fn cleanup_partial_files(
     version: Option<&EmbeddingModelVersion>,
 ) -> Result<(), String> {
     let files = match version {
-        Some(EmbeddingModelVersion::V1) => MODEL_FILES_V1.to_vec(),
+        Some(EmbeddingModelVersion::V1) => {
+            let mut v = MODEL_FILES_V1.to_vec();
+            v.extend(COMPANION_EMOTION_MODEL_FILES_LOCAL.iter().copied());
+            v
+        }
         Some(EmbeddingModelVersion::V2) => {
             let mut v = MODEL_FILES_V2_LOCAL.to_vec();
             v.extend(MODEL_FILES_V2_LOCAL_LEGACY.iter().copied());
+            v.extend(COMPANION_EMOTION_MODEL_FILES_LOCAL.iter().copied());
             v
         }
-        Some(EmbeddingModelVersion::V3) => MODEL_FILES_V3_LOCAL.to_vec(),
+        Some(EmbeddingModelVersion::V3) => {
+            let mut v = MODEL_FILES_V3_LOCAL.to_vec();
+            v.extend(COMPANION_EMOTION_MODEL_FILES_LOCAL.iter().copied());
+            v
+        }
         None => {
             let mut all_files = MODEL_FILES_V1.to_vec();
             all_files.extend(MODEL_FILES_V2_LOCAL.iter().copied());
             all_files.extend(MODEL_FILES_V2_LOCAL_LEGACY.iter().copied());
             all_files.extend(MODEL_FILES_V3_LOCAL.iter().copied());
+            all_files.extend(COMPANION_EMOTION_MODEL_FILES_LOCAL.iter().copied());
             all_files
         }
     };
@@ -97,6 +107,19 @@ fn log_model_file_status(app: &AppHandle, component: &str, model_dir: &PathBuf) 
             format!("model file v3 {}: {}", filename, describe_path(&path)),
         );
     }
+
+    for filename in COMPANION_EMOTION_MODEL_FILES_LOCAL.iter() {
+        let path = model_dir.join(filename);
+        log_info(
+            app,
+            component,
+            format!(
+                "model file companion-emotion {}: {}",
+                filename,
+                describe_path(&path)
+            ),
+        );
+    }
 }
 
 async fn download_file(
@@ -150,6 +173,15 @@ async fn download_file(
     }
 
     let temp_path = dest_path.with_extension("tmp");
+    if let Some(parent) = temp_path.parent() {
+        tokio::fs::create_dir_all(parent).await.map_err(|e| {
+            crate::utils::err_msg(
+                module_path!(),
+                line!(),
+                format!("Failed to create parent directory: {}", e),
+            )
+        })?;
+    }
     let mut file = tokio::fs::File::create(&temp_path).await.map_err(|e| {
         crate::utils::err_msg(
             module_path!(),
@@ -243,6 +275,7 @@ pub async fn start_embedding_download(
     version: Option<String>,
 ) -> Result<(), String> {
     super::inference::clear_loaded_runtime_cache().await;
+    super::emotion::clear_loaded_runtime_cache().await;
 
     let source_spec = download_source_spec(version.as_deref());
     let target_version = source_spec.target_version;
@@ -250,13 +283,14 @@ pub async fn start_embedding_download(
     let base_url = source_spec.base_url;
     let remote_files = source_spec.remote_files.to_vec();
     let local_files = source_spec.local_files.to_vec();
+    let install_plan = install_download_plan(version.as_deref());
 
     log_info(
         &app,
         "embedding_download",
         format!(
-            "download init requested={:?} source={} base_url={} remote_files={:?} local_files={:?}",
-            target_version, source_label, base_url, remote_files, local_files
+            "download init requested={:?} source={} base_url={} remote_files={:?} local_files={:?} install_plan={:?}",
+            target_version, source_label, base_url, remote_files, local_files, install_plan.iter().map(|item| item.local_path).collect::<Vec<_>>()
         ),
     );
 
@@ -276,10 +310,10 @@ pub async fn start_embedding_download(
             total: 0,
             status: "downloading".to_string(),
             current_file_index: 1,
-            total_files: remote_files.len(),
-            current_file_name: local_files
+            total_files: install_plan.len(),
+            current_file_name: install_plan
                 .first()
-                .map(|s| s.to_string())
+                .map(|item| item.progress_name.to_string())
                 .unwrap_or_default(),
         };
         let _ = app.emit("embedding_download_progress", &state.progress);
@@ -310,16 +344,10 @@ pub async fn start_embedding_download(
 
     let state = DOWNLOAD_STATE.clone();
 
-    for (file_index, (remote_filename, local_filename)) in
-        remote_files.iter().zip(local_files.iter()).enumerate()
-    {
-        let url = format!("{}/{}", base_url, remote_filename);
-        let dest_path = model_dir.join(local_filename);
-        let display_file_name = if source_label == "v3" {
-            remote_filename.to_string()
-        } else {
-            local_filename.to_string()
-        };
+    for (file_index, file_spec) in install_plan.iter().enumerate() {
+        let url = format!("{}/{}", file_spec.base_url, file_spec.remote_path);
+        let dest_path = model_dir.join(file_spec.local_path);
+        let display_file_name = file_spec.progress_name.to_string();
 
         {
             let mut state_lock = state.lock().await;
@@ -335,8 +363,8 @@ pub async fn start_embedding_download(
             format!(
                 "download file {} of {}: {}",
                 file_index + 1,
-                remote_files.len(),
-                local_filename
+                install_plan.len(),
+                file_spec.local_path
             ),
         );
         match download_file(&app, &url, &dest_path, state.clone()).await {
@@ -345,18 +373,9 @@ pub async fn start_embedding_download(
                 log_error(
                     &app,
                     "embedding_download",
-                    format!("download failed file={} error={}", local_filename, e),
+                    format!("download failed file={} error={}", file_spec.local_path, e),
                 );
-                if source_label == "v3" {
-                    for filename in MODEL_FILES_V3_LOCAL.iter() {
-                        let path = model_dir.join(filename);
-                        if path.exists() {
-                            let _ = fs::remove_file(path);
-                        }
-                    }
-                } else {
-                    let _ = cleanup_partial_files(&model_dir, Some(&target_version));
-                }
+                let _ = cleanup_partial_files(&model_dir, Some(&target_version));
                 let mut state_lock = state.lock().await;
                 state_lock.is_downloading = false;
                 state_lock.progress.status = "failed".to_string();
@@ -393,6 +412,7 @@ pub async fn get_embedding_download_progress() -> Result<DownloadProgress, Strin
 
 pub async fn cancel_embedding_download(app: AppHandle) -> Result<(), String> {
     super::inference::clear_loaded_runtime_cache().await;
+    super::emotion::clear_loaded_runtime_cache().await;
 
     {
         let mut state = DOWNLOAD_STATE.lock().await;
@@ -428,6 +448,7 @@ pub async fn cancel_embedding_download(app: AppHandle) -> Result<(), String> {
 
 pub async fn delete_embedding_model(app: AppHandle) -> Result<(), String> {
     super::inference::clear_loaded_runtime_cache().await;
+    super::emotion::clear_loaded_runtime_cache().await;
     reset_download_state().await;
 
     let model_dir = embedding_model_dir(&app)?;
@@ -443,6 +464,7 @@ pub async fn delete_embedding_model(app: AppHandle) -> Result<(), String> {
 
 pub async fn delete_embedding_model_version(app: AppHandle, version: String) -> Result<(), String> {
     super::inference::clear_loaded_runtime_cache().await;
+    super::emotion::clear_loaded_runtime_cache().await;
     reset_download_state().await;
 
     let model_dir = embedding_model_dir(&app)?;

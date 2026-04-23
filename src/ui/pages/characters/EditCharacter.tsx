@@ -35,6 +35,8 @@ import { BackgroundPositionModal } from "../../components/BackgroundPositionModa
 import { CharacterExportMenu } from "../../components/CharacterExportMenu";
 import { Switch } from "../../components/Switch";
 import { ActiveLorebooksSelector } from "./components/ActiveLorebooksSelector";
+import { InteractionModeSelector } from "./components/InteractionModeSelector";
+import { CompanionSoulEditor } from "./components/CompanionSoulEditor";
 import { cn, radius, colors, interactive, spacing, typography } from "../../design-tokens";
 import { getProviderIcon } from "../../../core/utils/providerIcons";
 import { useI18n } from "../../../core/i18n/context";
@@ -53,6 +55,11 @@ import {
   type CachedVoice,
   type UserVoice,
 } from "../../../core/storage/audioProviders";
+import {
+  APP_COMPANION_TEMPLATE_ID,
+  APP_GROUP_CHAT_ROLEPLAY_TEMPLATE_ID,
+  APP_GROUP_CHAT_TEMPLATE_ID,
+} from "../../../core/prompts/constants";
 
 const wordCount = (text: string) => {
   const trimmed = text.trim();
@@ -129,6 +136,9 @@ export function EditCharacterPage() {
     promptTemplates,
     loadingTemplates,
     systemPromptTemplateId,
+    companionPromptTemplateId,
+    mode,
+    companion,
     voiceConfig,
     voiceAutoplay,
 
@@ -156,12 +166,16 @@ export function EditCharacterPage() {
   const groupChatTemplates = promptTemplates.filter(
     (template) =>
       template.promptType === "groupChatConversational" &&
-      template.id !== "prompt_app_group_chat",
+      template.id !== APP_GROUP_CHAT_TEMPLATE_ID,
   );
   const groupChatRoleplayTemplates = promptTemplates.filter(
     (template) =>
       template.promptType === "groupChatRoleplay" &&
-      template.id !== "prompt_app_group_chat_roleplay",
+      template.id !== APP_GROUP_CHAT_ROLEPLAY_TEMPLATE_ID,
+  );
+  const companionPromptTemplates = promptTemplates.filter(
+    (template) =>
+      template.promptType === "companionChat" && template.id !== APP_COMPANION_TEMPLATE_ID,
   );
 
   const closeNewSceneEditor = React.useCallback(() => {
@@ -352,6 +366,20 @@ export function EditCharacterPage() {
           {/* Settings Tab Content */}
           {activeTab === "settings" && (
             <>
+              <InteractionModeSelector
+                mode={mode}
+                onChange={(nextMode) => setFields({ mode: nextMode })}
+                disabled={saving}
+              />
+
+              {mode === "companion" && (
+                <CompanionSoulEditor
+                  companion={companion}
+                  onChange={(nextCompanion) => setFields({ companion: nextCompanion })}
+                  disabled={saving}
+                />
+              )}
+
               {/* Background Image Section */}
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
@@ -1020,7 +1048,9 @@ export function EditCharacterPage() {
                   <div className="rounded-lg border border-info/30 bg-info/10 p-1.5">
                     <BookOpen className="h-4 w-4 text-info" />
                   </div>
-                  <h3 className="text-sm font-semibold text-fg">Starting Scenes</h3>
+                  <h3 className="text-sm font-semibold text-fg">
+                    {mode === "companion" ? "Opening Context" : "Starting Scenes"}
+                  </h3>
                   {scenes.length > 0 && (
                     <span className="ml-auto rounded-full border border-fg/10 bg-fg/5 px-2 py-0.5 text-xs text-fg/70">
                       {scenes.length}
@@ -1181,9 +1211,13 @@ export function EditCharacterPage() {
                 {/* Add New Scene */}
                 <motion.div layout className="space-y-2">
                   <div className="rounded-xl border border-fg/10 bg-surface-el/20 px-3.5 py-3">
-                    <div className="text-sm font-medium text-fg">New starting scene</div>
+                    <div className="text-sm font-medium text-fg">
+                      {mode === "companion" ? "New opening context" : "New starting scene"}
+                    </div>
                     <p className="mt-1 text-xs text-fg/50">
-                      Create a scenario and optional direction for the opening moment.
+                      {mode === "companion"
+                        ? "Optional first-chat context. Companion continuity comes from memory after that."
+                        : "Create a scenario and optional direction for the opening moment."}
                     </p>
                     <div className="mt-3 flex items-center gap-2">
                       <motion.button
@@ -1208,7 +1242,9 @@ export function EditCharacterPage() {
                 </motion.div>
 
                 <p className="text-xs text-fg/50">
-                  Create multiple starting scenarios. One will be selected when starting a new chat.
+                  {mode === "companion"
+                    ? "Companion mode can start without context; these are optional."
+                    : "Create multiple starting scenarios. One will be selected when starting a new chat."}
                 </p>
               </div>
             </>
@@ -1454,13 +1490,15 @@ export function EditCharacterPage() {
                 </div>
 
                 <div className="space-y-4">
-                  {/* System Prompt Template Section */}
+                  {/* Prompt Template Section */}
                   <div className="space-y-3">
                   <div className="flex items-center gap-2">
                     <div className="rounded-lg border border-info/30 bg-info/10 p-1.5">
                       <BookOpen className="h-4 w-4 text-info" />
                     </div>
-                    <h3 className="text-sm font-semibold text-fg">System Prompt</h3>
+                    <h3 className="text-sm font-semibold text-fg">
+                      {mode === "companion" ? "Companion Prompt" : "System Prompt"}
+                    </h3>
                     <span className="ml-auto text-xs text-fg/40">(Optional)</span>
                   </div>
 
@@ -1471,14 +1509,26 @@ export function EditCharacterPage() {
                     </div>
                   ) : promptTemplates.length > 0 ? (
                     <select
-                      value={systemPromptTemplateId || ""}
+                      value={
+                        mode === "companion"
+                          ? companionPromptTemplateId || ""
+                          : systemPromptTemplateId || ""
+                      }
                       onChange={(e) =>
-                        setFields({ systemPromptTemplateId: e.target.value || null })
+                        setFields(
+                          mode === "companion"
+                            ? { companionPromptTemplateId: e.target.value || null }
+                            : { systemPromptTemplateId: e.target.value || null },
+                        )
                       }
                       className="w-full appearance-none rounded-xl border border-fg/10 bg-surface-el/20 px-3.5 py-3 text-sm text-fg transition focus:border-fg/25 focus:outline-none"
                     >
-                      <option value="">Use default system prompt</option>
-                      {directPromptTemplates.map((template) => (
+                      <option value="">
+                        {mode === "companion"
+                          ? "Use default companion prompt"
+                          : "Use default system prompt"}
+                      </option>
+                      {(mode === "companion" ? companionPromptTemplates : directPromptTemplates).map((template) => (
                         <option key={template.id} value={template.id}>
                           {template.name}
                         </option>
@@ -1488,12 +1538,16 @@ export function EditCharacterPage() {
                     <div className="rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3">
                       <p className="text-sm text-fg/50">Using app default</p>
                       <p className="mt-1 text-xs text-fg/40">
-                        No custom direct-chat templates yet. Create one in Settings → Prompts.
+                        {mode === "companion"
+                          ? "No custom companion templates yet. Create one in Settings → Prompts."
+                          : "No custom direct-chat templates yet. Create one in Settings → Prompts."}
                       </p>
                     </div>
                   )}
                   <p className="text-xs text-fg/50">
-                    Override the default system prompt for this character
+                    {mode === "companion"
+                      ? "Stored separately as companion prompt ID; the roleplay system prompt is unchanged."
+                      : "Override the default system prompt for this character."}
                   </p>
                 </div>
 

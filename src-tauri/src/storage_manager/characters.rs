@@ -26,6 +26,8 @@ fn read_character(conn: &rusqlite::Connection, id: &str) -> Result<JsonValue, St
         default_scene_id,
         default_model_id,
         fallback_model_id,
+        mode,
+        companion,
         prompt_template_id,
         active_lorebook_ids,
         group_chat_prompt_template_id,
@@ -70,6 +72,8 @@ fn read_character(conn: &rusqlite::Connection, id: &str) -> Result<JsonValue, St
         Option<String>,
         Option<String>,
         Option<String>,
+        Option<String>,
+        Option<String>,
         Option<i64>,
         Option<String>,
         i64,
@@ -83,7 +87,7 @@ fn read_character(conn: &rusqlite::Connection, id: &str) -> Result<JsonValue, St
         i64,
     ) = conn
         .query_row(
-            "SELECT name, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, design_description, design_reference_image_ids, background_image_path, description, definition, nickname, scenario, creator_notes, creator, creator_notes_multilingual, source, tags, default_scene_id, default_model_id, fallback_model_id, prompt_template_id, active_lorebook_ids, group_chat_prompt_template_id, group_chat_roleplay_prompt_template_id, system_prompt, voice_config, voice_autoplay, memory_type, disable_avatar_gradient, custom_gradient_enabled, custom_gradient_colors, custom_text_color, custom_text_secondary, chat_appearance, default_chat_template_id, created_at, updated_at FROM characters WHERE id = ?",
+            "SELECT name, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, design_description, design_reference_image_ids, background_image_path, description, definition, nickname, scenario, creator_notes, creator, creator_notes_multilingual, source, tags, default_scene_id, default_model_id, fallback_model_id, mode, companion, prompt_template_id, active_lorebook_ids, group_chat_prompt_template_id, group_chat_roleplay_prompt_template_id, system_prompt, voice_config, voice_autoplay, memory_type, disable_avatar_gradient, custom_gradient_enabled, custom_gradient_colors, custom_text_color, custom_text_secondary, chat_appearance, default_chat_template_id, created_at, updated_at FROM characters WHERE id = ?",
             params![id],
             |r| Ok((
                 r.get(0)?,
@@ -112,17 +116,19 @@ fn read_character(conn: &rusqlite::Connection, id: &str) -> Result<JsonValue, St
                 r.get(23)?,
                 r.get(24)?,
                 r.get(25)?,
-                r.get::<_, Option<i64>>(26)?,
-                r.get::<_, Option<String>>(27)?,
-                r.get::<_, i64>(28)?,
-                r.get::<_, i64>(29)?,
-                r.get(30)?,
-                r.get(31)?,
+                r.get(26)?,
+                r.get(27)?,
+                r.get::<_, Option<i64>>(28)?,
+                r.get::<_, Option<String>>(29)?,
+                r.get::<_, i64>(30)?,
+                r.get::<_, i64>(31)?,
                 r.get(32)?,
                 r.get(33)?,
                 r.get(34)?,
-                r.get::<_, i64>(35)?,
-                r.get::<_, i64>(36)?
+                r.get(35)?,
+                r.get(36)?,
+                r.get::<_, i64>(37)?,
+                r.get::<_, i64>(38)?
             )),
         )
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
@@ -331,6 +337,17 @@ fn read_character(conn: &rusqlite::Connection, id: &str) -> Result<JsonValue, St
     }
     if let Some(fm) = fallback_model_id {
         root.insert("fallbackModelId".into(), JsonValue::String(fm));
+    }
+    root.insert(
+        "mode".into(),
+        JsonValue::String(mode.unwrap_or_else(|| "roleplay".to_string())),
+    );
+    if let Some(companion_json) = companion {
+        if let Ok(parsed) = serde_json::from_str::<JsonValue>(&companion_json) {
+            if !parsed.is_null() {
+                root.insert("companion".into(), parsed);
+            }
+        }
     }
     let memory_value = memory_type.unwrap_or_else(|| "manual".to_string());
     root.insert("memoryType".into(), JsonValue::String(memory_value));
@@ -578,6 +595,17 @@ fn upsert_character_value(app: &tauri::AppHandle, c: &JsonValue) -> Result<JsonV
         .get("fallbackModelId")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
+    let mode = match c.get("mode").and_then(|v| v.as_str()) {
+        Some("companion") => "companion".to_string(),
+        _ => "roleplay".to_string(),
+    };
+    let companion: Option<String> = c.get("companion").and_then(|v| {
+        if v.is_null() {
+            None
+        } else {
+            serde_json::to_string(v).ok()
+        }
+    });
     let prompt_template_id = c
         .get("promptTemplateId")
         .and_then(|v| v.as_str())
@@ -675,8 +703,8 @@ fn upsert_character_value(app: &tauri::AppHandle, c: &JsonValue) -> Result<JsonV
         .unwrap_or_else(|| "[]".to_string());
 
     tx.execute(
-        r#"INSERT INTO characters (id, name, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, design_description, design_reference_image_ids, background_image_path, description, definition, nickname, scenario, creator_notes, creator, creator_notes_multilingual, source, tags, default_scene_id, default_model_id, fallback_model_id, prompt_template_id, active_lorebook_ids, group_chat_prompt_template_id, group_chat_roleplay_prompt_template_id, system_prompt, voice_config, voice_autoplay, memory_type, disable_avatar_gradient, custom_gradient_enabled, custom_gradient_colors, custom_text_color, custom_text_secondary, chat_appearance, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        r#"INSERT INTO characters (id, name, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, design_description, design_reference_image_ids, background_image_path, description, definition, nickname, scenario, creator_notes, creator, creator_notes_multilingual, source, tags, default_scene_id, default_model_id, fallback_model_id, mode, companion, prompt_template_id, active_lorebook_ids, group_chat_prompt_template_id, group_chat_roleplay_prompt_template_id, system_prompt, voice_config, voice_autoplay, memory_type, disable_avatar_gradient, custom_gradient_enabled, custom_gradient_colors, custom_text_color, custom_text_secondary, chat_appearance, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
               name=excluded.name,
               avatar_path=excluded.avatar_path,
@@ -697,6 +725,8 @@ fn upsert_character_value(app: &tauri::AppHandle, c: &JsonValue) -> Result<JsonV
               tags=excluded.tags,
               default_model_id=excluded.default_model_id,
               fallback_model_id=excluded.fallback_model_id,
+              mode=excluded.mode,
+              companion=excluded.companion,
               prompt_template_id=excluded.prompt_template_id,
               active_lorebook_ids=excluded.active_lorebook_ids,
               group_chat_prompt_template_id=excluded.group_chat_prompt_template_id,
@@ -733,6 +763,8 @@ fn upsert_character_value(app: &tauri::AppHandle, c: &JsonValue) -> Result<JsonV
             tags,
             default_model_id,
             fallback_model_id,
+            mode,
+            companion,
             prompt_template_id,
             active_lorebook_ids,
             group_chat_prompt_template_id,

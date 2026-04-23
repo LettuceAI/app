@@ -33,6 +33,7 @@ import {
   createDefaultAccessibilitySettings,
 } from "./schemas";
 import { setDeveloperModeOverride } from "../utils/env";
+import { APP_COMPANION_TEMPLATE_ID } from "../prompts/constants";
 
 const SessionPreviewSchema = z.object({
   id: z.string(),
@@ -903,6 +904,8 @@ export async function saveCharacter(c: Partial<Character>): Promise<Character> {
     rules: defaultRules,
     defaultModelId: c.defaultModelId ?? null,
     fallbackModelId: c.fallbackModelId ?? null,
+    mode: c.mode ?? "roleplay",
+    companion: c.companion ?? null,
     memoryType: c.memoryType ?? "manual",
     activeLorebookIds: c.activeLorebookIds ?? [],
     promptTemplateId: c.promptTemplateId ?? null,
@@ -1171,6 +1174,10 @@ interface SaveSessionOptions {
 function mergePreservedDynamicMemoryState(latest: Session, next: Session): Session {
   return {
     ...next,
+    companionState:
+      next.companionState !== undefined
+        ? cloneSerializable(next.companionState)
+        : (latest.companionState == null ? latest.companionState : cloneSerializable(latest.companionState)),
     memories: cloneSerializable(latest.memories ?? []),
     memoryEmbeddings: cloneSerializable(latest.memoryEmbeddings ?? []),
     memorySummary: latest.memorySummary ?? "",
@@ -1260,11 +1267,12 @@ export async function createSession(
 
   const characters = await listCharacters();
   const character = characters.find((c) => c.id === characterId);
+  const sessionMode = character?.mode ?? "roleplay";
 
   const fallbackSceneId = character
     ? (selectedSceneId ?? character.defaultSceneId ?? character.scenes[0]?.id)
     : selectedSceneId;
-  let sessionSceneId = fallbackSceneId;
+  let sessionSceneId = sessionMode === "companion" ? undefined : fallbackSceneId;
 
   if (character && templateId) {
     const template = character.chatTemplates?.find((t) => t.id === templateId);
@@ -1288,10 +1296,13 @@ export async function createSession(
     }
   }
   if (sessionPromptTemplateId === undefined) {
-    sessionPromptTemplateId = character?.promptTemplateId ?? null;
+    sessionPromptTemplateId =
+      sessionMode === "companion"
+        ? (character?.companion?.prompting?.promptTemplateId ?? APP_COMPANION_TEMPLATE_ID)
+        : (character?.promptTemplateId ?? null);
   }
 
-  if (character && sessionSceneId) {
+  if (sessionMode !== "companion" && character && sessionSceneId) {
     const scene = character.scenes.find((s) => s.id === sessionSceneId);
     if (scene) {
       const variantContent = scene.selectedVariantId
@@ -1316,6 +1327,7 @@ export async function createSession(
     id,
     characterId,
     title,
+    mode: sessionMode,
     selectedSceneId: sessionSceneId,
     promptTemplateId: sessionPromptTemplateId,
     lorebookIdsOverride: sessionLorebookIdsOverride,
@@ -1363,10 +1375,12 @@ export async function createBranchedSession(
     characterId: sourceSession.characterId,
     title: `${sourceSession.title} (branch)`,
     backgroundImagePath: sourceSession.backgroundImagePath,
+    mode: sourceSession.mode ?? "roleplay",
     selectedSceneId: sourceSession.selectedSceneId,
     promptTemplateId: sourceSession.promptTemplateId,
     personaId: sourceSession.personaId,
     personaDisabled: sourceSession.personaDisabled ?? false,
+    companionState: sourceSession.companionState,
     memories: branchedVisibleMemories,
     memoryEmbeddings: branchedDynamicMemoryState.memoryEmbeddings,
     memorySummary: branchedDynamicMemoryState.memorySummary,
@@ -1420,10 +1434,18 @@ export async function createBranchedSessionToCharacter(
     characterId: targetCharacterId,
     title: `Branch to ${characterName}`,
     backgroundImagePath: undefined,
-    selectedSceneId: targetCharacter?.defaultSceneId ?? targetCharacter?.scenes?.[0]?.id,
-    promptTemplateId: targetCharacter?.promptTemplateId ?? null,
+    mode: targetCharacter?.mode ?? "roleplay",
+    selectedSceneId:
+      targetCharacter?.mode === "companion"
+        ? undefined
+        : (targetCharacter?.defaultSceneId ?? targetCharacter?.scenes?.[0]?.id),
+    promptTemplateId:
+      targetCharacter?.mode === "companion"
+        ? (targetCharacter?.companion?.prompting?.promptTemplateId ?? APP_COMPANION_TEMPLATE_ID)
+        : (targetCharacter?.promptTemplateId ?? null),
     personaId: sourceSession.personaId,
     personaDisabled: sourceSession.personaDisabled ?? false,
+    companionState: undefined,
     memories: branchedVisibleMemories,
     memoryEmbeddings: branchedDynamicMemoryState.memoryEmbeddings,
     memorySummary: branchedDynamicMemoryState.memorySummary,
@@ -1715,6 +1737,8 @@ export async function getEmbeddingModelInfo(): Promise<{
   selectedSourceVersion?: string | null;
   availableVersions?: string[];
   maxTokens: number;
+  companionEmotionInstalled?: boolean;
+  installBundleComplete?: boolean;
 }> {
   return storageBridge.getEmbeddingModelInfo();
 }

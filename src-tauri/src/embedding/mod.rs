@@ -6,6 +6,7 @@ use tokio::sync::Mutex as TokioMutex;
 
 mod benchmark;
 mod download;
+pub(crate) mod emotion;
 mod inference;
 mod layout;
 mod ort_runtime;
@@ -59,6 +60,8 @@ pub struct EmbeddingModelInfo {
     pub selected_source_version: Option<String>,
     pub available_versions: Vec<String>,
     pub max_tokens: u32,
+    pub companion_emotion_installed: bool,
+    pub install_bundle_complete: bool,
 }
 
 #[derive(Clone, Debug, serde::Serialize)]
@@ -265,6 +268,8 @@ pub fn get_embedding_model_info(app: AppHandle) -> Result<EmbeddingModelInfo, St
             selected_source_version: source_version,
             available_versions,
             max_tokens,
+            companion_emotion_installed: installed.has_companion_emotion,
+            install_bundle_complete: installed.has_companion_emotion,
         }),
         Some(EmbeddingModelVersion::V3) => Ok(EmbeddingModelInfo {
             installed: true,
@@ -273,6 +278,8 @@ pub fn get_embedding_model_info(app: AppHandle) -> Result<EmbeddingModelInfo, St
             selected_source_version: source_version,
             available_versions,
             max_tokens,
+            companion_emotion_installed: installed.has_companion_emotion,
+            install_bundle_complete: installed.has_companion_emotion,
         }),
         Some(EmbeddingModelVersion::V1) => Ok(EmbeddingModelInfo {
             installed: true,
@@ -281,6 +288,8 @@ pub fn get_embedding_model_info(app: AppHandle) -> Result<EmbeddingModelInfo, St
             selected_source_version: source_version,
             available_versions,
             max_tokens,
+            companion_emotion_installed: installed.has_companion_emotion,
+            install_bundle_complete: installed.has_companion_emotion,
         }),
         None => Ok(EmbeddingModelInfo {
             installed: false,
@@ -289,6 +298,8 @@ pub fn get_embedding_model_info(app: AppHandle) -> Result<EmbeddingModelInfo, St
             selected_source_version: None,
             available_versions: vec![],
             max_tokens: 0,
+            companion_emotion_installed: installed.has_companion_emotion,
+            install_bundle_complete: false,
         }),
     }
 }
@@ -336,6 +347,7 @@ pub async fn initialize_embedding_model(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub async fn clear_embedding_runtime_cache() -> Result<(), String> {
     inference::clear_loaded_runtime_cache().await;
+    emotion::clear_loaded_runtime_cache().await;
     Ok(())
 }
 

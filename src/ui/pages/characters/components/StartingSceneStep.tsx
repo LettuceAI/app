@@ -1,7 +1,7 @@
 import React from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Plus, X, BookOpen, Edit2, ChevronDown, EyeOff } from "lucide-react";
-import type { Scene } from "../../../../core/storage/schemas";
+import type { CharacterMode, Scene } from "../../../../core/storage/schemas";
 import { typography, radius, spacing, interactive, shadows, cn } from "../../../design-tokens";
 import { BottomMenu } from "../../../components/BottomMenu";
 import { useI18n } from "../../../../core/i18n/context";
@@ -13,6 +13,7 @@ interface StartingSceneStepProps {
   onDefaultSceneIdChange: (id: string | null) => void;
   onContinue: () => void;
   canContinue: boolean;
+  mode?: CharacterMode;
 }
 
 export function StartingSceneStep({
@@ -22,8 +23,10 @@ export function StartingSceneStep({
   onDefaultSceneIdChange,
   onContinue,
   canContinue,
+  mode = "roleplay",
 }: StartingSceneStepProps) {
   const { t } = useI18n();
+  const isCompanion = mode === "companion";
   const [newSceneContent, setNewSceneContent] = React.useState("");
   const [newSceneDirection, setNewSceneDirection] = React.useState("");
   const [showNewDirectionInput, setShowNewDirectionInput] = React.useState(false);
@@ -112,7 +115,7 @@ export function StartingSceneStep({
             <BookOpen className="h-4 w-4 text-info" />
           </div>
           <h2 className={cn(typography.h1.size, typography.h1.weight, "text-fg")}>
-            {t("characters.scenes.title")}
+            {isCompanion ? "Opening Context" : t("characters.scenes.title")}
           </h2>
           {scenes.length > 0 && (
             <span className="ml-auto rounded-full border border-fg/10 bg-fg/5 px-2 py-0.5 text-xs text-fg/70">
@@ -121,7 +124,9 @@ export function StartingSceneStep({
           )}
         </div>
         <p className={cn(typography.body.size, "mt-2 text-fg/50")}>
-          {t("characters.scenes.subtitle")}
+          {isCompanion
+            ? "Optional first-chat context for this companion. Companion sessions can start without a scene."
+            : t("characters.scenes.subtitle")}
         </p>
       </div>
 
@@ -276,8 +281,14 @@ export function StartingSceneStep({
           {scenes.length === 0 && (
             <div className="rounded-xl border border-dashed border-fg/10 bg-fg/2 px-4 py-8 text-center">
               <BookOpen className="mx-auto h-8 w-8 text-fg/20 mb-2" />
-              <p className="text-sm text-fg/40">No scenes yet</p>
-              <p className="text-xs text-fg/30 mt-1">Create your first scene to get started</p>
+              <p className="text-sm text-fg/40">
+                {isCompanion ? "No opening context yet" : "No scenes yet"}
+              </p>
+              <p className="text-xs text-fg/30 mt-1">
+                {isCompanion
+                  ? "You can skip this for companion mode."
+                  : "Create your first scene to get started"}
+              </p>
             </div>
           )}
         </div>
@@ -288,7 +299,11 @@ export function StartingSceneStep({
             value={newSceneContent}
             onChange={(e) => setNewSceneContent(e.target.value)}
             rows={6}
-            placeholder="Create a starting scene or scenario for roleplay (e.g., 'You find yourself in a mystical forest at twilight...')"
+            placeholder={
+              isCompanion
+                ? "Optional opening context, like where the companion is or what they were doing before the first message..."
+                : "Create a starting scene or scenario for roleplay (e.g., 'You find yourself in a mystical forest at twilight...')"
+            }
             className="w-full resize-none rounded-xl border border-fg/10 bg-surface-el/20 px-3.5 py-3 text-sm leading-relaxed text-fg placeholder-fg/40 transition focus:border-fg/25 focus:outline-none"
           />
           <div className="flex items-center justify-between mt-1">
@@ -368,7 +383,9 @@ export function StartingSceneStep({
       {/* Continue Button - moved to bottom */}
       <div className="pt-4 mt-auto space-y-3">
         <p className="text-xs text-fg/50 text-center">
-          Create multiple starting scenarios. One will be selected when starting a new chat.
+          {isCompanion
+            ? "Opening context is optional for companions; long-term continuity comes from companion memory."
+            : "Create multiple starting scenarios. One will be selected when starting a new chat."}
         </p>
         <button
           disabled={!canContinue}
@@ -386,7 +403,7 @@ export function StartingSceneStep({
               : "cursor-not-allowed border border-fg/5 bg-fg/5 text-fg/30",
           )}
         >
-          {t("characters.scenes.continueToScenes")}
+          {isCompanion && scenes.length === 0 ? "Skip Context" : t("characters.scenes.continueToScenes")}
         </button>
       </div>
 

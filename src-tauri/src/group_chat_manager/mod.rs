@@ -4361,6 +4361,8 @@ fn load_character(conn: &rusqlite::Connection, character_id: &str) -> Result<Cha
         default_scene_id: None,
         default_model_id: row.10,
         fallback_model_id: None,
+        mode: "roleplay".to_string(),
+        companion: None,
         memory_type: row.11.unwrap_or_else(|| "manual".to_string()),
         active_lorebook_ids: Vec::new(),
         prompt_template_id: row.12,

@@ -69,6 +69,10 @@ pub struct CharacterExportData {
     pub scenes: Vec<SceneExport>,
     pub default_scene_id: Option<String>,
     pub default_model_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub companion: Option<JsonValue>,
     #[serde(default)]
     pub memory_type: Option<String>,
     #[serde(default)]
@@ -646,6 +650,14 @@ fn parse_uec_character(value: &JsonValue) -> Result<CharacterExportPackage, Stri
     let memory_type = app_specific
         .and_then(|map| map.get("memoryType").and_then(|v| v.as_str()))
         .map(|value| value.to_string());
+    let mode = app_specific
+        .and_then(|map| map.get("mode").and_then(|v| v.as_str()))
+        .or_else(|| payload.get("mode").and_then(|v| v.as_str()))
+        .map(|value| value.to_string());
+    let companion = app_specific
+        .and_then(|map| map.get("companion"))
+        .or_else(|| payload.get("companion"))
+        .cloned();
     let active_lorebook_ids = app_specific
         .and_then(|map| map.get("activeLorebookIds"))
         .or_else(|| payload.get("activeLorebookIds"))
@@ -717,6 +729,8 @@ fn parse_uec_character(value: &JsonValue) -> Result<CharacterExportPackage, Stri
             scenes,
             default_scene_id,
             default_model_id,
+            mode,
+            companion,
             memory_type,
             active_lorebook_ids,
             lorebooks,
@@ -1095,6 +1109,8 @@ fn load_character_export_snapshot(
         tags,
         default_scene_id,
         default_model_id,
+        mode,
+        companion_raw,
         prompt_template_id,
         system_prompt,
         voice_config_raw,
@@ -1127,6 +1143,8 @@ fn load_character_export_snapshot(
         Option<String>, // tags
         Option<String>, // default_scene_id
         Option<String>, // default_model_id
+        Option<String>, // mode
+        Option<String>, // companion
         Option<String>, // prompt_template_id
         Option<String>, // system_prompt
         Option<String>, // voice_config
@@ -1146,7 +1164,7 @@ fn load_character_export_snapshot(
         i64,            // updated_at
     ) = conn
         .query_row(
-            "SELECT name, avatar_path, background_image_path, description, definition, nickname, scenario, creator_notes, creator, creator_notes_multilingual, source, tags, default_scene_id, default_model_id, prompt_template_id, system_prompt, voice_config, voice_autoplay, memory_type, active_lorebook_ids, disable_avatar_gradient, custom_gradient_enabled, custom_gradient_colors, custom_text_color, custom_text_secondary, avatar_crop_x, avatar_crop_y, avatar_crop_scale, default_chat_template_id, created_at, updated_at FROM characters WHERE id = ?",
+            "SELECT name, avatar_path, background_image_path, description, definition, nickname, scenario, creator_notes, creator, creator_notes_multilingual, source, tags, default_scene_id, default_model_id, COALESCE(mode, 'roleplay'), companion, prompt_template_id, system_prompt, voice_config, voice_autoplay, memory_type, active_lorebook_ids, disable_avatar_gradient, custom_gradient_enabled, custom_gradient_colors, custom_text_color, custom_text_secondary, avatar_crop_x, avatar_crop_y, avatar_crop_scale, default_chat_template_id, created_at, updated_at FROM characters WHERE id = ?",
             params![character_id],
             |r| {
                 Ok((
@@ -1170,10 +1188,10 @@ fn load_character_export_snapshot(
                     r.get(17)?,
                     r.get(18)?,
                     r.get(19)?,
-                    r.get::<_, i64>(20)?,
-                    r.get::<_, i64>(21)?,
-                    r.get(22)?,
-                    r.get(23)?,
+                    r.get(20)?,
+                    r.get(21)?,
+                    r.get::<_, i64>(22)?,
+                    r.get::<_, i64>(23)?,
                     r.get(24)?,
                     r.get(25)?,
                     r.get(26)?,
@@ -1181,6 +1199,8 @@ fn load_character_export_snapshot(
                     r.get(28)?,
                     r.get(29)?,
                     r.get(30)?,
+                    r.get(31)?,
+                    r.get(32)?,
                 ))
             },
         )
@@ -1318,6 +1338,10 @@ fn load_character_export_snapshot(
         .and_then(|vc| serde_json::from_str::<JsonValue>(&vc).ok())
         .filter(|v| !v.is_null());
     let voice_autoplay = voice_autoplay_raw.map(|v| v != 0);
+    let companion = companion_raw
+        .as_ref()
+        .and_then(|value| serde_json::from_str::<JsonValue>(value).ok())
+        .filter(|value| !value.is_null());
     let creator_notes_multilingual = creator_notes_multilingual
         .as_ref()
         .and_then(|value| serde_json::from_str::<JsonValue>(value).ok())
@@ -1367,6 +1391,8 @@ fn load_character_export_snapshot(
             scenes,
             default_scene_id,
             default_model_id,
+            mode,
+            companion,
             memory_type: Some(memory_value),
             active_lorebook_ids,
             lorebooks,
@@ -1505,6 +1531,12 @@ fn build_uec_from_package(
         "disableAvatarGradient".into(),
         JsonValue::Bool(package.character.disable_avatar_gradient),
     );
+    if let Some(mode) = package.character.mode.clone() {
+        app_specific.insert("mode".into(), JsonValue::String(mode));
+    }
+    if let Some(companion) = package.character.companion.clone() {
+        app_specific.insert("companion".into(), companion);
+    }
     app_specific.insert("memoryType".into(), JsonValue::String(memory_value));
     if !package.character.active_lorebook_ids.is_empty() {
         app_specific.insert(
@@ -1955,11 +1987,22 @@ pub fn character_import(app: tauri::AppHandle, import_json: String) -> Result<St
         }
     });
     let voice_autoplay = package.character.voice_autoplay.unwrap_or(false) as i64;
+    let mode = package
+        .character
+        .mode
+        .as_deref()
+        .filter(|value| *value == "companion")
+        .unwrap_or("roleplay");
+    let companion = package
+        .character
+        .companion
+        .as_ref()
+        .and_then(|value| serde_json::to_string(value).ok());
 
     // Insert character
     tx.execute(
-        r#"INSERT INTO characters (id, name, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, background_image_path, description, definition, nickname, scenario, creator_notes, creator, creator_notes_multilingual, source, tags, default_scene_id, default_model_id, prompt_template_id, system_prompt, voice_config, voice_autoplay, memory_type, disable_avatar_gradient, custom_gradient_enabled, custom_gradient_colors, custom_text_color, custom_text_secondary, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
+        r#"INSERT INTO characters (id, name, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, background_image_path, description, definition, nickname, scenario, creator_notes, creator, creator_notes_multilingual, source, tags, default_scene_id, default_model_id, mode, companion, prompt_template_id, system_prompt, voice_config, voice_autoplay, memory_type, disable_avatar_gradient, custom_gradient_enabled, custom_gradient_colors, custom_text_color, custom_text_secondary, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
         params![
             &new_character_id,
             &package.character.name,
@@ -1982,6 +2025,8 @@ pub fn character_import(app: tauri::AppHandle, import_json: String) -> Result<St
             source,
             tags,
             package.character.default_model_id,
+            mode,
+            companion,
             package.character.prompt_template_id,
             package.character.system_prompt,
             voice_config,
@@ -2208,6 +2253,8 @@ fn build_character_import_preview(
         "chatTemplates": chat_templates,
         "defaultSceneId": package.character.default_scene_id,
         "defaultChatTemplateId": package.character.default_chat_template_id,
+        "mode": package.character.mode,
+        "companion": package.character.companion,
         "promptTemplateId": package.character.prompt_template_id,
         "activeLorebookIds": package.character.active_lorebook_ids,
         "lorebooks": package.character.lorebooks,
@@ -2385,6 +2432,12 @@ pub fn convert_export_to_uec(import_json: String) -> Result<String, String> {
                 "disableAvatarGradient".into(),
                 JsonValue::Bool(package.character.disable_avatar_gradient),
             );
+            if let Some(mode) = package.character.mode.clone() {
+                app_specific.insert("mode".into(), JsonValue::String(mode));
+            }
+            if let Some(companion) = package.character.companion.clone() {
+                app_specific.insert("companion".into(), companion);
+            }
             let memory_type = package
                 .character
                 .memory_type
@@ -2850,6 +2903,8 @@ fn read_imported_character(
         tags,
         default_scene_id,
         default_model_id,
+        mode,
+        companion_raw,
         prompt_template_id,
         active_lorebook_ids,
         system_prompt,
@@ -2881,6 +2936,8 @@ fn read_imported_character(
         Option<String>, // tags
         Option<String>, // default_scene_id
         Option<String>, // default_model_id
+        Option<String>, // mode
+        Option<String>, // companion
         Option<String>, // prompt_template_id
         Option<String>, // active_lorebook_ids
         Option<String>, // system_prompt
@@ -2896,7 +2953,7 @@ fn read_imported_character(
         i64,            // updated_at
     ) = conn
         .query_row(
-            "SELECT name, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, background_image_path, description, definition, nickname, scenario, creator_notes, creator, creator_notes_multilingual, source, tags, default_scene_id, default_model_id, prompt_template_id, active_lorebook_ids, system_prompt, voice_config, voice_autoplay, memory_type, disable_avatar_gradient, custom_gradient_enabled, custom_gradient_colors, custom_text_color, custom_text_secondary, created_at, updated_at FROM characters WHERE id = ?",
+            "SELECT name, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, background_image_path, description, definition, nickname, scenario, creator_notes, creator, creator_notes_multilingual, source, tags, default_scene_id, default_model_id, COALESCE(mode, 'roleplay'), companion, prompt_template_id, active_lorebook_ids, system_prompt, voice_config, voice_autoplay, memory_type, disable_avatar_gradient, custom_gradient_enabled, custom_gradient_colors, custom_text_color, custom_text_secondary, created_at, updated_at FROM characters WHERE id = ?",
             params![character_id],
             |r| {
                 Ok((
@@ -2923,13 +2980,15 @@ fn read_imported_character(
                     r.get(20)?,
                     r.get(21)?,
                     r.get(22)?,
-                    r.get::<_, i64>(23)?,
-                    r.get::<_, i64>(24)?,
-                    r.get(25)?,
-                    r.get(26)?,
+                    r.get(23)?,
+                    r.get(24)?,
+                    r.get::<_, i64>(25)?,
+                    r.get::<_, i64>(26)?,
                     r.get(27)?,
                     r.get(28)?,
                     r.get(29)?,
+                    r.get(30)?,
+                    r.get(31)?,
                 ))
             },
         )
@@ -3071,6 +3130,17 @@ fn read_imported_character(
     }
     if let Some(dm) = default_model_id {
         root.insert("defaultModelId".into(), JsonValue::String(dm));
+    }
+    root.insert(
+        "mode".into(),
+        JsonValue::String(mode.unwrap_or_else(|| "roleplay".to_string())),
+    );
+    if let Some(value) = companion_raw {
+        if let Ok(parsed) = serde_json::from_str::<JsonValue>(&value) {
+            if !parsed.is_null() {
+                root.insert("companion".into(), parsed);
+            }
+        }
     }
     if let Some(value) = active_lorebook_ids {
         if let Ok(parsed) = serde_json::from_str::<Vec<String>>(&value) {

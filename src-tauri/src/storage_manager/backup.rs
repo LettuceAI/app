@@ -416,7 +416,7 @@ fn export_characters(app: &tauri::AppHandle) -> Result<Vec<JsonValue>, String> {
 
     // Get all characters
     let mut stmt = conn
-        .prepare("SELECT id, name, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, design_description, design_reference_image_ids, background_image_path, description, definition, nickname, scenario, creator_notes, creator, creator_notes_multilingual, source, tags, default_scene_id, default_model_id, fallback_model_id, memory_type, COALESCE(active_lorebook_ids, '[]'), prompt_template_id, group_chat_prompt_template_id, group_chat_roleplay_prompt_template_id, system_prompt, voice_config, voice_autoplay, disable_avatar_gradient, custom_gradient_enabled, custom_gradient_colors, custom_text_color, custom_text_secondary, chat_appearance, default_chat_template_id, created_at, updated_at FROM characters")
+        .prepare("SELECT id, name, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, design_description, design_reference_image_ids, background_image_path, description, definition, nickname, scenario, creator_notes, creator, creator_notes_multilingual, source, tags, default_scene_id, default_model_id, fallback_model_id, COALESCE(mode, 'roleplay'), companion, memory_type, COALESCE(active_lorebook_ids, '[]'), prompt_template_id, group_chat_prompt_template_id, group_chat_roleplay_prompt_template_id, system_prompt, voice_config, voice_autoplay, disable_avatar_gradient, custom_gradient_enabled, custom_gradient_colors, custom_text_color, custom_text_secondary, chat_appearance, default_chat_template_id, created_at, updated_at FROM characters")
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 
     let characters: Vec<(String, JsonValue)> = stmt
@@ -444,23 +444,25 @@ fn export_characters(app: &tauri::AppHandle) -> Result<Vec<JsonValue>, String> {
                 "default_scene_id": r.get::<_, Option<String>>(18)?,
                 "default_model_id": r.get::<_, Option<String>>(19)?,
                 "fallback_model_id": r.get::<_, Option<String>>(20)?,
-                "memory_type": r.get::<_, String>(21)?,
-                "active_lorebook_ids": r.get::<_, String>(22)?,
-                "prompt_template_id": r.get::<_, Option<String>>(23)?,
-                "group_chat_prompt_template_id": r.get::<_, Option<String>>(24)?,
-                "group_chat_roleplay_prompt_template_id": r.get::<_, Option<String>>(25)?,
-                "system_prompt": r.get::<_, Option<String>>(26)?,
-                "voice_config": r.get::<_, Option<String>>(27)?,
-                "voice_autoplay": r.get::<_, Option<i64>>(28)?.unwrap_or(0) != 0,
-                "disable_avatar_gradient": r.get::<_, i64>(29)? != 0,
-                "custom_gradient_enabled": r.get::<_, i64>(30)? != 0,
-                "custom_gradient_colors": r.get::<_, Option<String>>(31)?,
-                "custom_text_color": r.get::<_, Option<String>>(32)?,
-                "custom_text_secondary": r.get::<_, Option<String>>(33)?,
-                "chat_appearance": r.get::<_, Option<String>>(34)?,
-                "default_chat_template_id": r.get::<_, Option<String>>(35)?,
-                "created_at": r.get::<_, i64>(36)?,
-                "updated_at": r.get::<_, i64>(37)?,
+                "mode": r.get::<_, String>(21)?,
+                "companion": r.get::<_, Option<String>>(22)?,
+                "memory_type": r.get::<_, String>(23)?,
+                "active_lorebook_ids": r.get::<_, String>(24)?,
+                "prompt_template_id": r.get::<_, Option<String>>(25)?,
+                "group_chat_prompt_template_id": r.get::<_, Option<String>>(26)?,
+                "group_chat_roleplay_prompt_template_id": r.get::<_, Option<String>>(27)?,
+                "system_prompt": r.get::<_, Option<String>>(28)?,
+                "voice_config": r.get::<_, Option<String>>(29)?,
+                "voice_autoplay": r.get::<_, Option<i64>>(30)?.unwrap_or(0) != 0,
+                "disable_avatar_gradient": r.get::<_, i64>(31)? != 0,
+                "custom_gradient_enabled": r.get::<_, i64>(32)? != 0,
+                "custom_gradient_colors": r.get::<_, Option<String>>(33)?,
+                "custom_text_color": r.get::<_, Option<String>>(34)?,
+                "custom_text_secondary": r.get::<_, Option<String>>(35)?,
+                "chat_appearance": r.get::<_, Option<String>>(36)?,
+                "default_chat_template_id": r.get::<_, Option<String>>(37)?,
+                "created_at": r.get::<_, i64>(38)?,
+                "updated_at": r.get::<_, i64>(39)?,
             });
             Ok((id, json))
         })
@@ -1785,15 +1787,24 @@ fn import_characters(app: &tauri::AppHandle, data: &JsonValue) -> Result<(), Str
                 .get("name")
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown");
+            let companion_json = item.get("companion").and_then(|value| {
+                if value.is_null() {
+                    None
+                } else if let Some(raw) = value.as_str() {
+                    Some(raw.to_string())
+                } else {
+                    serde_json::to_string(value).ok()
+                }
+            });
 
             // Insert character
             conn.execute(
                 "INSERT INTO characters (id, name, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, design_description, design_reference_image_ids, background_image_path, description, definition,
                  nickname, scenario, creator_notes, creator, creator_notes_multilingual, source, tags,
-                 default_scene_id, default_model_id, fallback_model_id, memory_type, active_lorebook_ids, prompt_template_id, group_chat_prompt_template_id, group_chat_roleplay_prompt_template_id, system_prompt,
+                 default_scene_id, default_model_id, fallback_model_id, mode, companion, memory_type, active_lorebook_ids, prompt_template_id, group_chat_prompt_template_id, group_chat_roleplay_prompt_template_id, system_prompt,
                  voice_config, voice_autoplay, disable_avatar_gradient, custom_gradient_enabled, custom_gradient_colors,
                  custom_text_color, custom_text_secondary, chat_appearance, default_chat_template_id, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35, ?36, ?37, ?38)",
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35, ?36, ?37, ?38, ?39, ?40)",
                 params![
                     char_id,
                     item.get("name").and_then(|v| v.as_str()),
@@ -1819,6 +1830,8 @@ fn import_characters(app: &tauri::AppHandle, data: &JsonValue) -> Result<(), Str
                     item.get("default_scene_id").and_then(|v| v.as_str()),
                     item.get("default_model_id").and_then(|v| v.as_str()),
                     item.get("fallback_model_id").and_then(|v| v.as_str()),
+                    item.get("mode").and_then(|v| v.as_str()).unwrap_or("roleplay"),
+                    companion_json.as_deref(),
                     item.get("memory_type").and_then(|v| v.as_str()).unwrap_or("manual"),
                     item.get("active_lorebook_ids")
                         .and_then(|v| v.as_str())
@@ -1957,17 +1970,18 @@ fn import_sessions(app: &tauri::AppHandle, data: &JsonValue) -> Result<(), Strin
                     });
 
             conn.execute(
-                "INSERT INTO sessions (id, character_id, title, background_image_path, system_prompt, selected_scene_id, author_note, persona_id, persona_disabled, voice_autoplay,
-                 prompt_template_id, lorebook_ids_override, temperature, top_p, max_output_tokens, frequency_penalty, presence_penalty, top_k,
+                "INSERT INTO sessions (id, character_id, title, background_image_path, system_prompt, mode, selected_scene_id, author_note, persona_id, persona_disabled, voice_autoplay,
+                 prompt_template_id, lorebook_ids_override, temperature, top_p, max_output_tokens, frequency_penalty, presence_penalty, top_k, companion_state,
                  memories, memory_embeddings, memory_summary, memory_summary_token_count, memory_tool_events,
                  memory_status, memory_error, memory_progress_step, archived, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29)",
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31)",
                 params![
                     session_id,
                     character_id,
                     item.get("title").and_then(|v| v.as_str()),
                     item.get("background_image_path").and_then(|v| v.as_str()),
                     item.get("system_prompt").and_then(|v| v.as_str()),
+                    item.get("mode").and_then(|v| v.as_str()).unwrap_or("roleplay"),
                     item.get("selected_scene_id").and_then(|v| v.as_str()),
                     item.get("author_note").and_then(|v| v.as_str()),
                     item.get("persona_id").and_then(|v| v.as_str()),
@@ -1983,6 +1997,7 @@ fn import_sessions(app: &tauri::AppHandle, data: &JsonValue) -> Result<(), Strin
                     item.get("frequency_penalty").and_then(|v| v.as_f64()),
                     item.get("presence_penalty").and_then(|v| v.as_f64()),
                     item.get("top_k").and_then(|v| v.as_i64()),
+                    item.get("companion_state").and_then(|v| v.as_str()),
                     item.get("memories").and_then(|v| v.as_str()).unwrap_or("[]"),
                     item.get("memory_embeddings").and_then(|v| v.as_str()).unwrap_or("[]"),
                     item.get("memory_summary").and_then(|v| v.as_str()),

@@ -73,6 +73,10 @@ export async function resetLocalRoleplayTemplate(): Promise<SystemPromptTemplate
   return await invoke<SystemPromptTemplate>("reset_local_roleplay_template");
 }
 
+export async function resetCompanionTemplate(): Promise<SystemPromptTemplate> {
+  return await invoke<SystemPromptTemplate>("reset_companion_template");
+}
+
 export async function resetDynamicSummaryTemplate(): Promise<SystemPromptTemplate> {
   return await invoke<SystemPromptTemplate>("reset_dynamic_summary_template");
 }

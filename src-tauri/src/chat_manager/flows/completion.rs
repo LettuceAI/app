@@ -7,6 +7,7 @@ use crate::chat_manager::attachments::{
     cleanup_attachments, load_attachment_data, persist_attachments,
 };
 use crate::chat_manager::commands::take_aborted_request;
+use crate::chat_manager::companion;
 use crate::chat_manager::execution::{
     build_model_attempts, build_provider_extra_fields, emit_fallback_retry_toast, RequestSettings,
 };
@@ -164,6 +165,23 @@ impl CompletionFlow {
         };
         session.messages.push(user_msg.clone());
         session.updated_at = now;
+
+        if companion::update_state_for_user_message(
+            &app,
+            &mut session,
+            &character,
+            &user_message,
+            now,
+        )
+        .await
+        {
+            log_info(
+                &app,
+                "companion",
+                format!("updated companion state for session={}", session.id),
+            );
+        }
+
         context.save_session(&session)?;
 
         emit_debug(

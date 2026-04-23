@@ -95,6 +95,8 @@ export const storageBridge = {
       selectedSourceVersion?: string | null;
       availableVersions?: string[];
       maxTokens: number;
+      companionEmotionInstalled?: boolean;
+      installBundleComplete?: boolean;
     }>("get_embedding_model_info"),
   startEmbeddingDownload: (version?: string) =>
     invoke("start_embedding_download", { version: version ?? null }) as Promise<void>,

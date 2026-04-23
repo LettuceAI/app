@@ -22,6 +22,7 @@ use crate::chat_manager::types::{
 pub enum PromptType {
     SystemPrompt,
     LocalRoleplayPrompt,
+    CompanionPrompt,
     DynamicMemoryPrompt,
     DynamicMemoryLocalPrompt,
     DynamicSummaryPrompt,
@@ -41,6 +42,7 @@ pub fn get_base_prompt(prompt_type: PromptType) -> String {
     match prompt_type {
         PromptType::SystemPrompt => prompt_engine::default_system_prompt_template(),
         PromptType::LocalRoleplayPrompt => prompt_engine::default_local_roleplay_prompt(),
+        PromptType::CompanionPrompt => prompt_engine::default_companion_prompt(),
         PromptType::DynamicMemoryPrompt => prompt_engine::default_dynamic_memory_prompt(),
         PromptType::DynamicMemoryLocalPrompt => {
             prompt_engine::default_dynamic_memory_local_prompt()
@@ -69,6 +71,7 @@ pub fn get_base_prompt_entries(prompt_type: PromptType) -> Vec<SystemPromptEntry
     match prompt_type {
         PromptType::SystemPrompt => prompt_engine::default_modular_prompt_entries(),
         PromptType::LocalRoleplayPrompt => prompt_engine::default_local_roleplay_entries(),
+        PromptType::CompanionPrompt => prompt_engine::default_companion_entries(),
         PromptType::DynamicMemoryPrompt => prompt_engine::default_dynamic_memory_entries(),
         PromptType::DynamicMemoryLocalPrompt => {
             prompt_engine::default_dynamic_memory_local_entries()

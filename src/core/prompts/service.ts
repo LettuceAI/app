@@ -13,6 +13,7 @@ export {
   isAppDefaultTemplate,
   resetAppDefaultTemplate,
   resetLocalRoleplayTemplate,
+  resetCompanionTemplate,
   resetDynamicSummaryTemplate,
   resetDynamicMemoryTemplate,
   resetDynamicMemoryLocalTemplate,

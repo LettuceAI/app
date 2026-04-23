@@ -63,6 +63,11 @@ fn direct_chat_variables() -> Vec<PromptVariableDefinition> {
             "Dynamic conversation summary.",
         ),
         variable(
+            "{{companion_state}}",
+            "Companion State",
+            "Rendered emotional and relationship state for companion chats.",
+        ),
+        variable(
             "{{key_memories}}",
             "Key Memories",
             "Relevant long-term memory facts.",
@@ -402,6 +407,7 @@ pub fn prompt_type_label(prompt_type: PromptTemplateType) -> &'static str {
     match prompt_type {
         PromptTemplateType::Undefined => "Undefined",
         PromptTemplateType::DirectChat => "Direct Chat",
+        PromptTemplateType::CompanionChat => "Companion Chat",
         PromptTemplateType::GroupChatRoleplay => "Group Chat (Roleplay)",
         PromptTemplateType::GroupChatConversational => "Group Chat (Conversation)",
         PromptTemplateType::DynamicMemorySummarizer => "Dynamic Memory Summarizer",
@@ -435,6 +441,7 @@ pub fn allowed_variables_for_prompt_type(
             design_reference_writer_variables(),
         ]),
         PromptTemplateType::DirectChat => direct_chat_variables(),
+        PromptTemplateType::CompanionChat => direct_chat_variables(),
         PromptTemplateType::GroupChatRoleplay => group_chat_roleplay_variables(),
         PromptTemplateType::GroupChatConversational => group_chat_conversational_variables(),
         PromptTemplateType::DynamicMemorySummarizer => dynamic_memory_summarizer_variables(),
@@ -456,6 +463,14 @@ pub fn required_variables_for_prompt_type(prompt_type: PromptTemplateType) -> Ve
         PromptTemplateType::DirectChat => vec![
             "{{scene}}".to_string(),
             "{{scene_direction}}".to_string(),
+            "{{char.name}}".to_string(),
+            "{{char.desc}}".to_string(),
+            "{{persona.name}}".to_string(),
+            "{{persona.desc}}".to_string(),
+            "{{context_summary}}".to_string(),
+            "{{key_memories}}".to_string(),
+        ],
+        PromptTemplateType::CompanionChat => vec![
             "{{char.name}}".to_string(),
             "{{char.desc}}".to_string(),
             "{{persona.name}}".to_string(),
@@ -558,6 +573,7 @@ pub fn build_parameter_engine() -> PromptParameterEngine {
     let prompt_types = [
         PromptTemplateType::Undefined,
         PromptTemplateType::DirectChat,
+        PromptTemplateType::CompanionChat,
         PromptTemplateType::GroupChatRoleplay,
         PromptTemplateType::GroupChatConversational,
         PromptTemplateType::DynamicMemorySummarizer,

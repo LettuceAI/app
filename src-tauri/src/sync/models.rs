@@ -8,6 +8,10 @@ fn default_memory_type() -> String {
     "manual".to_string()
 }
 
+fn default_character_mode() -> String {
+    "roleplay".to_string()
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MetaEntry {
     pub key: String,
@@ -238,6 +242,10 @@ pub struct Character {
     pub default_model_id: Option<String>,
     #[serde(default)]
     pub fallback_model_id: Option<String>,
+    #[serde(default = "default_character_mode")]
+    pub mode: String,
+    #[serde(default)]
+    pub companion: Option<String>,
     pub memory_type: String,
     #[serde(default)]
     pub active_lorebook_ids: Option<String>,
@@ -323,6 +331,8 @@ pub struct Session {
     #[serde(default)]
     pub background_image_path: Option<String>,
     pub system_prompt: Option<String>,
+    #[serde(default)]
+    pub mode: String,
     pub selected_scene_id: Option<String>,
     #[serde(default)]
     pub prompt_template_id: Option<String>,
@@ -340,6 +350,8 @@ pub struct Session {
     pub frequency_penalty: Option<f64>,
     pub presence_penalty: Option<f64>,
     pub top_k: Option<i64>,
+    #[serde(default)]
+    pub companion_state: Option<String>,
     pub memories: String,
     pub memory_embeddings: String,
     pub memory_summary: Option<String>,

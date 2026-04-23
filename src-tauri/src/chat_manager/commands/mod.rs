@@ -795,6 +795,11 @@ pub fn reset_local_roleplay_template(app: AppHandle) -> Result<SystemPromptTempl
 }
 
 #[tauri::command]
+pub fn reset_companion_template(app: AppHandle) -> Result<SystemPromptTemplate, String> {
+    prompts::reset_companion_template(&app)
+}
+
+#[tauri::command]
 pub fn reset_dynamic_summary_template(app: AppHandle) -> Result<SystemPromptTemplate, String> {
     prompts::reset_dynamic_summary_template(&app)
 }
@@ -934,6 +939,7 @@ pub fn render_prompt_preview(
             title: "Preview".to_string(),
             background_image_path: None,
             system_prompt: None,
+            mode: character.mode.clone(),
             selected_scene_id: None,
             prompt_template_id: None,
             lorebook_ids_override: None,
@@ -942,6 +948,7 @@ pub fn render_prompt_preview(
             persona_disabled: false,
             voice_autoplay: None,
             advanced_model_settings: None,
+            companion_state: None,
             messages: vec![],
             archived: false,
             created_at: now,

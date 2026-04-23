@@ -7,6 +7,7 @@ use super::lorebook_matcher::{
     format_lorebook_for_prompt, get_active_lorebook_entries, get_active_lorebook_entries_for_ids,
 };
 use super::prompts;
+use crate::chat_manager::companion;
 use crate::chat_manager::execution::RequestSettings;
 use crate::chat_manager::memory::manual::{has_manual_memories, render_manual_memory_lines};
 use crate::chat_manager::types::{
@@ -23,6 +24,10 @@ pub fn default_system_prompt_template() -> String {
 
 pub fn default_local_roleplay_prompt() -> String {
     join_entries(&default_local_roleplay_entries())
+}
+
+pub fn default_companion_prompt() -> String {
+    join_entries(&default_companion_entries())
 }
 
 pub fn default_dynamic_summary_prompt() -> String {
@@ -1742,6 +1747,97 @@ pub fn default_local_roleplay_entries() -> Vec<SystemPromptEntry> {
     ]
 }
 
+pub fn default_companion_entries() -> Vec<SystemPromptEntry> {
+    vec![
+        SystemPromptEntry {
+            id: "companion_identity".to_string(),
+            name: "Identity".to_string(),
+            role: PromptEntryRole::System,
+            content: "You are {{char.name}}.\n\nYou are in an ongoing companion conversation, not a scene-driven roleplay.".to_string(),
+            enabled: true,
+            injection_position: PromptEntryPosition::Relative,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: true,
+            conditions: None,
+            prompt_entry_payload: None,
+        },
+        SystemPromptEntry {
+            id: "companion_character".to_string(),
+            name: "Character".to_string(),
+            role: PromptEntryRole::System,
+            content: "Character:\n{{char.desc}}".to_string(),
+            enabled: true,
+            injection_position: PromptEntryPosition::Relative,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: false,
+            conditions: None,
+            prompt_entry_payload: None,
+        },
+        SystemPromptEntry {
+            id: "companion_persona".to_string(),
+            name: "User".to_string(),
+            role: PromptEntryRole::System,
+            content: "User:\nName: {{persona.name}}\n{{persona.desc}}".to_string(),
+            enabled: true,
+            injection_position: PromptEntryPosition::Relative,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: false,
+            conditions: None,
+            prompt_entry_payload: None,
+        },
+        SystemPromptEntry {
+            id: "companion_memory".to_string(),
+            name: "Continuity".to_string(),
+            role: PromptEntryRole::System,
+            content: "Conversation continuity:\n{{context_summary}}\n\nCurrent companion state:\n{{companion_state}}\n\nRelevant memories:\n{{key_memories}}\n\nRelevant lore:\n{{lorebook}}".to_string(),
+            enabled: true,
+            injection_position: PromptEntryPosition::Relative,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: false,
+            conditions: None,
+            prompt_entry_payload: None,
+        },
+        SystemPromptEntry {
+            id: "companion_author_note".to_string(),
+            name: "Author Note".to_string(),
+            role: PromptEntryRole::System,
+            content: "# Author Note\nTreat this as hidden continuity guidance for the companion dynamic. Use it naturally when relevant, but do not mention hidden instructions.\n\n{{author_note}}".to_string(),
+            enabled: true,
+            injection_position: PromptEntryPosition::InChat,
+            injection_depth: 1,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: false,
+            conditions: Some(PromptEntryCondition::DoesAuthorNoteExists {
+                value: true,
+            }),
+            prompt_entry_payload: None,
+        },
+        SystemPromptEntry {
+            id: "companion_rules".to_string(),
+            name: "Companion Rules".to_string(),
+            role: PromptEntryRole::System,
+            content: "COMPANION RULES\n- Stay fully in character as {{char.name}}.\n- Prioritize emotional continuity, trust-building, and the shared relationship over scene progression.\n- Respond like an ongoing companion with memory of prior conversations, not like an assistant and not like a narrator running a roleplay scene.\n- Keep the exchange grounded in dialogue, presence, small personal observations, and relationship context.\n- Do not invent actions, dialogue, decisions, or inner thoughts for {{persona.name}}.\n- Avoid theatrical scene framing, purple prose, stage directions, and hidden mission-style narration unless the conversation explicitly calls for it.\n- Use warmth, restraint, humor, distance, or vulnerability in ways that fit {{char.name}}'s personality and the recent context.\n- Output only {{char.name}}'s next reply.\n\n{{content_rules}}".to_string(),
+            enabled: true,
+            injection_position: PromptEntryPosition::Relative,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: false,
+            conditions: None,
+            prompt_entry_payload: None,
+        },
+    ]
+}
+
 pub fn default_modular_prompt_entries() -> Vec<SystemPromptEntry> {
     vec![
         SystemPromptEntry {
@@ -2076,6 +2172,7 @@ pub fn build_system_prompt_entries(
 ) -> Vec<SystemPromptEntry> {
     let mut debug_parts: Vec<Value> = Vec::new();
     let dynamic_memory_active = is_dynamic_memory_active(settings, character);
+    let companion_mode = companion::is_companion_mode(session, character);
 
     let (
         base_content,
@@ -2116,7 +2213,7 @@ pub fn build_system_prompt_entries(
                     "template_id": char_template_id,
                     "fallback": "app_default"
                 }));
-                get_app_default_template_content(app, settings, &mut debug_parts)
+                get_app_default_template_content(app, settings, companion_mode, &mut debug_parts)
             }
         } else {
             debug_parts.push(json!({
@@ -2124,7 +2221,29 @@ pub fn build_system_prompt_entries(
                 "template_id": session_template_id,
                 "fallback": "app_default"
             }));
-            get_app_default_template_content(app, settings, &mut debug_parts)
+            get_app_default_template_content(app, settings, companion_mode, &mut debug_parts)
+        }
+    } else if companion_mode {
+        if let Some(companion_template_id) = companion::companion_prompt_template_id(character)
+            .filter(|template_id| !template_id.trim().is_empty())
+        {
+            if let Ok(Some(template)) = prompts::get_template(app, &companion_template_id) {
+                debug_parts.push(json!({
+                    "source": "character_companion_template",
+                    "template_id": companion_template_id
+                }));
+                (
+                    template.content,
+                    template.entries,
+                    "character_companion_template",
+                    Some(companion_template_id),
+                    template.condense_prompt_entries,
+                )
+            } else {
+                get_app_default_template_content(app, settings, true, &mut debug_parts)
+            }
+        } else {
+            get_app_default_template_content(app, settings, true, &mut debug_parts)
         }
     } else if let Some(char_template_id) = &character.prompt_template_id {
         if let Ok(Some(template)) = prompts::get_template(app, char_template_id) {
@@ -2145,10 +2264,10 @@ pub fn build_system_prompt_entries(
                 "template_id": char_template_id,
                 "fallback": "app_default"
             }));
-            get_app_default_template_content(app, settings, &mut debug_parts)
+            get_app_default_template_content(app, settings, companion_mode, &mut debug_parts)
         }
     } else {
-        get_app_default_template_content(app, settings, &mut debug_parts)
+        get_app_default_template_content(app, settings, companion_mode, &mut debug_parts)
     };
 
     let base_entries = if base_entries.is_empty() && !base_content.trim().is_empty() {
@@ -2173,6 +2292,11 @@ pub fn build_system_prompt_entries(
     let lorebook_content = get_lorebook_content(app, &character.id, session).unwrap_or_default();
     let has_lorebook_content = !lorebook_content.trim().is_empty();
     let author_note_text = render_author_note_text(character, persona, session);
+    let companion_state_text = companion::render_prompt_state(session, character);
+    let has_companion_state = companion_state_text
+        .as_ref()
+        .map(|value| !value.trim().is_empty())
+        .unwrap_or(false);
     let has_author_note = author_note_text.is_some();
     let has_key_memories = if dynamic_memory_active {
         !session.memory_embeddings.is_empty()
@@ -2329,6 +2453,28 @@ pub fn build_system_prompt_entries(
         }
     }
 
+    if companion_mode
+        && has_companion_state
+        && !has_placeholder(&base_entries, "{{companion_state}}")
+    {
+        if let Some(companion_state) = companion_state_text.as_deref() {
+            rendered_entries.push(SystemPromptEntry {
+                id: "entry_companion_state".to_string(),
+                name: "Companion State".to_string(),
+                role: PromptEntryRole::System,
+                content: format!("# Companion State\n{}", companion_state),
+                enabled: true,
+                injection_position: PromptEntryPosition::Relative,
+                injection_depth: 0,
+                conditional_min_messages: None,
+                interval_turns: None,
+                system_prompt: true,
+                conditions: None,
+                prompt_entry_payload: None,
+            });
+        }
+    }
+
     if condense_prompt_entries {
         rendered_entries = condense_entries_into_single_system_message(rendered_entries);
     }
@@ -2337,6 +2483,7 @@ pub fn build_system_prompt_entries(
         "template_vars": build_debug_vars(character, persona, session, settings),
         "memories_count": session.memories.len(),
         "author_note_chars": author_note_text.as_ref().map(|value| value.len()).unwrap_or(0),
+        "companion_state_chars": companion_state_text.as_ref().map(|value| value.len()).unwrap_or(0),
     }));
 
     let mut total_chars: usize = 0;
@@ -2441,6 +2588,7 @@ pub fn build_system_prompt_entries(
 fn get_app_default_template_content(
     app: &AppHandle,
     settings: &Settings,
+    companion_mode: bool,
     debug_parts: &mut Vec<Value>,
 ) -> (
     String,
@@ -2452,31 +2600,42 @@ fn get_app_default_template_content(
     // Try settings.prompt_template_id first (user's custom app default)
     if let Some(app_template_id) = &settings.prompt_template_id {
         if let Ok(Some(template)) = prompts::get_template(app, app_template_id) {
-            debug_parts.push(json!({
-                "source": "app_wide_template",
-                "template_id": app_template_id
-            }));
-            return (
-                template.content,
-                template.entries,
-                "app_wide_template",
-                Some(app_template_id.clone()),
-                template.condense_prompt_entries,
-            );
+            let is_compatible = !companion_mode
+                || template.prompt_type
+                    == crate::chat_manager::types::PromptTemplateType::CompanionChat;
+            if is_compatible {
+                debug_parts.push(json!({
+                    "source": "app_wide_template",
+                    "template_id": app_template_id
+                }));
+                return (
+                    template.content,
+                    template.entries,
+                    "app_wide_template",
+                    Some(app_template_id.clone()),
+                    template.condense_prompt_entries,
+                );
+            }
         }
     }
 
-    match prompts::get_template(app, prompts::APP_DEFAULT_TEMPLATE_ID) {
+    let app_default_template_id = if companion_mode {
+        prompts::APP_COMPANION_TEMPLATE_ID
+    } else {
+        prompts::APP_DEFAULT_TEMPLATE_ID
+    };
+
+    match prompts::get_template(app, app_default_template_id) {
         Ok(Some(template)) => {
             debug_parts.push(json!({
                 "source": "app_default_template",
-                "template_id": prompts::APP_DEFAULT_TEMPLATE_ID
+                "template_id": app_default_template_id
             }));
             (
                 template.content,
                 template.entries,
                 "app_default_template",
-                Some(prompts::APP_DEFAULT_TEMPLATE_ID.to_string()),
+                Some(app_default_template_id.to_string()),
                 template.condense_prompt_entries,
             )
         }
@@ -2485,10 +2644,18 @@ fn get_app_default_template_content(
                 "source": "emergency_hardcoded_fallback",
                 "warning": "app_default template not found in database"
             }));
-            let content = default_system_prompt_template();
+            let content = if companion_mode {
+                default_companion_prompt()
+            } else {
+                default_system_prompt_template()
+            };
             (
                 content.clone(),
-                default_modular_prompt_entries(),
+                if companion_mode {
+                    default_companion_entries()
+                } else {
+                    default_modular_prompt_entries()
+                },
                 "emergency_hardcoded_fallback",
                 None,
                 false,
@@ -2738,11 +2905,18 @@ fn render_with_context_internal(
     result = result.replace("{{content_rules}}", &content_rules);
     let author_note_text =
         render_author_note_text(character, persona, session).unwrap_or_else(String::new);
+    let companion_state_text =
+        companion::render_prompt_state(session, character).unwrap_or_else(String::new);
     if author_note_text.is_empty() {
         result = result.replace("# Author Note\n    {{author_note}}", "");
         result = result.replace("# Author Note\n{{author_note}}", "");
     }
     result = result.replace("{{author_note}}", &author_note_text);
+    if companion_state_text.is_empty() {
+        result = result.replace("# Companion State\n{{companion_state}}", "");
+        result = result.replace("Current companion state:\n{{companion_state}}", "");
+    }
+    result = result.replace("{{companion_state}}", &companion_state_text);
     // Legacy support for {{rules}} placeholder
     result = result.replace("{{rules}}", "");
 
@@ -2849,6 +3023,7 @@ fn build_debug_vars(
         "persona_name": persona_name,
         "persona_desc": persona.map(|p| p.description.trim()).unwrap_or("") ,
         "scene_present": session.selected_scene_id.is_some(),
+        "companion_mode": companion::is_companion_mode(session, character),
         "author_note_present": session.author_note.as_deref().map(|value| !value.trim().is_empty()).unwrap_or(false),
     })
 }
@@ -2873,6 +3048,8 @@ mod tests {
             default_scene_id: None,
             default_model_id: None,
             fallback_model_id: None,
+            mode: "roleplay".into(),
+            companion: None,
             memory_type: "manual".into(),
             active_lorebook_ids: vec![],
             prompt_template_id: None,
@@ -2924,6 +3101,7 @@ mod tests {
             title: "t".into(),
             background_image_path: None,
             system_prompt: None,
+            mode: "roleplay".into(),
             selected_scene_id: None,
             prompt_template_id: None,
             lorebook_ids_override: None,
@@ -2932,6 +3110,7 @@ mod tests {
             persona_disabled: false,
             voice_autoplay: None,
             advanced_model_settings: None,
+            companion_state: None,
             memories: vec![],
             memory_summary: None,
             memory_summary_token_count: 0,

@@ -82,6 +82,7 @@ export function normalizeLlamaSamplerOrder(value: unknown): LlamaSamplerOrderSta
 export const PromptTemplateTypeSchema = z.enum([
   "undefined",
   "directChat",
+  "companionChat",
   "groupChatRoleplay",
   "groupChatConversational",
   "dynamicMemorySummarizer",
@@ -2669,6 +2670,221 @@ export type AvatarCrop = z.infer<typeof AvatarCropSchema>;
 export const DesignReferenceImageIdsSchema = z.array(z.string()).default([]);
 export type DesignReferenceImageIds = z.infer<typeof DesignReferenceImageIdsSchema>;
 
+export const CharacterModeSchema = z.enum(["roleplay", "companion"]);
+export type CharacterMode = z.infer<typeof CharacterModeSchema>;
+
+export const CompanionSoulSchema = z.object({
+  essence: z.string().default(""),
+  voice: z.string().default(""),
+  relationalStyle: z.string().default(""),
+  vulnerabilities: z.string().default(""),
+  habits: z.string().default(""),
+  boundaries: z.string().default(""),
+  baselineAffect: z
+    .object({
+      warmth: z.number().min(0).max(1).default(0.45),
+      trust: z.number().min(0).max(1).default(0.35),
+      calm: z.number().min(0).max(1).default(0.65),
+      vulnerability: z.number().min(0).max(1).default(0.2),
+      longing: z.number().min(0).max(1).default(0.15),
+      hurt: z.number().min(0).max(1).default(0.05),
+      tension: z.number().min(0).max(1).default(0.1),
+      irritation: z.number().min(0).max(1).default(0.05),
+      affectionIntensity: z.number().min(0).max(1).default(0.25),
+      reassuranceNeed: z.number().min(0).max(1).default(0.15),
+    })
+    .default({
+      warmth: 0.45,
+      trust: 0.35,
+      calm: 0.65,
+      vulnerability: 0.2,
+      longing: 0.15,
+      hurt: 0.05,
+      tension: 0.1,
+      irritation: 0.05,
+      affectionIntensity: 0.25,
+      reassuranceNeed: 0.15,
+    }),
+  regulationStyle: z
+    .object({
+      suppression: z.number().min(0).max(1).default(0.35),
+      volatility: z.number().min(0).max(1).default(0.25),
+      recoverySpeed: z.number().min(0).max(1).default(0.55),
+      conflictAvoidance: z.number().min(0).max(1).default(0.45),
+      reassuranceSeeking: z.number().min(0).max(1).default(0.4),
+      protestBehavior: z.number().min(0).max(1).default(0.2),
+      emotionalTransparency: z.number().min(0).max(1).default(0.55),
+      attachmentActivation: z.number().min(0).max(1).default(0.45),
+      pride: z.number().min(0).max(1).default(0.3),
+    })
+    .default({
+      suppression: 0.35,
+      volatility: 0.25,
+      recoverySpeed: 0.55,
+      conflictAvoidance: 0.45,
+      reassuranceSeeking: 0.4,
+      protestBehavior: 0.2,
+      emotionalTransparency: 0.55,
+      attachmentActivation: 0.45,
+      pride: 0.3,
+    }),
+});
+export type CompanionSoul = z.infer<typeof CompanionSoulSchema>;
+
+export const CompanionRelationshipDefaultsSchema = z.object({
+  closeness: z.number().min(0).max(1).default(0.2),
+  trust: z.number().min(0).max(1).default(0.3),
+  affection: z.number().min(0).max(1).default(0.15),
+  tension: z.number().min(0).max(1).default(0),
+});
+export type CompanionRelationshipDefaults = z.infer<typeof CompanionRelationshipDefaultsSchema>;
+
+export const CompanionMemoryConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  retrievalLimit: z.number().int().min(1).max(24).default(8),
+  maxEntries: z.number().int().min(1).max(500).default(120),
+  prioritizeRelationship: z.boolean().default(true),
+  prioritizeEpisodic: z.boolean().default(true),
+  useEmotionalSnapshots: z.boolean().default(true),
+});
+export type CompanionMemoryConfig = z.infer<typeof CompanionMemoryConfigSchema>;
+
+export const CompanionPromptingConfigSchema = z.object({
+  promptTemplateId: z.string().nullish().optional(),
+  styleNotes: z.string().default(""),
+});
+export type CompanionPromptingConfig = z.infer<typeof CompanionPromptingConfigSchema>;
+
+export const CompanionConfigSchema = z.object({
+  soul: CompanionSoulSchema.default({
+    essence: "",
+    voice: "",
+    relationalStyle: "",
+    vulnerabilities: "",
+    habits: "",
+    boundaries: "",
+    baselineAffect: {
+      warmth: 0.45,
+      trust: 0.35,
+      calm: 0.65,
+      vulnerability: 0.2,
+      longing: 0.15,
+      hurt: 0.05,
+      tension: 0.1,
+      irritation: 0.05,
+      affectionIntensity: 0.25,
+      reassuranceNeed: 0.15,
+    },
+    regulationStyle: {
+      suppression: 0.35,
+      volatility: 0.25,
+      recoverySpeed: 0.55,
+      conflictAvoidance: 0.45,
+      reassuranceSeeking: 0.4,
+      protestBehavior: 0.2,
+      emotionalTransparency: 0.55,
+      attachmentActivation: 0.45,
+      pride: 0.3,
+    },
+  }),
+  relationshipDefaults: CompanionRelationshipDefaultsSchema.default({
+    closeness: 0.2,
+    trust: 0.3,
+    affection: 0.15,
+    tension: 0,
+  }),
+  memory: CompanionMemoryConfigSchema.default({
+    enabled: true,
+    retrievalLimit: 8,
+    maxEntries: 120,
+    prioritizeRelationship: true,
+    prioritizeEpisodic: true,
+    useEmotionalSnapshots: true,
+  }),
+  prompting: CompanionPromptingConfigSchema.default({
+    promptTemplateId: null,
+    styleNotes: "",
+  }),
+});
+export type CompanionConfig = z.infer<typeof CompanionConfigSchema>;
+
+export const CompanionEmotionVectorSchema = z.object({
+  warmth: z.number().min(0).max(1).default(0),
+  trust: z.number().min(0).max(1).default(0),
+  calm: z.number().min(0).max(1).default(0),
+  vulnerability: z.number().min(0).max(1).default(0),
+  longing: z.number().min(0).max(1).default(0),
+  hurt: z.number().min(0).max(1).default(0),
+  tension: z.number().min(0).max(1).default(0),
+  irritation: z.number().min(0).max(1).default(0),
+  affectionIntensity: z.number().min(0).max(1).default(0),
+  reassuranceNeed: z.number().min(0).max(1).default(0),
+});
+export type CompanionEmotionVector = z.infer<typeof CompanionEmotionVectorSchema>;
+
+const DEFAULT_COMPANION_EMOTION_VECTOR: CompanionEmotionVector = {
+  warmth: 0,
+  trust: 0,
+  calm: 0,
+  vulnerability: 0,
+  longing: 0,
+  hurt: 0,
+  tension: 0,
+  irritation: 0,
+  affectionIntensity: 0,
+  reassuranceNeed: 0,
+};
+
+export const CompanionEmotionalStateSchema = z.object({
+  felt: CompanionEmotionVectorSchema.default(DEFAULT_COMPANION_EMOTION_VECTOR),
+  expressed: CompanionEmotionVectorSchema.default(DEFAULT_COMPANION_EMOTION_VECTOR),
+  blocked: CompanionEmotionVectorSchema.default(DEFAULT_COMPANION_EMOTION_VECTOR),
+  momentum: CompanionEmotionVectorSchema.default(DEFAULT_COMPANION_EMOTION_VECTOR),
+  activeDrivers: z.array(z.string()).default([]),
+  confidence: z.number().min(0).max(1).default(0.5),
+  updatedAt: z.number().int().default(0),
+});
+export type CompanionEmotionalState = z.infer<typeof CompanionEmotionalStateSchema>;
+
+const DEFAULT_COMPANION_EMOTIONAL_STATE: CompanionEmotionalState = {
+  felt: DEFAULT_COMPANION_EMOTION_VECTOR,
+  expressed: DEFAULT_COMPANION_EMOTION_VECTOR,
+  blocked: DEFAULT_COMPANION_EMOTION_VECTOR,
+  momentum: DEFAULT_COMPANION_EMOTION_VECTOR,
+  activeDrivers: [],
+  confidence: 0.5,
+  updatedAt: 0,
+};
+
+export const CompanionRelationshipStateSchema = z.object({
+  closeness: z.number().min(0).max(1).default(0.2),
+  trust: z.number().min(0).max(1).default(0.3),
+  affection: z.number().min(0).max(1).default(0.15),
+  tension: z.number().min(0).max(1).default(0),
+  stability: z.number().min(0).max(1).default(0.5),
+  interactionCount: z.number().int().min(0).default(0),
+  lastInteractionAt: z.number().int().default(0),
+});
+export type CompanionRelationshipState = z.infer<typeof CompanionRelationshipStateSchema>;
+
+const DEFAULT_COMPANION_RELATIONSHIP_STATE: CompanionRelationshipState = {
+  closeness: 0.2,
+  trust: 0.3,
+  affection: 0.15,
+  tension: 0,
+  stability: 0.5,
+  interactionCount: 0,
+  lastInteractionAt: 0,
+};
+
+export const CompanionSessionStateSchema = z.object({
+  emotionalState: CompanionEmotionalStateSchema.default(DEFAULT_COMPANION_EMOTIONAL_STATE),
+  relationshipState: CompanionRelationshipStateSchema.default(DEFAULT_COMPANION_RELATIONSHIP_STATE),
+  activeSignals: z.array(z.string()).default([]),
+  updatedAt: z.number().int().default(0),
+});
+export type CompanionSessionState = z.infer<typeof CompanionSessionStateSchema>;
+
 export const CharacterSchema = z.object({
   id: z.string().uuid(),
   name: z.string().min(1),
@@ -2693,6 +2909,8 @@ export const CharacterSchema = z.object({
   defaultChatTemplateId: z.string().uuid().nullish(),
   defaultModelId: z.string().uuid().nullable().optional(),
   fallbackModelId: z.string().uuid().nullable().optional(),
+  mode: CharacterModeSchema.default("roleplay"),
+  companion: CompanionConfigSchema.nullable().optional(),
   memoryType: z.enum(["manual", "dynamic"]).default("manual"),
   activeLorebookIds: z.array(z.string().uuid()).default([]),
   promptTemplateId: z.string().nullish().optional(),
@@ -2716,6 +2934,7 @@ export const SessionSchema = z.object({
   characterId: z.string().uuid(),
   title: z.string(),
   backgroundImagePath: z.string().nullish().optional(),
+  mode: CharacterModeSchema.default("roleplay"),
   selectedSceneId: z.string().uuid().nullish(), // ID of the scene from character.scenes array
   promptTemplateId: z.string().nullish().optional(),
   lorebookIdsOverride: z.array(z.string().uuid()).nullable().optional(),
@@ -2724,6 +2943,7 @@ export const SessionSchema = z.object({
   personaDisabled: z.boolean().optional().default(false),
   voiceAutoplay: z.boolean().nullable().optional(),
   advancedModelSettings: AdvancedModelSettingsSchema.nullish().optional(),
+  companionState: CompanionSessionStateSchema.nullish().optional(),
   memories: z.array(z.string()).default([]),
   memoryEmbeddings: z
     .array(

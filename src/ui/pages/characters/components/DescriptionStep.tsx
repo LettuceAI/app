@@ -12,7 +12,12 @@ import {
   Volume2,
   User,
 } from "lucide-react";
-import type { Model, SystemPromptTemplate } from "../../../../core/storage/schemas";
+import type {
+  CharacterMode,
+  CompanionConfig,
+  Model,
+  SystemPromptTemplate,
+} from "../../../../core/storage/schemas";
 import { typography, radius, spacing, interactive, shadows, cn } from "../../../design-tokens";
 import { BottomMenu, MenuSection } from "../../../components/BottomMenu";
 import { ModelSelectionBottomMenu } from "../../../components/ModelSelectionBottomMenu";
@@ -20,15 +25,22 @@ import { Switch } from "../../../components/Switch";
 import { getProviderIcon } from "../../../../core/utils/providerIcons";
 import { useI18n } from "../../../../core/i18n/context";
 import {
+  APP_COMPANION_TEMPLATE_ID,
   APP_GROUP_CHAT_ROLEPLAY_TEMPLATE_ID,
   APP_GROUP_CHAT_TEMPLATE_ID,
 } from "../../../../core/prompts/constants";
+import { InteractionModeSelector } from "./InteractionModeSelector";
+import { CompanionSoulEditor } from "./CompanionSoulEditor";
 
 interface DescriptionStepProps {
   definition: string;
   onDefinitionChange: (value: string) => void;
   description: string;
   onDescriptionChange: (value: string) => void;
+  mode: CharacterMode;
+  onModeChange: (value: CharacterMode) => void;
+  companion: CompanionConfig | null | undefined;
+  onCompanionChange: (value: CompanionConfig | null) => void;
   models: Model[];
   loadingModels: boolean;
   selectedModelId: string | null;
@@ -42,6 +54,8 @@ interface DescriptionStepProps {
   loadingTemplates: boolean;
   systemPromptTemplateId: string | null;
   onSelectSystemPrompt: (value: string | null) => void;
+  companionPromptTemplateId: string | null;
+  onSelectCompanionPrompt: (value: string | null) => void;
   groupChatPromptTemplateId: string | null;
   onSelectGroupChatPrompt: (value: string | null) => void;
   groupChatRoleplayPromptTemplateId: string | null;
@@ -67,6 +81,10 @@ export function DescriptionStep({
   onDefinitionChange,
   description,
   onDescriptionChange,
+  mode,
+  onModeChange,
+  companion,
+  onCompanionChange,
   models,
   loadingModels,
   selectedModelId,
@@ -80,6 +98,8 @@ export function DescriptionStep({
   loadingTemplates,
   systemPromptTemplateId,
   onSelectSystemPrompt,
+  companionPromptTemplateId,
+  onSelectCompanionPrompt,
   groupChatPromptTemplateId,
   onSelectGroupChatPrompt,
   groupChatRoleplayPromptTemplateId,
@@ -108,6 +128,10 @@ export function DescriptionStep({
   const [voiceSearchQuery, setVoiceSearchQuery] = useState("");
   const directPromptTemplates = promptTemplates.filter(
     (template) => template.promptType === "undefined" || template.promptType === "directChat",
+  );
+  const companionPromptTemplates = promptTemplates.filter(
+    (template) =>
+      template.promptType === "companionChat" && template.id !== APP_COMPANION_TEMPLATE_ID,
   );
   const groupChatTemplates = promptTemplates.filter(
     (template) =>
@@ -150,6 +174,12 @@ export function DescriptionStep({
         </h2>
         <p className={cn(typography.body.size, "text-fg/50")}>{t("characters.details.subtitle")}</p>
       </div>
+
+      <InteractionModeSelector mode={mode} onChange={onModeChange} />
+
+      {mode === "companion" && (
+        <CompanionSoulEditor companion={companion} onChange={onCompanionChange} />
+      )}
 
       {/* Desktop: Two-column layout / Mobile: stacked */}
       <div className="flex flex-col lg:flex-row lg:gap-8">
@@ -474,7 +504,7 @@ export function DescriptionStep({
             </p>
           </div>
 
-          {/* System Prompt Selection */}
+          {/* Prompt Selection */}
           <div className={spacing.field}>
             <label
               className={cn(
@@ -484,7 +514,7 @@ export function DescriptionStep({
                 "uppercase text-fg/70",
               )}
             >
-              System Prompt (Optional)
+              {mode === "companion" ? "Companion Prompt (Optional)" : "System Prompt (Optional)"}
             </label>
             {loadingTemplates ? (
               <div
@@ -499,20 +529,33 @@ export function DescriptionStep({
             ) : (
               <div className="relative">
                 <select
-                  value={systemPromptTemplateId ?? ""}
-                  onChange={(e) => onSelectSystemPrompt(e.target.value || null)}
+                  value={
+                    mode === "companion"
+                      ? (companionPromptTemplateId ?? "")
+                      : (systemPromptTemplateId ?? "")
+                  }
+                  onChange={(e) => {
+                    const next = e.target.value || null;
+                    if (mode === "companion") {
+                      onSelectCompanionPrompt(next);
+                    } else {
+                      onSelectSystemPrompt(next);
+                    }
+                  }}
                   className={cn(
                     "w-full appearance-none border bg-surface-el/20 px-4 py-3.5 pr-10 text-sm text-fg backdrop-blur-xl",
                     radius.md,
                     interactive.transition.default,
                     "focus:border-fg/30 focus:bg-surface-el/30 focus:outline-none",
-                    systemPromptTemplateId ? "border-fg/20" : "border-fg/10",
+                    (mode === "companion" ? companionPromptTemplateId : systemPromptTemplateId)
+                      ? "border-fg/20"
+                      : "border-fg/10",
                   )}
                 >
                   <option value="" className="bg-surface-el text-fg">
-                    Use app default
+                    {mode === "companion" ? "Use app companion default" : "Use app default"}
                   </option>
-                  {directPromptTemplates.map((template) => (
+                  {(mode === "companion" ? companionPromptTemplates : directPromptTemplates).map((template) => (
                     <option key={template.id} value={template.id} className="bg-surface-el text-fg">
                       {template.name}
                     </option>
@@ -525,7 +568,9 @@ export function DescriptionStep({
               </div>
             )}
             <p className={cn(typography.bodySmall.size, "text-fg/40")}>
-              Choose a custom system prompt or use the default
+              {mode === "companion"
+                ? "Stored separately as the companion prompt. The normal roleplay system prompt is not changed."
+                : "Choose a custom system prompt or use the default."}
             </p>
           </div>
 

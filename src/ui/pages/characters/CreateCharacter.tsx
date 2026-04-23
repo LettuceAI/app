@@ -162,6 +162,17 @@ export function CreateCharacterPage() {
       defaultModelId: state.selectedModelId,
       fallbackModelId: state.selectedFallbackModelId,
       promptTemplateId: state.systemPromptTemplateId,
+      companion:
+        state.mode === "companion"
+          ? {
+              ...(state.companion ?? {}),
+              prompting: {
+                ...(state.companion?.prompting ?? {}),
+                promptTemplateId: state.companionPromptTemplateId,
+              },
+            }
+          : undefined,
+      mode: state.mode,
       activeLorebookIds: state.activeLorebookIds,
       memoryType: state.memoryType,
       disableAvatarGradient: state.disableAvatarGradient,
@@ -190,6 +201,9 @@ export function CreateCharacterPage() {
     state.selectedModelId,
     state.selectedFallbackModelId,
     state.systemPromptTemplateId,
+    state.companionPromptTemplateId,
+    state.companion,
+    state.mode,
     state.activeLorebookIds,
     state.memoryType,
     state.disableAvatarGradient,
@@ -321,6 +335,10 @@ export function CreateCharacterPage() {
               onDefinitionChange={actions.setDefinition}
               description={state.description}
               onDescriptionChange={actions.setDescription}
+              mode={state.mode}
+              onModeChange={actions.setMode}
+              companion={state.companion}
+              onCompanionChange={actions.setCompanionConfig}
               models={state.models}
               loadingModels={state.loadingModels}
               selectedModelId={state.selectedModelId}
@@ -334,6 +352,8 @@ export function CreateCharacterPage() {
               loadingTemplates={state.loadingTemplates}
               systemPromptTemplateId={state.systemPromptTemplateId}
               onSelectSystemPrompt={actions.setSystemPromptTemplateId}
+              companionPromptTemplateId={state.companionPromptTemplateId}
+              onSelectCompanionPrompt={actions.setCompanionPromptTemplateId}
               groupChatPromptTemplateId={state.groupChatPromptTemplateId}
               onSelectGroupChatPrompt={actions.setGroupChatPromptTemplateId}
               groupChatRoleplayPromptTemplateId={state.groupChatRoleplayPromptTemplateId}
@@ -360,6 +380,7 @@ export function CreateCharacterPage() {
               onScenesChange={actions.setScenes}
               defaultSceneId={state.defaultSceneId}
               onDefaultSceneIdChange={actions.setDefaultSceneId}
+              mode={state.mode}
               onContinue={() => actions.setStep(Step.Extras)}
               canContinue={computed.canContinueStartingScene}
             />

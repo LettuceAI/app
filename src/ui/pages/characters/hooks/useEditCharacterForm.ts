@@ -4,7 +4,9 @@ import { listCharacters, saveCharacter, readSettings } from "../../../../core/st
 import type {
   AvatarCrop,
   ChatTemplate,
+  CharacterMode,
   CharacterVoiceConfig,
+  CompanionConfig,
   Model,
   Scene,
   SystemPromptTemplate,
@@ -22,6 +24,10 @@ import {
 } from "../../../../core/storage/characterTransfer";
 import { APP_DEFAULT_TEMPLATE_ID } from "../../../../core/prompts/constants";
 import { isRenderableImageUrl } from "../../../../core/utils/image";
+import {
+  createDefaultCompanionConfig,
+  withCompanionPromptTemplate,
+} from "../utils/companionDefaults";
 
 type EditCharacterState = {
   loading: boolean;
@@ -53,11 +59,14 @@ type EditCharacterState = {
   selectedModelId: string | null;
   selectedFallbackModelId: string | null;
   systemPromptTemplateId: string | null;
+  companionPromptTemplateId: string | null;
   groupChatPromptTemplateId: string | null;
   groupChatRoleplayPromptTemplateId: string | null;
   activeLorebookIds: string[];
   voiceConfig: CharacterVoiceConfig | null;
   voiceAutoplay: boolean;
+  mode: CharacterMode;
+  companion: CompanionConfig | null;
 
   disableAvatarGradient: boolean;
   customGradientEnabled: boolean;
@@ -112,11 +121,14 @@ const initialState: EditCharacterState = {
   selectedModelId: null,
   selectedFallbackModelId: null,
   systemPromptTemplateId: null,
+  companionPromptTemplateId: null,
   groupChatPromptTemplateId: null,
   groupChatRoleplayPromptTemplateId: null,
   activeLorebookIds: [],
   voiceConfig: null,
   voiceAutoplay: false,
+  mode: "roleplay",
+  companion: null,
 
   disableAvatarGradient: false,
   customGradientEnabled: false,
@@ -181,6 +193,7 @@ export function useEditCharacterForm(characterId: string | undefined) {
     selectedModelId: string | null;
     selectedFallbackModelId: string | null;
     systemPromptTemplateId: string | null;
+    companionPromptTemplateId: string | null;
     groupChatPromptTemplateId: string | null;
     groupChatRoleplayPromptTemplateId: string | null;
     activeLorebookIds: string;
@@ -190,6 +203,8 @@ export function useEditCharacterForm(characterId: string | undefined) {
     memoryType: string;
     voiceConfig: string;
     voiceAutoplay: boolean;
+    mode: CharacterMode;
+    companion: string;
   } | null>(null);
   const persistedMediaRef = useRef<{
     avatarFilename?: string;
@@ -287,6 +302,8 @@ export function useEditCharacterForm(characterId: string | undefined) {
         backgroundImageId: character.backgroundImagePath ?? undefined,
         backgroundImageUrl: backgroundImage || undefined,
       };
+      const characterMode: CharacterMode = character.mode === "companion" ? "companion" : "roleplay";
+      const companion = character.companion ?? null;
 
       setFields({
         name: character.name,
@@ -316,12 +333,15 @@ export function useEditCharacterForm(characterId: string | undefined) {
         selectedModelId: character.defaultModelId || null,
         selectedFallbackModelId: character.fallbackModelId || null,
         systemPromptTemplateId: character.promptTemplateId || null,
+        companionPromptTemplateId: companion?.prompting?.promptTemplateId ?? null,
         groupChatPromptTemplateId: character.groupChatPromptTemplateId || null,
         groupChatRoleplayPromptTemplateId:
           character.groupChatRoleplayPromptTemplateId || null,
         activeLorebookIds: character.activeLorebookIds || [],
         voiceConfig: character.voiceConfig ?? null,
         voiceAutoplay: character.voiceAutoplay ?? false,
+        mode: characterMode,
+        companion,
 
         disableAvatarGradient: character.disableAvatarGradient || false,
         customGradientEnabled: character.customGradientEnabled || false,
@@ -358,6 +378,7 @@ export function useEditCharacterForm(characterId: string | undefined) {
         selectedModelId: character.defaultModelId || null,
         selectedFallbackModelId: character.fallbackModelId || null,
         systemPromptTemplateId: character.promptTemplateId || null,
+        companionPromptTemplateId: companion?.prompting?.promptTemplateId ?? null,
         groupChatPromptTemplateId: character.groupChatPromptTemplateId || null,
         groupChatRoleplayPromptTemplateId:
           character.groupChatRoleplayPromptTemplateId || null,
@@ -368,6 +389,8 @@ export function useEditCharacterForm(characterId: string | undefined) {
         memoryType: character.memoryType === "dynamic" ? "dynamic" : "manual",
         voiceConfig: JSON.stringify(character.voiceConfig ?? null),
         voiceAutoplay: character.voiceAutoplay ?? false,
+        mode: characterMode,
+        companion: JSON.stringify(companion),
       };
       setError(null);
     } catch (err) {
@@ -500,12 +523,21 @@ export function useEditCharacterForm(characterId: string | undefined) {
           }),
         )
       ).filter((value): value is string => typeof value === "string" && value.length > 0);
+      const companionConfig =
+        state.mode === "companion"
+          ? withCompanionPromptTemplate(
+              state.companion ?? createDefaultCompanionConfig(),
+              state.companionPromptTemplateId,
+            )
+          : null;
 
       await saveCharacter({
         id: characterId,
         name: state.name.trim(),
         definition: state.definition.trim(),
         description: state.description.trim() || undefined,
+        mode: state.mode,
+        companion: companionConfig,
         nickname: state.nickname.trim() || undefined,
         designDescription: state.designDescription.trim() || undefined,
         designReferenceImageIds:
@@ -548,6 +580,7 @@ export function useEditCharacterForm(characterId: string | undefined) {
         nickname: state.nickname.trim(),
         designDescription: state.designDescription.trim(),
         designReferenceImageIds,
+        companion: companionConfig,
         creator: state.creator.trim(),
         creatorNotes: state.creatorNotes.trim(),
         creatorNotesMultilingualText: state.creatorNotesMultilingualText.trim(),
@@ -581,6 +614,7 @@ export function useEditCharacterForm(characterId: string | undefined) {
         selectedModelId: state.selectedModelId,
         selectedFallbackModelId: state.selectedFallbackModelId,
         systemPromptTemplateId: state.systemPromptTemplateId,
+        companionPromptTemplateId: state.companionPromptTemplateId,
         groupChatPromptTemplateId: state.groupChatPromptTemplateId,
         groupChatRoleplayPromptTemplateId: state.groupChatRoleplayPromptTemplateId,
         activeLorebookIds: JSON.stringify(state.activeLorebookIds),
@@ -590,6 +624,8 @@ export function useEditCharacterForm(characterId: string | undefined) {
         memoryType: state.dynamicMemoryEnabled ? state.memoryType : "manual",
         voiceConfig: JSON.stringify(state.voiceConfig ?? null),
         voiceAutoplay: state.voiceAutoplay,
+        mode: state.mode,
+        companion: JSON.stringify(companionConfig),
       };
       const removedDesignReferenceImageIds = previousDesignReferenceImageIds.filter(
         (imageId) => !designReferenceImageIds.includes(imageId),
@@ -782,6 +818,7 @@ export function useEditCharacterForm(characterId: string | undefined) {
       selectedModelId: initial.selectedModelId,
       selectedFallbackModelId: initial.selectedFallbackModelId,
       systemPromptTemplateId: initial.systemPromptTemplateId,
+      companionPromptTemplateId: initial.companionPromptTemplateId,
       groupChatPromptTemplateId: initial.groupChatPromptTemplateId,
       groupChatRoleplayPromptTemplateId: initial.groupChatRoleplayPromptTemplateId,
       activeLorebookIds: JSON.parse(initial.activeLorebookIds) as string[],
@@ -791,6 +828,8 @@ export function useEditCharacterForm(characterId: string | undefined) {
       memoryType: initial.memoryType === "dynamic" ? "dynamic" : "manual",
       voiceConfig: JSON.parse(initial.voiceConfig) as CharacterVoiceConfig | null,
       voiceAutoplay: initial.voiceAutoplay,
+      mode: initial.mode,
+      companion: JSON.parse(initial.companion) as CompanionConfig | null,
       newSceneContent: "",
       newSceneDirection: "",
       editingSceneId: null,
@@ -850,6 +889,7 @@ export function useEditCharacterForm(characterId: string | undefined) {
           state.selectedModelId !== initial.selectedModelId ||
           state.selectedFallbackModelId !== initial.selectedFallbackModelId ||
           state.systemPromptTemplateId !== initial.systemPromptTemplateId ||
+          state.companionPromptTemplateId !== initial.companionPromptTemplateId ||
           state.groupChatPromptTemplateId !== initial.groupChatPromptTemplateId ||
           state.groupChatRoleplayPromptTemplateId !==
             initial.groupChatRoleplayPromptTemplateId ||
@@ -859,7 +899,9 @@ export function useEditCharacterForm(characterId: string | undefined) {
           JSON.stringify(state.customGradientColors) !== initial.customGradientColors ||
           state.memoryType !== initial.memoryType ||
           JSON.stringify(state.voiceConfig ?? null) !== initial.voiceConfig ||
-          state.voiceAutoplay !== initial.voiceAutoplay;
+          state.voiceAutoplay !== initial.voiceAutoplay ||
+          state.mode !== initial.mode ||
+          JSON.stringify(state.companion ?? null) !== initial.companion;
 
         return hasChanges;
       })(),
