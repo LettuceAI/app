@@ -1806,6 +1806,20 @@ pub fn default_companion_entries() -> Vec<SystemPromptEntry> {
             prompt_entry_payload: None,
         },
         SystemPromptEntry {
+            id: "companion_scene".to_string(),
+            name: "Scene Context".to_string(),
+            role: PromptEntryRole::System,
+            content: "# Optional Scene Context\nA starting scene is selected for this chat. Treat it as environmental and situational context, not as a command to switch into theatrical roleplay.\n\n## Scene\n{{scene}}\n\n## Scene Direction\n{{scene_direction}}".to_string(),
+            enabled: true,
+            injection_position: PromptEntryPosition::Relative,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: false,
+            conditions: Some(PromptEntryCondition::HasScene { value: true }),
+            prompt_entry_payload: None,
+        },
+        SystemPromptEntry {
             id: "companion_author_note".to_string(),
             name: "Author Note".to_string(),
             role: PromptEntryRole::System,
@@ -2053,19 +2067,7 @@ fn recent_message_window_text(session: &Session) -> String {
 }
 
 fn scene_state(character: &Character, session: &Session) -> (bool, bool) {
-    let scene_id_to_use = session
-        .selected_scene_id
-        .as_ref()
-        .or_else(|| character.default_scene_id.as_ref())
-        .or_else(|| {
-            if character.scenes.len() == 1 {
-                character.scenes.first().map(|scene| &scene.id)
-            } else {
-                None
-            }
-        });
-
-    let Some(selected_scene_id) = scene_id_to_use else {
+    let Some(selected_scene_id) = session.selected_scene_id.as_ref() else {
         return (false, false);
     };
 
@@ -2739,6 +2741,15 @@ pub fn render_with_context(
     )
 }
 
+fn edited_session_scene_content(session: &Session) -> Option<&str> {
+    session
+        .messages
+        .iter()
+        .find(|message| message.role.eq_ignore_ascii_case("scene") && message.scene_edited)
+        .map(|message| message.content.trim())
+        .filter(|content| !content.is_empty())
+}
+
 fn render_with_context_internal(
     app: Option<&AppHandle>,
     base_template: &str,
@@ -2763,19 +2774,10 @@ fn render_with_context_internal(
         .filter(|s| !s.is_empty())
         .unwrap_or("");
 
-    let scene_id_to_use = session
-        .selected_scene_id
-        .as_ref()
-        .or_else(|| character.default_scene_id.as_ref())
-        .or_else(|| {
-            if character.scenes.len() == 1 {
-                character.scenes.first().map(|s| &s.id)
-            } else {
-                None
-            }
-        });
-
-    let (scene_content, scene_direction) = if let Some(selected_scene_id) = scene_id_to_use {
+    let edited_scene_content = edited_session_scene_content(session);
+    let (scene_content, scene_direction) = if let Some(selected_scene_id) =
+        session.selected_scene_id.as_ref()
+    {
         if let Some(scene) = character.scenes.iter().find(|s| &s.id == selected_scene_id) {
             let (content, direction) = if let Some(variant_id) = &scene.selected_variant_id {
                 let variant = scene.variants.iter().find(|v| &v.id == variant_id);
@@ -2789,7 +2791,7 @@ fn render_with_context_internal(
                 (scene.content.as_str(), scene.direction.as_deref())
             };
 
-            let content_trimmed = content.trim();
+            let content_trimmed = edited_scene_content.unwrap_or_else(|| content.trim());
             let direction_processed = if let Some(dir) = direction {
                 let dir_trimmed = dir.trim();
                 if !dir_trimmed.is_empty() {
@@ -2813,11 +2815,17 @@ fn render_with_context_internal(
                 content_processed = content_processed.replace("{{user}}", persona_name);
 
                 if let Some(app) = app {
+                    let content_source = if edited_scene_content.is_some() {
+                        "session_edited_scene"
+                    } else {
+                        "character_scene"
+                    };
                     utils::log_info(
                         app,
                         "prompt_engine",
                         format!(
-                            "Scene found and processed. ID: {}, content length: {}, direction length: {}",
+                            "Scene found and processed. source: {}, id: {}, content length: {}, direction length: {}",
+                            content_source,
                             selected_scene_id,
                             content_processed.len(),
                             direction_processed.len()
@@ -2838,6 +2846,12 @@ fn render_with_context_internal(
                 }
                 (String::new(), direction_processed)
             }
+        } else if let Some(content_trimmed) = edited_scene_content {
+            let mut content_processed = content_trimmed.to_string();
+            content_processed = content_processed.replace("{{char}}", char_name);
+            content_processed = content_processed.replace("{{persona}}", persona_name);
+            content_processed = content_processed.replace("{{user}}", persona_name);
+            (content_processed, String::new())
         } else {
             if let Some(app) = app {
                 utils::log_warn(app, "prompt_engine",
@@ -2845,6 +2859,12 @@ fn render_with_context_internal(
             }
             (String::new(), String::new())
         }
+    } else if let Some(content_trimmed) = edited_scene_content {
+        let mut content_processed = content_trimmed.to_string();
+        content_processed = content_processed.replace("{{char}}", char_name);
+        content_processed = content_processed.replace("{{persona}}", persona_name);
+        content_processed = content_processed.replace("{{user}}", persona_name);
+        (content_processed, String::new())
     } else {
         if let Some(app) = app {
             utils::log_info(app, "prompt_engine", "No scene selected in session");
@@ -3052,7 +3072,7 @@ fn build_debug_vars(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chat_manager::types::{Scene, SceneVariant};
+    use crate::chat_manager::types::{Scene, SceneVariant, StoredMessage};
 
     fn make_character() -> Character {
         Character {
@@ -3207,6 +3227,34 @@ mod tests {
         );
         assert!(rendered2.contains("Var Alice"));
         assert!(!rendered2.contains("Starting Scene")); // No hardcoded formatting
+
+        let mut session2_edited = session2.clone();
+        session2_edited.messages.push(StoredMessage {
+            id: "msg-scene".into(),
+            role: "scene".into(),
+            content: "Edited scene with {{char}} and {{persona}}".into(),
+            created_at: 1,
+            scene_edited: true,
+            usage: None,
+            variants: vec![],
+            selected_variant_id: None,
+            memory_refs: vec![],
+            used_lorebook_entries: vec![],
+            is_pinned: false,
+            attachments: vec![],
+            reasoning: None,
+            model_id: None,
+            fallback_from_model_id: None,
+        });
+        let rendered2_edited = render_with_context_internal(
+            None,
+            base2,
+            &character2,
+            persona.as_ref(),
+            &session2_edited,
+            &settings,
+        );
+        assert_eq!(rendered2_edited, "Edited scene with Alice and Bob");
 
         let mut session3 = session.clone();
         session3.author_note = Some("Keep {{char}} focused on {{persona}}.".into());
