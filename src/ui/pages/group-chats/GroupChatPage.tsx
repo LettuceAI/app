@@ -220,6 +220,7 @@ export function GroupChatPage() {
       status: string;
       characterId?: string;
       characterName?: string;
+      message?: string;
     }>("group_chat_status", (event) => {
       const { sessionId, status, characterId, characterName } = event.payload;
 
@@ -251,6 +252,16 @@ export function GroupChatPage() {
         setSelectedCharacterId(null);
         setSelectedCharacterName(null);
         setSelectedCharacterAvatarUrl(null);
+      } else if (status === "error") {
+        setSendingStatus(null);
+        setSelectedCharacterId(null);
+        setSelectedCharacterName(null);
+        setSelectedCharacterAvatarUrl(null);
+        const message =
+          typeof event.payload.message === "string" ? event.payload.message : "Group chat failed.";
+        if (!isAbortMessage(message)) {
+          setError(message);
+        }
       }
     });
 

@@ -252,6 +252,13 @@ fn emit_group_chat_error_status(app: &AppHandle, session_id: &str, message: &str
     emit_group_chat_status(app, session_id, "error", extra);
 }
 
+fn is_request_abort_error(message: &str) -> bool {
+    let normalized = message.to_ascii_lowercase();
+    normalized.contains("aborted by user")
+        || normalized.contains("cancelled by user")
+        || normalized.contains("canceled by user")
+}
+
 struct AbortGuard<'a> {
     registry: &'a AbortRegistry,
     request_id: String,
@@ -5407,8 +5414,9 @@ async fn select_speaker_via_llm(
     app: &AppHandle,
     context: &GroupChatContext,
     settings: &Settings,
+    request_id: &str,
 ) -> Result<selection::SelectionResult, String> {
-    select_speaker_via_llm_with_tracking(app, context, settings, true).await
+    select_speaker_via_llm_with_tracking(app, context, settings, request_id, true).await
 }
 
 /// Use LLM with tool calling to select next speaker, with optional usage tracking
@@ -5416,6 +5424,7 @@ async fn select_speaker_via_llm_with_tracking(
     app: &AppHandle,
     context: &GroupChatContext,
     settings: &Settings,
+    request_id: &str,
     track_usage: bool,
 ) -> Result<selection::SelectionResult, String> {
     // Get the first available model for selection
@@ -5521,7 +5530,7 @@ async fn select_speaker_via_llm_with_tracking(
         body: Some(built.body),
         timeout_ms: Some(crate::transport::DEFAULT_REQUEST_TIMEOUT_MS),
         stream: Some(false),
-        request_id: None,
+        request_id: Some(request_id.to_string()),
         provider_id: Some(credential.provider_id.clone()),
     };
 
@@ -5534,19 +5543,25 @@ async fn select_speaker_via_llm_with_tracking(
         ));
     }
 
-    // Record usage for decision maker
     if track_usage {
+        let app = app.clone();
         let usage = extract_usage(api_response.data());
-        record_decision_maker_usage(
-            app,
-            &usage,
-            &context.session,
-            model,
-            credential,
-            &api_key,
-            "group_chat_decision_maker",
-        )
-        .await;
+        let session = context.session.clone();
+        let model = model.clone();
+        let credential = credential.clone();
+        let api_key = api_key.clone();
+        tauri::async_runtime::spawn(async move {
+            record_decision_maker_usage(
+                &app,
+                &usage,
+                &session,
+                &model,
+                &credential,
+                &api_key,
+                "group_chat_decision_maker",
+            )
+            .await;
+        });
     }
 
     // Parse tool call response
@@ -6115,7 +6130,7 @@ pub async fn group_chat_send(
                         );
                         return Err(crate::utils::err_msg(module_path!(), line!(), "Request aborted by user"));
                     }
-                    selection = select_speaker_via_llm(&app, &context, &settings) => selection,
+                    selection = select_speaker_via_llm(&app, &context, &settings, &req_id) => selection,
                 };
                 match selection_result {
                     Ok(selection) => {
@@ -6130,6 +6145,9 @@ pub async fn group_chat_send(
                         Ok((selection.character_id, selection.reasoning, false))
                     }
                     Err(err) => {
+                        if is_request_abort_error(&err) {
+                            return Err(err);
+                        }
                         log_error(
                             &app,
                             "group_chat_send",
@@ -6147,7 +6165,9 @@ pub async fn group_chat_send(
     {
         Ok(result) => result,
         Err(err) => {
-            emit_group_chat_error_status(&app, &session_id, &err);
+            if !is_request_abort_error(&err) {
+                emit_group_chat_error_status(&app, &session_id, &err);
+            }
             return Err(err);
         }
     };
@@ -6233,7 +6253,9 @@ pub async fn group_chat_send(
         match response_result {
             Ok(result) => result,
             Err(err) => {
-                emit_group_chat_error_status(&app, &session_id, &err);
+                if !is_request_abort_error(&err) {
+                    emit_group_chat_error_status(&app, &session_id, &err);
+                }
                 return Err(err);
             }
         };
@@ -6421,11 +6443,14 @@ pub async fn group_chat_regenerate(
                 );
                 return Err(crate::utils::err_msg(module_path!(), line!(), "Request aborted by user"));
             }
-            selection = select_speaker_via_llm(&app, &context, &settings) => selection,
+            selection = select_speaker_via_llm(&app, &context, &settings, &req_id) => selection,
         };
         match selection_result {
             Ok(selection) => Ok((selection.character_id, selection.reasoning, false)),
             Err(err) => {
+                if is_request_abort_error(&err) {
+                    return Err(err);
+                }
                 log_error(
                     &app,
                     "group_chat_regenerate",
@@ -6441,7 +6466,9 @@ pub async fn group_chat_regenerate(
         match selection_result {
             Ok(result) => result,
             Err(err) => {
-                emit_group_chat_error_status(&app, &session_id, &err);
+                if !is_request_abort_error(&err) {
+                    emit_group_chat_error_status(&app, &session_id, &err);
+                }
                 return Err(err);
             }
         };
@@ -6512,7 +6539,9 @@ pub async fn group_chat_regenerate(
         match response_result {
             Ok(result) => result,
             Err(err) => {
-                emit_group_chat_error_status(&app, &session_id, &err);
+                if !is_request_abort_error(&err) {
+                    emit_group_chat_error_status(&app, &session_id, &err);
+                }
                 return Err(err);
             }
         };
@@ -6649,11 +6678,14 @@ pub async fn group_chat_continue(
                         );
                         return Err(crate::utils::err_msg(module_path!(), line!(), "Request aborted by user"));
                     }
-                    selection = select_speaker_via_llm(&app, &context, &settings) => selection,
+                    selection = select_speaker_via_llm(&app, &context, &settings, &req_id) => selection,
                 };
                 match selection_result {
                     Ok(selection) => Ok((selection.character_id, selection.reasoning, false)),
                     Err(err) => {
+                        if is_request_abort_error(&err) {
+                            return Err(err);
+                        }
                         log_error(
                             &app,
                             "group_chat_continue",
@@ -6671,7 +6703,9 @@ pub async fn group_chat_continue(
         match selection_result {
             Ok(result) => result,
             Err(err) => {
-                emit_group_chat_error_status(&app, &session_id, &err);
+                if !is_request_abort_error(&err) {
+                    emit_group_chat_error_status(&app, &session_id, &err);
+                }
                 return Err(err);
             }
         };
@@ -6742,7 +6776,9 @@ pub async fn group_chat_continue(
         match response_result {
             Ok(result) => result,
             Err(err) => {
-                emit_group_chat_error_status(&app, &session_id, &err);
+                if !is_request_abort_error(&err) {
+                    emit_group_chat_error_status(&app, &session_id, &err);
+                }
                 return Err(err);
             }
         };
