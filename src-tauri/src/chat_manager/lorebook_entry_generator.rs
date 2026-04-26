@@ -18,7 +18,7 @@ use crate::chat_manager::storage::{
     get_base_prompt_entries, resolve_credential_for_model, PromptType,
 };
 use crate::chat_manager::tooling::{
-    parse_tool_calls, parse_tool_calls_from_text, ToolCall, ToolChoice, ToolConfig, ToolDefinition,
+    parse_tool_calls, ToolCall, ToolChoice, ToolConfig, ToolDefinition,
 };
 use crate::chat_manager::turn_builder::should_insert_in_chat_prompt_entry;
 use crate::chat_manager::types::{
@@ -1760,25 +1760,9 @@ pub async fn chat_generate_lorebook_entry_draft(
             .await;
 
             if api_response.ok {
-                let mut calls = parse_tool_calls(&credential.provider_id, api_response.data());
-                if calls.is_empty() {
-                    if let Some(text) =
-                        extract_text(api_response.data(), Some(&credential.provider_id))
-                    {
-                        calls = parse_tool_calls_from_text(&text);
-                    }
-                }
+                let calls = parse_tool_calls(&credential.provider_id, api_response.data());
 
                 if let Some(result) = result_from_tool_calls(&calls)? {
-                    return Ok(result);
-                }
-
-                let response_text =
-                    extract_text(api_response.data(), Some(&credential.provider_id))
-                        .unwrap_or_default();
-                if let Some(result) =
-                    result_from_tool_calls(&parse_tool_calls_from_text(&response_text))?
-                {
                     return Ok(result);
                 }
 
@@ -1983,25 +1967,9 @@ pub async fn chat_generate_lorebook_keyword_draft(
     let tool_failure_reason = match tool_attempt {
         Ok(api_response) => {
             if api_response.ok {
-                let mut calls = parse_tool_calls(&credential.provider_id, api_response.data());
-                if calls.is_empty() {
-                    if let Some(text) =
-                        extract_text(api_response.data(), Some(&credential.provider_id))
-                    {
-                        calls = parse_tool_calls_from_text(&text);
-                    }
-                }
+                let calls = parse_tool_calls(&credential.provider_id, api_response.data());
 
                 if let Some(result) = result_keywords_from_tool_calls(&calls)? {
-                    return Ok(result);
-                }
-
-                let response_text =
-                    extract_text(api_response.data(), Some(&credential.provider_id))
-                        .unwrap_or_default();
-                if let Some(result) =
-                    result_keywords_from_tool_calls(&parse_tool_calls_from_text(&response_text))?
-                {
                     return Ok(result);
                 }
 

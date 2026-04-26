@@ -358,6 +358,7 @@ pub fn parse_tool_calls(provider_id: &str, payload: &Value) -> Vec<ToolCall> {
     calls
 }
 
+#[cfg(any(test, not(mobile)))]
 pub fn parse_tool_calls_from_text(raw: &str) -> Vec<ToolCall> {
     let mut calls = Vec::new();
     let normalized = raw.trim();
@@ -502,7 +503,6 @@ fn parse_tool_call_block_function_tag(block: &str, index: usize) -> Option<ToolC
     })
 }
 
-#[cfg(any(test, not(mobile)))]
 fn extract_tool_calls_from_json_value(value: &Value, out: &mut Vec<ToolCall>) {
     match value {
         Value::Array(items) => {
@@ -538,7 +538,6 @@ fn extract_tool_calls_from_json_value(value: &Value, out: &mut Vec<ToolCall>) {
     }
 }
 
-#[cfg(any(test, not(mobile)))]
 fn parse_json_tool_call_object(value: &Value, index: usize) -> Option<ToolCall> {
     let function = value.get("function").unwrap_or(value);
     let name = function

@@ -16,7 +16,7 @@ use crate::chat_manager::storage::{
     get_base_prompt_entries, resolve_credential_for_model, PromptType,
 };
 use crate::chat_manager::tooling::{
-    parse_tool_calls, parse_tool_calls_from_text, ToolCall, ToolChoice, ToolConfig, ToolDefinition,
+    parse_tool_calls, ToolCall, ToolChoice, ToolConfig, ToolDefinition,
 };
 use crate::chat_manager::types::{
     ChatGenerateCompanionSoulArgs, DynamicMemoryStructuredFallbackFormat, Model,
@@ -890,12 +890,7 @@ async fn run_with_target(
             break;
         }
 
-        let mut calls = parse_tool_calls(&credential.provider_id, api_response.data());
-        if calls.is_empty() {
-            if let Some(text) = extract_text(api_response.data(), Some(&credential.provider_id)) {
-                calls = parse_tool_calls_from_text(&text);
-            }
-        }
+        let calls = parse_tool_calls(&credential.provider_id, api_response.data());
 
         if calls.is_empty() {
             log_warn(
