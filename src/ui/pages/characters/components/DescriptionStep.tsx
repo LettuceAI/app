@@ -286,214 +286,8 @@ export function DescriptionStep({
               Optional short description for the UI; the full definition is used in prompts.
             </p>
           </div>
-        </div>
 
-        {/* Right sidebar: Settings (desktop) / continues stacked (mobile) */}
-        <div className="lg:w-80 lg:shrink-0 space-y-6 mt-6 lg:mt-0">
-          {/* Model Selection */}
-          <div className={spacing.field}>
-            <label
-              className={cn(
-                typography.label.size,
-                typography.label.weight,
-                typography.label.tracking,
-                "uppercase text-fg/70",
-              )}
-            >
-              AI Model *
-            </label>
-            {loadingModels ? (
-              <div
-                className={cn(
-                  "flex items-center gap-3 border border-fg/10 bg-surface-el/20 px-4 py-3 backdrop-blur-xl",
-                  radius.md,
-                )}
-              >
-                <div className="h-4 w-4 animate-spin rounded-full border-2 border-fg/10 border-t-white/60" />
-                <span className={cn(typography.body.size, "text-fg/60")}>Loading models...</span>
-              </div>
-            ) : models.length ? (
-              <button
-                type="button"
-                onClick={() => setShowModelMenu(true)}
-                className={cn(
-                  "flex w-full items-center justify-between border bg-surface-el/20 px-4 py-3.5 text-left backdrop-blur-xl",
-                  radius.md,
-                  interactive.transition.default,
-                  "focus:border-fg/30 focus:bg-surface-el/30 focus:outline-none hover:bg-surface-el/30",
-                  selectedModelId ? "border-fg/20" : "border-fg/10",
-                )}
-              >
-                <div className="flex items-center gap-2">
-                  {selectedModelId ? (
-                    getProviderIcon(models.find((m) => m.id === selectedModelId)?.providerId || "")
-                  ) : (
-                    <Cpu className="h-5 w-5 text-fg/40" />
-                  )}
-                  <span className={cn("text-sm", selectedModelId ? "text-fg" : "text-fg/50")}>
-                    {selectedModelId
-                      ? models.find((m) => m.id === selectedModelId)?.displayName || "Selected Model"
-                      : "Select a model"}
-                  </span>
-                </div>
-                <ChevronDown className="h-4 w-4 text-fg/40" />
-              </button>
-            ) : (
-              <div
-                className={cn(
-                  "border border-warning/20 bg-warning/10 px-4 py-3 backdrop-blur-xl",
-                  radius.md,
-                )}
-              >
-                <div className="flex items-start gap-3">
-                  <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-warning" />
-                  <div>
-                    <p className={cn(typography.body.size, typography.h3.weight, "text-warning/90")}>
-                      No models configured
-                    </p>
-                    <p className={cn(typography.bodySmall.size, "mt-1 text-warning/70")}>
-                      Add a provider in settings first to continue
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-            <p className={cn(typography.bodySmall.size, "text-fg/40")}>
-              This model will power the character's responses
-            </p>
-          </div>
-
-          {/* Fallback Model Selection */}
-          <div className={spacing.field}>
-            <label
-              className={cn(
-                typography.label.size,
-                typography.label.weight,
-                typography.label.tracking,
-                "uppercase text-fg/70",
-              )}
-            >
-              Fallback Model (Optional)
-            </label>
-            {loadingModels ? (
-              <div
-                className={cn(
-                  "flex items-center gap-3 border border-fg/10 bg-surface-el/20 px-4 py-3 backdrop-blur-xl",
-                  radius.md,
-                )}
-              >
-                <div className="h-4 w-4 animate-spin rounded-full border-2 border-fg/10 border-t-white/60" />
-                <span className={cn(typography.body.size, "text-fg/60")}>Loading models...</span>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setShowFallbackModelMenu(true)}
-                className={cn(
-                  "flex w-full items-center justify-between border bg-surface-el/20 px-4 py-3.5 text-left backdrop-blur-xl",
-                  radius.md,
-                  interactive.transition.default,
-                  "focus:border-fg/30 focus:bg-surface-el/30 focus:outline-none hover:bg-surface-el/30",
-                  selectedFallbackModelId ? "border-fg/20" : "border-fg/10",
-                )}
-              >
-                <div className="flex items-center gap-2">
-                  {selectedFallbackModelId ? (
-                    getProviderIcon(
-                      models.find((m) => m.id === selectedFallbackModelId)?.providerId || "",
-                    )
-                  ) : (
-                    <Cpu className="h-5 w-5 text-fg/40" />
-                  )}
-                  <span
-                    className={cn(
-                      "text-sm",
-                      selectedFallbackModelId ? "text-fg" : "text-fg/50",
-                    )}
-                  >
-                    {selectedFallbackModelId
-                      ? models.find((m) => m.id === selectedFallbackModelId)?.displayName ||
-                        "Selected Fallback Model"
-                      : "Off (no fallback)"}
-                  </span>
-                </div>
-                <ChevronDown className="h-4 w-4 text-fg/40" />
-              </button>
-            )}
-            <p className={cn(typography.bodySmall.size, "text-fg/40")}>
-              Retries with this model only if the primary model fails
-            </p>
-          </div>
-
-          {/* Memory Mode */}
-          <div className={spacing.field}>
-            <div className="flex items-center justify-between">
-              <label
-                className={cn(
-                  typography.label.size,
-                  typography.label.weight,
-                  typography.label.tracking,
-                  "uppercase text-fg/70",
-                )}
-              >
-                Memory Mode
-              </label>
-              {!dynamicMemoryEnabled && (
-                <span className="text-[11px] text-fg/45">Enable in Settings to switch</span>
-              )}
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => onMemoryTypeChange("manual")}
-                className={cn(
-                  "flex flex-col items-start gap-1 rounded-xl border px-3 py-3 text-left transition",
-                  memoryType === "manual"
-                    ? "border-accent/50 bg-accent/10 text-accent/70 shadow-[0_0_0_1px_rgba(16,185,129,0.2)]"
-                    : "border-fg/10 bg-fg/5 text-fg/70 hover:border-fg/20 hover:bg-fg/10",
-                )}
-              >
-                <div className="flex items-center gap-2">
-                  <Layers className="h-4 w-4" />
-                  <span className="text-sm font-semibold">Manual</span>
-                </div>
-                <p className="text-xs text-fg/60 hidden lg:block">
-                  Add and manage memory notes yourself.
-                </p>
-                <p className="text-xs text-fg/60 lg:hidden">
-                  Current system: add and manage memory notes yourself.
-                </p>
-              </button>
-              <button
-                type="button"
-                disabled={!dynamicMemoryEnabled}
-                onClick={() => dynamicMemoryEnabled && onMemoryTypeChange("dynamic")}
-                className={cn(
-                  "flex flex-col items-start gap-1 rounded-xl border px-3 py-3 text-left transition",
-                  memoryType === "dynamic" && dynamicMemoryEnabled
-                    ? "border-info/60 bg-info/15 text-info shadow-[0_0_0_1px_rgba(96,165,250,0.3)]"
-                    : "border-fg/10 bg-fg/5 text-fg/60",
-                  !dynamicMemoryEnabled && "cursor-not-allowed opacity-50",
-                )}
-              >
-                <div className="flex items-center gap-2">
-                  <Sparkles className="h-4 w-4" />
-                  <span className="text-sm font-semibold">Dynamic</span>
-                </div>
-                <p className="text-xs text-fg/60 hidden lg:block">
-                  Automatic summaries and context updates.
-                </p>
-                <p className="text-xs text-fg/60 lg:hidden">
-                  Automatic summaries and context updates for this character.
-                </p>
-              </button>
-            </div>
-            <p className={cn(typography.bodySmall.size, "text-fg/40")}>
-              Dynamic memory requires it to be enabled in Advanced settings. Otherwise, manual memory is
-              used.
-            </p>
-          </div>
-
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Prompt Selection */}
           <div className={spacing.field}>
             <label
@@ -762,6 +556,214 @@ export function DescriptionStep({
                 disabled={!voiceConfig}
               />
             </div>
+          </div>
+          </div>
+        </div>
+
+        {/* Right sidebar: Settings (desktop) / continues stacked (mobile) */}
+        <div className="lg:w-80 lg:shrink-0 space-y-6 mt-6 lg:mt-0">
+          {/* Model Selection */}
+          <div className={spacing.field}>
+            <label
+              className={cn(
+                typography.label.size,
+                typography.label.weight,
+                typography.label.tracking,
+                "uppercase text-fg/70",
+              )}
+            >
+              AI Model *
+            </label>
+            {loadingModels ? (
+              <div
+                className={cn(
+                  "flex items-center gap-3 border border-fg/10 bg-surface-el/20 px-4 py-3 backdrop-blur-xl",
+                  radius.md,
+                )}
+              >
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-fg/10 border-t-white/60" />
+                <span className={cn(typography.body.size, "text-fg/60")}>Loading models...</span>
+              </div>
+            ) : models.length ? (
+              <button
+                type="button"
+                onClick={() => setShowModelMenu(true)}
+                className={cn(
+                  "flex w-full items-center justify-between border bg-surface-el/20 px-4 py-3.5 text-left backdrop-blur-xl",
+                  radius.md,
+                  interactive.transition.default,
+                  "focus:border-fg/30 focus:bg-surface-el/30 focus:outline-none hover:bg-surface-el/30",
+                  selectedModelId ? "border-fg/20" : "border-fg/10",
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  {selectedModelId ? (
+                    getProviderIcon(models.find((m) => m.id === selectedModelId)?.providerId || "")
+                  ) : (
+                    <Cpu className="h-5 w-5 text-fg/40" />
+                  )}
+                  <span className={cn("text-sm", selectedModelId ? "text-fg" : "text-fg/50")}>
+                    {selectedModelId
+                      ? models.find((m) => m.id === selectedModelId)?.displayName || "Selected Model"
+                      : "Select a model"}
+                  </span>
+                </div>
+                <ChevronDown className="h-4 w-4 text-fg/40" />
+              </button>
+            ) : (
+              <div
+                className={cn(
+                  "border border-warning/20 bg-warning/10 px-4 py-3 backdrop-blur-xl",
+                  radius.md,
+                )}
+              >
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-warning" />
+                  <div>
+                    <p className={cn(typography.body.size, typography.h3.weight, "text-warning/90")}>
+                      No models configured
+                    </p>
+                    <p className={cn(typography.bodySmall.size, "mt-1 text-warning/70")}>
+                      Add a provider in settings first to continue
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+            <p className={cn(typography.bodySmall.size, "text-fg/40")}>
+              This model will power the character's responses
+            </p>
+          </div>
+
+          {/* Fallback Model Selection */}
+          <div className={spacing.field}>
+            <label
+              className={cn(
+                typography.label.size,
+                typography.label.weight,
+                typography.label.tracking,
+                "uppercase text-fg/70",
+              )}
+            >
+              Fallback Model (Optional)
+            </label>
+            {loadingModels ? (
+              <div
+                className={cn(
+                  "flex items-center gap-3 border border-fg/10 bg-surface-el/20 px-4 py-3 backdrop-blur-xl",
+                  radius.md,
+                )}
+              >
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-fg/10 border-t-white/60" />
+                <span className={cn(typography.body.size, "text-fg/60")}>Loading models...</span>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowFallbackModelMenu(true)}
+                className={cn(
+                  "flex w-full items-center justify-between border bg-surface-el/20 px-4 py-3.5 text-left backdrop-blur-xl",
+                  radius.md,
+                  interactive.transition.default,
+                  "focus:border-fg/30 focus:bg-surface-el/30 focus:outline-none hover:bg-surface-el/30",
+                  selectedFallbackModelId ? "border-fg/20" : "border-fg/10",
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  {selectedFallbackModelId ? (
+                    getProviderIcon(
+                      models.find((m) => m.id === selectedFallbackModelId)?.providerId || "",
+                    )
+                  ) : (
+                    <Cpu className="h-5 w-5 text-fg/40" />
+                  )}
+                  <span
+                    className={cn(
+                      "text-sm",
+                      selectedFallbackModelId ? "text-fg" : "text-fg/50",
+                    )}
+                  >
+                    {selectedFallbackModelId
+                      ? models.find((m) => m.id === selectedFallbackModelId)?.displayName ||
+                        "Selected Fallback Model"
+                      : "Off (no fallback)"}
+                  </span>
+                </div>
+                <ChevronDown className="h-4 w-4 text-fg/40" />
+              </button>
+            )}
+            <p className={cn(typography.bodySmall.size, "text-fg/40")}>
+              Retries with this model only if the primary model fails
+            </p>
+          </div>
+
+          {/* Memory Mode */}
+          <div className={spacing.field}>
+            <div className="flex items-center justify-between">
+              <label
+                className={cn(
+                  typography.label.size,
+                  typography.label.weight,
+                  typography.label.tracking,
+                  "uppercase text-fg/70",
+                )}
+              >
+                Memory Mode
+              </label>
+              {!dynamicMemoryEnabled && (
+                <span className="text-[11px] text-fg/45">Enable in Settings to switch</span>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => onMemoryTypeChange("manual")}
+                className={cn(
+                  "flex flex-col items-start gap-1 rounded-xl border px-3 py-3 text-left transition",
+                  memoryType === "manual"
+                    ? "border-accent/50 bg-accent/10 text-accent/70 shadow-[0_0_0_1px_rgba(16,185,129,0.2)]"
+                    : "border-fg/10 bg-fg/5 text-fg/70 hover:border-fg/20 hover:bg-fg/10",
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  <Layers className="h-4 w-4" />
+                  <span className="text-sm font-semibold">Manual</span>
+                </div>
+                <p className="text-xs text-fg/60 hidden lg:block">
+                  Add and manage memory notes yourself.
+                </p>
+                <p className="text-xs text-fg/60 lg:hidden">
+                  Current system: add and manage memory notes yourself.
+                </p>
+              </button>
+              <button
+                type="button"
+                disabled={!dynamicMemoryEnabled}
+                onClick={() => dynamicMemoryEnabled && onMemoryTypeChange("dynamic")}
+                className={cn(
+                  "flex flex-col items-start gap-1 rounded-xl border px-3 py-3 text-left transition",
+                  memoryType === "dynamic" && dynamicMemoryEnabled
+                    ? "border-info/60 bg-info/15 text-info shadow-[0_0_0_1px_rgba(96,165,250,0.3)]"
+                    : "border-fg/10 bg-fg/5 text-fg/60",
+                  !dynamicMemoryEnabled && "cursor-not-allowed opacity-50",
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4" />
+                  <span className="text-sm font-semibold">Dynamic</span>
+                </div>
+                <p className="text-xs text-fg/60 hidden lg:block">
+                  Automatic summaries and context updates.
+                </p>
+                <p className="text-xs text-fg/60 lg:hidden">
+                  Automatic summaries and context updates for this character.
+                </p>
+              </button>
+            </div>
+            <p className={cn(typography.bodySmall.size, "text-fg/40")}>
+              Dynamic memory requires it to be enabled in Advanced settings. Otherwise, manual memory is
+              used.
+            </p>
           </div>
         </div>
       </div>
