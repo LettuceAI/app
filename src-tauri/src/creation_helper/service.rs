@@ -1488,7 +1488,7 @@ fn record_image_generation_usage(
 
     let usage = RequestUsage {
         id: request_id,
-        timestamp: now_ms() as u64,
+        timestamp: now_ms(),
         session_id: session_id.to_string(),
         character_id: "creation_helper".to_string(),
         character_name: if character_name.is_empty() {
@@ -2973,11 +2973,7 @@ async fn process_assistant_turn(
     }
 
     if iteration >= MAX_TOOL_ITERATIONS {
-        log_info(
-            &app,
-            "creation_helper",
-            "Max tool iterations reached".to_string(),
-        );
+        log_info(&app, "creation_helper", "Max tool iterations reached");
     }
 
     if !all_tool_calls.is_empty()
@@ -2986,7 +2982,7 @@ async fn process_assistant_turn(
         log_info(
             &app,
             "creation_helper",
-            "Running finalization pass without tools to get user-facing response".to_string(),
+            "Running finalization pass without tools to get user-facing response",
         );
 
         let mut finalize_messages = api_messages.clone();
@@ -3398,7 +3394,7 @@ async fn record_creation_usage(
 
     let mut usage = RequestUsage {
         id: request_id,
-        timestamp: now_ms() as u64,
+        timestamp: now_ms(),
         session_id: session_id.to_string(),
         character_id: "creation_helper".to_string(),
         character_name: if character_name.is_empty() {

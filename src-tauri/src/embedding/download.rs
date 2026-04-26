@@ -439,7 +439,7 @@ pub async fn start_companion_download(app: AppHandle, kind: String) -> Result<()
     }
 
     let plan = companion_download_plan(kind);
-    let owned_files: Vec<&'static str> = kind.local_files().iter().copied().collect();
+    let owned_files: Vec<&'static str> = kind.local_files().to_vec();
 
     log_info(
         &app,
@@ -585,7 +585,7 @@ pub async fn delete_companion_model(app: AppHandle, kind: String) -> Result<(), 
             model_dir.display()
         ),
     );
-    let files: Vec<&'static str> = kind.local_files().iter().copied().collect();
+    let files: Vec<&'static str> = kind.local_files().to_vec();
     delete_files(&model_dir, &files)?;
 
     Ok(())

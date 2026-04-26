@@ -669,9 +669,7 @@ fn push_pause_punctuation(parts: &mut Vec<TextPart>) {
 }
 
 fn push_space_id(ids: &mut Vec<i64>, vocab: &HashMap<char, i64>) -> Option<i64> {
-    let Some(&space_id) = vocab.get(&' ') else {
-        return None;
-    };
+    let &space_id = vocab.get(&' ')?;
     if ids.last().copied() == Some(space_id) {
         return None;
     }

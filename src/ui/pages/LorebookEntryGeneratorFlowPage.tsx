@@ -582,7 +582,7 @@ export function LorebookEntryGeneratorFlowPage() {
   const pageTitle = lorebook ? `${lorebook.name} · Generate` : "Generate Lorebook Entry";
 
   return (
-    <div className="flex h-[100dvh] flex-col overflow-hidden bg-surface pt-[calc(72px+env(safe-area-inset-top))] pb-[env(safe-area-inset-bottom)]">
+    <div className="flex h-dvh flex-col overflow-hidden bg-surface pt-[calc(72px+env(safe-area-inset-top))] pb-[env(safe-area-inset-bottom)]">
       <TopNav
         currentPath={location.pathname + location.search}
         titleOverride={pageTitle}
@@ -596,14 +596,14 @@ export function LorebookEntryGeneratorFlowPage() {
             onClick={() => !characterPickerLocked && setCharacterPickerOpen((v) => !v)}
             disabled={isBootLoading || characterPickerLocked}
             title={characterPickerLocked ? "Character is locked to this lorebook's owner" : undefined}
-            className={`flex items-center gap-1.5 rounded-lg border border-fg/10 bg-fg/[0.04] px-2.5 py-1.5 text-[12px] font-medium text-fg/80 transition ${
+            className={`flex items-center gap-1.5 rounded-lg border border-fg/10 bg-fg/4 px-2.5 py-1.5 text-[12px] font-medium text-fg/80 transition ${
               characterPickerLocked
                 ? "cursor-default opacity-70"
                 : "hover:border-fg/20 hover:bg-fg/10 disabled:opacity-60"
             }`}
           >
             <Hash className="h-3.5 w-3.5 text-fg/45" />
-            <span className="max-w-[120px] truncate">
+            <span className="max-w-30 truncate">
               {selectedCharacter?.name ?? "Character"}
             </span>
             {!characterPickerLocked && (
@@ -650,12 +650,12 @@ export function LorebookEntryGeneratorFlowPage() {
           </AnimatePresence>
         </div>
 
-        <div className="relative shrink-0 min-w-[160px] max-w-[280px]">
+        <div className="relative shrink-0 min-w-40 max-w-70">
           <button
             type="button"
             onClick={() => setSessionPickerOpen((v) => !v)}
             disabled={!selectedCharacterId || isSessionLoading}
-            className="flex w-full min-w-0 items-center gap-1.5 rounded-lg border border-fg/10 bg-fg/[0.04] px-2.5 py-1.5 text-[12px] text-left transition hover:border-fg/20 hover:bg-fg/10 disabled:opacity-60"
+            className="flex w-full min-w-0 items-center gap-1.5 rounded-lg border border-fg/10 bg-fg/4 px-2.5 py-1.5 text-[12px] text-left transition hover:border-fg/20 hover:bg-fg/10 disabled:opacity-60"
           >
             <MessageSquareText className="h-3.5 w-3.5 shrink-0 text-fg/45" />
             <div className="min-w-0 flex-1">
@@ -726,7 +726,7 @@ export function LorebookEntryGeneratorFlowPage() {
           </AnimatePresence>
         </div>
 
-        <div className="order-3 flex min-w-0 basis-full items-center gap-1.5 rounded-lg border border-fg/10 bg-fg/[0.04] px-2 py-1.5 focus-within:border-fg/20 sm:order-none sm:basis-auto sm:flex-1">
+        <div className="order-3 flex min-w-0 basis-full items-center gap-1.5 rounded-lg border border-fg/10 bg-fg/4 px-2 py-1.5 focus-within:border-fg/20 sm:order-0 sm:basis-auto sm:flex-1">
           <Search className="h-3.5 w-3.5 shrink-0 text-fg/40" />
           <input
             value={messageSearch}
@@ -787,7 +787,7 @@ export function LorebookEntryGeneratorFlowPage() {
       </div>
 
       <div className="flex items-center gap-2 border-b border-fg/10 px-3 py-1.5">
-        <div className="flex items-center gap-0.5 rounded-md bg-fg/[0.04] p-0.5">
+        <div className="flex items-center gap-0.5 rounded-md bg-fg/4 p-0.5">
           <FilterPill
             active={sourceMode === "messages"}
             onClick={() => setSourceMode("messages")}
@@ -815,7 +815,7 @@ export function LorebookEntryGeneratorFlowPage() {
 
         {sourceMode !== "memory" ? (
           <>
-            <div className="flex items-center gap-0.5 rounded-md bg-fg/[0.04] p-0.5">
+            <div className="flex items-center gap-0.5 rounded-md bg-fg/4 p-0.5">
               <FilterPill active={roleFilter === "all"} onClick={() => setRoleFilter("all")}>
                 All
               </FilterPill>
@@ -908,7 +908,7 @@ export function LorebookEntryGeneratorFlowPage() {
                   className={`rounded-lg border px-3 py-2 transition ${
                     includeMemorySummary
                       ? "border-info/20 bg-info/5"
-                      : "border-fg/10 bg-fg/[0.03] opacity-60"
+                      : "border-fg/10 bg-fg/3 opacity-60"
                   }`}
                 >
                   <div className="mb-1 flex items-center gap-2">
@@ -942,7 +942,7 @@ export function LorebookEntryGeneratorFlowPage() {
                       />
                     </button>
                   </div>
-                  <div className="line-clamp-3 whitespace-pre-wrap break-words text-[12px] leading-[1.45] text-fg/75">
+                  <div className="line-clamp-3 whitespace-pre-wrap wrap-break-word text-[12px] leading-[1.45] text-fg/75">
                     {sessionMemorySummary}
                   </div>
                 </div>
@@ -1051,7 +1051,7 @@ export function LorebookEntryGeneratorFlowPage() {
                 className={`rounded-lg border px-3 py-2 transition ${
                   includeMemorySummary
                     ? "border-info/20 bg-info/5"
-                    : "border-fg/10 bg-fg/[0.03] opacity-60"
+                    : "border-fg/10 bg-fg/3 opacity-60"
                 }`}
               >
                 <div className="mb-1 flex items-center gap-2">
@@ -1085,7 +1085,7 @@ export function LorebookEntryGeneratorFlowPage() {
                     />
                   </button>
                 </div>
-                <div className="whitespace-pre-wrap break-words text-[12.5px] leading-[1.5] text-fg/80">
+                <div className="whitespace-pre-wrap wrap-break-word text-[12.5px] leading-normal text-fg/80">
                   {sessionMemorySummary}
                 </div>
               </div>
@@ -1293,7 +1293,7 @@ function Dropdown({
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: -6, scale: 0.98 }}
         transition={{ duration: 0.18, ease: [0.4, 0, 0.2, 1] }}
-        className="absolute left-0 right-0 top-full z-20 mt-1 min-w-[220px] origin-top overflow-hidden rounded-xl border border-fg/15 bg-surface shadow-2xl"
+        className="absolute left-0 right-0 top-full z-20 mt-1 min-w-55 origin-top overflow-hidden rounded-xl border border-fg/15 bg-surface shadow-2xl"
       >
         <div className="flex items-center justify-between border-b border-fg/10 px-3 py-1.5">
           <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-fg/55">
@@ -1366,7 +1366,7 @@ function MessageRow({
   return (
     <div
       className={`flex items-start gap-2.5 py-2.5 pl-1 pr-2 transition ${
-        selected ? "bg-accent/5" : "hover:bg-fg/[0.03]"
+        selected ? "bg-accent/5" : "hover:bg-fg/3"
       }`}
     >
       <button
@@ -1395,7 +1395,7 @@ function MessageRow({
         </div>
         <div
           ref={textRef}
-          className={`whitespace-pre-wrap break-words text-[12.5px] leading-[1.5] text-fg/80 ${
+          className={`whitespace-pre-wrap wrap-break-word text-[12.5px] leading-normal text-fg/80 ${
             expanded ? "" : "line-clamp-3"
           }`}
         >
@@ -1449,7 +1449,7 @@ function MemoryRow({
   return (
     <div
       className={`flex items-start gap-2.5 py-2.5 pl-1 pr-2 transition ${
-        selected ? "bg-accent/5" : "hover:bg-fg/[0.03]"
+        selected ? "bg-accent/5" : "hover:bg-fg/3"
       }`}
     >
       <button
@@ -1484,7 +1484,7 @@ function MemoryRow({
         </div>
         <div
           ref={textRef}
-          className={`whitespace-pre-wrap break-words text-[12.5px] leading-[1.5] text-fg/80 ${
+          className={`whitespace-pre-wrap wrap-break-word text-[12.5px] leading-normal text-fg/80 ${
             expanded ? "" : "line-clamp-3"
           }`}
         >
@@ -1585,7 +1585,7 @@ function ReviewOverlay({
               />
             </FieldRow>
 
-            <div className="flex items-center justify-between rounded-lg border border-fg/10 bg-fg/[0.03] px-3 py-2.5">
+            <div className="flex items-center justify-between rounded-lg border border-fg/10 bg-fg/3 px-3 py-2.5">
               <div>
                 <div className="text-[12.5px] font-semibold text-fg">Always active</div>
                 <div className="mt-0.5 text-[11px] text-fg/50">

@@ -868,7 +868,7 @@ function getEntryActivationSummary(entry: SystemPromptEntry) {
 
 function SummaryField({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-[120px]">
+    <div className="min-w-30">
       <p className="text-[10px] font-medium uppercase tracking-wide text-fg/35">{label}</p>
       <p className="mt-1 text-sm leading-snug text-fg/78">{value}</p>
     </div>
@@ -906,7 +906,7 @@ function ConditionRuleRow({
 
   return (
     <div className="group relative flex flex-col gap-2 rounded border border-fg/10 bg-fg/2 p-2 transition-colors hover:border-fg/20 sm:flex-row sm:items-center">
-      <div className="flex-shrink-0 sm:w-[160px]">
+      <div className="shrink-0 sm:w-40">
         <select
           value={condition.type}
           onChange={(event) =>
@@ -3364,7 +3364,7 @@ export function EditPromptTemplate() {
                           <div
                             className={cn(
                               radius.lg,
-                              "border border-dashed border-fg/10 bg-fg/[0.02]",
+                              "border border-dashed border-fg/10 bg-fg/2",
                               "px-4 py-8 text-center",
                             )}
                           >

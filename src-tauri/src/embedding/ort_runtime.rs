@@ -607,7 +607,6 @@ fn log_missing_macos_provider_dylibs(app: &AppHandle, ort_dir: &Path, dylib_path
     #[cfg(not(target_os = "macos"))]
     {
         let _ = (app, ort_dir, dylib_path);
-        return;
     }
 
     #[cfg(target_os = "macos")]

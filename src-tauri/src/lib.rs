@@ -1,3 +1,11 @@
+#![allow(
+    clippy::enum_variant_names,
+    clippy::large_enum_variant,
+    clippy::ptr_arg,
+    clippy::too_many_arguments,
+    clippy::type_complexity
+)]
+
 mod api;
 mod app;
 mod chat_appearance;

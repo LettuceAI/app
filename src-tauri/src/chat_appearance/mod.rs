@@ -38,8 +38,7 @@ fn color_to_luminance(color: &str) -> f64 {
     let trimmed = color.trim();
 
     // Hex: #rgb, #rrggbb, #rrggbbaa
-    if trimmed.starts_with('#') {
-        let hex = &trimmed[1..];
+    if let Some(hex) = trimmed.strip_prefix('#') {
         let expanded = match hex.len() {
             3 => format!(
                 "{}{}{}{}{}{}",
@@ -67,7 +66,7 @@ fn color_to_luminance(color: &str) -> f64 {
             .trim_start_matches("rgba(")
             .trim_start_matches("rgb(")
             .trim_end_matches(')');
-        let parts: Vec<&str> = inner.split(|c| c == ',' || c == ' ').collect();
+        let parts: Vec<&str> = inner.split([',', ' ']).collect();
         let nums: Vec<f64> = parts
             .iter()
             .filter_map(|s| s.trim().parse::<f64>().ok())

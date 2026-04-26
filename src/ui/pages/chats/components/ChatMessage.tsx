@@ -317,9 +317,9 @@ const MessageActions = React.memo(function MessageActions({
             placeholder={t("chats.message.guidedRegenerationPlaceholder")}
             rows={4}
             className={cn(
-              "w-full resize-none border border-fg/12 bg-fg/[0.04] px-3 py-3 text-sm text-fg outline-none",
+              "w-full resize-none border border-fg/12 bg-fg/4 px-3 py-3 text-sm text-fg outline-none",
               radius.lg,
-              "placeholder:text-fg/35 focus:border-fg/25 focus:bg-fg/[0.06] focus:ring-2 focus:ring-fg/10",
+              "placeholder:text-fg/35 focus:border-fg/25 focus:bg-fg/6 focus:ring-2 focus:ring-fg/10",
             )}
           />
           <div className="flex gap-3">

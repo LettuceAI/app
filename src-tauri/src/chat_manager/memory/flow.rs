@@ -355,11 +355,11 @@ async fn request_memory_tool_calls(
                     .ok_or_else(|| {
                         "memory fallback returned neither tool calls nor text output".to_string()
                     })?;
-                let calls =
-                    parse_memory_operations_from_text(&text, fallback_format).map_err(|err| {
-                        log_text_parse_failure(app, "memory fallback", &text, &err);
-                        err
-                    })?;
+                let calls = parse_memory_operations_from_text(&text, fallback_format).inspect_err(
+                    |err| {
+                        log_text_parse_failure(app, "memory fallback", &text, err);
+                    },
+                )?;
                 Ok((calls, "text_fallback_after_http_error"))
             } else {
                 let tool_calls = parse_tool_calls(&provider_cred.provider_id, api_response.data());
@@ -446,12 +446,10 @@ async fn request_memory_tool_calls(
                             "memory fallback returned neither tool calls nor text output"
                                 .to_string()
                         })?;
-                    let calls = parse_memory_operations_from_text(&text, fallback_format).map_err(
-                        |err| {
-                            log_text_parse_failure(app, "memory fallback", &text, &err);
-                            err
-                        },
-                    )?;
+                    let calls = parse_memory_operations_from_text(&text, fallback_format)
+                        .inspect_err(|err| {
+                            log_text_parse_failure(app, "memory fallback", &text, err);
+                        })?;
                     Ok((calls, "text_fallback_after_empty_tool_calls"))
                 }
             }
@@ -547,9 +545,8 @@ async fn request_memory_tool_calls(
                     "memory fallback returned neither tool calls nor text output".to_string()
                 })?;
             let calls =
-                parse_memory_operations_from_text(&text, fallback_format).map_err(|err| {
-                    log_text_parse_failure(app, "memory fallback", &text, &err);
-                    err
+                parse_memory_operations_from_text(&text, fallback_format).inspect_err(|err| {
+                    log_text_parse_failure(app, "memory fallback", &text, err);
                 })?;
             Ok((calls, "text_fallback_after_request_error"))
         }
@@ -1421,7 +1418,7 @@ fn format_delta(value: f64) -> String {
 }
 
 fn humanize_key(key: &str) -> String {
-    key.replace('_', " ").replace('.', " ")
+    key.replace(['_', '.'], " ")
 }
 
 fn plural_suffix(count: usize) -> &'static str {

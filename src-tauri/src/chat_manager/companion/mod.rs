@@ -240,22 +240,12 @@ impl Default for RelationshipState {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub struct CompanionSessionState {
     pub emotional_state: EmotionalState,
     pub relationship_state: RelationshipState,
     pub active_signals: Vec<String>,
     pub updated_at: u64,
-}
-
-impl Default for CompanionSessionState {
-    fn default() -> Self {
-        Self {
-            emotional_state: EmotionalState::default(),
-            relationship_state: RelationshipState::default(),
-            active_signals: Vec::new(),
-            updated_at: 0,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]

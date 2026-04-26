@@ -2419,7 +2419,7 @@ function SceneBackgroundCard({
   const imageData = useImageData(path) ?? path;
 
   return (
-    <div className="overflow-hidden rounded-xl border border-fg/10 bg-fg/[0.04]">
+    <div className="overflow-hidden rounded-xl border border-fg/10 bg-fg/4">
       <img
         src={imageData}
         alt={label}

@@ -1130,8 +1130,6 @@ fn parse_fallback_xml_result(raw: &str) -> Result<LorebookEntryDraftResult, Stri
                     current_field = None;
                 } else if current_operation.as_deref() == Some(tag.as_str()) {
                     break;
-                } else if LOREBOOK_RESULT_XML_ROOT_TAGS.contains(&tag.as_str()) {
-                    current_field = None;
                 } else {
                     current_field = None;
                 }
@@ -1687,7 +1685,9 @@ pub async fn chat_generate_lorebook_entry_draft(
     let api_key = require_api_key(&app, credential, "lorebook_entry_generator")?;
 
     let info_source = match source_mode {
-        LorebookEntrySource::Messages => crate::chat_manager::types::PromptEntryInfoSource::Messages,
+        LorebookEntrySource::Messages => {
+            crate::chat_manager::types::PromptEntryInfoSource::Messages
+        }
         LorebookEntrySource::Memory => crate::chat_manager::types::PromptEntryInfoSource::Memory,
         LorebookEntrySource::Mixed => crate::chat_manager::types::PromptEntryInfoSource::Mixed,
     };

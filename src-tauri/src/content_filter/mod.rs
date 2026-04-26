@@ -129,8 +129,7 @@ impl ContentFilter {
 
     fn redact_snippet(text: &str, max_chars: usize) -> String {
         let mut out = String::new();
-        let mut count = 0usize;
-        for ch in text.chars() {
+        for (count, ch) in text.chars().enumerate() {
             if count >= max_chars {
                 out.push_str("...");
                 break;
@@ -140,7 +139,6 @@ impl ContentFilter {
             } else {
                 out.push('*');
             }
-            count += 1;
         }
         out
     }
@@ -578,9 +576,8 @@ impl ContentFilter {
                 normalized_text.contains(trimmed)
             } else if exact_only {
                 // Trailing-space terms: exact word match only
-                words.iter().any(|w| *w == trimmed)
-                    || (!collapsed_words.is_empty()
-                        && collapsed_words.iter().any(|w| *w == trimmed))
+                words.contains(&trimmed)
+                    || (!collapsed_words.is_empty() && collapsed_words.contains(&trimmed))
             } else {
                 // Single-word: word-boundary + morphological matching
                 words.iter().any(|w| Self::word_matches_term(w, trimmed))

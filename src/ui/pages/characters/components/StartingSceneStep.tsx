@@ -782,7 +782,7 @@ function SceneBackgroundPreview({
   const imageData = useImageData(path) ?? path;
 
   return (
-    <div className="overflow-hidden rounded-xl border border-fg/10 bg-fg/[0.04]">
+    <div className="overflow-hidden rounded-xl border border-fg/10 bg-fg/4">
       <img
         src={imageData}
         alt={label}
@@ -806,7 +806,7 @@ function SceneBackgroundEmptyZone({
   hint: string;
 }) {
   return (
-    <div className="rounded-xl border border-dashed border-fg/15 bg-fg/[0.02] p-4">
+    <div className="rounded-xl border border-dashed border-fg/15 bg-fg/2 p-4">
       <div className="flex flex-col items-center text-center">
         <div className="rounded-xl border border-fg/10 bg-fg/5 p-2.5 mb-2">
           <ImageIcon className="h-5 w-5 text-fg/40" />
@@ -849,7 +849,7 @@ function SceneBackgroundDropzone({
   const imageData = useImageData(path) ?? path;
 
   return (
-    <div className="group relative overflow-hidden rounded-xl border border-fg/15 bg-fg/[0.04]">
+    <div className="group relative overflow-hidden rounded-xl border border-fg/15 bg-fg/4">
       <img src={imageData} alt="Scene background" className="w-full h-40 object-cover" />
       <div className="absolute inset-0 bg-linear-to-t from-black/70 via-black/20 to-transparent pointer-events-none" />
       <div className="absolute top-2 right-2">

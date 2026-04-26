@@ -432,7 +432,7 @@ impl LogManager {
                                 .filter(|kw| line_msg_lower.contains(kw.as_str()))
                                 .count();
                             if shared >= 2
-                                || (ref_message_keywords.len() > 0
+                                || (!ref_message_keywords.is_empty()
                                     && shared * 100 / ref_message_keywords.len() > 40)
                             {
                                 matched = true;

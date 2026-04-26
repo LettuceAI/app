@@ -129,7 +129,7 @@ pub async fn chat_generate_user_reply(
         .advanced_settings
         .as_ref()
         .and_then(|advanced| advanced.help_me_reply_max_tokens)
-        .unwrap_or(150) as u32;
+        .unwrap_or(150);
 
     // Get streaming setting (default to true)
     let streaming_enabled = settings
@@ -299,8 +299,8 @@ pub async fn chat_generate_user_reply(
         &usage,
         &session,
         &prompt_character,
-        &model,
-        &credential,
+        model,
+        credential,
         &api_key,
         now_millis().unwrap_or(0),
         UsageOperationType::ReplyHelper,

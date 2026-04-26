@@ -536,7 +536,7 @@ function LorebookListView({
                     onClick={() => setSelectedLorebook(lorebook)}
                     className={`group flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition ${
                       isAssigned
-                        ? "border-fg/10 border-l-2 border-l-accent bg-accent/[0.04] hover:bg-accent/[0.08]"
+                        ? "border-fg/10 border-l-2 border-l-accent bg-accent/4 hover:bg-accent/8"
                         : "border-fg/10 bg-surface-el/40 hover:border-fg/20 hover:bg-surface-el/70"
                     }`}
                   >

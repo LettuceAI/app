@@ -294,7 +294,12 @@ fn count_voice_bins(path: &Path) -> u32 {
     };
     entries
         .filter_map(Result::ok)
-        .filter(|e| e.path().extension().map(|ext| ext == "bin").unwrap_or(false))
+        .filter(|e| {
+            e.path()
+                .extension()
+                .map(|ext| ext == "bin")
+                .unwrap_or(false)
+        })
         .count() as u32
 }
 
@@ -321,7 +326,9 @@ pub async fn queue_voices_install(
     }
     for id in &voice_ids {
         if !is_valid_voice_id(id) {
-            return Err(KokoroError::VoiceParse(format!("Unsupported voice id: {id}")));
+            return Err(KokoroError::VoiceParse(format!(
+                "Unsupported voice id: {id}"
+            )));
         }
     }
 

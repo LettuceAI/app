@@ -37,17 +37,13 @@ pub enum PromptEntryRole {
 
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum PromptEntryPosition {
+    #[default]
     Relative,
     InChat,
     Conditional,
     Interval,
-}
-
-impl Default for PromptEntryPosition {
-    fn default() -> Self {
-        PromptEntryPosition::Relative
-    }
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]

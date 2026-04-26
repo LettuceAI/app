@@ -14,7 +14,7 @@ pub fn provider_base_url(cred: &ProviderCredential) -> String {
     )
 }
 
-fn selected_variant<'a>(message: &'a StoredMessage) -> Option<&'a MessageVariant> {
+fn selected_variant(message: &StoredMessage) -> Option<&MessageVariant> {
     if let Some(selected_id) = &message.selected_variant_id {
         message
             .variants
@@ -127,12 +127,12 @@ fn extract_explicit_reasoning(data: &Value) -> Option<String> {
     }
 }
 
-fn extract_raw_text(data: &Value, provider_id: Option<&str>) -> Option<String> {
+fn extract_raw_text(data: &Value, _provider_id: Option<&str>) -> Option<String> {
     match data {
         Value::Array(items) => {
             let mut combined = String::new();
             for item in items {
-                if let Some(part) = extract_raw_text(item, provider_id) {
+                if let Some(part) = extract_raw_text(item, _provider_id) {
                     combined.push_str(&part);
                 }
             }
@@ -283,8 +283,8 @@ pub fn extract_usage(data: &Value) -> Option<UsageSummary> {
             let mut found: Option<UsageSummary> = None;
             for line in raw.lines() {
                 let piece = line.trim();
-                if piece.starts_with("data:") {
-                    let payload = piece[5..].trim();
+                if let Some(stripped) = piece.strip_prefix("data:") {
+                    let payload = stripped.trim();
                     if payload.is_empty() || payload == "[DONE]" {
                         continue;
                     }

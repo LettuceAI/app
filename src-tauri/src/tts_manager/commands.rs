@@ -399,12 +399,8 @@ pub fn audio_provider_voices(
     let conn = open_db(&app)?;
 
     // First get the provider type and any provider-specific configuration we need
-    let (provider_type, kokoro_variant, asset_root): (
-        String,
-        Option<String>,
-        Option<String>,
-    ) = conn
-        .query_row(
+    let (provider_type, kokoro_variant, asset_root): (String, Option<String>, Option<String>) =
+        conn.query_row(
             "SELECT provider_type, kokoro_variant, asset_root FROM audio_providers WHERE id = ?",
             params![provider_id],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
@@ -814,18 +810,17 @@ pub async fn tts_preview(
                     espeak_data_path: None,
                 };
 
-                let audio = tokio::task::spawn_blocking(move || {
-                    kokoro::engine::synthesize_to_wav(request)
-                })
-                .await
-                .map_err(|e| {
-                    crate::utils::err_msg(
-                        module_path!(),
-                        line!(),
-                        format!("Kokoro synthesis task failed: {}", e),
-                    )
-                })?
-                .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+                let audio =
+                    tokio::task::spawn_blocking(move || kokoro::engine::synthesize_to_wav(request))
+                        .await
+                        .map_err(|e| {
+                            crate::utils::err_msg(
+                                module_path!(),
+                                line!(),
+                                format!("Kokoro synthesis task failed: {}", e),
+                            )
+                        })?
+                        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 
                 Ok((audio, "audio/wav".to_string()))
             }

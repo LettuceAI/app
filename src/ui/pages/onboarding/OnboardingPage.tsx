@@ -107,7 +107,7 @@ export function OnboardingPage() {
 
   if (state.capabilitiesLoading && state.step === OnboardingStep.Provider) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-[#050505] text-gray-200">
+      <div className="flex min-h-screen flex-col items-center justify-center bg-surface text-gray-200">
         <div className="flex items-center gap-3">
           <Loader size={20} className="animate-spin" />
           <span>{t("onboarding.loading")}</span>
@@ -123,7 +123,7 @@ export function OnboardingPage() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#050505] text-gray-200 overflow-hidden">
+    <div className="flex min-h-screen flex-col bg-surface text-gray-200 overflow-hidden">
       {/* Header */}
       <div
         className={cn(

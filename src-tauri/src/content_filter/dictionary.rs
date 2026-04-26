@@ -1,9 +1,9 @@
-/// Keyword/pattern entries with severity weights for content filtering.
-///
-/// Each entry is `(term, weight)` where weight ranges from 0.1 to 1.0.
-/// The filter lowercases all text before matching, so entries here should be lowercase.
-///
-/// Prefix/substring matching is used — e.g. "ejaculat" matches "ejaculate", "ejaculating", "ejaculation".
+//! Keyword/pattern entries with severity weights for content filtering.
+//!
+//! Each entry is `(term, weight)` where weight ranges from 0.1 to 1.0.
+//! The filter lowercases all text before matching, so entries here should be lowercase.
+//!
+//! Prefix/substring matching is used — e.g. "ejaculat" matches "ejaculate", "ejaculating", "ejaculation".
 
 /// Explicitly sexual terms — high severity.
 pub const EXPLICIT_SEXUAL: &[(&str, f32)] = &[

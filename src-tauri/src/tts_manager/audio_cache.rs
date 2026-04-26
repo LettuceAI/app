@@ -143,20 +143,19 @@ pub fn clear_audio_cache(app: &tauri::AppHandle) -> Result<u64, String> {
     let mut count = 0u64;
 
     if dir.exists() {
-        for entry in fs::read_dir(&dir).map_err(|e| {
-            crate::utils::err_msg(
-                module_path!(),
-                line!(),
-                format!("Failed to read TTS cache directory: {}", e),
-            )
-        })? {
-            if let Ok(entry) = entry {
-                let path = entry.path();
-                if path.is_file() {
-                    if fs::remove_file(&path).is_ok() {
-                        count += 1;
-                    }
-                }
+        for entry in fs::read_dir(&dir)
+            .map_err(|e| {
+                crate::utils::err_msg(
+                    module_path!(),
+                    line!(),
+                    format!("Failed to read TTS cache directory: {}", e),
+                )
+            })?
+            .flatten()
+        {
+            let path = entry.path();
+            if path.is_file() && fs::remove_file(&path).is_ok() {
+                count += 1;
             }
         }
     }
@@ -169,18 +168,19 @@ pub fn get_cache_size(app: &tauri::AppHandle) -> Result<u64, String> {
     let mut total_size = 0u64;
 
     if dir.exists() {
-        for entry in fs::read_dir(&dir).map_err(|e| {
-            crate::utils::err_msg(
-                module_path!(),
-                line!(),
-                format!("Failed to read TTS cache directory: {}", e),
-            )
-        })? {
-            if let Ok(entry) = entry {
-                if let Ok(metadata) = entry.metadata() {
-                    if metadata.is_file() {
-                        total_size += metadata.len();
-                    }
+        for entry in fs::read_dir(&dir)
+            .map_err(|e| {
+                crate::utils::err_msg(
+                    module_path!(),
+                    line!(),
+                    format!("Failed to read TTS cache directory: {}", e),
+                )
+            })?
+            .flatten()
+        {
+            if let Ok(metadata) = entry.metadata() {
+                if metadata.is_file() {
+                    total_size += metadata.len();
                 }
             }
         }
@@ -194,18 +194,19 @@ pub fn get_cache_count(app: &tauri::AppHandle) -> Result<u64, String> {
     let mut count = 0u64;
 
     if dir.exists() {
-        for entry in fs::read_dir(&dir).map_err(|e| {
-            crate::utils::err_msg(
-                module_path!(),
-                line!(),
-                format!("Failed to read TTS cache directory: {}", e),
-            )
-        })? {
-            if let Ok(entry) = entry {
-                if let Ok(metadata) = entry.metadata() {
-                    if metadata.is_file() {
-                        count += 1;
-                    }
+        for entry in fs::read_dir(&dir)
+            .map_err(|e| {
+                crate::utils::err_msg(
+                    module_path!(),
+                    line!(),
+                    format!("Failed to read TTS cache directory: {}", e),
+                )
+            })?
+            .flatten()
+        {
+            if let Ok(metadata) = entry.metadata() {
+                if metadata.is_file() {
+                    count += 1;
                 }
             }
         }

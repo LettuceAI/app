@@ -30,13 +30,13 @@ impl ChatContext {
     pub fn initialize(app: AppHandle) -> Result<Self, String> {
         let repository = ChatRepository::new(app);
         let app = repository.app();
-        log_info(&app, "chat_context", "Initializing chat context");
+        log_info(app, "chat_context", "Initializing chat context");
         let settings = repository.load_settings()?;
         let characters = repository.load_characters()?;
         let personas = repository.load_personas()?;
 
         log_info(
-            &app,
+            app,
             "chat_context",
             format!(
                 "Context loaded: {} characters, {} personas",
@@ -472,11 +472,7 @@ pub async fn apply_openrouter_cost_to_usage(
             ),
         );
     } else {
-        log_error(
-            app,
-            log_scope,
-            "failed to calculate OpenRouter routed cost".to_string(),
-        );
+        log_error(app, log_scope, "failed to calculate OpenRouter routed cost");
     }
 }
 

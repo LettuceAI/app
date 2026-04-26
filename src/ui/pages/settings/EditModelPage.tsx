@@ -1715,7 +1715,7 @@ export function EditModelPage() {
                                     className="rounded-lg border border-fg/8 bg-surface-el/14 px-3 py-2.5"
                                   >
                                     <div className="text-[11px] text-fg/42">{item.label}</div>
-                                    <div className="mt-1 break-words text-[13px] text-fg/86">
+                                    <div className="mt-1 wrap-break-word text-[13px] text-fg/86">
                                       {item.value}
                                     </div>
                                   </div>
@@ -4758,14 +4758,14 @@ export function EditModelPage() {
                         <div className="text-[12px] font-medium text-danger">
                           Could not read embedded template
                         </div>
-                        <div className="whitespace-pre-wrap break-words text-[12px] text-fg/50">
+                        <div className="whitespace-pre-wrap wrap-break-word text-[12px] text-fg/50">
                           {embeddedTemplateError}
                         </div>
                       </div>
                     ) : (
                       <>
                         <pre
-                          className="max-h-64 overflow-auto px-4 py-3 font-mono text-[11px] leading-[18px]"
+                          className="max-h-64 overflow-auto px-4 py-3 font-mono text-[11px] leading-4.5"
                           dangerouslySetInnerHTML={{
                             __html: highlightedTemplate ?? "",
                           }}

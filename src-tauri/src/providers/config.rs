@@ -131,14 +131,14 @@ fn get_all_provider_configs_internal() -> Vec<ProviderConfig> {
 
 fn get_cached_provider_configs() -> &'static Vec<ProviderConfig> {
     static CACHE: OnceLock<Vec<ProviderConfig>> = OnceLock::new();
-    CACHE.get_or_init(|| get_all_provider_configs_internal())
+    CACHE.get_or_init(get_all_provider_configs_internal)
 }
 
 pub fn get_provider_config(provider_id: &ProviderId) -> Option<ProviderConfig> {
     get_cached_provider_configs()
         .iter()
+        .find(|&p| p.id == provider_id.0)
         .cloned()
-        .find(|p| p.id == provider_id.0)
 }
 
 pub fn resolve_base_url(provider_id: &ProviderId, custom_base_url: Option<&str>) -> String {

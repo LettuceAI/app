@@ -675,7 +675,7 @@ pub fn settings_increment_app_active_usage_ms(
             .ok_or_else(|| "failed to initialize app_state object".to_string())?
     };
 
-    let now = now_ms() as u64;
+    let now = now_ms();
     let current_total = app_state_obj
         .get("appActiveUsageMs")
         .and_then(|v| v.as_u64())

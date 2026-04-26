@@ -506,7 +506,7 @@ fn fetch_pinned_messages_typed(
         .prepare("SELECT id FROM messages WHERE session_id = ? AND is_pinned = 1 ORDER BY created_at ASC, id ASC")
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     let rows = stmt
-        .query_map(params![session_id], |r| Ok(r.get::<_, String>(0)?))
+        .query_map(params![session_id], |r| r.get::<_, String>(0))
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 
     let mut pinned_ids: Vec<String> = Vec::new();
@@ -1609,14 +1609,13 @@ pub fn sessions_list_ids(app: tauri::AppHandle) -> Result<String, String> {
         .prepare("SELECT id FROM sessions ORDER BY created_at ASC")
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     let rows = stmt
-        .query_map([], |r| Ok(r.get::<_, String>(0)?))
+        .query_map([], |r| r.get::<_, String>(0))
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     let mut ids: Vec<String> = Vec::new();
     for r in rows {
         ids.push(r.map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?);
     }
-    Ok(serde_json::to_string(&ids)
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?)
+    serde_json::to_string(&ids).map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
 }
 
 /// List session previews without loading full message history.
@@ -1686,8 +1685,8 @@ pub fn sessions_list_previews(
         }
     }
 
-    Ok(serde_json::to_string(&previews)
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?)
+    serde_json::to_string(&previews)
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
 }
 
 #[tauri::command]
@@ -1848,12 +1847,12 @@ pub fn messages_list(
     let messages = fetch_messages_page(
         &conn,
         &session_id,
-        limit.max(0).min(500),
+        limit.clamp(0, 500),
         before_created_at,
         before_id.as_deref(),
     )?;
-    Ok(serde_json::to_string(&messages)
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?)
+    serde_json::to_string(&messages)
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
 }
 
 #[tauri::command]
@@ -1863,7 +1862,7 @@ pub fn messages_list_pinned(app: tauri::AppHandle, session_id: String) -> Result
         .prepare("SELECT id FROM messages WHERE session_id = ? AND is_pinned = 1 ORDER BY created_at ASC, id ASC")
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     let rows = stmt
-        .query_map(params![&session_id], |r| Ok(r.get::<_, String>(0)?))
+        .query_map(params![&session_id], |r| r.get::<_, String>(0))
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     let mut pinned_ids: Vec<String> = Vec::new();
     for row in rows {
@@ -2023,8 +2022,7 @@ pub fn messages_list_pinned(app: tauri::AppHandle, session_id: String) -> Result
         out.push(JsonValue::Object(mobj));
     }
 
-    Ok(serde_json::to_string(&out)
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?)
+    serde_json::to_string(&out).map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
 }
 
 #[tauri::command]
@@ -2431,7 +2429,7 @@ pub fn messages_delete_after(
             .prepare("SELECT id FROM messages WHERE session_id = ? ORDER BY created_at ASC, id ASC")
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
         let rows = stmt
-            .query_map(params![&session_id], |r| Ok(r.get::<_, String>(0)?))
+            .query_map(params![&session_id], |r| r.get::<_, String>(0))
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
         let mut ids: Vec<String> = Vec::new();
         for row in rows {

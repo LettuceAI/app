@@ -1323,10 +1323,7 @@ pub fn init_db(_app: &tauri::AppHandle, conn: &Connection) -> Result<(), String>
         );
     }
     if !has_audio_asset_root {
-        let _ = conn.execute(
-            "ALTER TABLE audio_providers ADD COLUMN asset_root TEXT",
-            [],
-        );
+        let _ = conn.execute("ALTER TABLE audio_providers ADD COLUMN asset_root TEXT", []);
     }
 
     let mut stmt2 = conn

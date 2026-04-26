@@ -12,8 +12,8 @@ use crate::chat_manager::execution::RequestSettings;
 use crate::chat_manager::memory::manual::{has_manual_memories, render_manual_memory_lines};
 use crate::chat_manager::types::{
     Character, Model, Persona, PromptEntryChatMode, PromptEntryCondition, PromptEntryImageSlot,
-    PromptEntryInfoSource,
-    PromptEntryPayload, PromptEntryPosition, PromptEntryRole, Session, Settings, SystemPromptEntry,
+    PromptEntryInfoSource, PromptEntryPayload, PromptEntryPosition, PromptEntryRole, Session,
+    Settings, SystemPromptEntry,
 };
 use crate::storage_manager::db::open_db;
 use crate::storage_manager::lorebook::get_lorebook;
@@ -1802,7 +1802,7 @@ fn get_lorebook_content(
         utils::log_info(
             app,
             "lorebook",
-            "No active lorebook entries (no keywords matched or none always-active)".to_string(),
+            "No active lorebook entries (no keywords matched or none always-active)",
         );
         return Ok(String::new());
     }
@@ -2694,53 +2694,49 @@ pub fn build_system_prompt_entries(
         Vec::new()
     };
 
-    if !has_placeholder(&base_entries, "{{key_memories}}") {
-        if has_key_memories {
-            let mut content = String::from("# Key Memories\n");
-            content.push_str("Important facts to remember in this conversation:\n");
-            if dynamic_memory_active {
-                for line in &rendered_key_memories {
-                    content.push_str(line);
-                    content.push('\n');
-                }
-            } else {
-                content.push_str(&rendered_key_memories.join("\n"));
+    if !has_placeholder(&base_entries, "{{key_memories}}") && has_key_memories {
+        let mut content = String::from("# Key Memories\n");
+        content.push_str("Important facts to remember in this conversation:\n");
+        if dynamic_memory_active {
+            for line in &rendered_key_memories {
+                content.push_str(line);
                 content.push('\n');
             }
-            rendered_entries.push(SystemPromptEntry {
-                id: "entry_key_memories".to_string(),
-                name: "Key Memories".to_string(),
-                role: PromptEntryRole::System,
-                content: content.trim().to_string(),
-                enabled: true,
-                injection_position: PromptEntryPosition::Relative,
-                injection_depth: 0,
-                conditional_min_messages: None,
-                interval_turns: None,
-                system_prompt: true,
-                conditions: None,
-                prompt_entry_payload: None,
-            });
+        } else {
+            content.push_str(&rendered_key_memories.join("\n"));
+            content.push('\n');
         }
+        rendered_entries.push(SystemPromptEntry {
+            id: "entry_key_memories".to_string(),
+            name: "Key Memories".to_string(),
+            role: PromptEntryRole::System,
+            content: content.trim().to_string(),
+            enabled: true,
+            injection_position: PromptEntryPosition::Relative,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: true,
+            conditions: None,
+            prompt_entry_payload: None,
+        });
     }
 
-    if !has_placeholder(&base_entries, "{{lorebook}}") {
-        if !lorebook_content.trim().is_empty() {
-            rendered_entries.push(SystemPromptEntry {
-                id: "entry_lorebook".to_string(),
-                name: "World Information".to_string(),
-                role: PromptEntryRole::System,
-                content: format!("# World Information\n{}", lorebook_content.trim()),
-                enabled: true,
-                injection_position: PromptEntryPosition::Relative,
-                injection_depth: 0,
-                conditional_min_messages: None,
-                interval_turns: None,
-                system_prompt: true,
-                conditions: None,
-                prompt_entry_payload: None,
-            });
-        }
+    if !has_placeholder(&base_entries, "{{lorebook}}") && !lorebook_content.trim().is_empty() {
+        rendered_entries.push(SystemPromptEntry {
+            id: "entry_lorebook".to_string(),
+            name: "World Information".to_string(),
+            role: PromptEntryRole::System,
+            content: format!("# World Information\n{}", lorebook_content.trim()),
+            enabled: true,
+            injection_position: PromptEntryPosition::Relative,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: true,
+            conditions: None,
+            prompt_entry_payload: None,
+        });
     }
 
     if !has_placeholder(&base_entries, "{{author_note}}") {
@@ -3230,10 +3226,9 @@ fn render_with_context_internal(
     result = result.replace("{{user.name}}", persona_name);
     result = result.replace("{{user.desc}}", persona_desc);
     result = result.replace("{{content_rules}}", &content_rules);
-    let author_note_text =
-        render_author_note_text(character, persona, session).unwrap_or_else(String::new);
+    let author_note_text = render_author_note_text(character, persona, session).unwrap_or_default();
     let companion_state_text =
-        companion::render_prompt_state(session, character, persona).unwrap_or_else(String::new);
+        companion::render_prompt_state(session, character, persona).unwrap_or_default();
     if author_note_text.is_empty() {
         result = result.replace("# Author Note\n    {{author_note}}", "");
         result = result.replace("# Author Note\n{{author_note}}", "");

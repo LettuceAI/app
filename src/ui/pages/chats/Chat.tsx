@@ -2218,7 +2218,7 @@ export function ChatConversationPage() {
             sessionBackgroundPreview) && (
             <div className="space-y-3">
               {backgroundImageData && (
-                <div className="overflow-hidden rounded-2xl border border-fg/10 bg-fg/[0.04]">
+                <div className="overflow-hidden rounded-2xl border border-fg/10 bg-fg/4">
                   <img
                     src={backgroundImageData}
                     alt="Current chat background"
@@ -2237,7 +2237,7 @@ export function ChatConversationPage() {
               {hasSessionBackgroundOverride &&
                 sceneBackgroundPreview &&
                 sceneBackgroundPreview !== sessionBackgroundPreview && (
-                  <div className="overflow-hidden rounded-2xl border border-fg/10 bg-fg/[0.04]">
+                  <div className="overflow-hidden rounded-2xl border border-fg/10 bg-fg/4">
                     <img
                       src={sceneBackgroundPreview}
                       alt="Scene background"
@@ -2253,7 +2253,7 @@ export function ChatConversationPage() {
                 characterBackgroundPreview &&
                 characterBackgroundPreview !== sessionBackgroundPreview &&
                 characterBackgroundPreview !== sceneBackgroundPreview && (
-                  <div className="overflow-hidden rounded-2xl border border-fg/10 bg-fg/[0.04]">
+                  <div className="overflow-hidden rounded-2xl border border-fg/10 bg-fg/4">
                     <img
                       src={characterBackgroundPreview}
                       alt="Character default background"
@@ -2464,7 +2464,7 @@ export function ChatConversationPage() {
               onChange={(event) => setScenePromptDraft(event.target.value)}
               rows={8}
               className={cn(
-                "min-h-[180px] w-full resize-none bg-transparent text-sm leading-relaxed text-white placeholder-white/30 outline-none",
+                "min-h-45 w-full resize-none bg-transparent text-sm leading-relaxed text-white placeholder-white/30 outline-none",
               )}
               placeholder={t("chats.sceneImage.promptPlaceholder")}
               disabled={applyingSceneImage}
@@ -2673,9 +2673,9 @@ export function ChatConversationPage() {
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: -8 }}
                   transition={{ duration: 0.18, delay: 0.04 }}
-                  className="hidden w-full max-w-3xl rounded-[32px] border border-white/12 bg-white/[0.045] p-3 backdrop-blur-xl lg:order-none lg:flex lg:h-full lg:max-w-none lg:flex-col lg:rounded-[38px] lg:border-white/10 lg:bg-white/[0.03] lg:p-4"
+                  className="hidden w-full max-w-3xl rounded-4xl border border-white/12 bg-white/4.5 p-3 backdrop-blur-xl lg:order-0 lg:flex lg:h-full lg:max-w-none lg:flex-col lg:rounded-[38px] lg:border-white/10 lg:bg-white/3 lg:p-4"
                 >
-                  <div className="rounded-[18px] border border-white/10 bg-black/35 px-4 py-3 lg:flex lg:h-full lg:flex-col lg:rounded-[24px] lg:border-white/8 lg:bg-black/30 lg:px-5 lg:py-5">
+                  <div className="rounded-[18px] border border-white/10 bg-black/35 px-4 py-3 lg:flex lg:h-full lg:flex-col lg:rounded-3xl lg:border-white/8 lg:bg-black/30 lg:px-5 lg:py-5">
                     <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-white/45 lg:mb-4 lg:text-[10px] lg:tracking-[0.28em]">
                       <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-300/80" />
                       Image Prompt
@@ -2703,7 +2703,7 @@ export function ChatConversationPage() {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 8 }}
                   transition={{ duration: 0.18, delay: 0.04 }}
-                  className="w-full max-w-3xl rounded-[24px] border border-white/12 bg-white/[0.045] p-3 backdrop-blur-xl lg:hidden"
+                  className="w-full max-w-3xl rounded-3xl border border-white/12 bg-white/4.5 p-3 backdrop-blur-xl lg:hidden"
                 >
                   <button
                     type="button"

@@ -153,7 +153,7 @@ pub fn storage_usage_summary(app: tauri::AppHandle) -> Result<StorageUsageSummar
     }
     let last_updated_ms = latest.or_else(|| now_millis().ok());
     Ok(StorageUsageSummary {
-        file_count: file_count as usize,
+        file_count,
         estimated_sessions: session_count as usize,
         last_updated_ms,
     })

@@ -61,8 +61,8 @@ use crate::chat_manager::tooling::{
 };
 use crate::chat_manager::types::{
     Character, DynamicMemorySettings, MemoryRetrievalStrategy, Model, Persona, PromptEntryChatMode,
-    PromptEntryInfoSource,
-    PromptEntryPosition, PromptEntryRole, ProviderCredential, Settings, SystemPromptEntry,
+    PromptEntryInfoSource, PromptEntryPosition, PromptEntryRole, ProviderCredential, Settings,
+    SystemPromptEntry,
 };
 use crate::embedding;
 use crate::storage_manager::db::{now_ms, DbConnection, SwappablePool};
@@ -1971,7 +1971,7 @@ async fn select_relevant_memories(
     results
 }
 
-/// Format memories as a string block for injection into prompts
+// Format memories as a string block for injection into prompts
 
 // ============================================================================
 // Dynamic Memory Cycle
@@ -2044,7 +2044,7 @@ async fn process_group_dynamic_memory_cycle(
 
     // Check if enough new messages since last run (match normal chat behavior)
     // Use last_window_end from memory_tool_events to track progress
-    let (last_window_end, cursor_rewound) = resolve_last_valid_group_window_end(&*conn, session)?;
+    let (last_window_end, cursor_rewound) = resolve_last_valid_group_window_end(&conn, session)?;
 
     log_info(
         app,
@@ -2086,7 +2086,7 @@ async fn process_group_dynamic_memory_cycle(
     let mut window_start = if cursor_rewound { 0 } else { last_window_end };
     let mut window_end = total_convo;
     let convo_window = match fetch_group_conversation_messages_range(
-        &*conn,
+        &conn,
         &session.id,
         window_start,
         window_end,
@@ -2291,7 +2291,7 @@ async fn process_group_dynamic_memory_cycle(
         json!({ "sessionId": session.id, "step": 1, "totalSteps": 4, "label": "Summarizing conversation" }),
     );
 
-    ensure_group_dynamic_memory_not_cancelled(app, session, &*pool, &cancel_token)?;
+    ensure_group_dynamic_memory_not_cancelled(app, session, pool, &cancel_token)?;
 
     let prior_summary = if cursor_rewound || session.memory_summary.is_empty() {
         None
@@ -2334,7 +2334,7 @@ async fn process_group_dynamic_memory_cycle(
                     let _ =
                         finish_local_dynamic_memory_cycle(app, summary_model, &session.id).await;
                 }
-                return cancel_group_dynamic_memory_cycle(app, session, &*pool, &err);
+                return cancel_group_dynamic_memory_cycle(app, session, pool, &err);
             }
             log_error(
                 app,
@@ -2378,7 +2378,7 @@ async fn process_group_dynamic_memory_cycle(
         json!({ "sessionId": session.id, "step": 2, "totalSteps": 4, "label": "Analyzing memories" }),
     );
 
-    ensure_group_dynamic_memory_not_cancelled(app, session, &*pool, &cancel_token)?;
+    ensure_group_dynamic_memory_not_cancelled(app, session, pool, &cancel_token)?;
 
     let tools_request_id = group_dynamic_memory_request_id(&session.id, "tools");
     run_guard.set_active_request_id(Some(tools_request_id.clone()));
@@ -2408,7 +2408,7 @@ async fn process_group_dynamic_memory_cycle(
                     let _ =
                         finish_local_dynamic_memory_cycle(app, summary_model, &session.id).await;
                 }
-                return cancel_group_dynamic_memory_cycle(app, session, &*pool, &err);
+                return cancel_group_dynamic_memory_cycle(app, session, pool, &err);
             }
             log_error(
                 app,
@@ -2453,7 +2453,7 @@ async fn process_group_dynamic_memory_cycle(
         "group-dynamic-memory:progress",
         json!({ "sessionId": session.id, "step": 3, "totalSteps": 4, "label": "Applying changes" }),
     );
-    ensure_group_dynamic_memory_not_cancelled(app, session, &*pool, &cancel_token)?;
+    ensure_group_dynamic_memory_not_cancelled(app, session, pool, &cancel_token)?;
     session.memory_summary = summary;
     session.memory_summary_token_count =
         crate::embedding::tokenizer::count_tokens(app, &session.memory_summary).unwrap_or(0) as i32;
@@ -2634,13 +2634,13 @@ async fn summarize_group_messages(
         .max_output_tokens
         .unwrap_or(2048);
 
-    let context_length = resolve_context_length(model, &settings);
+    let context_length = resolve_context_length(model, settings);
     let extra_body_fields = if provider_cred.provider_id == "llamacpp" {
-        build_llama_extra_fields(model, &settings)
+        build_llama_extra_fields(model, settings)
     } else if provider_cred.provider_id == "ollama" {
         build_ollama_extra_fields(
             model,
-            &settings,
+            settings,
             context_length,
             max_tokens,
             0.2,
@@ -2929,13 +2929,13 @@ async fn run_group_memory_tool_update(
         .max_output_tokens
         .unwrap_or(2048);
 
-    let context_length = resolve_context_length(model, &settings);
+    let context_length = resolve_context_length(model, settings);
     let extra_body_fields = if provider_cred.provider_id == "llamacpp" {
-        build_llama_extra_fields(model, &settings)
+        build_llama_extra_fields(model, settings)
     } else if provider_cred.provider_id == "ollama" {
         build_ollama_extra_fields(
             model,
-            &settings,
+            settings,
             context_length,
             max_tokens,
             0.2,
@@ -5340,27 +5340,23 @@ fn replace_character_name_placeholders(content: &str, characters: &[CharacterInf
     let mut result = content.to_string();
 
     // Find all {{@"..."}} patterns and replace them
-    loop {
-        if let Some(start) = result.find(r#"{{@""#) {
-            if let Some(end) = result[start + 4..].find(r#""}}"#) {
-                let name_start = start + 4;
-                let name_end = start + 4 + end;
-                let character_name = &result[name_start..name_end];
+    while let Some(start) = result.find(r#"{{@""#) {
+        if let Some(end) = result[start + 4..].find(r#""}}"#) {
+            let name_start = start + 4;
+            let name_end = start + 4 + end;
+            let character_name = &result[name_start..name_end];
 
-                // Check if this character exists in the group
-                let replacement = if characters.iter().any(|c| c.name == character_name) {
-                    character_name.to_string()
-                } else {
-                    // If character not found, keep the original placeholder
-                    format!(r#"{{{{@"{}"}}}}"#, character_name)
-                };
-
-                // Replace this occurrence
-                let placeholder_end = name_end + 2;
-                result.replace_range(start..placeholder_end, &replacement);
+            // Check if this character exists in the group
+            let replacement = if characters.iter().any(|c| c.name == character_name) {
+                character_name.to_string()
             } else {
-                break;
-            }
+                // If character not found, keep the original placeholder
+                format!(r#"{{{{@"{}"}}}}"#, character_name)
+            };
+
+            // Replace this occurrence
+            let placeholder_end = name_end + 2;
+            result.replace_range(start..placeholder_end, &replacement);
         } else {
             break;
         }
@@ -5483,13 +5479,13 @@ async fn select_speaker_via_llm_with_tracking(
         choice: Some(ToolChoice::Required),
     };
 
-    let context_length = resolve_context_length(model, &settings);
+    let context_length = resolve_context_length(model, settings);
     let extra_body_fields = if credential.provider_id == "llamacpp" {
-        build_llama_extra_fields(model, &settings)
+        build_llama_extra_fields(model, settings)
     } else if credential.provider_id == "ollama" {
         build_ollama_extra_fields(
             model,
-            &settings,
+            settings,
             context_length,
             500,
             0.3,
@@ -5603,7 +5599,7 @@ async fn select_speaker_via_llm_with_tracking(
     log_info(
         app,
         "group_chat",
-        "LLM selection failed, using heuristic fallback".to_string(),
+        "LLM selection failed, using heuristic fallback",
     );
     selection::heuristic_select_speaker(context)
 }
@@ -5780,7 +5776,7 @@ async fn generate_character_response(
     }));
 
     let sampler_profile = if credential.provider_id == "llamacpp" {
-        Some(resolve_llama_sampler_profile(model, &settings))
+        Some(resolve_llama_sampler_profile(model, settings))
     } else {
         None
     };
@@ -5802,7 +5798,7 @@ async fn generate_character_response(
         .as_ref()
         .and_then(|a| a.max_output_tokens)
         .unwrap_or(2048);
-    let context_length = resolve_context_length(model, &settings);
+    let context_length = resolve_context_length(model, settings);
     let reasoning_enabled = model
         .advanced_model_settings
         .as_ref()
@@ -5837,11 +5833,11 @@ async fn generate_character_response(
         .and_then(|s| s.prompt_caching_enabled)
         .unwrap_or(false);
     let extra_body_fields = if credential.provider_id == "llamacpp" {
-        build_llama_extra_fields(model, &settings)
+        build_llama_extra_fields(model, settings)
     } else if credential.provider_id == "ollama" {
         build_ollama_extra_fields(
             model,
-            &settings,
+            settings,
             context_length,
             max_tokens,
             temperature,
@@ -6357,7 +6353,7 @@ pub async fn group_chat_retry_dynamic_memory(
         log_info(
             &app,
             "group_chat_retry_dynamic_memory",
-            "session memory_type is not dynamic; skipping manual retry".to_string(),
+            "session memory_type is not dynamic; skipping manual retry",
         );
         return Ok(());
     }
@@ -7157,7 +7153,7 @@ pub async fn group_chat_generate_user_reply(
             &app,
             &usage,
             &session,
-            &first_char,
+            first_char,
             model,
             provider_cred,
             &api_key,

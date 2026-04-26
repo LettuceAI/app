@@ -557,7 +557,7 @@ pub(super) fn load_engine(
                                 MODEL_LOAD_STAGE_CPU
                             },
                         )
-                        .map_err(|err| {
+                        .inspect_err(|_err| {
                             if let Some(app) = app {
                                 emit_model_load_progress(
                                     app,
@@ -573,7 +573,6 @@ pub(super) fn load_engine(
                                     0.0,
                                 );
                             }
-                            err
                         })?,
                     )
                 }
@@ -667,7 +666,7 @@ pub(super) fn load_engine(
                                 "cpu",
                                 MODEL_LOAD_STAGE_CPU_FALLBACK,
                             )
-                            .map_err(|err| {
+                            .inspect_err(|_err| {
                                 if let Some(app) = app {
                                     emit_model_load_progress(
                                         app,
@@ -679,7 +678,6 @@ pub(super) fn load_engine(
                                         0.0,
                                     );
                                 }
-                                err
                             })?,
                         )
                     }
@@ -696,7 +694,7 @@ pub(super) fn load_engine(
                     "cpu",
                     MODEL_LOAD_STAGE_CPU,
                 )
-                .map_err(|err| {
+                .inspect_err(|_err| {
                     if let Some(app) = app {
                         emit_model_load_progress(
                             app,
@@ -708,7 +706,6 @@ pub(super) fn load_engine(
                             0.0,
                         );
                     }
-                    err
                 })?,
             )
         };

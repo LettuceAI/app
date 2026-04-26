@@ -132,9 +132,9 @@ fn resolve_companion_soul_writer_target<'a>(
         .ok_or_else(|| "No text generation model is configured".to_string())
 }
 
-fn resolve_companion_soul_writer_fallback_target<'a>(
-    settings: &'a Settings,
-) -> Option<(&'a Model, &'a ProviderCredential)> {
+fn resolve_companion_soul_writer_fallback_target(
+    settings: &Settings,
+) -> Option<(&Model, &ProviderCredential)> {
     let model_id = settings
         .advanced_settings
         .as_ref()

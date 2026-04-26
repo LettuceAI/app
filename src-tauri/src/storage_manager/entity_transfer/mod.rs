@@ -1219,7 +1219,7 @@ fn load_character_export_snapshot(
         .prepare("SELECT rule FROM character_rules WHERE character_id = ? ORDER BY idx ASC")
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     let rule_rows = stmt
-        .query_map(params![character_id], |r| Ok(r.get::<_, String>(0)?))
+        .query_map(params![character_id], |r| r.get::<_, String>(0))
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     for rule in rule_rows {
         rules.push(rule.map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?);
@@ -3017,7 +3017,7 @@ fn read_imported_character(
         .prepare("SELECT rule FROM character_rules WHERE character_id = ? ORDER BY idx ASC")
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     let rule_rows = stmt
-        .query_map(params![character_id], |r| Ok(r.get::<_, String>(0)?))
+        .query_map(params![character_id], |r| r.get::<_, String>(0))
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     for rule in rule_rows {
         rules.push(JsonValue::String(rule.map_err(|e| {

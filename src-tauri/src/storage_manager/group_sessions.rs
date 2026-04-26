@@ -1395,7 +1395,7 @@ pub fn group_session_branch_to_character(
 
         // Replace character name placeholders in content
         let mut processed_content = content.clone();
-        for (_char_id, char_name) in &character_names {
+        for char_name in character_names.values() {
             // Replace {{@"CharacterName"}} with the chosen character's name
             let placeholder = format!("{{{{@\"{}\"}}+}}", char_name);
             processed_content = processed_content.replace(&placeholder, &character_name);
@@ -2480,10 +2480,9 @@ pub async fn group_session_add_memory(
     memories.push(memory.clone());
 
     // Compute embedding (best-effort)
-    let embedding = match embedding::compute_embedding(app.clone(), memory.clone()).await {
-        Ok(vec) => vec,
-        Err(_) => Vec::new(),
-    };
+    let embedding: Vec<f32> = embedding::compute_embedding(app.clone(), memory.clone())
+        .await
+        .unwrap_or_default();
 
     // Count tokens (best-effort)
     let token_count = crate::embedding::tokenizer::count_tokens(&app, &memory).unwrap_or(0);

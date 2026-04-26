@@ -259,12 +259,8 @@ pub fn gemini_tool_config(choice: Option<&ToolChoice>) -> Option<Value> {
 }
 
 /// Z.AI exposes OpenAI-style tools but only supports auto mode today.
-pub fn zai_tool_choice(choice: Option<&ToolChoice>) -> Option<Value> {
-    if choice.is_none() {
-        Some(json!("auto"))
-    } else {
-        Some(json!("auto"))
-    }
+pub fn zai_tool_choice(_choice: Option<&ToolChoice>) -> Option<Value> {
+    Some(json!("auto"))
 }
 
 pub fn parse_tool_calls(provider_id: &str, payload: &Value) -> Vec<ToolCall> {
@@ -298,7 +294,7 @@ pub fn parse_tool_calls(provider_id: &str, payload: &Value) -> Vec<ToolCall> {
                         let id = part
                             .get("id")
                             .and_then(|v| v.as_str())
-                            .unwrap_or_else(|| "tool_use");
+                            .unwrap_or("tool_use");
                         let (arguments, raw_arguments) = match part.get("input") {
                             Some(Value::String(raw)) => arguments_value_from_str(raw),
                             Some(other) => (other.clone(), None),
@@ -622,7 +618,7 @@ fn extract_openai_calls(node: &Value, out: &mut Vec<ToolCall>) {
                     let id = raw_call
                         .get("id")
                         .and_then(|v| v.as_str())
-                        .unwrap_or_else(|| "tool_call");
+                        .unwrap_or("tool_call");
                     out.push(ToolCall {
                         id: id.to_string(),
                         name: name.to_string(),

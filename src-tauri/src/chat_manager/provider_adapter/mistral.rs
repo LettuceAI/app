@@ -74,7 +74,7 @@ impl ProviderAdapter for MistralAdapter {
         let presence_penalty = None;
 
         let (tools, tool_choice) = if let Some(cfg) = tool_config {
-            let tools = openai_tools(cfg).unwrap_or_else(Vec::new);
+            let tools = openai_tools(cfg).unwrap_or_default();
             let choice = if tools.is_empty() {
                 None
             } else {

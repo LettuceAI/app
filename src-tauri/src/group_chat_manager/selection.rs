@@ -195,7 +195,7 @@ pub fn build_selection_prompt(context: &GroupChatContext) -> String {
             prompt.push_str("- Last spoke: never\n");
         }
 
-        prompt.push_str("\n");
+        prompt.push('\n');
     }
 
     // Recent conversation
@@ -229,7 +229,7 @@ pub fn build_selection_prompt(context: &GroupChatContext) -> String {
     }
 
     // New user message
-    prompt.push_str(&format!("\n## New Message from User\n\n"));
+    prompt.push_str("\n## New Message from User\n\n");
     prompt.push_str(&prompt_quote(&context.user_message));
     prompt.push_str("\n\n");
 

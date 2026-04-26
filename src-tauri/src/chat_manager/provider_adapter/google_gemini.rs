@@ -337,7 +337,7 @@ impl ProviderAdapter for GoogleGeminiAdapter {
 
         if let Some(system) = system_prompt
             .into_iter()
-            .chain(system_instruction_chunks.into_iter())
+            .chain(system_instruction_chunks)
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .reduce(|mut combined, chunk| {

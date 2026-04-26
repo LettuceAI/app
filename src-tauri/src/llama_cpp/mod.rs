@@ -1914,7 +1914,7 @@ mod desktop {
                     break;
                 }
 
-                let piece_bytes = token_piece_bytes(&model, token)?;
+                let piece_bytes = token_piece_bytes(model, token)?;
 
                 pending_utf8.extend_from_slice(&piece_bytes);
                 let mut piece = String::new();
@@ -2613,13 +2613,13 @@ pub async fn llamacpp_context_info(
             llama_gpu_layers,
         )
         .await?;
-        return serde_json::to_value(info).map_err(|e| {
+        serde_json::to_value(info).map_err(|e| {
             crate::utils::err_msg(
                 module_path!(),
                 line!(),
                 format!("Failed to serialize context info: {e}"),
             )
-        });
+        })
     }
     #[cfg(mobile)]
     {
@@ -2685,13 +2685,13 @@ pub async fn llamacpp_embedded_chat_template(
             )
         })?;
 
-        return template.to_string().map_err(|e| {
+        template.to_string().map_err(|e| {
             crate::utils::err_msg(
                 module_path!(),
                 line!(),
                 format!("Failed to decode embedded GGUF chat template: {e}"),
             )
-        });
+        })
     }
     #[cfg(mobile)]
     {
@@ -2708,7 +2708,7 @@ pub async fn llamacpp_embedded_chat_template(
 pub async fn llamacpp_unload(app: AppHandle) -> Result<(), String> {
     #[cfg(not(mobile))]
     {
-        return desktop::engine::unload_engine(&app);
+        desktop::engine::unload_engine(&app)
     }
     #[cfg(mobile)]
     {

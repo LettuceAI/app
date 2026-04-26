@@ -294,8 +294,8 @@ fn kv_bytes_per_value(llama_kv_type: Option<&str>) -> f64 {
 fn estimate_kv_bytes_per_token(model: &LlamaModel, llama_kv_type: Option<&str>) -> Option<u64> {
     let n_layer = u64::from(model.n_layer());
     let n_embd = u64::try_from(model.n_embd()).ok()?;
-    let n_head = u64::try_from(model.n_head()).unwrap_or(1).max(1);
-    let n_head_kv = u64::try_from(model.n_head_kv()).unwrap_or(n_head).max(1);
+    let n_head = u64::from(model.n_head()).max(1);
+    let n_head_kv = u64::from(model.n_head_kv()).max(1);
     let gqa_correction = n_head_kv as f64 / n_head as f64;
     let effective_n_embd = (n_embd as f64 * gqa_correction) as u64;
     let bytes_per_value = kv_bytes_per_value(llama_kv_type);
@@ -522,9 +522,7 @@ pub(crate) async fn llamacpp_context_info(
     let supports_gpu_offload = shared_backend()?.supports_gpu_offload();
     let resolved_offload_kqv = if llama_offload_kqv.is_some() {
         llama_offload_kqv
-    } else if !supports_gpu_offload {
-        Some(false)
-    } else if using_rocm_backend() {
+    } else if !supports_gpu_offload || using_rocm_backend() {
         Some(false)
     } else {
         None

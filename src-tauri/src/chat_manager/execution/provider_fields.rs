@@ -503,7 +503,7 @@ pub(crate) fn build_provider_extra_fields(
                 .and_then(|cfg| cfg.prompt_caching_ttl.clone())
         })
         // Global settings fallback (in case you ever add it there)
-        .or_else(|| {
+        .or({
             // settings.advanced_model_settings.prompt_caching_ttl.clone()  // uncomment if the field exists
             None
         });

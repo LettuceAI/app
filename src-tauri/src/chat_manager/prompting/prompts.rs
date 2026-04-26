@@ -576,7 +576,7 @@ pub fn validate_required_variables(
 }
 
 fn generate_id() -> String {
-    format!("prompt_{}", uuid::Uuid::new_v4().to_string())
+    format!("prompt_{}", uuid::Uuid::new_v4())
 }
 
 fn now() -> u64 {
@@ -680,7 +680,7 @@ pub fn load_templates(app: &AppHandle) -> Result<Vec<SystemPromptTemplate>, Stri
         )
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     let rows = stmt
-        .query_map([], |row| row_to_template(row))
+        .query_map([], row_to_template)
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     let mut out = Vec::new();
     for r in rows {
@@ -701,7 +701,7 @@ pub fn load_templates(app: &AppHandle) -> Result<Vec<SystemPromptTemplate>, Stri
             )
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
         let rows2 = stmt2
-            .query_map([], |row| row_to_template(row))
+            .query_map([], row_to_template)
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
         out.clear();
         for r in rows2 {
@@ -858,7 +858,7 @@ pub fn get_template(app: &AppHandle, id: &str) -> Result<Option<SystemPromptTemp
         .query_row(
             "SELECT id, name, prompt_type, content, entries, condense_prompt_entries, created_at, updated_at FROM prompt_templates WHERE id = ?1",
             params![lookup_id],
-            |row| row_to_template(row),
+            row_to_template,
         )
         .optional()
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;

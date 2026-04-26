@@ -198,8 +198,7 @@ pub fn personas_list(app: tauri::AppHandle) -> Result<String, String> {
         obj.insert("updatedAt".into(), JsonValue::from(updated_at));
         out.push(JsonValue::Object(obj));
     }
-    Ok(serde_json::to_string(&out)
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?)
+    serde_json::to_string(&out).map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
 }
 
 #[tauri::command]

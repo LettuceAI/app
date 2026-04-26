@@ -139,7 +139,7 @@ fn read_character(conn: &rusqlite::Connection, id: &str) -> Result<JsonValue, St
         .prepare("SELECT rule FROM character_rules WHERE character_id = ? ORDER BY idx ASC")
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     let q = stmt
-        .query_map(params![id], |r| Ok(r.get::<_, String>(0)?))
+        .query_map(params![id], |r| r.get::<_, String>(0))
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     for it in q {
         rules.push(JsonValue::String(it.map_err(|e| {
@@ -433,7 +433,7 @@ where
         .prepare("SELECT id FROM characters ORDER BY created_at ASC")
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     let rows = stmt
-        .query_map([], |r| Ok(r.get::<_, String>(0)?))
+        .query_map([], |r| r.get::<_, String>(0))
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 
     let mut out = Vec::new();
@@ -471,16 +471,14 @@ pub fn characters_list(app: tauri::AppHandle) -> Result<String, String> {
             );
             e.to_string()
         })?;
-    let rows = stmt
-        .query_map([], |r| Ok(r.get::<_, String>(0)?))
-        .map_err(|e| {
-            log_error(
-                &app,
-                "characters_list",
-                format!("Failed to query map: {}", e),
-            );
-            e.to_string()
-        })?;
+    let rows = stmt.query_map([], |r| r.get::<_, String>(0)).map_err(|e| {
+        log_error(
+            &app,
+            "characters_list",
+            format!("Failed to query map: {}", e),
+        );
+        e.to_string()
+    })?;
     let mut out = Vec::new();
     for id in rows {
         let id = id.map_err(|e| {
@@ -504,8 +502,7 @@ pub fn characters_list(app: tauri::AppHandle) -> Result<String, String> {
         "characters_list",
         format!("Found {} characters", out.len()),
     );
-    Ok(serde_json::to_string(&out)
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?)
+    serde_json::to_string(&out).map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
 }
 
 #[tauri::command]
@@ -818,7 +815,7 @@ fn upsert_character_value(app: &tauri::AppHandle, c: &JsonValue) -> Result<JsonV
             .prepare("SELECT id FROM scenes WHERE character_id = ?")
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
         let rows = s
-            .query_map(params![&id], |r| Ok(r.get::<_, String>(0)?))
+            .query_map(params![&id], |r| r.get::<_, String>(0))
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
         let mut v = Vec::new();
         for it in rows {

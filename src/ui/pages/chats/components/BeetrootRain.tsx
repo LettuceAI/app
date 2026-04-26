@@ -55,7 +55,7 @@ export function useBeetrootRain(): UseBeetrootRainResult {
   const overlay = (
     <div
       aria-hidden
-      className="pointer-events-none fixed inset-0 z-[60] overflow-hidden"
+      className="pointer-events-none fixed inset-0 z-60 overflow-hidden"
     >
       <AnimatePresence>
         {drops.map((drop) => (

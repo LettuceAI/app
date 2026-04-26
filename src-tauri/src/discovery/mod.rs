@@ -1225,9 +1225,11 @@ pub async fn discovery_import_character(app: AppHandle, path: String) -> Result<
                         }
                     }
 
-                    if let Err(err) =
-                        set_character_lorebooks(&mut conn, &character_id, &[lorebook_id.clone()])
-                    {
+                    if let Err(err) = set_character_lorebooks(
+                        &mut conn,
+                        &character_id,
+                        std::slice::from_ref(&lorebook_id),
+                    ) {
                         log_error(
                             &app,
                             "discovery_import",

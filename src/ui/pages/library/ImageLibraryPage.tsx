@@ -130,7 +130,7 @@ const ImageTile = memo(function ImageTile({
     <button
       type="button"
       onClick={() => onSelect(item)}
-      className="group relative aspect-square overflow-hidden rounded-2xl border border-fg/10 bg-fg/[0.03] text-left"
+      className="group relative aspect-square overflow-hidden rounded-2xl border border-fg/10 bg-fg/3 text-left"
     >
       <img
         src={getAssetUrl(item.filePath)}
@@ -139,8 +139,8 @@ const ImageTile = memo(function ImageTile({
         loading="lazy"
         decoding="async"
       />
-      <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent" />
-      <div className="absolute left-2 top-2 rounded-full border border-white/15 bg-black/45 px-2 py-1 text-[10px] font-medium uppercase tracking-[0.1em] text-white/85 backdrop-blur-md">
+      <div className="absolute inset-0 bg-linear-to-t from-black/85 via-black/20 to-transparent" />
+      <div className="absolute left-2 top-2 rounded-full border border-white/15 bg-black/45 px-2 py-1 text-[10px] font-medium uppercase tracking-widest text-white/85 backdrop-blur-md">
         {kindLabel}
       </div>
       <div className="absolute inset-x-0 bottom-0 p-3">
@@ -504,7 +504,7 @@ export function ImageLibraryPanel({
           {Array.from({ length: 12 }).map((_, index) => (
             <div
               key={index}
-              className="aspect-square animate-pulse rounded-2xl border border-fg/10 bg-fg/[0.04]"
+              className="aspect-square animate-pulse rounded-2xl border border-fg/10 bg-fg/4"
             />
           ))}
         </div>
@@ -512,9 +512,9 @@ export function ImageLibraryPanel({
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          className="flex min-h-[45vh] flex-col items-center justify-center rounded-2xl border border-dashed border-fg/12 bg-fg/[0.02] px-6 text-center"
+          className="flex min-h-[45vh] flex-col items-center justify-center rounded-2xl border border-dashed border-fg/12 bg-fg/2 px-6 text-center"
         >
-          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-fg/10 bg-fg/[0.04]">
+          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-fg/10 bg-fg/4">
             <ImageIcon className="h-7 w-7 text-fg/35" />
           </div>
           <h2 className="text-lg font-semibold text-fg">{t("library.imageLibrary.empty.title")}</h2>
@@ -575,7 +575,7 @@ export function ImageLibraryPanel({
       >
         {selectedItem && (
           <div className={mode === "picker" ? "space-y-3" : "space-y-4"}>
-            <div className="overflow-hidden rounded-2xl border border-fg/10 bg-fg/[0.03]">
+            <div className="overflow-hidden rounded-2xl border border-fg/10 bg-fg/3">
               <img
                 src={getAssetUrl(selectedItem.filePath)}
                 alt={selectedItem.filename}
@@ -591,8 +591,8 @@ export function ImageLibraryPanel({
                 className={cn(
                   "flex w-full items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-medium transition",
                   usingItemId === selectedItem.id
-                    ? "cursor-wait border-fg/10 bg-fg/[0.06] text-fg/55"
-                    : "border-fg/10 bg-fg/[0.04] text-fg/80 hover:bg-fg/[0.08] hover:text-fg",
+                    ? "cursor-wait border-fg/10 bg-fg/6 text-fg/55"
+                    : "border-fg/10 bg-fg/4 text-fg/80 hover:bg-fg/8 hover:text-fg",
                 )}
               >
                 {usingItemId === selectedItem.id ? (
@@ -710,7 +710,7 @@ export function ImageLibraryPanel({
                   <button
                     type="button"
                     onClick={() => copyToClipboard(selectedItem.storagePath, "Storage path")}
-                    className="flex items-center justify-center gap-2 rounded-xl border border-fg/10 bg-fg/[0.04] px-4 py-3 text-sm font-medium text-fg/75 transition hover:bg-fg/[0.08] hover:text-fg"
+                    className="flex items-center justify-center gap-2 rounded-xl border border-fg/10 bg-fg/4 px-4 py-3 text-sm font-medium text-fg/75 transition hover:bg-fg/8 hover:text-fg"
                   >
                     <Copy className="h-4 w-4" />
                     {t("library.imageLibrary.actions.copyPath")}
@@ -722,8 +722,8 @@ export function ImageLibraryPanel({
                     className={cn(
                       "flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-medium transition",
                       downloadingItemId === selectedItem.id
-                        ? "cursor-wait border-fg/10 bg-fg/[0.06] text-fg/55"
-                        : "border-fg/10 bg-fg/[0.04] text-fg/75 hover:bg-fg/[0.08] hover:text-fg",
+                        ? "cursor-wait border-fg/10 bg-fg/6 text-fg/55"
+                        : "border-fg/10 bg-fg/4 text-fg/75 hover:bg-fg/8 hover:text-fg",
                     )}
                   >
                     {downloadingItemId === selectedItem.id ? (

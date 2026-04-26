@@ -122,10 +122,8 @@ fn load_model_metadata_uncached(model_path: &str) -> Result<LlamaModelMetadata, 
         layer_count: model.n_layer().max(1),
         max_context_length: model.n_ctx_train().max(1),
         n_embd: u64::try_from(model.n_embd()).unwrap_or(0).max(1),
-        n_head: u64::try_from(model.n_head()).unwrap_or(1).max(1),
-        n_head_kv: u64::try_from(model.n_head_kv())
-            .unwrap_or_else(|_| u64::try_from(model.n_head()).unwrap_or(1))
-            .max(1),
+        n_head: u64::from(model.n_head()).max(1),
+        n_head_kv: u64::from(model.n_head_kv()).max(1),
     })
 }
 

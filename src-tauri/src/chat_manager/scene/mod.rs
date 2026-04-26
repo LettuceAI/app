@@ -22,9 +22,8 @@ use crate::chat_manager::turn_builder::{
 use crate::chat_manager::types::{
     Character, ChatGenerateDesignReferenceDescriptionArgs, ChatGenerateSceneImageArgs,
     ChatGenerateScenePromptArgs, ImageAttachment, Model, Persona, PromptEntryChatMode,
-    PromptEntryInfoSource,
-    PromptEntryImageSlot, PromptEntryPayload, PromptEntryPosition, ProviderCredential, Session,
-    Settings, StoredMessage, SystemPromptEntry,
+    PromptEntryImageSlot, PromptEntryInfoSource, PromptEntryPayload, PromptEntryPosition,
+    ProviderCredential, Session, Settings, StoredMessage, SystemPromptEntry,
 };
 use crate::image_generator::types::ImageGenerationRequest;
 use crate::storage_manager::media::{storage_load_avatar, storage_read_image_data};
@@ -427,10 +426,10 @@ fn legacy_prompt_entry_image_slot(content: &str) -> Option<PromptEntryImageSlot>
 }
 
 fn prompt_entry_image_slot(entry: &SystemPromptEntry) -> Option<PromptEntryImageSlot> {
-    match &entry.prompt_entry_payload {
-        Some(PromptEntryPayload::ImageSlot { slot }) => Some(slot.clone()),
-        None => None,
-    }
+    entry
+        .prompt_entry_payload
+        .as_ref()
+        .map(|PromptEntryPayload::ImageSlot { slot }| slot.clone())
 }
 
 fn prompt_entry_has_image_binding(entry: &SystemPromptEntry) -> bool {
@@ -1072,8 +1071,8 @@ fn build_design_reference_prompt_content_with_images(
     if let Some(slot) = entry
         .prompt_entry_payload
         .as_ref()
-        .and_then(|payload| match payload {
-            PromptEntryPayload::ImageSlot { slot } => Some(slot.clone()),
+        .map(|payload| match payload {
+            PromptEntryPayload::ImageSlot { slot } => slot.clone(),
         })
     {
         let parts = match slot {
@@ -1359,8 +1358,8 @@ fn content_with_scene_image_hints(
     match entry
         .prompt_entry_payload
         .as_ref()
-        .and_then(|payload| match payload {
-            PromptEntryPayload::ImageSlot { slot } => Some(slot.clone()),
+        .map(|payload| match payload {
+            PromptEntryPayload::ImageSlot { slot } => slot.clone(),
         }) {
         Some(PromptEntryImageSlot::Character) => {
             let replaced = entry

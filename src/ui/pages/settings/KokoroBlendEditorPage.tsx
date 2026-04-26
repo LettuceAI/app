@@ -358,7 +358,7 @@ export function KokoroBlendEditorPage() {
               </div>
 
               {voices.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-fg/15 bg-fg/[0.025] px-4 py-8 text-center">
+                <div className="rounded-xl border border-dashed border-fg/15 bg-fg/2.5 px-4 py-8 text-center">
                   <p className="text-[12px] text-fg/55">No voices added yet</p>
                   <button
                     onClick={() => setPickerOpen(true)}
@@ -418,7 +418,7 @@ export function KokoroBlendEditorPage() {
                 Hear the blend before you save it.
               </p>
             </div>
-            <div className="overflow-hidden rounded-xl border border-fg/10 bg-fg/[0.04]">
+            <div className="overflow-hidden rounded-xl border border-fg/10 bg-fg/4">
               <textarea
                 value={previewText}
                 onChange={(e) => setPreviewText(e.target.value)}
@@ -426,7 +426,7 @@ export function KokoroBlendEditorPage() {
                 placeholder="Type a phrase to test…"
                 className="w-full resize-none border-0 bg-transparent px-4 pt-3 pb-1 text-[13px] leading-relaxed text-fg placeholder-fg/35 focus:outline-none"
               />
-              <div className="flex items-center justify-between gap-2 border-t border-fg/10 bg-fg/[0.02] px-3 py-2">
+              <div className="flex items-center justify-between gap-2 border-t border-fg/10 bg-fg/2 px-3 py-2">
                 <span className="text-[10px] text-fg/40">
                   {blendForApi.length === 0
                     ? "No active voices"
@@ -458,7 +458,7 @@ export function KokoroBlendEditorPage() {
               </div>
             </div>
 
-            <div className="rounded-xl border border-fg/10 bg-fg/[0.03] px-4 py-3 text-[11px] text-fg/55">
+            <div className="rounded-xl border border-fg/10 bg-fg/3 px-4 py-3 text-[11px] text-fg/55">
               <p className="font-medium text-fg/70">Tips</p>
               <ul className="mt-1.5 space-y-1 text-fg/50">
                 <li>· Higher weights = more of that voice in the mix.</li>

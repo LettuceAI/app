@@ -101,7 +101,7 @@ impl ProviderAdapter for CustomAnthropicAdapter {
 
     fn system_role(&self) -> Cow<'static, str> {
         self.config_value("systemRole")
-            .map(|s| Cow::Owned(s))
+            .map(Cow::Owned)
             .unwrap_or(Cow::Borrowed("system"))
     }
 

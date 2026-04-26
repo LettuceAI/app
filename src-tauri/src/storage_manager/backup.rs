@@ -3403,7 +3403,7 @@ pub async fn backup_import(
             log_info(
                 &app,
                 "backup",
-                &format!("Failed to delete temp backup file: {}", e),
+                format!("Failed to delete temp backup file: {}", e),
             );
         } else {
             log_info(&app, "backup", "Deleted temp backup file");
@@ -3537,11 +3537,7 @@ pub fn backup_list(app: tauri::AppHandle) -> Result<Vec<serde_json::Value>, Stri
 
     let read_result = fs::read_dir(&downloads);
     match &read_result {
-        Ok(_) => log_info(
-            &app,
-            "backup",
-            "Successfully opened downloads directory".to_string(),
-        ),
+        Ok(_) => log_info(&app, "backup", "Successfully opened downloads directory"),
         Err(e) => log_info(
             &app,
             "backup",
@@ -4480,7 +4476,7 @@ pub async fn backup_check_dynamic_memory(
         log_info(
             &app,
             "backup_check_dynamic_memory",
-            "Decrypting characters JSON...".to_string(),
+            "Decrypting characters JSON...",
         );
         decrypt_data(&json_data, &key, &nonce)?
     } else {
@@ -4541,7 +4537,7 @@ pub async fn backup_check_dynamic_memory_from_bytes(
     log_info(
         &app,
         "backup_check_dynamic_memory_from_bytes",
-        "Successfully opened archive".to_string(),
+        "Successfully opened archive",
     );
 
     // Read manifest to check if encrypted
@@ -4650,7 +4646,7 @@ pub async fn backup_check_dynamic_memory_from_bytes(
         log_info(
             &app,
             "backup_check_dynamic_memory_from_bytes",
-            "Decrypting characters JSON...".to_string(),
+            "Decrypting characters JSON...",
         );
         decrypt_data(&json_data, &key, &nonce)?
     } else {

@@ -223,9 +223,7 @@ fn extract_message_text(value: &JsonValue) -> Option<String> {
         }
     }
 
-    let Some(obj) = value.as_object() else {
-        return None;
-    };
+    let obj = value.as_object()?;
 
     for key in ["content", "text", "message", "value", "body", "mes"] {
         let Some(candidate) = obj.get(key) else {

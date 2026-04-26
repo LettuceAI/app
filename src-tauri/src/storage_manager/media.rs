@@ -83,7 +83,7 @@ fn validate_single_component<'a>(
     Ok(trimmed)
 }
 
-fn validate_avatar_filename<'a>(filename: &'a str) -> Result<&'a str, String> {
+fn validate_avatar_filename(filename: &str) -> Result<&str, String> {
     let filename = validate_single_component(filename, "avatar filename", true)?;
     let path = PathBuf::from(filename);
     if !is_supported_image_file(&path) {
@@ -520,7 +520,7 @@ pub fn storage_download_image_to_downloads(
             crate::utils::err_msg(
                 module_path!(),
                 line!(),
-                "Unable to resolve filename for image download".to_string(),
+                "Unable to resolve filename for image download",
             )
         })?;
     let resolved_filename =
@@ -542,9 +542,7 @@ pub fn storage_download_image_to_downloads(
 
     let saved_path = target_path
         .to_str()
-        .ok_or_else(|| {
-            crate::utils::err_msg(module_path!(), line!(), "Invalid download path".to_string())
-        })?
+        .ok_or_else(|| crate::utils::err_msg(module_path!(), line!(), "Invalid download path"))?
         .to_string();
 
     log_info(

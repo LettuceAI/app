@@ -259,7 +259,7 @@ fn score_with_runtime(
         )
     })?;
 
-    let probabilities = softmax(logits.as_ref());
+    let probabilities = softmax(logits);
     Ok((
         label_probability(labels, &probabilities, "ENTAILMENT"),
         label_probability(labels, &probabilities, "NEUTRAL"),

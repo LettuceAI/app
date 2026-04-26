@@ -73,7 +73,7 @@ pub(crate) fn should_insert_in_chat_prompt_entry(
         }
         PromptEntryPosition::Interval => {
             let interval = entry.interval_turns.unwrap_or(0) as usize;
-            interval > 0 && turn_count > 0 && turn_count % interval == 0
+            interval > 0 && turn_count > 0 && turn_count.is_multiple_of(interval)
         }
         PromptEntryPosition::Relative => false,
     }

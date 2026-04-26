@@ -108,7 +108,7 @@ pub fn accumulate_tool_calls_from_sse(raw: &str, provider_id: &str) -> Vec<ToolC
                 if let (Value::String(a), Value::String(b)) =
                     (&mut existing.arguments, &call.arguments)
                 {
-                    a.push_str(&b);
+                    a.push_str(b);
                 }
             } else {
                 out.push(call);

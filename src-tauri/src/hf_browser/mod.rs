@@ -520,7 +520,7 @@ fn parse_gguf_meta(data: &[u8]) -> Option<GgufModelMeta> {
 
     // Version
     let version = reader.read_u32()?;
-    if version < 2 || version > 3 {
+    if !(2..=3).contains(&version) {
         return None;
     }
 
@@ -726,8 +726,11 @@ fn kv_base_per_token(meta: &GgufModelMeta) -> Option<f64> {
         .to_lowercase();
 
     // DeepSeek MLA: KV cache uses compressed latent dimension instead of full head dim
-    if (arch.starts_with("deepseek") || arch == "deepseek2") && meta.kv_lora_rank.is_some() {
-        let lora_rank = meta.kv_lora_rank.unwrap() as f64;
+    if let (true, Some(lora_rank)) = (
+        arch.starts_with("deepseek") || arch == "deepseek2",
+        meta.kv_lora_rank,
+    ) {
+        let lora_rank = lora_rank as f64;
         // MLA stores compressed KV: block_count × lora_rank × 2 (K+V)
         // Key uses rope_dim + lora_rank, value uses lora_rank
         // Simplified: use lora_rank for both as a conservative estimate
@@ -930,7 +933,7 @@ fn compute_scores(
     // KV cache at 8192 context, F16 KV
     let effective_ctx = meta.map(|m| effective_kv_context(m, 8192)).unwrap_or(8192);
     let kv_8k: u64 = meta
-        .and_then(|m| kv_base_per_token(m))
+        .and_then(kv_base_per_token)
         .map(|base| (base * 2.0 * effective_ctx as f64) as u64) // F16 = 2.0 bytes
         .unwrap_or(0);
 
@@ -1105,7 +1108,7 @@ fn build_recommendation(
 ) -> RecommendationData {
     let unified = crate::llama_cpp::is_unified_memory();
     let total_available = resolve_total_available(available_ram, available_vram, unified);
-    let kv_base = meta.and_then(|m| kv_base_per_token(m));
+    let kv_base = meta.and_then(kv_base_per_token);
     let model_max_ctx = meta.and_then(|m| m.context_length).unwrap_or(8192);
     // SWA cap: for sliding window architectures, KV cache doesn't grow past window size
     let kv_ctx_cap = meta.and_then(|m| {
@@ -1191,7 +1194,7 @@ fn build_recommendation(
             let (score, ..) =
                 score_configuration(file.size, qq, kv_bytes, total_available, available_vram);
 
-            if best.as_ref().map_or(true, |b| score > b.score) {
+            if best.as_ref().is_none_or(|b| score > b.score) {
                 best = Some(BestRecommendation {
                     filename: file.filename.clone(),
                     context_length: ctx,
@@ -1218,7 +1221,7 @@ fn build_recommendation(
             let qq = quant_quality_score(&file.quantization);
             if gpu_candidate
                 .as_ref()
-                .map_or(true, |(_, prev_rec)| qq > prev_rec.quant_quality as f64)
+                .is_none_or(|(_, prev_rec)| qq > prev_rec.quant_quality as f64)
             {
                 gpu_candidate = Some((file, rec));
             }
@@ -2132,9 +2135,9 @@ pub async fn hf_fetch_readme(app: AppHandle, model_id: String) -> Result<String,
         .await
         .map_err(|e| format!("Failed to read README body: {}", e))?;
 
-    let content = if raw.starts_with("---") {
-        if let Some(end) = raw[3..].find("---") {
-            let after = &raw[3 + end + 3..];
+    let content = if let Some(stripped) = raw.strip_prefix("---") {
+        if let Some(end) = stripped.find("---") {
+            let after = &stripped[end + 3..];
             after
                 .trim_start_matches('\n')
                 .trim_start_matches('\r')
@@ -2330,7 +2333,7 @@ pub async fn hf_compute_local_runability(
         .unwrap_or(8192);
     let kv_8k: u64 = meta
         .as_ref()
-        .and_then(|m| kv_base_per_token(m))
+        .and_then(kv_base_per_token)
         .map(|base| (base * 2.0 * effective_ctx as f64) as u64)
         .unwrap_or(0);
 

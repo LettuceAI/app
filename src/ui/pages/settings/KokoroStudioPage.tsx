@@ -914,8 +914,8 @@ export function KokoroStudioPage() {
             className={cn(
               "group flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-left transition",
               !modelInstalled
-                ? "border-warning/25 bg-warning/[0.06] hover:border-warning/40 hover:bg-warning/[0.1]"
-                : "border-info/25 bg-info/[0.06] hover:border-info/40 hover:bg-info/[0.1]",
+                ? "border-warning/25 bg-warning/6 hover:border-warning/40 hover:bg-warning/1"
+                : "border-info/25 bg-info/6 hover:border-info/40 hover:bg-info/1",
             )}
           >
             <div
@@ -1033,7 +1033,7 @@ export function KokoroStudioPage() {
         {modelInstalled && experimentOptions.length > 0 && (
           <section>
             <SectionHeader label="Experiment" />
-            <div className="overflow-hidden rounded-xl border border-fg/10 bg-fg/[0.04]">
+            <div className="overflow-hidden rounded-xl border border-fg/10 bg-fg/4">
               <textarea
                 value={experimentText}
                 onChange={(e) => setExperimentText(e.target.value)}
@@ -1041,11 +1041,11 @@ export function KokoroStudioPage() {
                 placeholder="Type a phrase to hear it spoken…"
                 className="w-full resize-none border-0 bg-transparent px-4 pt-3 pb-1 text-[13px] leading-relaxed text-fg placeholder-fg/35 focus:outline-none"
               />
-              <div className="flex flex-wrap items-center gap-2 border-t border-fg/10 bg-fg/[0.02] px-3 py-2">
+              <div className="flex flex-wrap items-center gap-2 border-t border-fg/10 bg-fg/2 px-3 py-2">
                 <select
                   value={experimentSourceId}
                   onChange={(e) => setExperimentSourceId(e.target.value)}
-                  className="min-w-0 max-w-[200px] truncate rounded-full border border-fg/10 bg-fg/5 px-2.5 py-1 text-[11px] font-medium text-fg/80 focus:border-fg/25 focus:outline-none"
+                  className="min-w-0 max-w-50 truncate rounded-full border border-fg/10 bg-fg/5 px-2.5 py-1 text-[11px] font-medium text-fg/80 focus:border-fg/25 focus:outline-none"
                 >
                   {experimentOptions
                     .filter((o) => o.kind === "blend")
@@ -1071,7 +1071,7 @@ export function KokoroStudioPage() {
                     step={0.05}
                     value={experimentSpeed}
                     onChange={(e) => setExperimentSpeed(Number(e.target.value))}
-                    className="h-1 min-w-[80px] flex-1 accent-accent"
+                    className="h-1 min-w-20 flex-1 accent-accent"
                   />
                   <span className="w-10 text-right font-mono text-[10px] tabular-nums text-fg/60">
                     {experimentSpeed.toFixed(2)}×
@@ -1110,7 +1110,7 @@ export function KokoroStudioPage() {
             }
           />
           {savedBlends.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-fg/15 bg-fg/[0.025] px-4 py-6 text-center text-[12px] text-fg/55">
+            <div className="rounded-xl border border-dashed border-fg/15 bg-fg/2.5 px-4 py-6 text-center text-[12px] text-fg/55">
               {modelInstalled && hasVoices
                 ? "No saved blends yet."
                 : "Install the model and a voice first."}
@@ -1155,8 +1155,8 @@ export function KokoroStudioPage() {
                       className={cn(
                         "group relative flex h-14 w-56 shrink-0 items-center gap-2.5 rounded-lg border px-2 transition",
                         isPlayingSample
-                          ? "border-accent/40 bg-accent/[0.08]"
-                          : "border-fg/10 bg-fg/[0.04] hover:border-fg/25 hover:bg-fg/[0.07]",
+                          ? "border-accent/40 bg-accent/8"
+                          : "border-fg/10 bg-fg/4 hover:border-fg/25 hover:bg-fg/[0.07]",
                       )}
                     >
                       <button
@@ -1243,7 +1243,7 @@ export function KokoroStudioPage() {
           />
 
           <div className="mb-2.5 flex flex-wrap items-center gap-2">
-            <div className="relative flex-1 min-w-[180px]">
+            <div className="relative flex-1 min-w-45">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-fg/35" />
               <input
                 value={voiceSearch}
@@ -1270,11 +1270,11 @@ export function KokoroStudioPage() {
           </div>
 
           {!modelInstalled ? (
-            <div className="rounded-xl border border-dashed border-fg/15 bg-fg/[0.025] px-4 py-6 text-center text-[12px] text-fg/55">
+            <div className="rounded-xl border border-dashed border-fg/15 bg-fg/2.5 px-4 py-6 text-center text-[12px] text-fg/55">
               Install the model to browse voices.
             </div>
           ) : groupedVoices.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-fg/15 bg-fg/[0.025] px-4 py-6 text-center text-[12px] text-fg/55">
+            <div className="rounded-xl border border-dashed border-fg/15 bg-fg/2.5 px-4 py-6 text-center text-[12px] text-fg/55">
               {availableVoices.length === 0
                 ? "No voices in catalog. Tap Refresh."
                 : "No voices match your filters."}
@@ -1413,7 +1413,7 @@ export function KokoroStudioPage() {
                   void handleVariantChange(e.target.value as KokoroModelVariant)
                 }
                 disabled={isSwitchingVariant || variants.length <= 1}
-                className="min-w-0 max-w-[60%] truncate rounded-md border border-fg/10 bg-fg/[0.06] px-2 py-1 text-right text-[12px] text-fg/85 focus:border-fg/25 focus:outline-none disabled:opacity-60"
+                className="min-w-0 max-w-[60%] truncate rounded-md border border-fg/10 bg-fg/6 px-2 py-1 text-right text-[12px] text-fg/85 focus:border-fg/25 focus:outline-none disabled:opacity-60"
               >
                 {variants.map((v) => (
                   <option key={v.id} value={v.id} className="bg-surface-el">
@@ -1645,10 +1645,10 @@ function SetupModelStep({
               className={cn(
                 "group relative w-full overflow-hidden rounded-xl border px-4 py-3 text-left transition disabled:opacity-50",
                 isThisInstalling
-                  ? "border-info/40 bg-info/[0.08]"
+                  ? "border-info/40 bg-info/8"
                   : isSelected
-                    ? "border-accent/35 bg-accent/[0.08] hover:border-accent/55"
-                    : "border-fg/10 bg-fg/[0.04] hover:border-fg/25 hover:bg-fg/[0.07]",
+                    ? "border-accent/35 bg-accent/8 hover:border-accent/55"
+                    : "border-fg/10 bg-fg/4 hover:border-fg/25 hover:bg-fg/[0.07]",
               )}
             >
               <div className="flex items-start justify-between gap-3">
@@ -2159,8 +2159,8 @@ function VoiceGroupBlock({
   const showInstallAll = !selectMode && uninstalledIds.length > 0;
 
   return (
-    <div className="overflow-hidden rounded-lg border border-fg/10 bg-fg/[0.03]">
-      <div className="group/row flex items-center transition hover:bg-fg/[0.06]">
+    <div className="overflow-hidden rounded-lg border border-fg/10 bg-fg/3">
+      <div className="group/row flex items-center transition hover:bg-fg/6">
         <button
           onClick={onToggle}
           className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left"
@@ -2315,7 +2315,7 @@ function VoiceGroupBlock({
                 </div>
 
                 {!selectMode && installed && isTryOpen && (
-                  <div className="flex items-center gap-2 border-t border-fg/5 bg-fg/[0.03] px-3 py-2">
+                  <div className="flex items-center gap-2 border-t border-fg/5 bg-fg/3 px-3 py-2">
                     <input
                       value={tryText}
                       onChange={(e) => onTryTextChange(e.target.value)}
