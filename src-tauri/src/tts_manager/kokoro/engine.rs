@@ -6,8 +6,8 @@ use super::model::{
     chunk_lengths_for_tokens, resolve_config_path, write_wav, KokoroError, KokoroModel,
 };
 use super::phonemizer::{build_trace, EspeakConfig};
-use super::voices::{list_installed_voice_ids, KokoroVoiceBlendSpec, resolve_voice_path};
 use super::vocab::{hardcoded_vocab, load_vocab};
+use super::voices::{list_installed_voice_ids, resolve_voice_path, KokoroVoiceBlendSpec};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KokoroModelVariant {
@@ -124,21 +124,25 @@ pub struct KokoroTokenizePreview {
 }
 
 pub fn kokoro_supported_model_variants() -> Vec<KokoroModelVariantInfo> {
-    [KokoroModelVariant::Fp32, KokoroModelVariant::Fp16, KokoroModelVariant::Int8]
-        .into_iter()
-        .filter(|variant| kokoro_platform_allows_variant(*variant))
-        .map(|variant| KokoroModelVariantInfo {
-            id: variant.id().to_string(),
-            label: variant.label().to_string(),
-            filename: variant.candidate_model_filenames()[0].to_string(),
-            size_mb: match variant {
-                KokoroModelVariant::Fp32 => 326.0,
-                KokoroModelVariant::Fp16 => 163.0,
-                KokoroModelVariant::Int8 => 92.4,
-            },
-            mobile_supported: kokoro_platform_allows_variant(variant),
-        })
-        .collect()
+    [
+        KokoroModelVariant::Fp32,
+        KokoroModelVariant::Fp16,
+        KokoroModelVariant::Int8,
+    ]
+    .into_iter()
+    .filter(|variant| kokoro_platform_allows_variant(*variant))
+    .map(|variant| KokoroModelVariantInfo {
+        id: variant.id().to_string(),
+        label: variant.label().to_string(),
+        filename: variant.candidate_model_filenames()[0].to_string(),
+        size_mb: match variant {
+            KokoroModelVariant::Fp32 => 326.0,
+            KokoroModelVariant::Fp16 => 163.0,
+            KokoroModelVariant::Int8 => 92.4,
+        },
+        mobile_supported: kokoro_platform_allows_variant(variant),
+    })
+    .collect()
 }
 
 pub fn kokoro_platform_allows_variant(variant: KokoroModelVariant) -> bool {
@@ -248,10 +252,15 @@ pub fn preview_tokenization(
     let chunk_lengths = chunk_lengths_for_tokens(&trace.token_ids);
     let mut warnings = Vec::new();
     if trace.token_ids.len() > 400 {
-        warnings.push("Long utterance: official Kokoro voices often degrade past roughly 400 tokens.".to_string());
+        warnings.push(
+            "Long utterance: official Kokoro voices often degrade past roughly 400 tokens."
+                .to_string(),
+        );
     }
     if trace.token_ids.len() > super::model::MAX_PHONEME_LEN {
-        warnings.push("Sequence exceeds the single-pass 510-token limit and will be chunked.".to_string());
+        warnings.push(
+            "Sequence exceeds the single-pass 510-token limit and will be chunked.".to_string(),
+        );
     }
     if chunk_lengths.len() > 1 {
         warnings.push(format!(

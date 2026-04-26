@@ -7,6 +7,7 @@ pub enum AudioProviderType {
     GeminiTts,
     Elevenlabs,
     OpenAiTts,
+    Kokoro,
 }
 
 impl AudioProviderType {
@@ -15,6 +16,7 @@ impl AudioProviderType {
             "gemini_tts" => Some(Self::GeminiTts),
             "elevenlabs" => Some(Self::Elevenlabs),
             "openai_tts" => Some(Self::OpenAiTts),
+            "kokoro" => Some(Self::Kokoro),
             _ => None,
         }
     }
@@ -36,6 +38,10 @@ pub struct AudioProvider {
     pub base_url: Option<String>,
     #[serde(default)]
     pub request_path: Option<String>,
+    #[serde(default)]
+    pub kokoro_variant: Option<String>,
+    #[serde(default)]
+    pub asset_root: Option<String>,
     #[serde(default)]
     pub created_at: u64,
     #[serde(default)]

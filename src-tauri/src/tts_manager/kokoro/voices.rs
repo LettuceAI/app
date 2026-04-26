@@ -161,7 +161,11 @@ fn normalize_blend_specs(
         if voice_id.is_empty() {
             continue;
         }
-        let weight = if spec.weight.is_finite() { spec.weight } else { 0.0 };
+        let weight = if spec.weight.is_finite() {
+            spec.weight
+        } else {
+            0.0
+        };
         if weight <= 0.0 {
             continue;
         }

@@ -20,13 +20,49 @@ pub struct KokoroVoiceBlendInput {
     pub weight: f32,
 }
 
+const SYSTEM_KOKORO_ID: &str = "system-kokoro";
+
+fn ensure_default_kokoro_provider(
+    conn: &rusqlite::Connection,
+    app: &AppHandle,
+) -> Result<(), String> {
+    let exists: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM audio_providers WHERE id = ?",
+            params![SYSTEM_KOKORO_ID],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+    if exists > 0 {
+        return Ok(());
+    }
+
+    let asset_root = kokoro::default_asset_root(app)
+        .ok()
+        .map(|p| p.to_string_lossy().to_string());
+    let variant = kokoro::kokoro_supported_model_variants()
+        .into_iter()
+        .next()
+        .map(|v| v.id);
+
+    let now = now_ms();
+    let _ = conn.execute(
+        "INSERT OR IGNORE INTO audio_providers
+         (id, provider_type, label, api_key, project_id, location, base_url, request_path, kokoro_variant, asset_root, created_at, updated_at)
+         VALUES (?1, 'kokoro', 'Kokoro (Local)', NULL, NULL, NULL, NULL, NULL, ?2, ?3, ?4, ?4)",
+        params![SYSTEM_KOKORO_ID, variant, asset_root, now],
+    );
+    Ok(())
+}
+
 /// List all audio providers
 #[tauri::command]
 pub fn audio_provider_list(app: AppHandle) -> Result<Vec<AudioProvider>, String> {
     let conn = open_db(&app)?;
+    let _ = ensure_default_kokoro_provider(&conn, &app);
     let mut stmt = conn
         .prepare(
-            "SELECT id, provider_type, label, api_key, project_id, location, base_url, request_path, created_at, updated_at
+            "SELECT id, provider_type, label, api_key, project_id, location, base_url, request_path, kokoro_variant, asset_root, created_at, updated_at
              FROM audio_providers ORDER BY created_at DESC",
         )
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
@@ -42,8 +78,10 @@ pub fn audio_provider_list(app: AppHandle) -> Result<Vec<AudioProvider>, String>
                 location: row.get(5)?,
                 base_url: row.get(6)?,
                 request_path: row.get(7)?,
-                created_at: row.get(8)?,
-                updated_at: row.get(9)?,
+                kokoro_variant: row.get(8)?,
+                asset_root: row.get(9)?,
+                created_at: row.get(10)?,
+                updated_at: row.get(11)?,
             })
         })
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
@@ -79,9 +117,12 @@ pub fn audio_provider_upsert(
     let base_url = provider.base_url.clone();
     let request_path = provider.request_path.clone();
 
+    let kokoro_variant = provider.kokoro_variant.clone();
+    let asset_root = provider.asset_root.clone();
+
     conn.execute(
-        "INSERT INTO audio_providers (id, provider_type, label, api_key, project_id, location, base_url, request_path, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)
+        "INSERT INTO audio_providers (id, provider_type, label, api_key, project_id, location, base_url, request_path, kokoro_variant, asset_root, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)
          ON CONFLICT(id) DO UPDATE SET
             provider_type = excluded.provider_type,
             label = excluded.label,
@@ -90,6 +131,8 @@ pub fn audio_provider_upsert(
             location = excluded.location,
             base_url = excluded.base_url,
             request_path = excluded.request_path,
+            kokoro_variant = excluded.kokoro_variant,
+            asset_root = excluded.asset_root,
             updated_at = excluded.updated_at",
         params![
             id,
@@ -100,6 +143,8 @@ pub fn audio_provider_upsert(
             location,
             base_url,
             request_path,
+            kokoro_variant,
+            asset_root,
             now
         ],
     )
@@ -114,6 +159,8 @@ pub fn audio_provider_upsert(
         location: provider.location,
         base_url: provider.base_url,
         request_path: provider.request_path,
+        kokoro_variant: provider.kokoro_variant,
+        asset_root: provider.asset_root,
         created_at: now,
         updated_at: now,
     })
@@ -122,6 +169,13 @@ pub fn audio_provider_upsert(
 /// Delete an audio provider
 #[tauri::command]
 pub fn audio_provider_delete(app: AppHandle, id: String) -> Result<(), String> {
+    if id == SYSTEM_KOKORO_ID {
+        return Err(crate::utils::err_msg(
+            module_path!(),
+            line!(),
+            "The default Kokoro provider can't be deleted",
+        ));
+    }
     let conn = open_db(&app)?;
     conn.execute("DELETE FROM audio_providers WHERE id = ?", params![id])
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
@@ -129,12 +183,24 @@ pub fn audio_provider_delete(app: AppHandle, id: String) -> Result<(), String> {
 }
 
 /// Get models for a provider type
+fn kokoro_variants_as_models() -> Vec<AudioModel> {
+    kokoro::kokoro_supported_model_variants()
+        .into_iter()
+        .map(|info| AudioModel {
+            id: info.id.clone(),
+            name: info.label,
+            provider_type: "kokoro".to_string(),
+        })
+        .collect()
+}
+
 #[tauri::command]
 pub fn audio_models_list(provider_type: String) -> Vec<AudioModel> {
     match AudioProviderType::from_str(&provider_type) {
         Some(AudioProviderType::GeminiTts) => gemini::get_models(),
         Some(AudioProviderType::Elevenlabs) => elevenlabs::get_models(),
         Some(AudioProviderType::OpenAiTts) => openai_compatible::default_models(),
+        Some(AudioProviderType::Kokoro) => kokoro_variants_as_models(),
         None => vec![],
     }
 }
@@ -145,6 +211,7 @@ pub fn audio_voice_design_models_list(provider_type: String) -> Vec<AudioModel> 
         Some(AudioProviderType::GeminiTts) => gemini::get_models(),
         Some(AudioProviderType::Elevenlabs) => elevenlabs::get_voice_design_models(),
         Some(AudioProviderType::OpenAiTts) => openai_compatible::default_models(),
+        Some(AudioProviderType::Kokoro) => kokoro_variants_as_models(),
         None => vec![],
     }
 }
@@ -220,6 +287,36 @@ pub async fn kokoro_install_voice(
 ) -> Result<kokoro::KokoroQueuedInstall, String> {
     kokoro::queue_voice_install(app, PathBuf::from(asset_root), voice_id)
         .await
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
+}
+
+#[tauri::command]
+pub async fn kokoro_install_voices(
+    app: AppHandle,
+    asset_root: String,
+    voice_ids: Vec<String>,
+) -> Result<kokoro::KokoroQueuedInstall, String> {
+    kokoro::queue_voices_install(app, PathBuf::from(asset_root), voice_ids)
+        .await
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
+}
+
+#[tauri::command]
+pub fn kokoro_storage_stats(asset_root: String) -> kokoro::KokoroStorageStats {
+    kokoro::storage_stats(&PathBuf::from(asset_root))
+}
+
+#[tauri::command]
+pub fn kokoro_uninstall_model(asset_root: String, variant: String) -> Result<bool, String> {
+    let variant = kokoro::KokoroModelVariant::from_str(&variant)
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    kokoro::uninstall_model(&PathBuf::from(asset_root), variant)
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
+}
+
+#[tauri::command]
+pub fn kokoro_uninstall_voice(asset_root: String, voice_id: String) -> Result<bool, String> {
+    kokoro::uninstall_voice(&PathBuf::from(asset_root), &voice_id)
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
 }
 
@@ -301,12 +398,16 @@ pub fn audio_provider_voices(
 ) -> Result<Vec<CachedVoice>, String> {
     let conn = open_db(&app)?;
 
-    // First get the provider type
-    let provider_type: String = conn
+    // First get the provider type and any provider-specific configuration we need
+    let (provider_type, kokoro_variant, asset_root): (
+        String,
+        Option<String>,
+        Option<String>,
+    ) = conn
         .query_row(
-            "SELECT provider_type FROM audio_providers WHERE id = ?",
+            "SELECT provider_type, kokoro_variant, asset_root FROM audio_providers WHERE id = ?",
             params![provider_id],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .map_err(|e| {
             crate::utils::err_msg(
@@ -328,6 +429,37 @@ pub fn audio_provider_voices(
                 name: v.name,
                 preview_url: v.preview_url,
                 labels: v.labels,
+                cached_at: now,
+            })
+            .collect());
+    }
+
+    if provider_type == "kokoro" {
+        let asset_root = match asset_root {
+            Some(root) if !root.trim().is_empty() => root,
+            _ => return Ok(Vec::new()),
+        };
+        let variant = kokoro_variant
+            .as_deref()
+            .and_then(|value| kokoro::KokoroModelVariant::from_str(value).ok())
+            .unwrap_or(kokoro::KokoroModelVariant::Int8);
+        let status = kokoro::validate_assets(&PathBuf::from(asset_root), variant, None)
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        let now = now_ms();
+
+        return Ok(status
+            .installed_voices
+            .into_iter()
+            .map(|voice| CachedVoice {
+                id: format!("{}:{}", provider_id, voice.id),
+                provider_id: provider_id.clone(),
+                voice_id: voice.id.clone(),
+                name: voice.id,
+                preview_url: None,
+                labels: HashMap::from([
+                    ("category".to_string(), "library".to_string()),
+                    ("engine".to_string(), "kokoro".to_string()),
+                ]),
                 cached_at: now,
             })
             .collect());
@@ -393,7 +525,7 @@ pub async fn audio_provider_refresh_voices(
         })?;
 
     // Gemini uses hardcoded voices
-    if provider_type == "gemini_tts" {
+    if provider_type == "gemini_tts" || provider_type == "kokoro" {
         return audio_provider_voices(app, provider_id);
     }
 
@@ -543,8 +675,10 @@ pub async fn tts_preview(
     let conn = open_db(&app)?;
 
     // Get provider details
-    let (provider_type, api_key, project_id, location, base_url, request_path): (
+    let (provider_type, api_key, project_id, location, base_url, request_path, kokoro_variant, asset_root): (
         String,
+        Option<String>,
+        Option<String>,
         Option<String>,
         Option<String>,
         Option<String>,
@@ -552,9 +686,9 @@ pub async fn tts_preview(
         Option<String>,
     ) = conn
         .query_row(
-            "SELECT provider_type, api_key, project_id, location, base_url, request_path FROM audio_providers WHERE id = ?",
+            "SELECT provider_type, api_key, project_id, location, base_url, request_path, kokoro_variant, asset_root FROM audio_providers WHERE id = ?",
             params![provider_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?, row.get(7)?)),
         )
         .map_err(|e| {
             crate::utils::err_msg(
@@ -564,7 +698,11 @@ pub async fn tts_preview(
             )
         })?;
 
-    let api_key = api_key.ok_or("API key not configured")?;
+    let api_key = if provider_type == "kokoro" {
+        String::new()
+    } else {
+        api_key.ok_or("API key not configured")?
+    };
 
     let mut abort_rx = request_id.as_ref().map(|id| {
         use tauri::Manager;
@@ -605,6 +743,91 @@ pub async fn tts_preview(
                     prompt.as_deref(),
                 )
                 .await
+            }
+            "kokoro" => {
+                let asset_root = asset_root
+                    .clone()
+                    .ok_or("Asset root not configured for Kokoro provider")?;
+                let variant_str = if !model_id.trim().is_empty() {
+                    model_id.clone()
+                } else {
+                    kokoro_variant
+                        .clone()
+                        .ok_or("Kokoro model variant not configured")?
+                };
+                let variant = kokoro::KokoroModelVariant::from_str(&variant_str)
+                    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+
+                let blend: Vec<KokoroVoiceBlendInput> = if voice_id.trim().starts_with('[') {
+                    serde_json::from_str(&voice_id).map_err(|e| {
+                        crate::utils::err_msg(
+                            module_path!(),
+                            line!(),
+                            format!("Invalid Kokoro voice blend JSON: {}", e),
+                        )
+                    })?
+                } else if voice_id.trim().is_empty() {
+                    return Err(crate::utils::err_msg(
+                        module_path!(),
+                        line!(),
+                        "No Kokoro voice configured",
+                    ));
+                } else {
+                    vec![KokoroVoiceBlendInput {
+                        voice_id: voice_id.trim().to_string(),
+                        weight: 1.0,
+                    }]
+                };
+
+                let blend_specs: Vec<kokoro::KokoroVoiceBlendSpec> = blend
+                    .into_iter()
+                    .filter(|entry| entry.weight > 0.0)
+                    .map(|entry| kokoro::KokoroVoiceBlendSpec {
+                        voice_id: entry.voice_id,
+                        weight: entry.weight,
+                    })
+                    .collect();
+
+                if blend_specs.is_empty() {
+                    return Err(crate::utils::err_msg(
+                        module_path!(),
+                        line!(),
+                        "Kokoro voice blend has no positive weights",
+                    ));
+                }
+
+                let speed = prompt
+                    .as_ref()
+                    .and_then(|p| serde_json::from_str::<serde_json::Value>(p).ok())
+                    .and_then(|v| v.get("speed").and_then(|s| s.as_f64()))
+                    .map(|f| f as f32)
+                    .filter(|s| s.is_finite() && *s > 0.0)
+                    .unwrap_or(1.0);
+
+                let request = kokoro::KokoroSynthesisRequest {
+                    asset_root: PathBuf::from(asset_root),
+                    variant,
+                    voice_blend: blend_specs,
+                    text: text.clone(),
+                    speed,
+                    espeak_bin_path: None,
+                    espeak_data_path: None,
+                };
+
+                let audio = tokio::task::spawn_blocking(move || {
+                    kokoro::engine::synthesize_to_wav(request)
+                })
+                .await
+                .map_err(|e| {
+                    crate::utils::err_msg(
+                        module_path!(),
+                        line!(),
+                        format!("Kokoro synthesis task failed: {}", e),
+                    )
+                })?
+                .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+
+                Ok((audio, "audio/wav".to_string()))
             }
             _ => Err(crate::utils::err_msg(
                 module_path!(),
@@ -660,6 +883,7 @@ pub async fn audio_provider_verify(
         }
         "elevenlabs" => elevenlabs::verify_api_key(&api_key).await,
         "openai_tts" => Ok(true),
+        "kokoro" => Ok(true),
         _ => Err(crate::utils::err_msg(
             module_path!(),
             line!(),

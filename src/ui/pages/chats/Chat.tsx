@@ -859,8 +859,12 @@ export function ChatConversationPage() {
 
         let modelId = character.voiceConfig.modelId;
         if (!modelId) {
-          const models = await ensureAudioModels(provider.providerType as AudioProviderType);
-          modelId = models[0]?.id;
+          if (provider.providerType === "kokoro" && provider.kokoroVariant) {
+            modelId = provider.kokoroVariant;
+          } else {
+            const models = await ensureAudioModels(provider.providerType as AudioProviderType);
+            modelId = models[0]?.id;
+          }
         }
         if (!modelId) {
           throw new Error("No audio models available for this provider.");

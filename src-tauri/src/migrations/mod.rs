@@ -3393,8 +3393,11 @@ fn migrate_v59_to_v60(app: &AppHandle) -> Result<(), String> {
     }
 
     if !has_background_image_path {
-        conn.execute("ALTER TABLE scenes ADD COLUMN background_image_path TEXT", [])
-            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        conn.execute(
+            "ALTER TABLE scenes ADD COLUMN background_image_path TEXT",
+            [],
+        )
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     }
 
     Ok(())

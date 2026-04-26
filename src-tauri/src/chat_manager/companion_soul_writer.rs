@@ -235,8 +235,7 @@ fn load_prompt_entries(app: &AppHandle, template_id: &str) -> Vec<SystemPromptEn
                     role: crate::chat_manager::types::PromptEntryRole::System,
                     content: template.content,
                     enabled: true,
-                    injection_position:
-                        crate::chat_manager::types::PromptEntryPosition::Relative,
+                    injection_position: crate::chat_manager::types::PromptEntryPosition::Relative,
                     injection_depth: 0,
                     conditional_min_messages: None,
                     interval_turns: None,
@@ -420,10 +419,7 @@ fn normalize_working_soul(current: Option<&Value>) -> Value {
     };
 
     if let Some(soul_in) = current_obj.get("soul").and_then(Value::as_object) {
-        if let Some(soul_out) = working
-            .get_mut("soul")
-            .and_then(Value::as_object_mut)
-        {
+        if let Some(soul_out) = working.get_mut("soul").and_then(Value::as_object_mut) {
             for key in TEXT_FIELDS {
                 if let Some(Value::String(value)) = soul_in.get(*key) {
                     soul_out.insert((*key).to_string(), Value::String(value.clone()));
@@ -487,10 +483,7 @@ fn apply_set_identity(working: &mut Value, args: &Value) -> Vec<String> {
     let Some(args_obj) = args.as_object() else {
         return applied;
     };
-    let Some(soul_obj) = working
-        .get_mut("soul")
-        .and_then(Value::as_object_mut)
-    else {
+    let Some(soul_obj) = working.get_mut("soul").and_then(Value::as_object_mut) else {
         return applied;
     };
     for key in TEXT_FIELDS {
@@ -771,10 +764,7 @@ fn apply_call(working_soul: &mut Value, call: &ToolCall) -> (bool, Value) {
     match call.name.as_str() {
         "set_identity" => {
             let applied = apply_set_identity(working_soul, &call.arguments);
-            (
-                false,
-                json!({ "ok": true, "applied": applied }),
-            )
+            (false, json!({ "ok": true, "applied": applied }))
         }
         "set_baseline_affect" => {
             let applied = apply_set_numeric_section(
@@ -783,10 +773,7 @@ fn apply_call(working_soul: &mut Value, call: &ToolCall) -> (bool, Value) {
                 BASELINE_AFFECT_FIELDS,
                 &call.arguments,
             );
-            (
-                false,
-                json!({ "ok": true, "applied": applied }),
-            )
+            (false, json!({ "ok": true, "applied": applied }))
         }
         "set_regulation_style" => {
             let applied = apply_set_numeric_section(
@@ -795,10 +782,7 @@ fn apply_call(working_soul: &mut Value, call: &ToolCall) -> (bool, Value) {
                 REGULATION_STYLE_FIELDS,
                 &call.arguments,
             );
-            (
-                false,
-                json!({ "ok": true, "applied": applied }),
-            )
+            (false, json!({ "ok": true, "applied": applied }))
         }
         "set_relationship_defaults" => {
             let applied = apply_set_numeric_section(
@@ -807,10 +791,7 @@ fn apply_call(working_soul: &mut Value, call: &ToolCall) -> (bool, Value) {
                 RELATIONSHIP_DEFAULTS_FIELDS,
                 &call.arguments,
             );
-            (
-                false,
-                json!({ "ok": true, "applied": applied }),
-            )
+            (false, json!({ "ok": true, "applied": applied }))
         }
         "done" => (true, json!({ "ok": true, "done": true })),
         _ => (
@@ -904,8 +885,7 @@ async fn run_with_target(
 
         if !api_response.ok {
             let status_fallback = format!("Provider returned status {}", api_response.status);
-            let err_message =
-                extract_error_message(api_response.data()).unwrap_or(status_fallback);
+            let err_message = extract_error_message(api_response.data()).unwrap_or(status_fallback);
             last_failure_reason = Some(err_message);
             break;
         }
@@ -1006,8 +986,8 @@ async fn run_with_target(
         return Ok(working_soul);
     }
 
-    let failure_reason = last_failure_reason
-        .unwrap_or_else(|| "tool attempt produced no usable output".to_string());
+    let failure_reason =
+        last_failure_reason.unwrap_or_else(|| "tool attempt produced no usable output".to_string());
     log_warn(
         app,
         "companion_soul_writer",
@@ -1158,8 +1138,7 @@ pub async fn chat_generate_companion_soul(
     let context = ChatContext::initialize(app.clone())?;
     let settings = context.settings.clone();
 
-    let primary_target =
-        resolve_companion_soul_writer_target(&settings, args.model_id.as_deref())?;
+    let primary_target = resolve_companion_soul_writer_target(&settings, args.model_id.as_deref())?;
     let (model, credential) = primary_target;
     let api_key = require_api_key(&app, credential, "companion_soul_writer")?;
 
@@ -1217,8 +1196,6 @@ pub async fn chat_generate_companion_soul(
 
     Err(primary_err)
 }
-
-// ---- Structured fallback parsing ----
 
 fn normalize_structured_fallback_text(raw: &str) -> String {
     let trimmed = raw.trim();

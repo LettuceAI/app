@@ -175,7 +175,9 @@ pub fn build_trace(
         normalized_text,
         effective_text,
         language: lang.to_string(),
-        lexicon_path: resolve_lexicon_path(asset_root).to_string_lossy().to_string(),
+        lexicon_path: resolve_lexicon_path(asset_root)
+            .to_string_lossy()
+            .to_string(),
         lexicon_entry_count: lexicon.entries.len(),
         used_lexicon_entries,
         segments: trace_segments,
@@ -340,7 +342,9 @@ fn match_lexicon_entry<'a>(
 ) -> Option<(usize, &'a LexiconEntry, &'a str)> {
     for entry in entries {
         let candidate = text.get(start..start + entry.label.len())?;
-        if !candidate.eq_ignore_ascii_case(&entry.label) && candidate.to_lowercase() != entry.label_lower {
+        if !candidate.eq_ignore_ascii_case(&entry.label)
+            && candidate.to_lowercase() != entry.label_lower
+        {
             continue;
         }
         if !has_word_boundary_before(text, start) {
@@ -413,7 +417,10 @@ fn try_parse_inline_annotation(text: &str, start: usize) -> Option<(usize, TextP
     let target_end = target_start + closing_paren_rel;
     let target = text.get(target_start..target_end)?.trim();
 
-    if let Some(ipa) = target.strip_prefix('/').and_then(|value| value.strip_suffix('/')) {
+    if let Some(ipa) = target
+        .strip_prefix('/')
+        .and_then(|value| value.strip_suffix('/'))
+    {
         let ipa = ipa.trim();
         if ipa.is_empty() {
             return None;
@@ -471,7 +478,10 @@ fn phonemize_segments_batch(
     }
 
     let _ = vocab;
-    Ok(lines.iter().map(|line| normalize_ipa_output(line)).collect())
+    Ok(lines
+        .iter()
+        .map(|line| normalize_ipa_output(line))
+        .collect())
 }
 
 fn run_espeak(input: &str, lang: &str, espeak: &EspeakConfig) -> Result<String, KokoroError> {
@@ -608,8 +618,7 @@ fn insert_stress_marker(chars: &mut Vec<char>, marker: char) {
 fn is_vowel_like(ch: char) -> bool {
     matches!(
         ch,
-        'A'
-            | 'I'
+        'A' | 'I'
             | 'O'
             | 'Q'
             | 'W'

@@ -1243,8 +1243,14 @@ fn load_character_export_snapshot(
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 
     for row in scene_rows {
-        let (scene_id, content, direction, background_image_path, scene_created_at, selected_variant_id) =
-            row.map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        let (
+            scene_id,
+            content,
+            direction,
+            background_image_path,
+            scene_created_at,
+            selected_variant_id,
+        ) = row.map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 
         let mut variants: Vec<SceneVariantExport> = Vec::new();
         let mut var_stmt = conn
@@ -3038,8 +3044,14 @@ fn read_imported_character(
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 
     for row in scenes_rows {
-        let (scene_id, content, direction, background_image_path, _scene_created_at, selected_variant_id) =
-            row.map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        let (
+            scene_id,
+            content,
+            direction,
+            background_image_path,
+            _scene_created_at,
+            selected_variant_id,
+        ) = row.map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 
         // Read scene variants
         let mut variants: Vec<JsonValue> = Vec::new();

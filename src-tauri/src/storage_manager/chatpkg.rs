@@ -1078,8 +1078,14 @@ fn maybe_read_character_snapshots(
 
         let mut scenes = Vec::new();
         for scene in scenes_rows {
-            let (scene_id, content, direction, background_image_path, scene_created_at, selected_variant_id) =
-                scene.map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+            let (
+                scene_id,
+                content,
+                direction,
+                background_image_path,
+                scene_created_at,
+                selected_variant_id,
+            ) = scene.map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 
             let mut variants_stmt = conn
                 .prepare(

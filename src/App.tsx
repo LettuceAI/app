@@ -49,6 +49,8 @@ import { EmbeddingDownloadPage } from "./ui/pages/settings/EmbeddingDownloadPage
 import { CompanionDownloadPage } from "./ui/pages/settings/CompanionDownloadPage";
 import { EmbeddingTestPage } from "./ui/pages/settings/EmbeddingTestPage";
 import { KokoroTestPage } from "./ui/pages/settings/KokoroTestPage";
+import { KokoroStudioPage } from "./ui/pages/settings/KokoroStudioPage";
+import { KokoroBlendEditorPage } from "./ui/pages/settings/KokoroBlendEditorPage";
 import {
   ChatPage,
   ChatConversationPage,
@@ -910,7 +912,13 @@ function AppContent() {
                 ? "Select from library"
                 : location.pathname === "/settings/models/installed"
                   ? "Installed Models"
-                  : undefined
+                  : /^\/settings\/voices\/kokoro\/[^/]+\/blend$/.test(location.pathname)
+                    ? "New blend"
+                    : /^\/settings\/voices\/kokoro\/[^/]+\/blend\/.+$/.test(location.pathname)
+                      ? "Edit blend"
+                      : /^\/settings\/voices\/kokoro\/[^/]+$/.test(location.pathname)
+                        ? "Kokoro Studio"
+                        : undefined
             }
           />
         )}
@@ -990,6 +998,18 @@ function AppContent() {
               <Route path="/settings/models/installed" element={<InstalledModelsPage />} />
               <Route path="/settings/models/:modelId" element={<EditModelPage />} />
               <Route path="/settings/voices" element={<VoicesPage />} />
+              <Route
+                path="/settings/voices/kokoro/:providerId"
+                element={<KokoroStudioPage />}
+              />
+              <Route
+                path="/settings/voices/kokoro/:providerId/blend"
+                element={<KokoroBlendEditorPage />}
+              />
+              <Route
+                path="/settings/voices/kokoro/:providerId/blend/:blendId"
+                element={<KokoroBlendEditorPage />}
+              />
               <Route path="/settings/image-generation" element={<ImageGenerationPage />} />
               <Route path="/settings/prompts" element={<SystemPromptsPage />} />
               <Route path="/settings/prompts/new" element={<EditPromptTemplate />} />

@@ -144,8 +144,9 @@ pub fn write_wav(samples: &[f32]) -> Result<Vec<u8>, KokoroError> {
     };
 
     let mut cursor = std::io::Cursor::new(Vec::new());
-    let mut writer = hound::WavWriter::new(&mut cursor, spec)
-        .map_err(|err| KokoroError::VoiceParse(format!("Failed to initialize WAV writer: {err}")))?;
+    let mut writer = hound::WavWriter::new(&mut cursor, spec).map_err(|err| {
+        KokoroError::VoiceParse(format!("Failed to initialize WAV writer: {err}"))
+    })?;
 
     for sample in samples {
         let scaled = (sample.clamp(-1.0, 1.0) * i16::MAX as f32).round() as i16;

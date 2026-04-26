@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 
-export type AudioProviderType = "gemini_tts" | "elevenlabs" | "openai_tts";
+export type AudioProviderType = "gemini_tts" | "elevenlabs" | "openai_tts" | "kokoro";
 
 export interface AudioProvider {
   id: string;
@@ -11,6 +11,8 @@ export interface AudioProvider {
   location?: string; // Gemini only
   baseUrl?: string; // OpenAI-compatible TTS only
   requestPath?: string; // OpenAI-compatible TTS only
+  kokoroVariant?: KokoroModelVariant; // Kokoro only
+  assetRoot?: string; // Kokoro only
   createdAt?: number;
   updatedAt?: number;
   isSystem?: boolean;
@@ -239,6 +241,38 @@ export async function kokoroInstallVoice(
     assetRoot,
     voiceId,
   });
+}
+
+export async function kokoroUninstallModel(
+  assetRoot: string,
+  variant: KokoroModelVariant,
+): Promise<boolean> {
+  return invoke<boolean>("kokoro_uninstall_model", { assetRoot, variant });
+}
+
+export async function kokoroUninstallVoice(
+  assetRoot: string,
+  voiceId: string,
+): Promise<boolean> {
+  return invoke<boolean>("kokoro_uninstall_voice", { assetRoot, voiceId });
+}
+
+export async function kokoroInstallVoices(
+  assetRoot: string,
+  voiceIds: string[],
+): Promise<KokoroQueuedInstall> {
+  return invoke<KokoroQueuedInstall>("kokoro_install_voices", { assetRoot, voiceIds });
+}
+
+export interface KokoroStorageStats {
+  modelBytes: number;
+  voicesBytes: number;
+  totalBytes: number;
+  voiceCount: number;
+}
+
+export async function kokoroStorageStats(assetRoot: string): Promise<KokoroStorageStats> {
+  return invoke<KokoroStorageStats>("kokoro_storage_stats", { assetRoot });
 }
 
 export async function kokoroTokenizePreview(

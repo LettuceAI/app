@@ -44,7 +44,10 @@ pub fn load_lexicon_overrides(
 
     let mut entries = match parsed {
         LexiconFile::Flat(entries) => entries,
-        LexiconFile::Scoped { mut global, by_lang } => {
+        LexiconFile::Scoped {
+            mut global,
+            by_lang,
+        } => {
             if let Some(lang_entries) = by_lang.get(lang) {
                 for (key, value) in lang_entries {
                     global.insert(key.clone(), value.clone());

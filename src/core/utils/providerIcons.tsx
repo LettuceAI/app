@@ -1,5 +1,5 @@
 import type { ReactElement } from "react";
-import { Cpu, EthernetPort, Leaf, Settings, Sparkles, Wrench } from "lucide-react";
+import { Cpu, EthernetPort, Leaf, Mic, Settings, Sparkles, Volume2, Wrench } from "lucide-react";
 
 import OpenAIIcon from "../../assets/openai_light.svg";
 import AnthropicIcon from "../../assets/anthropic_light.svg";
@@ -45,6 +45,10 @@ const ICON_MAP: Record<string, ReactElement> = {
   "lettuce-engine": <Leaf className="h-6 w-6 text-emerald-400" />,
   custom: <Settings className="h-6 w-6 text-gray-400" />,
   "custom-anthropic": <Settings className="h-6 w-6 text-gray-400" />,
+  elevenlabs: <Mic className="h-6 w-6 text-violet-300" />,
+  gemini_tts: <img src={GeminiIcon} alt="Gemini TTS" className="h-6 w-6" />,
+  openai_tts: <Volume2 className="h-6 w-6 text-emerald-300" />,
+  kokoro: <Cpu className="h-6 w-6 text-pink-300" />,
 };
 
 export function getProviderIcon(providerId: string) {

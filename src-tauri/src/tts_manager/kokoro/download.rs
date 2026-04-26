@@ -260,3 +260,137 @@ async fn queue_download_plan(
 
     Ok(queue_ids)
 }
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KokoroStorageStats {
+    pub model_bytes: u64,
+    pub voices_bytes: u64,
+    pub total_bytes: u64,
+    pub voice_count: u32,
+}
+
+fn dir_total_size(path: &Path) -> u64 {
+    if !path.exists() {
+        return 0;
+    }
+    let Ok(entries) = fs::read_dir(path) else {
+        return 0;
+    };
+    entries
+        .filter_map(Result::ok)
+        .filter_map(|e| e.metadata().ok())
+        .filter(|m| m.is_file())
+        .map(|m| m.len())
+        .sum()
+}
+
+fn count_voice_bins(path: &Path) -> u32 {
+    if !path.exists() {
+        return 0;
+    }
+    let Ok(entries) = fs::read_dir(path) else {
+        return 0;
+    };
+    entries
+        .filter_map(Result::ok)
+        .filter(|e| e.path().extension().map(|ext| ext == "bin").unwrap_or(false))
+        .count() as u32
+}
+
+pub fn storage_stats(asset_root: &Path) -> KokoroStorageStats {
+    let model_bytes = dir_total_size(&asset_root.join("onnx"));
+    let voices_dir = asset_root.join("voices");
+    let voices_bytes = dir_total_size(&voices_dir);
+    let voice_count = count_voice_bins(&voices_dir);
+    KokoroStorageStats {
+        model_bytes,
+        voices_bytes,
+        total_bytes: model_bytes + voices_bytes,
+        voice_count,
+    }
+}
+
+pub async fn queue_voices_install(
+    app: AppHandle,
+    asset_root: PathBuf,
+    voice_ids: Vec<String>,
+) -> Result<KokoroQueuedInstall, KokoroError> {
+    if voice_ids.is_empty() {
+        return Err(KokoroError::VoiceParse("No voices to install".into()));
+    }
+    for id in &voice_ids {
+        if !is_valid_voice_id(id) {
+            return Err(KokoroError::VoiceParse(format!("Unsupported voice id: {id}")));
+        }
+    }
+
+    let install_id = uuid::Uuid::new_v4().to_string();
+    let plan: Vec<DownloadFileSpec> = voice_ids
+        .iter()
+        .map(|id| {
+            let leaked_remote = Box::leak(format!("voices/{id}.bin").into_boxed_str());
+            let leaked_local = Box::leak(format!("voices/{id}.bin").into_boxed_str());
+            let leaked_filename = Box::leak(format!("{id}.bin").into_boxed_str());
+            DownloadFileSpec {
+                remote_path: leaked_remote,
+                local_relative_path: leaked_local,
+                filename: leaked_filename,
+            }
+        })
+        .collect();
+
+    let display = if voice_ids.len() == 1 {
+        format!("Kokoro voice {}", voice_ids[0])
+    } else {
+        format!("Kokoro voices · {}", voice_ids.len())
+    };
+
+    let queue_ids = queue_download_plan(
+        &app,
+        &asset_root,
+        &install_id,
+        &plan,
+        "voice",
+        None,
+        None,
+        Some(display),
+    )
+    .await?;
+
+    Ok(KokoroQueuedInstall {
+        install_id,
+        queue_ids,
+    })
+}
+
+pub fn uninstall_model(
+    asset_root: &Path,
+    variant: KokoroModelVariant,
+) -> Result<bool, KokoroError> {
+    let mut removed = false;
+    for filename in variant.candidate_model_filenames() {
+        let path = asset_root.join("onnx").join(filename);
+        if path.exists() {
+            fs::remove_file(&path)?;
+            removed = true;
+        }
+    }
+    Ok(removed)
+}
+
+pub fn uninstall_voice(asset_root: &Path, voice_id: &str) -> Result<bool, KokoroError> {
+    if !is_valid_voice_id(voice_id) {
+        return Err(KokoroError::VoiceParse(format!(
+            "Unsupported voice id: {}",
+            voice_id
+        )));
+    }
+    let path = asset_root.join("voices").join(format!("{voice_id}.bin"));
+    if path.exists() {
+        fs::remove_file(&path)?;
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}

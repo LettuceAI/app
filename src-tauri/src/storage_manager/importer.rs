@@ -301,7 +301,8 @@ fn import_characters(conn: &mut rusqlite::Connection, json: &str) -> Result<(), 
                         .and_then(|v| v.as_str())
                         .map(|s| s.to_string());
                     let direction = obj.get("direction").and_then(|v| v.as_str());
-                    let background_image_path = obj.get("backgroundImagePath").and_then(|v| v.as_str());
+                    let background_image_path =
+                        obj.get("backgroundImagePath").and_then(|v| v.as_str());
                     tx.execute("INSERT INTO scenes (id, character_id, content, direction, background_image_path, created_at, selected_variant_id) VALUES (?, ?, ?, ?, ?, ?, ?)", params![&sid, &id, content, direction, background_image_path, screated, sel]).map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
                     if let Some(vars) = obj.get("variants").and_then(|v| v.as_array()) {
                         for v in vars {

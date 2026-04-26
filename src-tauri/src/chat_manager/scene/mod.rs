@@ -20,10 +20,10 @@ use crate::chat_manager::turn_builder::{
     partition_prompt_entries, should_insert_in_chat_prompt_entry,
 };
 use crate::chat_manager::types::{
-    Character, ChatGenerateDesignReferenceDescriptionArgs,
-    ChatGenerateSceneImageArgs, ChatGenerateScenePromptArgs, ImageAttachment, Model, Persona,
-    PromptEntryChatMode, PromptEntryImageSlot, PromptEntryPayload, PromptEntryPosition,
-    ProviderCredential, Session, Settings, StoredMessage, SystemPromptEntry,
+    Character, ChatGenerateDesignReferenceDescriptionArgs, ChatGenerateSceneImageArgs,
+    ChatGenerateScenePromptArgs, ImageAttachment, Model, Persona, PromptEntryChatMode,
+    PromptEntryImageSlot, PromptEntryPayload, PromptEntryPosition, ProviderCredential, Session,
+    Settings, StoredMessage, SystemPromptEntry,
 };
 use crate::image_generator::types::ImageGenerationRequest;
 use crate::storage_manager::media::{storage_load_avatar, storage_read_image_data};

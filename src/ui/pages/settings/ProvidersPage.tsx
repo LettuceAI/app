@@ -5,25 +5,40 @@ import {
   EthernetPort,
   Cpu,
   Volume2,
+  Mic,
   Leaf,
   Sparkles,
   LayoutDashboard,
 } from "lucide-react";
-import { useEffect, useId, useLayoutEffect, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 
 import { useProvidersPageController } from "./hooks/useProvidersPageController";
-import { VoicesPage } from "./VoicesPage";
+import { AudioProviderEditor } from "./components/AudioProviderEditor";
 
 import type { ProviderCapabilitiesCamel } from "../../../core/providers/capabilities";
 import { getProviderIcon } from "../../../core/utils/providerIcons";
 import { Routes } from "../../navigation";
+import {
+  listAudioProviders,
+  upsertAudioProvider,
+  deleteAudioProvider,
+  type AudioProvider,
+  type AudioProviderType,
+} from "../../../core/storage/audioProviders";
 
 import { BottomMenu, MenuButton } from "../../components/BottomMenu";
 import { cn, colors, interactive, radius } from "../../design-tokens";
 import { getPlatform } from "../../../core/utils/platform";
 import { useI18n } from "../../../core/i18n/context";
 import { Switch } from "../../components/Switch";
+
+const AUDIO_PROVIDER_TYPE_LABEL: Record<AudioProviderType, string> = {
+  elevenlabs: "ElevenLabs",
+  gemini_tts: "Gemini TTS",
+  openai_tts: "OpenAI-Compatible TTS",
+  kokoro: "Kokoro (Local)",
+};
 
 type ProviderTab = "llm" | "audio";
 
@@ -112,10 +127,79 @@ export function ProvidersPage() {
     ? capabilities.filter((provider) => provider.id !== "llamacpp")
     : capabilities;
 
+  const [audioProviders, setAudioProviders] = useState<AudioProvider[]>([]);
+  const [audioLoading, setAudioLoading] = useState(true);
+  const [selectedAudioProvider, setSelectedAudioProvider] = useState<AudioProvider | null>(null);
+  const [isAudioEditorOpen, setIsAudioEditorOpen] = useState(false);
+  const [editingAudioProvider, setEditingAudioProvider] = useState<AudioProvider | null>(null);
+  const [isAudioDeleting, setIsAudioDeleting] = useState(false);
+
+  const loadAudioProviders = useCallback(async () => {
+    setAudioLoading(true);
+    try {
+      const list = await listAudioProviders();
+      setAudioProviders(list);
+    } catch (e) {
+      console.error("Failed to load audio providers:", e);
+    } finally {
+      setAudioLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadAudioProviders();
+  }, [loadAudioProviders]);
+
+  const openAudioEditor = useCallback((provider?: AudioProvider) => {
+    setEditingAudioProvider(
+      provider
+        ? { ...provider }
+        : {
+            id: "",
+            providerType: "elevenlabs",
+            label: "",
+            apiKey: "",
+            requestPath: "/v1/audio/speech",
+          },
+    );
+    setIsAudioEditorOpen(true);
+    setSelectedAudioProvider(null);
+  }, []);
+
+  const closeAudioEditor = useCallback(() => {
+    setIsAudioEditorOpen(false);
+    setEditingAudioProvider(null);
+  }, []);
+
+  const handleSaveAudioProvider = useCallback(
+    async (provider: AudioProvider) => {
+      await upsertAudioProvider(provider);
+      await loadAudioProviders();
+      closeAudioEditor();
+    },
+    [loadAudioProviders, closeAudioEditor],
+  );
+
+  const handleDeleteAudioProvider = useCallback(
+    async (id: string) => {
+      setIsAudioDeleting(true);
+      try {
+        await deleteAudioProvider(id);
+        await loadAudioProviders();
+        setSelectedAudioProvider(null);
+      } catch (e) {
+        console.error("Failed to delete audio provider:", e);
+      } finally {
+        setIsAudioDeleting(false);
+      }
+    },
+    [loadAudioProviders],
+  );
+
   useEffect(() => {
     const handleAddProvider = () => {
       if (activeTab === "audio") {
-        window.dispatchEvent(new CustomEvent("audioProviders:add"));
+        openAudioEditor();
         return;
       }
       openEditor();
@@ -128,7 +212,7 @@ export function ProvidersPage() {
       if ((window as any).__openAddProvider) delete (window as any).__openAddProvider;
       window.removeEventListener("providers:add", listener);
     };
-  }, [activeTab, openEditor]);
+  }, [activeTab, openEditor, openAudioEditor]);
 
   const EmptyState = ({ onCreate }: { onCreate: () => void }) => (
     <div className="flex h-64 flex-col items-center justify-center">
@@ -140,6 +224,22 @@ export function ProvidersPage() {
         className="rounded-full border border-accent/40 bg-accent/20 px-6 py-2 text-sm font-medium text-accent/90 transition hover:bg-accent/30 active:scale-[0.99]"
       >
         {t("providers.empty.addButton")}
+      </button>
+    </div>
+  );
+
+  const AudioEmptyState = ({ onCreate }: { onCreate: () => void }) => (
+    <div className="flex h-64 flex-col items-center justify-center">
+      <Mic className="mb-3 h-12 w-12 text-fg/20" />
+      <h3 className="mb-1 text-lg font-medium text-fg">No audio providers</h3>
+      <p className="mb-4 text-center text-sm text-fg/50">
+        Add a TTS provider to generate voices for your characters.
+      </p>
+      <button
+        onClick={onCreate}
+        className="rounded-full border border-accent/40 bg-accent/20 px-6 py-2 text-sm font-medium text-accent/90 transition hover:bg-accent/30 active:scale-[0.99]"
+      >
+        Add Provider
       </button>
     </div>
   );
@@ -198,9 +298,53 @@ export function ProvidersPage() {
             id={audioPanelId}
             aria-labelledby={audioTabId}
             tabIndex={0}
-            className="h-full"
+            className="space-y-2"
           >
-            <VoicesPage />
+            {!audioLoading && audioProviders.length === 0 && (
+              <AudioEmptyState onCreate={() => openAudioEditor()} />
+            )}
+            {audioProviders.map((provider) => (
+              <button
+                key={provider.id}
+                onClick={() => setSelectedAudioProvider(provider)}
+                className="group w-full rounded-xl border border-fg/10 bg-fg/5 px-4 py-3 text-left transition hover:border-fg/20 hover:bg-fg/10 focus:outline-none focus:ring-2 focus:ring-fg/20 active:scale-[0.99]"
+              >
+                <div className="flex items-center gap-3">
+                  {getProviderIcon(provider.providerType)}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-sm font-medium text-fg">{provider.label}</span>
+                    </div>
+                    <div className="mt-0.5 flex items-center gap-1 text-[11px] text-fg/50">
+                      <span className="truncate">
+                        {AUDIO_PROVIDER_TYPE_LABEL[provider.providerType]}
+                      </span>
+                      {provider.baseUrl && (
+                        <>
+                          <span className="opacity-40">•</span>
+                          <span className="truncate max-w-30">
+                            {provider.baseUrl.replace(/^https?:\/\//, "")}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-fg/30 group-hover:text-fg/60 transition" />
+                </div>
+              </button>
+            ))}
+            {audioProviders.length > 0 && (
+              <p className="px-1 pt-3 text-[11px] text-fg/40">
+                Manage voices, voice library, and audio cache from{" "}
+                <button
+                  onClick={() => navigate("/settings/voices")}
+                  className="text-fg/60 underline-offset-2 hover:text-fg hover:underline"
+                >
+                  Voices
+                </button>
+                .
+              </p>
+            )}
           </div>
         )}
       </div>
@@ -831,6 +975,66 @@ export function ProvidersPage() {
               </div>
             )}
           </BottomMenu>
+        </>
+      )}
+
+      {activeTab === "audio" && (
+        <>
+          <BottomMenu
+            isOpen={!!selectedAudioProvider}
+            onClose={() => setSelectedAudioProvider(null)}
+            title={selectedAudioProvider?.label || "Provider"}
+          >
+            {selectedAudioProvider && (
+              <div className="space-y-4">
+                <div className="rounded-lg border border-fg/10 bg-fg/5 px-3 py-2">
+                  <p className="truncate text-sm font-medium text-fg">
+                    {selectedAudioProvider.label}
+                  </p>
+                  <p className="mt-0.5 truncate text-[11px] text-fg/50">
+                    {AUDIO_PROVIDER_TYPE_LABEL[selectedAudioProvider.providerType]}
+                  </p>
+                </div>
+                {selectedAudioProvider.providerType === "kokoro" && (
+                  <MenuButton
+                    icon={LayoutDashboard}
+                    title="Open Kokoro Studio"
+                    description="Install models, manage voices, design blends"
+                    onClick={() => {
+                      const id = selectedAudioProvider.id;
+                      setSelectedAudioProvider(null);
+                      navigate(`/settings/voices/kokoro/${id}`);
+                    }}
+                    color="from-accent to-accent/80"
+                  />
+                )}
+                <MenuButton
+                  icon={Edit3}
+                  title="Edit"
+                  description="Modify provider settings"
+                  onClick={() => openAudioEditor(selectedAudioProvider)}
+                  color="from-info to-info/80"
+                />
+                {selectedAudioProvider.id !== "system-kokoro" && (
+                  <MenuButton
+                    icon={Trash2}
+                    title={isAudioDeleting ? "Deleting..." : "Delete"}
+                    description="Remove this provider"
+                    onClick={() => void handleDeleteAudioProvider(selectedAudioProvider.id)}
+                    disabled={isAudioDeleting}
+                    color="from-danger to-danger/80"
+                  />
+                )}
+              </div>
+            )}
+          </BottomMenu>
+
+          <AudioProviderEditor
+            isOpen={isAudioEditorOpen}
+            provider={editingAudioProvider}
+            onClose={closeAudioEditor}
+            onSave={handleSaveAudioProvider}
+          />
         </>
       )}
 

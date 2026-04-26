@@ -163,8 +163,14 @@ fn read_character(conn: &rusqlite::Connection, id: &str) -> Result<JsonValue, St
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     let mut scenes: Vec<JsonValue> = Vec::new();
     for row in scenes_rows {
-        let (scene_id, content, direction, background_image_path, created_at_s, selected_variant_id) =
-            row.map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        let (
+            scene_id,
+            content,
+            direction,
+            background_image_path,
+            created_at_s,
+            selected_variant_id,
+        ) = row.map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
         // variants
         let mut var_stmt = conn.prepare("SELECT id, content, direction, created_at FROM scene_variants WHERE scene_id = ? ORDER BY created_at ASC").map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
         let var_rows = var_stmt

@@ -2374,6 +2374,10 @@ export function EditCharacterPage() {
                               source: "provider",
                               providerId: provider.id,
                               voiceId: voice.voiceId,
+                              modelId:
+                                provider.providerType === "kokoro"
+                                  ? provider.kokoroVariant
+                                  : undefined,
                               voiceName: voice.name,
                             },
                           });
