@@ -12,6 +12,7 @@ import {
   History,
   Loader2,
   MessageSquareText,
+  Brain,
   Search,
   Sparkles,
   Square,
@@ -24,6 +25,7 @@ import { toast } from "../components/toast";
 import type { Character, Lorebook, LorebookEntry, StoredMessage } from "../../core/storage/schemas";
 import {
   createBlankLorebookEntry,
+  getSession,
   listCharacters,
   listLorebooks,
   listMessages,
@@ -51,6 +53,15 @@ type GeneratorContext =
     };
 
 type RoleFilter = "all" | "user" | "assistant";
+type SourceMode = "messages" | "memory" | "mixed";
+
+interface MemoryItem {
+  id: string;
+  text: string;
+  createdAt: number;
+  isCold: boolean;
+  isPinned: boolean;
+}
 
 interface DraftFormState {
   title: string;
@@ -177,6 +188,13 @@ export function LorebookEntryGeneratorFlowPage() {
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("all");
   const deferredMessageSearch = useDeferredValue(messageSearch);
 
+  const [sourceMode, setSourceMode] = useState<SourceMode>("messages");
+  const [sessionMemorySummary, setSessionMemorySummary] = useState("");
+  const [sessionMemories, setSessionMemories] = useState<MemoryItem[]>([]);
+  const [selectedMemoryIds, setSelectedMemoryIds] = useState<Set<string>>(new Set());
+  const [isMemoriesLoading, setIsMemoriesLoading] = useState(false);
+  const [includeMemorySummary, setIncludeMemorySummary] = useState(true);
+
   const [characterPickerOpen, setCharacterPickerOpen] = useState(false);
   const [sessionPickerOpen, setSessionPickerOpen] = useState(false);
   const [directionOpen, setDirectionOpen] = useState(false);
@@ -278,8 +296,37 @@ export function LorebookEntryGeneratorFlowPage() {
     setMessages([]);
     setSelectedMessageIds(new Set());
     setHasMoreMessages(false);
+    setSessionMemorySummary("");
+    setSessionMemories([]);
+    setSelectedMemoryIds(new Set());
     if (!selectedSessionId) return;
     void loadMessagesPage(true);
+    let cancelled = false;
+    setIsMemoriesLoading(true);
+    void (async () => {
+      try {
+        const session = await getSession(selectedSessionId);
+        if (cancelled || !session) return;
+        setSessionMemorySummary((session.memorySummary ?? "").trim());
+        const items: MemoryItem[] = (session.memoryEmbeddings ?? [])
+          .map((m) => ({
+            id: m.id,
+            text: m.text,
+            createdAt: m.createdAt,
+            isCold: m.isCold,
+            isPinned: m.isPinned,
+          }))
+          .sort((a, b) => b.createdAt - a.createdAt);
+        setSessionMemories(items);
+      } catch (error) {
+        console.error("Failed to load session memories:", error);
+      } finally {
+        if (!cancelled) setIsMemoriesLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSessionId]);
 
@@ -326,6 +373,41 @@ export function LorebookEntryGeneratorFlowPage() {
     });
   }, [deferredMessageSearch, messages, roleFilter]);
 
+  const filteredMemories = useMemo(() => {
+    const query = deferredMessageSearch.trim().toLowerCase();
+    if (!query) return sessionMemories;
+    return sessionMemories.filter((m) => m.text.toLowerCase().includes(query));
+  }, [sessionMemories, deferredMessageSearch]);
+
+  const selectedMemoryCount = selectedMemoryIds.size;
+  const selectedMemoryTokenEstimate = useMemo(() => {
+    if (selectedMemoryCount === 0) return 0;
+    let total = 0;
+    for (const m of sessionMemories) {
+      if (selectedMemoryIds.has(m.id)) total += estimateTokens(m.text);
+    }
+    return total;
+  }, [sessionMemories, selectedMemoryIds, selectedMemoryCount]);
+
+  const toggleMemorySelection = (id: string) => {
+    setSelectedMemoryIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAllFilteredMemories = () => {
+    setSelectedMemoryIds((prev) => {
+      const next = new Set(prev);
+      for (const m of filteredMemories) next.add(m.id);
+      return next;
+    });
+  };
+
+  const clearMemorySelection = () => setSelectedMemoryIds(new Set());
+
   const selectedCount = selectedMessageIds.size;
   const selectedSession = sessions.find((item) => item.id === selectedSessionId) ?? null;
   const selectedCharacter = characters.find((item) => item.id === selectedCharacterId) ?? null;
@@ -366,13 +448,33 @@ export function LorebookEntryGeneratorFlowPage() {
   const clearSelection = () => setSelectedMessageIds(new Set());
 
   const handleGenerate = async () => {
-    if (!context || !selectedSessionId || selectedMessageIds.size === 0) return;
+    if (!context || !selectedSessionId) return;
+    if (sourceMode === "messages" && selectedMessageIds.size === 0) return;
+    if (
+      sourceMode === "memory"
+      && selectedMemoryIds.size === 0
+      && !(sessionMemorySummary.trim() && includeMemorySummary)
+    )
+      return;
+    if (
+      sourceMode === "mixed"
+      && selectedMessageIds.size === 0
+      && selectedMemoryIds.size === 0
+      && !(sessionMemorySummary.trim() && includeMemorySummary)
+    )
+      return;
     try {
       setIsGenerating(true);
       setNoEntryReason(null);
+      const forceSourceLabel =
+        sourceMode === "memory"
+          ? "the dynamic memory context summary and the selected memories"
+          : sourceMode === "mixed"
+            ? "the selected messages, dynamic memory context summary, and selected memories"
+            : "the selected messages";
       const effectiveDirection = forceMode
         ? [
-            "[FORCE MODE] Always call write_lorebook_entry. Do not return no_entry. Ignore duplicate-avoidance and weak-canon rules; produce the best possible durable lorebook entry from the selected messages even if the facts are already covered or seem transient.",
+            `[FORCE MODE] Always call write_lorebook_entry. Do not return no_entry. Ignore duplicate-avoidance and weak-canon rules; produce the best possible durable lorebook entry from ${forceSourceLabel} even if the facts are already covered or seem transient.`,
             directionPrompt.trim(),
           ]
             .filter(Boolean)
@@ -381,7 +483,16 @@ export function LorebookEntryGeneratorFlowPage() {
       const result = await generateLorebookEntryDraft({
         lorebookId: context.lorebookId,
         sessionId: selectedSessionId,
-        messageIds: Array.from(selectedMessageIds),
+        source: sourceMode,
+        messageIds:
+          sourceMode === "messages" || sourceMode === "mixed"
+            ? Array.from(selectedMessageIds)
+            : [],
+        memoryIds:
+          sourceMode === "memory" || sourceMode === "mixed"
+            ? Array.from(selectedMemoryIds)
+            : [],
+        includeMemorySummary,
         directionPrompt: effectiveDirection,
         force: forceMode,
       });
@@ -441,7 +552,17 @@ export function LorebookEntryGeneratorFlowPage() {
     else backOrReplace(Routes.settings);
   };
 
-  const canGenerate = Boolean(selectedSessionId) && selectedCount > 0 && !isGenerating;
+  const canGenerate =
+    Boolean(selectedSessionId)
+    && !isGenerating
+    && (sourceMode === "messages"
+      ? selectedCount > 0
+      : sourceMode === "memory"
+        ? selectedMemoryCount > 0
+          || (sessionMemorySummary.trim().length > 0 && includeMemorySummary)
+        : selectedCount > 0
+          || selectedMemoryCount > 0
+          || (sessionMemorySummary.trim().length > 0 && includeMemorySummary));
 
   if (!context) {
     return (
@@ -468,7 +589,7 @@ export function LorebookEntryGeneratorFlowPage() {
         onBackOverride={handleBack}
       />
 
-      <div className="flex items-center gap-2 border-b border-fg/10 px-3 py-2">
+      <div className="flex flex-wrap items-center gap-2 border-b border-fg/10 px-3 py-2">
         <div className="relative shrink-0">
           <button
             type="button"
@@ -605,12 +726,18 @@ export function LorebookEntryGeneratorFlowPage() {
           </AnimatePresence>
         </div>
 
-        <div className="flex min-w-0 flex-1 items-center gap-1.5 rounded-lg border border-fg/10 bg-fg/[0.04] px-2 py-1.5 focus-within:border-fg/20">
+        <div className="order-3 flex min-w-0 basis-full items-center gap-1.5 rounded-lg border border-fg/10 bg-fg/[0.04] px-2 py-1.5 focus-within:border-fg/20 sm:order-none sm:basis-auto sm:flex-1">
           <Search className="h-3.5 w-3.5 shrink-0 text-fg/40" />
           <input
             value={messageSearch}
             onChange={(e) => setMessageSearch(e.target.value)}
-            placeholder="Search messages"
+            placeholder={
+              sourceMode === "memory"
+                ? "Search memories"
+                : sourceMode === "mixed"
+                  ? "Search messages"
+                  : "Search messages"
+            }
             disabled={!selectedSession}
             className="w-full bg-transparent text-[12px] text-fg outline-none placeholder:text-fg/35"
           />
@@ -625,7 +752,7 @@ export function LorebookEntryGeneratorFlowPage() {
           )}
         </div>
 
-        {selectedCount > 0 && (
+        {sourceMode === "messages" && selectedCount > 0 && (
           <div className="flex shrink-0 items-center gap-1.5 rounded-lg border border-accent/30 bg-accent/10 px-2 py-1">
             <span className="text-[11px] font-semibold text-accent">{selectedCount}</span>
             <span className="font-mono text-[10px] text-accent/65">~{selectedTokenEstimate}t</span>
@@ -640,91 +767,348 @@ export function LorebookEntryGeneratorFlowPage() {
             </button>
           </div>
         )}
+        {sourceMode === "memory" && selectedMemoryCount > 0 && (
+          <div className="flex shrink-0 items-center gap-1.5 rounded-lg border border-accent/30 bg-accent/10 px-2 py-1">
+            <span className="text-[11px] font-semibold text-accent">{selectedMemoryCount}</span>
+            <span className="font-mono text-[10px] text-accent/65">
+              ~{selectedMemoryTokenEstimate}t
+            </span>
+            <button
+              type="button"
+              onClick={clearMemorySelection}
+              className="rounded p-0.5 text-accent/60 transition hover:bg-accent/15 hover:text-accent"
+              title="Clear selection"
+              aria-label="Clear selection"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="flex items-center gap-2 border-b border-fg/10 px-3 py-1.5">
         <div className="flex items-center gap-0.5 rounded-md bg-fg/[0.04] p-0.5">
-          <FilterPill active={roleFilter === "all"} onClick={() => setRoleFilter("all")}>
-            All
+          <FilterPill
+            active={sourceMode === "messages"}
+            onClick={() => setSourceMode("messages")}
+          >
+            <span className="inline-flex items-center gap-1">
+              <MessageSquareText className="h-3 w-3" />
+              Messages
+            </span>
           </FilterPill>
-          <FilterPill active={roleFilter === "user"} onClick={() => setRoleFilter("user")}>
-            User
+          <FilterPill active={sourceMode === "memory"} onClick={() => setSourceMode("memory")}>
+            <span className="inline-flex items-center gap-1">
+              <Brain className="h-3 w-3" />
+              Memory
+            </span>
           </FilterPill>
-          <FilterPill active={roleFilter === "assistant"} onClick={() => setRoleFilter("assistant")}>
-            AI
+          <FilterPill active={sourceMode === "mixed"} onClick={() => setSourceMode("mixed")}>
+            <span className="inline-flex items-center gap-1">
+              <Sparkles className="h-3 w-3" />
+              Mixed
+            </span>
           </FilterPill>
         </div>
 
         <div className="hidden h-4 w-px bg-fg/10 sm:block" />
 
-        <div className="flex items-center gap-0.5">
-          <span className="mr-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-fg/35">
-            Last
-          </span>
-          {QUICK_RANGES.map((n) => (
-            <button
-              key={n}
-              type="button"
-              onClick={() => selectLastN(n)}
-              disabled={messages.length === 0}
-              className="rounded px-1.5 py-1 text-[11px] font-medium text-fg/60 transition hover:bg-fg/5 hover:text-fg disabled:cursor-not-allowed disabled:opacity-40"
-              title={`Select last ${n} messages`}
-            >
-              {n}
-            </button>
-          ))}
-        </div>
+        {sourceMode !== "memory" ? (
+          <>
+            <div className="flex items-center gap-0.5 rounded-md bg-fg/[0.04] p-0.5">
+              <FilterPill active={roleFilter === "all"} onClick={() => setRoleFilter("all")}>
+                All
+              </FilterPill>
+              <FilterPill active={roleFilter === "user"} onClick={() => setRoleFilter("user")}>
+                User
+              </FilterPill>
+              <FilterPill
+                active={roleFilter === "assistant"}
+                onClick={() => setRoleFilter("assistant")}
+              >
+                AI
+              </FilterPill>
+            </div>
 
-        <div className="ml-auto flex items-center gap-1">
-          <button
-            type="button"
-            onClick={selectAllFilteredMessages}
-            disabled={filteredMessages.length === 0}
-            className="rounded-md px-2 py-1 text-[11px] font-medium text-fg/60 transition hover:bg-fg/5 hover:text-fg disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            Select all
-          </button>
-          <span className="font-mono text-[10px] text-fg/35">
-            {filteredMessages.length}/{messages.length}
-          </span>
-        </div>
+            <div className="hidden h-4 w-px bg-fg/10 sm:block" />
+
+            <div className="hidden items-center gap-0.5 sm:flex">
+              <span className="mr-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-fg/35">
+                Last
+              </span>
+              {QUICK_RANGES.map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => selectLastN(n)}
+                  disabled={messages.length === 0}
+                  className="rounded px-1.5 py-1 text-[11px] font-medium text-fg/60 transition hover:bg-fg/5 hover:text-fg disabled:cursor-not-allowed disabled:opacity-40"
+                  title={`Select last ${n} messages`}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+
+            <div className="ml-auto flex items-center gap-1">
+              <button
+                type="button"
+                onClick={selectAllFilteredMessages}
+                disabled={filteredMessages.length === 0}
+                className="hidden rounded-md px-2 py-1 text-[11px] font-medium text-fg/60 transition hover:bg-fg/5 hover:text-fg disabled:cursor-not-allowed disabled:opacity-40 sm:block"
+              >
+                Select all
+              </button>
+              <span className="font-mono text-[10px] text-fg/35">
+                {filteredMessages.length}/{messages.length}
+              </span>
+            </div>
+          </>
+        ) : (
+          <div className="ml-auto flex items-center gap-1">
+            <button
+              type="button"
+              onClick={selectAllFilteredMemories}
+              disabled={filteredMemories.length === 0}
+              className="rounded-md px-2 py-1 text-[11px] font-medium text-fg/60 transition hover:bg-fg/5 hover:text-fg disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Select all
+            </button>
+            <span className="font-mono text-[10px] text-fg/35">
+              {filteredMemories.length}/{sessionMemories.length}
+            </span>
+          </div>
+        )}
       </div>
 
       <div className="scrollbar-thin flex-1 min-h-0 overflow-y-auto">
         {!selectedSession ? (
           <EmptyHint icon={<History className="h-4 w-4 text-fg/40" />}>
-            Select a session to load messages.
+            Select a session to load{" "}
+            {sourceMode === "memory"
+              ? "memories"
+              : sourceMode === "mixed"
+                ? "messages and memories"
+                : "messages"}
+            .
           </EmptyHint>
-        ) : isMessagesLoading ? (
+        ) : sourceMode === "mixed" ? (
+          <div className="flex flex-col">
+            <div className="border-b border-fg/10 px-3 py-2 space-y-2 bg-surface-el/20">
+              <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-fg/55">
+                <Brain className="h-3 w-3" />
+                Memory
+                {isMemoriesLoading && <Loader2 className="h-3 w-3 animate-spin text-fg/40" />}
+                <span className="ml-auto font-mono text-[10px] font-medium tracking-normal text-fg/35">
+                  {sessionMemories.length} entr{sessionMemories.length === 1 ? "y" : "ies"}
+                </span>
+              </div>
+              {sessionMemorySummary && (
+                <div
+                  className={`rounded-lg border px-3 py-2 transition ${
+                    includeMemorySummary
+                      ? "border-info/20 bg-info/5"
+                      : "border-fg/10 bg-fg/[0.03] opacity-60"
+                  }`}
+                >
+                  <div className="mb-1 flex items-center gap-2">
+                    <div
+                      className={`flex flex-1 items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.14em] ${
+                        includeMemorySummary ? "text-info/80" : "text-fg/45"
+                      }`}
+                    >
+                      <FileText className="h-3 w-3" />
+                      Context summary
+                      {!includeMemorySummary && (
+                        <span className="font-mono text-[9px] font-medium tracking-normal text-fg/40">
+                          (excluded)
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIncludeMemorySummary((v) => !v)}
+                      role="switch"
+                      aria-checked={includeMemorySummary}
+                      title={includeMemorySummary ? "Exclude summary" : "Include summary"}
+                      className={`relative inline-flex h-4 w-7 shrink-0 cursor-pointer items-center rounded-full border border-transparent transition ${
+                        includeMemorySummary ? "bg-info/70" : "bg-fg/15"
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-3 w-3 transform rounded-full bg-fg shadow transition ${
+                          includeMemorySummary ? "translate-x-3.5" : "translate-x-0.5"
+                        }`}
+                      />
+                    </button>
+                  </div>
+                  <div className="line-clamp-3 whitespace-pre-wrap break-words text-[12px] leading-[1.45] text-fg/75">
+                    {sessionMemorySummary}
+                  </div>
+                </div>
+              )}
+              {sessionMemories.length > 0 && (
+                <div className="rounded-lg border border-fg/10 bg-surface/40 max-h-72 overflow-y-auto scrollbar-thin">
+                  <div className="divide-y divide-fg/5">
+                    {sessionMemories.map((m) => (
+                      <MemoryRow
+                        key={m.id}
+                        memory={m}
+                        selected={selectedMemoryIds.has(m.id)}
+                        onToggle={() => toggleMemorySelection(m.id)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+              {!sessionMemorySummary && sessionMemories.length === 0 && !isMemoriesLoading && (
+                <div className="rounded-lg border border-dashed border-fg/15 px-3 py-2 text-[11px] text-fg/45">
+                  No dynamic memory yet for this session.
+                </div>
+              )}
+            </div>
+            <div className="flex items-center gap-1.5 px-3 pt-2 text-[10px] font-bold uppercase tracking-[0.14em] text-fg/55">
+              <MessageSquareText className="h-3 w-3" />
+              Messages
+            </div>
+            {isMessagesLoading ? (
+              <MessagesSkeleton />
+            ) : filteredMessages.length === 0 ? (
+              <EmptyHint icon={<Search className="h-4 w-4 text-fg/40" />}>
+                {messages.length === 0
+                  ? "Session has no messages."
+                  : "No messages match the filter."}
+              </EmptyHint>
+            ) : (
+              <div className="px-3 py-2">
+                {hasMoreMessages && (
+                  <button
+                    type="button"
+                    onClick={() => void loadMessagesPage(false)}
+                    disabled={isLoadingMoreMessages}
+                    className="mb-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-fg/15 px-3 py-1.5 text-[11px] font-medium text-fg/55 transition hover:border-fg/25 hover:text-fg disabled:opacity-60"
+                  >
+                    {isLoadingMoreMessages ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                    Load older messages
+                  </button>
+                )}
+                <div className="divide-y divide-fg/5">
+                  {filteredMessages.map((msg) => (
+                    <MessageRow
+                      key={msg.id}
+                      message={msg}
+                      selected={selectedMessageIds.has(msg.id)}
+                      onToggle={() => toggleMessageSelection(msg.id)}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : sourceMode === "messages" ? (
+          isMessagesLoading ? (
+            <MessagesSkeleton />
+          ) : filteredMessages.length === 0 ? (
+            <EmptyHint icon={<Search className="h-4 w-4 text-fg/40" />}>
+              {messages.length === 0 ? "Session has no messages." : "No messages match the filter."}
+            </EmptyHint>
+          ) : (
+            <div className="px-3 py-2">
+              {hasMoreMessages && (
+                <button
+                  type="button"
+                  onClick={() => void loadMessagesPage(false)}
+                  disabled={isLoadingMoreMessages}
+                  className="mb-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-fg/15 px-3 py-1.5 text-[11px] font-medium text-fg/55 transition hover:border-fg/25 hover:text-fg disabled:opacity-60"
+                >
+                  {isLoadingMoreMessages ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                  Load older messages
+                </button>
+              )}
+
+              <div className="divide-y divide-fg/5">
+                {filteredMessages.map((msg) => (
+                  <MessageRow
+                    key={msg.id}
+                    message={msg}
+                    selected={selectedMessageIds.has(msg.id)}
+                    onToggle={() => toggleMessageSelection(msg.id)}
+                  />
+                ))}
+              </div>
+            </div>
+          )
+        ) : isMemoriesLoading ? (
           <MessagesSkeleton />
-        ) : filteredMessages.length === 0 ? (
-          <EmptyHint icon={<Search className="h-4 w-4 text-fg/40" />}>
-            {messages.length === 0 ? "Session has no messages." : "No messages match the filter."}
+        ) : sessionMemories.length === 0 && !sessionMemorySummary ? (
+          <EmptyHint icon={<Brain className="h-4 w-4 text-fg/40" />}>
+            Session has no dynamic memory yet.
           </EmptyHint>
         ) : (
-          <div className="px-3 py-2">
-            {hasMoreMessages && (
-              <button
-                type="button"
-                onClick={() => void loadMessagesPage(false)}
-                disabled={isLoadingMoreMessages}
-                className="mb-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-fg/15 px-3 py-1.5 text-[11px] font-medium text-fg/55 transition hover:border-fg/25 hover:text-fg disabled:opacity-60"
+          <div className="px-3 py-2 space-y-2">
+            {sessionMemorySummary && (
+              <div
+                className={`rounded-lg border px-3 py-2 transition ${
+                  includeMemorySummary
+                    ? "border-info/20 bg-info/5"
+                    : "border-fg/10 bg-fg/[0.03] opacity-60"
+                }`}
               >
-                {isLoadingMoreMessages ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-                Load older messages
-              </button>
+                <div className="mb-1 flex items-center gap-2">
+                  <div
+                    className={`flex flex-1 items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.14em] ${
+                      includeMemorySummary ? "text-info/80" : "text-fg/45"
+                    }`}
+                  >
+                    <FileText className="h-3 w-3" />
+                    Context summary
+                    {!includeMemorySummary && (
+                      <span className="font-mono text-[9px] font-medium tracking-normal text-fg/40">
+                        (excluded)
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIncludeMemorySummary((v) => !v)}
+                    role="switch"
+                    aria-checked={includeMemorySummary}
+                    title={includeMemorySummary ? "Exclude summary" : "Include summary"}
+                    className={`relative inline-flex h-4 w-7 shrink-0 cursor-pointer items-center rounded-full border border-transparent transition ${
+                      includeMemorySummary ? "bg-info/70" : "bg-fg/15"
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-3 w-3 transform rounded-full bg-fg shadow transition ${
+                        includeMemorySummary ? "translate-x-3.5" : "translate-x-0.5"
+                      }`}
+                    />
+                  </button>
+                </div>
+                <div className="whitespace-pre-wrap break-words text-[12.5px] leading-[1.5] text-fg/80">
+                  {sessionMemorySummary}
+                </div>
+              </div>
             )}
 
-            <div className="divide-y divide-fg/5">
-              {filteredMessages.map((msg) => (
-                <MessageRow
-                  key={msg.id}
-                  message={msg}
-                  selected={selectedMessageIds.has(msg.id)}
-                  onToggle={() => toggleMessageSelection(msg.id)}
-                />
-              ))}
-            </div>
+            {filteredMemories.length === 0 ? (
+              <EmptyHint icon={<Search className="h-4 w-4 text-fg/40" />}>
+                {sessionMemories.length === 0
+                  ? "No memory entries — only the summary will be used."
+                  : "No memories match the filter."}
+              </EmptyHint>
+            ) : (
+              <div className="divide-y divide-fg/5">
+                {filteredMemories.map((m) => (
+                  <MemoryRow
+                    key={m.id}
+                    memory={m}
+                    selected={selectedMemoryIds.has(m.id)}
+                    onToggle={() => toggleMemorySelection(m.id)}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -777,9 +1161,31 @@ export function LorebookEntryGeneratorFlowPage() {
         </button>
 
         <div className="min-w-0 flex-1 truncate text-[11px] text-fg/50">
-          {selectedCount > 0
-            ? `${selectedCount} message${selectedCount === 1 ? "" : "s"} · ~${selectedTokenEstimate} tokens`
-            : "Select messages to generate"}
+          {sourceMode === "messages"
+            ? selectedCount > 0
+              ? `${selectedCount} message${selectedCount === 1 ? "" : "s"} · ~${selectedTokenEstimate} tokens`
+              : "Select messages to generate"
+            : sourceMode === "memory"
+              ? selectedMemoryCount > 0
+                ? `${selectedMemoryCount} memor${selectedMemoryCount === 1 ? "y" : "ies"}${
+                    sessionMemorySummary && includeMemorySummary ? " + summary" : ""
+                  } · ~${selectedMemoryTokenEstimate} tokens`
+                : sessionMemorySummary && includeMemorySummary
+                  ? "Summary only — select memories to add detail"
+                  : "Select memories to generate"
+              : (() => {
+                  const parts: string[] = [];
+                  if (selectedCount > 0)
+                    parts.push(`${selectedCount} msg${selectedCount === 1 ? "" : "s"}`);
+                  if (selectedMemoryCount > 0)
+                    parts.push(
+                      `${selectedMemoryCount} memor${selectedMemoryCount === 1 ? "y" : "ies"}`,
+                    );
+                  if (sessionMemorySummary && includeMemorySummary) parts.push("summary");
+                  if (parts.length === 0) return "Select messages, memories, or include summary";
+                  const tokens = selectedTokenEstimate + selectedMemoryTokenEstimate;
+                  return `${parts.join(" + ")} · ~${tokens} tokens`;
+                })()}
         </div>
 
         <button
@@ -1010,6 +1416,93 @@ function MessageRow({
           <ChevronDown
             className={`h-3.5 w-3.5 transition ${expanded ? "rotate-180" : ""}`}
           />
+        </button>
+      )}
+    </div>
+  );
+}
+
+function MemoryRow({
+  memory,
+  selected,
+  onToggle,
+}: {
+  memory: MemoryItem;
+  selected: boolean;
+  onToggle: () => void;
+}) {
+  const text = memory.text.trim();
+  const [expanded, setExpanded] = useState(false);
+  const textRef = useRef<HTMLDivElement>(null);
+  const [isOverflowing, setIsOverflowing] = useState(false);
+
+  useEffect(() => {
+    const el = textRef.current;
+    if (!el) return;
+    if (expanded) {
+      setIsOverflowing(true);
+      return;
+    }
+    setIsOverflowing(el.scrollHeight - el.clientHeight > 1);
+  }, [text, expanded]);
+
+  return (
+    <div
+      className={`flex items-start gap-2.5 py-2.5 pl-1 pr-2 transition ${
+        selected ? "bg-accent/5" : "hover:bg-fg/[0.03]"
+      }`}
+    >
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-label={selected ? "Deselect memory" : "Select memory"}
+        className={`mt-0.5 shrink-0 rounded p-0.5 transition ${
+          selected ? "text-accent" : "text-fg/30 hover:text-fg/60"
+        }`}
+      >
+        {selected ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
+      </button>
+      <button type="button" onClick={onToggle} className="min-w-0 flex-1 text-left">
+        <div className="mb-0.5 flex items-center gap-2">
+          <Brain className="h-3 w-3 text-info/70" />
+          <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-info/85">
+            MEMORY
+          </span>
+          {memory.isPinned && (
+            <span className="rounded-full border border-warning/30 bg-warning/10 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wider text-warning/85">
+              pinned
+            </span>
+          )}
+          {memory.isCold && (
+            <span className="rounded-full border border-fg/15 bg-fg/5 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wider text-fg/55">
+              cold
+            </span>
+          )}
+          <span className="ml-auto font-mono text-[10px] text-fg/30">
+            {formatRelative(memory.createdAt)}
+          </span>
+        </div>
+        <div
+          ref={textRef}
+          className={`whitespace-pre-wrap break-words text-[12.5px] leading-[1.5] text-fg/80 ${
+            expanded ? "" : "line-clamp-3"
+          }`}
+        >
+          {text || <span className="italic text-fg/35">Empty memory</span>}
+        </div>
+      </button>
+      {isOverflowing && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setExpanded((v) => !v);
+          }}
+          className="mt-0.5 shrink-0 rounded p-1 text-fg/40 transition hover:bg-fg/5 hover:text-fg"
+          aria-label={expanded ? "Collapse memory" : "Expand memory"}
+          title={expanded ? "Show less" : "Show full memory"}
+        >
+          <ChevronDown className={`h-3.5 w-3.5 transition ${expanded ? "rotate-180" : ""}`} />
         </button>
       )}
     </div>

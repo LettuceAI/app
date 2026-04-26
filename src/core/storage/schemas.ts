@@ -122,6 +122,7 @@ export type PromptEntryCondition =
   | { type: "keywordAll"; values: string[] }
   | { type: "keywordNone"; values: string[] }
   | { type: "dynamicMemoryEnabled"; value: boolean }
+  | { type: "infoSource"; value: "messages" | "memory" | "mixed" }
   | { type: "hasMemorySummary"; value: boolean }
   | { type: "hasKeyMemories"; value: boolean }
   | { type: "hasLorebookContent"; value: boolean }
@@ -156,6 +157,10 @@ export const PromptEntryConditionSchema: z.ZodType<PromptEntryCondition> = z.laz
     z.object({ type: z.literal("keywordAll"), values: z.array(z.string().trim().min(1)).min(1) }),
     z.object({ type: z.literal("keywordNone"), values: z.array(z.string().trim().min(1)).min(1) }),
     z.object({ type: z.literal("dynamicMemoryEnabled"), value: z.boolean() }),
+    z.object({
+      type: z.literal("infoSource"),
+      value: z.enum(["messages", "memory", "mixed"]),
+    }),
     z.object({ type: z.literal("hasMemorySummary"), value: z.boolean() }),
     z.object({ type: z.literal("hasKeyMemories"), value: z.boolean() }),
     z.object({ type: z.literal("hasLorebookContent"), value: z.boolean() }),

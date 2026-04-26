@@ -1,9 +1,12 @@
 use crate::chat_manager::prompting::lorebook_matcher::keyword_matches;
-use crate::chat_manager::types::{PromptEntryChatMode, PromptEntryCondition, SystemPromptEntry};
+use crate::chat_manager::types::{
+    PromptEntryChatMode, PromptEntryCondition, PromptEntryInfoSource, SystemPromptEntry,
+};
 
 #[derive(Clone, Debug)]
 pub(crate) struct PromptEntryConditionContext<'a> {
     pub(crate) chat_mode: PromptEntryChatMode,
+    pub(crate) info_source: PromptEntryInfoSource,
     pub(crate) scene_generation_enabled: bool,
     pub(crate) avatar_generation_enabled: bool,
     pub(crate) has_scene: bool,
@@ -52,6 +55,7 @@ pub(crate) fn matches_condition(
 ) -> bool {
     match condition {
         PromptEntryCondition::ChatMode { value } => value == &context.chat_mode,
+        PromptEntryCondition::InfoSource { value } => *value == context.info_source,
         PromptEntryCondition::SceneGenerationEnabled { value } => {
             context.scene_generation_enabled == *value
         }
@@ -175,6 +179,7 @@ mod tests {
         let output_scopes = Box::leak(Box::new(vec!["text".to_string()]));
         PromptEntryConditionContext {
             chat_mode: PromptEntryChatMode::Group,
+            info_source: PromptEntryInfoSource::Messages,
             scene_generation_enabled: true,
             avatar_generation_enabled: true,
             has_scene: true,

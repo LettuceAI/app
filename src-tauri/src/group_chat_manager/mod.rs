@@ -61,6 +61,7 @@ use crate::chat_manager::tooling::{
 };
 use crate::chat_manager::types::{
     Character, DynamicMemorySettings, MemoryRetrievalStrategy, Model, Persona, PromptEntryChatMode,
+    PromptEntryInfoSource,
     PromptEntryPosition, PromptEntryRole, ProviderCredential, Settings, SystemPromptEntry,
 };
 use crate::embedding;
@@ -5231,6 +5232,7 @@ fn build_group_system_prompt(
     let has_scene_direction = is_roleplay && !scene_direction.trim().is_empty();
     let condition_context = PromptEntryConditionContext {
         chat_mode: PromptEntryChatMode::Group,
+        info_source: PromptEntryInfoSource::Messages,
         scene_generation_enabled: group_scene_generation_enabled(settings),
         avatar_generation_enabled: group_avatar_generation_enabled(settings),
         has_scene,

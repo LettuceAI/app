@@ -285,6 +285,8 @@ fn render_lorebook_entry_prompt_content(
     existing_entries: &str,
     direction_prompt: &str,
     selected_messages: &str,
+    memory_summary: &str,
+    selected_memories: &str,
 ) -> String {
     let rendered = crate::chat_manager::prompt_engine::render_with_context(
         app, content, character, persona, session, settings,
@@ -294,7 +296,10 @@ fn render_lorebook_entry_prompt_content(
     let rendered = replace_custom_placeholder(&rendered, "{{session_title}}", &session.title);
     let rendered = replace_custom_placeholder(&rendered, "{{existing_entries}}", existing_entries);
     let rendered = replace_custom_placeholder(&rendered, "{{direction_prompt}}", direction_prompt);
-    replace_custom_placeholder(&rendered, "{{selected_messages}}", selected_messages)
+    let rendered =
+        replace_custom_placeholder(&rendered, "{{selected_messages}}", selected_messages);
+    let rendered = replace_custom_placeholder(&rendered, "{{memory_summary}}", memory_summary);
+    replace_custom_placeholder(&rendered, "{{selected_memories}}", selected_memories)
 }
 
 fn render_lorebook_entry_prompt_entries(
@@ -308,12 +313,22 @@ fn render_lorebook_entry_prompt_entries(
     existing_entries: &str,
     direction_prompt: &str,
     selected_messages: &str,
+    memory_summary: &str,
+    selected_memories: &str,
+    info_source: crate::chat_manager::types::PromptEntryInfoSource,
 ) -> Vec<SystemPromptEntry> {
     let (template_entries, should_condense) =
         load_lorebook_entry_prompt_entries(app, selected_prompt_template_id(settings));
-    let recent_text = [direction_prompt, selected_messages].join("\n");
+    let recent_text = [
+        direction_prompt,
+        selected_messages,
+        memory_summary,
+        selected_memories,
+    ]
+    .join("\n");
     let condition_context = PromptEntryConditionContext {
         chat_mode: PromptEntryChatMode::Direct,
+        info_source,
         scene_generation_enabled: false,
         avatar_generation_enabled: false,
         has_scene: session.selected_scene_id.is_some(),
@@ -323,12 +338,9 @@ fn render_lorebook_entry_prompt_entries(
         participant_count: 2,
         recent_text: &recent_text,
         dynamic_memory_enabled: false,
-        has_memory_summary: session
-            .memory_summary
-            .as_deref()
-            .map(|value| !value.trim().is_empty())
-            .unwrap_or(false),
-        has_key_memories: !session.memories.is_empty() || !session.memory_embeddings.is_empty(),
+        has_memory_summary: !memory_summary.trim().is_empty() && memory_summary.trim() != "(none)",
+        has_key_memories: !selected_memories.trim().is_empty()
+            && selected_memories.trim() != "(none)",
         has_lorebook_content: !existing_entries.trim().is_empty(),
         does_author_note_exists: session
             .author_note
@@ -370,6 +382,8 @@ fn render_lorebook_entry_prompt_entries(
             existing_entries,
             direction_prompt,
             selected_messages,
+            memory_summary,
+            selected_memories,
         );
         if rendered.trim().is_empty() && entry.prompt_entry_payload.is_none() {
             continue;
@@ -406,6 +420,7 @@ fn render_lorebook_keyword_prompt_entries(
     .join("\n");
     let condition_context = PromptEntryConditionContext {
         chat_mode: PromptEntryChatMode::Direct,
+        info_source: crate::chat_manager::types::PromptEntryInfoSource::Messages,
         scene_generation_enabled: false,
         avatar_generation_enabled: false,
         has_scene: false,
@@ -541,15 +556,38 @@ fn prompt_entries_to_messages_with_instruction(
     messages
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LorebookEntrySource {
+    Messages,
+    Memory,
+    Mixed,
+}
+
 fn prompt_entries_to_messages(
     provider_cred: &ProviderCredential,
     entries: &[SystemPromptEntry],
     force: bool,
+    source: LorebookEntrySource,
 ) -> Vec<Value> {
-    let final_instruction = if force {
-        "Analyze the selected transcript and return exactly one result now. You MUST call write_lorebook_entry. The no_entry option is disabled — produce the best possible durable lorebook entry even if facts seem weak or already covered."
-    } else {
-        "Analyze the selected transcript and return exactly one result now. Use the write_lorebook_entry tool when there is a durable lorebook entry to create. Use no_entry when there is not."
+    let final_instruction = match (source, force) {
+        (LorebookEntrySource::Messages, false) => {
+            "Analyze the selected transcript and return exactly one result now. Use the write_lorebook_entry tool when there is a durable lorebook entry to create. Use no_entry when there is not."
+        }
+        (LorebookEntrySource::Messages, true) => {
+            "Analyze the selected transcript and return exactly one result now. You MUST call write_lorebook_entry. The no_entry option is disabled — produce the best possible durable lorebook entry even if facts seem weak or already covered."
+        }
+        (LorebookEntrySource::Memory, false) => {
+            "Analyze the dynamic memory context summary and the selected memories, then return exactly one result now. Use the write_lorebook_entry tool when there is a durable lorebook entry to create. Use no_entry when there is not."
+        }
+        (LorebookEntrySource::Memory, true) => {
+            "Analyze the dynamic memory context summary and the selected memories, then return exactly one result now. You MUST call write_lorebook_entry. The no_entry option is disabled — produce the best possible durable lorebook entry even if the memories seem weak or already covered."
+        }
+        (LorebookEntrySource::Mixed, false) => {
+            "Analyze every provided input section that is not marked (none) — selected messages, dynamic memory context summary, and selected memories — and return exactly one result now. Use the write_lorebook_entry tool when there is a durable lorebook entry to create. Use no_entry when there is not."
+        }
+        (LorebookEntrySource::Mixed, true) => {
+            "Analyze every provided input section that is not marked (none) — selected messages, dynamic memory context summary, and selected memories — and return exactly one result now. You MUST call write_lorebook_entry. The no_entry option is disabled — produce the best possible durable lorebook entry even if facts seem weak or already covered."
+        }
     };
     prompt_entries_to_messages_with_instruction(provider_cred, entries, final_instruction)
 }
@@ -587,6 +625,43 @@ fn format_existing_entries(entries: &[crate::storage_manager::lorebook::Lorebook
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+fn format_selected_memories(
+    memory_ids: &[String],
+    embeddings: &[crate::chat_manager::types::MemoryEmbedding],
+    legacy: &[String],
+) -> String {
+    if memory_ids.is_empty() {
+        return "(none)".to_string();
+    }
+    let id_set: HashSet<&str> = memory_ids.iter().map(String::as_str).collect();
+    let mut lines: Vec<String> = Vec::new();
+    let mut index = 1usize;
+    for embedding in embeddings {
+        if id_set.contains(embedding.id.as_str()) {
+            let trimmed = embedding.text.trim();
+            if !trimmed.is_empty() {
+                lines.push(format!("{}. {}", index, trimmed));
+                index += 1;
+            }
+        }
+    }
+    for (legacy_index, text) in legacy.iter().enumerate() {
+        let synthetic_id = format!("legacy:{}", legacy_index);
+        if id_set.contains(synthetic_id.as_str()) {
+            let trimmed = text.trim();
+            if !trimmed.is_empty() {
+                lines.push(format!("{}. {}", index, trimmed));
+                index += 1;
+            }
+        }
+    }
+    if lines.is_empty() {
+        "(none)".to_string()
+    } else {
+        lines.join("\n")
+    }
 }
 
 fn format_selected_messages(messages: &[StoredMessage]) -> String {
@@ -1492,9 +1567,13 @@ pub async fn chat_generate_lorebook_entry_draft(
         lorebook_id,
         session_id,
         message_ids,
+        memory_ids,
+        source,
+        include_memory_summary,
         direction_prompt,
         force,
     } = args;
+    let include_memory_summary = include_memory_summary.unwrap_or(true);
 
     if lorebook_id.trim().is_empty() {
         return Err("lorebookId cannot be empty".to_string());
@@ -1502,7 +1581,23 @@ pub async fn chat_generate_lorebook_entry_draft(
     if session_id.trim().is_empty() {
         return Err("sessionId cannot be empty".to_string());
     }
-    if message_ids.is_empty() {
+
+    let source_mode = match source.as_deref().map(str::trim).unwrap_or("messages") {
+        "memory" | "memories" | "dynamic_memory" => LorebookEntrySource::Memory,
+        "mixed" | "both" | "all" => LorebookEntrySource::Mixed,
+        _ => LorebookEntrySource::Messages,
+    };
+
+    let messages_enabled = matches!(
+        source_mode,
+        LorebookEntrySource::Messages | LorebookEntrySource::Mixed
+    );
+    let memory_enabled = matches!(
+        source_mode,
+        LorebookEntrySource::Memory | LorebookEntrySource::Mixed
+    );
+
+    if source_mode == LorebookEntrySource::Messages && message_ids.is_empty() {
         return Err("At least one message must be selected".to_string());
     }
 
@@ -1510,11 +1605,52 @@ pub async fn chat_generate_lorebook_entry_draft(
     let settings = &context.settings;
     let mut session = session_get_meta_internal(&app, &session_id)?
         .ok_or_else(|| "Session not found".to_string())?;
-    let selected_messages = load_selected_messages(&app, &session_id, &message_ids)?;
-    if selected_messages.is_empty() {
-        return Err("No selected messages were found for this session".to_string());
+    let selected_messages = if messages_enabled && !message_ids.is_empty() {
+        let loaded = load_selected_messages(&app, &session_id, &message_ids)?;
+        if loaded.is_empty() && source_mode == LorebookEntrySource::Messages {
+            return Err("No selected messages were found for this session".to_string());
+        }
+        session.messages = loaded.clone();
+        loaded
+    } else {
+        session.messages = Vec::new();
+        Vec::new()
+    };
+
+    let memory_summary_text = if memory_enabled && include_memory_summary {
+        session
+            .memory_summary
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or("(none)")
+            .to_string()
+    } else {
+        "(none)".to_string()
+    };
+    let selected_memories_text = if memory_enabled {
+        format_selected_memories(&memory_ids, &session.memory_embeddings, &session.memories)
+    } else {
+        "(none)".to_string()
+    };
+
+    if source_mode == LorebookEntrySource::Memory
+        && selected_memories_text == "(none)"
+        && memory_summary_text == "(none)"
+    {
+        return Err(
+            "Select at least one memory or ensure a context summary is available".to_string(),
+        );
     }
-    session.messages = selected_messages.clone();
+    if source_mode == LorebookEntrySource::Mixed
+        && selected_messages.is_empty()
+        && selected_memories_text == "(none)"
+        && memory_summary_text == "(none)"
+    {
+        return Err(
+            "Select at least one message or memory, or include the context summary".to_string(),
+        );
+    }
 
     let character = context.find_character(&session.character_id)?;
     let effective_persona_id = if session.persona_disabled {
@@ -1534,7 +1670,11 @@ pub async fn chat_generate_lorebook_entry_draft(
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .unwrap_or("(none)");
-    let selected_messages_text = format_selected_messages(&selected_messages);
+    let selected_messages_text = if !selected_messages.is_empty() {
+        format_selected_messages(&selected_messages)
+    } else {
+        "(none)".to_string()
+    };
     let existing_entries_text = format_existing_entries(&existing_entries);
 
     let (model, credential) = resolve_lorebook_entry_writer_target(
@@ -1546,6 +1686,11 @@ pub async fn chat_generate_lorebook_entry_draft(
     )?;
     let api_key = require_api_key(&app, credential, "lorebook_entry_generator")?;
 
+    let info_source = match source_mode {
+        LorebookEntrySource::Messages => crate::chat_manager::types::PromptEntryInfoSource::Messages,
+        LorebookEntrySource::Memory => crate::chat_manager::types::PromptEntryInfoSource::Memory,
+        LorebookEntrySource::Mixed => crate::chat_manager::types::PromptEntryInfoSource::Mixed,
+    };
     let prompt_entries = render_lorebook_entry_prompt_entries(
         &app,
         settings,
@@ -1557,6 +1702,9 @@ pub async fn chat_generate_lorebook_entry_draft(
         &existing_entries_text,
         direction_prompt_text,
         &selected_messages_text,
+        &memory_summary_text,
+        &selected_memories_text,
+        info_source,
     );
     if prompt_entries.is_empty() {
         return Err(
@@ -1564,7 +1712,8 @@ pub async fn chat_generate_lorebook_entry_draft(
         );
     }
 
-    let messages_for_api = prompt_entries_to_messages(credential, &prompt_entries, force);
+    let messages_for_api =
+        prompt_entries_to_messages(credential, &prompt_entries, force, source_mode);
     let tool_config = build_lorebook_entry_tool_config(force);
     let (request_settings, extra_body_fields) = prepare_default_sampling_request(
         &credential.provider_id,

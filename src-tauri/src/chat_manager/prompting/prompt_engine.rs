@@ -12,6 +12,7 @@ use crate::chat_manager::execution::RequestSettings;
 use crate::chat_manager::memory::manual::{has_manual_memories, render_manual_memory_lines};
 use crate::chat_manager::types::{
     Character, Model, Persona, PromptEntryChatMode, PromptEntryCondition, PromptEntryImageSlot,
+    PromptEntryInfoSource,
     PromptEntryPayload, PromptEntryPosition, PromptEntryRole, Session, Settings, SystemPromptEntry,
 };
 use crate::storage_manager::db::open_db;
@@ -751,10 +752,10 @@ pub fn default_lorebook_entry_writer_entries() -> Vec<SystemPromptEntry> {
             prompt_entry_payload: None,
         },
         SystemPromptEntry {
-            id: "lorebook_entry_inputs".to_string(),
+            id: "lorebook_entry_inputs_shared".to_string(),
             name: "Inputs".to_string(),
             role: PromptEntryRole::System,
-            content: "# Lorebook Context\nLorebook: {{lorebook_name}}\nCharacter: {{character_name}}\nSession: {{session_title}}\n\n# Existing Lorebook Entries\n{{existing_entries}}\n\n# Optional Direction\n{{direction_prompt}}\n\n# Selected Messages\n{{selected_messages}}".to_string(),
+            content: "# Lorebook Context\nLorebook: {{lorebook_name}}\nCharacter: {{character_name}}\nSession: {{session_title}}\n\n# Existing Lorebook Entries\n{{existing_entries}}\n\n# Optional Direction\n{{direction_prompt}}".to_string(),
             enabled: true,
             injection_position: PromptEntryPosition::Relative,
             injection_depth: 0,
@@ -762,6 +763,54 @@ pub fn default_lorebook_entry_writer_entries() -> Vec<SystemPromptEntry> {
             interval_turns: None,
             system_prompt: true,
             conditions: None,
+            prompt_entry_payload: None,
+        },
+        SystemPromptEntry {
+            id: "lorebook_entry_inputs_messages".to_string(),
+            name: "Inputs (Messages)".to_string(),
+            role: PromptEntryRole::System,
+            content: "# Selected Messages\n{{selected_messages}}".to_string(),
+            enabled: true,
+            injection_position: PromptEntryPosition::Relative,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: true,
+            conditions: Some(PromptEntryCondition::InfoSource {
+                value: crate::chat_manager::types::PromptEntryInfoSource::Messages,
+            }),
+            prompt_entry_payload: None,
+        },
+        SystemPromptEntry {
+            id: "lorebook_entry_inputs_memory".to_string(),
+            name: "Inputs (Memory)".to_string(),
+            role: PromptEntryRole::System,
+            content: "# Dynamic Memory Context Summary\n{{memory_summary}}\n\n# Selected Memories\n{{selected_memories}}".to_string(),
+            enabled: true,
+            injection_position: PromptEntryPosition::Relative,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: true,
+            conditions: Some(PromptEntryCondition::InfoSource {
+                value: crate::chat_manager::types::PromptEntryInfoSource::Memory,
+            }),
+            prompt_entry_payload: None,
+        },
+        SystemPromptEntry {
+            id: "lorebook_entry_inputs_mixed".to_string(),
+            name: "Inputs (Mixed)".to_string(),
+            role: PromptEntryRole::System,
+            content: "# Selected Messages\n{{selected_messages}}\n\n# Dynamic Memory Context Summary\n{{memory_summary}}\n\n# Selected Memories\n{{selected_memories}}".to_string(),
+            enabled: true,
+            injection_position: PromptEntryPosition::Relative,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: true,
+            conditions: Some(PromptEntryCondition::InfoSource {
+                value: crate::chat_manager::types::PromptEntryInfoSource::Mixed,
+            }),
             prompt_entry_payload: None,
         },
         SystemPromptEntry {
@@ -2557,6 +2606,7 @@ pub fn build_system_prompt_entries(
         .unwrap_or(true);
     let condition_context = PromptEntryConditionContext {
         chat_mode: PromptEntryChatMode::Direct,
+        info_source: PromptEntryInfoSource::Messages,
         scene_generation_enabled,
         avatar_generation_enabled,
         has_scene: has_scene || has_scene_message,

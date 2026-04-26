@@ -236,7 +236,10 @@ export async function generateScenePromptForMessage(params: {
 export async function generateLorebookEntryDraft(params: {
   lorebookId: string;
   sessionId: string;
-  messageIds: string[];
+  messageIds?: string[];
+  memoryIds?: string[];
+  source?: "messages" | "memory" | "mixed";
+  includeMemorySummary?: boolean;
   directionPrompt?: string | null;
   force?: boolean;
 }): Promise<LorebookEntryDraftResult> {
@@ -244,7 +247,10 @@ export async function generateLorebookEntryDraft(params: {
     args: {
       lorebookId: params.lorebookId,
       sessionId: params.sessionId,
-      messageIds: params.messageIds,
+      messageIds: params.messageIds ?? [],
+      memoryIds: params.memoryIds ?? [],
+      source: params.source ?? "messages",
+      includeMemorySummary: params.includeMemorySummary ?? true,
       directionPrompt: params.directionPrompt ?? null,
       force: params.force ?? false,
     },

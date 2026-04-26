@@ -22,6 +22,7 @@ use crate::chat_manager::turn_builder::{
 use crate::chat_manager::types::{
     Character, ChatGenerateDesignReferenceDescriptionArgs, ChatGenerateSceneImageArgs,
     ChatGenerateScenePromptArgs, ImageAttachment, Model, Persona, PromptEntryChatMode,
+    PromptEntryInfoSource,
     PromptEntryImageSlot, PromptEntryPayload, PromptEntryPosition, ProviderCredential, Session,
     Settings, StoredMessage, SystemPromptEntry,
 };
@@ -1006,6 +1007,7 @@ fn render_design_reference_prompt_entries(
     .join("\n");
     let condition_context = PromptEntryConditionContext {
         chat_mode: PromptEntryChatMode::Direct,
+        info_source: PromptEntryInfoSource::Messages,
         scene_generation_enabled: scene_generation_enabled(settings),
         avatar_generation_enabled: avatar_generation_enabled(settings),
         has_scene: false,
@@ -1228,6 +1230,7 @@ fn render_scene_generation_prompt_entries(
     };
     let condition_context = PromptEntryConditionContext {
         chat_mode: PromptEntryChatMode::Direct,
+        info_source: PromptEntryInfoSource::Messages,
         scene_generation_enabled: scene_generation_enabled(settings),
         avatar_generation_enabled: avatar_generation_enabled(settings),
         has_scene,

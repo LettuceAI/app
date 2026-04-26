@@ -237,7 +237,17 @@ fn lorebook_entry_writer_variables() -> Vec<PromptVariableDefinition> {
         variable(
             "{{selected_messages}}",
             "Selected Messages",
-            "Chronological transcript of the selected messages.",
+            "Chronological transcript of the selected messages (messages source mode).",
+        ),
+        variable(
+            "{{memory_summary}}",
+            "Memory Summary",
+            "Dynamic memory context summary for the session (memory source mode).",
+        ),
+        variable(
+            "{{selected_memories}}",
+            "Selected Memories",
+            "Selected memory entries from dynamic memory (memory source mode).",
         ),
         variable(
             "{{direction_prompt}}",
@@ -574,6 +584,8 @@ pub fn required_variables_for_prompt_type(prompt_type: PromptTemplateType) -> Ve
         }
         PromptTemplateType::LorebookEntryWriter => vec![
             "{{selected_messages}}".to_string(),
+            "{{memory_summary}}".to_string(),
+            "{{selected_memories}}".to_string(),
             "{{direction_prompt}}".to_string(),
         ],
         PromptTemplateType::LorebookKeywordGenerator => vec![

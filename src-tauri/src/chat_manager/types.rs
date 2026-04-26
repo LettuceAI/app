@@ -73,11 +73,22 @@ pub enum PromptEntryChatMode {
     Group,
 }
 
+#[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum PromptEntryInfoSource {
+    Messages,
+    Memory,
+    Mixed,
+}
+
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum PromptEntryCondition {
     ChatMode {
         value: PromptEntryChatMode,
+    },
+    InfoSource {
+        value: PromptEntryInfoSource,
     },
     SceneGenerationEnabled {
         value: bool,
@@ -1145,6 +1156,12 @@ pub struct ChatGenerateLorebookEntryDraftArgs {
     pub session_id: String,
     #[serde(default, alias = "messageIds")]
     pub message_ids: Vec<String>,
+    #[serde(default, alias = "memoryIds")]
+    pub memory_ids: Vec<String>,
+    #[serde(default, alias = "source")]
+    pub source: Option<String>,
+    #[serde(default, alias = "includeMemorySummary")]
+    pub include_memory_summary: Option<bool>,
     #[serde(default, alias = "directionPrompt")]
     pub direction_prompt: Option<String>,
     #[serde(default, alias = "force")]

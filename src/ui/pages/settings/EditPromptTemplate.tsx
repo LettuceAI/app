@@ -260,10 +260,11 @@ type ConditionRowGroup = {
 const SIMPLE_CONDITION_OPTIONS: Array<{
   value: SimplePromptEntryConditionType;
   label: string;
-  kind: "boolean" | "number" | "list" | "chatMode";
+  kind: "boolean" | "number" | "list" | "chatMode" | "infoSource";
   placeholder?: string;
 }> = [
   { value: "chatMode", label: "Chat mode", kind: "chatMode" },
+  { value: "infoSource", label: "Info source", kind: "infoSource" },
   { value: "sceneGenerationEnabled", label: "Scene generation enabled", kind: "boolean" },
   { value: "avatarGenerationEnabled", label: "Avatar generation enabled", kind: "boolean" },
   { value: "hasScene", label: "Has scene", kind: "boolean" },
@@ -336,6 +337,8 @@ function createDefaultCondition(
   switch (type) {
     case "chatMode":
       return { type, value: "direct" };
+    case "infoSource":
+      return { type, value: "messages" };
     case "messageCountAtLeast":
       return { type, value: 1 };
     case "participantCountAtLeast":
@@ -496,6 +499,8 @@ function describeSimpleCondition(condition: SimplePromptEntryCondition): string 
   switch (condition.type) {
     case "chatMode":
       return `chat is ${condition.value}`;
+    case "infoSource":
+      return `info source is ${condition.value}`;
     case "sceneGenerationEnabled":
       return `scene generation is ${condition.value ? "on" : "off"}`;
     case "avatarGenerationEnabled":
@@ -673,6 +678,7 @@ function getScalarConditionBucket(
 ): { type: SimplePromptEntryConditionType; value: string; label: string } | null {
   switch (condition.type) {
     case "chatMode":
+    case "infoSource":
       return {
         type: condition.type,
         value: condition.value,
@@ -930,6 +936,21 @@ function ConditionRuleRow({
           >
             <option value="direct">Direct</option>
             <option value="group">Group</option>
+          </select>
+        ) : meta.kind === "infoSource" ? (
+          <select
+            value={condition.type === "infoSource" ? condition.value : "messages"}
+            onChange={(event) =>
+              onChange({
+                type: "infoSource",
+                value: event.target.value as "messages" | "memory" | "mixed",
+              })
+            }
+            className={controlClasses}
+          >
+            <option value="messages">Messages</option>
+            <option value="memory">Memory</option>
+            <option value="mixed">Mixed</option>
           </select>
         ) : meta.kind === "boolean" ? (
           <div className="flex w-full gap-0.5 rounded border border-fg/15 bg-surface-el/50 p-0.5">
