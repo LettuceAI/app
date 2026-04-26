@@ -82,6 +82,7 @@ import {
   APP_HELP_ME_REPLY_TEMPLATE_ID,
   APP_HELP_ME_REPLY_CONVERSATIONAL_TEMPLATE_ID,
   APP_LOREBOOK_ENTRY_WRITER_TEMPLATE_ID,
+  LEGACY_APP_LOREBOOK_ENTRY_GENERATOR_TEMPLATE_ID,
   APP_LOREBOOK_KEYWORD_GENERATOR_TEMPLATE_ID,
   APP_GROUP_CHAT_TEMPLATE_ID,
   APP_GROUP_CHAT_ROLEPLAY_TEMPLATE_ID,
@@ -2174,6 +2175,8 @@ function getPromptTypeName(type: PromptType): string {
       return "Undefined";
     case "directChat":
       return "Direct Chat";
+    case "companionChat":
+      return "Companion Chat";
     case "groupChatRoleplay":
       return "Group Chat (Roleplay)";
     case "groupChatConversational":
@@ -2763,6 +2766,8 @@ export function EditPromptTemplate() {
       } else if (id === APP_HELP_ME_REPLY_CONVERSATIONAL_TEMPLATE_ID) {
         updated = await resetHelpMeReplyConversationalTemplate();
       } else if (id === APP_LOREBOOK_ENTRY_WRITER_TEMPLATE_ID) {
+        updated = await resetLorebookEntryWriterTemplate();
+      } else if (id === LEGACY_APP_LOREBOOK_ENTRY_GENERATOR_TEMPLATE_ID) {
         updated = await resetLorebookEntryWriterTemplate();
       } else if (id === APP_LOREBOOK_KEYWORD_GENERATOR_TEMPLATE_ID) {
         updated = await resetLorebookKeywordGeneratorTemplate();

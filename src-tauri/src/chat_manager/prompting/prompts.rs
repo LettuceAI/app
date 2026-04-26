@@ -22,6 +22,8 @@ pub const APP_HELP_ME_REPLY_TEMPLATE_ID: &str = "prompt_app_help_me_reply";
 pub const APP_HELP_ME_REPLY_CONVERSATIONAL_TEMPLATE_ID: &str =
     "prompt_app_help_me_reply_conversational";
 pub const APP_LOREBOOK_ENTRY_WRITER_TEMPLATE_ID: &str = "prompt_app_lorebook_entry_writer";
+pub const LEGACY_APP_LOREBOOK_ENTRY_GENERATOR_TEMPLATE_ID: &str =
+    "prompt_app_lorebook_entry_generator";
 pub const APP_LOREBOOK_KEYWORD_GENERATOR_TEMPLATE_ID: &str =
     "prompt_app_lorebook_keyword_generator";
 pub const APP_GROUP_CHAT_TEMPLATE_ID: &str = "prompt_app_group_chat";
@@ -68,7 +70,9 @@ pub fn template_prompt_type_from_id(id: &str) -> PromptTemplateType {
         APP_HELP_ME_REPLY_CONVERSATIONAL_TEMPLATE_ID => {
             PromptTemplateType::ReplyHelperConversational
         }
-        APP_LOREBOOK_ENTRY_WRITER_TEMPLATE_ID => PromptTemplateType::LorebookEntryWriter,
+        APP_LOREBOOK_ENTRY_WRITER_TEMPLATE_ID | LEGACY_APP_LOREBOOK_ENTRY_GENERATOR_TEMPLATE_ID => {
+            PromptTemplateType::LorebookEntryWriter
+        }
         APP_LOREBOOK_KEYWORD_GENERATOR_TEMPLATE_ID => PromptTemplateType::LorebookKeywordGenerator,
         APP_AVATAR_GENERATION_TEMPLATE_ID => PromptTemplateType::AvatarGeneration,
         APP_AVATAR_EDIT_TEMPLATE_ID => PromptTemplateType::AvatarEditRequest,
@@ -118,6 +122,48 @@ fn maybe_repair_protected_template_prompt_type(
 
     template.prompt_type = expected_prompt_type;
     template.updated_at = updated_at;
+    Ok(())
+}
+
+fn migrate_legacy_lorebook_entry_writer_template_id(
+    conn: &rusqlite::Connection,
+) -> Result<(), String> {
+    let legacy_exists: Option<String> = conn
+        .query_row(
+            "SELECT id FROM prompt_templates WHERE id = ?1",
+            params![LEGACY_APP_LOREBOOK_ENTRY_GENERATOR_TEMPLATE_ID],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    if legacy_exists.is_none() {
+        return Ok(());
+    }
+
+    let current_exists: Option<String> = conn
+        .query_row(
+            "SELECT id FROM prompt_templates WHERE id = ?1",
+            params![APP_LOREBOOK_ENTRY_WRITER_TEMPLATE_ID],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    if current_exists.is_some() {
+        return Ok(());
+    }
+
+    let updated_at = now();
+    conn.execute(
+        "UPDATE prompt_templates SET id = ?1, prompt_type = ?2, updated_at = ?3 WHERE id = ?4",
+        params![
+            APP_LOREBOOK_ENTRY_WRITER_TEMPLATE_ID,
+            prompt_type_to_str(PromptTemplateType::LorebookEntryWriter),
+            updated_at,
+            LEGACY_APP_LOREBOOK_ENTRY_GENERATOR_TEMPLATE_ID
+        ],
+    )
+    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+
     Ok(())
 }
 
@@ -627,6 +673,7 @@ pub fn load_templates(app: &AppHandle) -> Result<Vec<SystemPromptTemplate>, Stri
     ensure_group_chat_templates(app)?;
     ensure_companion_soul_writer_template(app)?;
     let conn = open_db(app)?;
+    migrate_legacy_lorebook_entry_writer_template_id(&conn)?;
     let mut stmt = conn
         .prepare(
             "SELECT id, name, prompt_type, content, entries, condense_prompt_entries, created_at, updated_at FROM prompt_templates ORDER BY created_at ASC",
@@ -801,10 +848,16 @@ pub fn delete_template(app: &AppHandle, id: String) -> Result<(), String> {
 
 pub fn get_template(app: &AppHandle, id: &str) -> Result<Option<SystemPromptTemplate>, String> {
     let conn = open_db(app)?;
+    migrate_legacy_lorebook_entry_writer_template_id(&conn)?;
+    let lookup_id = if id == LEGACY_APP_LOREBOOK_ENTRY_GENERATOR_TEMPLATE_ID {
+        APP_LOREBOOK_ENTRY_WRITER_TEMPLATE_ID
+    } else {
+        id
+    };
     let mut template = conn
         .query_row(
             "SELECT id, name, prompt_type, content, entries, condense_prompt_entries, created_at, updated_at FROM prompt_templates WHERE id = ?1",
-            params![id],
+            params![lookup_id],
             |row| row_to_template(row),
         )
         .optional()
@@ -1107,6 +1160,7 @@ pub fn is_app_default_template(id: &str) -> bool {
         || id == APP_HELP_ME_REPLY_TEMPLATE_ID
         || id == APP_HELP_ME_REPLY_CONVERSATIONAL_TEMPLATE_ID
         || id == APP_LOREBOOK_ENTRY_WRITER_TEMPLATE_ID
+        || id == LEGACY_APP_LOREBOOK_ENTRY_GENERATOR_TEMPLATE_ID
         || id == APP_LOREBOOK_KEYWORD_GENERATOR_TEMPLATE_ID
         || id == APP_GROUP_CHAT_TEMPLATE_ID
         || id == APP_GROUP_CHAT_ROLEPLAY_TEMPLATE_ID

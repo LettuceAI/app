@@ -206,6 +206,7 @@ function normalizeImportedPromptTemplatePayload(input: {
 
   const promptType: PromptTemplateType =
     input.promptType === "directChat" ||
+    input.promptType === "companionChat" ||
     input.promptType === "groupChatRoleplay" ||
     input.promptType === "groupChatConversational" ||
     input.promptType === "dynamicMemorySummarizer" ||
