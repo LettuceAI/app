@@ -19,3 +19,11 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# Kokoro phonemizer bridge: invoked from Rust via JNI, so R8 has no static
+# reference to it and would otherwise strip/inline the static `resolve`
+# method that the Rust side calls.
+-keep class com.lettuceai.app.KokoroPhonemizerBridge { *; }
+-keepclassmembers class com.lettuceai.app.KokoroPhonemizerBridge {
+  public static *;
+}
