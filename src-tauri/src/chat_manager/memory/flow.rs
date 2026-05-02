@@ -570,6 +570,112 @@ fn emit_dynamic_memory_transition_toast(
     );
 }
 
+fn emit_memory_vector_migration_toast(
+    app: &AppHandle,
+    toast_id: &str,
+    title: &str,
+    subtitle: &str,
+    progress: f32,
+) {
+    let _ = app.emit(
+        "app://toast",
+        json!({
+            "id": toast_id,
+            "kind": "modelLoad",
+            "title": title,
+            "subtitle": subtitle,
+            "modelName": "Memory embeddings",
+            "progress": progress,
+        }),
+    );
+}
+
+fn dismiss_memory_vector_migration_toast(app: &AppHandle, toast_id: &str) {
+    let _ = app.emit(
+        "app://toast",
+        json!({
+            "id": toast_id,
+            "dismiss": true,
+        }),
+    );
+}
+
+fn memory_embedding_requires_migration(
+    memory: &MemoryEmbedding,
+    target_source_version: &str,
+    target_dimensions: usize,
+) -> bool {
+    if memory.embedding.is_empty() || memory.embedding.len() != target_dimensions {
+        return true;
+    }
+
+    if memory.embedding_dimensions != Some(target_dimensions) {
+        return true;
+    }
+
+    match memory.embedding_source_version.as_deref() {
+        Some(version) => version != target_source_version,
+        None => !(target_source_version == "v3" && target_dimensions == 512),
+    }
+}
+
+async fn migrate_session_memory_embeddings_if_needed(
+    app: &AppHandle,
+    session: &mut Session,
+) -> Result<(), String> {
+    if session.memory_embeddings.is_empty() {
+        return Ok(());
+    }
+
+    let (target_source_version, target_dimensions) =
+        embedding::resolve_active_embedding_signature(app)?;
+    let needs_migration = session.memory_embeddings.iter().any(|memory| {
+        memory_embedding_requires_migration(memory, &target_source_version, target_dimensions)
+    });
+    if !needs_migration {
+        return Ok(());
+    }
+
+    let toast_id = format!("memory-vector-migration:{}", session.id);
+    let total = session.memory_embeddings.len().max(1);
+    emit_memory_vector_migration_toast(
+        app,
+        &toast_id,
+        "Migrating memory vectors",
+        "Updating saved memories for the current memory model. Messages may be delayed briefly.",
+        0.0,
+    );
+
+    for (idx, memory) in session.memory_embeddings.iter_mut().enumerate() {
+        if memory_embedding_requires_migration(memory, &target_source_version, target_dimensions) {
+            memory.embedding = embedding::compute_embedding(app.clone(), memory.text.clone()).await?;
+            memory.embedding_source_version = Some(target_source_version.clone());
+            memory.embedding_dimensions = Some(target_dimensions);
+        }
+
+        let progress = (idx + 1) as f32 / total as f32;
+        emit_memory_vector_migration_toast(
+            app,
+            &toast_id,
+            "Migrating memory vectors",
+            &format!("Re-embedded {}/{} saved memories.", idx + 1, total),
+            progress,
+        );
+    }
+
+    save_session(app, session)?;
+    dismiss_memory_vector_migration_toast(app, &toast_id);
+    let _ = app.emit(
+        "app://toast",
+        json!({
+            "variant": "success",
+            "title": "Memory migration complete",
+            "description": "Saved memory vectors are now using the current memory model.",
+        }),
+    );
+    Ok(())
+}
+
 async fn prepare_local_dynamic_memory_cycle(
     app: &AppHandle,
     model: &Model,
@@ -815,7 +921,7 @@ fn format_memories_with_ids(session: &Session) -> Vec<String> {
 
 pub(crate) async fn select_relevant_memories(
     app: &AppHandle,
-    session: &Session,
+    session: &mut Session,
     query: &str,
     limit: usize,
     min_similarity: f32,
@@ -823,6 +929,14 @@ pub(crate) async fn select_relevant_memories(
 ) -> Vec<MemoryEmbedding> {
     if query.is_empty() || session.memory_embeddings.is_empty() {
         return Vec::new();
+    }
+
+    if let Err(err) = migrate_session_memory_embeddings_if_needed(app, session).await {
+        log_warn(
+            app,
+            "memory_retrieval",
+            format!("memory vector migration failed: {}", err),
+        );
     }
 
     let query_embedding = match embedding::compute_embedding(app.clone(), query.to_string()).await {
@@ -859,11 +973,14 @@ pub(crate) async fn select_relevant_memories(
             .collect();
     }
 
-    let cosine_limit = (limit.saturating_sub(2)).max(1);
+    // Smart strategy: try cosine for the full limit first. The "newest" and
+    // "most-accessed" picks below act as fallbacks for slots cosine could not
+    // fill, not as guaranteed reservations. With v4 retrieval quality this
+    // keeps unrelated padding out of the LLM context when cosine succeeds.
     let cosine_indices = select_relevant_memory_indices(
         &query_embedding,
         &session.memory_embeddings,
-        cosine_limit,
+        limit,
         min_similarity,
     );
 
@@ -2951,6 +3068,9 @@ async fn run_memory_tool_update(
                                 continue;
                             }
                         };
+                        let (embedding_source_version, embedding_dimensions) =
+                            embedding::resolve_active_embedding_signature(app)
+                                .unwrap_or_else(|_| ("v3".to_string(), 512));
                         session.memory_embeddings.push(MemoryEmbedding {
                             id: mem_id.clone(),
                             text,
@@ -2965,6 +3085,8 @@ async fn run_memory_tool_update(
                             volatility: 0.4,
                             is_pinned,
                             access_count: 0,
+                            embedding_source_version: Some(embedding_source_version),
+                            embedding_dimensions: Some(embedding_dimensions),
                             match_score: None,
                             category: Some(category),
                             canonical_entities: Vec::new(),
@@ -3401,6 +3523,9 @@ async fn run_memory_tool_update(
                     }
                     let token_count =
                         crate::embedding::tokenizer::count_tokens(app, &text).unwrap_or(0);
+                    let (embedding_source_version, embedding_dimensions) =
+                        embedding::resolve_active_embedding_signature(app)
+                            .unwrap_or_else(|_| ("v3".to_string(), 512));
                     session.memory_embeddings.push(MemoryEmbedding {
                         id: mem_id.clone(),
                         text: text.clone(),
@@ -3415,6 +3540,8 @@ async fn run_memory_tool_update(
                         volatility: 0.4,
                         is_pinned,
                         access_count: 0,
+                        embedding_source_version: Some(embedding_source_version),
+                        embedding_dimensions: Some(embedding_dimensions),
                         match_score: None,
                         category: Some(category.clone()),
                         canonical_entities: Vec::new(),
@@ -3459,13 +3586,24 @@ async fn run_memory_tool_update(
     }
 
     let trimmed = trim_memories_to_max(&mut session.memory_embeddings, max_entries);
-    if trimmed > 0 {
+    if !trimmed.is_empty() {
+        // Cascade the eviction directly to the normalised table; the
+        // session-level `save_session` later in this cycle will re-sync the
+        // remaining rows but the narrow DELETE here keeps them gone if the
+        // save fails partway.
+        let _ = crate::storage_manager::memory_embeddings::delete_many_app(
+            app,
+            &session.id,
+            crate::storage_manager::memory_embeddings::SessionKind::Session,
+            &trimmed,
+        );
         log_info(
             app,
             "dynamic_memory",
             format!(
                 "Trimmed {} memories to enforce max_entries={}",
-                trimmed, max_entries
+                trimmed.len(),
+                max_entries
             ),
         );
     }

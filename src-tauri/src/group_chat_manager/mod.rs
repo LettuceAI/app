@@ -1094,12 +1094,24 @@ fn cancel_group_dynamic_memory_cycle(
     session.memory_status = "idle".to_string();
     session.memory_error = None;
     session.updated_at = crate::utils::now_millis()? as i64;
+
+    // Persist embeddings via the normalised table; the legacy JSON column is
+    // cleared by `group_session_update_memories_internal` below since we pass
+    // an empty slice.
+    crate::storage_manager::memory_embeddings::replace_all_app(
+        app,
+        &session.id,
+        crate::storage_manager::memory_embeddings::SessionKind::GroupSession,
+        &session.memory_embeddings,
+    )?;
+
     let conn = pool.get_connection()?;
+    let empty: Vec<MemoryEmbedding> = Vec::new();
     group_session_update_memories_internal(
         &conn,
         &session.id,
         &session.memories,
-        &session.memory_embeddings,
+        &empty,
         Some(&session.memory_summary),
         session.memory_summary_token_count,
         &session.memory_tool_events,
@@ -1832,10 +1844,117 @@ fn sanitize_dynamic_memory_extra_body_fields(
 // Memory Retrieval
 // ============================================================================
 
+fn emit_memory_vector_migration_toast(
+    app: &AppHandle,
+    toast_id: &str,
+    title: &str,
+    subtitle: &str,
+    progress: f32,
+) {
+    let _ = app.emit(
+        "app://toast",
+        json!({
+            "id": toast_id,
+            "kind": "modelLoad",
+            "title": title,
+            "subtitle": subtitle,
+            "modelName": "Memory embeddings",
+            "progress": progress,
+        }),
+    );
+}
+
+fn dismiss_memory_vector_migration_toast(app: &AppHandle, toast_id: &str) {
+    let _ = app.emit(
+        "app://toast",
+        json!({
+            "id": toast_id,
+            "dismiss": true,
+        }),
+    );
+}
+
+fn memory_embedding_requires_migration(
+    memory: &MemoryEmbedding,
+    target_source_version: &str,
+    target_dimensions: usize,
+) -> bool {
+    if memory.embedding.is_empty() || memory.embedding.len() != target_dimensions {
+        return true;
+    }
+
+    if memory.embedding_dimensions != Some(target_dimensions) {
+        return true;
+    }
+
+    match memory.embedding_source_version.as_deref() {
+        Some(version) => version != target_source_version,
+        None => !(target_source_version == "v3" && target_dimensions == 512),
+    }
+}
+
+async fn migrate_group_memory_embeddings_if_needed(
+    app: &AppHandle,
+    session: &mut GroupSession,
+    pool: &State<'_, SwappablePool>,
+) -> Result<(), String> {
+    if session.memory_embeddings.is_empty() {
+        return Ok(());
+    }
+
+    let (target_source_version, target_dimensions) =
+        embedding::resolve_active_embedding_signature(app)?;
+    let needs_migration = session.memory_embeddings.iter().any(|memory| {
+        memory_embedding_requires_migration(memory, &target_source_version, target_dimensions)
+    });
+    if !needs_migration {
+        return Ok(());
+    }
+
+    let toast_id = format!("group-memory-vector-migration:{}", session.id);
+    let total = session.memory_embeddings.len().max(1);
+    emit_memory_vector_migration_toast(
+        app,
+        &toast_id,
+        "Migrating memory vectors",
+        "Updating saved memories for the current memory model. Messages may be delayed briefly.",
+        0.0,
+    );
+
+    for (idx, memory) in session.memory_embeddings.iter_mut().enumerate() {
+        if memory_embedding_requires_migration(memory, &target_source_version, target_dimensions) {
+            memory.embedding = embedding::compute_embedding(app.clone(), memory.text.clone()).await?;
+            memory.embedding_source_version = Some(target_source_version.clone());
+            memory.embedding_dimensions = Some(target_dimensions);
+        }
+
+        emit_memory_vector_migration_toast(
+            app,
+            &toast_id,
+            "Migrating memory vectors",
+            &format!("Re-embedded {}/{} saved memories.", idx + 1, total),
+            (idx + 1) as f32 / total as f32,
+        );
+    }
+
+    save_group_session_memories(app, session, pool)?;
+    dismiss_memory_vector_migration_toast(app, &toast_id);
+    let _ = app.emit(
+        "app://toast",
+        json!({
+            "variant": "success",
+            "title": "Memory migration complete",
+            "description": "Saved memory vectors are now using the current memory model.",
+        }),
+    );
+    Ok(())
+}
+
 /// Select relevant memories from a group session using semantic search
 async fn select_relevant_memories(
     app: &AppHandle,
-    session: &GroupSession,
+    session: &mut GroupSession,
+    pool: &State<'_, SwappablePool>,
     query: &str,
     limit: usize,
     min_similarity: f32,
@@ -1843,6 +1962,14 @@ async fn select_relevant_memories(
 ) -> Vec<MemoryEmbedding> {
     if query.is_empty() || session.memory_embeddings.is_empty() {
         return Vec::new();
+    }
+
+    if let Err(err) = migrate_group_memory_embeddings_if_needed(app, session, pool).await {
+        log_warn(
+            app,
+            "group_memory_retrieval",
+            format!("memory vector migration failed: {}", err),
+        );
     }
 
     let query_embedding = match embedding::compute_embedding(app.clone(), query.to_string()).await {
@@ -2485,13 +2612,20 @@ async fn process_group_dynamic_memory_cycle(
     // Enforce max entries
     let max_entries = dynamic_settings.max_entries.max(1) as usize;
     let trimmed = trim_memories_to_max(&mut session.memory_embeddings, max_entries);
-    if trimmed > 0 {
+    if !trimmed.is_empty() {
+        let _ = crate::storage_manager::memory_embeddings::delete_many_app(
+            app,
+            &session.id,
+            crate::storage_manager::memory_embeddings::SessionKind::GroupSession,
+            &trimmed,
+        );
         log_info(
             app,
             "group_dynamic_memory",
             format!(
                 "Trimmed {} memories to enforce max_entries={}",
-                trimmed, max_entries
+                trimmed.len(),
+                max_entries
             ),
         );
     }
@@ -3420,18 +3554,36 @@ async fn run_group_memory_tool_update(
                             }
                         };
 
+                        let (embedding_source_version, embedding_dimensions) =
+                            embedding::resolve_active_embedding_signature(app)
+                                .unwrap_or_else(|_| ("v3".to_string(), 512));
+                        let _now = now_millis().unwrap_or_default();
                         session.memory_embeddings.push(MemoryEmbedding {
                             id: mem_id.clone(),
                             text,
                             embedding: embedding.unwrap_or_default(),
-                            created_at: now_millis().unwrap_or_default() as i64,
-                            token_count: token_count as i32,
+                            created_at: _now,
+                            token_count: token_count as u32,
                             is_cold: false,
-                            last_accessed_at: now_millis().unwrap_or_default() as i64,
+                            last_accessed_at: _now,
                             importance_score: 1.0,
+                            persistence_importance: 1.0,
+                            prompt_importance: 1.0,
+                            volatility: 0.4,
                             is_pinned,
                             access_count: 0,
+                            embedding_source_version: Some(embedding_source_version),
+                            embedding_dimensions: Some(embedding_dimensions),
+                            match_score: None,
                             category: Some(category),
+                            canonical_entities: Vec::new(),
+                            fact_signature: None,
+                            fact_polarity: None,
+                            source_role: None,
+                            source_message_id: None,
+                            superseded_by: None,
+                            superseded_at: None,
+                            supersedes: Vec::new(),
                         });
 
                         let action = json!({
@@ -3853,18 +4005,36 @@ async fn run_group_memory_tool_update(
 
                     let token_count =
                         crate::embedding::tokenizer::count_tokens(app, &text).unwrap_or(0);
+                    let (embedding_source_version, embedding_dimensions) =
+                        embedding::resolve_active_embedding_signature(app)
+                            .unwrap_or_else(|_| ("v3".to_string(), 512));
+                    let now = now_millis().unwrap_or_default();
                     session.memory_embeddings.push(MemoryEmbedding {
                         id: mem_id.clone(),
                         text: text.clone(),
                         embedding: embedding.unwrap_or_default(),
-                        created_at: now_millis().unwrap_or_default() as i64,
-                        token_count: token_count as i32,
+                        created_at: now,
+                        token_count: token_count as u32,
                         is_cold: false,
-                        last_accessed_at: now_millis().unwrap_or_default() as i64,
+                        last_accessed_at: now,
                         importance_score: 1.0,
+                        persistence_importance: 1.0,
+                        prompt_importance: 1.0,
+                        volatility: 0.4,
                         is_pinned,
                         access_count: 0,
+                        embedding_source_version: Some(embedding_source_version),
+                        embedding_dimensions: Some(embedding_dimensions),
+                        match_score: None,
                         category: Some(category.clone()),
+                        canonical_entities: Vec::new(),
+                        fact_signature: None,
+                        fact_polarity: None,
+                        source_role: None,
+                        source_message_id: None,
+                        superseded_by: None,
+                        superseded_at: None,
+                        supersedes: Vec::new(),
                     });
                     actions_log.push(json!({
                         "name": "create_memory",
@@ -3899,13 +4069,20 @@ async fn run_group_memory_tool_update(
     }
 
     let trimmed = trim_memories_to_max(&mut session.memory_embeddings, max_entries);
-    if trimmed > 0 {
+    if !trimmed.is_empty() {
+        let _ = crate::storage_manager::memory_embeddings::delete_many_app(
+            app,
+            &session.id,
+            crate::storage_manager::memory_embeddings::SessionKind::GroupSession,
+            &trimmed,
+        );
         log_info(
             app,
             "group_dynamic_memory",
             format!(
                 "Trimmed {} memories to enforce max_entries={}",
-                trimmed, max_entries
+                trimmed.len(),
+                max_entries
             ),
         );
     }
@@ -4265,12 +4442,24 @@ fn save_group_session_memories(
     session: &GroupSession,
     pool: &State<'_, SwappablePool>,
 ) -> Result<(), String> {
+    // Persist embeddings to the new normalised table first. If this fails, the
+    // legacy JSON column still holds the previous state.
+    crate::storage_manager::memory_embeddings::replace_all_app(
+        app,
+        &session.id,
+        crate::storage_manager::memory_embeddings::SessionKind::GroupSession,
+        &session.memory_embeddings,
+    )?;
+
+    // Then clear the legacy JSON column by writing an empty slice. The other
+    // memory metadata still travels through this path.
     let conn = pool.get_connection()?;
+    let empty: Vec<MemoryEmbedding> = Vec::new();
     group_session_update_memories_internal(
         &conn,
         &session.id,
         &session.memories,
-        &session.memory_embeddings,
+        &empty,
         Some(&session.memory_summary),
         session.memory_summary_token_count,
         &session.memory_tool_events,
@@ -5661,7 +5850,8 @@ async fn generate_character_response(
 
         select_relevant_memories(
             app,
-            &context.session,
+            &mut context.session,
+            pool,
             &search_query,
             dynamic_settings.retrieval_limit.max(1) as usize,
             min_similarity,
@@ -5672,22 +5862,40 @@ async fn generate_character_response(
         Vec::new()
     };
 
-    // Mark retrieved memories as accessed and promote cold ones
+    // Mark retrieved memories as accessed and promote cold ones, persisting
+    // the changes through narrow DB updates.
     if !retrieved_memories.is_empty() {
         let memory_ids: Vec<String> = retrieved_memories.iter().map(|m| m.id.clone()).collect();
         let now = now_millis().unwrap_or_default();
         let promoted =
             promote_cold_memories(&mut context.session.memory_embeddings, &memory_ids, now);
-        let accessed =
+        let access_updates =
             mark_memories_accessed(&mut context.session.memory_embeddings, &memory_ids, now);
+        if !promoted.is_empty() {
+            let _ = crate::storage_manager::memory_embeddings::set_cold_many_app(
+                app,
+                &context.session.id,
+                crate::storage_manager::memory_embeddings::SessionKind::GroupSession,
+                &promoted,
+                false,
+            );
+        }
+        if !access_updates.is_empty() {
+            let _ = crate::storage_manager::memory_embeddings::apply_access_updates_app(
+                app,
+                &context.session.id,
+                crate::storage_manager::memory_embeddings::SessionKind::GroupSession,
+                &access_updates,
+            );
+        }
         log_info(
             app,
             "group_chat",
             format!(
                 "Retrieved {} memories (promoted={}, accessed={}, query_enriched={})",
                 retrieved_memories.len(),
-                promoted,
-                accessed,
+                promoted.len(),
+                access_updates.len(),
                 dynamic_settings.context_enrichment_enabled
             ),
         );

@@ -270,7 +270,7 @@ impl CompletionFlow {
 
             select_relevant_memories(
                 &app,
-                &session,
+                &mut session,
                 &search_query,
                 dynamic_retrieval_limit(settings),
                 dynamic_min_similarity(settings),
@@ -285,19 +285,36 @@ impl CompletionFlow {
             let memory_ids: Vec<String> = relevant_memories.iter().map(|m| m.id.clone()).collect();
             let now = now_millis().unwrap_or_default();
             let promoted = promote_cold_memories(&mut session.memory_embeddings, &memory_ids, now);
-            let accessed = mark_memories_accessed(&mut session.memory_embeddings, &memory_ids, now);
-            if promoted > 0 {
+            let access_updates =
+                mark_memories_accessed(&mut session.memory_embeddings, &memory_ids, now);
+            // Persist the changes through narrow DB updates so the per-turn
+            // hot path is O(K) instead of going through `save_session` ->
+            // `replace_all` (O(N)).
+            if !promoted.is_empty() {
+                let _ = crate::storage_manager::memory_embeddings::set_cold_many_app(
+                    &app,
+                    &session.id,
+                    crate::storage_manager::memory_embeddings::SessionKind::Session,
+                    &promoted,
+                    false,
+                );
                 log_info(
                     &app,
                     "dynamic_memory",
-                    format!("Promoted {} cold memories to hot", promoted),
+                    format!("Promoted {} cold memories to hot", promoted.len()),
                 );
             }
-            if accessed > 0 {
+            if !access_updates.is_empty() {
+                let _ = crate::storage_manager::memory_embeddings::apply_access_updates_app(
+                    &app,
+                    &session.id,
+                    crate::storage_manager::memory_embeddings::SessionKind::Session,
+                    &access_updates,
+                );
                 log_info(
                     &app,
                     "dynamic_memory",
-                    format!("Marked {} memories as accessed", accessed),
+                    format!("Marked {} memories as accessed", access_updates.len()),
                 );
             }
         }

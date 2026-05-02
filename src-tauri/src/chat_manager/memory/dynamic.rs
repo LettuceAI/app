@@ -75,50 +75,9 @@ impl MemoryEntry for crate::chat_manager::types::MemoryEmbedding {
     }
 }
 
-impl MemoryEntry for crate::storage_manager::group_sessions::MemoryEmbedding {
-    fn id(&self) -> &str {
-        &self.id
-    }
-    fn text(&self) -> &str {
-        &self.text
-    }
-    fn embedding(&self) -> &[f32] {
-        &self.embedding
-    }
-    fn token_count(&self) -> u32 {
-        self.token_count.max(0) as u32
-    }
-    fn is_cold(&self) -> bool {
-        self.is_cold
-    }
-    fn set_is_cold(&mut self, value: bool) {
-        self.is_cold = value;
-    }
-    fn is_pinned(&self) -> bool {
-        self.is_pinned
-    }
-    fn importance_score(&self) -> f32 {
-        self.importance_score
-    }
-    fn set_importance_score(&mut self, value: f32) {
-        self.importance_score = value;
-    }
-    fn last_accessed_at(&self) -> u64 {
-        self.last_accessed_at.max(0) as u64
-    }
-    fn set_last_accessed_at(&mut self, value: u64) {
-        self.last_accessed_at = value as i64;
-    }
-    fn access_count(&self) -> u32 {
-        self.access_count.max(0) as u32
-    }
-    fn set_access_count(&mut self, value: u32) {
-        self.access_count = value as i32;
-    }
-    fn category(&self) -> Option<&str> {
-        self.category.as_deref()
-    }
-}
+// `storage_manager::group_sessions::MemoryEmbedding` is now a re-export of the
+// rich `chat_manager::types::MemoryEmbedding`, so the impl above already covers
+// both single-character and group sessions.
 
 // ============================================================================
 // Constants
@@ -363,6 +322,13 @@ fn lexical_overlap_ratio(a: &str, b: &str) -> f32 {
     }
 }
 
+/// Cosine threshold for treating a candidate memory as a duplicate. Tuned for
+/// retrieval-trained embedders (lettuce-emb-v4) which compress raw cosine
+/// values: paraphrases that score 0.92 on a vanilla SBERT typically land at
+/// 0.78-0.82 here. The previous 0.85 threshold let near-identical summaries
+/// slip through at moderate scale.
+const DUPLICATE_MEMORY_COSINE_THRESHOLD: f32 = 0.78;
+
 pub fn find_duplicate_memory_reason<E: MemoryEntry>(
     candidate_text: &str,
     candidate_embedding: Option<&[f32]>,
@@ -378,18 +344,24 @@ pub fn find_duplicate_memory_reason<E: MemoryEntry>(
             return Some("duplicate (normalized text match)".to_string());
         }
 
+        // Run the embedding check before lexical so paraphrases with low
+        // surface overlap but identical meaning still get caught.
+        if let Some(new_emb) = candidate_embedding {
+            if !existing.embedding().is_empty() {
+                let cos = cosine_similarity(new_emb, existing.embedding());
+                if cos > DUPLICATE_MEMORY_COSINE_THRESHOLD {
+                    return Some(format!(
+                        "duplicate (cosine {:.2} > {:.2})",
+                        cos, DUPLICATE_MEMORY_COSINE_THRESHOLD
+                    ));
+                }
+            }
+        }
+
         if candidate_word_count >= 3 {
             let overlap = lexical_overlap_ratio(candidate_text, existing.text());
             if overlap >= 0.9 {
                 return Some("duplicate (high lexical overlap)".to_string());
-            }
-        }
-
-        if let Some(new_emb) = candidate_embedding {
-            if !existing.embedding().is_empty()
-                && cosine_similarity(new_emb, existing.embedding()) > 0.85
-            {
-                return Some("duplicate (cosine > 0.85)".to_string());
             }
         }
     }
@@ -476,50 +448,70 @@ pub fn apply_memory_decay<E: MemoryEntry>(
     (decayed, demoted)
 }
 
-/// Promote cold memories by ID. Returns count promoted.
+/// Promote cold memories by ID. Returns the ids that were promoted so callers
+/// can persist the change via a narrow DB update instead of a full
+/// `save_session`.
 pub fn promote_cold_memories<E: MemoryEntry>(
     memories: &mut [E],
     memory_ids: &[String],
     now: u64,
-) -> usize {
-    let mut promoted = 0;
+) -> Vec<String> {
+    let mut promoted = Vec::new();
     for mem in memories.iter_mut() {
         if memory_ids.contains(&mem.id().to_string()) && mem.is_cold() {
             mem.set_is_cold(false);
             mem.set_importance_score(0.7);
             mem.set_last_accessed_at(now);
             mem.set_access_count(mem.access_count().saturating_add(1));
-            promoted += 1;
+            promoted.push(mem.id().to_string());
         }
     }
     promoted
 }
 
-/// Update access tracking for retrieved memories. Returns count updated.
+/// Update access tracking for retrieved memories. Returns one `AccessUpdate`
+/// per memory touched so callers can flush the new values to the normalised
+/// `memory_embeddings` table via a narrow UPDATE rather than a full session
+/// save.
+///
+/// Importance is incremented by `ACCESS_IMPORTANCE_BOOST` (capped at 1.0) per
+/// access instead of being slammed to 1.0. This preserves the per-cycle decay
+/// signal: frequently retrieved memories drift up, then decay if retrieval
+/// stops, instead of staying pinned at 1.0 forever after a single hit.
 pub fn mark_memories_accessed<E: MemoryEntry>(
     memories: &mut [E],
     memory_ids: &[String],
     now: u64,
-) -> usize {
-    let mut updated = 0;
+) -> Vec<crate::storage_manager::memory_embeddings::AccessUpdate> {
+    const ACCESS_IMPORTANCE_BOOST: f32 = 0.2;
+    let mut updates = Vec::new();
     for mem in memories.iter_mut() {
         if memory_ids.contains(&mem.id().to_string()) {
             mem.set_last_accessed_at(now);
             mem.set_access_count(mem.access_count().saturating_add(1));
-            mem.set_importance_score(1.0);
-            updated += 1;
+            let next_score = (mem.importance_score() + ACCESS_IMPORTANCE_BOOST).min(1.0);
+            mem.set_importance_score(next_score);
+            updates.push(
+                crate::storage_manager::memory_embeddings::AccessUpdate {
+                    memory_id: mem.id().to_string(),
+                    importance_score: mem.importance_score(),
+                    last_accessed_at: mem.last_accessed_at(),
+                    access_count: mem.access_count(),
+                },
+            );
         }
     }
-    updated
+    updates
 }
 
 pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
-    if a.len() != b.len() || a.is_empty() {
+    let dim = a.len().min(b.len());
+    if dim == 0 {
         return 0.0;
     }
-    let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
-    let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
-    let norm_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
+    let dot: f32 = a.iter().take(dim).zip(b.iter().take(dim)).map(|(x, y)| x * y).sum();
+    let norm_a: f32 = a.iter().take(dim).map(|x| x * x).sum::<f32>().sqrt();
+    let norm_b: f32 = b.iter().take(dim).map(|x| x * x).sum::<f32>().sqrt();
     let denom = norm_a * norm_b;
     if denom == 0.0 {
         return 0.0;
@@ -527,7 +519,16 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     dot / denom
 }
 
-/// Select hot (or pinned) memories by similarity. Returns (index, score).
+/// Multiplier applied to cold-memory cosine scores so they only resurface on
+/// strong semantic matches. Discourages cold memories from displacing fresh
+/// hot ones for borderline queries while keeping them reachable when the
+/// match is genuinely good.
+const COLD_MEMORY_SCORE_MULTIPLIER: f32 = 0.7;
+
+/// Select memories by similarity. Cold memories are included with a score
+/// multiplier (`COLD_MEMORY_SCORE_MULTIPLIER`) so they can resurface on
+/// strong matches without dominating routine retrieval. Returns (index,
+/// score).
 pub fn select_relevant_memory_indices<E: MemoryEntry>(
     query_embedding: &[f32],
     memories: &[E],
@@ -537,8 +538,16 @@ pub fn select_relevant_memory_indices<E: MemoryEntry>(
     let mut scored: Vec<(f32, usize)> = memories
         .iter()
         .enumerate()
-        .filter(|(_, m)| !m.embedding().is_empty() && (!m.is_cold() || m.is_pinned()))
-        .map(|(i, m)| (cosine_similarity(query_embedding, m.embedding()), i))
+        .filter(|(_, m)| !m.embedding().is_empty())
+        .map(|(i, m)| {
+            let raw = cosine_similarity(query_embedding, m.embedding());
+            let score = if m.is_cold() && !m.is_pinned() {
+                raw * COLD_MEMORY_SCORE_MULTIPLIER
+            } else {
+                raw
+            };
+            (score, i)
+        })
         .collect();
 
     scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
@@ -576,6 +585,7 @@ pub fn select_relevant_memory_indices<E: MemoryEntry>(
 }
 
 /// Select memories by pure cosine score, without category diversity bias.
+/// Cold memories are included with `COLD_MEMORY_SCORE_MULTIPLIER` applied.
 pub fn select_top_cosine_memory_indices<E: MemoryEntry>(
     query_embedding: &[f32],
     memories: &[E],
@@ -585,8 +595,16 @@ pub fn select_top_cosine_memory_indices<E: MemoryEntry>(
     let mut scored: Vec<(f32, usize)> = memories
         .iter()
         .enumerate()
-        .filter(|(_, m)| !m.embedding().is_empty() && (!m.is_cold() || m.is_pinned()))
-        .map(|(i, m)| (cosine_similarity(query_embedding, m.embedding()), i))
+        .filter(|(_, m)| !m.embedding().is_empty())
+        .map(|(i, m)| {
+            let raw = cosine_similarity(query_embedding, m.embedding());
+            let score = if m.is_cold() && !m.is_pinned() {
+                raw * COLD_MEMORY_SCORE_MULTIPLIER
+            } else {
+                raw
+            };
+            (score, i)
+        })
         .filter(|(score, _)| *score >= min_similarity)
         .collect();
 
@@ -637,18 +655,53 @@ pub fn search_cold_memory_indices_by_keyword<E: MemoryEntry>(
         .collect()
 }
 
-pub fn trim_memories_to_max<E: MemoryEntry>(memories: &mut Vec<E>, max_entries: usize) -> usize {
+/// Trim non-pinned memories until `memories.len() <= max_entries`. Returns the
+/// ids that were removed so callers can do a narrow `DELETE` from the
+/// normalised table.
+///
+/// Eviction priority is a composite of `importance_score` and recency, lower = evicted
+/// first. Importance dominates so an old-but-foundational memory (e.g. a character
+/// backstory created early and rarely re-accessed) is preserved over a freshly-summarised
+/// trivial detail. Cold memories naturally fall to the bottom of this ranking because
+/// their importance was already reduced by `apply_memory_decay`.
+pub fn trim_memories_to_max<E: MemoryEntry>(
+    memories: &mut Vec<E>,
+    max_entries: usize,
+) -> Vec<String> {
     if memories.len() <= max_entries {
-        return 0;
+        return Vec::new();
     }
 
-    let mut candidates: Vec<(u64, String)> = memories
+    const IMPORTANCE_WEIGHT: f32 = 0.7;
+    const RECENCY_WEIGHT: f32 = 0.3;
+
+    // Time bounds for recency normalisation. Only consider non-pinned memories since
+    // pinned ones never get evicted regardless.
+    let mut min_t = u64::MAX;
+    let mut max_t = 0u64;
+    for m in memories.iter().filter(|m| !m.is_pinned()) {
+        let t = m.last_accessed_at();
+        if t < min_t {
+            min_t = t;
+        }
+        if t > max_t {
+            max_t = t;
+        }
+    }
+    let range = max_t.saturating_sub(min_t).max(1) as f32;
+
+    let mut candidates: Vec<(f32, String)> = memories
         .iter()
         .filter(|m| !m.is_pinned())
-        .map(|m| (m.last_accessed_at(), m.id().to_string()))
+        .map(|m| {
+            let recency = (m.last_accessed_at().saturating_sub(min_t) as f32) / range;
+            let score = m.importance_score() * IMPORTANCE_WEIGHT + recency * RECENCY_WEIGHT;
+            (score, m.id().to_string())
+        })
         .collect();
 
-    candidates.sort_by_key(|(last_accessed, _)| *last_accessed);
+    // Sort ascending: lowest composite score is evicted first.
+    candidates.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
 
     let mut remove_ids: HashSet<String> = HashSet::new();
     let mut remaining = memories.len();
@@ -662,7 +715,6 @@ pub fn trim_memories_to_max<E: MemoryEntry>(memories: &mut Vec<E>, max_entries: 
         }
     }
 
-    let before = memories.len();
     memories.retain(|m| !remove_ids.contains(m.id()));
-    before.saturating_sub(memories.len())
+    remove_ids.into_iter().collect()
 }
