@@ -15,6 +15,8 @@ pub(crate) const MODEL_FILES_V2_LOCAL_LEGACY: [&str; 3] =
 
 pub(crate) const MODEL_FILES_V3_REMOTE: [&str; 2] = ["model.int8.onnx", "tokenizer.json"];
 pub(crate) const MODEL_FILES_V3_LOCAL: [&str; 2] = ["v3-model.int8.onnx", "v3-tokenizer.json"];
+pub(crate) const MODEL_FILES_V4_REMOTE: [&str; 2] = ["onnx/model.int8.onnx", "tokenizer.json"];
+pub(crate) const MODEL_FILES_V4_LOCAL: [&str; 2] = ["v4-model.int8.onnx", "v4-tokenizer.json"];
 
 pub(crate) const COMPANION_EMOTION_MODEL_FILES_REMOTE: [&str; 3] = [
     "onnx/model_quantized.onnx",
@@ -47,6 +49,8 @@ pub(crate) const HUGGINGFACE_BASE_V2: &str =
     "https://huggingface.co/Zeolit/lettuce-emb-512d-v2/resolve/main";
 pub(crate) const HUGGINGFACE_BASE_V3: &str =
     "https://huggingface.co/Zeolit/lettuce-emb-512d-v3/resolve/main";
+pub(crate) const HUGGINGFACE_BASE_V4: &str =
+    "https://huggingface.co/Zeolit/lettuce-emb-768d-v4/resolve/main";
 pub(crate) const HUGGINGFACE_BASE_COMPANION_EMOTION: &str =
     "https://huggingface.co/SamLowe/roberta-base-go_emotions-onnx/resolve/main";
 pub(crate) const HUGGINGFACE_BASE_COMPANION_NER: &str =
@@ -121,26 +125,19 @@ pub(crate) struct DownloadSourceSpec {
 
 pub(crate) fn download_source_spec(requested: Option<&str>) -> DownloadSourceSpec {
     match requested {
-        Some("v1") => DownloadSourceSpec {
-            target_version: EmbeddingModelVersion::V1,
-            source_label: "v1",
-            remote_files: &MODEL_FILES_V1,
-            local_files: &MODEL_FILES_V1,
-            base_url: HUGGINGFACE_BASE_V1,
-        },
-        Some("v2") => DownloadSourceSpec {
-            target_version: EmbeddingModelVersion::V2,
-            source_label: "v2",
-            remote_files: &MODEL_FILES_V2_REMOTE,
-            local_files: &MODEL_FILES_V2_LOCAL,
-            base_url: HUGGINGFACE_BASE_V2,
-        },
-        _ => DownloadSourceSpec {
+        Some("v3") => DownloadSourceSpec {
             target_version: EmbeddingModelVersion::V3,
             source_label: "v3",
             remote_files: &MODEL_FILES_V3_REMOTE,
             local_files: &MODEL_FILES_V3_LOCAL,
             base_url: HUGGINGFACE_BASE_V3,
+        },
+        _ => DownloadSourceSpec {
+            target_version: EmbeddingModelVersion::V4,
+            source_label: "v4",
+            remote_files: &MODEL_FILES_V4_REMOTE,
+            local_files: &MODEL_FILES_V4_LOCAL,
+            base_url: HUGGINGFACE_BASE_V4,
         },
     }
 }
@@ -160,7 +157,10 @@ pub(crate) fn embedding_download_plan(requested: Option<&str>) -> Vec<DownloadFi
         })
         .collect::<Vec<_>>();
 
-    if source.target_version == EmbeddingModelVersion::V3 {
+    if matches!(
+        source.target_version,
+        EmbeddingModelVersion::V3 | EmbeddingModelVersion::V4
+    ) {
         if let Some(item) = plan.get_mut(0) {
             item.progress_name = "model.int8.onnx";
         }
@@ -196,5 +196,6 @@ pub(crate) fn embedding_owned_files(version: &EmbeddingModelVersion) -> Vec<&'st
             v
         }
         EmbeddingModelVersion::V3 => MODEL_FILES_V3_LOCAL.to_vec(),
+        EmbeddingModelVersion::V4 => MODEL_FILES_V4_LOCAL.to_vec(),
     }
 }

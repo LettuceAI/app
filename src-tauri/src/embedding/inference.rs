@@ -27,6 +27,7 @@ struct LoadedEmbeddingRuntime {
     model_path: PathBuf,
     tokenizer_path: PathBuf,
     max_seq_length: usize,
+    embedding_dimensions: usize,
     session: Session,
     tokenizer: Tokenizer,
 }
@@ -82,6 +83,14 @@ fn log_model_file_status(app: &AppHandle, component: &str, model_dir: &PathBuf) 
             format!("model file v3 {}: {}", filename, describe_path(&path)),
         );
     }
+    for filename in MODEL_FILES_V4_LOCAL.iter() {
+        let path = model_dir.join(filename);
+        log_info(
+            app,
+            component,
+            format!("model file v4 {}: {}", filename, describe_path(&path)),
+        );
+    }
 }
 
 pub(super) fn compute_embedding_with_session(
@@ -89,6 +98,7 @@ pub(super) fn compute_embedding_with_session(
     tokenizer: &Tokenizer,
     text: &str,
     max_seq_length: usize,
+    embedding_dimensions: usize,
 ) -> Result<Vec<f32>, String> {
     let encoding = tokenizer.encode(text, true).map_err(|e| {
         crate::utils::err_msg(
@@ -226,13 +236,20 @@ pub(super) fn compute_embedding_with_session(
     };
 
     match embedding_vec.len() {
-        len if len == EMBEDDING_DIM => Ok(embedding_vec),
-        len if len > EMBEDDING_DIM && len % EMBEDDING_DIM == 0 => {
-            Ok(embedding_vec[..EMBEDDING_DIM].to_vec())
+        len if len == embedding_dimensions => Ok(embedding_vec),
+        len if len > embedding_dimensions => {
+            let mut sliced = embedding_vec[..embedding_dimensions].to_vec();
+            let norm = sliced.iter().map(|v| v * v).sum::<f32>().sqrt();
+            if norm > 0.0 {
+                for value in &mut sliced {
+                    *value /= norm;
+                }
+            }
+            Ok(sliced)
         }
         len => Err(format!(
-            "Unexpected embedding dimension: {} (expected {} or multiple thereof)",
-            len, EMBEDDING_DIM
+            "Unexpected embedding dimension: {} (expected at least {})",
+            len, embedding_dimensions
         )),
     }
 }
@@ -389,33 +406,36 @@ pub async fn compute_embedding(app: AppHandle, text: String) -> Result<Vec<f32>,
         ),
     );
 
-    let (selected_source, model_path, tokenizer_path, max_seq_length, version_label) =
-        resolve_runtime_model(&app)?;
+    let active_config = resolve_runtime_model(&app)?;
     log_info(
         &app,
         "embedding_debug",
-        format!("selected_embedding_source={}", selected_source.as_str()),
+        format!("selected_embedding_source={}", active_config.source.as_str()),
     );
     log_info(
         &app,
         "embedding_debug",
         format!(
-            "embedding model version={} model_path={} tokenizer_path={}",
-            version_label,
-            model_path.display(),
-            tokenizer_path.display()
+            "embedding model version={} model_path={} tokenizer_path={} dimensions={}",
+            active_config.version_label,
+            active_config.model_path.display(),
+            active_config.tokenizer_path.display(),
+            active_config.embedding_dimensions
         ),
     );
     log_model_file_status(&app, "embedding_debug", &model_dir);
     log_info(
         &app,
         "embedding_debug",
-        format!("model_path status {}", describe_path(&model_path)),
+        format!("model_path status {}", describe_path(&active_config.model_path)),
     );
     log_info(
         &app,
         "embedding_debug",
-        format!("tokenizer_path status {}", describe_path(&tokenizer_path)),
+        format!(
+            "tokenizer_path status {}",
+            describe_path(&active_config.tokenizer_path)
+        ),
     );
 
     super::ort_runtime::ensure_ort_init(&app).await?;
@@ -425,17 +445,20 @@ pub async fn compute_embedding(app: AppHandle, text: String) -> Result<Vec<f32>,
     let embedding_vec = if keep_model_loaded {
         let mut cache = LOADED_EMBEDDING_RUNTIME.lock().await;
         let reuse = cache.as_ref().is_some_and(|loaded| {
-            loaded.model_path == model_path
-                && loaded.tokenizer_path == tokenizer_path
-                && loaded.max_seq_length == max_seq_length
+            loaded.model_path == active_config.model_path
+                && loaded.tokenizer_path == active_config.tokenizer_path
+                && loaded.max_seq_length == active_config.max_seq_length
+                && loaded.embedding_dimensions == active_config.embedding_dimensions
         });
 
         if !reuse {
-            let (session, tokenizer) = create_runtime(&app, &model_path, &tokenizer_path)?;
+            let (session, tokenizer) =
+                create_runtime(&app, &active_config.model_path, &active_config.tokenizer_path)?;
             *cache = Some(LoadedEmbeddingRuntime {
-                model_path: model_path.clone(),
-                tokenizer_path: tokenizer_path.clone(),
-                max_seq_length,
+                model_path: active_config.model_path.clone(),
+                tokenizer_path: active_config.tokenizer_path.clone(),
+                max_seq_length: active_config.max_seq_length,
+                embedding_dimensions: active_config.embedding_dimensions,
                 session,
                 tokenizer,
             });
@@ -444,7 +467,7 @@ pub async fn compute_embedding(app: AppHandle, text: String) -> Result<Vec<f32>,
                 "embedding_debug",
                 format!(
                     "created persistent embedding runtime model={}",
-                    model_path.display()
+                    active_config.model_path.display()
                 ),
             );
         }
@@ -466,6 +489,7 @@ pub async fn compute_embedding(app: AppHandle, text: String) -> Result<Vec<f32>,
             &loaded.tokenizer,
             &text,
             loaded.max_seq_length,
+            loaded.embedding_dimensions,
         )?
     } else {
         {
@@ -480,15 +504,25 @@ pub async fn compute_embedding(app: AppHandle, text: String) -> Result<Vec<f32>,
             }
         }
 
-        let (mut session, tokenizer) = create_runtime(&app, &model_path, &tokenizer_path)?;
+        let (mut session, tokenizer) =
+            create_runtime(&app, &active_config.model_path, &active_config.tokenizer_path)?;
         log_info(
             &app,
             "embedding_debug",
-            format!("onnx session ready model_path={}", model_path.display()),
+            format!(
+                "onnx session ready model_path={}",
+                active_config.model_path.display()
+            ),
         );
         log_info(&app, "embedding_debug", "tokenizer loaded");
         log_info(&app, "embedding_debug", "running embedding inference");
-        compute_embedding_with_session(&mut session, &tokenizer, &text, max_seq_length)?
+        compute_embedding_with_session(
+            &mut session,
+            &tokenizer,
+            &text,
+            active_config.max_seq_length,
+            active_config.embedding_dimensions,
+        )?
     };
     log_info(
         &app,
@@ -514,25 +548,28 @@ pub async fn initialize_embedding_model(app: AppHandle) -> Result<(), String> {
         ));
     }
 
-    let (_, model_path, tokenizer_path, max_seq_length, version_label) =
-        resolve_runtime_model(&app)?;
+    let active_config = resolve_runtime_model(&app)?;
 
-    if !model_path.exists() {
+    if !active_config.model_path.exists() {
         return Err(crate::utils::err_msg(
             module_path!(),
             line!(),
-            format!("Model file missing: {}", model_path.display()),
+            format!("Model file missing: {}", active_config.model_path.display()),
         ));
     }
-    if !tokenizer_path.exists() {
+    if !active_config.tokenizer_path.exists() {
         return Err(format!(
             "Tokenizer file missing: {}",
-            tokenizer_path.display()
+            active_config.tokenizer_path.display()
         ));
     }
 
-    let model_size = fs::metadata(&model_path).map(|m| m.len()).unwrap_or(0);
-    let tokenizer_size = fs::metadata(&tokenizer_path).map(|m| m.len()).unwrap_or(0);
+    let model_size = fs::metadata(&active_config.model_path)
+        .map(|m| m.len())
+        .unwrap_or(0);
+    let tokenizer_size = fs::metadata(&active_config.tokenizer_path)
+        .map(|m| m.len())
+        .unwrap_or(0);
     if model_size == 0 || tokenizer_size == 0 {
         return Err(format!(
             "Model files look invalid (sizes: model={} bytes, tokenizer={} bytes)",
@@ -547,14 +584,21 @@ pub async fn initialize_embedding_model(app: AppHandle) -> Result<(), String> {
     if keep_model_loaded {
         let mut cache = LOADED_EMBEDDING_RUNTIME.lock().await;
         let reuse = cache.as_ref().is_some_and(|loaded| {
-            loaded.model_path == model_path && loaded.tokenizer_path == tokenizer_path
+            loaded.model_path == active_config.model_path
+                && loaded.tokenizer_path == active_config.tokenizer_path
+                && loaded.embedding_dimensions == active_config.embedding_dimensions
         });
         if !reuse {
-            let (session, tokenizer) = create_runtime(&app, &model_path, &tokenizer_path)?;
+            let (session, tokenizer) = create_runtime(
+                &app,
+                &active_config.model_path,
+                &active_config.tokenizer_path,
+            )?;
             *cache = Some(LoadedEmbeddingRuntime {
-                model_path: model_path.clone(),
-                tokenizer_path: tokenizer_path.clone(),
-                max_seq_length,
+                model_path: active_config.model_path.clone(),
+                tokenizer_path: active_config.tokenizer_path.clone(),
+                max_seq_length: active_config.max_seq_length,
+                embedding_dimensions: active_config.embedding_dimensions,
                 session,
                 tokenizer,
             });
@@ -563,8 +607,8 @@ pub async fn initialize_embedding_model(app: AppHandle) -> Result<(), String> {
                 "embedding_init",
                 format!(
                     "persistent embedding runtime primed model={} tokenizer={}",
-                    model_path.display(),
-                    tokenizer_path.display()
+                    active_config.model_path.display(),
+                    active_config.tokenizer_path.display()
                 ),
             );
         }
@@ -587,18 +631,18 @@ pub async fn initialize_embedding_model(app: AppHandle) -> Result<(), String> {
                 format!("Failed to set optimization level: {}", e),
             )
         })?
-        .commit_from_file(&model_path)
+        .commit_from_file(&active_config.model_path)
         .map_err(|e| {
             crate::utils::err_msg(
                 module_path!(),
                 line!(),
-                format!("Failed to load {} model: {}", version_label, e),
+                format!("Failed to load {} model: {}", active_config.version_label, e),
             )
         })?;
-    let _tokenizer = Tokenizer::from_file(&tokenizer_path).map_err(|e| {
+    let _tokenizer = Tokenizer::from_file(&active_config.tokenizer_path).map_err(|e| {
         format!(
             "Failed to load tokenizer from {}: {}",
-            tokenizer_path.display(),
+            active_config.tokenizer_path.display(),
             e
         )
     })?;
@@ -607,10 +651,11 @@ pub async fn initialize_embedding_model(app: AppHandle) -> Result<(), String> {
         &app,
         "embedding_init",
         format!(
-            "model validation ok version={} model_path={} tokenizer_path={}",
-            version_label,
-            model_path.display(),
-            tokenizer_path.display()
+            "model validation ok version={} model_path={} tokenizer_path={} dimensions={}",
+            active_config.version_label,
+            active_config.model_path.display(),
+            active_config.tokenizer_path.display(),
+            active_config.embedding_dimensions
         ),
     );
 

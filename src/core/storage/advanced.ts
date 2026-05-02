@@ -14,6 +14,8 @@ export interface AdvancedSettings {
   helpMeReplyEnabled?: boolean;
   manualModeContextWindow?: number;
   embeddingMaxTokens?: number; // 1024, 2048, or 4096
+  embeddingModelVersion?: "v3" | "v4";
+  embeddingDimensions?: number;
   accessibility?: {
     send: { enabled: boolean; volume: number };
     success: { enabled: boolean; volume: number };

@@ -765,6 +765,12 @@ pub struct MemoryEmbedding {
     /// Number of times this memory was retrieved for context
     #[serde(default)]
     pub access_count: u32,
+    /// Embedding source version used to create this vector, e.g. v3 or v4.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub embedding_source_version: Option<String>,
+    /// Embedding dimension used to create this vector.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub embedding_dimensions: Option<usize>,
     /// Ephemeral match score (similarity) from retrieval
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub match_score: Option<f32>,
