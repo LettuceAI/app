@@ -2102,7 +2102,7 @@ export const DynamicMemorySettingsSchema = z.object({
   enabled: z.boolean().default(false),
   summaryMessageInterval: z.number().min(1).default(20),
   maxEntries: z.number().min(10).max(500).default(50),
-  minSimilarityThreshold: z.number().min(0).max(1).default(0.35),
+  minSimilarityThreshold: z.number().min(0).max(1).default(0.32),
   retrievalLimit: z.number().min(1).max(20).default(5),
   retrievalStrategy: z.enum(["smart", "cosine"]).default("smart"),
   hotMemoryTokenBudget: z.number().min(500).max(16384).default(2000),
@@ -2597,7 +2597,8 @@ export const SettingsSchema = z.object({
         DynamicMemoryStructuredFallbackFormatSchema.optional(),
       manualModeContextWindow: z.number().optional(),
       embeddingMaxTokens: z.number().optional(), // 1024, 2048, or 4096
-      embeddingModelVersion: z.enum(["v2", "v3"]).optional(),
+      embeddingModelVersion: z.enum(["v3", "v4"]).optional(),
+      embeddingDimensions: z.number().optional(),
       embeddingKeepModelLoaded: z.boolean().optional(),
       hostApi: HostApiSettingsSchema.optional(),
       dynamicMemory: DynamicMemorySettingsSchema.optional(),
