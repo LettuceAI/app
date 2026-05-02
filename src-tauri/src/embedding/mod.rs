@@ -21,10 +21,11 @@ mod util;
 use specs::*;
 
 const MAX_SEQ_LENGTH_V1: usize = 512;
-const MAX_SEQ_LENGTH_V2: usize = 4096;
+const MAX_SEQ_LENGTH_MODERN: usize = 4096;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub(crate) const ORT_VERSION: &str = "1.22.0";
-const EMBEDDING_DIM: usize = 512;
+const EMBEDDING_DIM_LEGACY: usize = 512;
+const EMBEDDING_DIM_V4: usize = 768;
 const EMBEDDING_TEST_TIMEOUT_SECS: u64 = 90;
 const EMBEDDING_BENCH_MAX_SEQ_LENGTH: usize = 1024;
 
@@ -32,25 +33,36 @@ const EMBEDDING_BENCH_MAX_SEQ_LENGTH: usize = 1024;
 pub enum EmbeddingModelVersion {
     V1,
     V2,
-    #[default]
     V3,
+    #[default]
+    V4,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum EmbeddingSourceVersion {
     V1,
-    V2,
     V3,
+    V4,
 }
 
 impl EmbeddingSourceVersion {
     fn as_str(self) -> &'static str {
         match self {
             EmbeddingSourceVersion::V1 => "v1",
-            EmbeddingSourceVersion::V2 => "v2",
             EmbeddingSourceVersion::V3 => "v3",
+            EmbeddingSourceVersion::V4 => "v4",
         }
     }
+}
+
+#[derive(Clone, Debug)]
+struct ActiveEmbeddingConfig {
+    source: EmbeddingSourceVersion,
+    version_label: &'static str,
+    model_path: PathBuf,
+    tokenizer_path: PathBuf,
+    max_seq_length: usize,
+    embedding_dimensions: usize,
 }
 
 #[derive(Clone, Debug, serde::Serialize)]
@@ -102,16 +114,6 @@ lazy_static::lazy_static! {
 
 static ORT_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
-fn panic_payload_to_string(payload: &(dyn std::any::Any + Send)) -> String {
-    if let Some(msg) = payload.downcast_ref::<&str>() {
-        (*msg).to_string()
-    } else if let Some(msg) = payload.downcast_ref::<String>() {
-        msg.clone()
-    } else {
-        "unknown panic payload".to_string()
-    }
-}
-
 pub fn embedding_model_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let lettuce_dir = crate::utils::lettuce_dir(app)?;
     Ok(lettuce_dir.join("models").join("embedding"))
@@ -119,23 +121,21 @@ pub fn embedding_model_dir(app: &AppHandle) -> Result<PathBuf, String> {
 
 fn resolve_selected_source_version(
     app: &AppHandle,
-    has_v1: bool,
-    has_v2: bool,
+    _has_v1: bool,
+    _has_v2: bool,
     has_v3: bool,
+    has_v4: bool,
 ) -> Option<EmbeddingSourceVersion> {
     let preferred = settings::read_embedding_preferences(app).preferred_source_version;
 
     match preferred.as_deref() {
+        Some("v4") if has_v4 => Some(EmbeddingSourceVersion::V4),
         Some("v3") if has_v3 => Some(EmbeddingSourceVersion::V3),
-        Some("v2") if has_v2 => Some(EmbeddingSourceVersion::V2),
-        Some("v1") if has_v1 => Some(EmbeddingSourceVersion::V1),
         _ => {
-            if has_v3 {
+            if has_v4 {
+                Some(EmbeddingSourceVersion::V4)
+            } else if has_v3 {
                 Some(EmbeddingSourceVersion::V3)
-            } else if has_v2 {
-                Some(EmbeddingSourceVersion::V2)
-            } else if has_v1 {
-                Some(EmbeddingSourceVersion::V1)
             } else {
                 None
             }
@@ -154,62 +154,80 @@ fn resolve_model_paths(
             MAX_SEQ_LENGTH_V1,
             "v1",
         ),
-        EmbeddingSourceVersion::V2 => {
-            let tokenizer = if model_dir.join("v2-tokenizer.json").exists() {
-                model_dir.join("v2-tokenizer.json")
-            } else {
-                model_dir.join("tokenizer.json")
-            };
-            (
-                model_dir.join("v2-model.onnx"),
-                tokenizer,
-                MAX_SEQ_LENGTH_V2,
-                "v2",
-            )
-        }
         EmbeddingSourceVersion::V3 => (
             model_dir.join("v3-model.int8.onnx"),
             model_dir.join("v3-tokenizer.json"),
-            MAX_SEQ_LENGTH_V2,
+            MAX_SEQ_LENGTH_MODERN,
             "v3",
+        ),
+        EmbeddingSourceVersion::V4 => (
+            model_dir.join("v4-model.int8.onnx"),
+            model_dir.join("v4-tokenizer.json"),
+            MAX_SEQ_LENGTH_MODERN,
+            "v4",
         ),
     }
 }
 
-fn resolve_runtime_model(
-    app: &AppHandle,
-) -> Result<
-    (
-        EmbeddingSourceVersion,
-        PathBuf,
-        PathBuf,
-        usize,
-        &'static str,
-    ),
-    String,
-> {
+fn resolve_target_embedding_dimensions(
+    source: EmbeddingSourceVersion,
+    preferred_dimensions: Option<usize>,
+) -> usize {
+    match source {
+        EmbeddingSourceVersion::V4 => match preferred_dimensions.unwrap_or(EMBEDDING_DIM_V4) {
+            64 | 128 | 256 | 512 | 768 => preferred_dimensions.unwrap_or(EMBEDDING_DIM_V4),
+            _ => EMBEDDING_DIM_V4,
+        },
+        _ => EMBEDDING_DIM_LEGACY,
+    }
+}
+
+fn resolve_runtime_model(app: &AppHandle) -> Result<ActiveEmbeddingConfig, String> {
     let model_dir = embedding_model_dir(app)?;
     layout::migrate_legacy_layout(&model_dir)?;
     let installed = layout::detect_installed_sources(&model_dir);
-    let source =
-        resolve_selected_source_version(app, installed.has_v1, installed.has_v2, installed.has_v3)
-            .ok_or_else(|| {
-                crate::utils::err_msg(
-                    module_path!(),
-                    line!(),
-                    "Model files not found. Please download the model first.",
-                )
-            })?;
+    let source = resolve_selected_source_version(
+        app,
+        installed.has_v1,
+        installed.has_v2,
+        installed.has_v3,
+        installed.has_v4,
+    )
+    .ok_or_else(|| {
+        crate::utils::err_msg(
+            module_path!(),
+            line!(),
+            "Model files not found. Please download the model first.",
+        )
+    })?;
 
     let (model_path, tokenizer_path, mut max_seq_length, label) =
         resolve_model_paths(&model_dir, source);
     if source != EmbeddingSourceVersion::V1 {
         let settings_max_tokens = settings::read_embedding_preferences(app).max_tokens;
-        let resolved_max_tokens = settings_max_tokens.unwrap_or(MAX_SEQ_LENGTH_V2);
-        max_seq_length = resolved_max_tokens.clamp(512, MAX_SEQ_LENGTH_V2);
+        let resolved_max_tokens = settings_max_tokens.unwrap_or(MAX_SEQ_LENGTH_MODERN);
+        max_seq_length = resolved_max_tokens.clamp(512, MAX_SEQ_LENGTH_MODERN);
     }
 
-    Ok((source, model_path, tokenizer_path, max_seq_length, label))
+    let prefs = settings::read_embedding_preferences(app);
+    let embedding_dimensions =
+        resolve_target_embedding_dimensions(source, prefs.embedding_dimensions);
+
+    Ok(ActiveEmbeddingConfig {
+        source,
+        version_label: label,
+        model_path,
+        tokenizer_path,
+        max_seq_length,
+        embedding_dimensions,
+    })
+}
+
+pub(crate) fn resolve_active_embedding_signature(
+    app: &AppHandle,
+) -> Result<(String, usize), String> {
+    let active = resolve_runtime_model(app)?;
+    Ok((active.source.as_str().to_string(), active.embedding_dimensions))
 }
 
 #[tauri::command]
@@ -217,13 +235,16 @@ pub fn check_embedding_model(app: AppHandle) -> Result<bool, String> {
     let model_dir = embedding_model_dir(&app)?;
     layout::migrate_legacy_layout(&model_dir)?;
     let installed = layout::detect_installed_sources(&model_dir);
-    Ok(installed.has_v1 || installed.has_v2 || installed.has_v3)
+    Ok(installed.has_v3 || installed.has_v4)
 }
 
 pub fn detect_model_version(app: &AppHandle) -> Result<Option<EmbeddingModelVersion>, String> {
     let model_dir = embedding_model_dir(app)?;
     layout::migrate_legacy_layout(&model_dir)?;
     let installed = layout::detect_installed_sources(&model_dir);
+    if installed.has_v4 {
+        return Ok(Some(EmbeddingModelVersion::V4));
+    }
     if installed.has_v3 {
         return Ok(Some(EmbeddingModelVersion::V3));
     }
@@ -234,6 +255,17 @@ pub fn detect_model_version(app: &AppHandle) -> Result<Option<EmbeddingModelVers
         return Ok(Some(EmbeddingModelVersion::V1));
     }
     Ok(None)
+}
+
+impl EmbeddingModelVersion {
+    fn label(&self) -> &'static str {
+        match self {
+            EmbeddingModelVersion::V1 => "v1",
+            EmbeddingModelVersion::V2 => "v2",
+            EmbeddingModelVersion::V3 => "v3",
+            EmbeddingModelVersion::V4 => "v4",
+        }
+    }
 }
 
 #[tauri::command]
@@ -252,22 +284,33 @@ pub fn get_embedding_model_info(app: AppHandle) -> Result<EmbeddingModelInfo, St
     if installed.has_v3 {
         available_versions.push("v3".to_string());
     }
+    if installed.has_v4 {
+        available_versions.push("v4".to_string());
+    }
 
-    let selected_source =
-        resolve_selected_source_version(&app, installed.has_v1, installed.has_v2, installed.has_v3);
+    let selected_source = resolve_selected_source_version(
+        &app,
+        installed.has_v1,
+        installed.has_v2,
+        installed.has_v3,
+        installed.has_v4,
+    );
     let source_version = selected_source.map(|v| v.as_str().to_string());
-    let max_tokens = if selected_source == Some(EmbeddingSourceVersion::V1) {
-        MAX_SEQ_LENGTH_V1 as u32
-    } else if selected_source.is_some() {
-        MAX_SEQ_LENGTH_V2 as u32
-    } else {
-        0
+    let max_tokens = match selected_source {
+        Some(EmbeddingSourceVersion::V1) => MAX_SEQ_LENGTH_V1 as u32,
+        Some(_) => MAX_SEQ_LENGTH_MODERN as u32,
+        None => 0,
     };
 
-    match detect_model_version(&app)? {
-        Some(EmbeddingModelVersion::V2) => Ok(EmbeddingModelInfo {
+    let detected = detect_model_version(&app)?;
+    let companions_complete = installed.has_companion_emotion
+        && installed.has_companion_ner
+        && installed.has_companion_router;
+
+    Ok(match detected {
+        Some(version) => EmbeddingModelInfo {
             installed: true,
-            version: Some("v2".to_string()),
+            version: Some(version.label().to_string()),
             source_version: source_version.clone(),
             selected_source_version: source_version,
             available_versions,
@@ -275,39 +318,9 @@ pub fn get_embedding_model_info(app: AppHandle) -> Result<EmbeddingModelInfo, St
             companion_emotion_installed: installed.has_companion_emotion,
             companion_ner_installed: installed.has_companion_ner,
             companion_router_installed: installed.has_companion_router,
-            install_bundle_complete: installed.has_companion_emotion
-                && installed.has_companion_ner
-                && installed.has_companion_router,
-        }),
-        Some(EmbeddingModelVersion::V3) => Ok(EmbeddingModelInfo {
-            installed: true,
-            version: Some("v3".to_string()),
-            source_version: source_version.clone(),
-            selected_source_version: source_version,
-            available_versions,
-            max_tokens,
-            companion_emotion_installed: installed.has_companion_emotion,
-            companion_ner_installed: installed.has_companion_ner,
-            companion_router_installed: installed.has_companion_router,
-            install_bundle_complete: installed.has_companion_emotion
-                && installed.has_companion_ner
-                && installed.has_companion_router,
-        }),
-        Some(EmbeddingModelVersion::V1) => Ok(EmbeddingModelInfo {
-            installed: true,
-            version: Some("v1".to_string()),
-            source_version: source_version.clone(),
-            selected_source_version: source_version,
-            available_versions,
-            max_tokens,
-            companion_emotion_installed: installed.has_companion_emotion,
-            companion_ner_installed: installed.has_companion_ner,
-            companion_router_installed: installed.has_companion_router,
-            install_bundle_complete: installed.has_companion_emotion
-                && installed.has_companion_ner
-                && installed.has_companion_router,
-        }),
-        None => Ok(EmbeddingModelInfo {
+            install_bundle_complete: companions_complete,
+        },
+        None => EmbeddingModelInfo {
             installed: false,
             version: None,
             source_version: None,
@@ -318,8 +331,8 @@ pub fn get_embedding_model_info(app: AppHandle) -> Result<EmbeddingModelInfo, St
             companion_ner_installed: installed.has_companion_ner,
             companion_router_installed: installed.has_companion_router,
             install_bundle_complete: false,
-        }),
-    }
+        },
+    })
 }
 
 pub use download::reset_download_state;

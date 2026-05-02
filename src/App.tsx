@@ -112,6 +112,7 @@ import {
 import { CreateMenu, GuidedTour, useGuidedTour } from "./ui/components";
 import { V1UpgradeToast } from "./ui/components/V1UpgradeToast";
 import { V2UpgradeToast } from "./ui/components/V2UpgradeToast";
+import { V3UpgradeToast } from "./ui/components/V3UpgradeToast";
 import { ConfirmBottomMenuHost } from "./ui/components/ConfirmBottomMenu";
 import { isOnboardingCompleted } from "./core/storage/appState";
 import { TopNav, BottomNav, WindowControls } from "./ui/components/App";
@@ -438,6 +439,32 @@ function App() {
           const title = payload.title;
           const description = payload.description;
           const id = payload.id;
+          const dismiss = payload.dismiss;
+          const kind = payload.kind;
+          const subtitle = payload.subtitle;
+          const modelName = payload.modelName;
+          const progress = payload.progress;
+          if (dismiss === true && (typeof id === "string" || typeof id === "number")) {
+            toast.dismiss(id);
+            return;
+          }
+          if (
+            kind === "modelLoad"
+            && typeof title === "string"
+            && typeof subtitle === "string"
+            && typeof modelName === "string"
+            && typeof progress === "number"
+          ) {
+            toast.modelLoad({
+              id: typeof id === "string" || typeof id === "number" ? id : undefined,
+              title,
+              subtitle,
+              modelName,
+              progress,
+              duration: Infinity,
+            });
+            return;
+          }
           if (typeof title !== "string") {
             return;
           }
@@ -1161,6 +1188,8 @@ function AppContent() {
       <V1UpgradeToast />
       {/* V2 Embedding Model Upgrade Toast */}
       <V2UpgradeToast />
+      {/* V3 -> V4 Embedding Model Upgrade Toast (persistent dismissal) */}
+      <V3UpgradeToast />
     </div>
   );
 }

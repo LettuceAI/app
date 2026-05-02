@@ -43,19 +43,6 @@ fn delete_files(model_dir: &Path, files: &[&str]) -> Result<(), String> {
     Ok(())
 }
 
-/// All known files across embedding + companion. Used by the cancel command (which doesn't know
-/// which download was active) and by the legacy "delete embedding model" command.
-fn all_known_files() -> Vec<&'static str> {
-    let mut all_files = MODEL_FILES_V1.to_vec();
-    all_files.extend(MODEL_FILES_V2_LOCAL.iter().copied());
-    all_files.extend(MODEL_FILES_V2_LOCAL_LEGACY.iter().copied());
-    all_files.extend(MODEL_FILES_V3_LOCAL.iter().copied());
-    all_files.extend(COMPANION_EMOTION_MODEL_FILES_LOCAL.iter().copied());
-    all_files.extend(COMPANION_NER_MODEL_FILES_LOCAL.iter().copied());
-    all_files.extend(COMPANION_ROUTER_MODEL_FILES_LOCAL.iter().copied());
-    all_files
-}
-
 fn describe_path(path: &Path) -> String {
     match fs::metadata(path) {
         Ok(meta) => format!(
@@ -69,69 +56,24 @@ fn describe_path(path: &Path) -> String {
 }
 
 fn log_model_file_status(app: &AppHandle, component: &str, model_dir: &PathBuf) {
-    for filename in MODEL_FILES_V1.iter() {
-        let path = model_dir.join(filename);
-        log_info(
-            app,
-            component,
-            format!("model file v1 {}: {}", filename, describe_path(&path)),
-        );
-    }
-
-    for filename in MODEL_FILES_V2_LOCAL.iter() {
-        let path = model_dir.join(filename);
-        log_info(
-            app,
-            component,
-            format!("model file v2 {}: {}", filename, describe_path(&path)),
-        );
-    }
-    for filename in MODEL_FILES_V3_LOCAL.iter() {
-        let path = model_dir.join(filename);
-        log_info(
-            app,
-            component,
-            format!("model file v3 {}: {}", filename, describe_path(&path)),
-        );
-    }
-
-    for filename in COMPANION_EMOTION_MODEL_FILES_LOCAL.iter() {
-        let path = model_dir.join(filename);
-        log_info(
-            app,
-            component,
-            format!(
-                "model file companion-emotion {}: {}",
-                filename,
-                describe_path(&path)
-            ),
-        );
-    }
-
-    for filename in COMPANION_NER_MODEL_FILES_LOCAL.iter() {
-        let path = model_dir.join(filename);
-        log_info(
-            app,
-            component,
-            format!(
-                "model file companion-ner {}: {}",
-                filename,
-                describe_path(&path)
-            ),
-        );
-    }
-
-    for filename in COMPANION_ROUTER_MODEL_FILES_LOCAL.iter() {
-        let path = model_dir.join(filename);
-        log_info(
-            app,
-            component,
-            format!(
-                "model file companion-router {}: {}",
-                filename,
-                describe_path(&path)
-            ),
-        );
+    let groups: &[(&str, &[&str])] = &[
+        ("v1", &MODEL_FILES_V1),
+        ("v2", &MODEL_FILES_V2_LOCAL),
+        ("v3", &MODEL_FILES_V3_LOCAL),
+        ("v4", &MODEL_FILES_V4_LOCAL),
+        ("companion-emotion", &COMPANION_EMOTION_MODEL_FILES_LOCAL),
+        ("companion-ner", &COMPANION_NER_MODEL_FILES_LOCAL),
+        ("companion-router", &COMPANION_ROUTER_MODEL_FILES_LOCAL),
+    ];
+    for (label, files) in groups {
+        for filename in files.iter() {
+            let path = model_dir.join(filename);
+            log_info(
+                app,
+                component,
+                format!("model file {} {}: {}", label, filename, describe_path(&path)),
+            );
+        }
     }
 }
 
@@ -389,6 +331,23 @@ pub async fn start_embedding_download(
     app: AppHandle,
     version: Option<String>,
 ) -> Result<(), String> {
+    // v1, v2, and v3 are no longer offered as downloadable options. Existing
+    // installs are still detected and used for inference, but new downloads
+    // and upgrades always target the current model (v4).
+    if let Some(requested) = version.as_deref() {
+        let normalized = requested.to_ascii_lowercase();
+        if matches!(normalized.as_str(), "v1" | "v2" | "v3") {
+            return Err(crate::utils::err_msg(
+                module_path!(),
+                line!(),
+                format!(
+                    "Embedding model {} is no longer downloadable. Use v4.",
+                    normalized
+                ),
+            ));
+        }
+    }
+
     super::inference::clear_loaded_runtime_cache().await;
 
     let source_spec = download_source_spec(version.as_deref());
@@ -464,12 +423,13 @@ pub async fn get_embedding_download_progress() -> Result<DownloadProgress, Strin
     Ok(state.progress.clone())
 }
 
+/// Cancel an in-progress download. Signals the active `download_file` loop to
+/// abort, which cleans up its own `.tmp` partial. Already-completed files from
+/// the same download attempt are **left in place**; if the user wants them
+/// gone they can run `delete_embedding_model_version` (or the companion
+/// equivalent) explicitly. This separation prevents the historical bug where
+/// cancelling one download would wipe unrelated installed models.
 pub async fn cancel_embedding_download(app: AppHandle) -> Result<(), String> {
-    super::inference::clear_loaded_runtime_cache().await;
-    super::emotion::clear_loaded_runtime_cache().await;
-    super::ner::clear_loaded_runtime_cache().await;
-    super::router::clear_loaded_runtime_cache().await;
-
     {
         let mut state = DOWNLOAD_STATE.lock().await;
         if !state.is_downloading {
@@ -480,11 +440,9 @@ pub async fn cancel_embedding_download(app: AppHandle) -> Result<(), String> {
 
     log_info(&app, "embedding_download", "cancel requested");
 
-    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-
-    let model_dir = embedding_model_dir(&app)?;
-    let all_files = all_known_files();
-    delete_files(&model_dir, &all_files)?;
+    // Give the active `download_file` loop a moment to notice the flag and
+    // clean up its in-flight `.tmp` file.
+    tokio::time::sleep(tokio::time::Duration::from_millis(150)).await;
 
     {
         let mut state = DOWNLOAD_STATE.lock().await;
@@ -517,6 +475,7 @@ pub async fn delete_embedding_model(app: AppHandle) -> Result<(), String> {
     files.extend(MODEL_FILES_V2_LOCAL.iter().copied());
     files.extend(MODEL_FILES_V2_LOCAL_LEGACY.iter().copied());
     files.extend(MODEL_FILES_V3_LOCAL.iter().copied());
+    files.extend(MODEL_FILES_V4_LOCAL.iter().copied());
     delete_files(&model_dir, &files)?;
 
     Ok(())
@@ -547,6 +506,7 @@ pub async fn delete_embedding_model_version(app: AppHandle, version: String) -> 
             v
         }
         "v3" => MODEL_FILES_V3_LOCAL.to_vec(),
+        "v4" => MODEL_FILES_V4_LOCAL.to_vec(),
         _ => {
             return Err(crate::utils::err_msg(
                 module_path!(),

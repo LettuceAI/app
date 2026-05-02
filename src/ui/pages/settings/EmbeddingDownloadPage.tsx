@@ -26,10 +26,11 @@ export function EmbeddingDownloadPage() {
   const [searchParams] = useSearchParams();
   const returnTo = searchParams.get("returnTo");
   const isUpgrade = searchParams.get("upgrade") === "true";
-  const requestedVersion = searchParams.get("version");
-  const downloadVersion = requestedVersion === "v2" ? "v2" : "v3";
-  const downloadVersionLabel = downloadVersion.toUpperCase();
-  const downloadApproxSize = downloadVersion === "v2" ? "~132 MB" : "~86 MB";
+  // v3 is no longer offered as a download option; the page always installs v4.
+  // The `?version=` query param is ignored aside from logging legacy callers.
+  const downloadVersion = "v4" as const;
+  const downloadVersionLabel = "V4";
+  const downloadApproxSize = "~138 MB";
 
   const [showCapacitySelection, setShowCapacitySelection] = useState(true);
   const [selectedCapacity, setSelectedCapacity] = useState<Capacity>(2048);
@@ -38,13 +39,9 @@ export function EmbeddingDownloadPage() {
   const [testResults, setTestResults] = useState<{
     success: boolean;
     message: string;
-    scores: Array<{
-      pairName: string;
-      textA: string;
-      textB: string;
-      similarityScore: number;
-      expected: string;
-    }>;
+    health: { identityCosine: number; passed: boolean };
+    retrieval: { top1Rate: number; top3Rate: number; mrr: number; passed: boolean };
+    separation: { relatedAvg: number; unrelatedAvg: number; margin: number; passed: boolean };
   } | null>(null);
   const [countdown, setCountdown] = useState<number>(5);
   const [testProgress, setTestProgress] = useState<{ current: number; total: number } | null>(null);
@@ -64,7 +61,7 @@ export function EmbeddingDownloadPage() {
           enabled: true,
           summaryMessageInterval: 20,
           maxEntries: 50,
-          minSimilarityThreshold: 0.35,
+          minSimilarityThreshold: 0.32,
           retrievalLimit: 5,
           retrievalStrategy: "smart",
           hotMemoryTokenBudget: 2000,
@@ -155,7 +152,7 @@ export function EmbeddingDownloadPage() {
         enabled: false,
         summaryMessageInterval: 20,
         maxEntries: 50,
-        minSimilarityThreshold: 0.35,
+        minSimilarityThreshold: 0.32,
         retrievalLimit: 5,
         retrievalStrategy: "smart",
         hotMemoryTokenBudget: 2000,
@@ -332,20 +329,37 @@ export function EmbeddingDownloadPage() {
                       {testResults.message}
                     </div>
                   </div>
-                  <div className="space-y-3">
-                    {testResults.scores.map((score, idx) => (
-                      <div key={idx} className="rounded-lg border border-fg/10 bg-fg/5 p-3">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-medium text-fg/70">{score.pairName}</span>
+                  <div className="space-y-2">
+                    {[
+                      {
+                        label: "Health",
+                        passed: testResults.health.passed,
+                        detail: `identity ${testResults.health.identityCosine.toFixed(4)}`,
+                      },
+                      {
+                        label: "Retrieval",
+                        passed: testResults.retrieval.passed,
+                        detail: `top-1 ${Math.round(testResults.retrieval.top1Rate * 100)}% · mrr ${testResults.retrieval.mrr.toFixed(2)}`,
+                      },
+                      {
+                        label: "Separation",
+                        passed: testResults.separation.passed,
+                        detail: `margin ${testResults.separation.margin.toFixed(3)}`,
+                      },
+                    ].map((row) => (
+                      <div
+                        key={row.label}
+                        className="rounded-lg border border-fg/10 bg-fg/5 p-3 flex items-center justify-between gap-3"
+                      >
+                        <div className="flex items-center gap-2">
                           <span
-                            className={`text-sm font-bold ${
-                              score.similarityScore > 0.6 ? "text-accent" : "text-warning"
+                            className={`inline-flex h-1.5 w-1.5 rounded-full ${
+                              row.passed ? "bg-accent" : "bg-danger/80"
                             }`}
-                          >
-                            {score.similarityScore.toFixed(4)}
-                          </span>
+                          />
+                          <span className="text-xs font-medium text-fg/70">{row.label}</span>
                         </div>
-                        <div className="mt-1 text-xs text-fg/50">Expected: {score.expected}</div>
+                        <span className="text-xs text-fg/50 tabular-nums">{row.detail}</span>
                       </div>
                     ))}
                   </div>

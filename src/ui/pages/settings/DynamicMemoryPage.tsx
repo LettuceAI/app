@@ -12,7 +12,6 @@ import {
   Zap,
   Scale,
   Brain,
-  Boxes,
   Rocket,
   Code2,
 } from "lucide-react";
@@ -30,7 +29,11 @@ import type {
 } from "../../../core/storage/schemas";
 import { cn, typography, interactive } from "../../design-tokens";
 import { useNavigate } from "react-router-dom";
-import { EmbeddingUpgradePrompt } from "../../components/EmbeddingUpgradePrompt";
+import {
+  EmbeddingUpgradePrompt,
+  isEmbeddingUpgradeDismissed,
+  isEmbeddingUpgradePromptForced,
+} from "../../components/EmbeddingUpgradePrompt";
 import { BottomMenu } from "../../components/BottomMenu";
 import { confirmBottomMenu } from "../../components/ConfirmBottomMenu";
 import { ModelSelectionBottomMenu } from "../../components/ModelSelectionBottomMenu";
@@ -67,6 +70,9 @@ const DEFAULT_DYNAMIC_MEMORY_SETTINGS: DynamicMemorySettings = {
 };
 
 type MemoryPreset = "minimal" | "balanced" | "comprehensive" | "custom";
+type SelectableEmbeddingVersion = "v3" | "v4";
+
+const V4_DIMENSION_OPTIONS = [64, 128, 256, 512, 768] as const;
 
 const PRESETS: Record<
   Exclude<MemoryPreset, "custom">,
@@ -223,6 +229,7 @@ export function DynamicMemoryPage() {
   const [summarisationModelId, setSummarisationModelId] = useState<string | null>(null);
   const [models, setModels] = useState<Model[]>([]);
   const [embeddingMaxTokens, setEmbeddingMaxTokens] = useState<number>(2048);
+  const [embeddingDimensions, setEmbeddingDimensions] = useState<number>(768);
   const [embeddingKeepModelLoaded, setEmbeddingKeepModelLoaded] = useState(false);
   const [modelVersion, setModelVersion] = useState<string | null>(null);
   const [modelSourceVersion, setModelSourceVersion] = useState<string | null>(null);
@@ -274,6 +281,7 @@ export function DynamicMemoryPage() {
           settings.advancedSettings?.dynamicMemoryLlamaSamplerOverwriteEnabled ?? true,
         );
         setEmbeddingMaxTokens(settings.advancedSettings?.embeddingMaxTokens ?? 2048);
+        setEmbeddingDimensions(settings.advancedSettings?.embeddingDimensions ?? 768);
         setEmbeddingKeepModelLoaded(settings.advancedSettings?.embeddingKeepModelLoaded ?? false);
         setModels(settings.models);
         setInstallBundleComplete(modelInfo.installBundleComplete ?? modelInfo.installed);
@@ -286,7 +294,20 @@ export function DynamicMemoryPage() {
           setSelectedEmbeddingVersion(sourceVersion);
           const available = modelInfo.availableVersions ?? [];
           setAvailableEmbeddingVersions(available);
-          if ((sourceVersion === "v1" || sourceVersion === "v2") && !available.includes("v3")) {
+          // Show the upgrade-to-v4 banner for v1/v2 installs only. v3 has its
+          // own app-level toast (`V3UpgradeToast`) that fires anywhere, so
+          // we don't double-prompt v3 users when they visit this page.
+          //
+          // If v4 is genuinely installed (whether as the active source or
+          // alongside the legacy one), the prompt is suppressed regardless of
+          // any debug flag. This guards against the force-prompt flag being
+          // accidentally left on after testing.
+          const v4Installed = available.includes("v4") || sourceVersion === "v4";
+          const isLegacy = sourceVersion === "v1" || sourceVersion === "v2";
+          const naturallyEligible =
+            isLegacy && !v4Installed && !isEmbeddingUpgradeDismissed("v4");
+          const forced = isEmbeddingUpgradePromptForced() && !v4Installed;
+          if (naturallyEligible || forced) {
             setShowUpgradePrompt(true);
           }
         }
@@ -413,7 +434,7 @@ export function DynamicMemoryPage() {
     }, "Failed to save embedding max tokens:");
   };
 
-  const handleEmbeddingModelVersionChange = async (version: "v2" | "v3") => {
+  const handleEmbeddingModelVersionChange = async (version: SelectableEmbeddingVersion) => {
     setSelectedEmbeddingVersion(version);
     setModelSourceVersion(version);
     await updateAdvancedSettings((advanced) => {
@@ -427,6 +448,21 @@ export function DynamicMemoryPage() {
     }
   };
 
+  const handleEmbeddingDimensionsChange = async (
+    dimensions: (typeof V4_DIMENSION_OPTIONS)[number],
+  ) => {
+    setEmbeddingDimensions(dimensions);
+    await updateAdvancedSettings((advanced) => {
+      advanced.embeddingDimensions = dimensions;
+    }, "Failed to save embedding dimensions:");
+    try {
+      await storageBridge.clearEmbeddingRuntimeCache();
+      await storageBridge.initializeEmbeddingModel();
+    } catch (err) {
+      console.error("Failed to reinitialize embedding runtime after dimension switch:", err);
+    }
+  };
+
   const handleEmbeddingKeepModelLoadedChange = async (enabled: boolean) => {
     setEmbeddingKeepModelLoaded(enabled);
     await updateAdvancedSettings((advanced) => {
@@ -434,14 +470,20 @@ export function DynamicMemoryPage() {
     }, "Failed to save keep-model-loaded setting:");
   };
 
-  const navigateToBundleDownload = (version?: "v2" | "v3") => {
+  const navigateToBundleDownload = (version?: SelectableEmbeddingVersion) => {
     const targetVersion =
-      version ?? (selectedEmbeddingVersion === "v2" || modelSourceVersion === "v2" ? "v2" : "v3");
+      version ?? (selectedEmbeddingVersion === "v3" || modelSourceVersion === "v3" ? "v3" : "v4");
     navigate(`/settings/embedding-download?version=${targetVersion}`);
   };
 
   const handleDeleteSelectedEmbeddingModel = async () => {
-    const version = selectedEmbeddingVersion === "v2" ? "v2" : "v3";
+    const version =
+      selectedEmbeddingVersion === "v3"
+        ? "v3"
+        : selectedEmbeddingVersion === "v4"
+          ? "v4"
+          : null;
+    if (!version) return;
     const confirmed = await confirmBottomMenu({
       title: t("dynamicMemory.page.deleteEmbeddingTitle", {
         version: version.toUpperCase(),
@@ -488,13 +530,15 @@ export function DynamicMemoryPage() {
   const isLocalLlamaSummaryModel =
     effectiveSummarisationModel?.providerId === "llamacpp"
     && getPlatform().type !== "mobile";
-  const hasV2Installed = availableEmbeddingVersions.includes("v2");
   const hasV3Installed = availableEmbeddingVersions.includes("v3");
-  const hasBothMajorEmbeddingVersionsInstalled = hasV2Installed && hasV3Installed;
+  const hasV4Installed = availableEmbeddingVersions.includes("v4");
+  const hasBothMajorEmbeddingVersionsInstalled = hasV3Installed && hasV4Installed;
   const effectiveEmbeddingVersion =
     selectedEmbeddingVersion ?? modelSourceVersion ?? modelVersion ?? null;
   const supportsExtendedTokenCapacity =
-    effectiveEmbeddingVersion === "v2" || effectiveEmbeddingVersion === "v3";
+    effectiveEmbeddingVersion === "v3" || effectiveEmbeddingVersion === "v4";
+  const supportsMatryoshkaDimensions = effectiveEmbeddingVersion === "v4";
+  const effectiveEmbeddingDimensions = supportsMatryoshkaDimensions ? embeddingDimensions : 512;
   const selectedSummarisationModelLabel =
     selectedSummarisationModel?.displayName || t("dynamicMemory.page.selectedModel");
 
@@ -515,7 +559,13 @@ export function DynamicMemoryPage() {
               <EmbeddingUpgradePrompt
                 onDismiss={() => setShowUpgradePrompt(false)}
                 returnTo="/settings/advanced/dynamic-memory"
-                currentVersion={modelSourceVersion === "v1" ? "v1" : "v2"}
+                currentVersion={
+                  modelSourceVersion === "v1"
+                    ? "v1"
+                    : modelSourceVersion === "v3"
+                      ? "v3"
+                      : "v2"
+                }
               />
             )}
           </AnimatePresence>
@@ -1231,14 +1281,14 @@ export function DynamicMemoryPage() {
 
                 {/* Right: Token Capacity (v2/v3) or Model Info */}
                 <div className="space-y-3">
-                  {availableEmbeddingVersions.filter((v) => v === "v2" || v === "v3").length >
+                  {availableEmbeddingVersions.filter((v) => v === "v3" || v === "v4").length >
                     1 && (
                     <div className="rounded-xl border border-fg/10 bg-fg/5 px-4 py-3">
                       <div className="mb-2 text-sm font-medium text-fg">
                         {t("dynamicMemory.page.embeddingModel")}
                       </div>
                       <div className="grid grid-cols-2 gap-2">
-                        {(["v2", "v3"] as const)
+                        {(["v3", "v4"] as const)
                           .filter((version) => availableEmbeddingVersions.includes(version))
                           .map((version) => (
                             <button
@@ -1255,6 +1305,11 @@ export function DynamicMemoryPage() {
                             </button>
                           ))}
                       </div>
+                      <p className="mt-2 text-[11px] text-fg/45">
+                        {selectedEmbeddingVersion === "v3"
+                          ? "v3 remains usable but is deprecated."
+                          : "v4 is the latest memory model and supports Matryoshka dimensions."}
+                      </p>
                     </div>
                   )}
 
@@ -1296,6 +1351,43 @@ export function DynamicMemoryPage() {
                     </div>
                   )}
 
+                  {supportsMatryoshkaDimensions && (
+                    <div className="rounded-xl border border-fg/10 bg-fg/5 px-4 py-3">
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <span className="text-sm font-medium text-fg">Embedding dimensions</span>
+                        <span
+                          className={cn(
+                            "rounded-md border border-fg/10 bg-fg/10 px-2 py-1",
+                            typography.caption.size,
+                            "text-fg/70",
+                          )}
+                        >
+                          {embeddingDimensions}d
+                        </span>
+                      </div>
+                      <p className="mb-3 text-[11px] leading-relaxed text-fg/45">
+                        v4 supports Matryoshka slicing. Lower dimensions use less storage and run
+                        faster; higher dimensions preserve more recall.
+                      </p>
+                      <div className="grid grid-cols-5 gap-2">
+                        {V4_DIMENSION_OPTIONS.map((value) => (
+                          <button
+                            key={value}
+                            onClick={() => handleEmbeddingDimensionsChange(value)}
+                            className={cn(
+                              "px-2 py-2 rounded-lg text-sm font-medium transition-all",
+                              embeddingDimensions === value
+                                ? "bg-info text-fg"
+                                : "border border-fg/10 bg-fg/5 text-fg/70 hover:border-fg/20",
+                            )}
+                          >
+                            {value}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {supportsExtendedTokenCapacity && (
                     <div className={cn("rounded-xl border border-fg/10 bg-fg/5 px-4 py-3")}>
                       <div className="flex items-center justify-between gap-3">
@@ -1323,10 +1415,8 @@ export function DynamicMemoryPage() {
                   {/* Model info */}
                   {modelVersion && (
                     <div className="text-xs text-fg/40 px-1">
-                      {t("dynamicMemory.page.installedModel", {
-                        version: modelSourceVersion ?? modelVersion,
-                        tokens: embeddingMaxTokens,
-                      })}
+                      Installed memory model {(modelSourceVersion ?? modelVersion).toUpperCase()} ·{" "}
+                      {embeddingMaxTokens} tokens · {effectiveEmbeddingDimensions}d
                     </div>
                   )}
 
@@ -1403,45 +1493,12 @@ export function DynamicMemoryPage() {
           <button
             onClick={() => {
               setShowDownloadModelMenu(false);
-              navigateToBundleDownload("v2");
+              navigateToBundleDownload("v4");
             }}
-            disabled={hasV2Installed && installBundleComplete}
+            disabled={hasV4Installed && installBundleComplete}
             className={cn(
               "flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left transition",
-              hasV2Installed && installBundleComplete
-                ? "cursor-not-allowed border-fg/10 bg-fg/5 text-fg/35"
-                : "border-fg/10 bg-fg/5 text-fg hover:bg-fg/10",
-            )}
-          >
-            <div className="flex items-center gap-2">
-              <div className="rounded-md border border-fg/10 bg-fg/5 p-1.5">
-                <Boxes className="h-4 w-4" />
-              </div>
-              <div>
-                <div className="text-sm font-medium">
-                  {t("dynamicMemory.page.downloadVersion", { version: "v2" })}
-                </div>
-                <div className="text-[11px] text-fg/45">
-                  {t("dynamicMemory.page.downloadV2Description")}
-                </div>
-              </div>
-            </div>
-            {hasV2Installed && installBundleComplete && (
-              <span className="flex items-center gap-1 text-xs text-fg/45">
-                <Check className="h-3.5 w-3.5" />
-                {t("dynamicMemory.page.installed")}
-              </span>
-            )}
-          </button>
-          <button
-            onClick={() => {
-              setShowDownloadModelMenu(false);
-              navigateToBundleDownload("v3");
-            }}
-            disabled={hasV3Installed && installBundleComplete}
-            className={cn(
-              "flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left transition",
-              hasV3Installed && installBundleComplete
+              hasV4Installed && installBundleComplete
                 ? "cursor-not-allowed border-fg/10 bg-fg/5 text-fg/35"
                 : "border-fg/10 bg-fg/5 text-fg hover:bg-fg/10",
             )}
@@ -1452,14 +1509,14 @@ export function DynamicMemoryPage() {
               </div>
               <div>
                 <div className="text-sm font-medium">
-                  {t("dynamicMemory.page.downloadVersion", { version: "v3" })}
+                  {t("dynamicMemory.page.downloadVersion", { version: "v4" })}
                 </div>
                 <div className="text-[11px] text-fg/45">
-                  {t("dynamicMemory.page.downloadV3Description")}
+                  Latest roleplay memory quality with Matryoshka dimensions
                 </div>
               </div>
             </div>
-            {hasV3Installed && installBundleComplete && (
+            {hasV4Installed && installBundleComplete && (
               <span className="flex items-center gap-1 text-xs text-fg/45">
                 <Check className="h-3.5 w-3.5" />
                 {t("dynamicMemory.page.installed")}

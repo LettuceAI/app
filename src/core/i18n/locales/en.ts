@@ -424,24 +424,34 @@ export const enMessages = {
       summarization: "\u2022 Required for conversation summarization",
     },
     embeddingUpgrade: {
-      title: "Embedding Model v3 Available",
+      title: "Embedding Model v4 Available",
       v1Message:
-        "You're using v1 with 512 tokens. Upgrade to v3 for better memory quality and long-context support.",
+        "You're using v1 with 512 tokens. Upgrade to v4 for better memory quality and long-context support.",
       v2Message:
-        "You're using legacy v2. Upgrade to v3 for better memory quality with the latest embedding model.",
-      button: "Upgrade to v3",
+        "You're using legacy v2. Upgrade to v4 for better memory quality with the latest embedding model.",
+      v3Message:
+        "v4 is out and dramatically improves roleplay memory recall over v3 (recall@1 0.02 -> 0.92). Upgrading is recommended.",
+      button: "Upgrade to v4",
     },
     v2UpgradeToast: {
-      title: "Memory Model v3",
+      title: "Memory Model v4",
       badge: "Available",
-      message: "Improved embedding quality over v2",
+      message: "Improved embedding quality over legacy models",
       dismiss: "Dismiss",
       upgrade: "Upgrade",
     },
     v1UpgradeToast: {
-      title: "Memory Model v3 Available",
+      title: "Memory Model v4 Available",
       message: "Upgrade for better memory quality and long-context support.",
       dismiss: "Dismiss",
+      upgrade: "Upgrade",
+    },
+    v3UpgradeToast: {
+      title: "Memory model v4",
+      badge: "Available",
+      message:
+        "v4 dramatically improves roleplay memory recall over v3 (recall@1 0.02 → 0.92). Upgrading is recommended.",
+      dismiss: "Later",
       upgrade: "Upgrade",
     },
     createMenu: {
@@ -1896,8 +1906,8 @@ export const enMessages = {
       downloadEmbeddingDescription:
         "Choose which version to download. Installed versions are disabled.",
       downloadVersion: "Download {{version}}",
-      downloadV2Description: "Optimized for accuracy and long-context recall",
-      downloadV3Description: "Latest embedding quality",
+      downloadV2Description: "Legacy model",
+      downloadV3Description: "Deprecated but still supported",
       installed: "Installed",
       selectModel: "Select Model",
       searchModels: "Search models...",

@@ -4,47 +4,91 @@ import { ArrowUpRight, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { getEmbeddingModelInfo } from "../../core/storage/repo";
 import { useI18n } from "../../core/i18n/context";
+import {
+  isEmbeddingUpgradeDismissed,
+  isEmbeddingUpgradePromptForced,
+  markEmbeddingUpgradeDismissed,
+} from "./EmbeddingUpgradePrompt";
 
 /**
- * A toast that appears once on app launch if legacy v2 embedding model is detected.
- * Prompts user to upgrade to v4.
+ * App-level toast that appears once on app launch if a v3 embedding model is
+ * detected (and v4 is not yet installed). Persists dismissal to localStorage
+ * via `markEmbeddingUpgradeDismissed("v4")` so the prompt doesn't reappear
+ * until the next major target ships. The debug-only force flag bypasses both
+ * the version check and persisted dismissal — see
+ * `EmbeddingUpgradePrompt.tsx` for the console snippet.
  */
-export function V2UpgradeToast() {
+export function V3UpgradeToast() {
   const { t } = useI18n();
   const navigate = useNavigate();
   const [isVisible, setIsVisible] = useState(false);
   const [isDismissed, setIsDismissed] = useState(false);
 
   useEffect(() => {
-    const dismissed = sessionStorage.getItem("v2_upgrade_toast_dismissed");
-    if (dismissed) return;
+    const forced = isEmbeddingUpgradePromptForced();
+    if (!forced && isEmbeddingUpgradeDismissed("v4")) {
+      return;
+    }
 
+    let cancelled = false;
     const checkVersion = async () => {
       try {
         const modelInfo = await getEmbeddingModelInfo();
         const available = modelInfo.availableVersions ?? [];
-        if (modelInfo.installed && modelInfo.version === "v2" && !available.includes("v4")) {
-          setTimeout(() => setIsVisible(true), 1800);
+        const v4Installed =
+          available.includes("v4") || modelInfo.sourceVersion === "v4";
+        // If v4 is genuinely installed, never show — regardless of any debug
+        // flag. Catches the case where the force flag was left on after
+        // testing on a now-upgraded system.
+        if (v4Installed) {
+          return;
+        }
+        const eligible =
+          modelInfo.installed && modelInfo.version === "v3" && !available.includes("v4");
+        if (forced || eligible) {
+          if (!cancelled) {
+            setTimeout(() => {
+              if (!cancelled) setIsVisible(true);
+            }, 1800);
+          }
         }
       } catch (err) {
         console.error("Failed to check embedding model source version:", err);
       }
     };
 
-    checkVersion();
+    void checkVersion();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleDismiss = () => {
     setIsDismissed(true);
-    sessionStorage.setItem("v2_upgrade_toast_dismissed", "true");
+    markEmbeddingUpgradeDismissed("v4");
   };
 
   const handleUpgrade = () => {
-    handleDismiss();
+    setIsDismissed(true);
+    markEmbeddingUpgradeDismissed("v4");
     navigate("/settings/embedding-download?upgrade=true&version=v4&returnTo=/chat");
   };
 
   if (isDismissed) return null;
+
+  // Locale-fallback for installs that haven't translated the v3 strings yet.
+  const fallback = (key: string, en: string) => {
+    const value = t(key);
+    return value === key ? en : value;
+  };
+  const title = fallback("components.v3UpgradeToast.title", "Memory model v4");
+  const badge = fallback("components.v3UpgradeToast.badge", "Available");
+  const message = fallback(
+    "components.v3UpgradeToast.message",
+    "v4 dramatically improves roleplay memory recall over v3. Upgrading is recommended.",
+  );
+  const upgradeLabel = fallback("components.v3UpgradeToast.upgrade", "Upgrade");
+  const dismissLabel = fallback("components.v3UpgradeToast.dismiss", "Later");
 
   return (
     <AnimatePresence>
@@ -58,19 +102,16 @@ export function V2UpgradeToast() {
         >
           <div className="pointer-events-auto mx-auto max-w-md rounded-xl border border-white/10 bg-[#0a0a0a]/95 p-4 shadow-2xl backdrop-blur-md">
             <div className="flex items-start gap-3.5">
-              {/* Simple indicator dot */}
-              <div className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-blue-400" />
+              <div className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
 
               <div className="flex-1 min-w-0">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1">
                     <div className="flex items-baseline gap-2">
-                      <h3 className="text-[15px] font-medium text-white">{t("components.v2UpgradeToast.title")}</h3>
-                      <span className="text-xs font-medium text-white/40">{t("components.v2UpgradeToast.badge")}</span>
+                      <h3 className="text-[15px] font-medium text-white">{title}</h3>
+                      <span className="text-xs font-medium text-white/40">{badge}</span>
                     </div>
-                    <p className="mt-1 text-[13px] leading-relaxed text-white/60">
-                      {t("components.v2UpgradeToast.message")}
-                    </p>
+                    <p className="mt-1 text-[13px] leading-relaxed text-white/60">{message}</p>
                   </div>
 
                   <button
@@ -87,7 +128,7 @@ export function V2UpgradeToast() {
                     onClick={handleUpgrade}
                     className="group inline-flex items-center gap-1.5 rounded-lg bg-white px-3.5 py-2 text-[13px] font-medium text-black transition-all hover:bg-white/90 active:scale-[0.98]"
                   >
-                    {t("components.v2UpgradeToast.upgrade")}
+                    {upgradeLabel}
                     <ArrowUpRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
                   </button>
 
@@ -95,7 +136,7 @@ export function V2UpgradeToast() {
                     onClick={handleDismiss}
                     className="rounded-lg px-3.5 py-2 text-[13px] font-medium text-white/60 transition-colors hover:bg-white/5 hover:text-white/80 active:scale-[0.98]"
                   >
-                    {t("components.v2UpgradeToast.dismiss")}
+                    {dismissLabel}
                   </button>
                 </div>
               </div>

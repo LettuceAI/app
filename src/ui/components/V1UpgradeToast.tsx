@@ -7,7 +7,7 @@ import { useI18n } from "../../core/i18n/context";
 
 /**
  * A toast that appears once on app launch if v1 embedding model is detected.
- * Prompts user to upgrade to v3.
+ * Prompts user to upgrade to v4.
  */
 export function V1UpgradeToast() {
   const { t } = useI18n();
@@ -23,7 +23,7 @@ export function V1UpgradeToast() {
       try {
         const modelInfo = await getEmbeddingModelInfo();
         const available = modelInfo.availableVersions ?? [];
-        if (modelInfo.installed && available.includes("v1") && !available.includes("v3")) {
+        if (modelInfo.installed && modelInfo.version === "v1" && !available.includes("v4")) {
           setTimeout(() => setIsVisible(true), 1500);
         }
       } catch (err) {
@@ -41,7 +41,7 @@ export function V1UpgradeToast() {
 
   const handleUpgrade = () => {
     handleDismiss();
-    navigate("/settings/embedding-download?upgrade=true&returnTo=/chat");
+    navigate("/settings/embedding-download?upgrade=true&version=v4&returnTo=/chat");
   };
 
   if (isDismissed) return null;

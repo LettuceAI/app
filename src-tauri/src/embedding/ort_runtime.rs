@@ -119,7 +119,7 @@ pub(super) async fn ensure_ort_init(app: &AppHandle) -> Result<(), String> {
         }
     })
     .map_err(|panic_payload| {
-        let panic_msg = panic_payload_to_string(&*panic_payload);
+        let panic_msg = super::util::panic_payload_to_string(&*panic_payload);
         crate::utils::log_error(
             app,
             "embedding_debug",
