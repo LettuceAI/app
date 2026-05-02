@@ -580,9 +580,19 @@ pub fn usage_from_value(v: &Value) -> Option<UsageSummary> {
             u.get("prompt_tokens_details")
                 .and_then(|d| take_first(d, &["image_tokens", "imageTokens", "cached_tokens"]))
         });
-        let cached_prompt_tokens = u
-            .get("prompt_tokens_details")
-            .and_then(|d| take_first(d, &["cached_tokens", "cachedTokens"]));
+        let cached_prompt_tokens = take_first(
+            u,
+            &[
+                "cached_content_token_count",
+                "cachedContentTokenCount",
+                "cache_read",
+                "cacheRead",
+            ],
+        )
+        .or_else(|| {
+            u.get("prompt_tokens_details")
+                .and_then(|d| take_first(d, &["cached_tokens", "cachedTokens"]))
+        });
         let cache_write_tokens = u
             .get("prompt_tokens_details")
             .and_then(|d| take_first(d, &["cache_write_tokens", "cacheWriteTokens"]));

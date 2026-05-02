@@ -750,6 +750,8 @@ export const PROVIDER_PARAMETER_SUPPORT = {
       reasoningEnabled: true,
       reasoningEffort: true,
       reasoningBudgetTokens: true,
+      promptCachingEnabled: true,
+      promptCachingTtl: true,
       llamaGpuLayers: false,
       llamaThreads: false,
       llamaThreadsBatch: false,
@@ -904,8 +906,8 @@ export const PROVIDER_PARAMETER_SUPPORT = {
       reasoningEnabled: true,
       reasoningEffort: true,
       reasoningBudgetTokens: true,
-      promptCachingEnabled: true,
-      promptCachingTtl: true,
+      promptCachingEnabled: false,
+      promptCachingTtl: false,
       llamaGpuLayers: false,
       llamaThreads: false,
       llamaThreadsBatch: false,
@@ -1006,6 +1008,8 @@ export const PROVIDER_PARAMETER_SUPPORT = {
       reasoningEnabled: true,
       reasoningEffort: true,
       reasoningBudgetTokens: true,
+      promptCachingEnabled: true,
+      promptCachingTtl: true,
       llamaGpuLayers: false,
       llamaThreads: false,
       llamaThreadsBatch: false,
@@ -1056,6 +1060,8 @@ export const PROVIDER_PARAMETER_SUPPORT = {
       reasoningEnabled: true,
       reasoningEffort: true,
       reasoningBudgetTokens: true,
+      promptCachingEnabled: true,
+      promptCachingTtl: true,
       llamaGpuLayers: false,
       llamaThreads: false,
       llamaThreadsBatch: false,
@@ -1957,12 +1963,16 @@ export function getSupportedParameters(providerId: string): (keyof AdvancedModel
 /**
  * Caching Support Types
  */
-export type CachingSupport = "none" | "supported";
+export type CachingSupport = "none" | "supported" | "automatic";
 
 /**
  * Gets the caching support type for a specific provider
  */
 export function getProviderCachingSupport(providerId: string): CachingSupport {
+  if (providerId === "groq") {
+    return "automatic";
+  }
+
   const provider =
     PROVIDER_PARAMETER_SUPPORT[providerId as ProviderId] ||
     (providerId === "google-gemini" ? PROVIDER_PARAMETER_SUPPORT.gemini : null) ||

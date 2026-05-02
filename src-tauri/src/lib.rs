@@ -16,6 +16,7 @@ mod creation_helper;
 mod discovery;
 mod embedding;
 mod engine;
+mod gemini_cache;
 mod group_chat_manager;
 mod hf_browser;
 mod host_api;

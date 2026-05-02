@@ -9,7 +9,7 @@ use crate::llama_cpp;
 use crate::serde_utils::truncate_for_log;
 use crate::transport;
 use crate::transport::emit_normalized;
-use crate::utils::{log_error, log_info};
+use crate::utils::{log_error, log_info, log_warn};
 
 mod helpers;
 use helpers::{
@@ -48,6 +48,22 @@ impl ApiResponse {
 #[tauri::command]
 pub async fn api_request(app: tauri::AppHandle, req: ApiRequest) -> Result<ApiResponse, String> {
     log_info(&app, "api_request", "started");
+
+    let mut req = req;
+
+    if crate::gemini_cache::is_gemini_provider(req.provider_id.as_deref()) {
+        if let Err(err) = crate::gemini_cache::maybe_apply_gemini_explicit_cache(&app, &mut req).await
+        {
+            log_warn(
+                &app,
+                "api_request",
+                format!(
+                    "[api_request] Gemini explicit cache preparation failed, continuing uncached: {}",
+                    err
+                ),
+            );
+        }
+    }
 
     if llama_cpp::is_llama_cpp(req.provider_id.as_deref()) {
         return llama_cpp::handle_local_request(app, req).await;

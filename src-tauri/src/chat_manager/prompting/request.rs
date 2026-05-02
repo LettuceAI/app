@@ -407,10 +407,20 @@ fn usage_from_map(map: &Map<String, Value>) -> Option<UsageSummary> {
                     .and_then(|details| take_first(details, &["image_tokens", "imageTokens"]))
             })
     });
-    let cached_prompt_tokens = map
-        .get("prompt_tokens_details")
-        .and_then(|v| v.as_object())
-        .and_then(|details| take_first(details, &["cached_tokens", "cachedTokens"]));
+    let cached_prompt_tokens = take_first(
+        map,
+        &[
+            "cached_content_token_count",
+            "cachedContentTokenCount",
+            "cache_read",
+            "cacheRead",
+        ],
+    )
+    .or_else(|| {
+        map.get("prompt_tokens_details")
+            .and_then(|v| v.as_object())
+            .and_then(|details| take_first(details, &["cached_tokens", "cachedTokens"]))
+    });
     let cache_write_tokens = map
         .get("prompt_tokens_details")
         .and_then(|v| v.as_object())

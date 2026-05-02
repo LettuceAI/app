@@ -1185,6 +1185,20 @@ export function EditModelPage() {
     ? getProviderCachingSupport(editorModel.providerId)
     : "none";
   const showCachingSection = cachingSupport !== "none";
+  const hasAutomaticCaching = cachingSupport === "automatic";
+  const promptCachingTtlOptions =
+    editorModel?.providerId === "openai"
+      ? [
+          { value: "in_memory", label: "In-memory" },
+          { value: "24h", label: "24 hr" },
+        ]
+      : [
+          { value: "5min", label: "5 min" },
+          { value: "1h", label: "1 hr" },
+        ];
+  const selectedPromptCachingTtl =
+    modelAdvancedDraft.promptCachingTtl ??
+    (editorModel?.providerId === "openai" ? "in_memory" : "5min");
   const numberInputClassName =
     "w-full rounded-lg border border-fg/10 bg-surface-el/20 px-4 py-3.5 text-[13px] text-fg placeholder-fg/40 transition focus:border-fg/30 focus:outline-none";
   const selectInputClassName =
@@ -4493,90 +4507,144 @@ export function EditModelPage() {
                             </div>
 
                             <div className="space-y-6">
-                              {/* ── Enable toggle ── */}
-                              <div className="flex items-center justify-between rounded-xl border border-fg/8 bg-surface-el/10 p-4">
-                                <div className="flex items-center gap-3 border-l-2 border-accent/30 pl-3">
-                                  <HardDrive size={16} className="text-accent/80" />
-                                  <div className="space-y-0.5">
-                                    <span className="block text-[13px] font-medium text-fg/70">
-                                      Enable Context Caching
-                                    </span>
-                                    <span className="block text-[13px] text-fg/40">
-                                      Preserve static system prompts and document context across
-                                      interactions.
-                                    </span>
-                                  </div>
-                                </div>
-
-                                <Switch
-                                  checked={modelAdvancedDraft.promptCachingEnabled || false}
-                                  onChange={handlePromptCachingEnabledChange}
-                                />
-                              </div>
-
-                              {modelAdvancedDraft.promptCachingEnabled && (
-                                <>
-                                  {/* ── TTL toggle ── */}
-                                  <div className="flex items-center justify-between rounded-xl border border-fg/8 bg-surface-el/10 p-4">
-                                    <div className="flex items-center gap-3 border-l-2 border-fg/10 pl-3">
-                                      <div className="space-y-0.5">
+                              {hasAutomaticCaching ? (
+                                <div className="space-y-4">
+                                  <div className="flex items-start justify-between rounded-xl border border-fg/8 bg-surface-el/10 p-4">
+                                    <div className="flex items-start gap-3 border-l-2 border-accent/30 pl-3">
+                                      <HardDrive size={16} className="mt-0.5 text-accent/80" />
+                                      <div className="space-y-1">
                                         <span className="block text-[13px] font-medium text-fg/70">
-                                          Cache TTL
+                                          Automatic Provider Caching
                                         </span>
                                         <span className="block text-[13px] text-fg/40">
-                                          How long cached prefixes remain valid between requests.
+                                          This provider handles prompt caching automatically on the
+                                          upstream API. There is no app-side toggle to send.
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="rounded-lg border border-fg/10 bg-fg/4 px-4 py-3 text-[13px] leading-relaxed text-fg/65">
+                                    {editorModel?.providerId === "groq" && (
+                                      <>
+                                        <strong className="text-fg/80">Groq:</strong> caching is
+                                        automatic on supported models only. This app does not force
+                                        or tune it per request.
+                                      </>
+                                    )}
+                                    {(editorModel?.providerId === "gemini" ||
+                                      editorModel?.providerId === "google") && (
+                                      <>
+                                        <strong className="text-fg/80">Gemini:</strong> implicit
+                                        caching is automatic for supported models. Explicit cached
+                                        content resources are not created by this app yet.
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+                              ) : (
+                                <>
+                                  {/* ── Enable toggle ── */}
+                                  <div className="flex items-center justify-between rounded-xl border border-fg/8 bg-surface-el/10 p-4">
+                                    <div className="flex items-center gap-3 border-l-2 border-accent/30 pl-3">
+                                      <HardDrive size={16} className="text-accent/80" />
+                                      <div className="space-y-0.5">
+                                        <span className="block text-[13px] font-medium text-fg/70">
+                                          Enable Context Caching
+                                        </span>
+                                        <span className="block text-[13px] text-fg/40">
+                                          Preserve static system prompts and document context across
+                                          interactions.
                                         </span>
                                       </div>
                                     </div>
 
-                                    <div className="inline-flex shrink-0 rounded-lg border border-fg/10 bg-fg/4 p-0.5">
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.preventDefault();
-                                          handlePromptCachingTtlChange("5min");
-                                        }}
-                                        className={cn(
-                                          "rounded-md px-3 py-1 text-[12px] font-medium transition",
-                                          (modelAdvancedDraft.promptCachingTtl ?? "5min") === "5min"
-                                            ? "bg-accent/15 text-accent"
-                                            : "text-fg/45 hover:text-fg/70",
-                                        )}
-                                      >
-                                        5 min
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.preventDefault();
-                                          handlePromptCachingTtlChange("1h");
-                                        }}
-                                        className={cn(
-                                          "rounded-md px-3 py-1 text-[12px] font-medium transition",
-                                          modelAdvancedDraft.promptCachingTtl === "1h"
-                                            ? "bg-accent/15 text-accent"
-                                            : "text-fg/45 hover:text-fg/70",
-                                        )}
-                                      >
-                                        1 hr
-                                      </button>
-                                    </div>
+                                    <Switch
+                                      checked={modelAdvancedDraft.promptCachingEnabled || false}
+                                      onChange={handlePromptCachingEnabledChange}
+                                    />
                                   </div>
 
-                                  {/* ── Pricing / TTL notes ── */}
-                                  <div className="rounded-lg border border-fg/10 bg-fg/4 px-4 py-3 text-[13px] leading-relaxed text-fg/65">
-                                    <strong className="text-fg/80">Note on pricing:</strong> While
-                                    caching reduces the cost of repeated input tokens, the initial
-                                    write to the cache may incur a slight premium depending on the
-                                    selected provider.
-                                    {modelAdvancedDraft.promptCachingTtl === "1h" && (
-                                      <span className="mt-1.5 block text-fg/50">
-                                        Extended 1-hour TTL may not be honoured by all providers.
-                                        Falls back to the provider's default cache lifetime when
-                                        unsupported.
-                                      </span>
-                                    )}
-                                  </div>
+                                  {modelAdvancedDraft.promptCachingEnabled && (
+                                    <>
+                                      {/* ── TTL toggle ── */}
+                                      <div className="flex items-center justify-between rounded-xl border border-fg/8 bg-surface-el/10 p-4">
+                                        <div className="flex items-center gap-3 border-l-2 border-fg/10 pl-3">
+                                          <div className="space-y-0.5">
+                                            <span className="block text-[13px] font-medium text-fg/70">
+                                              Cache TTL
+                                            </span>
+                                            <span className="block text-[13px] text-fg/40">
+                                              How long cached prefixes remain valid between
+                                              requests.
+                                            </span>
+                                          </div>
+                                        </div>
+
+                                        <div className="inline-flex shrink-0 rounded-lg border border-fg/10 bg-fg/4 p-0.5">
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.preventDefault();
+                                              handlePromptCachingTtlChange(
+                                                promptCachingTtlOptions[0].value,
+                                              );
+                                            }}
+                                            className={cn(
+                                              "rounded-md px-3 py-1 text-[12px] font-medium transition",
+                                              selectedPromptCachingTtl ===
+                                                promptCachingTtlOptions[0].value
+                                                ? "bg-accent/15 text-accent"
+                                                : "text-fg/45 hover:text-fg/70",
+                                            )}
+                                          >
+                                            {promptCachingTtlOptions[0].label}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.preventDefault();
+                                              handlePromptCachingTtlChange(
+                                                promptCachingTtlOptions[1].value,
+                                              );
+                                            }}
+                                            className={cn(
+                                              "rounded-md px-3 py-1 text-[12px] font-medium transition",
+                                              selectedPromptCachingTtl ===
+                                                promptCachingTtlOptions[1].value
+                                                ? "bg-accent/15 text-accent"
+                                                : "text-fg/45 hover:text-fg/70",
+                                            )}
+                                          >
+                                            {promptCachingTtlOptions[1].label}
+                                          </button>
+                                        </div>
+                                      </div>
+
+                                      {/* ── Pricing / TTL notes ── */}
+                                      <div className="rounded-lg border border-fg/10 bg-fg/4 px-4 py-3 text-[13px] leading-relaxed text-fg/65">
+                                        <strong className="text-fg/80">Note on pricing:</strong>{" "}
+                                        While caching reduces the cost of repeated input tokens, the
+                                        initial write to the cache may incur a slight premium
+                                        depending on the selected provider.
+                                        {editorModel?.providerId !== "openai" &&
+                                          modelAdvancedDraft.promptCachingTtl === "1h" && (
+                                            <span className="mt-1.5 block text-fg/50">
+                                              Extended 1-hour TTL may not be honoured by all
+                                              providers. Falls back to the provider's default cache
+                                              lifetime when unsupported.
+                                            </span>
+                                          )}
+                                        {editorModel?.providerId === "openai" &&
+                                          selectedPromptCachingTtl === "24h" && (
+                                            <span className="mt-1.5 block text-fg/50">
+                                              OpenAI uses `in_memory` and `24h` retention policies
+                                              rather than a 1-hour TTL.
+                                            </span>
+                                          )}
+                                      </div>
+                                    </>
+                                  )}
                                 </>
                               )}
                             </div>

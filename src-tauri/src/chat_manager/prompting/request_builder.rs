@@ -66,6 +66,17 @@ fn supports_explicit_prompt_caching(credential: &ProviderCredential) -> bool {
     )
 }
 
+fn supports_openai_prompt_cache_retention(credential: &ProviderCredential) -> bool {
+    credential.provider_id == "openai"
+}
+
+fn supports_gemini_explicit_prompt_caching(credential: &ProviderCredential) -> bool {
+    matches!(
+        credential.provider_id.as_str(),
+        "gemini" | "google" | "google-gemini"
+    )
+}
+
 fn apply_cache_control_to_system_message(
     body_obj: &mut serde_json::Map<String, Value>,
     cache_control: &Value,
@@ -186,6 +197,47 @@ pub fn build_chat_request(
                     }
                 }
             }
+        }
+    }
+
+    if prompt_caching_enabled && supports_openai_prompt_cache_retention(credential) {
+        let retention = match extra_body_fields
+            .get("promptCachingTtl")
+            .and_then(|val| val.as_str())
+            .unwrap_or("in_memory")
+        {
+            "24h" => Some("24h"),
+            "in_memory" | "5min" | "1h" => Some("in_memory"),
+            _ => None,
+        };
+
+        if let (Some(body_obj), Some(retention)) = (body.as_object_mut(), retention) {
+            body_obj.insert(
+                "prompt_cache_retention".to_string(),
+                Value::String(retention.to_string()),
+            );
+        }
+    }
+
+    if prompt_caching_enabled && supports_gemini_explicit_prompt_caching(credential) {
+        let ttl = match extra_body_fields
+            .get("promptCachingTtl")
+            .and_then(|val| val.as_str())
+            .unwrap_or("1h")
+        {
+            "5min" | "300s" => "300s",
+            _ => "3600s",
+        };
+
+        if let Some(body_obj) = body.as_object_mut() {
+            body_obj.insert(
+                "_lettucePromptCachingEnabled".to_string(),
+                Value::Bool(true),
+            );
+            body_obj.insert(
+                "_lettucePromptCachingTtl".to_string(),
+                Value::String(ttl.to_string()),
+            );
         }
     }
 
