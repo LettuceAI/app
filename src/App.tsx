@@ -733,6 +733,7 @@ function AppUpdateNotifier() {
 function AppContent() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { t } = useI18n();
   console.log("AppContent render:", location.pathname, location.key);
   const mainRef = useRef<HTMLDivElement | null>(null);
   const previousLlamaKeepAliveRouteRef = useRef(shouldKeepLlamaLoaded(location.pathname));

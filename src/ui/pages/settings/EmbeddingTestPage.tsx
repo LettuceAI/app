@@ -210,7 +210,6 @@ function HeaderBanner({
           <p className="mt-1 text-xs text-fg/55 sm:text-sm">
             {status === "testing" && "Three checks: identity, retrieval, separation."}
             {passing &&
-              status !== "testing" &&
               "Identity stable. Retrieval ranks correctly. Related and unrelated text separate cleanly."}
             {status === "failed" && (error ?? results?.message ?? "Some checks did not pass.")}
             {status === "idle" && "Tap retry to start."}

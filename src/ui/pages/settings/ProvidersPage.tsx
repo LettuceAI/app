@@ -40,6 +40,17 @@ const AUDIO_PROVIDER_TYPE_LABEL: Record<AudioProviderType, string> = {
   kokoro: "kokoro",
 };
 
+const AUDIO_PROVIDER_TYPE_TRANSLATION_KEY: Record<
+  Exclude<AudioProviderType, "elevenlabs">,
+  | "providers.extra.audioProviderLabel.geminiTts"
+  | "providers.extra.audioProviderLabel.openaiTts"
+  | "providers.extra.audioProviderLabel.kokoro"
+> = {
+  gemini_tts: "providers.extra.audioProviderLabel.geminiTts",
+  openai_tts: "providers.extra.audioProviderLabel.openaiTts",
+  kokoro: "providers.extra.audioProviderLabel.kokoro",
+};
+
 type ProviderTab = "llm" | "audio";
 
 export function ProvidersPage() {
@@ -55,6 +66,13 @@ export function ProvidersPage() {
   const audioTabId = `${tabsId}-audio-tab`;
   const llmPanelId = `${tabsId}-llm-panel`;
   const audioPanelId = `${tabsId}-audio-panel`;
+  const getAudioProviderTypeLabel = useCallback(
+    (providerType: AudioProviderType) =>
+      providerType === "elevenlabs"
+        ? AUDIO_PROVIDER_TYPE_LABEL[providerType]
+        : t(AUDIO_PROVIDER_TYPE_TRANSLATION_KEY[providerType]),
+    [t],
+  );
   const navigate = useNavigate();
   const {
     state: {
@@ -319,11 +337,7 @@ export function ProvidersPage() {
                     </div>
                     <div className="mt-0.5 flex items-center gap-1 text-[11px] text-fg/50">
                       <span className="truncate">
-                              {provider.providerType === "elevenlabs"
-                                ? AUDIO_PROVIDER_TYPE_LABEL[provider.providerType]
-                                : t(
-                                    `providers.extra.audioProviderLabel.${AUDIO_PROVIDER_TYPE_LABEL[provider.providerType]}` as const,
-                                  )}
+                        {getAudioProviderTypeLabel(provider.providerType)}
                       </span>
                       {provider.baseUrl && (
                         <>
@@ -998,7 +1012,7 @@ export function ProvidersPage() {
                     {selectedAudioProvider.label}
                   </p>
                   <p className="mt-0.5 truncate text-[11px] text-fg/50">
-                    {AUDIO_PROVIDER_TYPE_LABEL[selectedAudioProvider.providerType]}
+                    {getAudioProviderTypeLabel(selectedAudioProvider.providerType)}
                   </p>
                 </div>
                 {selectedAudioProvider.providerType === "kokoro" && (
