@@ -80,16 +80,27 @@ pub trait ProviderAdapter {
         if let Some(data) = response.get("data").and_then(|d| d.as_array()) {
             for item in data {
                 if let Some(id) = item.get("id").and_then(|id| id.as_str()) {
+                    let input_price = item
+                        .get("pricing")
+                        .and_then(|pricing| pricing.get("prompt"))
+                        .and_then(value_to_f64);
+                    let output_price = item
+                        .get("pricing")
+                        .and_then(|pricing| pricing.get("completion"))
+                        .and_then(value_to_f64);
                     models.push(ModelInfo {
                         id: id.to_string(),
                         display_name: item
                             .get("name") // Some providers use name as display name
                             .and_then(|n| n.as_str())
                             .map(|s| s.to_string()),
-                        description: None,
+                        description: item
+                            .get("description")
+                            .and_then(|d| d.as_str())
+                            .map(|s| s.to_string()),
                         context_length: item.get("context_length").and_then(|c| c.as_u64()),
-                        input_price: None,
-                        output_price: None,
+                        input_price,
+                        output_price,
                     });
                 }
             }
@@ -108,6 +119,14 @@ pub struct ModelInfo {
     // Pricing per 1M tokens or similar, strictly for display/estimation if available
     pub input_price: Option<f64>,
     pub output_price: Option<f64>,
+}
+
+fn value_to_f64(value: &Value) -> Option<f64> {
+    match value {
+        Value::Number(n) => n.as_f64(),
+        Value::String(s) => s.parse::<f64>().ok(),
+        _ => None,
+    }
 }
 
 // Shared OpenAI-style request used by multiple providers.

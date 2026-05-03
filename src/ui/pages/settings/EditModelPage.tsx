@@ -997,6 +997,15 @@ export function EditModelPage() {
   }, [searchQuery]);
 
   const isOpenRouterProvider = editorModel?.providerId === "openrouter";
+  const formatOpenRouterPricePerMillion = (price?: number) => {
+    if (typeof price !== "number" || !Number.isFinite(price)) return null;
+    const perMillion = price * 1_000_000;
+    if (perMillion <= 0) return "Free";
+    if (perMillion >= 100) return `$${perMillion.toFixed(0)}/M`;
+    if (perMillion >= 10) return `$${perMillion.toFixed(1)}/M`;
+    if (perMillion >= 1) return `$${perMillion.toFixed(2)}/M`;
+    return `$${perMillion.toFixed(3)}/M`;
+  };
   const isFreeOpenRouterModel = (model: {
     id: string;
     inputPrice?: number;
@@ -2047,6 +2056,25 @@ export function EditModelPage() {
                               renderModelIcon={() => getProviderIcon(editorModel.providerId)}
                               renderModelTitle={(model: any) => model.displayName || model.id}
                               renderModelDescription={(model: any) => model.description || model.id}
+                              renderModelMeta={
+                                isOpenRouterProvider
+                                  ? (model: any) => {
+                                      const inputPrice = formatOpenRouterPricePerMillion(
+                                        model.inputPrice,
+                                      );
+                                      const outputPrice = formatOpenRouterPricePerMillion(
+                                        model.outputPrice,
+                                      );
+                                      if (!inputPrice && !outputPrice) return null;
+                                      return (
+                                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-fg/35">
+                                          {inputPrice && <span>Input {inputPrice}</span>}
+                                          {outputPrice && <span>Output {outputPrice}</span>}
+                                        </div>
+                                      );
+                                    }
+                                  : undefined
+                              }
                               renderEmptyState={() => (
                                 <div className="py-10 text-center text-[13px] text-fg/40">
                                   <p>

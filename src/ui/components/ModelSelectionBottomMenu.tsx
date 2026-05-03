@@ -32,6 +32,7 @@ export type ModelSelectionBottomMenuProps = {
   modelMatchesQuery?: (model: Model, query: string) => boolean;
   renderModelTitle?: (model: Model) => ReactNode;
   renderModelDescription?: (model: Model) => ReactNode;
+  renderModelMeta?: (model: Model) => ReactNode;
   renderModelIcon?: (model: Model) => ReactNode;
   renderEmptyState?: (query: string, hasModels: boolean) => ReactNode;
   loading?: boolean;
@@ -113,6 +114,7 @@ export function ModelSelectionBottomMenu({
   modelMatchesQuery,
   renderModelTitle,
   renderModelDescription,
+  renderModelMeta,
   renderModelIcon,
   renderEmptyState,
   loading = false,
@@ -232,7 +234,7 @@ export function ModelSelectionBottomMenu({
                     }
                   }}
                   className={cn(
-                    "flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition",
+                    "flex w-full items-start gap-3 rounded-xl border px-3.5 py-3 text-left transition",
                     isSelected ? toneStyles.selectedItem : themeStyles.idleItem,
                   )}
                 >
@@ -244,6 +246,9 @@ export function ModelSelectionBottomMenu({
                     <span className={cn("block truncate text-xs", themeStyles.secondaryText)}>
                       {renderModelDescription?.(model) ?? model.name}
                     </span>
+                    {renderModelMeta && (
+                      <div className="mt-1">{renderModelMeta(model)}</div>
+                    )}
                   </div>
                   {isSelected && <Check className={cn("h-4 w-4 shrink-0", toneStyles.check)} />}
                 </button>
