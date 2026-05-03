@@ -4,6 +4,7 @@ use std::path::Path;
 use tauri::Manager;
 
 use crate::storage_manager::db::DbConnection;
+use crate::storage_manager::memory_embeddings::SessionKind;
 use crate::sync::models::{
     AudioProvider, Character, CharacterRule, ChatTemplate, ChatTemplateMessage, GroupMessage,
     GroupMessageVariant, GroupParticipation, GroupSession, Message, MessageVariant, MetaEntry,
@@ -255,6 +256,35 @@ pub fn load_peer_cursors(conn: &DbConnection, peer_device_id: &str) -> Result<Cu
     }
 
     Ok(CursorSet { cursors })
+}
+
+fn canonical_memory_embeddings_json(
+    conn: &DbConnection,
+    session_id: &str,
+    kind: SessionKind,
+    legacy_json: &str,
+) -> String {
+    crate::storage_manager::memory_embeddings::canonical_json_for_session(
+        conn,
+        session_id,
+        kind,
+        Some(legacy_json),
+    )
+    .unwrap_or_else(|_| legacy_json.to_string())
+}
+
+fn persist_memory_embeddings_payload(
+    conn: &mut DbConnection,
+    session_id: &str,
+    kind: SessionKind,
+    raw: &str,
+) -> Result<(), String> {
+    crate::storage_manager::memory_embeddings::replace_all_from_json(
+        conn,
+        session_id,
+        kind,
+        Some(raw),
+    )
 }
 
 pub fn fetch_changes_since(
@@ -1660,7 +1690,7 @@ fn fetch_group_sessions_full(
     let mut stmt = conn
         .prepare(&sql)
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-    let sessions: Vec<SyncGroupSessionRecord> = stmt
+    let mut sessions: Vec<SyncGroupSessionRecord> = stmt
         .query_map(rusqlite::params_from_iter(ids.iter()), |r| {
             Ok(SyncGroupSessionRecord {
                 id: r.get(0)?,
@@ -1692,6 +1722,15 @@ fn fetch_group_sessions_full(
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
         .map(|r| r.unwrap())
         .collect();
+
+    for session in &mut sessions {
+        session.memory_embeddings = canonical_memory_embeddings_json(
+            conn,
+            &session.id,
+            SessionKind::GroupSession,
+            &session.memory_embeddings,
+        );
+    }
 
     let (_legacy_sessions, participation, messages, variants, usages, metadata) =
         fetch_group_sessions_data(conn, ids)?;
@@ -2112,6 +2151,11 @@ fn apply_characters_snapshot(conn: &mut DbConnection, payload: &[u8]) -> Result<
 fn apply_groups_snapshot(conn: &mut DbConnection, payload: &[u8]) -> Result<(), String> {
     let snapshot: GroupsSnapshot = bincode::deserialize(payload)
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    let incoming_group_sessions = snapshot
+        .group_sessions
+        .iter()
+        .map(|session| (session.id.clone(), session.memory_embeddings.clone()))
+        .collect::<Vec<_>>();
     let tx = conn
         .transaction()
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
@@ -2215,7 +2259,7 @@ fn apply_groups_snapshot(conn: &mut DbConnection, payload: &[u8]) -> Result<(), 
                 session.lorebook_ids,
                 session.disable_character_lorebooks,
                 session.memories,
-                session.memory_embeddings,
+                "[]",
                 session.memory_summary,
                 session.memory_summary_token_count,
                 session.memory_tool_events,
@@ -2314,12 +2358,33 @@ fn apply_groups_snapshot(conn: &mut DbConnection, payload: &[u8]) -> Result<(), 
     }
 
     tx.commit()
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+
+    conn.execute(
+        "DELETE FROM memory_embeddings WHERE session_kind = 'group_session'",
+        [],
+    )
+    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    for (session_id, memory_embeddings) in &incoming_group_sessions {
+        persist_memory_embeddings_payload(
+            conn,
+            session_id,
+            SessionKind::GroupSession,
+            memory_embeddings,
+        )?;
+    }
+
+    Ok(())
 }
 
 fn apply_sessions_snapshot(conn: &mut DbConnection, payload: &[u8]) -> Result<(), String> {
     let snapshot: SessionsSnapshot = bincode::deserialize(payload)
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    let incoming_sessions = snapshot
+        .sessions
+        .iter()
+        .map(|session| (session.id.clone(), session.memory_embeddings.clone()))
+        .collect::<Vec<_>>();
     let tx = conn
         .transaction()
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
@@ -2398,7 +2463,7 @@ fn apply_sessions_snapshot(conn: &mut DbConnection, payload: &[u8]) -> Result<()
                 session.top_k,
                 session.companion_state,
                 session.memories,
-                session.memory_embeddings,
+                "[]",
                 session.memory_summary,
                 session.memory_summary_token_count,
                 session.memory_tool_events,
@@ -2416,7 +2481,25 @@ fn apply_sessions_snapshot(conn: &mut DbConnection, payload: &[u8]) -> Result<()
     delete_missing_rows(&tx, "sessions", "id", &incoming_session_ids)?;
 
     tx.commit()
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+
+    for session_id in &removed_session_ids {
+        crate::storage_manager::memory_embeddings::delete_all_for_session(
+            conn,
+            session_id,
+            SessionKind::Session,
+        )?;
+    }
+    for (session_id, memory_embeddings) in &incoming_sessions {
+        persist_memory_embeddings_payload(
+            conn,
+            session_id,
+            SessionKind::Session,
+            memory_embeddings,
+        )?;
+    }
+
+    Ok(())
 }
 
 fn apply_messages_snapshot(conn: &mut DbConnection, payload: &[u8]) -> Result<(), String> {
@@ -3042,7 +3125,7 @@ fn fetch_sessions_data(
     let mut stmt = conn
         .prepare(&sql)
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-    let sessions: Vec<Session> = stmt
+    let mut sessions: Vec<Session> = stmt
         .query_map(rusqlite::params_from_iter(ids.iter()), |r| {
             Ok(Session {
                 id: r.get(0)?,
@@ -3081,6 +3164,15 @@ fn fetch_sessions_data(
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
         .map(|r| r.unwrap())
         .collect();
+
+    for session in &mut sessions {
+        session.memory_embeddings = canonical_memory_embeddings_json(
+            conn,
+            &session.id,
+            SessionKind::Session,
+            &session.memory_embeddings,
+        );
+    }
 
     // Messages
     let sql_msg = format!("SELECT id, session_id, role, content, created_at, prompt_tokens, completion_tokens, total_tokens, selected_variant_id, is_pinned, memory_refs, used_lorebook_entries, attachments, reasoning FROM messages WHERE session_id IN ({})", placeholders);
@@ -3219,7 +3311,7 @@ fn fetch_group_sessions_data(
     let mut stmt = conn
         .prepare(&sql)
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-    let sessions: Vec<GroupSession> = stmt
+    let mut sessions: Vec<GroupSession> = stmt
         .query_map(rusqlite::params_from_iter(ids.iter()), |r| {
             Ok(GroupSession {
                 id: r.get(0)?,
@@ -3251,6 +3343,15 @@ fn fetch_group_sessions_data(
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
         .map(|r| r.unwrap())
         .collect();
+
+    for session in &mut sessions {
+        session.memory_embeddings = canonical_memory_embeddings_json(
+            conn,
+            &session.id,
+            SessionKind::GroupSession,
+            &session.memory_embeddings,
+        );
+    }
 
     let sql_part = format!("SELECT id, session_id, character_id, speak_count, last_spoke_turn, last_spoke_at FROM group_participation WHERE session_id IN ({})", placeholders);
     let mut stmt = conn

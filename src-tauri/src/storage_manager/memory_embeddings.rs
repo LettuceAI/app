@@ -90,6 +90,40 @@ fn parse_supersedes(raw: Option<String>) -> Vec<String> {
         .unwrap_or_default()
 }
 
+pub fn parse_legacy_json(raw: &str) -> Vec<MemoryEmbedding> {
+    serde_json::from_str(raw).unwrap_or_default()
+}
+
+pub fn canonical_json_for_session(
+    conn: &Connection,
+    session_id: &str,
+    kind: SessionKind,
+    legacy_json: Option<&str>,
+) -> Result<String, String> {
+    let normalized = load_for_session(conn, session_id, kind)?;
+    if !normalized.is_empty() {
+        return serde_json::to_string(&normalized)
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e));
+    }
+
+    Ok(legacy_json.unwrap_or("[]").to_string())
+}
+
+pub fn replace_all_from_json(
+    conn: &mut Connection,
+    session_id: &str,
+    kind: SessionKind,
+    raw: Option<&str>,
+) -> Result<(), String> {
+    let parsed = raw.map(parse_legacy_json).unwrap_or_default();
+    if parsed.is_empty() {
+        delete_all_for_session(conn, session_id, kind)?;
+    } else {
+        replace_all(conn, session_id, kind, &parsed)?;
+    }
+    Ok(())
+}
+
 /// Read all memory embeddings for the given session. Ordered by `created_at`
 /// ascending so the in-memory `Vec<MemoryEmbedding>` keeps its historical
 /// insertion order.

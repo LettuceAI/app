@@ -539,9 +539,9 @@ fn export_sessions(app: &tauri::AppHandle) -> Result<Vec<JsonValue>, String> {
 
     // Get all sessions
     let mut stmt = conn
-        .prepare("SELECT id, character_id, title, background_image_path, system_prompt, selected_scene_id, author_note, persona_id, persona_disabled, voice_autoplay,
+        .prepare("SELECT id, character_id, title, background_image_path, system_prompt, mode, selected_scene_id, author_note, persona_id, persona_disabled, voice_autoplay,
                          prompt_template_id, lorebook_ids_override, temperature, top_p, max_output_tokens, frequency_penalty, presence_penalty, top_k,
-                         memories, memory_embeddings, memory_summary, memory_summary_token_count, memory_tool_events,
+                         companion_state, memories, memory_embeddings, memory_summary, memory_summary_token_count, memory_tool_events,
                          memory_status, memory_error, memory_progress_step, archived, created_at, updated_at FROM sessions")
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 
@@ -554,30 +554,32 @@ fn export_sessions(app: &tauri::AppHandle) -> Result<Vec<JsonValue>, String> {
                 "title": r.get::<_, String>(2)?,
                 "background_image_path": r.get::<_, Option<String>>(3)?,
                 "system_prompt": r.get::<_, Option<String>>(4)?,
-                "selected_scene_id": r.get::<_, Option<String>>(5)?,
-                "author_note": r.get::<_, Option<String>>(6)?,
-                "persona_id": r.get::<_, Option<String>>(7)?,
-                "persona_disabled": r.get::<_, i64>(8)? != 0,
-                "voice_autoplay": r.get::<_, Option<i64>>(9)?.map(|value| value != 0),
-                "prompt_template_id": r.get::<_, Option<String>>(10)?,
-                "lorebook_ids_override": r.get::<_, Option<String>>(11)?,
-                "temperature": r.get::<_, Option<f64>>(12)?,
-                "top_p": r.get::<_, Option<f64>>(13)?,
-                "max_output_tokens": r.get::<_, Option<i64>>(14)?,
-                "frequency_penalty": r.get::<_, Option<f64>>(15)?,
-                "presence_penalty": r.get::<_, Option<f64>>(16)?,
-                "top_k": r.get::<_, Option<i64>>(17)?,
-                "memories": r.get::<_, String>(18)?,
-                "memory_embeddings": r.get::<_, String>(19)?,
-                "memory_summary": r.get::<_, Option<String>>(20)?,
-                "memory_summary_token_count": r.get::<_, i64>(21)?,
-                "memory_tool_events": r.get::<_, String>(22)?,
-                "memory_status": r.get::<_, Option<String>>(23)?,
-                "memory_error": r.get::<_, Option<String>>(24)?,
-                "memory_progress_step": r.get::<_, Option<i64>>(25)?,
-                "archived": r.get::<_, i64>(26)? != 0,
-                "created_at": r.get::<_, i64>(27)?,
-                "updated_at": r.get::<_, i64>(28)?,
+                "mode": r.get::<_, String>(5)?,
+                "selected_scene_id": r.get::<_, Option<String>>(6)?,
+                "author_note": r.get::<_, Option<String>>(7)?,
+                "persona_id": r.get::<_, Option<String>>(8)?,
+                "persona_disabled": r.get::<_, i64>(9)? != 0,
+                "voice_autoplay": r.get::<_, Option<i64>>(10)?.map(|value| value != 0),
+                "prompt_template_id": r.get::<_, Option<String>>(11)?,
+                "lorebook_ids_override": r.get::<_, Option<String>>(12)?,
+                "temperature": r.get::<_, Option<f64>>(13)?,
+                "top_p": r.get::<_, Option<f64>>(14)?,
+                "max_output_tokens": r.get::<_, Option<i64>>(15)?,
+                "frequency_penalty": r.get::<_, Option<f64>>(16)?,
+                "presence_penalty": r.get::<_, Option<f64>>(17)?,
+                "top_k": r.get::<_, Option<i64>>(18)?,
+                "companion_state": r.get::<_, Option<String>>(19)?,
+                "memories": r.get::<_, String>(20)?,
+                "memory_embeddings": r.get::<_, String>(21)?,
+                "memory_summary": r.get::<_, Option<String>>(22)?,
+                "memory_summary_token_count": r.get::<_, i64>(23)?,
+                "memory_tool_events": r.get::<_, String>(24)?,
+                "memory_status": r.get::<_, Option<String>>(25)?,
+                "memory_error": r.get::<_, Option<String>>(26)?,
+                "memory_progress_step": r.get::<_, Option<i64>>(27)?,
+                "archived": r.get::<_, i64>(28)? != 0,
+                "created_at": r.get::<_, i64>(29)?,
+                "updated_at": r.get::<_, i64>(30)?,
             });
             Ok((id, json))
         })
@@ -585,31 +587,24 @@ fn export_sessions(app: &tauri::AppHandle) -> Result<Vec<JsonValue>, String> {
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 
-    // Backfill embeddings from the normalised table for sessions that have
-    // already migrated (legacy column == '[]').
     for (id, json) in sessions.iter_mut() {
-        let needs_backfill = json
+        let legacy_json = json
             .get("memory_embeddings")
             .and_then(|v| v.as_str())
-            .map(|s| s.trim() == "[]" || s.trim().is_empty())
-            .unwrap_or(true);
-        if !needs_backfill {
-            continue;
-        }
-        if let Ok(typed) = crate::storage_manager::memory_embeddings::load_for_session(
-            &conn,
-            id,
-            crate::storage_manager::memory_embeddings::SessionKind::Session,
-        ) {
-            if !typed.is_empty() {
-                if let Ok(serialized) = serde_json::to_string(&typed) {
-                    if let Some(obj) = json.as_object_mut() {
-                        obj.insert(
-                            "memory_embeddings".to_string(),
-                            JsonValue::String(serialized),
-                        );
-                    }
-                }
+            .unwrap_or("[]");
+        if let Ok(serialized) =
+            crate::storage_manager::memory_embeddings::canonical_json_for_session(
+                &conn,
+                id,
+                crate::storage_manager::memory_embeddings::SessionKind::Session,
+                Some(legacy_json),
+            )
+        {
+            if let Some(obj) = json.as_object_mut() {
+                obj.insert(
+                    "memory_embeddings".to_string(),
+                    JsonValue::String(serialized),
+                );
             }
         }
     }
@@ -730,30 +725,24 @@ fn export_group_sessions(app: &tauri::AppHandle) -> Result<Vec<JsonValue>, Strin
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 
-    // Backfill embeddings for group sessions that have already migrated.
     for (id, json) in sessions.iter_mut() {
-        let needs_backfill = json
+        let legacy_json = json
             .get("memory_embeddings")
             .and_then(|v| v.as_str())
-            .map(|s| s.trim() == "[]" || s.trim().is_empty())
-            .unwrap_or(true);
-        if !needs_backfill {
-            continue;
-        }
-        if let Ok(typed) = crate::storage_manager::memory_embeddings::load_for_session(
-            &conn,
-            id,
-            crate::storage_manager::memory_embeddings::SessionKind::GroupSession,
-        ) {
-            if !typed.is_empty() {
-                if let Ok(serialized) = serde_json::to_string(&typed) {
-                    if let Some(obj) = json.as_object_mut() {
-                        obj.insert(
-                            "memory_embeddings".to_string(),
-                            JsonValue::String(serialized),
-                        );
-                    }
-                }
+            .unwrap_or("[]");
+        if let Ok(serialized) =
+            crate::storage_manager::memory_embeddings::canonical_json_for_session(
+                &conn,
+                id,
+                crate::storage_manager::memory_embeddings::SessionKind::GroupSession,
+                Some(legacy_json),
+            )
+        {
+            if let Some(obj) = json.as_object_mut() {
+                obj.insert(
+                    "memory_embeddings".to_string(),
+                    JsonValue::String(serialized),
+                );
             }
         }
     }
@@ -1990,13 +1979,18 @@ fn import_characters(app: &tauri::AppHandle, data: &JsonValue) -> Result<(), Str
 }
 
 fn import_sessions(app: &tauri::AppHandle, data: &JsonValue) -> Result<(), String> {
-    let conn = open_db(app)?;
+    let mut conn = open_db(app)?;
 
     // Delete in correct order due to foreign keys
     conn.execute("DELETE FROM message_variants", [])
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     conn.execute("DELETE FROM messages", [])
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    conn.execute(
+        "DELETE FROM memory_embeddings WHERE session_kind = 'session'",
+        [],
+    )
+    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     conn.execute("DELETE FROM sessions", [])
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 
@@ -2058,7 +2052,7 @@ fn import_sessions(app: &tauri::AppHandle, data: &JsonValue) -> Result<(), Strin
                     item.get("top_k").and_then(|v| v.as_i64()),
                     item.get("companion_state").and_then(|v| v.as_str()),
                     item.get("memories").and_then(|v| v.as_str()).unwrap_or("[]"),
-                    item.get("memory_embeddings").and_then(|v| v.as_str()).unwrap_or("[]"),
+                    "[]",
                     item.get("memory_summary").and_then(|v| v.as_str()),
                     item.get("memory_summary_token_count").and_then(|v| v.as_i64()).unwrap_or(0),
                     item.get("memory_tool_events").and_then(|v| v.as_str()).unwrap_or("[]"),
@@ -2070,6 +2064,12 @@ fn import_sessions(app: &tauri::AppHandle, data: &JsonValue) -> Result<(), Strin
                     item.get("updated_at").and_then(|v| v.as_i64()),
                 ],
             ).map_err(|e| crate::utils::err_msg(module_path!(), line!(), format!("Failed to insert session (character_id={}): {}", character_id, e)))?;
+            crate::storage_manager::memory_embeddings::replace_all_from_json(
+                &mut conn,
+                session_id,
+                crate::storage_manager::memory_embeddings::SessionKind::Session,
+                item.get("memory_embeddings").and_then(|v| v.as_str()),
+            )?;
             session_count += 1;
 
             // Insert messages
@@ -2148,7 +2148,7 @@ fn import_sessions(app: &tauri::AppHandle, data: &JsonValue) -> Result<(), Strin
 }
 
 fn import_group_sessions(app: &tauri::AppHandle, data: &JsonValue) -> Result<(), String> {
-    let conn = open_db(app)?;
+    let mut conn = open_db(app)?;
 
     conn.execute("DELETE FROM group_message_variants", [])
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
@@ -2156,6 +2156,11 @@ fn import_group_sessions(app: &tauri::AppHandle, data: &JsonValue) -> Result<(),
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     conn.execute("DELETE FROM group_participation", [])
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    conn.execute(
+        "DELETE FROM memory_embeddings WHERE session_kind = 'group_session'",
+        [],
+    )
+    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     conn.execute("DELETE FROM group_sessions", [])
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 
@@ -2199,7 +2204,7 @@ fn import_group_sessions(app: &tauri::AppHandle, data: &JsonValue) -> Result<(),
                         .and_then(|v| v.as_bool())
                         .unwrap_or(false) as i64,
                     item.get("memories").and_then(|v| v.as_str()).unwrap_or("[]"),
-                    item.get("memory_embeddings").and_then(|v| v.as_str()).unwrap_or("[]"),
+                    "[]",
                     item.get("memory_summary").and_then(|v| v.as_str()).unwrap_or(""),
                     item.get("memory_summary_token_count").and_then(|v| v.as_i64()).unwrap_or(0),
                     item.get("memory_tool_events").and_then(|v| v.as_str()).unwrap_or("[]"),
@@ -2215,6 +2220,12 @@ fn import_group_sessions(app: &tauri::AppHandle, data: &JsonValue) -> Result<(),
                 ],
             )
             .map_err(|e| crate::utils::err_msg(module_path!(), line!(), format!("Failed to insert group session {}: {}", session_id, e)))?;
+            crate::storage_manager::memory_embeddings::replace_all_from_json(
+                &mut conn,
+                session_id,
+                crate::storage_manager::memory_embeddings::SessionKind::GroupSession,
+                item.get("memory_embeddings").and_then(|v| v.as_str()),
+            )?;
             session_count += 1;
 
             if let Some(participants) = item.get("participation").and_then(|v| v.as_array()) {
