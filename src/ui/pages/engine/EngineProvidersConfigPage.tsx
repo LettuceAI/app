@@ -359,7 +359,7 @@ function ProviderForm({
             type="url"
             value={config.baseUrl}
             onChange={(e) => onUpdate({ baseUrl: e.target.value })}
-            placeholder="http://localhost:11434"
+            placeholder={t("engine.config.fields.baseUrlPlaceholder")}
             className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder-white/40 focus:border-white/30 focus:outline-none"
           />
         </div>

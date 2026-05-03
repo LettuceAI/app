@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import { CheckCircle, Download, Loader2, XCircle } from "lucide-react";
 import type { DownloadProgress } from "../hooks/useModelDownload";
+import { useI18n, type TranslationKey } from "../../../../core/i18n/context";
 
 export type ModelDownloadPhase = "idle" | "downloading" | "verifying" | "passed" | "failed";
 
@@ -21,6 +22,7 @@ export function ModelDownloadProgress({
   phase: ModelDownloadPhase;
   statusText: string;
 }) {
+  const { t } = useI18n();
   const progressPercent =
     phase === "passed" || phase === "verifying"
       ? 100
@@ -54,7 +56,10 @@ export function ModelDownloadProgress({
         {progress.status.toLowerCase().includes("downloading") && progress.totalFiles > 0 && (
           <div className="text-center">
             <div className="text-sm font-medium text-fg/80">
-              File {progress.currentFileIndex} of {progress.totalFiles}
+              {t("models.downloadProgress.fileOfTotal" as TranslationKey, {
+                current: progress.currentFileIndex,
+                total: progress.totalFiles,
+              })}
             </div>
             {progress.currentFileName && (
               <div className="mt-1 text-xs text-fg/50 font-mono">{progress.currentFileName}</div>
@@ -64,7 +69,7 @@ export function ModelDownloadProgress({
 
         <div className="space-y-2">
           <div className="flex justify-between text-sm">
-            <span className="text-fg/70">Progress</span>
+            <span className="text-fg/70">{t("models.downloadProgress.progress" as TranslationKey)}</span>
             <span className="font-medium text-fg">{Math.round(progressPercent)}%</span>
           </div>
           <div className="h-2 w-full overflow-hidden rounded-full bg-fg/10">

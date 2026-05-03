@@ -82,7 +82,7 @@ export function DiscoveryCardDetailPage() {
 
   useEffect(() => {
     if (!path) {
-      setError("No card path provided");
+      setError(t("discovery.errors.noCardPath"));
       setLoading(false);
       return;
     }
@@ -131,14 +131,14 @@ export function DiscoveryCardDetailPage() {
         }
       } catch (err) {
         console.error("Failed to load card detail:", err);
-        setError(err instanceof Error ? err.message : "Failed to load character");
+        setError(err instanceof Error ? err.message : t("discovery.errors.loadCharacter"));
       } finally {
         setLoading(false);
       }
     };
 
     loadCard();
-  }, [path]);
+  }, [path, t]);
 
   const handleBack = useCallback(() => {
     const stateFrom = (location.state as { from?: string } | null | undefined)?.from || undefined;
@@ -172,7 +172,7 @@ export function DiscoveryCardDetailPage() {
       setShowDownloadMenu(true);
     } catch (err) {
       console.error("Download failed:", err);
-      setError(err instanceof Error ? err.message : "Failed to download character");
+      setError(err instanceof Error ? err.message : t("discovery.errors.downloadCharacter"));
     } finally {
       setDownloading(false);
     }
@@ -182,7 +182,7 @@ export function DiscoveryCardDetailPage() {
     if (!importedCharacterId) return;
 
     try {
-      const session = await createSession(importedCharacterId, cardData?.card.name || "New Chat");
+      const session = await createSession(importedCharacterId, cardData?.card.name || t("discovery.detail.defaultChatTitle"));
 
       navigate(`/chat/${importedCharacterId}?sessionId=${session.id}`);
     } catch (err) {

@@ -58,12 +58,12 @@ export function DiscoveryPage() {
       setSections(data);
     } catch (err) {
       console.error("Failed to load discovery sections:", err);
-      setError(err instanceof Error ? err.message : "Failed to load content");
+      setError(err instanceof Error ? err.message : t("discovery.errors.loadContent"));
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     loadSections();

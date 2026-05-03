@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import type { Character } from "../../../../core/storage/schemas";
 import { ChatSettingsContent } from "../ChatSettings";
 import { WindowControlButtons, useDragRegionProps } from "../../../components/App/TopNav";
+import { useI18n } from "../../../../core/i18n/context";
 
 interface ChatSettingsDrawerProps {
   isOpen: boolean;
@@ -18,6 +19,7 @@ export function ChatSettingsDrawer({
   onOpenAuthorNote,
 }: ChatSettingsDrawerProps) {
   const dragRegionProps = useDragRegionProps();
+  const { t } = useI18n();
   // Close on Escape
   useEffect(() => {
     if (!isOpen) return;
@@ -53,8 +55,8 @@ export function ChatSettingsDrawer({
             {/* Drawer header */}
             <div className="flex shrink-0 items-center justify-between border-b border-fg/10 px-4 py-3" {...dragRegionProps}>
               <div>
-                <p className="text-base font-bold text-fg">Chat Settings</p>
-                <p className="text-xs text-fg/50">Manage conversation preferences</p>
+                <p className="text-base font-bold text-fg">{t("chats.drawer.chatSettingsTitle")}</p>
+                <p className="text-xs text-fg/50">{t("chats.drawer.chatSettingsSubtitle")}</p>
               </div>
               <div className="flex items-center gap-1">
                 <WindowControlButtons />

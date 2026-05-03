@@ -18,7 +18,9 @@ import { cn } from "../../design-tokens";
 import { confirmBottomMenu } from "../../components/ConfirmBottomMenu";
 import { toast } from "../../components/toast";
 import { isRenderableImageUrl } from "../../../core/utils/image";
-import { useI18n } from "../../../core/i18n/context";
+import { useI18n, type TranslationKey, type TranslateParams } from "../../../core/i18n/context";
+
+type TFn = (key: TranslationKey, params?: TranslateParams) => string;
 import {
   buildAvatarLibrarySelectionKey,
   buildBackgroundLibrarySelectionKey,
@@ -54,8 +56,8 @@ function formatBytes(bytes: number): string {
   return `${value.toFixed(value >= 10 ? 0 : 1)} ${unit}`;
 }
 
-function formatDate(timestamp: number): string {
-  if (!timestamp) return "Unknown";
+function formatDate(timestamp: number, t: TFn): string {
+  if (!timestamp) return t("library.imageLibrary.unknownDate");
   return new Intl.DateTimeFormat(undefined, {
     month: "short",
     day: "numeric",
@@ -80,11 +82,17 @@ function getImageKind(
   return "Other";
 }
 
-function imageKindLabel(kind: Exclude<FilterOption, "All">): string {
-  if (kind === "Backgrounds") return "Background";
-  if (kind === "Avatars") return "Avatar";
-  if (kind === "Attachments") return "Attachment";
-  return "Stored";
+function sortLabel(option: SortOption, t: TFn): string {
+  if (option === "Newest") return t("library.imageLibrary.sort.newest");
+  if (option === "Largest") return t("library.imageLibrary.sort.largest");
+  return t("library.imageLibrary.sort.name");
+}
+
+function imageKindLabel(kind: Exclude<FilterOption, "All">, t: TFn): string {
+  if (kind === "Backgrounds") return t("library.imageLibrary.kinds.background");
+  if (kind === "Avatars") return t("library.imageLibrary.kinds.avatar");
+  if (kind === "Attachments") return t("library.imageLibrary.kinds.attachment");
+  return t("library.imageLibrary.kinds.stored");
 }
 
 function matchesFilter(item: ImageLibraryItem, filter: FilterOption, backgroundIds: Set<string>) {
@@ -103,13 +111,13 @@ function sortItems(items: ImageLibraryItem[], sort: SortOption) {
   return next.sort((a, b) => b.updatedAt - a.updatedAt || a.filename.localeCompare(b.filename));
 }
 
-function copyToClipboard(value: string, label: string) {
+function copyToClipboard(value: string, label: string, t: TFn) {
   navigator.clipboard
     .writeText(value)
-    .then(() => toast.success(`${label} copied`, value))
+    .then(() => toast.success(t("library.imageLibrary.copy.copied", { label }), value))
     .catch((error) => {
       console.error(`Failed to copy ${label.toLowerCase()}:`, error);
-      toast.error(`Failed to copy ${label.toLowerCase()}`);
+      toast.error(t("library.imageLibrary.copy.failed", { label: label.toLowerCase() }));
     });
 }
 
@@ -246,6 +254,7 @@ const ImageLibraryGrid = memo(function ImageLibraryGrid({
   onSelect: (group: ImageLibraryGroup) => void;
   columnCountOverride?: number;
 }) {
+  const { t } = useI18n();
   const [viewportWidth, setViewportWidth] = useState(0);
   const [gridWidth, setGridWidth] = useState(0);
   const gridRef = useRef<HTMLDivElement | null>(null);
@@ -327,7 +336,7 @@ const ImageLibraryGrid = memo(function ImageLibraryGrid({
               <ImageTile
                 key={group.id}
                 group={group}
-                kindLabel={imageKindLabel(getImageKind(group.item, backgroundIds))}
+                kindLabel={imageKindLabel(getImageKind(group.item, backgroundIds), t)}
                 onSelect={onSelect}
               />
             ))}
@@ -647,7 +656,7 @@ export function ImageLibraryPanel({
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => setQuery("")}
                 className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-fg/45 transition hover:bg-fg/10 hover:text-fg"
-                title="Clear search"
+                title={t("library.imageLibrary.clearSearch")}
               >
                 <X className="h-3.5 w-3.5" />
               </button>
@@ -660,7 +669,7 @@ export function ImageLibraryPanel({
             title={t("library.imageLibrary.actions.sort")}
           >
             <ArrowUpDown className="h-4 w-4" />
-            <span className="hidden text-xs text-fg/55 sm:inline">{sort}</span>
+            <span className="hidden text-xs text-fg/55 sm:inline">{sortLabel(sort, t)}</span>
           </button>
         </div>
       </div>
@@ -726,7 +735,7 @@ export function ImageLibraryPanel({
                       : "border border-fg/10 bg-surface-el/50 text-fg/65 hover:bg-fg/5 hover:text-fg",
                   )}
                 >
-                  <span>{option}</span>
+                  <span>{sortLabel(option, t)}</span>
                   {sort === option && (
                     <span className="text-xs font-medium text-accent">
                       {t("library.imageLibrary.active")}
@@ -744,14 +753,16 @@ export function ImageLibraryPanel({
         onClose={() => setSelectedGroup(null)}
         title={
           selectedGroup
-            ? `${imageKindLabel(getImageKind(selectedGroup.item, backgroundIds))} details`
+            ? t("library.imageLibrary.detailsTitle", {
+                kind: imageKindLabel(getImageKind(selectedGroup.item, backgroundIds), t),
+              })
             : ""
         }
       >
         {selectedGroup && (() => {
           const item = selectedGroup.item;
           const kind = getImageKind(item, backgroundIds);
-          const kindLabel = imageKindLabel(kind);
+          const kindLabel = imageKindLabel(kind, t);
           const dimensions =
             item.width && item.height ? `${item.width} × ${item.height}` : null;
           const ext = getFileExtension(item.filename).toUpperCase();
@@ -801,14 +812,14 @@ export function ImageLibraryPanel({
                     <span className="tabular-nums">{formatBytes(item.sizeBytes)}</span>
                     {ext && <span className="font-mono uppercase tracking-wide">{ext}</span>}
                     <span className="text-fg/45">·</span>
-                    <span>{formatDate(item.updatedAt)}</span>
+                    <span>{formatDate(item.updatedAt, t)}</span>
                   </div>
 
                   <button
                     type="button"
-                    onClick={() => copyToClipboard(item.filename, "Filename")}
+                    onClick={() => copyToClipboard(item.filename, t("library.imageLibrary.copyLabels.filename"), t)}
                     className="flex w-full items-center gap-2 rounded-xl border border-fg/10 bg-surface-el/40 px-3 py-2 text-left text-fg/75 transition hover:bg-fg/5 hover:text-fg"
-                    title="Copy filename"
+                    title={t("library.imageLibrary.copyFilename")}
                   >
                     <Copy className="h-3.5 w-3.5 shrink-0 text-fg/40" />
                     <span className="min-w-0 truncate font-mono text-[12px]">
@@ -819,7 +830,7 @@ export function ImageLibraryPanel({
                   {selectedGroup.variants.length > 1 && (
                     <div className="flex flex-wrap items-center gap-1.5">
                       <span className="text-[11px] uppercase tracking-[0.12em] text-fg/40">
-                        Formats
+                        {t("library.imageLibrary.formatsLabel")}
                       </span>
                       {selectedGroup.variants.map((variant) => (
                         <span
@@ -835,16 +846,16 @@ export function ImageLibraryPanel({
                   <details className="group rounded-xl bg-surface-el/40">
                     <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-[12px]">
                       <span className="text-fg/55">
-                        Storage path
+                        {t("library.imageLibrary.storagePath")}
                       </span>
                       <span className="min-w-0 flex-1 truncate text-right font-mono text-[11px] text-fg/55">
                         {compactPath(item.storagePath)}
                       </span>
                       <span className="shrink-0 text-[11px] text-fg/40 transition group-open:hidden">
-                        Show
+                        {t("library.imageLibrary.show")}
                       </span>
                       <span className="hidden shrink-0 text-[11px] text-fg/40 group-open:inline">
-                        Hide
+                        {t("library.imageLibrary.hide")}
                       </span>
                     </summary>
                     <div className="border-t border-fg/8 px-3 pb-3 pt-2">
@@ -857,17 +868,17 @@ export function ImageLibraryPanel({
                   {hasContext && (
                     <details className="group rounded-xl bg-surface-el/40">
                       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-[12px]">
-                        <span className="text-fg/55">Context</span>
+                        <span className="text-fg/55">{t("library.imageLibrary.contextLabel")}</span>
                         <span className="min-w-0 flex-1 truncate text-right text-[11px] text-fg/55">
                           {[item.entityType, item.characterId, item.sessionId]
                             .filter(Boolean)
-                            .join(" · ") || "Linked"}
+                            .join(" · ") || t("library.imageLibrary.contextLinkedFallback")}
                         </span>
                         <span className="shrink-0 text-[11px] text-fg/40 group-open:hidden">
-                          Show
+                          {t("library.imageLibrary.show")}
                         </span>
                         <span className="hidden shrink-0 text-[11px] text-fg/40 group-open:inline">
-                          Hide
+                          {t("library.imageLibrary.hide")}
                         </span>
                       </summary>
                       <div className="border-t border-fg/8 px-3 pb-3 pt-2">
@@ -880,19 +891,19 @@ export function ImageLibraryPanel({
                           )}
                           {item.characterId && (
                             <p>
-                              <span className="text-fg/45">character:</span>{" "}
+                              <span className="text-fg/45">{t("library.imageLibrary.contextRoles.character")}</span>{" "}
                               <span className="font-mono">{item.characterId}</span>
                             </p>
                           )}
                           {item.sessionId && (
                             <p>
-                              <span className="text-fg/45">session:</span>{" "}
+                              <span className="text-fg/45">{t("library.imageLibrary.contextRoles.session")}</span>{" "}
                               <span className="font-mono">{item.sessionId}</span>
                             </p>
                           )}
                           {item.role && (
                             <p>
-                              <span className="text-fg/45">role:</span> {item.role}
+                              <span className="text-fg/45">{t("library.imageLibrary.contextRoles.role")}</span> {item.role}
                             </p>
                           )}
                         </div>
@@ -903,7 +914,7 @@ export function ImageLibraryPanel({
                   <div className="flex items-center gap-2 pt-1">
                     <button
                       type="button"
-                      onClick={() => copyToClipboard(item.storagePath, "Storage path")}
+                      onClick={() => copyToClipboard(item.storagePath, t("library.imageLibrary.copyLabels.storagePath"), t)}
                       className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-fg/10 bg-fg/4 px-3 py-2.5 text-sm font-medium text-fg/75 transition hover:bg-fg/8 hover:text-fg"
                     >
                       <Copy className="h-4 w-4" />
@@ -934,7 +945,9 @@ export function ImageLibraryPanel({
                       {downloading
                         ? t("library.imageLibrary.actions.saving")
                         : selectedGroup.variants.length > 1
-                          ? `${t("library.imageLibrary.actions.download")} Format`
+                          ? t("library.imageLibrary.downloadFormat", {
+                              download: t("library.imageLibrary.actions.download"),
+                            })
                           : t("library.imageLibrary.actions.download")}
                     </button>
                     <button

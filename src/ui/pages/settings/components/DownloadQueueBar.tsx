@@ -8,6 +8,7 @@ import {
   useDownloadQueue,
   type QueuedDownload,
 } from "../../../../core/downloads/DownloadQueueContext";
+import { useI18n, type TranslationKey } from "../../../../core/i18n/context";
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";
@@ -30,9 +31,12 @@ function isMmprojFilename(filename: string): boolean {
   return filename.toLowerCase().includes("mmproj");
 }
 
-function queueSubtitle(item: QueuedDownload): string {
+function queueSubtitle(
+  item: QueuedDownload,
+  t: (key: TranslationKey, params?: Record<string, string | number>) => string,
+): string {
   if (item.queueKind === "kokoro") {
-    return item.displayName || "Kokoro asset";
+    return item.displayName || t("models.downloadQueue.kokoroAsset" as TranslationKey);
   }
   return extractShortName(item.modelId);
 }
@@ -68,6 +72,7 @@ export function InlineDownloadCards({
   compact?: boolean;
 }) {
   const navigate = useNavigate();
+  const { t } = useI18n();
   const { queue, cancelItem, dismissItem } = useDownloadQueue();
 
   const createModel = useCallback(
@@ -126,7 +131,7 @@ export function InlineDownloadCards({
                 )}
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[12px] font-medium text-fg/80">{item.filename}</p>
-                  {!compact && <p className="truncate text-[10px] text-fg/40">{queueSubtitle(item)}</p>}
+                  {!compact && <p className="truncate text-[10px] text-fg/40">{queueSubtitle(item, t)}</p>}
                 </div>
                 <button
                   onClick={() => cancelItem(item.id)}
@@ -135,7 +140,7 @@ export function InlineDownloadCards({
                     interactive.transition.fast,
                     "hover:bg-fg/10 hover:text-danger/70 active:scale-90",
                   )}
-                  title="Cancel"
+                  title={t("models.downloadQueue.cancel" as TranslationKey)}
                 >
                   <X size={13} />
                 </button>
@@ -164,7 +169,9 @@ export function InlineDownloadCards({
                 </div>
               )}
               {item.status === "queued" && (
-                <p className="mt-1.5 text-[10px] text-fg/30">Waiting in queue...</p>
+                <p className="mt-1.5 text-[10px] text-fg/30">
+                  {t("models.downloadQueue.waiting" as TranslationKey)}
+                </p>
               )}
             </div>
           </motion.div>
@@ -186,7 +193,9 @@ export function InlineDownloadCards({
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[12px] font-medium text-fg/80">{item.filename}</p>
                   <p className="text-[10px] text-emerald-400/60">
-                    {formatBytes(item.total)} — Ready to use
+                    {t("models.downloadQueue.completeBytes" as TranslationKey, {
+                      size: formatBytes(item.total),
+                    })}
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-1.5">

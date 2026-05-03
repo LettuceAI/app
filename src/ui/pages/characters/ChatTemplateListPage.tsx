@@ -89,12 +89,12 @@ export default function ChatTemplateListPage() {
         setExportTarget(null);
       } catch (error) {
         console.error("Failed to export chat template:", error);
-        toast.error("Export failed", String(error));
+        toast.error(t("characters.templates.exportFailed"), String(error));
       } finally {
         setExporting(false);
       }
     },
-    [exportTarget, exporting],
+    [exportTarget, exporting, t],
   );
 
   const handleImportFile = useCallback(
@@ -110,10 +110,13 @@ export default function ChatTemplateListPage() {
         };
         await saveCharacter(updated);
         setCharacter(updated);
-        toast.success("Imported", `Added "${imported.name}".`);
+        toast.success(
+          t("characters.templates.importedToast.title"),
+          t("characters.templates.importedToast.message", { name: imported.name }),
+        );
       } catch (error) {
         console.error("Failed to import chat template:", error);
-        toast.error("Import failed", String(error));
+        toast.error(t("characters.templates.importFailed"), String(error));
       } finally {
         setImporting(false);
         if (importInputRef.current) {
@@ -121,7 +124,7 @@ export default function ChatTemplateListPage() {
         }
       }
     },
-    [character, importing, templates, importInputRef],
+    [character, importing, templates, importInputRef, t],
   );
 
   const menuTemplate = templates.find((t) => t.id === menuTemplateId);
@@ -243,7 +246,7 @@ export default function ChatTemplateListPage() {
       <BottomMenu
         isOpen={!!menuTemplateId}
         onClose={() => setMenuTemplateId(null)}
-        title={menuTemplate?.name ?? "Template"}
+        title={menuTemplate?.name ?? t("characters.templates.contextMenuFallbackTitle")}
       >
         <div className="space-y-3">
           <MenuButton

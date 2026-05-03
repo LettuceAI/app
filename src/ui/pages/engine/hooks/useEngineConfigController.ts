@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useReducer, useState } from "react";
 
+import { useI18n } from "../../../../core/i18n/context";
 import {
   engineGetConfig,
   engineConfigLlm,
@@ -124,6 +125,7 @@ function providersReducer(state: ProvidersState, action: ProvidersAction): Provi
 export function useEngineProvidersConfigController(baseUrl: string, apiKey: string) {
   const [state, dispatch] = useReducer(providersReducer, initialProvidersState);
   const [appProviders, setAppProviders] = useState<ProviderCredential[]>([]);
+  const { t } = useI18n();
 
   const load = useCallback(async () => {
     dispatch({ type: "set_loading", payload: true });
@@ -210,7 +212,7 @@ export function useEngineProvidersConfigController(baseUrl: string, apiKey: stri
       const enabledProviders = ENGINE_LLM_PROVIDERS.filter((p) => state.providers[p.id].enabled);
 
       if (enabledProviders.length === 0) {
-        dispatch({ type: "set_error", payload: "At least one provider must be enabled." });
+        dispatch({ type: "set_error", payload: t("engine.errors.atLeastOneProvider") });
         return false;
       }
 
@@ -218,11 +220,11 @@ export function useEngineProvidersConfigController(baseUrl: string, apiKey: stri
       for (const provider of enabledProviders) {
         const config = state.providers[provider.id];
         if (!config.model.trim()) {
-          dispatch({ type: "set_error", payload: `Model is required for ${provider.name}.` });
+          dispatch({ type: "set_error", payload: t("engine.errors.modelRequired", { provider: provider.name }) });
           return false;
         }
         if (provider.requiresKey && !config.apiKey.trim() && !config.apiKeyRedacted) {
-          dispatch({ type: "set_error", payload: `API key is required for ${provider.name}.` });
+          dispatch({ type: "set_error", payload: t("engine.errors.apiKeyRequired", { provider: provider.name }) });
           return false;
         }
 
@@ -260,7 +262,7 @@ export function useEngineProvidersConfigController(baseUrl: string, apiKey: stri
     } finally {
       dispatch({ type: "set_saving", payload: false });
     }
-  }, [state.providers, state.defaultBackend, baseUrl, apiKey]);
+  }, [state.providers, state.defaultBackend, baseUrl, apiKey, t]);
 
   return {
     state,

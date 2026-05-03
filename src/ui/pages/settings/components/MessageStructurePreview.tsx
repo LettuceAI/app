@@ -12,6 +12,7 @@ import { cn, radius, interactive } from "../../../design-tokens";
 import { BottomMenu } from "../../../components";
 import { confirmBottomMenu } from "../../../components/ConfirmBottomMenu";
 import type { SystemPromptEntry } from "../../../../core/storage/schemas";
+import { useI18n, type TranslationKey } from "../../../../core/i18n/context";
 
 interface PreviewMessage {
   id: string;
@@ -25,25 +26,31 @@ interface PreviewMessage {
 
 type PromptEntryImageSlot = "character" | "persona" | "chatBackground" | "avatar" | "references";
 
-const IMAGE_SLOT_LABELS: Record<PromptEntryImageSlot, string> = {
-  character: "Character reference image",
-  persona: "Persona reference image",
-  chatBackground: "Chat background image",
-  avatar: "Avatar image",
-  references: "Reference images",
+const IMAGE_SLOT_LABEL_KEYS: Record<PromptEntryImageSlot, string> = {
+  character: "systemPrompts.preview.imageSlot.character",
+  persona: "systemPrompts.preview.imageSlot.persona",
+  chatBackground: "systemPrompts.preview.imageSlot.chatBackground",
+  avatar: "systemPrompts.preview.imageSlot.avatar",
+  references: "systemPrompts.preview.imageSlot.references",
 };
 
 function entryHasPreviewContent(entry: SystemPromptEntry) {
   return entry.content.trim() !== "" || entry.promptEntryPayload?.type === "imageSlot";
 }
 
-function getPreviewEntryContent(entry: SystemPromptEntry) {
+function getPreviewEntryContent(
+  entry: SystemPromptEntry,
+  t: (key: TranslationKey, params?: Record<string, string | number>) => string,
+) {
   if (entry.content.trim() !== "") {
     return entry.content;
   }
 
   if (entry.promptEntryPayload?.type === "imageSlot") {
-    return `[Image attachment: ${IMAGE_SLOT_LABELS[entry.promptEntryPayload.slot]}]`;
+    const labelKey = IMAGE_SLOT_LABEL_KEYS[entry.promptEntryPayload.slot] as TranslationKey;
+    return t("systemPrompts.preview.imageAttachment" as TranslationKey, {
+      label: t(labelKey),
+    });
   }
 
   return "";
@@ -91,6 +98,7 @@ function shouldInsert(entry: SystemPromptEntry, turnCount: number): boolean {
 function insertInChatEntries(
   messages: PreviewMessage[],
   entries: SystemPromptEntry[],
+  t: (key: TranslationKey, params?: Record<string, string | number>) => string,
 ): PreviewMessage[] {
   if (entries.length === 0) return messages;
 
@@ -115,10 +123,10 @@ function insertInChatEntries(
       id: `injected-${entry.id}`,
       role: entry.promptEntryPayload?.type === "imageSlot" ? "user" : entry.role,
       label: entry.name,
-      content: getPreviewEntryContent(entry),
+      content: getPreviewEntryContent(entry, t),
       isMock: false,
       entryId: entry.id,
-      injectionInfo: formatInjectionInfo(entry),
+      injectionInfo: formatInjectionInfo(entry, t),
     });
     offset += 1;
   }
@@ -126,7 +134,10 @@ function insertInChatEntries(
   return result;
 }
 
-function condenseEntries(entries: SystemPromptEntry[]): SystemPromptEntry[] {
+function condenseEntries(
+  entries: SystemPromptEntry[],
+  t: (key: TranslationKey, params?: Record<string, string | number>) => string,
+): SystemPromptEntry[] {
   const merged = entries
     .filter((e) => (e.enabled || e.systemPrompt) && e.content.trim() !== "")
     .map((e) => e.content.trim())
@@ -142,7 +153,7 @@ function condenseEntries(entries: SystemPromptEntry[]): SystemPromptEntry[] {
   if (merged.trim()) {
     condensed.push({
       id: "entry_condensed_system",
-      name: "Condensed System Prompt",
+      name: t("systemPrompts.preview.condensedName" as TranslationKey),
       role: "system",
       content: merged,
       enabled: true,
@@ -160,37 +171,49 @@ function condenseEntries(entries: SystemPromptEntry[]): SystemPromptEntry[] {
   return condensed;
 }
 
-function formatInjectionInfo(entry: SystemPromptEntry): string {
+function formatInjectionInfo(
+  entry: SystemPromptEntry,
+  t: (key: TranslationKey, params?: Record<string, string | number>) => string,
+): string {
   switch (entry.injectionPosition) {
     case "relative":
-      return "relative";
+      return t("systemPrompts.preview.injection.relative" as TranslationKey);
     case "inChat":
-      return `inChat · depth ${entry.injectionDepth}`;
+      return t("systemPrompts.preview.injection.inChat" as TranslationKey, {
+        depth: entry.injectionDepth,
+      });
     case "conditional":
-      return `conditional · min ${entry.conditionalMinMessages ?? 1}`;
+      return t("systemPrompts.preview.injection.conditional" as TranslationKey, {
+        min: entry.conditionalMinMessages ?? 1,
+      });
     case "interval":
-      return `interval · every ${entry.intervalTurns ?? 0}`;
+      return t("systemPrompts.preview.injection.interval" as TranslationKey, {
+        every: entry.intervalTurns ?? 0,
+      });
     default:
       return "";
   }
 }
 
-function generateMockMessages(turnCount: number): PreviewMessage[] {
+function generateMockMessages(
+  turnCount: number,
+  t: (key: TranslationKey, params?: Record<string, string | number>) => string,
+): PreviewMessage[] {
   const messages: PreviewMessage[] = [];
   for (let i = 1; i <= turnCount; i++) {
     messages.push({
       id: `mock-user-${i}`,
       role: "user",
-      label: `User message #${i}`,
-      content: `This is a mock user message #${i}`,
+      label: t("systemPrompts.preview.mock.userLabel" as TranslationKey, { n: i }),
+      content: t("systemPrompts.preview.mock.userContent" as TranslationKey, { n: i }),
       isMock: true,
     });
     if (i < turnCount) {
       messages.push({
         id: `mock-assistant-${i}`,
         role: "assistant",
-        label: `Assistant message #${i}`,
-        content: `This is a mock assistant message #${i}`,
+        label: t("systemPrompts.preview.mock.assistantLabel" as TranslationKey, { n: i }),
+        content: t("systemPrompts.preview.mock.assistantContent" as TranslationKey, { n: i }),
         isMock: true,
       });
     }
@@ -202,9 +225,10 @@ function assembleStructure(
   entries: SystemPromptEntry[],
   mockPairCount: number,
   condense: boolean,
+  t: (key: TranslationKey, params?: Record<string, string | number>) => string,
 ): PreviewMessage[] {
   const working = condense
-    ? condenseEntries(entries)
+    ? condenseEntries(entries, t)
     : entries.filter((e) => e.enabled || e.systemPrompt);
 
   const [relativeEntries, inChatEntries] = partitionEntries(working);
@@ -217,15 +241,15 @@ function assembleStructure(
       id: `relative-${entry.id}`,
       role: entry.promptEntryPayload?.type === "imageSlot" ? "user" : entry.role,
       label: entry.name,
-      content: getPreviewEntryContent(entry),
+      content: getPreviewEntryContent(entry, t),
       isMock: false,
       entryId: entry.id,
-      injectionInfo: "relative",
+      injectionInfo: t("systemPrompts.preview.injection.relative" as TranslationKey),
     });
   }
 
-  const mockMessages = generateMockMessages(mockPairCount);
-  const chatWithInjections = insertInChatEntries(mockMessages, inChatEntries);
+  const mockMessages = generateMockMessages(mockPairCount, t);
+  const chatWithInjections = insertInChatEntries(mockMessages, inChatEntries, t);
   result.push(...chatWithInjections);
 
   return result;
@@ -248,6 +272,7 @@ function PromptEntryMessage({
   message: PreviewMessage;
   onMenuOpen: (entryId: string) => void;
 }) {
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const role = ROLE_CONFIG[message.role] ?? ROLE_CONFIG.system;
   const isLong = message.content.length > 160;
@@ -300,11 +325,13 @@ function PromptEntryMessage({
               >
                 {expanded ? (
                   <>
-                    <ChevronUp className="h-3 w-3" /> Show less
+                    <ChevronUp className="h-3 w-3" />{" "}
+                    {t("systemPrompts.preview.showLess" as TranslationKey)}
                   </>
                 ) : (
                   <>
-                    <ChevronDown className="h-3 w-3" /> Show more
+                    <ChevronDown className="h-3 w-3" />{" "}
+                    {t("systemPrompts.preview.showMore" as TranslationKey)}
                   </>
                 )}
               </button>
@@ -360,12 +387,13 @@ export function MessageStructurePreview({
   onDeleteEntry,
   onReorderEntry,
 }: MessageStructurePreviewProps) {
+  const { t } = useI18n();
   const [mockPairCount, setMockPairCount] = useState(3);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
 
   const messages = useMemo(
-    () => assembleStructure(entries, mockPairCount, condensePromptEntries),
-    [entries, mockPairCount, condensePromptEntries],
+    () => assembleStructure(entries, mockPairCount, condensePromptEntries, t),
+    [entries, mockPairCount, condensePromptEntries, t],
   );
 
   const menuEntry = menuOpenId ? entries.find((e) => e.id === menuOpenId) : null;
@@ -378,9 +406,11 @@ export function MessageStructurePreview({
     const entryId = menuOpenId;
     setMenuOpenId(null);
     const confirmed = await confirmBottomMenu({
-      title: "Delete entry?",
-      message: `Remove "${menuEntry?.name ?? "this entry"}" from the prompt template? This cannot be undone.`,
-      confirmLabel: "Delete",
+      title: t("systemPrompts.preview.deleteTitle" as TranslationKey),
+      message: t("systemPrompts.preview.deleteMessage" as TranslationKey, {
+        name: menuEntry?.name ?? t("systemPrompts.preview.thisEntry" as TranslationKey),
+      }),
+      confirmLabel: t("systemPrompts.preview.deleteConfirm" as TranslationKey),
       destructive: true,
     });
     if (confirmed) onDeleteEntry?.(entryId);
@@ -392,11 +422,11 @@ export function MessageStructurePreview({
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-fg/40">
           <MessageSquare className="h-3.5 w-3.5" />
-          <span className="text-xs">What the LLM sees</span>
+          <span className="text-xs">{t("systemPrompts.preview.whatLlmSees" as TranslationKey)}</span>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <label htmlFor="mock-pair-count" className="text-[11px] text-fg/30">
-            Turns
+            {t("systemPrompts.preview.turns" as TranslationKey)}
           </label>
           <input
             id="mock-pair-count"
@@ -423,8 +453,10 @@ export function MessageStructurePreview({
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-10 text-center">
             <MessageSquare className="h-6 w-6 text-fg/15 mb-2" />
-            <p className="text-xs text-fg/30">No messages</p>
-            <p className="text-[11px] text-fg/20 mt-0.5">Add entries or increase turns</p>
+            <p className="text-xs text-fg/30">{t("systemPrompts.preview.noMessages" as TranslationKey)}</p>
+            <p className="text-[11px] text-fg/20 mt-0.5">
+              {t("systemPrompts.preview.noMessagesHint" as TranslationKey)}
+            </p>
           </div>
         ) : (
           (() => {
@@ -443,13 +475,16 @@ export function MessageStructurePreview({
       {/* Summary */}
       <div className="flex items-center gap-4 pt-2 border-t border-fg/5 text-[11px] text-fg/25">
         <span>
-          <span className="font-mono text-fg/40">{mockCount}</span> chat
+          <span className="font-mono text-fg/40">{mockCount}</span>{" "}
+          {t("systemPrompts.preview.statChat" as TranslationKey)}
         </span>
         <span>
-          <span className="font-mono text-info/40">{promptCount}</span> injected
+          <span className="font-mono text-info/40">{promptCount}</span>{" "}
+          {t("systemPrompts.preview.statInjected" as TranslationKey)}
         </span>
         <span>
-          <span className="font-mono text-fg/40">{messages.length}</span> total
+          <span className="font-mono text-fg/40">{messages.length}</span>{" "}
+          {t("systemPrompts.preview.statTotal" as TranslationKey)}
         </span>
       </div>
 
@@ -457,7 +492,7 @@ export function MessageStructurePreview({
       <BottomMenu
         isOpen={!!menuOpenId}
         onClose={() => setMenuOpenId(null)}
-        title={menuEntry?.name ?? "Entry"}
+        title={menuEntry?.name ?? t("systemPrompts.preview.entry" as TranslationKey)}
       >
         <div className="space-y-1 py-1">
           <button
@@ -474,7 +509,9 @@ export function MessageStructurePreview({
             )}
           >
             <Pencil className="h-4 w-4 text-fg/50" />
-            <span className="text-sm text-fg">Edit entry</span>
+            <span className="text-sm text-fg">
+              {t("systemPrompts.preview.editEntry" as TranslationKey)}
+            </span>
           </button>
 
           <button
@@ -491,7 +528,9 @@ export function MessageStructurePreview({
             )}
           >
             <GripVertical className="h-4 w-4 text-fg/50" />
-            <span className="text-sm text-fg">Reorder</span>
+            <span className="text-sm text-fg">
+              {t("systemPrompts.preview.reorder" as TranslationKey)}
+            </span>
           </button>
 
           <button
@@ -504,7 +543,9 @@ export function MessageStructurePreview({
             )}
           >
             <Trash2 className="h-4 w-4 text-danger" />
-            <span className="text-sm text-danger">Delete</span>
+            <span className="text-sm text-danger">
+              {t("systemPrompts.preview.delete" as TranslationKey)}
+            </span>
           </button>
         </div>
       </BottomMenu>

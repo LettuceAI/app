@@ -129,7 +129,7 @@ export function CreationHelperFooter({
               )}
             >
               <RotateCcw className="h-3.5 w-3.5" />
-              <span>Retry</span>
+              <span>{t("characters.creationHelper.retry")}</span>
             </button>
           )}
         </div>
@@ -145,7 +145,7 @@ export function CreationHelperFooter({
             >
               <img
                 src={attachment.data}
-                alt={attachment.filename || "Attachment"}
+                alt={attachment.filename || t("characters.creationHelper.attachmentAlt")}
                 className={cn("h-20 w-20 object-cover", radius.md)}
               />
               {onRemoveAttachment && (
@@ -156,7 +156,7 @@ export function CreationHelperFooter({
                     interactive.transition.fast,
                     interactive.active.scale,
                   )}
-                  aria-label="Remove attachment"
+                  aria-label={t("characters.creationHelper.removeAttachment")}
                 >
                   <X className="h-5 w-5 text-surface drop-shadow-[0_1px_2px_rgba(255,255,255,0.8)]" />
                 </button>
@@ -191,7 +191,7 @@ export function CreationHelperFooter({
                 <button
                   onClick={() => onRemoveReference(ref.id)}
                   className="ml-1 hover:text-fg"
-                  aria-label="Remove reference"
+                  aria-label={t("characters.creationHelper.removeReference")}
                 >
                   <X className="h-3.5 w-3.5" />
                 </button>
@@ -312,7 +312,7 @@ export function CreationHelperFooter({
         <MenuSection>
           <MenuButton
             icon={ImageIcon}
-            title="Upload Image"
+            title={t("characters.creationHelper.uploadImageTitle")}
             description={t("characters.creationHelper.uploadImageDesc")}
             color="from-info to-info/80"
             onClick={() => {
@@ -323,7 +323,7 @@ export function CreationHelperFooter({
             <>
               <MenuButton
                 icon={User}
-                title="Reference Character"
+                title={t("characters.creationHelper.referenceCharacterTitle")}
                 description={t("characters.creationHelper.referenceCharacterDesc")}
                 color="from-secondary to-danger/80"
                 onClick={() => {
@@ -333,7 +333,7 @@ export function CreationHelperFooter({
               />
               <MenuButton
                 icon={Users}
-                title="Reference Persona"
+                title={t("characters.creationHelper.referencePersonaTitle")}
                 description={t("characters.creationHelper.referencePersonaDesc")}
                 color="from-warning to-warning/80"
                 onClick={() => {

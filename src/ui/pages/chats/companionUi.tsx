@@ -6,6 +6,9 @@ import type {
   Session,
 } from "../../../core/storage/schemas";
 import { getSessionMeta, listCharacters, listSessionPreviews } from "../../../core/storage/repo";
+import { useI18n } from "../../../core/i18n/context";
+
+type T = ReturnType<typeof useI18n>["t"];
 
 export const COMPANION_CATEGORY_ORDER = [
   "relationship",
@@ -20,16 +23,26 @@ export const COMPANION_CATEGORY_ORDER = [
 
 export type CompanionMemoryCategory = (typeof COMPANION_CATEGORY_ORDER)[number];
 
-export const COMPANION_CATEGORY_LABELS: Record<CompanionMemoryCategory, string> = {
-  relationship: "Relationship",
-  milestone: "Milestones",
-  boundary: "Boundaries",
-  preference: "Preferences",
-  profile: "Profile",
-  routine: "Routines",
-  episodic: "Episodes",
-  emotional_snapshot: "Emotional snapshots",
-};
+export function companionCategoryLabel(t: T, category: CompanionMemoryCategory): string {
+  switch (category) {
+    case "relationship":
+      return t("chats.companionUi.relationship");
+    case "milestone":
+      return t("chats.companionUi.milestones");
+    case "boundary":
+      return t("chats.companionUi.boundaries");
+    case "preference":
+      return t("chats.companionUi.preferences");
+    case "profile":
+      return t("chats.companionUi.profile");
+    case "routine":
+      return t("chats.companionUi.routines");
+    case "episodic":
+      return t("chats.companionUi.episodes");
+    case "emotional_snapshot":
+      return t("chats.companionUi.emotionalSnapshots");
+  }
+}
 
 export type CompanionMemoryItem = {
   id: string;
@@ -136,17 +149,17 @@ export function buildCompanionMemoryItems(session?: Session | null): CompanionMe
   }));
 }
 
-export function formatRelativeTime(ts?: number): string {
-  if (!ts) return "Unknown";
+export function formatRelativeTime(t: T, ts?: number): string {
+  if (!ts) return t("chats.companionUi.unknownTime");
   const diff = Date.now() - ts;
   const seconds = Math.floor(diff / 1000);
-  if (seconds < 60) return "Just now";
+  if (seconds < 60) return t("chats.companionUi.justNow");
   const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 60) return t("chats.companionUi.minutesAgo", { minutes });
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
+  if (hours < 24) return t("chats.companionUi.hoursAgo", { hours });
   const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
+  if (days < 7) return t("chats.companionUi.daysAgo", { days });
   return new Date(ts).toLocaleDateString();
 }
 
@@ -171,8 +184,8 @@ export function emotionLabel(key: string): string {
     .trim();
 }
 
-export function summarizeSoulText(value?: string | null): string {
-  if (!value?.trim()) return "Not set yet";
+export function summarizeSoulText(t: T, value?: string | null): string {
+  if (!value?.trim()) return t("chats.companionUi.notSetYet");
   const compact = value.trim().replace(/\s+/g, " ");
   return compact.length > 160 ? `${compact.slice(0, 157)}...` : compact;
 }
@@ -182,10 +195,11 @@ export function useCompanionSessionData(characterId?: string, requestedSessionId
   const [character, setCharacter] = useState<Character | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { t } = useI18n();
 
   const load = useCallback(async () => {
     if (!characterId) {
-      setError("Missing characterId");
+      setError(t("chats.companionUi.missingCharacterId"));
       setLoading(false);
       return;
     }
@@ -210,18 +224,18 @@ export function useCompanionSessionData(characterId?: string, requestedSessionId
 
       if (!targetSession) {
         setSession(null);
-        setError("Session not found");
+        setError(t("chats.companionUi.sessionNotFound"));
         return;
       }
 
       setSession(targetSession);
     } catch (err: any) {
       setSession(null);
-      setError(err?.message || "Failed to load companion session");
+      setError(err?.message || t("chats.companionUi.failedLoadCompanion"));
     } finally {
       setLoading(false);
     }
-  }, [characterId, requestedSessionId]);
+  }, [characterId, requestedSessionId, t]);
 
   useEffect(() => {
     void load();

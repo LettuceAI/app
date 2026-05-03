@@ -742,8 +742,8 @@ export function TopNav({
                 interactive.transition.fast,
                 interactive.active.scale,
               )}
-              aria-label="Installed Models"
-              title="Installed Models"
+              aria-label={t("topNav.extra.installedModels")}
+              title={t("topNav.extra.installedModels")}
             >
               <HardDrive size={18} strokeWidth={2.2} className="text-fg/75" />
             </button>
@@ -772,7 +772,7 @@ export function TopNav({
                 interactive.transition.fast,
                 interactive.active.scale,
               )}
-              aria-label="Refresh"
+              aria-label={t("topNav.extra.refresh")}
             >
               <RefreshCw size={18} strokeWidth={2.4} className="text-fg" />
             </button>
@@ -880,7 +880,7 @@ export function TopNav({
                   await getCurrentWindow().minimize();
                 }}
                 className="flex h-8 w-10 items-center justify-center text-fg/45 transition hover:bg-fg/10 hover:text-fg"
-                aria-label="Minimize"
+                aria-label={t("topNav.extra.minimize")}
               >
                 <Minus size={15} strokeWidth={1.5} />
               </button>
@@ -892,7 +892,7 @@ export function TopNav({
                   await getCurrentWindow().toggleMaximize();
                 }}
                 className="flex h-8 w-10 items-center justify-center text-fg/45 transition hover:bg-fg/10 hover:text-fg"
-                aria-label="Maximize"
+                aria-label={t("topNav.extra.maximize")}
               >
                 <Square size={12} strokeWidth={1.5} />
               </button>
@@ -904,7 +904,7 @@ export function TopNav({
                   await getCurrentWindow().close();
                 }}
                 className="flex h-8 w-10 items-center justify-center text-fg/45 transition hover:bg-red-500/80 hover:text-white"
-                aria-label="Close"
+                aria-label={t("topNav.extra.close")}
               >
                 <X size={15} strokeWidth={1.5} />
               </button>
@@ -921,6 +921,7 @@ export function TopNav({
  * (e.g. discovery pages) that don't use TopNav.
  */
 export function WindowControlButtons() {
+  const { t } = useI18n();
   const chromeFlags = useChromeFlags();
   const show = isDesktop && !isMacOS && !chromeFlags?.osDecorations && !chromeFlags?.noButtons;
   if (!show) return null;
@@ -935,7 +936,7 @@ export function WindowControlButtons() {
           await getCurrentWindow().minimize();
         }}
         className="flex h-8 w-10 items-center justify-center text-fg/45 transition hover:bg-fg/10 hover:text-fg"
-        aria-label="Minimize"
+        aria-label={t("topNav.extra.minimize")}
       >
         <Minus size={15} strokeWidth={1.5} />
       </button>
@@ -947,7 +948,7 @@ export function WindowControlButtons() {
           await getCurrentWindow().toggleMaximize();
         }}
         className="flex h-8 w-10 items-center justify-center text-fg/45 transition hover:bg-fg/10 hover:text-fg"
-        aria-label="Maximize"
+        aria-label={t("topNav.extra.maximize")}
       >
         <Square size={12} strokeWidth={1.5} />
       </button>
@@ -959,7 +960,7 @@ export function WindowControlButtons() {
           await getCurrentWindow().close();
         }}
         className="flex h-8 w-10 items-center justify-center text-fg/45 transition hover:bg-red-500/80 hover:text-white"
-        aria-label="Close"
+        aria-label={t("topNav.extra.close")}
       >
         <X size={15} strokeWidth={1.5} />
       </button>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useReducer, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import { useI18n } from "../../../../core/i18n/context";
 import {
   engineSetupReducer,
   initialEngineSetupState,
@@ -28,6 +29,7 @@ export function useEngineSetupController(baseUrl: string, apiKey: string, creden
   const [state, dispatch] = useReducer(engineSetupReducer, initialEngineSetupState);
   const [appProviders, setAppProviders] = useState<ProviderCredential[]>([]);
   const navigate = useNavigate();
+  const { t } = useI18n();
 
   // Load existing app providers that can be imported into the Engine
   useEffect(() => {
@@ -89,7 +91,7 @@ export function useEngineSetupController(baseUrl: string, apiKey: string, creden
       );
 
       if (enabledProviders.length === 0) {
-        dispatch({ type: "set_error", payload: "Please enable at least one LLM provider." });
+        dispatch({ type: "set_error", payload: t("engine.errors.enableLlmProvider") });
         return false;
       }
 
@@ -98,14 +100,14 @@ export function useEngineSetupController(baseUrl: string, apiKey: string, creden
         if (!config.model.trim()) {
           dispatch({
             type: "set_error",
-            payload: `Model is required for ${provider.name}.`,
+            payload: t("engine.errors.modelRequired", { provider: provider.name }),
           });
           return false;
         }
         if (provider.requiresKey && !config.apiKey.trim()) {
           dispatch({
             type: "set_error",
-            payload: `API key is required for ${provider.name}.`,
+            payload: t("engine.errors.apiKeyRequired", { provider: provider.name }),
           });
           return false;
         }
@@ -136,7 +138,7 @@ export function useEngineSetupController(baseUrl: string, apiKey: string, creden
     } finally {
       dispatch({ type: "set_saving", payload: false });
     }
-  }, [state.llmProviders, state.defaultBackend, baseUrl, apiKey]);
+  }, [state.llmProviders, state.defaultBackend, baseUrl, apiKey, t]);
 
   const saveSettings = useCallback(async () => {
     dispatch({ type: "set_saving", payload: true });

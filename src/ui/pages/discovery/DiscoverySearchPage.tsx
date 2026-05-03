@@ -129,7 +129,7 @@ export function DiscoverySearchPage() {
         window.history.replaceState({}, "", `${window.location.pathname}?${newParams.toString()}`);
       } catch (err) {
         console.error("Search failed:", err);
-        setError(err instanceof Error ? err.message : "Search failed");
+        setError(err instanceof Error ? err.message : t("discovery.errors.searchFailed"));
       } finally {
         setLoading(false);
       }

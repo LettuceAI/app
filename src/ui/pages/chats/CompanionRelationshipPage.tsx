@@ -21,7 +21,7 @@ import {
 import { cn, components, interactive, radius } from "../../design-tokens";
 import { Routes, useNavigationManager } from "../../navigation";
 import {
-  COMPANION_CATEGORY_LABELS,
+  companionCategoryLabel,
   emotionLabel,
   formatPercent,
   formatRelativeTime,
@@ -29,6 +29,7 @@ import {
   topEmotionEntries,
   useCompanionSessionData,
 } from "./companionUi";
+import { useI18n } from "../../../core/i18n/context";
 
 function PageHeader({
   title,
@@ -42,6 +43,7 @@ function PageHeader({
   right?: React.ReactNode;
 }) {
   const dragRegionProps = useDragRegionProps();
+  const { t } = useI18n();
 
   return (
     <header
@@ -61,7 +63,7 @@ function PageHeader({
           <button
             onClick={onBack}
             className="flex shrink-0 items-center justify-center -ml-2 px-[0.6em] py-[0.3em] text-fg/80 transition hover:text-fg"
-            aria-label="Back"
+            aria-label={t("chats.companionRelationship.back")}
           >
             <ArrowLeft size={18} strokeWidth={2.5} />
           </button>
@@ -145,6 +147,7 @@ function EmotionGroup({
   entries: Array<{ key: string; value: number }>;
   tone?: "default" | "warm" | "warning";
 }) {
+  const { t } = useI18n();
   const barTone =
     tone === "warm" ? "bg-amber-400" : tone === "warning" ? "bg-rose-400" : "bg-accent";
   return (
@@ -171,7 +174,7 @@ function EmotionGroup({
           })}
         </div>
       ) : (
-        <p className="mt-3 text-[11px] italic text-fg/35">No signal.</p>
+        <p className="mt-3 text-[11px] italic text-fg/35">{t("chats.companionRelationship.noSignal")}</p>
       )}
     </div>
   );
@@ -186,6 +189,7 @@ function SoulCard({
   value?: string | null;
   icon: React.ComponentType<{ size?: number; className?: string }>;
 }) {
+  const { t } = useI18n();
   const empty = !value?.trim();
   return (
     <div className="rounded-xl border border-fg/8 bg-fg/2 p-3">
@@ -199,7 +203,7 @@ function SoulCard({
           empty ? "italic text-fg/35" : "text-fg/85",
         )}
       >
-        {empty ? "Not authored yet." : value}
+        {empty ? t("chats.companionRelationship.notAuthoredYet") : value}
       </p>
     </div>
   );
@@ -210,6 +214,7 @@ export function CompanionRelationshipPage() {
   const [searchParams] = useSearchParams();
   const sessionId = searchParams.get("sessionId");
   const { go, backOrReplace } = useNavigationManager();
+  const { t } = useI18n();
   const { session, character, loading, error, memoryItems } = useCompanionSessionData(
     characterId,
     sessionId,
@@ -241,7 +246,7 @@ export function CompanionRelationshipPage() {
       <div className="flex min-h-screen items-center justify-center bg-base text-fg">
         <div className="flex items-center gap-3 text-sm text-fg/60">
           <Loader2 className="h-4 w-4 animate-spin" />
-          Loading relationship state...
+          {t("chats.companionRelationship.loading")}
         </div>
       </div>
     );
@@ -251,13 +256,13 @@ export function CompanionRelationshipPage() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-base px-6">
         <div className={cn("w-full max-w-md border border-fg/10 bg-surface p-5 text-center", radius.lg)}>
-          <p className="text-base font-semibold text-fg">Relationship state is unavailable</p>
-          <p className="mt-2 text-sm text-fg/60">{error || "The chat session could not be loaded."}</p>
+          <p className="text-base font-semibold text-fg">{t("chats.companionRelationship.unavailableTitle")}</p>
+          <p className="mt-2 text-sm text-fg/60">{error || t("chats.companionRelationship.sessionLoadFailed")}</p>
           <button
             onClick={() => backOrReplace(characterId ? Routes.chatSession(characterId, sessionId) : Routes.chat)}
             className={cn("mt-4 inline-flex items-center justify-center px-4 py-2 text-sm text-fg", components.button.primary, "border border-fg/10 bg-fg/5")}
           >
-            Back to chat
+            {t("chats.companionRelationship.backToChat")}
           </button>
         </div>
       </div>
@@ -268,22 +273,22 @@ export function CompanionRelationshipPage() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-base px-6">
         <div className={cn("w-full max-w-lg border border-fg/10 bg-surface p-5", radius.lg)}>
-          <p className="text-base font-semibold text-fg">This chat is not in companion mode</p>
+          <p className="text-base font-semibold text-fg">{t("chats.companionRelationship.notCompanionTitle")}</p>
           <p className="mt-2 text-sm text-fg/60">
-            Companion relationship pages only render for chats whose character mode is companion.
+            {t("chats.companionRelationship.notCompanionDesc")}
           </p>
           <div className="mt-4 flex gap-3">
             <button
               onClick={() => go(Routes.chatMemories(character.id, session.id))}
               className={cn("px-4 py-2 text-sm text-fg", components.button.primary, "border border-fg/10 bg-fg/5")}
             >
-              Open regular memories
+              {t("chats.companionRelationship.openRegularMemories")}
             </button>
             <button
               onClick={() => backOrReplace(Routes.chatSession(character.id, session.id))}
               className={cn("px-4 py-2 text-sm text-fg/70", components.button.primary, "border border-fg/10 bg-transparent")}
             >
-              Back to chat
+              {t("chats.companionRelationship.backToChat")}
             </button>
           </div>
         </div>
@@ -297,7 +302,7 @@ export function CompanionRelationshipPage() {
   return (
     <div className={cn("flex h-full flex-col bg-base text-fg")}>
       <PageHeader
-        title="Relationship state"
+        title={t("chats.companionRelationship.pageTitle")}
         subtitle={session.title || character.name}
         onBack={() => backOrReplace(Routes.chatCompanionMemories(character.id, session.id))}
         right={
@@ -309,7 +314,7 @@ export function CompanionRelationshipPage() {
               interactive.transition.fast,
             )}
           >
-            <Brain size={12} /> Memory
+            <Brain size={12} /> {t("chats.companionRelationship.memoryButton")}
           </button>
         }
       />
@@ -326,45 +331,45 @@ export function CompanionRelationshipPage() {
             <SectionLabel
               right={
                 relationshipState?.lastInteractionAt
-                  ? `Last interaction ${formatRelativeTime(relationshipState.lastInteractionAt)}`
+                  ? t("chats.companionRelationship.lastInteraction", { time: formatRelativeTime(t, relationshipState.lastInteractionAt) })
                   : undefined
               }
             >
-              Bond
+              {t("chats.companionRelationship.bond")}
             </SectionLabel>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
               <StatTile
-                label="Closeness"
+                label={t("chats.companionRelationship.closeness")}
                 value={relationshipState?.closeness ?? companion?.relationshipDefaults?.closeness ?? 0.2}
                 baseline={companion?.relationshipDefaults?.closeness}
               />
               <StatTile
-                label="Trust"
+                label={t("chats.companionRelationship.trust")}
                 value={relationshipState?.trust ?? companion?.relationshipDefaults?.trust ?? 0.3}
                 baseline={companion?.relationshipDefaults?.trust}
               />
               <StatTile
-                label="Affection"
+                label={t("chats.companionRelationship.affection")}
                 value={relationshipState?.affection ?? companion?.relationshipDefaults?.affection ?? 0.15}
                 baseline={companion?.relationshipDefaults?.affection}
                 tone="warm"
               />
               <StatTile
-                label="Tension"
+                label={t("chats.companionRelationship.tension")}
                 value={relationshipState?.tension ?? companion?.relationshipDefaults?.tension ?? 0}
                 baseline={companion?.relationshipDefaults?.tension}
                 tone="warning"
               />
-              <StatTile label="Stability" value={stability} />
+              <StatTile label={t("chats.companionRelationship.stability")} value={stability} />
               <div className="rounded-xl border border-fg/8 bg-fg/2 px-3 py-2.5">
                 <div className="text-[10px] font-semibold uppercase tracking-wider text-fg/45">
-                  Interactions
+                  {t("chats.companionRelationship.interactions")}
                 </div>
                 <div className="mt-0.5 text-[17px] font-semibold tabular-nums text-fg/90">
                   {interactionCount.toLocaleString()}
                 </div>
                 <div className="mt-1.5 text-[10px] text-fg/40">
-                  vs. character defaults
+                  {t("chats.companionRelationship.vsDefaults")}
                 </div>
               </div>
             </div>
@@ -372,30 +377,30 @@ export function CompanionRelationshipPage() {
 
           {/* Emotional engine */}
           <section>
-            <SectionLabel right={`Updated ${formatRelativeTime(emotionalState?.updatedAt)}`}>
-              Emotional engine
+            <SectionLabel right={t("chats.companionRelationship.updatedAt", { time: formatRelativeTime(t, emotionalState?.updatedAt) })}>
+              {t("chats.companionRelationship.emotionalEngine")}
             </SectionLabel>
             <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
               <EmotionGroup
-                title="Felt"
-                description="Internal affect"
+                title={t("chats.companionRelationship.felt")}
+                description={t("chats.companionRelationship.feltDesc")}
                 entries={feltEntries}
               />
               <EmotionGroup
-                title="Expressed"
-                description="Surfaces in replies"
+                title={t("chats.companionRelationship.expressed")}
+                description={t("chats.companionRelationship.expressedDesc")}
                 entries={expressedEntries}
                 tone="warm"
               />
               <EmotionGroup
-                title="Blocked"
-                description="Suppressed by persona"
+                title={t("chats.companionRelationship.blocked")}
+                description={t("chats.companionRelationship.blockedDesc")}
                 entries={blockedEntries}
                 tone="warning"
               />
               <EmotionGroup
-                title="Momentum"
-                description="Trend over recent turns"
+                title={t("chats.companionRelationship.momentum")}
+                description={t("chats.companionRelationship.momentumDesc")}
                 entries={momentumEntries}
               />
             </div>
@@ -403,7 +408,7 @@ export function CompanionRelationshipPage() {
             {activeSignals.length > 0 && (
               <div className="mt-3 rounded-xl border border-fg/8 bg-fg/2 px-3 py-2.5">
                 <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-fg/45">
-                  Active drivers
+                  {t("chats.companionRelationship.activeDrivers")}
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   {activeSignals.map((signal) => (
@@ -421,21 +426,21 @@ export function CompanionRelationshipPage() {
 
           {/* Soul */}
           <section>
-            <SectionLabel>Soul</SectionLabel>
+            <SectionLabel>{t("chats.companionRelationship.soul")}</SectionLabel>
             <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
-              <SoulCard label="Essence" value={companion?.soul?.essence} icon={Sparkles} />
-              <SoulCard label="Voice" value={companion?.soul?.voice} icon={BookHeart} />
-              <SoulCard label="Relational style" value={companion?.soul?.relationalStyle} icon={Heart} />
-              <SoulCard label="Vulnerabilities" value={companion?.soul?.vulnerabilities} icon={Heart} />
-              <SoulCard label="Habits" value={companion?.soul?.habits} icon={Link2} />
-              <SoulCard label="Boundaries" value={companion?.soul?.boundaries} icon={Shield} />
+              <SoulCard label={t("chats.companionRelationship.essence")} value={companion?.soul?.essence} icon={Sparkles} />
+              <SoulCard label={t("chats.companionRelationship.voice")} value={companion?.soul?.voice} icon={BookHeart} />
+              <SoulCard label={t("chats.companionRelationship.relationalStyle")} value={companion?.soul?.relationalStyle} icon={Heart} />
+              <SoulCard label={t("chats.companionRelationship.vulnerabilities")} value={companion?.soul?.vulnerabilities} icon={Heart} />
+              <SoulCard label={t("chats.companionRelationship.habits")} value={companion?.soul?.habits} icon={Link2} />
+              <SoulCard label={t("chats.companionRelationship.boundaries")} value={companion?.soul?.boundaries} icon={Shield} />
             </div>
           </section>
 
           {/* Timeline */}
           <section>
-            <SectionLabel right={`${relationshipTimeline.length} events`}>
-              Recent timeline
+            <SectionLabel right={t("chats.companionRelationship.eventsCount", { count: relationshipTimeline.length })}>
+              {t("chats.companionRelationship.recentTimeline")}
             </SectionLabel>
 
             {relationshipTimeline.length ? (
@@ -452,10 +457,10 @@ export function CompanionRelationshipPage() {
                     <div className="rounded-xl border border-fg/6 bg-fg/2 px-3 py-2.5 hover:border-fg/10 hover:bg-fg/3">
                       <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-fg/40">
                         <span className="font-semibold uppercase tracking-wider text-fg/55">
-                          {COMPANION_CATEGORY_LABELS[memory.category]}
+                          {companionCategoryLabel(t, memory.category)}
                         </span>
                         <span className="text-fg/20">·</span>
-                        <span>{formatRelativeTime(memory.createdAt)}</span>
+                        <span>{formatRelativeTime(t, memory.createdAt)}</span>
                         {memory.sourceRole ? (
                           <>
                             <span className="text-fg/20">·</span>
@@ -464,14 +469,14 @@ export function CompanionRelationshipPage() {
                         ) : null}
                         {!memory.isActive && (
                           <span className="ml-1 rounded-full border border-warning/25 bg-warning/10 px-1.5 py-0.5 text-[9px] font-medium text-warning">
-                            superseded
+                            {t("chats.companionRelationship.superseded")}
                           </span>
                         )}
                       </div>
                       <p className="mt-1.5 text-sm leading-relaxed text-fg/90">{memory.text}</p>
                       <div className="mt-2 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-fg/35">
-                        <span>Prompt {formatPercent(memory.promptImportance)}</span>
-                        <span>Persistence {formatPercent(memory.persistenceImportance)}</span>
+                        <span>{t("chats.companionRelationship.promptScore", { score: formatPercent(memory.promptImportance) })}</span>
+                        <span>{t("chats.companionRelationship.persistenceScore", { score: formatPercent(memory.persistenceImportance) })}</span>
                       </div>
                     </div>
                   </motion.li>
@@ -486,10 +491,9 @@ export function CompanionRelationshipPage() {
                 <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-fg/10 bg-fg/4">
                   <Heart className="h-6 w-6 text-fg/25" />
                 </div>
-                <h3 className="mb-1 text-sm font-semibold text-fg/85">No timeline yet</h3>
+                <h3 className="mb-1 text-sm font-semibold text-fg/85">{t("chats.companionRelationship.noTimeline")}</h3>
                 <p className="max-w-sm text-center text-xs text-fg/45">
-                  Relationship, milestone, and emotional snapshot memories will appear here as the
-                  companion learns from conversations.
+                  {t("chats.companionRelationship.noTimelineDesc")}
                 </p>
               </motion.div>
             )}

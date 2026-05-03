@@ -1,6 +1,7 @@
 import { useCallback, useReducer } from "react";
 import { useNavigate } from "react-router-dom";
 
+import { useI18n } from "../../../../core/i18n/context";
 import {
   engineCharacterReducer,
   initialCharacterState,
@@ -47,6 +48,7 @@ export function useEngineCharacterController(
 ) {
   const [state, dispatch] = useReducer(engineCharacterReducer, initialCharacterState);
   const navigate = useNavigate();
+  const { t } = useI18n();
 
   const setStep = useCallback((step: EngineCharacterStep) => {
     dispatch({ type: "set_step", payload: step });
@@ -77,7 +79,7 @@ export function useEngineCharacterController(
 
   const boost = useCallback(async () => {
     if (!state.boostSeed.trim()) {
-      dispatch({ type: "set_boost_error", payload: "Seed description is required." });
+      dispatch({ type: "set_boost_error", payload: t("engine.errors.seedRequired") });
       return;
     }
     dispatch({ type: "set_boosting", payload: true });
@@ -99,11 +101,11 @@ export function useEngineCharacterController(
     } finally {
       dispatch({ type: "set_boosting", payload: false });
     }
-  }, [baseUrl, apiKey, state.boostSeed, state.boostName, state.boostEra]);
+  }, [baseUrl, apiKey, state.boostSeed, state.boostName, state.boostEra, t]);
 
   const save = useCallback(async () => {
     if (!state.name.trim()) {
-      dispatch({ type: "set_error", payload: "Character name is required." });
+      dispatch({ type: "set_error", payload: t("engine.errors.characterNameRequired") });
       return false;
     }
     dispatch({ type: "set_saving", payload: true });
@@ -122,7 +124,7 @@ export function useEngineCharacterController(
     } finally {
       dispatch({ type: "set_saving", payload: false });
     }
-  }, [baseUrl, apiKey, credentialId, state, navigate]);
+  }, [baseUrl, apiKey, credentialId, state, navigate, t]);
 
   return {
     state,

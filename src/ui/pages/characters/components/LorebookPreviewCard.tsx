@@ -94,8 +94,13 @@ export function LorebookPreviewCard({
               })}
               {entryCount > previewEntries.length && (
                 <p className="text-xs text-fg/40">
-                  +{entryCount - previewEntries.length} more entr
-                  {entryCount - previewEntries.length === 1 ? "y" : "ies"}
+                  {entryCount - previewEntries.length === 1
+                    ? t("characters.lorebookPreview.moreEntry", {
+                        count: entryCount - previewEntries.length,
+                      })
+                    : t("characters.lorebookPreview.moreEntries", {
+                        count: entryCount - previewEntries.length,
+                      })}
                 </p>
               )}
             </div>

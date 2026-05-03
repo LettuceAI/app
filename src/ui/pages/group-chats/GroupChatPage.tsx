@@ -1142,7 +1142,7 @@ export function GroupChatPage() {
         stopFooterRecordingVisuals();
         setFooterAsrMode("idle");
         setFooterAsrBusy(false);
-        setError("No audio captured.");
+        setError(t("groupChats.pageExtra.noAudioCaptured"));
         return;
       }
       const merged = new Float32Array(total);
@@ -1156,9 +1156,7 @@ export function GroupChatPage() {
         stopFooterRecordingVisuals();
         setFooterAsrMode("idle");
         setFooterAsrBusy(false);
-        setError(
-          "No installed Whisper model found. Install one in Speech Recognition settings.",
-        );
+        setError(t("groupChats.pageExtra.noWhisperModelInstalled"));
         return;
       }
       const pcmBytes = new Uint8Array(merged.buffer, merged.byteOffset, merged.byteLength);
@@ -1688,7 +1686,7 @@ export function GroupChatPage() {
           {!isAtBottom && (
             <motion.button
               type="button"
-              aria-label="Scroll to bottom"
+              aria-label={t("groupChats.pageExtra.scrollToBottomAria")}
               onClick={() => scrollToBottom("smooth")}
               initial={{ opacity: 0, y: 10, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -1750,16 +1748,16 @@ export function GroupChatPage() {
       </div>
 
       {/* Plus Menu - Upload Image & Help Me Reply */}
-      <BottomMenu isOpen={showPlusMenu} onClose={() => setShowPlusMenu(false)} title="Add Content">
+      <BottomMenu isOpen={showPlusMenu} onClose={() => setShowPlusMenu(false)} title={t("groupChats.addContentMenu.title")}>
         <div className="space-y-2">
           {supportsImageInput && (
-            <MenuButton icon={Image} title="Upload Image" onClick={handlePlusMenuImageUpload} />
+            <MenuButton icon={Image} title={t("groupChats.addContentMenu.uploadImage")} onClick={handlePlusMenuImageUpload} />
           )}
           {helpMeReplyEnabled && (
             <MenuButton
               icon={Sparkles}
-              title="Help Me Reply"
-              description="Let AI suggest what to say"
+              title={t("groupChats.helpMeReplyMenu.title")}
+              description={t("groupChats.helpMeReplyMenu.helpMeReplyDesc")}
               onClick={handlePlusMenuHelpMeReply}
             />
           )}
@@ -1770,22 +1768,22 @@ export function GroupChatPage() {
       <BottomMenu
         isOpen={showChoiceMenu}
         onClose={() => setShowChoiceMenu(false)}
-        title="Help Me Reply"
+        title={t("groupChats.helpMeReplyMenu.title")}
       >
         <div className="space-y-2">
           <p className="text-sm text-fg/60 mb-4">
-            You have a draft message. How would you like to proceed?
+            {t("groupChats.helpMeReplyMenu.draftPrompt")}
           </p>
           <MenuButton
             icon={PenLine}
-            title="Use my text as base"
-            description="Expand and improve your draft"
+            title={t("groupChats.helpMeReplyMenu.useTextAsBase")}
+            description={t("groupChats.helpMeReplyMenu.useTextAsBaseDesc")}
             onClick={() => handleHelpMeReply("enrich")}
           />
           <MenuButton
             icon={Sparkles}
-            title="Write something new"
-            description="Generate a fresh reply"
+            title={t("groupChats.helpMeReplyMenu.writeSomethingNew")}
+            description={t("groupChats.helpMeReplyMenu.writeSomethingNewDesc")}
             onClick={() => handleHelpMeReply("new")}
           />
         </div>
@@ -1795,7 +1793,7 @@ export function GroupChatPage() {
       <BottomMenu
         isOpen={showResultMenu}
         onClose={handleCloseHelpMeReplyResultMenu}
-        title="Suggested Reply"
+        title={t("groupChats.suggestedReplyMenu.title")}
       >
         <div className="space-y-4">
           {helpMeReplyError ? (
@@ -1807,8 +1805,8 @@ export function GroupChatPage() {
               <Loader2 className="h-8 w-8 animate-spin text-fg/50" />
               <p className="text-center text-sm text-fg/60">
                 {helpMeReplyReasoning
-                  ? "Reasoning before writing your reply..."
-                  : "Writing your reply..."}
+                  ? t("groupChats.suggestedReplyMenu.reasoningBeforeWriting")
+                  : t("groupChats.suggestedReplyMenu.writingYourReply")}
               </p>
             </div>
           ) : generatedReply ? (
@@ -1835,7 +1833,7 @@ export function GroupChatPage() {
               )}
             >
               <RefreshCw size={18} />
-              <span>Regenerate</span>
+              <span>{t("groupChats.suggestedReplyMenu.regenerate")}</span>
             </button>
             <button
               onClick={handleUseReply}
@@ -1848,7 +1846,7 @@ export function GroupChatPage() {
               )}
             >
               <Check size={18} />
-              <span>Use Reply</span>
+              <span>{t("groupChats.suggestedReplyMenu.useReply")}</span>
             </button>
           </div>
         </div>

@@ -16,6 +16,7 @@ import { CompanionSoulEditor } from "../characters/components/CompanionSoulEdito
 import { normalizeCompanionConfig } from "../characters/utils/companionDefaults";
 import { cn, components, radius } from "../../design-tokens";
 import { Routes, useNavigationManager } from "../../navigation";
+import { useI18n } from "../../../core/i18n/context";
 import { useChatLayoutContext } from "./ChatLayout";
 import { isCompanionChat } from "./companionUi";
 
@@ -31,6 +32,7 @@ function PageHeader({
   right?: React.ReactNode;
 }) {
   const dragRegionProps = useDragRegionProps();
+  const { t } = useI18n();
 
   return (
     <header
@@ -50,7 +52,7 @@ function PageHeader({
           <button
             onClick={onBack}
             className="-ml-2 flex shrink-0 items-center justify-center px-[0.6em] py-[0.3em] text-fg/80 transition hover:text-fg"
-            aria-label="Back"
+            aria-label={t("chats.companionSoul.back")}
           >
             <ArrowLeft size={18} strokeWidth={2.5} />
           </button>
@@ -83,6 +85,7 @@ export function CompanionSoulPage() {
   const [searchParams] = useSearchParams();
   const sessionId = searchParams.get("sessionId");
   const { backOrReplace } = useNavigationManager();
+  const { t } = useI18n();
   const { character, characterLoading, chatController, reloadCharacter } = useChatLayoutContext();
   const [draft, setDraft] = useState<CompanionConfig | null>(null);
   const [saving, setSaving] = useState(false);
@@ -152,7 +155,7 @@ export function CompanionSoulPage() {
       <div className="flex min-h-screen items-center justify-center bg-base text-fg">
         <div className="flex items-center gap-3 text-sm text-fg/60">
           <Loader2 className="h-4 w-4 animate-spin" />
-          Loading Companion Soul...
+          {t("chats.companionSoul.loading")}
         </div>
       </div>
     );
@@ -162,15 +165,15 @@ export function CompanionSoulPage() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-base px-6">
         <div className={cn("w-full max-w-lg border border-fg/10 bg-surface p-5", radius.lg)}>
-          <p className="text-base font-semibold text-fg">Companion Soul is unavailable</p>
+          <p className="text-base font-semibold text-fg">{t("chats.companionSoul.unavailable")}</p>
           <p className="mt-2 text-sm text-fg/60">
-            Soul editing is only available for companion-mode characters.
+            {t("chats.companionSoul.unavailableDesc")}
           </p>
           <button
             onClick={handleBack}
             className={cn("mt-4 px-4 py-2 text-sm text-fg", components.button.primary)}
           >
-            Back
+            {t("chats.companionSoul.back")}
           </button>
         </div>
       </div>
@@ -180,7 +183,7 @@ export function CompanionSoulPage() {
   return (
     <div className="relative z-10 flex min-h-screen flex-col bg-base text-fg">
       <PageHeader
-        title="Companion Soul"
+        title={t("chats.companionSoul.pageTitle")}
         subtitle={character.name}
         onBack={handleBack}
         right={
@@ -193,7 +196,7 @@ export function CompanionSoulPage() {
             )}
           >
             {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-            Save
+            {t("chats.companionSoul.save")}
           </button>
         }
       />

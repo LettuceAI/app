@@ -117,7 +117,7 @@ export function ChatHistoryPage() {
           }),
         );
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load data");
+        setError(err instanceof Error ? err.message : t("chats.history.failedLoad"));
       } finally {
         setIsLoading(false);
       }
@@ -132,7 +132,7 @@ export function ChatHistoryPage() {
       await deleteSession(sessionId);
       setSessions((prev) => prev.filter((s) => s.id !== sessionId));
     } catch (err) {
-      setError(`Failed to delete: ${err}`);
+      setError(t("chats.history.failedDelete", { error: String(err) }));
     } finally {
       setBusyIds((prev) => {
         const next = new Set(prev);
@@ -148,7 +148,7 @@ export function ChatHistoryPage() {
       await updateSessionTitle(sessionId, newTitle);
       setSessions((prev) => prev.map((s) => (s.id === sessionId ? { ...s, title: newTitle } : s)));
     } catch (err) {
-      setError(`Failed to rename: ${err}`);
+      setError(t("chats.history.failedRename", { error: String(err) }));
     } finally {
       setBusyIds((prev) => {
         const next = new Set(prev);
@@ -168,10 +168,10 @@ export function ChatHistoryPage() {
           includeCharacterId,
         );
         setExportTarget(null);
-        alert(`Chat package exported to:\n${path}`);
+        alert(t("chats.history.chatPackageExportedTo", { path }));
       } catch (err) {
         console.error("Failed to export chat package:", err);
-        alert(typeof err === "string" ? err : "Failed to export chat package");
+        alert(typeof err === "string" ? err : t("chats.history.failedExportChatPackage"));
       } finally {
         setExporting(false);
       }
@@ -185,10 +185,10 @@ export function ChatHistoryPage() {
       setExporting(true);
       const path = await storageBridge.chatpkgExportSingleChatSillyTavern(exportTarget.id);
       setExportTarget(null);
-      alert(`SillyTavern chat exported to:\n${path}`);
+      alert(t("chats.history.sillyTavernExportedTo", { path }));
     } catch (err) {
       console.error("Failed to export SillyTavern chat:", err);
-      alert(typeof err === "string" ? err : "Failed to export SillyTavern chat");
+      alert(typeof err === "string" ? err : t("chats.history.failedExportSillyTavern"));
     } finally {
       setExporting(false);
     }
@@ -432,7 +432,7 @@ export function ChatHistoryPage() {
                               "rounded-md p-1.5 text-fg/58 transition-colors hover:bg-fg/6 hover:text-fg/82",
                               "disabled:pointer-events-none disabled:opacity-30",
                             )}
-                            aria-label={`Previous ${group.label} page`}
+                            aria-label={t("chats.history.previousGroupPage", { label: group.label })}
                           >
                             <ChevronLeft size={14} />
                           </button>
@@ -452,7 +452,7 @@ export function ChatHistoryPage() {
                               "rounded-md p-1.5 text-fg/58 transition-colors hover:bg-fg/6 hover:text-fg/82",
                               "disabled:pointer-events-none disabled:opacity-30",
                             )}
-                            aria-label={`Next ${group.label} page`}
+                            aria-label={t("chats.history.nextGroupPage", { label: group.label })}
                           >
                             <ChevronRight size={14} />
                           </button>
@@ -486,7 +486,7 @@ export function ChatHistoryPage() {
                               "rounded-md p-2 text-fg/65 transition-colors hover:bg-fg/6 hover:text-fg/82",
                               "disabled:pointer-events-none disabled:opacity-30",
                             )}
-                            aria-label={`Previous ${group.label} page`}
+                            aria-label={t("chats.history.previousGroupPage", { label: group.label })}
                           >
                             <ChevronLeft size={16} />
                           </button>
@@ -506,7 +506,7 @@ export function ChatHistoryPage() {
                               "rounded-md p-2 text-fg/65 transition-colors hover:bg-fg/6 hover:text-fg/82",
                               "disabled:pointer-events-none disabled:opacity-30",
                             )}
-                            aria-label={`Next ${group.label} page`}
+                            aria-label={t("chats.history.nextGroupPage", { label: group.label })}
                           >
                             <ChevronRight size={16} />
                           </button>
@@ -649,8 +649,8 @@ export function ChatHistoryPage() {
           />
           <MenuButton
             icon={Download}
-            title={exporting ? t("common.buttons.exporting") : "SillyTavern format"}
-            description="Export as .jsonl compatible with SillyTavern."
+            title={exporting ? t("common.buttons.exporting") : t("chats.history.sillyTavernFormat")}
+            description={t("chats.history.sillyTavernFormatDesc")}
             color="from-emerald-500 to-teal-600"
             disabled={!exportTarget || exporting}
             onClick={() => {
@@ -778,7 +778,7 @@ function SessionCard({
               </h3>
               {session.archived ? (
                 <span className="inline-flex shrink-0 items-center rounded-md border border-amber-400/25 bg-amber-400/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-200/80">
-                  Archived
+                  {t("chats.history.archivedBadge")}
                 </span>
               ) : null}
             </div>
@@ -802,7 +802,7 @@ function SessionCard({
 
       <div className="flex items-center justify-between gap-3 border-t border-fg/8 px-3 py-2">
         <span className={cn(typography.caption.size, "text-fg/38")}>
-          {session.messageCount.toLocaleString()} messages
+          {t("chats.history.messagesCount", { count: session.messageCount.toLocaleString() })}
         </span>
         <div className="flex items-center gap-1">
           <button

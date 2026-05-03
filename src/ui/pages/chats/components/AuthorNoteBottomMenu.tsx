@@ -4,6 +4,7 @@ import { updateSessionAuthorNote } from "../../../../core/storage/repo";
 import { BottomMenu } from "../../../components/BottomMenu";
 import { Switch } from "../../../components/Switch";
 import { cn, radius } from "../../../design-tokens";
+import { useI18n } from "../../../../core/i18n/context";
 import {
   useAuthorNoteInlineEditor,
   setAuthorNoteInlineEditor,
@@ -26,6 +27,7 @@ export function AuthorNoteBottomMenu({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inlineEditorEnabled = useAuthorNoteInlineEditor();
+  const { t } = useI18n();
 
   useEffect(() => {
     if (!isOpen) return;
@@ -39,10 +41,12 @@ export function AuthorNoteBottomMenu({
 
   const footerText = useMemo(() => {
     if (!trimmedDraft) {
-      return savedValue ? "Author note will be removed on save" : "No author note saved";
+      return savedValue
+        ? t("chats.authorNote.willBeRemoved")
+        : t("chats.authorNote.noNoteSaved");
     }
-    return `${trimmedDraft.length} characters`;
-  }, [savedValue, trimmedDraft]);
+    return t("chats.authorNote.charactersCount", { count: trimmedDraft.length });
+  }, [savedValue, trimmedDraft, t]);
 
   const handleSave = async () => {
     if (!session?.id || saving) return;
@@ -54,7 +58,7 @@ export function AuthorNoteBottomMenu({
       onClose();
     } catch (err) {
       console.error("Failed to save author note:", err);
-      setError(typeof err === "string" ? err : "Failed to save author note");
+      setError(typeof err === "string" ? err : t("chats.authorNote.failedSave"));
     } finally {
       setSaving(false);
     }
@@ -83,7 +87,7 @@ export function AuthorNoteBottomMenu({
       onClose={() => {
         if (!saving) onClose();
       }}
-      title="Author Note"
+      title={t("chats.authorNote.title")}
     >
       <div className="space-y-4">
         <div
@@ -94,15 +98,15 @@ export function AuthorNoteBottomMenu({
           )}
         >
           <div className="min-w-0">
-            <p className="text-sm font-medium text-fg">Inline editor</p>
+            <p className="text-sm font-medium text-fg">{t("chats.authorNote.inlineEditor")}</p>
             <p className="mt-0.5 text-xs text-fg/45">
-              Show the author note above the chat input for quick edits.
+              {t("chats.authorNote.inlineEditorDesc")}
             </p>
           </div>
           <Switch
             checked={inlineEditorEnabled}
             onChange={setAuthorNoteInlineEditor}
-            aria-label="Toggle inline author note editor"
+            aria-label={t("chats.authorNote.toggleInlineEditor")}
           />
         </div>
 
@@ -110,7 +114,7 @@ export function AuthorNoteBottomMenu({
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           disabled={!session?.id || saving}
-          placeholder="Private direction for this chat"
+          placeholder={t("chats.authorNote.placeholder")}
           rows={8}
           className={cn(
             "w-full resize-none border bg-fg/[0.04] px-3 py-3 text-sm leading-relaxed text-fg outline-none",
@@ -137,7 +141,7 @@ export function AuthorNoteBottomMenu({
               "disabled:cursor-not-allowed disabled:opacity-45",
             )}
           >
-            Clear
+            {t("chats.authorNote.clear")}
           </button>
           <button
             type="button"
@@ -150,7 +154,7 @@ export function AuthorNoteBottomMenu({
               "disabled:cursor-not-allowed disabled:opacity-45",
             )}
           >
-            {saving ? "Saving..." : "Save"}
+            {saving ? t("chats.authorNote.saving") : t("chats.authorNote.save")}
           </button>
         </div>
       </div>

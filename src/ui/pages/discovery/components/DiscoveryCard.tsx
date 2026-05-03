@@ -126,7 +126,7 @@ export const DiscoveryCard = memo(function DiscoveryCard({
           {card.isOc && (
             <span className="flex items-center gap-1 rounded-full bg-secondary/80 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-fg shadow-lg shadow-violet-500/30 backdrop-blur-sm">
               <Sparkles className="h-2.5 w-2.5" />
-              OC
+              {t("discovery.card.ocBadge")}
             </span>
           )}
 
@@ -152,7 +152,7 @@ export const DiscoveryCard = memo(function DiscoveryCard({
         {/* Author */}
         {card.author && !isCompact && (
           <span className="text-[10px] font-medium text-fg/50 tracking-wide">
-            by {card.author}
+            {t("discovery.card.byAuthor", { author: card.author })}
           </span>
         )}
 

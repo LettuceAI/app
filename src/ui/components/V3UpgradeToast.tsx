@@ -78,7 +78,7 @@ export function V3UpgradeToast() {
 
   // Locale-fallback for installs that haven't translated the v3 strings yet.
   const fallback = (key: string, en: string) => {
-    const value = t(key);
+    const value = t(key as Parameters<typeof t>[0]);
     return value === key ? en : value;
   };
   const title = fallback("components.v3UpgradeToast.title", "Memory model v4");

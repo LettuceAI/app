@@ -4,6 +4,7 @@ import type { Session } from "../../../../core/storage/schemas";
 import { updateSessionAuthorNote } from "../../../../core/storage/repo";
 import { getPlatform } from "../../../../core/utils/platform";
 import { cn } from "../../../design-tokens";
+import { useI18n } from "../../../../core/i18n/context";
 
 interface InlineAuthorNoteBarProps {
   session: Session | null | undefined;
@@ -20,6 +21,7 @@ export function InlineAuthorNoteBar({
   const [saving, setSaving] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isDesktop = useMemo(() => getPlatform().type === "desktop", []);
+  const { t } = useI18n();
 
   useEffect(() => {
     if (!editing) {
@@ -117,11 +119,11 @@ export function InlineAuthorNoteBar({
             "group-hover:text-fg",
           )}
         >
-          {showPlaceholder ? "Add an author note…" : savedValue}
+          {showPlaceholder ? t("chats.authorNote.addPlaceholder") : savedValue}
         </button>
       )}
 
-      {saving && <span className="shrink-0 text-[10px] text-fg/35">Saving…</span>}
+      {saving && <span className="shrink-0 text-[10px] text-fg/35">{t("chats.authorNote.savingShort")}</span>}
     </div>
   );
 }

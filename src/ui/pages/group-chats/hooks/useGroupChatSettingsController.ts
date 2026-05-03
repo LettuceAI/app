@@ -12,6 +12,7 @@ import {
   groupChatSettingsUiReducer,
   initialGroupChatSettingsUiState,
 } from "../reducers/groupChatSettingsReducer";
+import { useI18n } from "../../../../core/i18n/context";
 
 interface SettingsControllerOptions {
   layoutSession?: GroupSession | null;
@@ -30,6 +31,7 @@ export function useGroupChatSettingsController(
     layoutPersonas = [],
     updateSession,
   } = options;
+  const { t } = useI18n();
 
   const session = layoutSession ?? null;
   const characters = layoutCharacters;
@@ -59,11 +61,11 @@ export function useGroupChatSettingsController(
       setUi({ nameDraft: layoutSession.name });
     } catch (err) {
       console.error("Failed to load group chat settings:", err);
-      setUi({ error: "Failed to load group chat settings" });
+      setUi({ error: t("groupChats.sessionSettingsController.failedToLoad") });
     } finally {
       setUi({ loading: false });
     }
-  }, [groupSessionId, layoutSession, setUi]);
+  }, [groupSessionId, layoutSession, setUi, t]);
 
   useEffect(() => {
     void loadData();
@@ -92,10 +94,10 @@ export function useGroupChatSettingsController(
   }, [session, personas]);
 
   const currentPersonaDisplay = useMemo(() => {
-    if (!session?.personaId) return "No persona";
-    if (!currentPersona) return "Custom persona";
+    if (!session?.personaId) return t("groupChats.sessionSettingsController.noPersona");
+    if (!currentPersona) return t("groupChats.sessionSettingsController.customPersona");
     return currentPersona.isDefault ? `${currentPersona.title} (default)` : currentPersona.title;
-  }, [currentPersona, session?.personaId]);
+  }, [currentPersona, session?.personaId, t]);
 
   const handleSaveName = useCallback(async () => {
     if (!session || !ui.nameDraft.trim()) return;
@@ -206,7 +208,7 @@ export function useGroupChatSettingsController(
       const nextMuted = new Set(session.mutedCharacterIds ?? []);
       const activeCount = session.characterIds.length - nextMuted.size;
       if (muted && activeCount <= 1 && !nextMuted.has(characterId)) {
-        setUi({ error: "At least one participant must remain active" });
+        setUi({ error: t("groupChats.sessionSettingsController.minOneActive") });
         return;
       }
       if (muted) {
@@ -228,7 +230,7 @@ export function useGroupChatSettingsController(
         setUi({ saving: false });
       }
     },
-    [session, setUi, updateSession],
+    [session, setUi, updateSession, t],
   );
 
   const handleUpdateBackgroundImage = useCallback(

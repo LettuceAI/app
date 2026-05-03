@@ -228,7 +228,8 @@ export function IdentityStep({
                 "uppercase text-fg/70",
               )}
             >
-              Chat Background <span className="text-fg/40">(Optional)</span>
+              {t("characters.identity.chatBackgroundLabel")}{" "}
+              <span className="text-fg/40">{t("characters.identity.optionalSuffix")}</span>
             </label>
             <div
               className={cn(
@@ -243,7 +244,7 @@ export function IdentityStep({
                 <div className="relative">
                   <img
                     src={backgroundImagePath}
-                    alt="Background preview"
+                    alt={t("characters.identity.backgroundPreviewAlt")}
                     className="h-24 w-full object-cover"
                   />
                   <div className="absolute inset-0 bg-surface-el/30 flex items-center justify-center">
@@ -254,7 +255,7 @@ export function IdentityStep({
                         radius.sm,
                       )}
                     >
-                      Background Preview
+                      {t("characters.identity.backgroundPreviewBadge")}
                     </span>
                   </div>
                   <button
@@ -280,9 +281,11 @@ export function IdentityStep({
                     <Image size={16} className="text-fg/40" />
                   </div>
                   <div className="text-center">
-                    <p className={cn(typography.bodySmall.size, "text-fg/70")}>Add Background</p>
+                    <p className={cn(typography.bodySmall.size, "text-fg/70")}>
+                      {t("characters.identity.addBackground")}
+                    </p>
                     <p className={cn(typography.caption.size, "text-fg/40")}>
-                      Upload one or pick from library
+                      {t("characters.identity.addBackgroundHint")}
                     </p>
                   </div>
                 </div>

@@ -410,7 +410,7 @@ function EntryListItem({
         onContextMenu={(event) => event.preventDefault()}
         className="flex h-10 w-8 shrink-0 items-center justify-center text-fg/30"
         style={{ touchAction: "none" }}
-        title="Drag to reorder"
+        title={t("library.lorebookEditor.dragToReorder")}
       >
         <GripVertical size={18} />
       </button>
@@ -724,7 +724,7 @@ export function StandaloneLorebookEditor() {
       setShowExportMenu(false);
     } catch (error) {
       console.error("Failed to export lorebook:", error);
-      toast.error("Export failed", String(error));
+      toast.error(t("library.errors.exportFailed"), String(error));
     } finally {
       setIsExporting(false);
     }
@@ -798,14 +798,14 @@ export function StandaloneLorebookEditor() {
     <>
       <TopNav
         currentPath="/library/lorebooks"
-        titleOverride={`Lorebook - ${lorebook.name}`}
+        titleOverride={t("library.lorebookEditor.titleOverride", { name: lorebook.name })}
         onBackOverride={() => navigate("/library")}
         rightAction={
           <div className="flex items-center gap-1">
             <button
               onClick={() => navigate(Routes.libraryLorebookGenerate(lorebook.id))}
               className="flex items-center px-[0.6em] py-[0.3em] justify-center rounded-full text-fg/70 hover:text-fg hover:bg-fg/10 transition"
-              aria-label="Generate lorebook entry"
+              aria-label={t("library.lorebookEditor.aria.generateEntry")}
             >
               <Sparkles size={18} className="text-fg" />
             </button>
@@ -817,7 +817,7 @@ export function StandaloneLorebookEditor() {
                 setShowRenameMenu(true);
               }}
               className="flex items-center px-[0.6em] py-[0.3em] justify-center rounded-full text-fg/70 hover:text-fg hover:bg-fg/10 transition"
-              aria-label="Edit lorebook"
+              aria-label={t("library.lorebookEditor.aria.editLorebook")}
             >
               <Edit2 size={18} className="text-fg" />
             </button>
@@ -825,7 +825,7 @@ export function StandaloneLorebookEditor() {
               onClick={() => setShowExportMenu(true)}
               disabled={isExporting}
               className="flex items-center px-[0.6em] py-[0.3em] justify-center rounded-full text-fg/70 hover:text-fg hover:bg-fg/10 transition disabled:opacity-50 disabled:cursor-not-allowed"
-              aria-label="Export lorebook"
+              aria-label={t("library.lorebookEditor.aria.exportLorebook")}
             >
               {isExporting ? (
                 <Loader2 size={18} className="animate-spin text-fg" />

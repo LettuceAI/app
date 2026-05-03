@@ -6,6 +6,7 @@ import { convertToImageRef } from "../../../../core/storage/images";
 import { invalidateAvatarCache } from "../../../hooks/useAvatar";
 import { importPersona, readFileAsText } from "../../../../core/storage/personaTransfer";
 import { toast } from "../../../components/toast";
+import { useI18n } from "../../../../core/i18n/context";
 import type { AvatarCrop } from "../../../../core/storage/schemas";
 
 export interface PersonaFormState {
@@ -115,6 +116,7 @@ export function createPersonaReducer(
 export function useCreatePersonaController() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { t } = useI18n();
   const [state, dispatch] = useReducer(createPersonaReducer, initialCreatePersonaState);
 
   const canSave = useMemo(
@@ -157,8 +159,8 @@ export function useCreatePersonaController() {
         dispatch({ type: "set_importing", value: true });
         if (file.name.toLowerCase().endsWith(".json")) {
           toast.warning(
-            "Legacy JSON import detected",
-            "JSON imports are deprecated and will be removed soon. Use Settings → Convert Files.",
+            t("personas.importToast.legacyJsonTitle"),
+            t("personas.importToast.legacyJsonMessage"),
           );
         }
         const jsonContent = await readFileAsText(file);
@@ -178,11 +180,11 @@ export function useCreatePersonaController() {
         });
         dispatch({ type: "set_error", value: null });
 
-        alert("Persona imported successfully! Opening it for review.");
+        alert(t("personas.importToast.successMessage"));
         navigate(`/personas/${importedPersona.id}/edit`);
       } catch (err: any) {
         console.error("Failed to import persona:", err);
-        alert(err?.message || "Failed to import persona");
+        alert(err?.message || t("personas.errors.importFailed"));
       } finally {
         dispatch({ type: "set_importing", value: false });
       }
@@ -243,7 +245,7 @@ export function useCreatePersonaController() {
 
       navigate("/library?view=personas", { replace: true });
     } catch (e: any) {
-      dispatch({ type: "set_error", value: e?.message || "Failed to save persona" });
+      dispatch({ type: "set_error", value: e?.message || t("personas.errors.saveFailed") });
     } finally {
       dispatch({ type: "set_saving", value: false });
     }

@@ -1,5 +1,6 @@
 import { FileCode, Package } from "lucide-react";
 import { BottomMenu, MenuButton, MenuButtonGroup, MenuLabel } from "./BottomMenu";
+import { useI18n } from "../../core/i18n/context";
 
 export type LorebookExportFormat = "legacy_json" | "usc";
 
@@ -10,39 +11,41 @@ interface LorebookExportMenuProps {
   exporting?: boolean;
 }
 
-const FORMATS: Array<{
-  id: LorebookExportFormat;
-  title: string;
-  description: string;
-  icon: typeof FileCode;
-  color: string;
-}> = [
-  {
-    id: "usc",
-    title: "Unified System Card",
-    description: "Portable USC export for lorebooks.",
-    icon: Package,
-    color: "from-emerald-500 to-emerald-600",
-  },
-  {
-    id: "legacy_json",
-    title: "Lorebook JSON",
-    description: "Current lorebook export format.",
-    icon: FileCode,
-    color: "from-amber-500 to-orange-600",
-  },
-];
-
 export function LorebookExportMenu({
   isOpen,
   onClose,
   onSelect,
   exporting = false,
 }: LorebookExportMenuProps) {
+  const { t } = useI18n();
+
+  const FORMATS: Array<{
+    id: LorebookExportFormat;
+    title: string;
+    description: string;
+    icon: typeof FileCode;
+    color: string;
+  }> = [
+    {
+      id: "usc",
+      title: t("exportMenu.extra.uscLorebook"),
+      description: t("exportMenu.extra.portableLorebook"),
+      icon: Package,
+      color: "from-emerald-500 to-emerald-600",
+    },
+    {
+      id: "legacy_json",
+      title: t("exportMenu.extra.lorebookJson"),
+      description: t("exportMenu.extra.currentLorebook"),
+      icon: FileCode,
+      color: "from-amber-500 to-orange-600",
+    },
+  ];
+
   return (
-    <BottomMenu isOpen={isOpen} onClose={onClose} title="Export Format">
+    <BottomMenu isOpen={isOpen} onClose={onClose} title={t("exportMenu.extra.exportFormatTitle")}>
       <div className="space-y-4">
-        <MenuLabel>Select a format</MenuLabel>
+        <MenuLabel>{t("exportMenu.selectFormat")}</MenuLabel>
         <MenuButtonGroup>
           {FORMATS.map((format) => (
             <MenuButton

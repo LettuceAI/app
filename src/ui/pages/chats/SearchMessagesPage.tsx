@@ -98,7 +98,7 @@ export function SearchMessagesPage() {
                         interactive.active.scale,
                         interactive.focus.ring
                     )}
-                    aria-label="Back"
+                    aria-label={t("chats.header.back")}
                 >
                     <ArrowLeft size={14} />
                 </button>

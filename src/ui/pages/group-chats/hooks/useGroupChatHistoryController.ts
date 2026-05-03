@@ -3,10 +3,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { GroupSessionPreview, Character } from "../../../../core/storage/schemas";
 import { storageBridge } from "../../../../core/storage/files";
 import { listCharacters } from "../../../../core/storage/repo";
+import { useI18n } from "../../../../core/i18n/context";
 
 export function useGroupChatHistoryController(options?: {
   onOpenSession?: (sessionId: string) => void;
 }) {
+  const { t } = useI18n();
   const [sessions, setSessions] = useState<GroupSessionPreview[]>([]);
   const [characters, setCharacters] = useState<Character[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -48,11 +50,11 @@ export function useGroupChatHistoryController(options?: {
       setSessions(allSessions);
       setCharacters(chars);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load data");
+      setError(err instanceof Error ? err.message : t("groupChats.historyController.failedToLoadData"));
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     void loadData();
@@ -64,7 +66,7 @@ export function useGroupChatHistoryController(options?: {
       await storageBridge.groupSessionDelete(sessionId);
       setSessions((prev) => prev.filter((s) => s.id !== sessionId));
     } catch (err) {
-      setError(`Failed to delete: ${err}`);
+      setError(t("groupChats.historyController.failedToDelete", { error: String(err) }));
     } finally {
       setBusyIds((prev) => {
         const next = new Set(prev);
@@ -72,7 +74,7 @@ export function useGroupChatHistoryController(options?: {
         return next;
       });
     }
-  }, []);
+  }, [t]);
 
   const handleRename = useCallback(async (sessionId: string, newTitle: string) => {
     setBusyIds((prev) => new Set(prev).add(sessionId));
@@ -80,7 +82,7 @@ export function useGroupChatHistoryController(options?: {
       await storageBridge.groupSessionUpdateTitle(sessionId, newTitle);
       setSessions((prev) => prev.map((s) => (s.id === sessionId ? { ...s, name: newTitle } : s)));
     } catch (err) {
-      setError(`Failed to rename: ${err}`);
+      setError(t("groupChats.historyController.failedToRename", { error: String(err) }));
     } finally {
       setBusyIds((prev) => {
         const next = new Set(prev);
@@ -88,7 +90,7 @@ export function useGroupChatHistoryController(options?: {
         return next;
       });
     }
-  }, []);
+  }, [t]);
 
   const handleArchive = useCallback(async (sessionId: string, archived: boolean) => {
     setBusyIds((prev) => new Set(prev).add(sessionId));
@@ -96,7 +98,14 @@ export function useGroupChatHistoryController(options?: {
       await storageBridge.groupSessionArchive(sessionId, archived);
       setSessions((prev) => prev.map((s) => (s.id === sessionId ? { ...s, archived } : s)));
     } catch (err) {
-      setError(`Failed to ${archived ? "archive" : "unarchive"}: ${err}`);
+      setError(
+        t(
+          archived
+            ? "groupChats.historyController.failedToArchive"
+            : "groupChats.historyController.failedToUnarchive",
+          { error: String(err) },
+        ),
+      );
     } finally {
       setBusyIds((prev) => {
         const next = new Set(prev);
@@ -104,7 +113,7 @@ export function useGroupChatHistoryController(options?: {
         return next;
       });
     }
-  }, []);
+  }, [t]);
 
   const handleDuplicate = useCallback(
     async (session: GroupSessionPreview) => {
@@ -114,7 +123,7 @@ export function useGroupChatHistoryController(options?: {
         setSessions((prev) => [newSession, ...prev]);
         options?.onOpenSession?.(newSession.id);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to duplicate");
+        setError(err instanceof Error ? err.message : t("groupChats.historyController.failedToDuplicate"));
       } finally {
         setBusyIds((prev) => {
           const next = new Set(prev);
@@ -123,7 +132,7 @@ export function useGroupChatHistoryController(options?: {
         });
       }
     },
-    [options?.onOpenSession],
+    [options?.onOpenSession, t],
   );
 
   const filteredSessions = useMemo(() => {

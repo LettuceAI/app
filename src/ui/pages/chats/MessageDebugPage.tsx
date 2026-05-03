@@ -4,6 +4,7 @@ import { ArrowLeft, Copy, ChevronRight, ChevronDown } from "lucide-react";
 
 import { getMessageDebugSnapshot, type ChatMessageDebugSnapshot } from "../../../core/chat/manager";
 import { getSession, readSettings } from "../../../core/storage/repo";
+import { useI18n } from "../../../core/i18n/context";
 import type { Session, Settings, StoredMessage } from "../../../core/storage/schemas";
 import {
   getMessageDebugTrace,
@@ -110,6 +111,7 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
 }
 
 function CopyButton({ onClick }: { onClick: () => void }) {
+  const { t } = useI18n();
   return (
     <button
       type="button"
@@ -117,7 +119,7 @@ function CopyButton({ onClick }: { onClick: () => void }) {
       className="inline-flex items-center gap-2 rounded border border-fg/10 bg-fg/5 px-2.5 py-1.5 text-[11px] text-fg/60 hover:bg-fg/10 hover:text-fg transition-colors"
     >
       <Copy className="h-3.5 w-3.5" />
-      Copy
+      {t("chats.debugPage.copy")}
     </button>
   );
 }

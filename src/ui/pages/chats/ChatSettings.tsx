@@ -642,8 +642,8 @@ export function ChatSettingsContent({
   }, [currentCharacter, avatarUrl]);
 
   const advancedDefaultsLabel = useMemo(() => {
-    return currentModel?.advancedModelSettings ? "Model defaults" : "App defaults";
-  }, [currentModel?.advancedModelSettings]);
+    return currentModel?.advancedModelSettings ? t("chats.settings.modelDefaults") : t("chats.settings.appDefaults");
+  }, [currentModel?.advancedModelSettings, t]);
 
   const effectiveVoiceAutoplay = useMemo(() => {
     return currentSession?.voiceAutoplay ?? currentCharacter?.voiceAutoplay ?? false;
@@ -651,13 +651,13 @@ export function ChatSettingsContent({
 
   const sessionAdvancedSummary = useMemo(() => {
     if (!currentSession) {
-      return "Open a chat session first";
+      return t("chats.settings.openChatSessionFirst");
     }
     if (!sessionAdvancedSettings) {
       return `${advancedDefaultsLabel}: ${formatAdvancedModelSettingsSummary(baseAdvancedSettings, "Default settings")}`;
     }
     return `Overrides: ${formatAdvancedModelSettingsSummary(sessionAdvancedSettings, "Overrides active")}`;
-  }, [currentSession, sessionAdvancedSettings, baseAdvancedSettings, advancedDefaultsLabel]);
+  }, [currentSession, sessionAdvancedSettings, baseAdvancedSettings, advancedDefaultsLabel, t]);
 
   const sessionAdvancedOverrideCount = useMemo(() => {
     if (!currentSession || !sessionAdvancedSettings) return 0;
@@ -693,22 +693,22 @@ export function ChatSettingsContent({
   }, [currentCharacter?.memoryType]);
 
   const memorySummaryPreview = useMemo(() => {
-    if (!currentSession) return "Open a chat session to view memory";
+    if (!currentSession) return t("chats.settings.openChatSessionFirst");
     if (!isDynamic) {
       const memoryCount = currentSession.memories?.length ?? 0;
       if (memoryCount > 0) return "Manual memories available for this session";
-      return "No memories yet — add manual memories from the Memories page";
+      return "No memories yet. Add manual memories from the Memories page.";
     }
     const summary = (currentSession.memorySummary ?? "").trim();
     if (summary) return summary;
     const memoryCount =
       currentSession.memoryEmbeddings?.length ?? currentSession.memories?.length ?? 0;
-    if (memoryCount > 0) return "No summary yet — memories exist for this session";
-    return "No memories yet — open to add summary, tags, and history";
-  }, [currentSession, isDynamic]);
+    if (memoryCount > 0) return "No summary yet. Memories exist for this session.";
+    return "No memories yet. Open to add summary, tags, and history.";
+  }, [currentSession, isDynamic, t]);
 
   const memoryMetaLine = useMemo(() => {
-    if (!currentSession) return "Session required";
+    if (!currentSession) return t("chats.settings.sessionRequired");
     const memoryCount =
       (isDynamic ? currentSession.memoryEmbeddings?.length : currentSession.memories?.length) ?? 0;
     const toolsCount = isDynamic ? (currentSession.memoryToolEvents?.length ?? 0) : 0;
@@ -718,7 +718,7 @@ export function ChatSettingsContent({
     if (toolsCount > 0) parts.push(`${toolsCount.toLocaleString()} tool events`);
     if (tokenCount > 0) parts.push(`${tokenCount.toLocaleString()} summary tokens`);
     return parts.join(" • ");
-  }, [currentSession, isDynamic]);
+  }, [currentSession, isDynamic, t]);
 
   const handleBack = () => {
     if (mode === "drawer" && onClose) {
@@ -735,19 +735,19 @@ export function ChatSettingsContent({
   };
 
   const getCurrentPersonaDisplay = () => {
-    if (!currentSession) return "Open a chat session first";
+    if (!currentSession) return t("chats.settings.openChatSessionFirst");
 
-    if (currentSession.personaDisabled || currentSession.personaId === "") return "No persona";
+    if (currentSession.personaDisabled || currentSession.personaId === "") return t("chats.settings.noPersona");
     const currentPersonaId = currentSession?.personaId;
     if (!currentPersonaId) {
       const defaultPersona = personas.find((p) => p.isDefault);
-      if (!defaultPersona) return "No persona";
+      if (!defaultPersona) return t("chats.settings.noPersona");
       return defaultPersona.nickname
         ? `${defaultPersona.title} (${defaultPersona.nickname}) (default)`
         : `${defaultPersona.title} (default)`;
     }
     const persona = personas.find((p) => p.id === currentPersonaId);
-    if (!persona) return "Custom persona";
+    if (!persona) return t("chats.settings.customPersona");
     return persona.nickname ? `${persona.title} (${persona.nickname})` : persona.title;
   };
 
@@ -760,14 +760,14 @@ export function ChatSettingsContent({
   }, [currentSession, personas]);
 
   const getModelDisplay = () => {
-    if (!currentModel) return "No model available";
+    if (!currentModel) return t("chats.settings.noModelAvailable");
     return currentModel.displayName + (!currentCharacter?.defaultModelId ? " (app default)" : "");
   };
 
   const getFallbackModelDisplay = () => {
-    if (!selectedFallbackModelId) return "None";
+    if (!selectedFallbackModelId) return t("chats.settings.fallbackNone");
     const fallback = models.find((m) => m.id === selectedFallbackModelId);
-    return fallback?.displayName || fallback?.name || "Unknown model";
+    return fallback?.displayName || fallback?.name || t("chats.settings.unknownModel");
   };
 
   const isDrawer = mode === "drawer";
@@ -804,13 +804,13 @@ export function ChatSettingsContent({
               <button
                 onClick={handleBack}
                 className="flex shrink-0 items-center justify-center -ml-2 px-[0.6em] py-[0.3em] text-fg transition hover:text-fg/80"
-                aria-label="Back to chat"
+                aria-label={t("chats.settings.backToChat")}
               >
                 <ArrowLeft size={18} strokeWidth={2.5} />
               </button>
               <div className="min-w-0 text-left">
-                <p className="truncate text-xl font-bold text-fg/90">Chat Settings</p>
-                <p className="mt-0.5 truncate text-xs text-fg/50">Manage conversation preferences</p>
+                <p className="truncate text-xl font-bold text-fg/90">{t("chats.settings.chatSettingsTitle")}</p>
+                <p className="mt-0.5 truncate text-xs text-fg/50">{t("chats.settings.chatSettingsSubtitle")}</p>
               </div>
             </div>
             <WindowControlButtons />
@@ -838,9 +838,9 @@ export function ChatSettingsContent({
                 </h3>
                 {currentSession ? (
                   <p className={cn(typography.caption.size, "text-fg/55 mt-1 truncate")}>
-                    Session: {currentSession.title || "Untitled"}
+                    {t("chats.settings.sessionTitle", { title: currentSession.title || t("chats.settings.sessionUntitled") })}
                     <span className="opacity-50 mx-1.5">•</span>
-                    {messageCount} messages
+                    {t("chats.settings.messageCount", { count: messageCount })}
                   </p>
                 ) : null}
                 {currentCharacter?.description || currentCharacter?.definition ? (
@@ -956,11 +956,11 @@ export function ChatSettingsContent({
               {currentCharacter?.mode === "companion" && characterId ? (
                 <QuickChip
                   icon={<Heart className="h-4 w-4" />}
-                  label="Soul"
+                  label={t("chats.settings.soulLabel")}
                   value={
                     currentCharacter.companion?.soul?.essence?.trim()
-                      ? "Identity profile authored"
-                      : "Add companion identity profile"
+                      ? t("chats.settings.identityProfileAuthored")
+                      : t("chats.settings.addIdentityProfile")
                   }
                   onClick={() =>
                     navigate(Routes.chatCompanionSoul(characterId, currentSession?.id))
@@ -1004,13 +1004,13 @@ export function ChatSettingsContent({
                 )}
               >
                 <div>
-                  <p className="text-sm font-semibold text-white">Autoplay voice</p>
+                  <p className="text-sm font-semibold text-white">{t("chats.settings.autoplayVoice")}</p>
                   <p className="mt-1 text-xs text-white/50">
                     {currentSession
                       ? currentSession.voiceAutoplay == null
-                        ? "Using character default"
-                        : "Session override active"
-                      : "Open a chat session first"}
+                        ? t("chats.settings.usingCharacterDefault")
+                        : t("chats.settings.sessionOverrideActive")
+                      : t("chats.settings.openChatSessionFirst")}
                   </p>
                 </div>
                 <Switch
@@ -1026,7 +1026,7 @@ export function ChatSettingsContent({
                   onClick={handleResetSessionVoiceAutoplay}
                   className="mt-2 w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs text-white/70 transition hover:border-white/20 hover:bg-white/10"
                 >
-                  Use character default
+                  {t("chats.settings.useCharacterDefault")}
                 </button>
               )}
             </section>
@@ -1118,7 +1118,7 @@ export function ChatSettingsContent({
             <div className={spacing.field}>
               <SettingsButton
                 icon={<NotebookPen className="h-4 w-4" />}
-                title="Author Note"
+                title={t("chats.settings.authorNote")}
                 subtitle={
                   currentSession?.authorNote?.trim()
                     ? "Active for this chat"
@@ -1241,7 +1241,7 @@ export function ChatSettingsContent({
               <div className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/10">
                 <Edit2 className="h-4 w-4 text-white/70" />
               </div>
-              <span className="text-sm font-medium text-white">Edit Persona</span>
+              <span className="text-sm font-medium text-white">{t("common.buttons.edit")}</span>
             </button>
 
             <button
@@ -1261,7 +1261,7 @@ export function ChatSettingsContent({
               <div className="flex h-8 w-8 items-center justify-center rounded-full border border-red-500/30 bg-red-500/20">
                 <Trash2 className="h-4 w-4 text-red-400" />
               </div>
-              <span className="text-sm font-medium text-red-300">Delete Persona</span>
+              <span className="text-sm font-medium text-red-300">{t("common.buttons.delete")}</span>
             </button>
           </div>
         </MenuSection>
@@ -1330,7 +1330,7 @@ export function ChatSettingsContent({
       <BottomMenu
         isOpen={showParameterSupport}
         onClose={() => setShowParameterSupport(false)}
-        title="Parameter Support"
+        title={t("chats.settings.parameterSupport")}
         includeExitIcon={true}
         location="bottom"
       >
@@ -1358,6 +1358,7 @@ export function ChatSettingsContent({
 }
 
 export function ChatSettingsPage() {
+  const { t } = useI18n();
   const { character, characterLoading } = useChatLayoutContext();
 
   if (characterLoading) {
@@ -1372,9 +1373,9 @@ export function ChatSettingsPage() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-surface px-4">
         <div className="text-center">
-          <p className="text-lg text-white">Character not found</p>
+          <p className="text-lg text-white">{t("chats.chatPage.characterNotFound")}</p>
           <p className="mt-2 text-sm text-gray-400">
-            The character you&apos;re looking for doesn&apos;t exist.
+            {t("chats.chatPage.characterDoesntExist")}
           </p>
         </div>
       </div>

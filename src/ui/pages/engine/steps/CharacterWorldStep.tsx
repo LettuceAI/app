@@ -2,6 +2,7 @@ import type { TimeBehaviors, BaselineEmotions } from "../../../../core/engine/ty
 import { TagInput } from "../components/TagInput";
 import { CollapsibleSection } from "../components/CollapsibleSection";
 import { Switch } from "../../../components/Switch";
+import { useI18n } from "../../../../core/i18n/context";
 
 type Props = {
   knowledgeDomains: string[];
@@ -22,23 +23,23 @@ type Props = {
   onNext: () => void;
 };
 
-const EMOTION_FIELDS: { field: keyof BaselineEmotions; label: string; color: string }[] = [
-  { field: "joy", label: "Joy", color: "bg-yellow-400" },
-  { field: "trust", label: "Trust", color: "bg-green-400" },
-  { field: "fear", label: "Fear", color: "bg-purple-400" },
-  { field: "surprise", label: "Surprise", color: "bg-cyan-400" },
-  { field: "sadness", label: "Sadness", color: "bg-blue-400" },
-  { field: "disgust", label: "Disgust", color: "bg-lime-400" },
-  { field: "anger", label: "Anger", color: "bg-rose-400" },
-  { field: "anticipation", label: "Anticipation", color: "bg-orange-400" },
+const EMOTION_FIELD_DEFS: { field: keyof BaselineEmotions; labelKey: string; color: string }[] = [
+  { field: "joy", labelKey: "joy", color: "bg-yellow-400" },
+  { field: "trust", labelKey: "trust", color: "bg-green-400" },
+  { field: "fear", labelKey: "fear", color: "bg-purple-400" },
+  { field: "surprise", labelKey: "surprise", color: "bg-cyan-400" },
+  { field: "sadness", labelKey: "sadness", color: "bg-blue-400" },
+  { field: "disgust", labelKey: "disgust", color: "bg-lime-400" },
+  { field: "anger", labelKey: "anger", color: "bg-rose-400" },
+  { field: "anticipation", labelKey: "anticipation", color: "bg-orange-400" },
 ];
 
-const TIME_FIELDS: { field: keyof TimeBehaviors; label: string }[] = [
-  { field: "early_morning", label: "Early Morning" },
-  { field: "morning", label: "Morning" },
-  { field: "afternoon", label: "Afternoon" },
-  { field: "evening", label: "Evening" },
-  { field: "night", label: "Night" },
+const TIME_FIELD_DEFS: { field: keyof TimeBehaviors; labelKey: string }[] = [
+  { field: "early_morning", labelKey: "earlyMorning" },
+  { field: "morning", labelKey: "morning" },
+  { field: "afternoon", labelKey: "afternoon" },
+  { field: "evening", labelKey: "evening" },
+  { field: "night", labelKey: "night" },
 ];
 
 export function CharacterWorldStep({
@@ -59,34 +60,36 @@ export function CharacterWorldStep({
   onEmotionChange,
   onNext,
 }: Props) {
+  const { t: tRoot, scope } = useI18n();
+  const t = scope("engine.characterCreate.steps.world");
   return (
     <div className="space-y-4 px-4 py-6">
-      <h2 className="text-lg font-semibold text-white">World & Behavior</h2>
+      <h2 className="text-lg font-semibold text-white">{t("title")}</h2>
 
       {/* Knowledge */}
       <TagInput
-        label="Knowledge Domains"
+        label={t("knowledgeDomains")}
         value={knowledgeDomains}
         onChange={(v) => onFieldChange("knowledgeDomains", v)}
-        placeholder="e.g. jazz history, music theory"
+        placeholder={t("knowledgeDomainsPlaceholder")}
       />
       <TagInput
-        label="Knowledge Boundaries"
+        label={t("knowledgeBoundaries")}
         value={knowledgeBoundaries}
         onChange={(v) => onFieldChange("knowledgeBoundaries", v)}
-        placeholder="Topics they don't know about"
+        placeholder={t("knowledgeBoundariesPlaceholder")}
       />
       <TagInput
-        label="Research Seeds"
+        label={t("researchSeeds")}
         value={researchSeeds}
         onChange={(v) => onFieldChange("researchSeeds", v)}
-        placeholder="Starting topics for background research"
+        placeholder={t("researchSeedsPlaceholder")}
       />
 
       <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-4 py-3">
         <div>
-          <p className="text-sm font-medium text-white/80">Research Enabled</p>
-          <p className="text-[11px] text-white/45">Allow background knowledge gathering</p>
+          <p className="text-sm font-medium text-white/80">{t("researchEnabled")}</p>
+          <p className="text-[11px] text-white/45">{t("researchEnabledDesc")}</p>
         </div>
         <Switch
           checked={researchEnabled}
@@ -97,55 +100,58 @@ export function CharacterWorldStep({
       {/* Physical */}
       <div>
         <label className="mb-1 block text-[11px] font-medium text-white/70">
-          Physical Description
+          {t("physicalDescription")}
         </label>
         <textarea
           value={physicalDescription}
           onChange={(e) => onFieldChange("physicalDescription", e.target.value)}
-          placeholder="Physical appearance and mannerisms..."
+          placeholder={t("physicalDescPlaceholder")}
           rows={2}
           className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder-white/40 focus:border-white/30 focus:outline-none resize-none"
         />
       </div>
       <TagInput
-        label="Physical Habits"
+        label={t("physicalHabits")}
         value={physicalHabits}
         onChange={(v) => onFieldChange("physicalHabits", v)}
-        placeholder="e.g. taps fingers, adjusts glasses"
+        placeholder={t("physicalHabitsPlaceholder")}
       />
       <TagInput
-        label="Idle Behaviors"
+        label={t("idleBehaviors")}
         value={idleBehaviors}
         onChange={(v) => onFieldChange("idleBehaviors", v)}
-        placeholder="What they do when not engaged"
+        placeholder={t("idleBehaviorsPlaceholder")}
       />
 
       {/* Time Behaviors */}
-      <CollapsibleSection title="Time Behaviors">
-        {TIME_FIELDS.map(({ field, label }) => (
-          <div key={field}>
-            <label className="mb-1 block text-[11px] font-medium text-white/70">{label}</label>
-            <textarea
-              value={timeBehaviors[field] || ""}
-              onChange={(e) => onTimeBehaviorChange(field, e.target.value)}
-              placeholder={`What do they do during ${label.toLowerCase()}?`}
-              rows={2}
-              className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder-white/40 focus:border-white/30 focus:outline-none resize-none"
-            />
-          </div>
-        ))}
+      <CollapsibleSection title={t("timeBehaviors")}>
+        {TIME_FIELD_DEFS.map(({ field, labelKey }) => {
+          const label = t(labelKey);
+          return (
+            <div key={field}>
+              <label className="mb-1 block text-[11px] font-medium text-white/70">{label}</label>
+              <textarea
+                value={timeBehaviors[field] || ""}
+                onChange={(e) => onTimeBehaviorChange(field, e.target.value)}
+                placeholder={t("timePlaceholder", { period: label.toLowerCase() })}
+                rows={2}
+                className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder-white/40 focus:border-white/30 focus:outline-none resize-none"
+              />
+            </div>
+          );
+        })}
       </CollapsibleSection>
 
       {/* Emotions */}
-      <CollapsibleSection title="Baseline Emotions (Plutchik)">
+      <CollapsibleSection title={t("baselineEmotions")}>
         <p className="text-[11px] text-white/40 -mt-1">
-          Set default emotional baseline (0 = none, 1 = maximum)
+          {t("emotionDesc")}
         </p>
-        {EMOTION_FIELDS.map(({ field, label, color }) => (
+        {EMOTION_FIELD_DEFS.map(({ field, labelKey, color }) => (
           <div key={field} className="flex items-center gap-3">
             <div className="flex items-center gap-2 w-28">
               <span className={`h-2 w-2 rounded-full ${color}`} />
-              <span className="text-xs text-white/60">{label}</span>
+              <span className="text-xs text-white/60">{t(labelKey)}</span>
             </div>
             <input
               type="range"
@@ -164,29 +170,29 @@ export function CharacterWorldStep({
       </CollapsibleSection>
 
       {/* Engine Overrides */}
-      <CollapsibleSection title="Engine Overrides">
+      <CollapsibleSection title={t("engineOverrides")}>
         <div>
-          <label className="mb-1 block text-[11px] font-medium text-white/70">Backend</label>
+          <label className="mb-1 block text-[11px] font-medium text-white/70">{t("backend")}</label>
           <input
             type="text"
             value={backend}
             onChange={(e) => onFieldChange("backend", e.target.value)}
-            placeholder="Leave empty for default"
+            placeholder={t("leaveEmpty")}
             className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder-white/40 focus:border-white/30 focus:outline-none"
           />
         </div>
         <div>
-          <label className="mb-1 block text-[11px] font-medium text-white/70">Model</label>
+          <label className="mb-1 block text-[11px] font-medium text-white/70">{t("model")}</label>
           <input
             type="text"
             value={model}
             onChange={(e) => onFieldChange("model", e.target.value)}
-            placeholder="Leave empty for default"
+            placeholder={t("leaveEmpty")}
             className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder-white/40 focus:border-white/30 focus:outline-none"
           />
         </div>
         <div>
-          <label className="mb-1 block text-[11px] font-medium text-white/70">Temperature</label>
+          <label className="mb-1 block text-[11px] font-medium text-white/70">{t("temperature")}</label>
           <input
             type="number"
             step="0.1"
@@ -208,7 +214,7 @@ export function CharacterWorldStep({
         onClick={onNext}
         className="w-full rounded-lg border border-emerald-400/40 bg-emerald-500/20 px-4 py-3 text-sm font-semibold text-emerald-100 transition hover:border-emerald-400/60 hover:bg-emerald-500/30"
       >
-        Continue
+        {tRoot("common.buttons.continue")}
       </button>
     </div>
   );

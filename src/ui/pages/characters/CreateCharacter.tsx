@@ -166,11 +166,11 @@ export function CreateCharacterPage() {
       setHasLoadedVoices(true);
     } catch (err) {
       console.error("Failed to load voices:", err);
-      setVoiceError("Failed to load voices");
+      setVoiceError(t("characters.voiceLoading.failed"));
     } finally {
       setLoadingVoices(false);
     }
-  }, []);
+  }, [t]);
 
   React.useEffect(() => {
     if (state.step !== Step.Description || hasLoadedVoices) return;

@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { TopNav } from "../components/App";
 import { toast } from "../components/toast";
+import { useI18n } from "../../core/i18n/context";
 import type { Character, Lorebook, LorebookEntry, StoredMessage } from "../../core/storage/schemas";
 import {
   createBlankLorebookEntry,
@@ -169,6 +170,7 @@ function roleMeta(role: StoredMessage["role"]): {
 }
 
 export function LorebookEntryGeneratorFlowPage() {
+  const { t } = useI18n();
   const { backOrReplace } = useNavigationManager();
   const location = useLocation();
   const params = useParams<{ characterId?: string; lorebookId?: string }>();
@@ -237,7 +239,7 @@ export function LorebookEntryGeneratorFlowPage() {
         setCharacters(allCharacters);
       } catch (error) {
         console.error("Failed to load lorebook generator context:", error);
-        if (!cancelled) toast.error("Failed to load lorebook generator");
+        if (!cancelled) toast.error(t("lorebookGen.flow.failedToLoadContext"));
       } finally {
         if (!cancelled) setIsBootLoading(false);
       }
@@ -279,7 +281,7 @@ export function LorebookEntryGeneratorFlowPage() {
       } catch (error) {
         console.error("Failed to load session previews:", error);
         if (!cancelled) {
-          toast.error("Failed to load sessions");
+          toast.error(t("lorebookGen.flow.failedToLoadSessions"));
           setSessions([]);
         }
       } finally {
@@ -356,7 +358,7 @@ export function LorebookEntryGeneratorFlowPage() {
       });
     } catch (error) {
       console.error("Failed to load session messages:", error);
-      toast.error("Failed to load messages");
+      toast.error(t("lorebookGen.flow.failedToLoadMessages"));
     } finally {
       setIsMessagesLoading(false);
       setIsLoadingMoreMessages(false);
@@ -498,15 +500,15 @@ export function LorebookEntryGeneratorFlowPage() {
       });
       if (result.kind === "none") {
         setDraftForm(null);
-        setNoEntryReason(result.reason?.trim() || "No durable lorebook entry was found.");
+        setNoEntryReason(result.reason?.trim() || t("lorebookGen.flow.generatorReturnedNoDraft"));
         return;
       }
-      if (!result.draft) throw new Error("Generator returned no draft");
+      if (!result.draft) throw new Error(t("lorebookGen.flow.generatorReturnedNoDraft"));
       setDraftForm(buildDraftFormState(result.draft));
       setNoEntryReason(null);
     } catch (error) {
       console.error("Failed to generate lorebook entry draft:", error);
-      toast.error("Generation failed", error instanceof Error ? error.message : "Unknown error");
+      toast.error(t("lorebookGen.flow.generationFailed"), error instanceof Error ? error.message : "Unknown error");
     } finally {
       setIsGenerating(false);
     }
@@ -518,11 +520,11 @@ export function LorebookEntryGeneratorFlowPage() {
     const content = draftForm.content.trim();
     const keywords = parseKeywordsInput(draftForm.keywordsText);
     if (!title || !content) {
-      toast.error("Title and content are required");
+      toast.error(t("lorebookGen.flow.titleAndContentRequired"));
       return;
     }
     if (!draftForm.alwaysActive && keywords.length === 0) {
-      toast.error("Add at least one keyword or enable Always active");
+      toast.error(t("lorebookGen.flow.keywordsOrAlwaysActive"));
       return;
     }
     try {
@@ -537,11 +539,11 @@ export function LorebookEntryGeneratorFlowPage() {
         enabled: true,
       };
       await saveLorebookEntry(nextEntry);
-      toast.success("Lorebook entry saved");
+      toast.success(t("lorebookGen.flow.lorybookEntrySaved"));
       backOrReplace(context.backPath);
     } catch (error) {
       console.error("Failed to save generated lorebook entry:", error);
-      toast.error("Save failed", error instanceof Error ? error.message : "Unknown error");
+      toast.error(t("lorebookGen.flow.saveFailed"), error instanceof Error ? error.message : "Unknown error");
     } finally {
       setIsSaving(false);
     }
@@ -569,17 +571,17 @@ export function LorebookEntryGeneratorFlowPage() {
       <div className="flex h-full flex-col bg-surface pt-[calc(72px+env(safe-area-inset-top))]">
         <TopNav
           currentPath={location.pathname + location.search}
-          titleOverride="Generate Lorebook Entry"
+          titleOverride={t("lorebookGen.flow.pageTitle")}
           onBackOverride={handleBack}
         />
         <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-fg/60">
-          Missing lorebook context for the generator page.
+          {t("lorebookGen.flow.missingContext")}
         </div>
       </div>
     );
   }
 
-  const pageTitle = lorebook ? `${lorebook.name} · Generate` : "Generate Lorebook Entry";
+  const pageTitle = lorebook ? `${lorebook.name} · Generate` : t("lorebookGen.flow.pageTitle");
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-surface pt-[calc(72px+env(safe-area-inset-top))] pb-[env(safe-area-inset-bottom)]">
@@ -595,7 +597,7 @@ export function LorebookEntryGeneratorFlowPage() {
             type="button"
             onClick={() => !characterPickerLocked && setCharacterPickerOpen((v) => !v)}
             disabled={isBootLoading || characterPickerLocked}
-            title={characterPickerLocked ? "Character is locked to this lorebook's owner" : undefined}
+            title={characterPickerLocked ? t("lorebookGen.flow.characterLocked") : undefined}
             className={`flex items-center gap-1.5 rounded-lg border border-fg/10 bg-fg/4 px-2.5 py-1.5 text-[12px] font-medium text-fg/80 transition ${
               characterPickerLocked
                 ? "cursor-default opacity-70"
@@ -614,9 +616,9 @@ export function LorebookEntryGeneratorFlowPage() {
           </button>
           <AnimatePresence>
             {characterPickerOpen && !characterPickerLocked && (
-              <Dropdown onClose={() => setCharacterPickerOpen(false)} title="Characters">
+              <Dropdown onClose={() => setCharacterPickerOpen(false)} title={t("lorebookGen.flow.pickerCharactersTitle")}>
                   {characters.length === 0 ? (
-                    <EmptyDropdown>No characters</EmptyDropdown>
+                    <EmptyDropdown>{t("lorebookGen.flow.noCharacters")}</EmptyDropdown>
                   ) : (
                     <div className="scrollbar-thin max-h-72 overflow-y-auto py-1">
                       {characters.map((c) => {
@@ -672,7 +674,7 @@ export function LorebookEntryGeneratorFlowPage() {
                 </div>
               ) : (
                 <span className="text-fg/55">
-                  {selectedCharacterId ? "Choose session" : "Pick character"}
+                  {selectedCharacterId ? t("lorebookGen.flow.chooseSession") : t("lorebookGen.flow.pickCharacter")}
                 </span>
               )}
             </div>
@@ -682,9 +684,9 @@ export function LorebookEntryGeneratorFlowPage() {
           </button>
           <AnimatePresence>
             {sessionPickerOpen && (
-              <Dropdown onClose={() => setSessionPickerOpen(false)} title="Sessions">
+              <Dropdown onClose={() => setSessionPickerOpen(false)} title={t("lorebookGen.flow.pickerSessionsTitle")}>
                 {sessions.length === 0 ? (
-                  <EmptyDropdown>No sessions</EmptyDropdown>
+                  <EmptyDropdown>{t("lorebookGen.flow.noSessions")}</EmptyDropdown>
                 ) : (
                   <div className="scrollbar-thin max-h-72 overflow-y-auto py-1">
                     {sessions.map((s) => {
@@ -733,10 +735,8 @@ export function LorebookEntryGeneratorFlowPage() {
             onChange={(e) => setMessageSearch(e.target.value)}
             placeholder={
               sourceMode === "memory"
-                ? "Search memories"
-                : sourceMode === "mixed"
-                  ? "Search messages"
-                  : "Search messages"
+                ? t("lorebookGen.flow.searchMemories")
+                : t("lorebookGen.flow.searchMessages")
             }
             disabled={!selectedSession}
             className="w-full bg-transparent text-[12px] text-fg outline-none placeholder:text-fg/35"
@@ -760,8 +760,8 @@ export function LorebookEntryGeneratorFlowPage() {
               type="button"
               onClick={clearSelection}
               className="rounded p-0.5 text-accent/60 transition hover:bg-accent/15 hover:text-accent"
-              title="Clear selection"
-              aria-label="Clear selection"
+              title={t("lorebookGen.flow.clearSelection")}
+              aria-label={t("lorebookGen.flow.clearSelection")}
             >
               <X className="h-3 w-3" />
             </button>
@@ -777,8 +777,8 @@ export function LorebookEntryGeneratorFlowPage() {
               type="button"
               onClick={clearMemorySelection}
               className="rounded p-0.5 text-accent/60 transition hover:bg-accent/15 hover:text-accent"
-              title="Clear selection"
-              aria-label="Clear selection"
+              title={t("lorebookGen.flow.clearSelection")}
+              aria-label={t("lorebookGen.flow.clearSelection")}
             >
               <X className="h-3 w-3" />
             </button>
@@ -794,13 +794,13 @@ export function LorebookEntryGeneratorFlowPage() {
           >
             <span className="inline-flex items-center gap-1">
               <MessageSquareText className="h-3 w-3" />
-              Messages
+              {t("lorebookGen.flow.messagesText")}
             </span>
           </FilterPill>
           <FilterPill active={sourceMode === "memory"} onClick={() => setSourceMode("memory")}>
             <span className="inline-flex items-center gap-1">
               <Brain className="h-3 w-3" />
-              Memory
+              {t("common.nav.dynamicMemory")}
             </span>
           </FilterPill>
           <FilterPill active={sourceMode === "mixed"} onClick={() => setSourceMode("mixed")}>
@@ -820,13 +820,13 @@ export function LorebookEntryGeneratorFlowPage() {
                 All
               </FilterPill>
               <FilterPill active={roleFilter === "user"} onClick={() => setRoleFilter("user")}>
-                User
+                {t("lorebookGen.flow.userRole")}
               </FilterPill>
               <FilterPill
                 active={roleFilter === "assistant"}
                 onClick={() => setRoleFilter("assistant")}
               >
-                AI
+                {t("lorebookGen.flow.aiRole")}
               </FilterPill>
             </div>
 

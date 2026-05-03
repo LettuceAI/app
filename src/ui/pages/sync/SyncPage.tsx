@@ -285,7 +285,7 @@ export function SyncPage() {
             </div>
           </div>
           <h4 className="text-lg font-medium text-white mb-1">
-            {(status as any).details?.device_name || "Unknown Device"}
+            {(status as any).details?.device_name || t("sync.unknownDevice")}
           </h4>
           <p className="text-sm text-white/50 font-mono mb-2">{(status as any).details?.ip}</p>
           <p className="text-sm text-white/40">{t("sync.modals.requestMessage")}</p>
@@ -352,7 +352,7 @@ export function SyncPage() {
               type="button"
               onClick={stopSync}
               className="text-emerald-300/60 hover:text-emerald-300 text-lg px-1"
-              aria-label="Dismiss sync status"
+              aria-label={t("sync.aria.dismissStatus")}
             >
               ×
             </button>
@@ -370,7 +370,7 @@ export function SyncPage() {
               type="button"
               onClick={stopSync}
               className="text-red-300/60 hover:text-red-300 text-lg px-1"
-              aria-label="Dismiss sync error"
+              aria-label={t("sync.aria.dismissError")}
             >
               ×
             </button>
@@ -493,7 +493,7 @@ export function SyncPage() {
                   type="text"
                   value={hostIp}
                   onChange={(e) => setHostIp(e.target.value)}
-                  placeholder="e.g. 192.168.1.100:12345"
+                  placeholder={t("sync.fields.hostPlaceholder")}
                   className={cn(
                     "w-full border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-white/30 font-mono",
                     radius.lg,
@@ -509,7 +509,7 @@ export function SyncPage() {
                   type="text"
                   value={pin}
                   onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                  placeholder="000000"
+                  placeholder={t("sync.fields.pinPlaceholder")}
                   maxLength={6}
                   className={cn(
                     "w-full border border-white/10 bg-white/5 px-4 py-3 text-white font-mono text-center text-xl",
@@ -638,7 +638,7 @@ export function SyncPage() {
                   <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
                 </span>
                 <span className="text-[10px] font-medium text-emerald-400 uppercase tracking-wider">
-                  Live
+                  {t("sync.status.live")}
                 </span>
               </div>
             </div>
@@ -654,7 +654,7 @@ export function SyncPage() {
                           {t("sync.status.syncing")}
                         </p>
                         <p className="text-sm text-blue-200/60 mt-1">
-                          {(status as any).details?.phase || "Transferring data"}
+                          {(status as any).details?.phase || t("sync.status.transferringData")}
                         </p>
                       </div>
                     </div>
@@ -723,16 +723,16 @@ export function SyncPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="border border-white/10 bg-white/5 p-4 rounded-xl">
                 <p className="text-[9px] font-bold uppercase tracking-wider text-white/30 mb-1">
-                  Status
+                  {t("sync.stats.statusLabel")}
                 </p>
-                <p className="text-sm font-medium text-emerald-400">Broadcasting</p>
+                <p className="text-sm font-medium text-emerald-400">{t("sync.status.broadcasting")}</p>
               </div>
               <div className="border border-white/10 bg-white/5 p-4 rounded-xl">
                 <p className="text-[9px] font-bold uppercase tracking-wider text-white/30 mb-1">
-                  Connected
+                  {t("sync.status.clientsLabel")}
                 </p>
                 <p className="text-sm font-medium text-white">
-                  {(status as any).details?.clients || 0} Clients
+                  {(status as any).details?.clients || 0} {t("sync.status.clientsUnit")}
                 </p>
               </div>
             </div>
@@ -741,14 +741,14 @@ export function SyncPage() {
               <div className="flex items-center gap-2 mb-3">
                 <HelpCircle className="h-4 w-4 text-white/30" />
                 <p className="text-[10px] font-bold uppercase tracking-wider text-white/40 font-mono">
-                  Setup Guide
+                  {t("sync.sections.setupGuide")}
                 </p>
               </div>
               <ul className="space-y-3">
                 {[
-                  "Open app on another device",
-                  "Go to Settings → Local Sync",
-                  "Scan the QR code or enter address",
+                  t("sync.setupSteps.step1"),
+                  t("sync.setupSteps.step2"),
+                  t("sync.setupSteps.step3"),
                 ].map((step, i) => (
                   <li key={i} className="flex gap-3 items-start text-xs text-white/50">
                     <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white/10 text-[10px] font-bold text-white/40">
@@ -768,7 +768,7 @@ export function SyncPage() {
                 "hover:bg-rose-500/20 active:scale-[0.98] transition-all",
               )}
             >
-              <X className="h-4 w-4" /> Stop Hosting
+              <X className="h-4 w-4" /> {t("sync.buttons.stopHosting")}
             </button>
           </div>
         )}
@@ -783,7 +783,7 @@ export function SyncPage() {
                 radius.lg,
               )}
             >
-              Host Again
+              {t("sync.buttons.hostAgain")}
             </button>
             <button
               onClick={stopSync}
@@ -792,13 +792,13 @@ export function SyncPage() {
                 radius.lg,
               )}
             >
-              Done
+              {t("sync.buttons.done")}
             </button>
           </div>
         )}
 
         <p className="px-1 text-[11px] text-white/30 pt-4">
-          Sync works over your local network. Both devices must be on the same WiFi.
+          {t("sync.disclaimer")}
         </p>
       </section>
 
@@ -810,13 +810,13 @@ export function SyncPage() {
               <div className="absolute inset-0 border-2 border-white/20 rounded-3xl animate-pulse"></div>
               <div className="absolute top-0 left-0 w-full h-1 bg-white/50 shadow-[0_0_10px_white] animate-[scan_2s_infinite]"></div>
             </div>
-            <p className="text-white font-medium shadow-black/50 drop-shadow-md">Scan QR Code</p>
+            <p className="text-white font-medium shadow-black/50 drop-shadow-md">{t("sync.scanner.title")}</p>
           </div>
           <button
             onClick={stopScan}
             className="bg-white/10 backdrop-blur-md border border-white/20 text-white px-6 py-3 rounded-full font-medium active:scale-95 transition-all flex items-center gap-2"
           >
-            <X className="w-5 h-5" /> Cancel Scan
+            <X className="w-5 h-5" /> {t("sync.scanner.cancel")}
           </button>
           <style>{`
                         @keyframes scan {

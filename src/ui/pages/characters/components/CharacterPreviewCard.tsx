@@ -139,7 +139,7 @@ export function CharacterPreviewCard({
             {avatarSrc ? (
               <img
                 src={avatarSrc}
-                alt={draft.name || "Character"}
+                alt={draft.name || t("characters.preview.characterFallback")}
                 className="h-full w-full object-cover"
               />
             ) : (

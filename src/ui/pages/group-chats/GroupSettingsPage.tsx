@@ -490,12 +490,12 @@ export function GroupSettingsPage() {
 
           <section className={spacing.item}>
             <SectionHeader
-              title="Lorebooks"
-              subtitle="Attach shared lorebooks and control whether character lorebooks apply by default."
+              title={t("groupChats.groupSettingsPageExtra.lorebrooksTitle")}
+              subtitle={t("groupChats.groupSettingsPageExtra.lorebrooksDesc")}
             />
             <QuickChip
               icon={<BookOpen className="h-4 w-4" />}
-              label="Manage lorebooks"
+              label={t("groupChats.groupSettingsPageExtra.manageLorebooks")}
               value={`${group.lorebookIds?.length ?? 0} attached`}
               onClick={() => navigate(Routes.groupLorebook(group.id))}
             />

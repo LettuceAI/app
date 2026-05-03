@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef } from "react";
 
+import { useI18n } from "../../../../core/i18n/context";
 import {
   engineChatReducer,
   initialEngineChatState,
@@ -25,6 +26,7 @@ export function useEngineChatController(
   slug: string,
 ) {
   const [state, dispatch] = useReducer(engineChatReducer, initialEngineChatState);
+  const { t } = useI18n();
 
   const userRef = useRef<{
     userId: string;
@@ -117,12 +119,12 @@ export function useEngineChatController(
     } catch (err) {
       dispatch({
         type: "set_error",
-        payload: typeof err === "string" ? err : err instanceof Error ? err.message : "Failed to send message.",
+        payload: typeof err === "string" ? err : err instanceof Error ? err.message : t("engine.errors.sendMessageFailed"),
       });
     } finally {
       dispatch({ type: "set_sending", payload: false });
     }
-  }, [baseUrl, apiKey, slug, state.draft, state.sending]);
+  }, [baseUrl, apiKey, slug, state.draft, state.sending, t]);
 
   return {
     state,

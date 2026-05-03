@@ -1,5 +1,6 @@
 import { FileCode, Package } from "lucide-react";
 import { BottomMenu, MenuButton, MenuButtonGroup, MenuLabel } from "./BottomMenu";
+import { useI18n } from "../../core/i18n/context";
 
 export type ModelExportFormat = "json" | "usc";
 
@@ -10,39 +11,41 @@ interface ModelExportMenuProps {
   exporting?: boolean;
 }
 
-const FORMATS: Array<{
-  id: ModelExportFormat;
-  title: string;
-  description: string;
-  icon: typeof FileCode;
-  color: string;
-}> = [
-  {
-    id: "usc",
-    title: "Unified System Card",
-    description: "Portable USC export for model profiles.",
-    icon: Package,
-    color: "from-emerald-500 to-emerald-600",
-  },
-  {
-    id: "json",
-    title: "Model JSON",
-    description: "Safe model profile JSON without credentials.",
-    icon: FileCode,
-    color: "from-amber-500 to-orange-600",
-  },
-];
-
 export function ModelExportMenu({
   isOpen,
   onClose,
   onSelect,
   exporting = false,
 }: ModelExportMenuProps) {
+  const { t } = useI18n();
+
+  const FORMATS: Array<{
+    id: ModelExportFormat;
+    title: string;
+    description: string;
+    icon: typeof FileCode;
+    color: string;
+  }> = [
+    {
+      id: "usc",
+      title: t("exportMenu.extra.uscModel"),
+      description: t("exportMenu.extra.portableModel"),
+      icon: Package,
+      color: "from-emerald-500 to-emerald-600",
+    },
+    {
+      id: "json",
+      title: t("exportMenu.extra.modelJson"),
+      description: t("exportMenu.extra.safeModel"),
+      icon: FileCode,
+      color: "from-amber-500 to-orange-600",
+    },
+  ];
+
   return (
-    <BottomMenu isOpen={isOpen} onClose={onClose} title="Export Format">
+    <BottomMenu isOpen={isOpen} onClose={onClose} title={t("exportMenu.extra.exportFormatTitle")}>
       <div className="space-y-4">
-        <MenuLabel>Select a format</MenuLabel>
+        <MenuLabel>{t("exportMenu.selectFormat")}</MenuLabel>
         <MenuButtonGroup>
           {FORMATS.map((format) => (
             <MenuButton

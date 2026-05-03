@@ -73,7 +73,7 @@ function MemoryActionRow({
 
 const MEMORY_PROGRESS_TOTAL = 4;
 const MEMORY_STEP_LABELS: Record<number, string> = {
-  1: "Summarizing conversation",
+  1: "Summarizing conversation", // Will be migrated in next phase
   2: "Analyzing memories",
   3: "Applying changes",
   4: "Organizing memories",
@@ -126,7 +126,7 @@ export function GroupChatMemoriesPage() {
   const tabs = [
     { id: "memories" as const, icon: Bot, label: t("common.nav.dynamicMemory") },
     { id: "pinned" as const, icon: Pin, label: t("groupChats.memories.tabPinned") },
-    { id: "tools" as const, icon: Clock, label: "Activity" },
+    { id: "tools" as const, icon: Clock, label: t("groupChats.memoriesPageExtra.activityTabLabel") },
   ];
 
   if (loading) {
@@ -145,7 +145,7 @@ export function GroupChatMemoriesPage() {
           colors.surface.base,
         )}
       >
-        <p className={cn("text-sm", colors.text.secondary)}>{error || "Session not found"}</p>
+        <p className={cn("text-sm", colors.text.secondary)}>{error || t("groupChats.memoriesPageExtra.sessionNotFound")}</p>
         <button
           onClick={() => backOrReplace(Routes.groupChats)}
           className={cn(
@@ -270,8 +270,8 @@ export function GroupChatMemoriesPage() {
                           <span className={cn(typography.body.size, "font-semibold text-info")}>
                             {label ??
                               (ui.retryStatus === "retrying"
-                                ? "Retrying Memory Cycle..."
-                                : "Processing memories...")}
+                                ? t("groupChats.memoriesPageExtra.retryingMemoryCycle")
+                                : t("groupChats.memoriesPageExtra.processingMemories"))}
                           </span>
                         </div>
                         {step && (
@@ -305,7 +305,7 @@ export function GroupChatMemoriesPage() {
               >
                 <Check className="h-5 w-5 text-accent shrink-0" />
                 <div className={cn("flex-1", typography.body.size, "text-accent/80")}>
-                  <p className="font-semibold">Memory cycle processed successfully!</p>
+                  <p className="font-semibold">{t("groupChats.memoriesPageExtra.memoryCycleSuccess")}</p>
                 </div>
                 <button
                   onClick={() => dispatch({ type: "SET_RETRY_STATUS", value: "idle" })}
@@ -323,7 +323,7 @@ export function GroupChatMemoriesPage() {
               >
                 <AlertTriangle className="h-5 w-5 text-danger shrink-0" />
                 <div className={cn("flex-1", typography.body.size, "text-danger")}>
-                  <p className="font-semibold mb-1">Memory System Error</p>
+                  <p className="font-semibold mb-1">{t("groupChats.memoriesPageExtra.memorySystemError")}</p>
                   <p className="opacity-90">{ui.actionError || session.memoryError}</p>
                 </div>
                 <button
@@ -359,7 +359,7 @@ export function GroupChatMemoriesPage() {
                 <div className="flex items-center gap-2 mb-1.5">
                   <Sparkles size={13} className="text-accent/70 shrink-0" />
                   <span className="text-[11px] font-semibold text-accent/60 uppercase tracking-wider">
-                    Context Summary
+                    {t("groupChats.memoriesPageExtra.contextSummaryTitle")}
                   </span>
                   {session?.memorySummaryTokenCount && session.memorySummaryTokenCount > 0 ? (
                     <span className="text-[10px] text-fg/30 ml-auto">
@@ -374,7 +374,7 @@ export function GroupChatMemoriesPage() {
                     ui.summaryDraft ? "text-accent/70" : "text-accent/25 italic",
                   )}
                 >
-                  {ui.summaryDraft || "Tap to add a context summary..."}
+                  {ui.summaryDraft || t("groupChats.memoriesPage.contextSummaryPrompt")}
                 </p>
               </button>
 

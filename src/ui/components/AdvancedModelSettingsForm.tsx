@@ -495,7 +495,7 @@ export function AdvancedModelSettingsForm({
       <div className="space-y-4 rounded-2xl border border-blue-400/20 bg-blue-400/5 p-4 mb-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-white">
-            <h3 className="text-sm font-semibold">Prompt Caching</h3>
+            <h3 className="text-sm font-semibold">{t("components.extra.promptCachingTitle")}</h3>
           </div>
           <Switch
             checked={!!settings.promptCachingEnabled}
@@ -504,8 +504,7 @@ export function AdvancedModelSettingsForm({
           />
         </div>
         <p className="text-[11px] text-white/50 leading-relaxed">
-          Speeds up generation and reduces costs for long, repetitive contexts (like large system
-          prompts or deep chat histories).
+          {t("components.extra.promptCachingDescription")}
         </p>
       </div>
 

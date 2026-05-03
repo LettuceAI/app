@@ -82,7 +82,7 @@ export function EditPersonaPage() {
       await downloadJson(exportJson, filename);
     } catch (err: any) {
       console.error("Failed to export persona:", err);
-      alert(err?.message || "Failed to export persona");
+      alert(err?.message || t("personas.errors.exportFailed"));
     } finally {
       setExporting(false);
     }
@@ -324,8 +324,8 @@ export function EditPersonaPage() {
                 subjectName={title}
                 subjectDescription={description}
                 avatarImage={avatarPath}
-                title="Design references"
-                description="Attach a few stable image references and one concise design note for scene generation."
+                title={t("personas.designReferences.title")}
+                description={t("personas.designReferences.description")}
               />
             </div>
           </div>

@@ -679,12 +679,12 @@ export function GroupChatSettingsPage() {
 
           <section className={spacing.item}>
             <SectionHeader
-              title="Lorebooks"
-              subtitle="Attach session lorebooks and optionally ignore each character's own lorebooks."
+              title={t("groupChats.settingsPageExtra.lorebrooksTitle")}
+              subtitle={t("groupChats.settingsPageExtra.lorebrooksDesc")}
             />
             <QuickChip
               icon={<BookOpen className="h-4 w-4" />}
-              label="Manage lorebooks"
+              label={t("groupChats.settingsPageExtra.manageLorebooks")}
               value={`${session.lorebookIds?.length ?? 0} attached`}
               onClick={() => navigate(Routes.groupChatLorebook(session.id))}
             />

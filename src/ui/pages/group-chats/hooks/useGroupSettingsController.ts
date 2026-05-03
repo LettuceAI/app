@@ -11,8 +11,10 @@ import {
   groupChatSettingsUiReducer,
   initialGroupChatSettingsUiState,
 } from "../reducers/groupChatSettingsReducer";
+import { useI18n } from "../../../../core/i18n/context";
 
 export function useGroupSettingsController(groupId?: string) {
+  const { t } = useI18n();
   const [group, setGroup] = useState<Group | null>(null);
   const [characters, setCharacters] = useState<Character[]>([]);
   const [personas, setPersonas] = useState<Persona[]>([]);
@@ -34,7 +36,7 @@ export function useGroupSettingsController(groupId?: string) {
       ]);
 
       if (!groupData) {
-        setUi({ error: "Group not found" });
+        setUi({ error: t("groupChats.groupSettingsController.notFound") });
         return;
       }
 
@@ -44,11 +46,11 @@ export function useGroupSettingsController(groupId?: string) {
       setUi({ nameDraft: groupData.name });
     } catch (err) {
       console.error("Failed to load group settings:", err);
-      setUi({ error: "Failed to load group settings" });
+      setUi({ error: t("groupChats.groupSettingsController.failedToLoad") });
     } finally {
       setUi({ loading: false });
     }
-  }, [groupId, setUi]);
+  }, [groupId, setUi, t]);
 
   useEffect(() => {
     void loadData();
@@ -72,12 +74,12 @@ export function useGroupSettingsController(groupId?: string) {
   }, [group, personas]);
 
   const currentPersonaDisplay = useMemo(() => {
-    if (!group?.personaId) return "No persona";
-    if (!currentPersona) return "Custom persona";
+    if (!group?.personaId) return t("groupChats.sessionSettingsController.noPersona");
+    if (!currentPersona) return t("groupChats.sessionSettingsController.customPersona");
     return currentPersona.isDefault
       ? `${currentPersona.title} (default)`
       : currentPersona.title;
-  }, [group?.personaId, currentPersona]);
+  }, [group?.personaId, currentPersona, t]);
 
   const mutedCharacterIds = useMemo(
     () => new Set(group?.mutedCharacterIds ?? []),
@@ -178,7 +180,7 @@ export function useGroupSettingsController(groupId?: string) {
       const nextMuted = new Set(group.mutedCharacterIds);
       const activeCount = group.characterIds.length - nextMuted.size;
       if (muted && activeCount <= 1 && !nextMuted.has(characterId)) {
-        setUi({ error: "At least one participant must remain active" });
+        setUi({ error: t("groupChats.sessionSettingsController.minOneActive") });
         return;
       }
 
@@ -199,7 +201,7 @@ export function useGroupSettingsController(groupId?: string) {
           setUi({ saving: false });
         });
     },
-    [group, setUi],
+    [group, setUi, t],
   );
 
   const handleChangeSpeakerSelectionMethod = useCallback(

@@ -205,7 +205,7 @@ export function ReferenceSelector({
         <div className="max-h-[50vh] overflow-y-auto -mx-4 px-4">
           {loading ? (
             <div className="flex items-center justify-center py-8">
-              <span className="text-fg/40 text-sm">Loading...</span>
+              <span className="text-fg/40 text-sm">{t("characters.referenceSelector.loading")}</span>
             </div>
           ) : filteredItems.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-8 text-center">
@@ -217,7 +217,9 @@ export function ReferenceSelector({
                 )}
               </div>
               <span className="text-fg/40 text-sm">
-                {search ? `No ${type}s match your search` : `No ${type}s available`}
+                {search
+                  ? t("characters.referenceSelector.noMatch", { type })
+                  : t("characters.referenceSelector.noAvailable", { type })}
               </span>
             </div>
           ) : (

@@ -1,5 +1,6 @@
 import { FileCode, Package } from "lucide-react";
 import { BottomMenu, MenuButton, MenuButtonGroup, MenuLabel } from "./BottomMenu";
+import { useI18n } from "../../core/i18n/context";
 
 export type ChatTemplateExportFormat = "json" | "usc";
 
@@ -10,39 +11,41 @@ interface ChatTemplateExportMenuProps {
   exporting?: boolean;
 }
 
-const FORMATS: Array<{
-  id: ChatTemplateExportFormat;
-  title: string;
-  description: string;
-  icon: typeof FileCode;
-  color: string;
-}> = [
-  {
-    id: "usc",
-    title: "Unified System Card",
-    description: "Portable USC export for chat templates.",
-    icon: Package,
-    color: "from-emerald-500 to-emerald-600",
-  },
-  {
-    id: "json",
-    title: "Chat Template JSON",
-    description: "Native chat template export format.",
-    icon: FileCode,
-    color: "from-amber-500 to-orange-600",
-  },
-];
-
 export function ChatTemplateExportMenu({
   isOpen,
   onClose,
   onSelect,
   exporting = false,
 }: ChatTemplateExportMenuProps) {
+  const { t } = useI18n();
+
+  const FORMATS: Array<{
+    id: ChatTemplateExportFormat;
+    title: string;
+    description: string;
+    icon: typeof FileCode;
+    color: string;
+  }> = [
+    {
+      id: "usc",
+      title: t("exportMenu.extra.uscTemplate"),
+      description: t("exportMenu.extra.portableTemplate"),
+      icon: Package,
+      color: "from-emerald-500 to-emerald-600",
+    },
+    {
+      id: "json",
+      title: t("exportMenu.extra.templateJson"),
+      description: t("exportMenu.extra.nativeTemplate"),
+      icon: FileCode,
+      color: "from-amber-500 to-orange-600",
+    },
+  ];
+
   return (
-    <BottomMenu isOpen={isOpen} onClose={onClose} title="Export Format">
+    <BottomMenu isOpen={isOpen} onClose={onClose} title={t("exportMenu.extra.exportFormatTitle")}>
       <div className="space-y-4">
-        <MenuLabel>Select a format</MenuLabel>
+        <MenuLabel>{t("exportMenu.selectFormat")}</MenuLabel>
         <MenuButtonGroup>
           {FORMATS.map((format) => (
             <MenuButton

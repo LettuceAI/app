@@ -35,15 +35,16 @@ function formatTokens(n: number): string {
   return String(n);
 }
 
-function timeAgo(isoString: string | null): string {
-  if (!isoString) return "Never";
+type T = ReturnType<typeof useI18n>["t"];
+function timeAgo(isoString: string | null, t: T): string {
+  if (!isoString) return t("engine.home.never");
   const diff = Date.now() - new Date(isoString).getTime();
   const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "Just now";
-  if (mins < 60) return `${mins}m ago`;
+  if (mins < 1) return t("engine.home.justNow");
+  if (mins < 60) return t("engine.home.timeAgo.minutes", { n: mins });
   const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
+  if (hrs < 24) return t("engine.home.timeAgo.hours", { n: hrs });
+  return t("engine.home.timeAgo.days", { n: Math.floor(hrs / 24) });
 }
 
 export function EngineHomePage() {
@@ -361,7 +362,7 @@ function ActivityCard({ slug, activity }: { slug: string; activity: CharacterAct
             >
               {loop.data.status}
             </span>
-            <span className="ml-auto text-white/40">{timeAgo(loop.data.last_run)}</span>
+            <span className="ml-auto text-white/40">{timeAgo(loop.data.last_run, t)}</span>
           </div>
         ))}
       </div>

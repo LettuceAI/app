@@ -274,7 +274,7 @@ export function LibraryPage() {
       navigate(`/library/lorebooks/${imported.id}`);
     } catch (err) {
       console.error("Failed to import lorebook:", err);
-      alert("Failed to import lorebook. " + String(err));
+      alert(t("library.errors.importLorebook", { error: String(err) }));
     } finally {
       setImportingLorebook(false);
       if (lorebookImportRef.current) {
@@ -328,7 +328,7 @@ export function LibraryPage() {
                   Characters: t("library.filters.characters"),
                   Personas: t("library.filters.personas"),
                   Lorebooks: t("library.filters.lorebooks"),
-                  Images: "Images",
+                  Images: t("library.filters.images"),
                 };
 
                 return (
@@ -684,6 +684,7 @@ function getItemDescription(item: LibraryItem, t?: (key: any) => string): string
 }
 
 const ItemAvatar = memo(({ item, className }: { item: LibraryItem; className?: string }) => {
+  const { t } = useI18n();
   if (item.itemType === "lorebook") {
     return (
       <LorebookAvatar
@@ -701,7 +702,7 @@ const ItemAvatar = memo(({ item, className }: { item: LibraryItem; className?: s
     return (
       <img
         src={avatarUrl}
-        alt={`${getItemName(item)} avatar`}
+        alt={t("library.card.avatarAlt", { name: getItemName(item) })}
         className={cn("h-full w-full object-cover", className)}
       />
     );

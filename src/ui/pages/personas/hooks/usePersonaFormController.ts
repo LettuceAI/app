@@ -5,6 +5,7 @@ import { getPersona, savePersona } from "../../../../core/storage/repo";
 import { loadAvatar, saveAvatar } from "../../../../core/storage/avatars";
 import { convertToImageRef, deleteImageRef } from "../../../../core/storage/images";
 import { invalidateAvatarCache } from "../../../hooks/useAvatar";
+import { useI18n } from "../../../../core/i18n/context";
 import type { AvatarCrop } from "../../../../core/storage/schemas";
 
 type PersonaFormState = {
@@ -63,6 +64,7 @@ function reducer(state: PersonaFormState, action: Action): PersonaFormState {
 
 export function usePersonaFormController(personaId: string | undefined) {
   const navigate = useNavigate();
+  const { t } = useI18n();
   const [state, dispatch] = useReducer(reducer, initialState);
 
   // Track initial state for change detection
@@ -144,12 +146,12 @@ export function usePersonaFormController(personaId: string | undefined) {
       console.error("Failed to load persona:", error);
       dispatch({
         type: "set_error",
-        payload: "Failed to load persona",
+        payload: t("personas.errors.loadFailed"),
       });
     } finally {
       dispatch({ type: "set_loading", payload: false });
     }
-  }, [personaId, navigate]);
+  }, [personaId, navigate, t]);
 
   useEffect(() => {
     void loadPersona();
@@ -298,12 +300,12 @@ export function usePersonaFormController(personaId: string | undefined) {
       console.error("Failed to save persona:", error);
       dispatch({
         type: "set_error",
-        payload: error?.message || "Failed to save persona",
+        payload: error?.message || t("personas.errors.saveFailed"),
       });
     } finally {
       dispatch({ type: "set_saving", payload: false });
     }
-  }, [personaId, state]);
+  }, [personaId, state, t]);
 
   const resetToInitial = useCallback(() => {
     const initial = initialStateRef.current;

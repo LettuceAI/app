@@ -18,6 +18,7 @@ export function EngineChatPage() {
   const { credentialId, slug } = useParams<{ credentialId: string; slug: string }>();
   const navigate = useNavigate();
   const { t } = useI18n();
+  const fallbackChatName = t("engine.chat.fallbackName");
   const [credential, setCredential] = useState<ProviderCredential | null>(null);
   const [charName, setCharName] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -30,7 +31,7 @@ export function EngineChatPage() {
         const cred = settings.providerCredentials.find((p) => p.id === credentialId);
         if (!cancelled && cred) {
           setCredential(cred);
-          setCharName(slug?.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) || "Chat");
+          setCharName(slug?.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) || fallbackChatName);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -39,7 +40,7 @@ export function EngineChatPage() {
     return () => {
       cancelled = true;
     };
-  }, [credentialId, slug]);
+  }, [credentialId, slug, fallbackChatName]);
 
   if (loading) {
     return (
@@ -80,6 +81,7 @@ function ChatInner({
   const baseUrl = credential.baseUrl || "";
   const apiKey = credential.apiKey || "";
   const navigate = useNavigate();
+  const { t } = useI18n();
   const { state, setDraft, sendMessage } = useEngineChatController(baseUrl, apiKey, slug);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -104,7 +106,7 @@ function ChatInner({
           <button
             onClick={() => navigate(Routes.engineHome(credential.id))}
             className="flex px-[0.6em] py-[0.3em] shrink-0 items-center justify-center -ml-2 text-white transition hover:text-white/80"
-            aria-label="Back"
+            aria-label={t("engine.chat.back")}
           >
             <ArrowLeft size={14} strokeWidth={2.5} />
           </button>
@@ -150,7 +152,7 @@ function ChatInner({
                       "border bg-gray-600/30 text-white/95 border-gray-400/40",
                     )}
                   >
-                    <div className="flex items-center gap-1" aria-label="Assistant is typing" aria-live="polite">
+                    <div className="flex items-center gap-1" aria-label={t("engine.chat.assistantTyping")} aria-live="polite">
                       <span className="typing-dot" />
                       <span className="typing-dot" style={{ animationDelay: "0.2s" }} />
                       <span className="typing-dot" style={{ animationDelay: "0.4s" }} />

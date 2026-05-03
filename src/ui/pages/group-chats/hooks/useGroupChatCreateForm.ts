@@ -2,6 +2,7 @@ import { useReducer, useEffect, useCallback, useMemo } from "react";
 import { storageBridge } from "../../../../core/storage/files";
 import { listCharacters } from "../../../../core/storage/repo";
 import type { Character, Scene } from "../../../../core/storage/schemas";
+import { useI18n } from "../../../../core/i18n/context";
 
 export enum Step {
   SelectCharacters = 1,
@@ -130,6 +131,7 @@ type UseGroupChatCreateFormOptions = {
 export function useGroupChatCreateForm(options: UseGroupChatCreateFormOptions = {}) {
   const { onCreated } = options;
   const [state, dispatch] = useReducer(groupChatCreateFormReducer, initialState);
+  const { t } = useI18n();
 
   // Load characters on mount
   useEffect(() => {
@@ -142,7 +144,7 @@ export function useGroupChatCreateForm(options: UseGroupChatCreateFormOptions = 
         dispatch({ type: "SET_CHARACTERS", payload: chars });
       } catch (err) {
         console.error("Failed to load characters:", err);
-        if (isActive) dispatch({ type: "SET_ERROR", payload: "Failed to load characters" });
+        if (isActive) dispatch({ type: "SET_ERROR", payload: t("groupChats.createForm.failedToLoadCharacters") });
       } finally {
         if (isActive) dispatch({ type: "SET_LOADING_CHARACTERS", payload: false });
       }
@@ -151,7 +153,7 @@ export function useGroupChatCreateForm(options: UseGroupChatCreateFormOptions = 
     return () => {
       isActive = false;
     };
-  }, []);
+  }, [t]);
 
   // Computed values
   const selectedCharacters = useMemo(
@@ -242,7 +244,7 @@ export function useGroupChatCreateForm(options: UseGroupChatCreateFormOptions = 
     if (state.selectedIds.size < 2) {
       dispatch({
         type: "SET_ERROR",
-        payload: "Please select at least 2 characters for a group chat",
+        payload: t("groupChats.createForm.selectAtLeastTwo"),
       });
       return;
     }
@@ -294,7 +296,7 @@ export function useGroupChatCreateForm(options: UseGroupChatCreateFormOptions = 
       onCreated?.(session.id);
     } catch (err) {
       console.error("Failed to create group character:", err);
-      dispatch({ type: "SET_ERROR", payload: "Failed to create group chat" });
+      dispatch({ type: "SET_ERROR", payload: t("groupChats.createForm.failedToCreate") });
     } finally {
       dispatch({ type: "SET_CREATING", payload: false });
     }
@@ -311,6 +313,7 @@ export function useGroupChatCreateForm(options: UseGroupChatCreateFormOptions = 
     defaultName,
     onCreated,
     availableScenes,
+    t,
   ]);
 
   // Computed validation states

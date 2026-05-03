@@ -39,7 +39,7 @@ import {
   updateMemory,
 } from "../../../core/storage/repo";
 import {
-  COMPANION_CATEGORY_LABELS,
+  companionCategoryLabel,
   COMPANION_CATEGORY_ORDER,
   emotionLabel,
   formatPercent,
@@ -51,6 +51,7 @@ import {
   type CompanionMemoryCategory,
   type CompanionMemoryItem,
 } from "./companionUi";
+import { useI18n } from "../../../core/i18n/context";
 
 type MemoryFilter = "all" | "active" | "superseded";
 
@@ -77,6 +78,7 @@ function PageHeader({
   right?: React.ReactNode;
 }) {
   const dragRegionProps = useDragRegionProps();
+  const { t } = useI18n();
 
   return (
     <header
@@ -96,7 +98,7 @@ function PageHeader({
           <button
             onClick={onBack}
             className="flex shrink-0 items-center justify-center -ml-2 px-[0.6em] py-[0.3em] text-fg/80 transition hover:text-fg"
-            aria-label="Back"
+            aria-label={t("chats.companionMemoryPage.backLabel")}
           >
             <ArrowLeft size={18} strokeWidth={2.5} />
           </button>
@@ -238,6 +240,7 @@ function MemoryCard({
   onToggleCold,
   onDelete,
 }: CardProps) {
+  const { t } = useI18n();
   const Icon = sectionIcons[memory.category];
   const isUser = memory.sourceRole === "user";
   const SourceIcon = isUser ? User : Bot;
@@ -282,15 +285,15 @@ function MemoryCard({
             <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-fg/40">
               <span className="inline-flex items-center gap-1">
                 <Icon size={10} />
-                {COMPANION_CATEGORY_LABELS[memory.category]}
+                {companionCategoryLabel(t, memory.category)}
               </span>
               <span className="text-fg/20">·</span>
-              <span>{formatRelativeTime(memory.createdAt)}</span>
+              <span>{formatRelativeTime(t, memory.createdAt)}</span>
               {memory.isPinned && (
                 <>
                   <span className="text-fg/20">·</span>
                   <span className="inline-flex items-center gap-1 text-amber-400/80">
-                    <Pin size={10} /> pinned
+                    <Pin size={10} /> {t("chats.companionMemoryPage.pinned")}
                   </span>
                 </>
               )}
@@ -298,14 +301,14 @@ function MemoryCard({
                 <>
                   <span className="text-fg/20">·</span>
                   <span className="inline-flex items-center gap-1 text-fg/45">
-                    <Snowflake size={10} /> cold
+                    <Snowflake size={10} /> {t("chats.companionMemoryPage.cold")}
                   </span>
                 </>
               )}
               {!memory.isActive && (
                 <>
                   <span className="text-fg/20">·</span>
-                  <span className="text-warning/80">superseded</span>
+                  <span className="text-warning/80">{t("chats.companionMemoryPage.superseded")}</span>
                 </>
               )}
             </div>
@@ -340,7 +343,7 @@ function MemoryCard({
                       components.input.base,
                       "min-h-[88px] w-full resize-y px-3 py-2 text-sm text-fg",
                     )}
-                    placeholder="Refine the stored companion memory"
+                    placeholder={t("chats.companionMemoryPage.refineMemoryPlaceholder")}
                   />
                   <select
                     value={editCategory}
@@ -349,7 +352,7 @@ function MemoryCard({
                   >
                     {COMPANION_CATEGORY_ORDER.map((category) => (
                       <option key={category} value={category}>
-                        {COMPANION_CATEGORY_LABELS[category]}
+                        {companionCategoryLabel(t, category)}
                       </option>
                     ))}
                   </select>
@@ -379,14 +382,14 @@ function MemoryCard({
               {!editing && (memory.factSignature || memory.supersedes.length || memory.supersededAt || memory.lastAccessedAt) ? (
                 <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-fg/40">
                   {memory.lastAccessedAt ? (
-                    <span>Last used {formatRelativeTime(memory.lastAccessedAt)}</span>
+                    <span>Last used {formatRelativeTime(t, memory.lastAccessedAt)}</span>
                   ) : null}
                   {memory.factSignature ? <span>Key: {memory.factSignature}</span> : null}
                   {memory.supersedes.length ? (
                     <span>Replaces {memory.supersedes.length}</span>
                   ) : null}
                   {memory.supersededAt ? (
-                    <span>Superseded {formatRelativeTime(memory.supersededAt)}</span>
+                    <span>Superseded {formatRelativeTime(t, memory.supersededAt)}</span>
                   ) : null}
                 </div>
               ) : null}
@@ -478,6 +481,7 @@ function ActionPill({
 }
 
 export function CompanionMemoryPage() {
+  const { t } = useI18n();
   const { characterId } = useParams<{ characterId: string }>();
   const [searchParams] = useSearchParams();
   const sessionId = searchParams.get("sessionId");
@@ -749,7 +753,7 @@ export function CompanionMemoryPage() {
         >
           {/* Snapshot */}
           <section className="space-y-3 xl:sticky xl:top-4">
-            <SectionLabel right={`Updated ${formatRelativeTime(emotionalState?.updatedAt)}`}>
+            <SectionLabel right={`Updated ${formatRelativeTime(t, emotionalState?.updatedAt)}`}>
               Current state
             </SectionLabel>
             <div className="grid grid-cols-2 gap-2 xl:grid-cols-2">
@@ -880,7 +884,7 @@ export function CompanionMemoryPage() {
                       >
                         {COMPANION_CATEGORY_ORDER.map((category) => (
                           <option key={category} value={category}>
-                            {COMPANION_CATEGORY_LABELS[category]}
+                            {companionCategoryLabel(t, category)}
                           </option>
                         ))}
                       </select>
@@ -934,7 +938,7 @@ export function CompanionMemoryPage() {
                     active={categoryFilter === category}
                     onClick={() => setCategoryFilter(category)}
                   >
-                    {COMPANION_CATEGORY_LABELS[category]}
+                    {companionCategoryLabel(t, category)}
                     {count > 0 && <span className="ml-1 text-fg/35">{count}</span>}
                   </FilterChip>
                 );

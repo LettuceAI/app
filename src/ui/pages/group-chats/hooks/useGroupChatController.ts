@@ -30,6 +30,7 @@ import {
   initialGroupChatUiState,
   type MessageActionState,
 } from "../reducers/groupChatReducer";
+import { useI18n } from "../../../../core/i18n/context";
 
 const MESSAGES_PAGE_SIZE = 50;
 
@@ -79,6 +80,7 @@ type GroupChatController = {
 };
 
 export function useGroupChatController(groupSessionId?: string): GroupChatController {
+  const { t } = useI18n();
   const [session, setSession] = useState<GroupSession | null>(null);
   const [characters, setCharacters] = useState<Character[]>([]);
   const [personas, setPersonas] = useState<Persona[]>([]);
@@ -152,7 +154,7 @@ export function useGroupChatController(groupSessionId?: string): GroupChatContro
       ]);
 
       if (!sessionData) {
-        setUi({ error: "Group session not found" });
+        setUi({ error: t("groupChats.chatController.sessionNotFound") });
         return;
       }
 
@@ -163,11 +165,11 @@ export function useGroupChatController(groupSessionId?: string): GroupChatContro
       setParticipationStats(stats);
     } catch (err) {
       console.error("Failed to load group chat:", err);
-      setUi({ error: "Failed to load group chat" });
+      setUi({ error: t("groupChats.chatController.failedToLoadGroupChat") });
     } finally {
       setUi({ loading: false });
     }
-  }, [groupSessionId, setUi]);
+  }, [groupSessionId, setUi, t]);
 
   useEffect(() => {
     void loadData();

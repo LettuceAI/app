@@ -28,8 +28,7 @@ export function MemorySetupPrompt({ isOpen, onClose, onConfirm, onSkip }: Memory
           </div>
           <h3 className="text-lg font-semibold text-white">{t("onboarding.memory.oneLastStep")}</h3>
           <p className="mt-2 text-sm text-white/60 leading-relaxed max-w-xs mx-auto">
-            To use Dynamic Memory, we need to download a small embedding model (~120MB) to your
-            device.
+            {t("onboarding.memory.setupModelMessage")}
           </p>
         </div>
 
@@ -38,15 +37,15 @@ export function MemorySetupPrompt({ isOpen, onClose, onConfirm, onSkip }: Memory
           <ul className="space-y-2 text-xs text-emerald-200/80">
             <li className="flex items-start gap-2">
               <span className="mt-0.5">•</span>
-              <span>Model runs 100% offline on your device</span>
+              <span>{t("onboarding.memory.setupBullets.offline")}</span>
             </li>
             <li className="flex items-start gap-2">
               <span className="mt-0.5">•</span>
-              <span>Required for remembering context</span>
+              <span>{t("onboarding.memory.setupBullets.remembering")}</span>
             </li>
             <li className="flex items-start gap-2">
               <span className="mt-0.5">•</span>
-              <span>You can disable this later in settings</span>
+              <span>{t("onboarding.memory.setupBullets.disable")}</span>
             </li>
           </ul>
         </div>

@@ -108,11 +108,11 @@ export function MemorySystemIntro() {
             </div>
             <div>
               <h3 className={cn("font-semibold text-white", compact ? "text-base" : "text-lg")}>
-                Dynamic Memory
+                {t("onboarding.memory.dynamicTitle")}
               </h3>
               <div className="flex items-center gap-1.5 mt-0.5 h-5">
                 <span className="text-[10px] uppercase tracking-wider font-medium text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
-                  Recommended
+                  {t("onboarding.memory.recommended")}
                 </span>
               </div>
             </div>
@@ -135,8 +135,16 @@ export function MemorySystemIntro() {
             compact ? "text-xs" : "text-sm",
           )}
         >
-          Uses a <b>local embedding model</b> to smartly manage context. This cuts token costs while
-          maintaining high quality, even in long chats.
+          {(() => {
+            const parts = t("onboarding.memory.dynamicDescription").split(/<0>|<\/0>/);
+            return (
+              <>
+                {parts[0]}
+                <b>{parts[1]}</b>
+                {parts[2]}
+              </>
+            );
+          })()}
         </p>
 
         <div
@@ -144,19 +152,19 @@ export function MemorySystemIntro() {
         >
           <div className="flex items-center gap-2 text-xs text-gray-300">
             <div className="w-1 h-1 rounded-full bg-emerald-500" />
-            Maintains quality in long chats
+            {t("onboarding.memory.dynamicFeatures.quality")}
           </div>
           <div className="flex items-center gap-2 text-xs text-gray-300">
             <div className="w-1 h-1 rounded-full bg-emerald-500" />
-            Reduces API costs significantly
+            {t("onboarding.memory.dynamicFeatures.cost")}
           </div>
           <div className="flex items-center gap-2 text-xs text-gray-300">
             <div className="w-1 h-1 rounded-full bg-emerald-500" />
-            Automatic context management
+            {t("onboarding.memory.dynamicFeatures.auto")}
           </div>
           <div className="flex items-center gap-2 text-xs text-gray-300">
             <div className="w-1 h-1 rounded-full bg-emerald-500" />
-            Zero configuration needed
+            {t("onboarding.memory.dynamicFeatures.zeroConfig")}
           </div>
         </div>
       </div>

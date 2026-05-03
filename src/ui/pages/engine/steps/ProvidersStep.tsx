@@ -154,7 +154,7 @@ export function ProvidersStep({
                       type="text"
                       value={config.model}
                       onChange={(e) => onUpdate(provider.id, { model: e.target.value })}
-                      placeholder="e.g. claude-sonnet-4-5-20250929"
+                      placeholder={t("engine.config.fields.modelPlaceholder")}
                       className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder-white/40 focus:border-white/30 focus:outline-none"
                     />
                   </div>
@@ -183,7 +183,7 @@ export function ProvidersStep({
                         type="url"
                         value={config.baseUrl}
                         onChange={(e) => onUpdate(provider.id, { baseUrl: e.target.value })}
-                        placeholder="http://localhost:11434"
+                        placeholder={t("engine.config.fields.baseUrlPlaceholder")}
                         className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder-white/40 focus:border-white/30 focus:outline-none"
                       />
                     </div>

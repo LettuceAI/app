@@ -27,6 +27,7 @@ import { LocaleSelector } from "../../components/LocaleSelector";
 export function WelcomePage() {
   const { locale, setLocale, t } = useI18n();
   const navigate = useNavigate();
+  const quickFacts = useQuickFacts();
   const [showSkipWarning, setShowSkipWarning] = useState(false);
   const [showRestoreBackup, setShowRestoreBackup] = useState(false);
 
@@ -262,7 +263,7 @@ export function WelcomePage() {
             animate={{ opacity: 1 }}
             transition={{ duration: 0.4, delay: 0.5 }}
           >
-            Setup takes less than 2 minutes
+            {t("onboarding.welcome.setupTime")}
           </motion.p>
         </motion.div>
       </div>
@@ -285,10 +286,13 @@ export function WelcomePage() {
   );
 }
 
-const quickFacts = [
-  { icon: ShieldCheck, label: "On-device only" },
-  { icon: Sparkles, label: "Character ready" },
-];
+const useQuickFacts = () => {
+  const { t } = useI18n();
+  return [
+    { icon: ShieldCheck, label: t("onboarding.welcome.features.onDevice") },
+    { icon: Sparkles, label: t("onboarding.welcome.features.characterReady") },
+  ];
+};
 
 function SkipWarning({
   onClose,
@@ -299,6 +303,7 @@ function SkipWarning({
   onConfirm: () => void | Promise<void>;
   onAddProvider: () => void;
 }) {
+  const { t } = useI18n();
   const [isExiting, setIsExiting] = useState(false);
 
   const handleClose = () => {
@@ -346,7 +351,7 @@ function SkipWarning({
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <h3 className={cn(typography.h2.size, typography.h2.weight, "text-white")}>
-            Skip setup?
+            {t("onboarding.welcome.skipWarning.title")}
           </h3>
         </div>
 
@@ -367,7 +372,7 @@ function SkipWarning({
           </div>
           <div className={spacing.tight}>
             <h4 className={cn(typography.body.size, typography.h3.weight, "text-white")}>
-              Provider needed to chat
+              {t("onboarding.welcome.skipWarning.warningTitle")}
             </h4>
             <p
               className={cn(
@@ -376,8 +381,7 @@ function SkipWarning({
                 "text-white/60",
               )}
             >
-              Without a provider, you won't be able to send messages. You can add one later from
-              settings.
+              {t("onboarding.welcome.skipWarning.warningMessage")}
             </p>
           </div>
         </div>
@@ -397,7 +401,7 @@ function SkipWarning({
             )}
             onClick={handleAddProvider}
           >
-            <span>Add Provider</span>
+            <span>{t("onboarding.welcome.skipWarning.addProvider")}</span>
             <ArrowRight size={16} strokeWidth={2.5} />
           </button>
           <button
@@ -412,7 +416,7 @@ function SkipWarning({
             )}
             onClick={handleConfirm}
           >
-            Skip anyway
+            {t("onboarding.welcome.skipWarning.skipAnyway")}
           </button>
         </div>
       </motion.div>
@@ -437,6 +441,7 @@ function RestoreBackupModal({
   onClose: () => void;
   onComplete: () => void | Promise<void>;
 }) {
+  const { t } = useI18n();
   const [isExiting, setIsExiting] = useState(false);
   const [backups, setBackups] = useState<BackupInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -486,7 +491,7 @@ function RestoreBackupModal({
       setPassword("");
     } catch (e) {
       console.error("Failed to browse for backup:", e);
-      setError(e instanceof Error ? e.message : "Failed to open file");
+      setError(e instanceof Error ? e.message : t("onboarding.welcome.restoreBackup.errors.failedToOpenFile"));
     } finally {
       setLoading(false);
     }
@@ -502,7 +507,7 @@ function RestoreBackupModal({
     if (!selectedBackup) return;
 
     if (selectedBackup.encrypted && password.length < 1) {
-      setError("Password is required");
+      setError(t("onboarding.welcome.restoreBackup.errors.passwordRequired"));
       return;
     }
 
@@ -512,7 +517,7 @@ function RestoreBackupModal({
       if (selectedBackup.encrypted) {
         const valid = await storageBridge.backupVerifyPassword(selectedBackup.path, password);
         if (!valid) {
-          setError("Incorrect password");
+          setError(t("onboarding.welcome.restoreBackup.errors.incorrectPassword"));
           return;
         }
       }
@@ -546,7 +551,7 @@ function RestoreBackupModal({
       }, 200);
     } catch (e) {
       console.log(e);
-      setError(e instanceof Error ? e.message : "Failed to restore backup");
+      setError(e instanceof Error ? e.message : t("onboarding.welcome.restoreBackup.errors.failedToRestore"));
       setRestoring(false);
     }
   };
@@ -567,7 +572,7 @@ function RestoreBackupModal({
       navigate("/");
     } catch (error) {
       console.error("Failed to disable dynamic memory:", error);
-      setError(error instanceof Error ? error.message : "Failed to update settings");
+      setError(error instanceof Error ? error.message : t("onboarding.welcome.restoreBackup.errors.failedToUpdateSettings"));
     } finally {
       setRestoring(false);
     }
@@ -609,7 +614,7 @@ function RestoreBackupModal({
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
           <h3 className={cn(typography.h2.size, typography.h2.weight, "text-white")}>
-            Restore Backup
+            {t("onboarding.welcome.restoreBackup.title")}
           </h3>
         </div>
 
@@ -619,13 +624,13 @@ function RestoreBackupModal({
             <>
               <div className="flex items-center justify-between">
                 <p className={cn(typography.bodySmall.size, "text-white/50")}>
-                  Select a backup to restore.
+                  {t("onboarding.welcome.restoreBackup.selectMessage")}
                 </p>
                 <button
                   onClick={handleBrowseForBackup}
                   className="text-xs font-medium text-blue-400 hover:text-blue-300"
                 >
-                  Browse Files
+                  {t("onboarding.welcome.restoreBackup.browse")}
                 </button>
               </div>
 
@@ -645,20 +650,20 @@ function RestoreBackupModal({
               {loading ? (
                 <div className="flex flex-col items-center justify-center py-8">
                   <Loader2 className="h-6 w-6 animate-spin text-white/30" />
-                  <p className="mt-2 text-sm text-white/40">Processing file...</p>
-                  <p className="text-xs text-white/20 mt-1">Large backups may take a minute</p>
+                  <p className="mt-2 text-sm text-white/40">{t("onboarding.welcome.restoreBackup.processing")}</p>
+                  <p className="text-xs text-white/20 mt-1">{t("onboarding.welcome.restoreBackup.processingNote")}</p>
                   <button
                     onClick={() => setLoading(false)}
                     className="mt-6 text-xs text-red-400/60 hover:text-red-300 transition-colors"
                   >
-                    Cancel
+                    {t("onboarding.welcome.restoreBackup.cancel")}
                   </button>
                 </div>
               ) : backups.length === 0 ? (
                 <div className={cn("border border-white/10 bg-white/5 p-6 text-center", radius.md)}>
                   <FileArchive className="mx-auto h-8 w-8 text-white/20" />
-                  <p className="mt-3 text-sm text-white/40">No backups found</p>
-                  <p className="mt-1 text-xs text-white/30">Tap browse to select a .lettuce file</p>
+                  <p className="mt-3 text-sm text-white/40">{t("onboarding.welcome.restoreBackup.noBackups")}</p>
+                  <p className="mt-1 text-xs text-white/30">{t("onboarding.welcome.restoreBackup.noBackupsHint")}</p>
                   <button
                     onClick={handleBrowseForBackup}
                     className={cn(
@@ -670,7 +675,7 @@ function RestoreBackupModal({
                     )}
                   >
                     <Upload className="h-4 w-4" />
-                    Browse for .lettuce file
+                    {t("onboarding.welcome.restoreBackup.browseLettuce")}
                   </button>
                 </div>
               ) : (
@@ -738,10 +743,7 @@ function RestoreBackupModal({
                 )}
               >
                 <CheckCircle className="h-4 w-4 shrink-0 mt-0.5" />
-                <span>
-                  This will set up the app with your backed up data, including characters, chats,
-                  and settings.
-                </span>
+                <span>{t("onboarding.welcome.restoreBackup.infoMessage")}</span>
               </div>
 
               {error && (
@@ -759,14 +761,14 @@ function RestoreBackupModal({
               {selectedBackup.encrypted && (
                 <div>
                   <label className="mb-1.5 block text-xs font-medium text-white/50">
-                    Backup Password
+                    {t("onboarding.welcome.restoreBackup.passwordLabel")}
                   </label>
                   <div className="relative">
                     <input
                       type={showPassword ? "text" : "password"}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Enter password"
+                      placeholder={t("onboarding.welcome.restoreBackup.passwordPlaceholder")}
                       className={cn(
                         "w-full border border-white/10 bg-white/5 px-4 py-3 pr-12 text-white placeholder-white/30",
                         radius.lg,
@@ -809,12 +811,12 @@ function RestoreBackupModal({
                 {restoring ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Restoring...
+                    {t("onboarding.welcome.restoreBackup.restoring")}
                   </>
                 ) : (
                   <>
                     <Upload size={16} />
-                    Restore Backup
+                    {t("onboarding.welcome.restoreBackup.restoreButton")}
                   </>
                 )}
               </button>
@@ -832,7 +834,7 @@ function RestoreBackupModal({
                   "disabled:opacity-50",
                 )}
               >
-                Back
+                {t("onboarding.welcome.restoreBackup.back")}
               </button>
             </>
           ) : (
@@ -848,7 +850,7 @@ function RestoreBackupModal({
                 "hover:border-white/20 hover:bg-white/10 hover:text-white",
               )}
             >
-              Cancel
+              {t("onboarding.welcome.restoreBackup.cancel")}
             </button>
           )}
         </div>
@@ -874,24 +876,22 @@ function RestoreBackupModal({
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className={cn(typography.h2.size, typography.h2.weight, "text-white mb-4")}>
-              Embedding Model Required
+              {t("onboarding.welcome.restoreBackup.embeddingTitle")}
             </h3>
 
             <div className="space-y-4">
               <div className="flex items-start gap-3 rounded-xl border border-amber-400/20 bg-amber-400/10 p-3">
                 <HardDrive className="h-5 w-5 shrink-0 text-amber-400 mt-0.5" />
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-amber-200">Dynamic Memory Detected</p>
+                  <p className="text-sm font-medium text-amber-200">{t("onboarding.welcome.restoreBackup.dynamicMemoryDetected")}</p>
                   <p className="mt-1 text-xs text-amber-200/70">
-                    This backup contains characters with dynamic memory enabled, which requires the
-                    embedding model (~120MB).
+                    {t("onboarding.welcome.restoreBackup.dynamicMemoryMessage")}
                   </p>
                 </div>
               </div>
 
               <p className="text-sm text-white/60">
-                You can download the model now to enable dynamic memory, or continue without it
-                (dynamic memory will be disabled for affected characters).
+                {t("onboarding.welcome.restoreBackup.embeddingOptions")}
               </p>
 
               <div className="flex flex-col gap-2 pt-2">
@@ -908,7 +908,7 @@ function RestoreBackupModal({
                   )}
                 >
                   <Download className="h-4 w-4" />
-                  Download Model
+                  {t("onboarding.welcome.restoreBackup.downloadModel")}
                 </button>
                 <button
                   onClick={handleDisableAndContinue}
@@ -921,13 +921,12 @@ function RestoreBackupModal({
                     "hover:border-white/20 hover:bg-white/10 hover:text-white",
                   )}
                 >
-                  Continue Without Dynamic Memory
+                  {t("onboarding.welcome.restoreBackup.continueWithoutDynamic")}
                 </button>
               </div>
 
               <p className="text-xs text-white/40 text-center">
-                You can re-enable dynamic memory later in character settings after downloading the
-                model.
+                {t("onboarding.welcome.restoreBackup.embeddingNote")}
               </p>
             </div>
           </motion.div>

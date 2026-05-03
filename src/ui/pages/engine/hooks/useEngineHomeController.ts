@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useReducer } from "react";
 
+import { useI18n } from "../../../../core/i18n/context";
 import {
   engineHomeReducer,
   initialEngineHomeState,
@@ -19,6 +20,7 @@ import type { CharacterActivity, UsageResponse } from "../../../../core/engine/t
 
 export function useEngineHomeController(baseUrl: string, apiKey: string) {
   const [state, dispatch] = useReducer(engineHomeReducer, initialEngineHomeState);
+  const { t } = useI18n();
 
   const load = useCallback(async () => {
     dispatch({ type: "set_loading", payload: true });
@@ -33,7 +35,7 @@ export function useEngineHomeController(baseUrl: string, apiKey: string) {
         dispatch({ type: "set_health", payload: { version, connected: true } });
       } catch {
         dispatch({ type: "set_health", payload: { version: null, connected: false } });
-        dispatch({ type: "set_error", payload: "Engine is offline or unreachable." });
+        dispatch({ type: "set_error", payload: t("engine.errors.engineOffline") });
         return;
       }
 
@@ -52,7 +54,7 @@ export function useEngineHomeController(baseUrl: string, apiKey: string) {
         if (Array.isArray(chars)) {
           const cards: CharacterCard[] = chars.map((c: Record<string, unknown>) => ({
             slug: String(c.slug ?? c.name ?? ""),
-            name: String(c.name ?? c.slug ?? "Unknown"),
+            name: String(c.name ?? c.slug ?? t("engine.errors.unknownCharacter")),
             role: c.role ? String(c.role) : undefined,
             era: c.era ? String(c.era) : undefined,
             loaded: c.loaded === true,
@@ -92,7 +94,7 @@ export function useEngineHomeController(baseUrl: string, apiKey: string) {
     } finally {
       dispatch({ type: "set_loading", payload: false });
     }
-  }, [baseUrl, apiKey]);
+  }, [baseUrl, apiKey, t]);
 
   useEffect(() => {
     void load();
@@ -131,13 +133,13 @@ export function useEngineHomeController(baseUrl: string, apiKey: string) {
         await engineCharacterDeleteCmd(baseUrl, apiKey, slug);
         dispatch({ type: "remove_character", payload: slug });
       } catch {
-        dispatch({ type: "set_error", payload: "Failed to delete character." });
+        dispatch({ type: "set_error", payload: t("engine.errors.deleteCharacterFailed") });
         dispatch({ type: "set_selected_character", payload: null });
       } finally {
         dispatch({ type: "set_deleting_slug", payload: null });
       }
     },
-    [baseUrl, apiKey],
+    [baseUrl, apiKey, t],
   );
 
   return { state, reload: load, toggleCharacter, selectCharacter, deleteCharacter };

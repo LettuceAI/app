@@ -87,11 +87,11 @@ export function DiscoveryBrowsePage() {
       setCards(data);
     } catch (err) {
       console.error("Failed to load cards:", err);
-      setError(err instanceof Error ? err.message : "Failed to load content");
+      setError(err instanceof Error ? err.message : t("discovery.errors.loadContent"));
     } finally {
       setLoading(false);
     }
-  }, [section, sortBy]);
+  }, [section, sortBy, t]);
 
   useEffect(() => {
     loadCards();
