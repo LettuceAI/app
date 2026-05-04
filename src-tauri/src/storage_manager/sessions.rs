@@ -203,9 +203,10 @@ fn resolve_lorebook_ids_override_json(
             .query_row(
                 "SELECT lorebook_ids_override FROM sessions WHERE id = ?1",
                 params![session_id],
-                |row| row.get(0),
+                |row| row.get::<_, Option<String>>(0),
             )
             .optional()
+            .map(|value| value.flatten())
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e)),
     }
 }
@@ -225,9 +226,10 @@ fn resolve_author_note(
             .query_row(
                 "SELECT author_note FROM sessions WHERE id = ?1",
                 params![session_id],
-                |row| row.get(0),
+                |row| row.get::<_, Option<String>>(0),
             )
             .optional()
+            .map(|value| value.flatten())
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e)),
     }
 }
