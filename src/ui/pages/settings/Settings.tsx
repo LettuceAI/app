@@ -124,7 +124,7 @@ export function SettingsPage() {
   const { t } = useI18n();
   const { toModelsList } = useNavigationManager();
   const {
-    state: { providers, models, characterCount, isLoading },
+    state: { providers, models, characterCount },
   } = useSettingsSummary();
 
   const providerCount = providers.length;
@@ -534,17 +534,6 @@ export function SettingsPage() {
                     tone={item.tone}
                   />
                 ))}
-            </div>
-          </div>
-        )}
-
-        {/* Loading overlay */}
-        {isLoading && (
-          <div className="pointer-events-none absolute inset-x-0 top-0 px-4 pt-4">
-            <div className={spacing.field}>
-              {Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className={cn("h-13 w-full animate-pulse", radius.md, "bg-fg/5")} />
-              ))}
             </div>
           </div>
         )}
