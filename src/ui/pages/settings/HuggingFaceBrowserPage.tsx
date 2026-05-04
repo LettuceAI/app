@@ -2983,7 +2983,7 @@ export function HuggingFaceBrowserPage() {
                                         >
                                           {rs.score}
                                         </span>
-                                        <span className="max-w-[220px] text-[10px] leading-tight text-fg/40">
+                                        <span className="max-w-55 text-[10px] leading-tight text-fg/40">
                                           {getRunabilityModeCopy(rs.gpuMode).short}
                                         </span>
                                       </div>

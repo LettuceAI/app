@@ -956,7 +956,7 @@ export function ImageLibraryPanel({
                       disabled={isDeleting}
                       title={t("library.imageLibrary.actions.delete")}
                       className={cn(
-                        "flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-xl border transition",
+                        "flex h-10.5 w-10.5 shrink-0 items-center justify-center rounded-xl border transition",
                         isDeleting
                           ? "cursor-wait border-red-500/15 bg-red-500/8 text-red-200/65"
                           : "border-red-500/20 bg-red-500/10 text-red-200 hover:bg-red-500/20",

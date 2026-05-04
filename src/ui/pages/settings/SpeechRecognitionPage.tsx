@@ -968,7 +968,7 @@ export function SpeechRecognitionPage() {
       className="flex h-full flex-col"
     >
       <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-[1280px] px-3 pb-24 pt-3 sm:px-6 sm:pt-5 lg:px-8 space-y-4 sm:space-y-6">
+        <div className="mx-auto w-full max-w-7xl px-3 pb-24 pt-3 sm:px-6 sm:pt-5 lg:px-8 space-y-4 sm:space-y-6">
           <div className="grid grid-cols-1 gap-4 sm:gap-5 lg:gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(340px,380px)]">
             <div className="min-w-0 space-y-4 sm:space-y-6">
               <div data-tour-id="asr-active-model">
@@ -1027,7 +1027,7 @@ export function SpeechRecognitionPage() {
             </AnimatePresence>
 
             <LayoutGroup id="asr-library-tabs">
-              <div className="flex gap-1 overflow-x-auto rounded-2xl border border-fg/10 bg-fg/[0.04] p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <div className="flex gap-1 overflow-x-auto rounded-2xl border border-fg/10 bg-fg/4 p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                 {LIBRARY_TABS.map((entry) => {
                   const Icon = entry.icon;
                   const active = tab === entry.key;
@@ -1533,8 +1533,8 @@ function ActiveModelCard({
         interactive.transition.fast,
         interactive.active.scale,
         hasModel
-          ? "border-accent/25 bg-gradient-to-br from-accent/[0.07] via-fg/[0.03] to-fg/[0.02] hover:border-accent/40"
-          : "border-dashed border-fg/20 bg-fg/[0.03] hover:border-fg/30 hover:bg-fg/[0.05]",
+          ? "border-accent/25 bg-linear-to-br from-accent/[0.07] via-fg/3 to-fg/2 hover:border-accent/40"
+          : "border-dashed border-fg/20 bg-fg/3 hover:border-fg/30 hover:bg-fg/5",
       )}
     >
       <div className="flex items-center gap-3 sm:gap-4">
@@ -2037,8 +2037,8 @@ function MicTestSection({
           className={cn(
             "flex flex-col items-center gap-3 rounded-xl border px-4 py-6 sm:py-7",
             isRecording
-              ? "border-danger/25 bg-gradient-to-b from-danger/8 via-bg-1/40 to-bg-1/30"
-              : "border-fg/10 bg-gradient-to-b from-fg/[0.04] via-bg-1/30 to-bg-1/40",
+              ? "border-danger/25 bg-linear-to-b from-danger/8 via-bg-1/40 to-bg-1/30"
+              : "border-fg/10 bg-linear-to-b from-fg/4 via-bg-1/30 to-bg-1/40",
           )}
         >
           <RecordButton
@@ -2806,7 +2806,7 @@ function Pagination({
         >
           <ChevronRight className="h-3.5 w-3.5 rotate-180" />
         </button>
-        <span className="min-w-[3.5rem] text-center text-[11px] font-semibold tabular-nums text-fg/70">
+        <span className="min-w-14 text-center text-[11px] font-semibold tabular-nums text-fg/70">
           {page + 1} / {totalPages}
         </span>
         <button
@@ -2971,7 +2971,7 @@ function EmptyState({
   return (
     <div
       className={cn(
-        "flex flex-col items-center gap-2 rounded-2xl border border-dashed border-fg/15 bg-fg/[0.03] px-4 py-8 text-center",
+        "flex flex-col items-center gap-2 rounded-2xl border border-dashed border-fg/15 bg-fg/3 px-4 py-8 text-center",
       )}
     >
       {Icon && (
