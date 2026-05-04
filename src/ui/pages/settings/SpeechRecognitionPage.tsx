@@ -4,6 +4,7 @@ import {
   AudioLines,
   BookOpen,
   CheckCircle2,
+  ChevronRight,
   Copy,
   Download,
   Folder,
@@ -167,6 +168,18 @@ function formatBytes(bytes: number) {
 function formatDuration(ms: number) {
   if (!ms || ms <= 0) return "0.0s";
   return `${(ms / 1000).toFixed(ms >= 10_000 ? 0 : 1)}s`;
+}
+
+function micErrorMessage(error: unknown) {
+  if (error instanceof DOMException) {
+    if (error.name === "NotAllowedError") {
+      return "Microphone permission denied. Allow microphone access for Lettuce and try again.";
+    }
+    if (error.name === "NotFoundError") {
+      return "No microphone was found on this device.";
+    }
+  }
+  return String(error);
 }
 
 function mergeFloat32Chunks(chunks: Float32Array[]) {
@@ -876,8 +889,14 @@ export function SpeechRecognitionPage() {
       setRecordingElapsedMs(0);
       setIsRecording(true);
     } catch (error) {
-      console.error("Failed to start microphone capture:", error);
-      toast.error("Microphone access failed", String(error));
+      const message = micErrorMessage(error);
+      if (error instanceof DOMException && error.name === "NotAllowedError") {
+        console.warn("Microphone access denied:", error);
+        toast.warning("Microphone access denied", message);
+      } else {
+        console.error("Failed to start microphone capture:", error);
+        toast.error("Microphone access failed", message);
+      }
     }
   }, [isRecording, selectedTestModelPath, stopPlayback]);
 
@@ -885,6 +904,54 @@ export function SpeechRecognitionPage() {
     () => (downloadQueue?.queue ?? []).filter((item) => item.queueKind === "whisper"),
     [downloadQueue],
   );
+  const previousWhisperQueueRef = useRef<string>("");
+  useEffect(() => {
+    const snapshot = JSON.stringify(
+      whisperQueue.map((item) => ({
+        id: item.id,
+        status: item.status,
+        variant: item.variant ?? null,
+      })),
+    );
+    if (snapshot === previousWhisperQueueRef.current) {
+      return;
+    }
+
+    const previousById = new Map(
+      (previousWhisperQueueRef.current
+        ? (JSON.parse(previousWhisperQueueRef.current) as Array<{
+            id: string;
+            status: string;
+            variant: string | null;
+          }>)
+        : []
+      ).map((item) => [item.id, item]),
+    );
+
+    previousWhisperQueueRef.current = snapshot;
+
+    let shouldReloadInstalledModels = false;
+    for (const item of whisperQueue) {
+      const previous = previousById.get(item.id);
+      if (!previous || previous.status === item.status) {
+        continue;
+      }
+      if (item.status === "complete") {
+        shouldReloadInstalledModels = true;
+      }
+      if (
+        pendingModelId &&
+        item.variant === pendingModelId &&
+        (item.status === "error" || item.status === "cancelled")
+      ) {
+        setPendingModelId(null);
+      }
+    }
+
+    if (shouldReloadInstalledModels) {
+      void reloadInstalledModels();
+    }
+  }, [pendingModelId, reloadInstalledModels, whisperQueue]);
   const filterActive = filter.language.trim().length > 0 || filter.scope.trim().length > 0;
   const activeTab = LIBRARY_TABS.find((entry) => entry.key === tab)!;
   const tabCount = useMemo(() => {
@@ -901,9 +968,9 @@ export function SpeechRecognitionPage() {
       className="flex h-full flex-col"
     >
       <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-[1280px] px-4 pb-24 pt-4 sm:px-6 lg:px-8 space-y-5">
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(360px,400px)]">
-            <div className="min-w-0 space-y-5">
+        <div className="mx-auto w-full max-w-[1280px] px-3 pb-24 pt-3 sm:px-6 sm:pt-5 lg:px-8 space-y-4 sm:space-y-6">
+          <div className="grid grid-cols-1 gap-4 sm:gap-5 lg:gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(340px,380px)]">
+            <div className="min-w-0 space-y-4 sm:space-y-6">
               <div data-tour-id="asr-active-model">
                 <ActiveModelCard
                   installedModels={installedModels}
@@ -917,8 +984,8 @@ export function SpeechRecognitionPage() {
               </div>
 
           <section data-tour-id="asr-library" className="space-y-3">
-            <div className="flex items-end justify-between gap-3">
-              <div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between sm:gap-3">
+              <div className="min-w-0">
                 <h2 className={SECTION_TITLE}>Library</h2>
                 <p className={cn("mt-0.5", SECTION_SUB)}>
                   Three layers shape Whisper output: the prompt prefix, post-processing
@@ -929,7 +996,7 @@ export function SpeechRecognitionPage() {
                 type="button"
                 onClick={() => setFiltersOpen((v) => !v)}
                 className={cn(
-                  ghostButton(),
+                  ghostButton("self-start sm:self-auto"),
                   filterActive && "border-accent/40 bg-accent/10 text-accent",
                 )}
               >
@@ -960,7 +1027,7 @@ export function SpeechRecognitionPage() {
             </AnimatePresence>
 
             <LayoutGroup id="asr-library-tabs">
-              <div className="flex gap-1 overflow-x-auto rounded-2xl border border-fg/10 bg-fg/[0.04] p-1">
+              <div className="flex gap-1 overflow-x-auto rounded-2xl border border-fg/10 bg-fg/[0.04] p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                 {LIBRARY_TABS.map((entry) => {
                   const Icon = entry.icon;
                   const active = tab === entry.key;
@@ -1456,28 +1523,83 @@ function ActiveModelCard({
     );
   }
 
+  const hasModel = !!installed;
   return (
     <button
       type="button"
       onClick={onOpen}
       className={cn(
-        "group flex w-full items-center justify-between gap-3 rounded-xl border border-fg/10 bg-fg/[0.03] px-4 py-2.5 text-left",
+        "group relative block w-full overflow-hidden rounded-2xl border px-4 py-3.5 text-left sm:px-5 sm:py-4",
         interactive.transition.fast,
         interactive.active.scale,
-        "hover:border-fg/20 hover:bg-fg/[0.05]",
+        hasModel
+          ? "border-accent/25 bg-gradient-to-br from-accent/[0.07] via-fg/[0.03] to-fg/[0.02] hover:border-accent/40"
+          : "border-dashed border-fg/20 bg-fg/[0.03] hover:border-fg/30 hover:bg-fg/[0.05]",
       )}
     >
-      <div className="flex min-w-0 items-baseline gap-2.5">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-fg/40">
-          Model
-        </span>
-        <span className="truncate text-sm font-medium text-fg">
-          {installed?.label ?? "Not selected"}
-        </span>
+      <div className="flex items-center gap-3 sm:gap-4">
+        <div
+          className={cn(
+            "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border sm:h-12 sm:w-12",
+            hasModel
+              ? "border-accent/30 bg-accent/12 text-accent"
+              : "border-fg/15 bg-fg/8 text-fg/55",
+          )}
+        >
+          {hasModel ? <Waves className="h-5 w-5" /> : <Download className="h-5 w-5" />}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-fg/40">
+              Active model
+            </span>
+            {hasModel && (
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent/50" />
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-accent" />
+              </span>
+            )}
+          </div>
+          <div className="mt-0.5 truncate text-sm font-semibold text-fg sm:text-[15px]">
+            {installed?.label ?? "No model selected"}
+          </div>
+          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+            {hasModel ? (
+              <>
+                {installed.sizeBytes > 0 && (
+                  <span className="inline-flex items-center rounded-md border border-fg/10 bg-fg/8 px-1.5 py-0.5 text-[10px] font-medium text-fg/65 tabular-nums">
+                    {formatBytes(installed.sizeBytes)}
+                  </span>
+                )}
+                {installed.quantized && (
+                  <span className="inline-flex items-center rounded-md border border-info/25 bg-info/10 px-1.5 py-0.5 text-[10px] font-semibold text-info">
+                    quantized
+                  </span>
+                )}
+                <span className="inline-flex items-center rounded-md border border-fg/10 bg-fg/8 px-1.5 py-0.5 text-[10px] font-medium text-fg/55">
+                  {installed.englishOnly ? "EN only" : "multilingual"}
+                </span>
+              </>
+            ) : (
+              <span className="text-[11px] text-fg/50">
+                Pick a Whisper model to enable speech recognition.
+              </span>
+            )}
+          </div>
+        </div>
+        <div
+          className={cn(
+            "flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold",
+            interactive.transition.fast,
+            hasModel
+              ? "border-fg/15 bg-fg/5 text-fg/70 group-hover:border-accent/40 group-hover:bg-accent/10 group-hover:text-accent"
+              : "border-accent/40 bg-accent/15 text-accent",
+          )}
+        >
+          {hasModel ? "Change" : "Choose"}
+          <ChevronRight className="h-3.5 w-3.5" />
+        </div>
       </div>
-      <span className="shrink-0 text-[11px] font-medium text-fg/45 group-hover:text-fg/75">
-        Change
-      </span>
     </button>
   );
 }
@@ -1863,11 +1985,25 @@ function MicTestSection({
 
   return (
     <section className="space-y-3">
-      <div className="flex items-baseline justify-between">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
         <h2 className={SECTION_TITLE}>Mic test</h2>
         {(activeModel || pendingModelId) && (
-          <span className="text-[11px] text-fg/45 truncate ml-2">
-            {pendingModelId ? "waiting for download" : activeModel?.label}
+          <span
+            className={cn(
+              "inline-flex min-w-0 max-w-full items-center gap-1.5 truncate rounded-md border px-1.5 py-0.5 text-[10px] font-medium",
+              pendingModelId
+                ? "border-warning/25 bg-warning/10 text-warning/90"
+                : "border-fg/10 bg-fg/8 text-fg/60",
+            )}
+          >
+            {pendingModelId ? (
+              <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
+            ) : (
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+            )}
+            <span className="truncate">
+              {pendingModelId ? "waiting for download" : activeModel?.label}
+            </span>
           </span>
         )}
       </div>
@@ -1897,7 +2033,14 @@ function MicTestSection({
           />
         </FieldShell>
 
-        <div className="flex flex-col items-center gap-3 rounded-xl border border-fg/10 bg-bg-1/30 px-4 py-5">
+        <div
+          className={cn(
+            "flex flex-col items-center gap-3 rounded-xl border px-4 py-6 sm:py-7",
+            isRecording
+              ? "border-danger/25 bg-gradient-to-b from-danger/8 via-bg-1/40 to-bg-1/30"
+              : "border-fg/10 bg-gradient-to-b from-fg/[0.04] via-bg-1/30 to-bg-1/40",
+          )}
+        >
           <RecordButton
             isRecording={isRecording}
             disabled={isTranscribingTest || !activeModel}
@@ -2038,7 +2181,7 @@ function TranscriptionResultCard({ result }: { result: AsrWhisperTranscriptionRe
           </div>
         </div>
       </div>
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
         <Stat label="Language">
           <span className="inline-flex items-center gap-1">
             <Languages className="h-3 w-3 text-fg/40" />
@@ -2238,9 +2381,9 @@ function RuntimeRow({
   right: React.ReactNode;
 }) {
   return (
-    <div className="flex items-start justify-between gap-3 rounded-xl border border-fg/10 bg-fg/5 px-3.5 py-3">
+    <div className="flex flex-col gap-3 rounded-xl border border-fg/10 bg-fg/5 px-3.5 py-3 sm:flex-row sm:items-start sm:justify-between">
       <div className="flex min-w-0 items-start gap-3">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-fg/10 bg-fg/5 text-fg/70">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-fg/12 bg-fg/8 text-fg/75">
           {icon}
         </div>
         <div className="min-w-0">
@@ -2255,7 +2398,9 @@ function RuntimeRow({
           </div>
         </div>
       </div>
-      {right && <div className="shrink-0">{right}</div>}
+      {right && (
+        <div className="flex shrink-0 flex-wrap justify-end gap-2 pl-12 sm:pl-0">{right}</div>
+      )}
     </div>
   );
 }
@@ -2307,7 +2452,7 @@ function MicInputRow() {
       await refresh();
     } catch (error) {
       console.error("Failed to request microphone permission:", error);
-      toast.error("Microphone permission denied", String(error));
+      toast.error("Microphone permission denied", micErrorMessage(error));
     }
   };
 
@@ -2317,7 +2462,7 @@ function MicInputRow() {
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-xl border border-fg/10 bg-fg/5 px-3.5 py-3">
+    <div className="flex flex-col gap-3 rounded-xl border border-fg/10 bg-fg/5 px-3.5 py-3 sm:flex-row sm:flex-wrap sm:items-center">
       <div className="flex min-w-0 flex-1 items-center gap-3">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-fg/10 bg-fg/5 text-fg/70">
           <Mic className="h-4 w-4" />
@@ -2329,9 +2474,9 @@ function MicInputRow() {
           </div>
         </div>
       </div>
-      <div className="flex shrink-0 items-center gap-2">
+      <div className="flex items-center gap-2 pl-12 sm:pl-0 sm:shrink-0">
         <select
-          className={cn(inputClass(), "h-9 w-56 max-w-[60vw] py-0")}
+          className={cn(inputClass(), "h-9 min-w-0 flex-1 py-0 sm:w-56 sm:flex-none sm:max-w-[60vw]")}
           value={selectedId}
           onChange={(event) => handleChange(event.target.value)}
           disabled={devices.length === 0}
@@ -2374,9 +2519,9 @@ function MicInputRow() {
 
 function Stat({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-fg/10 bg-fg/5 px-3 py-2">
-      <div className={OVERLINE}>{label}</div>
-      <div className="mt-1 text-sm font-semibold text-fg/85 tabular-nums">{children}</div>
+    <div className="min-w-0 rounded-xl border border-fg/10 bg-fg/5 px-2 py-2 sm:px-3">
+      <div className={cn(OVERLINE, "truncate")}>{label}</div>
+      <div className="mt-1 truncate text-sm font-semibold text-fg/85 tabular-nums">{children}</div>
     </div>
   );
 }
@@ -2494,6 +2639,8 @@ interface CorrectionsSectionProps extends SectionProps<AsrCorrection> {
   onToggleApprovedOnly: (next: boolean) => void;
 }
 
+const CORRECTIONS_PAGE_SIZE = 10;
+
 function CorrectionsSection({
   items,
   count,
@@ -2504,6 +2651,22 @@ function CorrectionsSection({
   onEdit,
   onDelete,
 }: CorrectionsSectionProps) {
+  const [page, setPage] = useState(0);
+  const totalPages = Math.max(1, Math.ceil(items.length / CORRECTIONS_PAGE_SIZE));
+
+  useEffect(() => {
+    if (page > totalPages - 1) setPage(Math.max(0, totalPages - 1));
+  }, [page, totalPages]);
+
+  useEffect(() => {
+    setPage(0);
+  }, [approvedOnly]);
+
+  const start = page * CORRECTIONS_PAGE_SIZE;
+  const visible = items.slice(start, start + CORRECTIONS_PAGE_SIZE);
+  const showingFrom = items.length === 0 ? 0 : start + 1;
+  const showingTo = Math.min(items.length, start + CORRECTIONS_PAGE_SIZE);
+
   return (
     <div className="space-y-2">
       <LibraryHeader
@@ -2537,7 +2700,7 @@ function CorrectionsSection({
         />
       ) : (
         <div className="space-y-2">
-          {items.map((item) => (
+          {visible.map((item) => (
             <div
               key={item.id ?? `${item.wrong}->${item.correct}`}
               className={subCardClass("hover:border-fg/20")}
@@ -2585,6 +2748,83 @@ function CorrectionsSection({
           ))}
         </div>
       )}
+      {items.length > CORRECTIONS_PAGE_SIZE && (
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          showingFrom={showingFrom}
+          showingTo={showingTo}
+          total={items.length}
+          onPrev={() => setPage((p) => Math.max(0, p - 1))}
+          onNext={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+        />
+      )}
+    </div>
+  );
+}
+
+function Pagination({
+  page,
+  totalPages,
+  showingFrom,
+  showingTo,
+  total,
+  onPrev,
+  onNext,
+}: {
+  page: number;
+  totalPages: number;
+  showingFrom: number;
+  showingTo: number;
+  total: number;
+  onPrev: () => void;
+  onNext: () => void;
+}) {
+  const atStart = page === 0;
+  const atEnd = page >= totalPages - 1;
+  return (
+    <div className="flex items-center justify-between gap-2 rounded-xl border border-fg/10 bg-fg/5 px-3 py-2">
+      <span className="text-[11px] tabular-nums text-fg/55">
+        <span className="font-semibold text-fg/75">
+          {showingFrom}–{showingTo}
+        </span>{" "}
+        of {total}
+      </span>
+      <div className="flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={onPrev}
+          disabled={atStart}
+          className={cn(
+            "flex h-8 w-8 items-center justify-center rounded-lg border border-fg/10 bg-fg/5 text-fg/70",
+            interactive.transition.fast,
+            interactive.active.scale,
+            "hover:border-fg/25 hover:bg-fg/10 hover:text-fg",
+            "disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-fg/10 disabled:hover:bg-fg/5 disabled:hover:text-fg/70",
+          )}
+          aria-label="Previous page"
+        >
+          <ChevronRight className="h-3.5 w-3.5 rotate-180" />
+        </button>
+        <span className="min-w-[3.5rem] text-center text-[11px] font-semibold tabular-nums text-fg/70">
+          {page + 1} / {totalPages}
+        </span>
+        <button
+          type="button"
+          onClick={onNext}
+          disabled={atEnd}
+          className={cn(
+            "flex h-8 w-8 items-center justify-center rounded-lg border border-fg/10 bg-fg/5 text-fg/70",
+            interactive.transition.fast,
+            interactive.active.scale,
+            "hover:border-fg/25 hover:bg-fg/10 hover:text-fg",
+            "disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-fg/10 disabled:hover:bg-fg/5 disabled:hover:text-fg/70",
+          )}
+          aria-label="Next page"
+        >
+          <ChevronRight className="h-3.5 w-3.5" />
+        </button>
+      </div>
     </div>
   );
 }
