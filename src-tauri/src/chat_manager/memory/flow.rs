@@ -131,6 +131,12 @@ fn dynamic_memory_request_id(session_id: &str, phase: &str) -> String {
 
 const POST_TURN_MEMORY_DEBOUNCE_MS: u64 = 1_200;
 
+fn dynamic_memory_request_session(session: &Session) -> Session {
+    let mut sanitized = session.clone();
+    sanitized.advanced_model_settings = None;
+    sanitized
+}
+
 fn uses_local_dynamic_memory_model(provider_cred: &ProviderCredential, model: &Model) -> bool {
     crate::llama_cpp::is_llama_cpp(Some(provider_cred.provider_id.as_str()))
         || crate::llama_cpp::is_llama_cpp(Some(model.provider_id.as_str()))
@@ -2826,9 +2832,10 @@ async fn run_memory_tool_update(
         )
     }));
 
+    let request_session = dynamic_memory_request_session(session);
     let (request_settings, extra_body_fields) = prepare_default_sampling_request(
         &provider_cred.provider_id,
-        session,
+        &request_session,
         model,
         settings,
         0.2,
@@ -4020,9 +4027,10 @@ async fn summarize_messages(
         "content": "Return only the concise summary for the above conversation window. Use the write_summary tool."
     }));
 
+    let request_session = dynamic_memory_request_session(session);
     let (request_settings, extra_body_fields) = prepare_default_sampling_request(
         &provider_cred.provider_id,
-        session,
+        &request_session,
         model,
         settings,
         0.2,
