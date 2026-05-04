@@ -14,6 +14,32 @@ pub struct BuiltRequest {
     pub request_id: Option<String>,
 }
 
+const LLAMA_EXTRA_BODY_KEYS: &[&str] = &[
+    "llamaGpuLayers",
+    "llamaThreads",
+    "llamaThreadsBatch",
+    "llamaSeed",
+    "llamaRopeFreqBase",
+    "llamaRopeFreqScale",
+    "llamaOffloadKqv",
+    "llamaBatchSize",
+    "llamaKvType",
+    "llamaFlashAttentionPolicy",
+    "llamaChatTemplateOverride",
+    "llamaMmprojPath",
+    "llamaChatTemplatePreset",
+    "llamaRawCompletionFallback",
+    "llamaStreamingEnabled",
+    "llamaStrictMode",
+    "llamaSamplerProfile",
+    "llamaSamplerOrder",
+    "llamaMinP",
+    "llamaTypicalP",
+    "llamaDisableSamplerProfileDefaults",
+];
+
+const OLLAMA_EXTRA_BODY_KEYS: &[&str] = &["options"];
+
 fn should_force_local_parallel_tool_calls(
     credential: &ProviderCredential,
     tool_config: Option<&ToolConfig>,
@@ -22,6 +48,18 @@ fn should_force_local_parallel_tool_calls(
         && tool_config
             .map(|config| !config.tools.is_empty())
             .unwrap_or(false)
+}
+
+fn strip_provider_incompatible_extra_fields(
+    credential: &ProviderCredential,
+    extra_body_fields: &mut HashMap<String, Value>,
+) {
+    if credential.provider_id != "llamacpp" {
+        extra_body_fields.retain(|key, _| !LLAMA_EXTRA_BODY_KEYS.contains(&key.as_str()));
+    }
+    if credential.provider_id != "ollama" {
+        extra_body_fields.retain(|key, _| !OLLAMA_EXTRA_BODY_KEYS.contains(&key.as_str()));
+    }
 }
 
 pub fn provider_streaming_enabled(credential: &ProviderCredential) -> bool {
@@ -171,6 +209,7 @@ pub fn build_chat_request(
     );
 
     let mut extra_body_fields = extra_body_fields.unwrap_or_default();
+    strip_provider_incompatible_extra_fields(credential, &mut extra_body_fields);
     if should_force_local_parallel_tool_calls(credential, tool_config)
         && !extra_body_fields.contains_key("parallel_tool_calls")
     {
@@ -291,4 +330,147 @@ pub fn build_chat_request(
 /// Returns the preferred system role keyword for the given provider.
 pub fn system_role_for(credential: &ProviderCredential) -> std::borrow::Cow<'static, str> {
     adapter_for(credential).system_role()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn credential(provider_id: &str) -> ProviderCredential {
+        ProviderCredential {
+            id: format!("{provider_id}-cred"),
+            provider_id: provider_id.to_string(),
+            label: provider_id.to_string(),
+            api_key: Some("test-key".to_string()),
+            base_url: None,
+            default_model: None,
+            headers: None,
+            config: None,
+        }
+    }
+
+    #[test]
+    fn strips_llama_fields_from_non_llama_requests() {
+        let credential = credential("mistral");
+        let extra_body_fields = HashMap::from([
+            ("llamaSamplerOrder".to_string(), json!(["top_k"])),
+            (
+                "llamaDisableSamplerProfileDefaults".to_string(),
+                json!(true),
+            ),
+            (
+                "options".to_string(),
+                json!({"num_ctx": 4096, "mirostat": 2}),
+            ),
+            ("top_k".to_string(), json!(40)),
+        ]);
+
+        let built = build_chat_request(
+            &credential,
+            "test-key",
+            "mistral-small-latest",
+            &vec![json!({"role": "user", "content": "hello"})],
+            None,
+            Some(0.7),
+            Some(0.95),
+            128,
+            None,
+            false,
+            None,
+            None,
+            None,
+            Some(40),
+            None,
+            false,
+            None,
+            None,
+            false,
+            Some(extra_body_fields),
+        );
+
+        let body = built.body.as_object().expect("request body should be an object");
+        assert!(!body.contains_key("llamaSamplerOrder"));
+        assert!(!body.contains_key("llamaDisableSamplerProfileDefaults"));
+        assert!(!body.contains_key("options"));
+        assert_eq!(body.get("top_k"), Some(&json!(40)));
+    }
+
+    #[test]
+    fn keeps_llama_fields_for_llamacpp_requests() {
+        let credential = credential("llamacpp");
+        let extra_body_fields = HashMap::from([
+            ("llamaSamplerOrder".to_string(), json!(["top_k"])),
+            (
+                "llamaDisableSamplerProfileDefaults".to_string(),
+                json!(true),
+            ),
+        ]);
+
+        let built = build_chat_request(
+            &credential,
+            "test-key",
+            "local-model",
+            &vec![json!({"role": "user", "content": "hello"})],
+            None,
+            Some(0.7),
+            Some(0.95),
+            128,
+            None,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+            None,
+            None,
+            false,
+            Some(extra_body_fields),
+        );
+
+        let body = built.body.as_object().expect("request body should be an object");
+        assert_eq!(body.get("llamaSamplerOrder"), Some(&json!(["top_k"])));
+        assert_eq!(
+            body.get("llamaDisableSamplerProfileDefaults"),
+            Some(&json!(true))
+        );
+    }
+
+    #[test]
+    fn keeps_ollama_options_for_ollama_requests() {
+        let credential = credential("ollama");
+        let extra_body_fields =
+            HashMap::from([("options".to_string(), json!({"num_ctx": 4096, "mirostat": 2}))]);
+
+        let built = build_chat_request(
+            &credential,
+            "test-key",
+            "local-model",
+            &vec![json!({"role": "user", "content": "hello"})],
+            None,
+            Some(0.7),
+            Some(0.95),
+            128,
+            None,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+            None,
+            None,
+            false,
+            Some(extra_body_fields),
+        );
+
+        let body = built.body.as_object().expect("request body should be an object");
+        assert_eq!(
+            body.get("options"),
+            Some(&json!({"num_ctx": 4096, "mirostat": 2}))
+        );
+    }
 }
