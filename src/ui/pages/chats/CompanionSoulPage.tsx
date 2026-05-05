@@ -181,7 +181,7 @@ export function CompanionSoulPage() {
   }
 
   return (
-    <div className="relative z-10 flex min-h-screen flex-col bg-base text-fg">
+    <div className="relative z-10 flex h-full flex-col bg-base text-fg">
       <PageHeader
         title={t("chats.companionSoul.pageTitle")}
         subtitle={character.name}
