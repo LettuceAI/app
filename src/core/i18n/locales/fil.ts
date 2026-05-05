@@ -2744,6 +2744,7 @@ export const filMessages: DeepPartialMessageTree<LocaleMessages> = {
     "downloadCancelled": "Nakansela ang download",
     "downloadProgress": "{{downloaded}} / {{total}}",
     "progress": "Progreso",
+    "fileOfTotal": "File {{current}} ng {{total}}",
     "speed": "{{speed}}/s",
     "alreadyDownloaded": "Na-download na",
     "createModel": "Gumawa ng Modelo",

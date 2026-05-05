@@ -2708,6 +2708,7 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
     downloadCancelled: "다운로드가 취소되었습니다",
     downloadProgress: "{{downloaded}} / {{total}}",
     progress: "진행 상황",
+    fileOfTotal: "파일 {{current}} / {{total}}",
     speed: "{{speed}}/s",
     alreadyDownloaded: "이미 다운로드됨",
     createModel: "모델 생성",

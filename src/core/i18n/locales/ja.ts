@@ -2445,6 +2445,7 @@ export const jaMessages: DeepPartialMessageTree<LocaleMessages> = {
     "downloadCancelled": "ダウンロードがキャンセルされました",
     "downloadProgress": "{{downloaded}} / {{total}}",
     "progress": "進行状況",
+    "fileOfTotal": "ファイル {{current}} / {{total}}",
     "speed": "{{speed}}/s",
     "alreadyDownloaded": "ダウンロード済み",
     "createModel": "モデルを作成",

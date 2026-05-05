@@ -2767,6 +2767,7 @@ export const deMessages: DeepPartialMessageTree<LocaleMessages> = {
     downloadCancelled: "Download abgebrochen",
     downloadProgress: "{{downloaded}} / {{total}}",
     progress: "Fortschritt",
+    fileOfTotal: "Datei {{current}} von {{total}}",
     speed: "{{speed}}/s",
     alreadyDownloaded: "Bereits heruntergeladen",
     createModel: "Modell erstellen",

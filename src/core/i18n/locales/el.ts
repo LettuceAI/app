@@ -2744,6 +2744,7 @@ export const elMessages: DeepPartialMessageTree<LocaleMessages> = {
     "downloadCancelled": "Η λήψη ακυρώθηκε",
     "downloadProgress": "{{downloaded}} / {{total}}",
     "progress": "Πρόοδος",
+    "fileOfTotal": "Αρχείο {{current}} από {{total}}",
     "speed": "{{speed}}/s",
     "alreadyDownloaded": "Έχει ήδη ληφθεί",
     "createModel": "Δημιουργία Μοντέλου",

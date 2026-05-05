@@ -2744,6 +2744,7 @@ export const zhHansMessages: DeepPartialMessageTree<LocaleMessages> = {
     downloadCancelled: "下载已取消",
     downloadProgress: "{{downloaded}} / {{total}}",
     progress: "进度",
+    fileOfTotal: "文件 {{current}} / {{total}}",
     speed: "{{speed}}/s",
     alreadyDownloaded: "已下载",
     createModel: "创建模型",

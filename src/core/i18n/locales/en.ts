@@ -2763,6 +2763,7 @@ export const enMessages = {
     downloadCancelled: "Download cancelled",
     downloadProgress: "{{downloaded}} / {{total}}",
     progress: "Progress",
+    fileOfTotal: "File {{current}} of {{total}}",
     speed: "{{speed}}/s",
     alreadyDownloaded: "Already downloaded",
     createModel: "Create Model",

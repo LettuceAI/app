@@ -2474,6 +2474,7 @@ export const plMessages: DeepPartialMessageTree<LocaleMessages> = {
     "downloadCancelled": "Pobieranie anulowane",
     "downloadProgress": "{{downloaded}} / {{total}}",
     "progress": "Postęp",
+    "fileOfTotal": "Plik {{current}} z {{total}}",
     "speed": "{{speed}}/s",
     "alreadyDownloaded": "Już pobrano",
     "createModel": "Utwórz model",

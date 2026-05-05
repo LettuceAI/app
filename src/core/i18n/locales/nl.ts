@@ -2464,6 +2464,7 @@ export const nlMessages: DeepPartialMessageTree<LocaleMessages> = {
     downloadCancelled: "Download geannuleerd",
     downloadProgress: "{{downloaded}} / {{total}}",
     progress: "Voortgang",
+    fileOfTotal: "Bestand {{current}} van {{total}}",
     speed: "{{speed}}/s",
     alreadyDownloaded: "Reeds gedownload",
     createModel: "Model aanmaken",

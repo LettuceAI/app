@@ -2692,6 +2692,7 @@ export const zhHantMessages: DeepPartialMessageTree<LocaleMessages> = {
     downloadCancelled: "下載已取消",
     downloadProgress: "{{downloaded}} / {{total}}",
     progress: "進度",
+    fileOfTotal: "檔案 {{current}} / {{total}}",
     speed: "{{speed}}/s",
     alreadyDownloaded: "已下載",
     createModel: "建立模型",
