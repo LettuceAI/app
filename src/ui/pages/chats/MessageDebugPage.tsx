@@ -398,6 +398,12 @@ export function MessageDebugPage() {
                 </div>
               ) : null}
               {attempt.request ? <JsonBlock title="Request" value={attempt.request.payload} /> : null}
+              {attempt.request && getPayloadObject(attempt.request.payload)?.requestBody !== undefined ? (
+                <JsonBlock
+                  title="Request Body"
+                  value={getPayloadObject(attempt.request.payload)?.requestBody}
+                />
+              ) : null}
               {attempt.response ? (
                 <JsonBlock title="Response" value={attempt.response.payload} />
               ) : null}

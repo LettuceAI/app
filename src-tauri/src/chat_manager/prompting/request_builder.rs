@@ -5,6 +5,7 @@ use super::request::provider_base_url;
 use crate::chat_manager::provider_adapter::adapter_for;
 use crate::chat_manager::tooling::ToolConfig;
 use crate::chat_manager::types::ProviderCredential;
+use crate::providers::config::supported_extra_body_keys_for_provider;
 
 pub struct BuiltRequest {
     pub url: String,
@@ -13,32 +14,6 @@ pub struct BuiltRequest {
     pub stream: bool,
     pub request_id: Option<String>,
 }
-
-const LLAMA_EXTRA_BODY_KEYS: &[&str] = &[
-    "llamaGpuLayers",
-    "llamaThreads",
-    "llamaThreadsBatch",
-    "llamaSeed",
-    "llamaRopeFreqBase",
-    "llamaRopeFreqScale",
-    "llamaOffloadKqv",
-    "llamaBatchSize",
-    "llamaKvType",
-    "llamaFlashAttentionPolicy",
-    "llamaChatTemplateOverride",
-    "llamaMmprojPath",
-    "llamaChatTemplatePreset",
-    "llamaRawCompletionFallback",
-    "llamaStreamingEnabled",
-    "llamaStrictMode",
-    "llamaSamplerProfile",
-    "llamaSamplerOrder",
-    "llamaMinP",
-    "llamaTypicalP",
-    "llamaDisableSamplerProfileDefaults",
-];
-
-const OLLAMA_EXTRA_BODY_KEYS: &[&str] = &["options"];
 
 fn should_force_local_parallel_tool_calls(
     credential: &ProviderCredential,
@@ -54,12 +29,8 @@ fn strip_provider_incompatible_extra_fields(
     credential: &ProviderCredential,
     extra_body_fields: &mut HashMap<String, Value>,
 ) {
-    if credential.provider_id != "llamacpp" {
-        extra_body_fields.retain(|key, _| !LLAMA_EXTRA_BODY_KEYS.contains(&key.as_str()));
-    }
-    if credential.provider_id != "ollama" {
-        extra_body_fields.retain(|key, _| !OLLAMA_EXTRA_BODY_KEYS.contains(&key.as_str()));
-    }
+    let supported_keys = supported_extra_body_keys_for_provider(&credential.provider_id);
+    extra_body_fields.retain(|key, _| supported_keys.contains(&key.as_str()));
 }
 
 pub fn provider_streaming_enabled(credential: &ProviderCredential) -> bool {
@@ -363,7 +334,9 @@ mod tests {
                 "options".to_string(),
                 json!({"num_ctx": 4096, "mirostat": 2}),
             ),
-            ("top_k".to_string(), json!(40)),
+            ("min_p".to_string(), json!(0.0)),
+            ("typical_p".to_string(), json!(0.0)),
+            ("parallel_tool_calls".to_string(), json!(true)),
         ]);
 
         let built = build_chat_request(
@@ -393,7 +366,9 @@ mod tests {
         assert!(!body.contains_key("llamaSamplerOrder"));
         assert!(!body.contains_key("llamaDisableSamplerProfileDefaults"));
         assert!(!body.contains_key("options"));
-        assert_eq!(body.get("top_k"), Some(&json!(40)));
+        assert!(!body.contains_key("min_p"));
+        assert!(!body.contains_key("typical_p"));
+        assert!(!body.contains_key("parallel_tool_calls"));
     }
 
     #[test]
@@ -472,5 +447,39 @@ mod tests {
             body.get("options"),
             Some(&json!({"num_ctx": 4096, "mirostat": 2}))
         );
+    }
+
+    #[test]
+    fn keeps_openai_prompt_cache_retention_internal_key() {
+        let credential = credential("openai");
+        let extra_body_fields =
+            HashMap::from([("promptCachingTtl".to_string(), json!("24h"))]);
+
+        let built = build_chat_request(
+            &credential,
+            "test-key",
+            "gpt-5",
+            &vec![json!({"role": "user", "content": "hello"})],
+            None,
+            Some(0.7),
+            Some(0.95),
+            128,
+            None,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+            None,
+            None,
+            true,
+            Some(extra_body_fields),
+        );
+
+        let body = built.body.as_object().expect("request body should be an object");
+        assert_eq!(body.get("prompt_cache_retention"), Some(&json!("24h")));
+        assert!(!body.contains_key("promptCachingTtl"));
     }
 }
