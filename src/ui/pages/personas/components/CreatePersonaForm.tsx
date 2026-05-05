@@ -5,6 +5,7 @@ import { PersonaFormState, PersonaFormAction } from "../hooks/createPersonaReduc
 import { AvatarPicker } from "../../../components/AvatarPicker";
 import { Switch } from "../../../components/Switch";
 import { DesignReferenceEditor } from "../../../components/DesignReferenceEditor";
+import { ActiveLorebooksSelector } from "../../characters/components/ActiveLorebooksSelector";
 import { typography, radius, spacing, interactive, cn } from "../../../design-tokens";
 import type { AvatarCrop } from "../../../../core/storage/schemas";
 import { useI18n } from "../../../../core/i18n/context";
@@ -40,6 +41,7 @@ export function CreatePersonaForm({
     avatarRoundPath,
     designDescription,
     designReferenceImageIds,
+    activeLorebookIds,
     isDefault,
     saving,
     importing,
@@ -226,6 +228,12 @@ export function CreatePersonaForm({
               />
             </div>
           </div>
+
+          <ActiveLorebooksSelector
+            selectedIds={activeLorebookIds}
+            onChange={(value) => dispatch({ type: "set_active_lorebook_ids", value })}
+            subjectLabel="persona"
+          />
         </div>
 
         <div className="space-y-5">

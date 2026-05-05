@@ -1740,6 +1740,7 @@ export async function savePersona(
     avatarCrop: p.avatarCrop,
     designDescription: p.designDescription,
     designReferenceImageIds: p.designReferenceImageIds ?? [],
+    activeLorebookIds: p.activeLorebookIds ?? [],
     isDefault: p.isDefault ?? false,
     createdAt: p.createdAt ?? now(),
     updatedAt: now(),

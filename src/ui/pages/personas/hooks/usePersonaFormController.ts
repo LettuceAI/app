@@ -21,6 +21,7 @@ type PersonaFormState = {
   avatarRoundPath: string | null;
   designDescription: string;
   designReferenceImageIds: string[];
+  activeLorebookIds: string[];
 };
 
 type Action =
@@ -45,6 +46,7 @@ const initialState: PersonaFormState = {
   avatarRoundPath: null,
   designDescription: "",
   designReferenceImageIds: [],
+  activeLorebookIds: [],
 };
 
 function reducer(state: PersonaFormState, action: Action): PersonaFormState {
@@ -78,6 +80,7 @@ export function usePersonaFormController(personaId: string | undefined) {
     avatarRoundPath: string;
     designDescription: string;
     designReferenceImageIds: string;
+    activeLorebookIds: string;
   } | null>(null);
   const persistedAvatarRef = useRef<{ filename?: string; url?: string }>({});
 
@@ -126,6 +129,9 @@ export function usePersonaFormController(personaId: string | undefined) {
           designReferenceImageIds: Array.isArray(persona.designReferenceImageIds)
             ? persona.designReferenceImageIds
             : [],
+          activeLorebookIds: Array.isArray(persona.activeLorebookIds)
+            ? persona.activeLorebookIds
+            : [],
         },
       });
 
@@ -140,6 +146,7 @@ export function usePersonaFormController(personaId: string | undefined) {
         avatarRoundPath: JSON.stringify(avatarRoundDataUrl ?? null),
         designDescription: persona.designDescription ?? "",
         designReferenceImageIds: JSON.stringify(persona.designReferenceImageIds ?? []),
+        activeLorebookIds: JSON.stringify(persona.activeLorebookIds ?? []),
       };
       dispatch({ type: "set_error", payload: null });
     } catch (error) {
@@ -193,6 +200,10 @@ export function usePersonaFormController(personaId: string | undefined) {
     dispatch({ type: "set_fields", payload: { designReferenceImageIds: value } });
   }, []);
 
+  const setActiveLorebookIds = useCallback((value: string[]) => {
+    dispatch({ type: "set_fields", payload: { activeLorebookIds: value } });
+  }, []);
+
   const handleSave = useCallback(async () => {
     if (!personaId) {
       return;
@@ -208,6 +219,7 @@ export function usePersonaFormController(personaId: string | undefined) {
       avatarRoundPath,
       designDescription,
       designReferenceImageIds: rawDesignReferenceImageIds,
+      activeLorebookIds,
     } = state;
     if (!title.trim() || !description.trim()) {
       return;
@@ -263,6 +275,7 @@ export function usePersonaFormController(personaId: string | undefined) {
         designDescription: designDescription.trim() || undefined,
         designReferenceImageIds:
           designReferenceImageIds.length > 0 ? designReferenceImageIds : undefined,
+        activeLorebookIds,
       });
 
       // Update initial state to match current (for change detection)
@@ -276,6 +289,7 @@ export function usePersonaFormController(personaId: string | undefined) {
         avatarRoundPath: JSON.stringify(avatarRoundPath ?? null),
         designDescription: designDescription.trim(),
         designReferenceImageIds: JSON.stringify(designReferenceImageIds),
+        activeLorebookIds: JSON.stringify(activeLorebookIds),
       };
 
       // Sync trimmed values
@@ -287,6 +301,7 @@ export function usePersonaFormController(personaId: string | undefined) {
           nickname: nickname.trim(),
           designDescription: designDescription.trim(),
           designReferenceImageIds,
+          activeLorebookIds,
         },
       });
 
@@ -322,6 +337,7 @@ export function usePersonaFormController(personaId: string | undefined) {
         avatarRoundPath: JSON.parse(initial.avatarRoundPath) as string | null,
         designDescription: initial.designDescription,
         designReferenceImageIds: JSON.parse(initial.designReferenceImageIds) as string[],
+        activeLorebookIds: JSON.parse(initial.activeLorebookIds) as string[],
       },
     });
     dispatch({ type: "set_error", payload: null });
@@ -346,7 +362,8 @@ export function usePersonaFormController(personaId: string | undefined) {
       JSON.stringify(state.avatarCrop ?? null) !== initial.avatarCrop ||
       JSON.stringify(state.avatarRoundPath ?? null) !== initial.avatarRoundPath ||
       state.designDescription !== initial.designDescription ||
-      JSON.stringify(state.designReferenceImageIds) !== initial.designReferenceImageIds;
+      JSON.stringify(state.designReferenceImageIds) !== initial.designReferenceImageIds ||
+      JSON.stringify(state.activeLorebookIds) !== initial.activeLorebookIds;
 
     return hasChanges;
   })();
@@ -362,6 +379,7 @@ export function usePersonaFormController(personaId: string | undefined) {
     setAvatarRoundPath,
     setDesignDescription,
     setDesignReferenceImageIds,
+    setActiveLorebookIds,
     handleSave,
     resetToInitial,
     canSave,

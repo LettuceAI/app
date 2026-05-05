@@ -47,6 +47,8 @@ pub struct Persona {
     pub design_description: Option<String>,
     #[serde(default)]
     pub design_reference_image_ids: Option<String>,
+    #[serde(default)]
+    pub active_lorebook_ids: Option<String>,
     pub is_default: i64, // Boolean as integer
     pub created_at: i64,
     pub updated_at: i64,

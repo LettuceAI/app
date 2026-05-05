@@ -222,6 +222,7 @@ impl CompletionFlow {
             crate::chat_manager::prompt_engine::resolve_used_lorebook_entries(
                 &app,
                 &character.id,
+                persona.as_ref(),
                 &session,
                 &prompt_entries,
             );

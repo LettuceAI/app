@@ -3106,6 +3106,7 @@ export const PersonaSchema = z.object({
   avatarCrop: AvatarCropSchema.optional(),
   designDescription: z.string().optional(),
   designReferenceImageIds: DesignReferenceImageIdsSchema.optional(),
+  activeLorebookIds: z.array(z.string().uuid()).default([]).optional(),
   isDefault: z.boolean().default(false),
   createdAt: z.number().int(),
   updatedAt: z.number().int(),

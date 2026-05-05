@@ -968,6 +968,8 @@ pub struct Persona {
     #[serde(default)]
     pub design_reference_image_ids: Vec<String>,
     #[serde(default)]
+    pub active_lorebook_ids: Vec<String>,
+    #[serde(default)]
     pub is_default: bool,
     pub created_at: u64,
     pub updated_at: u64,

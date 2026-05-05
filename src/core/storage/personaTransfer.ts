@@ -19,6 +19,7 @@ export interface PersonaExportData {
   description: string;
   nickname?: string;
   avatarCrop?: AvatarCrop;
+  activeLorebookIds?: string[];
 }
 
 /**

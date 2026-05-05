@@ -4,7 +4,7 @@ use serde_json::{json, Value};
 use tauri::AppHandle;
 
 use super::lorebook_matcher::{
-    format_lorebook_for_prompt, get_active_lorebook_entries, get_active_lorebook_entries_for_ids,
+    format_lorebook_for_prompt, get_active_lorebook_entries_for_ids,
 };
 use super::prompts;
 use crate::chat_manager::companion;
@@ -16,7 +16,7 @@ use crate::chat_manager::types::{
     Settings, SystemPromptEntry,
 };
 use crate::storage_manager::db::open_db;
-use crate::storage_manager::lorebook::get_lorebook;
+use crate::storage_manager::lorebook::{get_character_active_lorebook_ids, get_lorebook};
 use crate::utils;
 
 pub fn default_system_prompt_template() -> String {
@@ -1756,6 +1756,7 @@ pub fn default_design_reference_entries() -> Vec<SystemPromptEntry> {
 fn get_lorebook_content(
     app: &AppHandle,
     character_id: &str,
+    persona: Option<&Persona>,
     session: &Session,
 ) -> Result<String, String> {
     let conn = open_db(app)?;
@@ -1786,8 +1787,7 @@ fn get_lorebook_content(
         ),
     );
 
-    let active_entries = if let Some(lorebook_ids_override) = session.lorebook_ids_override.as_ref()
-    {
+    let active_entries = if let Some(lorebook_ids_override) = session.lorebook_ids_override.as_ref() {
         get_active_lorebook_entries_for_ids(
             &conn,
             lorebook_ids_override,
@@ -1795,7 +1795,20 @@ fn get_lorebook_content(
             latest_user_message,
         )?
     } else {
-        get_active_lorebook_entries(&conn, character_id, &recent_messages, latest_user_message)?
+        let mut lorebook_ids = get_character_active_lorebook_ids(&conn, character_id)?;
+        if let Some(persona) = persona {
+            for lorebook_id in &persona.active_lorebook_ids {
+                if !lorebook_ids.contains(lorebook_id) {
+                    lorebook_ids.push(lorebook_id.clone());
+                }
+            }
+        }
+        get_active_lorebook_entries_for_ids(
+            &conn,
+            &lorebook_ids,
+            &recent_messages,
+            latest_user_message,
+        )?
     };
 
     if active_entries.is_empty() {
@@ -1834,6 +1847,7 @@ fn get_lorebook_content(
 pub fn resolve_used_lorebook_entries(
     app: &AppHandle,
     character_id: &str,
+    persona: Option<&Persona>,
     session: &Session,
     rendered_entries: &[SystemPromptEntry],
 ) -> Vec<String> {
@@ -1867,15 +1881,28 @@ pub fn resolve_used_lorebook_entries(
             Ok(entries) => entries,
             Err(_) => return Vec::new(),
         },
-        None => match get_active_lorebook_entries(
-            &conn,
-            character_id,
-            &recent_messages,
-            latest_user_message,
-        ) {
-            Ok(entries) => entries,
-            Err(_) => return Vec::new(),
-        },
+        None => {
+            let mut lorebook_ids = match get_character_active_lorebook_ids(&conn, character_id) {
+                Ok(ids) => ids,
+                Err(_) => return Vec::new(),
+            };
+            if let Some(persona) = persona {
+                for lorebook_id in &persona.active_lorebook_ids {
+                    if !lorebook_ids.contains(lorebook_id) {
+                        lorebook_ids.push(lorebook_id.clone());
+                    }
+                }
+            }
+            match get_active_lorebook_entries_for_ids(
+                &conn,
+                &lorebook_ids,
+                &recent_messages,
+                latest_user_message,
+            ) {
+                Ok(entries) => entries,
+                Err(_) => return Vec::new(),
+            }
+        }
     };
     if active_entries.is_empty() {
         return Vec::new();
@@ -2577,7 +2604,8 @@ pub fn build_system_prompt_entries(
         .as_ref()
         .map(|summary| !summary.trim().is_empty())
         .unwrap_or(false);
-    let lorebook_content = get_lorebook_content(app, &character.id, session).unwrap_or_default();
+    let lorebook_content =
+        get_lorebook_content(app, &character.id, persona, session).unwrap_or_default();
     let has_lorebook_content = !lorebook_content.trim().is_empty();
     let author_note_text = render_author_note_text(character, persona, session);
     let companion_state_text = companion::render_prompt_state(session, character, persona);
@@ -3275,7 +3303,7 @@ fn render_with_context_internal(
 
     // Lorebook entries - get recent messages for keyword matching
     let lorebook_text = if let Some(app) = app {
-        match get_lorebook_content(app, &character.id, session) {
+        match get_lorebook_content(app, &character.id, persona, session) {
             Ok(content) => content,
             Err(e) => {
                 utils::log_warn(
@@ -3462,6 +3490,7 @@ mod tests {
             avatar_path: None,
             design_description: None,
             design_reference_image_ids: vec![],
+            active_lorebook_ids: vec![],
             nickname: None,
             is_default: true,
             created_at: 0,

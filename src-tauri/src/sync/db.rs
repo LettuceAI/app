@@ -1812,8 +1812,8 @@ fn apply_core_snapshot(conn: &mut DbConnection, payload: &[u8]) -> Result<(), St
         .collect::<Vec<_>>();
     for persona in snapshot.personas {
         tx.execute(
-            r#"INSERT OR REPLACE INTO personas (id, title, description, nickname, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, design_description, design_reference_image_ids, is_default, created_at, updated_at)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)"#,
+            r#"INSERT OR REPLACE INTO personas (id, title, description, nickname, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, design_description, design_reference_image_ids, active_lorebook_ids, is_default, created_at, updated_at)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)"#,
             params![
                 persona.id,
                 persona.title,
@@ -1825,6 +1825,7 @@ fn apply_core_snapshot(conn: &mut DbConnection, payload: &[u8]) -> Result<(), St
                 persona.avatar_crop_scale,
                 persona.design_description,
                 persona.design_reference_image_ids,
+                persona.active_lorebook_ids,
                 persona.is_default,
                 persona.created_at,
                 persona.updated_at
@@ -2695,7 +2696,7 @@ fn fetch_global_core(conn: &DbConnection) -> Result<GlobalCoreData, String> {
 
     // Personas
     let mut stmt = conn
-        .prepare("SELECT id, title, description, nickname, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, design_description, design_reference_image_ids, is_default, created_at, updated_at FROM personas")
+        .prepare("SELECT id, title, description, nickname, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, design_description, design_reference_image_ids, COALESCE(active_lorebook_ids, '[]'), is_default, created_at, updated_at FROM personas")
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     let personas: Vec<Persona> = stmt
         .query_map([], |r| {
@@ -2710,9 +2711,10 @@ fn fetch_global_core(conn: &DbConnection) -> Result<GlobalCoreData, String> {
                 avatar_crop_scale: r.get(7)?,
                 design_description: r.get(8)?,
                 design_reference_image_ids: r.get(9)?,
-                is_default: r.get(10)?,
-                created_at: r.get(11)?,
-                updated_at: r.get(12)?,
+                active_lorebook_ids: r.get(10)?,
+                is_default: r.get(11)?,
+                created_at: r.get(12)?,
+                updated_at: r.get(13)?,
             })
         })
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?

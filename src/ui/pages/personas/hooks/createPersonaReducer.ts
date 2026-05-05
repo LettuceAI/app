@@ -18,6 +18,7 @@ export interface PersonaFormState {
   avatarRoundPath: string | null;
   designDescription: string;
   designReferenceImageIds: string[];
+  activeLorebookIds: string[];
   isDefault: boolean;
   saving: boolean;
   importing: boolean;
@@ -33,6 +34,7 @@ export type PersonaFormAction =
   | { type: "set_avatar_round_path"; value: string | null }
   | { type: "set_design_description"; value: string }
   | { type: "set_design_reference_image_ids"; value: string[] }
+  | { type: "set_active_lorebook_ids"; value: string[] }
   | { type: "set_default"; value: boolean }
   | { type: "set_saving"; value: boolean }
   | { type: "set_importing"; value: boolean }
@@ -48,6 +50,7 @@ export type PersonaFormAction =
         avatarRoundPath?: string | null;
         designDescription?: string;
         designReferenceImageIds?: string[];
+        activeLorebookIds?: string[];
       };
     };
 
@@ -60,6 +63,7 @@ export const initialCreatePersonaState: PersonaFormState = {
   avatarRoundPath: null,
   designDescription: "",
   designReferenceImageIds: [],
+  activeLorebookIds: [],
   isDefault: false,
   saving: false,
   importing: false,
@@ -87,6 +91,8 @@ export function createPersonaReducer(
       return { ...state, designDescription: action.value };
     case "set_design_reference_image_ids":
       return { ...state, designReferenceImageIds: action.value };
+    case "set_active_lorebook_ids":
+      return { ...state, activeLorebookIds: action.value };
     case "set_default":
       return { ...state, isDefault: action.value };
     case "set_saving":
@@ -106,6 +112,7 @@ export function createPersonaReducer(
         avatarRoundPath: action.payload.avatarRoundPath ?? null,
         designDescription: action.payload.designDescription ?? "",
         designReferenceImageIds: action.payload.designReferenceImageIds ?? [],
+        activeLorebookIds: action.payload.activeLorebookIds ?? [],
         isDefault: false,
       };
     default:
@@ -176,6 +183,7 @@ export function useCreatePersonaController() {
             avatarCrop: importedPersona.avatarCrop ?? null,
             designDescription: importedPersona.designDescription ?? "",
             designReferenceImageIds: importedPersona.designReferenceImageIds ?? [],
+            activeLorebookIds: importedPersona.activeLorebookIds ?? [],
           },
         });
         dispatch({ type: "set_error", value: null });
@@ -240,6 +248,7 @@ export function useCreatePersonaController() {
         designDescription: state.designDescription.trim() || undefined,
         designReferenceImageIds:
           designReferenceImageIds.length > 0 ? designReferenceImageIds : undefined,
+        activeLorebookIds: state.activeLorebookIds,
         isDefault: state.isDefault,
       });
 

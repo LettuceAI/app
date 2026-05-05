@@ -11,6 +11,7 @@ import {
 import { AvatarPicker } from "../../components/AvatarPicker";
 import { Switch } from "../../components/Switch";
 import { DesignReferenceEditor } from "../../components/DesignReferenceEditor";
+import { ActiveLorebooksSelector } from "../characters/components/ActiveLorebooksSelector";
 import { useI18n } from "../../../core/i18n/context";
 import { typography, radius, spacing, interactive, cn } from "../../design-tokens";
 
@@ -37,6 +38,7 @@ export function EditPersonaPage() {
       avatarRoundPath,
       designDescription,
       designReferenceImageIds,
+      activeLorebookIds,
     },
     setTitle,
     setDescription,
@@ -47,6 +49,7 @@ export function EditPersonaPage() {
     setAvatarRoundPath,
     setDesignDescription,
     setDesignReferenceImageIds,
+    setActiveLorebookIds,
     handleSave,
     resetToInitial,
     canSave,
@@ -257,6 +260,12 @@ export function EditPersonaPage() {
                   <Switch checked={isDefault} onChange={(next) => setIsDefault(next)} />
                 </div>
               </div>
+
+              <ActiveLorebooksSelector
+                selectedIds={activeLorebookIds}
+                onChange={setActiveLorebookIds}
+                subjectLabel="persona"
+              />
 
               <div className={spacing.field}>
                 <motion.button

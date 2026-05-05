@@ -9,12 +9,14 @@ type ActiveLorebooksSelectorProps = {
   selectedIds: string[];
   onChange: (ids: string[]) => void;
   disabled?: boolean;
+  subjectLabel?: string;
 };
 
 export function ActiveLorebooksSelector({
   selectedIds,
   onChange,
   disabled = false,
+  subjectLabel = "character",
 }: ActiveLorebooksSelectorProps) {
   const [lorebooks, setLorebooks] = React.useState<Lorebook[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -54,7 +56,7 @@ export function ActiveLorebooksSelector({
       ? selectedLorebooks.map((lorebook) => lorebook.name || "Untitled lorebook").join(", ")
       : selectedCount > 0
         ? `${selectedCount} active`
-        : "Using no character lorebooks";
+        : `Using no ${subjectLabel} lorebooks`;
 
   const toggleLorebook = React.useCallback(
     (id: string) => {
@@ -100,7 +102,7 @@ export function ActiveLorebooksSelector({
               {loading ? "Loading lorebooks..." : error ? error : selectedLabel}
             </p>
             <p className="mt-1 text-xs text-fg/45">
-              Sessions inherit these unless the session overrides them.
+              Sessions inherit these unless a session override is set.
             </p>
           </div>
           {loading ? (
@@ -129,8 +131,8 @@ export function ActiveLorebooksSelector({
       >
         <div className="space-y-4">
           <p className="text-sm leading-relaxed text-fg/55">
-            Choose the lorebooks this character should activate by default. Existing sessions can
-            still override this list.
+            Choose the lorebooks this {subjectLabel} should activate by default. Existing sessions
+            can still override this list.
           </p>
 
           {loading ? (

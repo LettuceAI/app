@@ -363,6 +363,7 @@ mod tests {
             avatar_path: None,
             design_description: None,
             design_reference_image_ids: Vec::new(),
+            active_lorebook_ids: Vec::new(),
             is_default: false,
             created_at: 0,
             updated_at: 0,

@@ -354,6 +354,11 @@ fn import_personas(conn: &mut rusqlite::Connection, json: &str) -> Result<(), St
         let avatar_crop_y = avatar_crop.and_then(|crop| crop.get("y").and_then(|v| v.as_f64()));
         let avatar_crop_scale =
             avatar_crop.and_then(|crop| crop.get("scale").and_then(|v| v.as_f64()));
+        let active_lorebook_ids = p
+            .get("activeLorebookIds")
+            .and_then(|v| v.as_array())
+            .and_then(|arr| serde_json::to_string(arr).ok())
+            .unwrap_or_else(|| "[]".to_string());
         let is_default = p
             .get("isDefault")
             .and_then(|v| v.as_bool())
@@ -361,8 +366,8 @@ fn import_personas(conn: &mut rusqlite::Connection, json: &str) -> Result<(), St
         let created_at = p.get("createdAt").and_then(|v| v.as_i64()).unwrap_or(now);
         let updated_at = p.get("updatedAt").and_then(|v| v.as_i64()).unwrap_or(now);
         tx.execute(
-            r#"INSERT OR REPLACE INTO personas (id, title, description, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, is_default, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
+            r#"INSERT OR REPLACE INTO personas (id, title, description, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, active_lorebook_ids, is_default, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
             params![
                 &id,
                 title,
@@ -371,6 +376,7 @@ fn import_personas(conn: &mut rusqlite::Connection, json: &str) -> Result<(), St
                 avatar_crop_x,
                 avatar_crop_y,
                 avatar_crop_scale,
+                active_lorebook_ids,
                 is_default,
                 created_at,
                 updated_at
