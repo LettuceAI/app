@@ -64,6 +64,11 @@ type ControllerReturn = {
   handleLlamaSamplerOrderChange: (value: AdvancedModelSettings["llamaSamplerOrder"]) => void;
   handleLlamaMinPChange: (value: number | null) => void;
   handleLlamaTypicalPChange: (value: number | null) => void;
+  handleLlamaDryMultiplierChange: (value: number | null) => void;
+  handleLlamaDryBaseChange: (value: number | null) => void;
+  handleLlamaDryAllowedLengthChange: (value: number | null) => void;
+  handleLlamaDryPenaltyLastNChange: (value: number | null) => void;
+  handleLlamaDrySequenceBreakersChange: (value: string[] | null) => void;
   handleLlamaChatTemplateOverrideChange: (value: string | null) => void;
   handleLlamaMmprojPathChange: (value: string | null) => void;
   handleLlamaChatTemplatePresetChange: (value: string | null) => void;
@@ -786,6 +791,71 @@ export function useModelEditorController(): ControllerReturn {
     [dispatch, state.modelAdvancedDraft],
   );
 
+  const handleLlamaDryMultiplierChange = useCallback(
+    (value: number | null) => {
+      dispatch({
+        type: "set_model_advanced_draft",
+        payload: {
+          ...state.modelAdvancedDraft,
+          llamaDryMultiplier: value,
+        },
+      });
+    },
+    [dispatch, state.modelAdvancedDraft],
+  );
+
+  const handleLlamaDryBaseChange = useCallback(
+    (value: number | null) => {
+      dispatch({
+        type: "set_model_advanced_draft",
+        payload: {
+          ...state.modelAdvancedDraft,
+          llamaDryBase: value,
+        },
+      });
+    },
+    [dispatch, state.modelAdvancedDraft],
+  );
+
+  const handleLlamaDryAllowedLengthChange = useCallback(
+    (value: number | null) => {
+      dispatch({
+        type: "set_model_advanced_draft",
+        payload: {
+          ...state.modelAdvancedDraft,
+          llamaDryAllowedLength: value,
+        },
+      });
+    },
+    [dispatch, state.modelAdvancedDraft],
+  );
+
+  const handleLlamaDryPenaltyLastNChange = useCallback(
+    (value: number | null) => {
+      dispatch({
+        type: "set_model_advanced_draft",
+        payload: {
+          ...state.modelAdvancedDraft,
+          llamaDryPenaltyLastN: value,
+        },
+      });
+    },
+    [dispatch, state.modelAdvancedDraft],
+  );
+
+  const handleLlamaDrySequenceBreakersChange = useCallback(
+    (value: string[] | null) => {
+      dispatch({
+        type: "set_model_advanced_draft",
+        payload: {
+          ...state.modelAdvancedDraft,
+          llamaDrySequenceBreakers: value,
+        },
+      });
+    },
+    [dispatch, state.modelAdvancedDraft],
+  );
+
   const handleLlamaChatTemplateOverrideChange = useCallback(
     (value: string | null) => {
       dispatch({
@@ -1491,6 +1561,11 @@ export function useModelEditorController(): ControllerReturn {
     handleLlamaSamplerOrderChange,
     handleLlamaMinPChange,
     handleLlamaTypicalPChange,
+    handleLlamaDryMultiplierChange,
+    handleLlamaDryBaseChange,
+    handleLlamaDryAllowedLengthChange,
+    handleLlamaDryPenaltyLastNChange,
+    handleLlamaDrySequenceBreakersChange,
     handleLlamaChatTemplateOverrideChange,
     handleLlamaMmprojPathChange,
     handleLlamaChatTemplatePresetChange,

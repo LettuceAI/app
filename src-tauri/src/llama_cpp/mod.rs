@@ -230,6 +230,17 @@ mod desktop {
             .unwrap_or(false)
     }
 
+    fn decode_llama_sequence_breaker(value: &str) -> String {
+        match value.trim() {
+            "\\n" => "\n".to_string(),
+            "\\r" => "\r".to_string(),
+            "\\t" => "\t".to_string(),
+            "\\\"" => "\"".to_string(),
+            "\\\\" => "\\".to_string(),
+            other => other.to_string(),
+        }
+    }
+
     fn local_structured_debug_payload(
         request_id: Option<&String>,
         model_path: &str,
@@ -685,6 +696,42 @@ mod desktop {
             .or_else(|| body.get("llama_typical_p"))
             .and_then(|v| v.as_f64())
             .or(sampler_defaults.typical_p);
+        let dry_multiplier = body
+            .get("dry_multiplier")
+            .or_else(|| body.get("llamaDryMultiplier"))
+            .or_else(|| body.get("llama_dry_multiplier"))
+            .and_then(|v| v.as_f64());
+        let dry_base = body
+            .get("dry_base")
+            .or_else(|| body.get("llamaDryBase"))
+            .or_else(|| body.get("llama_dry_base"))
+            .and_then(|v| v.as_f64());
+        let dry_allowed_length = body
+            .get("dry_allowed_length")
+            .or_else(|| body.get("llamaDryAllowedLength"))
+            .or_else(|| body.get("llama_dry_allowed_length"))
+            .and_then(|v| v.as_u64())
+            .and_then(|v| u32::try_from(v).ok());
+        let dry_penalty_last_n = body
+            .get("dry_penalty_last_n")
+            .or_else(|| body.get("llamaDryPenaltyLastN"))
+            .or_else(|| body.get("llama_dry_penalty_last_n"))
+            .and_then(|v| v.as_i64())
+            .and_then(|v| i32::try_from(v).ok());
+        let dry_sequence_breakers = body
+            .get("dry_sequence_breakers")
+            .or_else(|| body.get("llamaDrySequenceBreakers"))
+            .or_else(|| body.get("llama_dry_sequence_breakers"))
+            .and_then(|v| v.as_array())
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.as_str())
+                    .map(decode_llama_sequence_breaker)
+                    .filter(|item| !item.is_empty())
+                    .collect::<Vec<_>>()
+            })
+            .filter(|items| !items.is_empty());
         let max_tokens = body
             .get("max_tokens")
             .or_else(|| body.get("max_completion_tokens"))
@@ -1828,6 +1875,11 @@ mod desktop {
                 top_k,
                 min_p,
                 typical_p,
+                dry_multiplier,
+                dry_base,
+                dry_allowed_length,
+                dry_penalty_last_n,
+                dry_sequence_breakers,
                 frequency_penalty,
                 presence_penalty,
                 seed: llama_seed,

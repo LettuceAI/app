@@ -299,12 +299,9 @@ pub fn load_session(app: &AppHandle, session_id: &str) -> Result<Option<Session>
     // this session. Sessions that have never been saved under the new schema
     // still read from the legacy JSON column populated by
     // `session_get_meta_internal`; the next `save_session` will migrate them.
-    let new_table_count = memory_embeddings::count_for_session_app(
-        app,
-        session_id,
-        SessionKind::Session,
-    )
-    .unwrap_or(0);
+    let new_table_count =
+        memory_embeddings::count_for_session_app(app, session_id, SessionKind::Session)
+            .unwrap_or(0);
     if new_table_count > 0 {
         session.memory_embeddings =
             memory_embeddings::load_for_session_app(app, session_id, SessionKind::Session)?;

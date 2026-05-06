@@ -31,6 +31,10 @@ const STAGE_META: Record<LlamaSamplerOrderStage, { label: string; description: s
     label: "Min P",
     description: "Drop low-probability tail tokens using a minimum floor.",
   },
+  dry: {
+    label: "DRY",
+    description: "Penalize repeated multi-token sequences before they loop.",
+  },
   typical: {
     label: "Typical P",
     description: "Prefer statistically typical tokens in the current distribution.",

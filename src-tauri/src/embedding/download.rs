@@ -121,7 +121,12 @@ fn log_model_file_status(app: &AppHandle, component: &str, model_dir: &PathBuf) 
             log_info(
                 app,
                 component,
-                format!("model file {} {}: {}", label, filename, describe_path(&path)),
+                format!(
+                    "model file {} {}: {}",
+                    label,
+                    filename,
+                    describe_path(&path)
+                ),
             );
         }
     }

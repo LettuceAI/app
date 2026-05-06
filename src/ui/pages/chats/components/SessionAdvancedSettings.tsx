@@ -14,6 +14,10 @@ import {
   ADVANCED_FREQUENCY_PENALTY_RANGE,
   ADVANCED_PRESENCE_PENALTY_RANGE,
   ADVANCED_TOP_K_RANGE,
+  ADVANCED_LLAMA_DRY_ALLOWED_LENGTH_RANGE,
+  ADVANCED_LLAMA_DRY_BASE_RANGE,
+  ADVANCED_LLAMA_DRY_MULTIPLIER_RANGE,
+  ADVANCED_LLAMA_DRY_PENALTY_LAST_N_RANGE,
 } from "../../../components/AdvancedModelSettingsForm";
 
 interface ParameterFieldProps {
@@ -570,6 +574,52 @@ export function SessionAdvancedSettings({
                               />
 
                               <ParameterField
+                                label="DRY Multiplier"
+                                description="Set above 0 to penalize repeated sequences."
+                                value={draft.llamaDryMultiplier}
+                                placeholder="0.80"
+                                min={ADVANCED_LLAMA_DRY_MULTIPLIER_RANGE.min}
+                                max={ADVANCED_LLAMA_DRY_MULTIPLIER_RANGE.max}
+                                step={0.05}
+                                onChange={(v) => update({ llamaDryMultiplier: v })}
+                              />
+
+                              <ParameterField
+                                label="DRY Base"
+                                description="How aggressively the DRY penalty ramps up."
+                                value={draft.llamaDryBase}
+                                placeholder="1.75"
+                                min={ADVANCED_LLAMA_DRY_BASE_RANGE.min}
+                                max={ADVANCED_LLAMA_DRY_BASE_RANGE.max}
+                                step={0.05}
+                                onChange={(v) => update({ llamaDryBase: v })}
+                              />
+
+                              <ParameterField
+                                label="DRY Allowed Length"
+                                description="Ignore repeats shorter than this many tokens."
+                                value={draft.llamaDryAllowedLength}
+                                placeholder="2"
+                                min={ADVANCED_LLAMA_DRY_ALLOWED_LENGTH_RANGE.min}
+                                max={ADVANCED_LLAMA_DRY_ALLOWED_LENGTH_RANGE.max}
+                                step={1}
+                                onChange={(v) => update({ llamaDryAllowedLength: v })}
+                                inputMode="numeric"
+                              />
+
+                              <ParameterField
+                                label="DRY Penalty Last N"
+                                description="Use `-1` to scan the full context."
+                                value={draft.llamaDryPenaltyLastN}
+                                placeholder="-1"
+                                min={ADVANCED_LLAMA_DRY_PENALTY_LAST_N_RANGE.min}
+                                max={ADVANCED_LLAMA_DRY_PENALTY_LAST_N_RANGE.max}
+                                step={1}
+                                onChange={(v) => update({ llamaDryPenaltyLastN: v })}
+                                inputMode="numeric"
+                              />
+
+                              <ParameterField
                                 label="Seed"
                                 description="Random seed. Leave blank for random."
                                 value={draft.llamaSeed}
@@ -602,6 +652,30 @@ export function SessionAdvancedSettings({
                                 step={0.01}
                                 onChange={(v) => update({ llamaRopeFreqScale: v })}
                               />
+
+                              <div className="space-y-2">
+                                <label className="text-[13px] font-medium text-fg/80">
+                                  DRY Sequence Breakers
+                                </label>
+                                <p className="text-[11px] text-fg/40 leading-relaxed">
+                                  Comma-separated boundaries like `\n`, `:`, `"`, `*`.
+                                </p>
+                                <input
+                                  type="text"
+                                  value={draft.llamaDrySequenceBreakers?.join(", ") ?? ""}
+                                  onChange={(e) => {
+                                    const next = e.target.value
+                                      .split(",")
+                                      .map((item) => item.trim())
+                                      .filter((item) => item.length > 0);
+                                    update({
+                                      llamaDrySequenceBreakers: next.length ? next : null,
+                                    });
+                                  }}
+                                  placeholder={'\\n, :, ", *'}
+                                  className="w-full rounded-lg border border-fg/10 bg-fg/5 px-3 py-2 text-sm text-fg transition focus:border-fg/20 focus:outline-none"
+                                />
+                              </div>
 
                               <div className="space-y-2">
                                 <label className="text-[13px] font-medium text-fg/80">

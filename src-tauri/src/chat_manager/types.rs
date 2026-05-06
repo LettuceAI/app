@@ -586,6 +586,16 @@ pub struct AdvancedModelSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub llama_typical_p: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub llama_dry_multiplier: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub llama_dry_base: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub llama_dry_allowed_length: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub llama_dry_penalty_last_n: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub llama_dry_sequence_breakers: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub llama_last_runtime_report: Option<serde_json::Value>,
     pub ollama_num_ctx: Option<u32>,
     pub ollama_num_predict: Option<u32>,
@@ -652,6 +662,11 @@ impl Default for AdvancedModelSettings {
             llama_sampler_order: None,
             llama_min_p: None,
             llama_typical_p: None,
+            llama_dry_multiplier: None,
+            llama_dry_base: None,
+            llama_dry_allowed_length: None,
+            llama_dry_penalty_last_n: None,
+            llama_dry_sequence_breakers: None,
             llama_last_runtime_report: None,
             ollama_num_ctx: None,
             ollama_num_predict: None,

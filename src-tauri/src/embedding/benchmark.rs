@@ -325,208 +325,209 @@ pub async fn run_embedding_dev_benchmark(app: AppHandle) -> Result<DevBenchmarkR
 
     let benchmark_future =
         tokio::task::spawn_blocking(move || -> Result<DevBenchmarkResult, String> {
-            let run_variant =
-                |version: &str,
-                 embedding_dimensions: usize,
-                 model_path: PathBuf,
-                 tokenizer_path: PathBuf|
-                 -> Result<BenchmarkVariantResult, String> {
-                    let mut session = Session::builder()
-                        .map_err(|e| {
-                            crate::utils::err_msg(
-                                module_path!(),
-                                line!(),
-                                format!("Failed to create {} session builder: {}", version, e),
-                            )
-                        })?
-                        .with_optimization_level(GraphOptimizationLevel::Level3)
-                        .map_err(|e| {
-                            crate::utils::err_msg(
-                                module_path!(),
-                                line!(),
-                                format!("Failed to set {} optimization level: {}", version, e),
-                            )
-                        })?
-                        .commit_from_file(&model_path)
-                        .map_err(|e| {
-                            crate::utils::err_msg(
-                                module_path!(),
-                                line!(),
-                                format!(
-                                    "Failed to load {} model {}: {}",
-                                    version,
-                                    model_path.display(),
-                                    e
-                                ),
-                            )
-                        })?;
-
-                    let tokenizer = Tokenizer::from_file(&tokenizer_path).map_err(|e| {
+            let run_variant = |version: &str,
+                               embedding_dimensions: usize,
+                               model_path: PathBuf,
+                               tokenizer_path: PathBuf|
+             -> Result<BenchmarkVariantResult, String> {
+                let mut session = Session::builder()
+                    .map_err(|e| {
+                        crate::utils::err_msg(
+                            module_path!(),
+                            line!(),
+                            format!("Failed to create {} session builder: {}", version, e),
+                        )
+                    })?
+                    .with_optimization_level(GraphOptimizationLevel::Level3)
+                    .map_err(|e| {
+                        crate::utils::err_msg(
+                            module_path!(),
+                            line!(),
+                            format!("Failed to set {} optimization level: {}", version, e),
+                        )
+                    })?
+                    .commit_from_file(&model_path)
+                    .map_err(|e| {
                         crate::utils::err_msg(
                             module_path!(),
                             line!(),
                             format!(
-                                "Failed to load {} tokenizer {}: {}",
+                                "Failed to load {} model {}: {}",
                                 version,
-                                tokenizer_path.display(),
+                                model_path.display(),
                                 e
                             ),
                         )
                     })?;
 
-                    let mut embedding_cache: HashMap<String, Vec<f32>> = HashMap::new();
+                let tokenizer = Tokenizer::from_file(&tokenizer_path).map_err(|e| {
+                    crate::utils::err_msg(
+                        module_path!(),
+                        line!(),
+                        format!(
+                            "Failed to load {} tokenizer {}: {}",
+                            version,
+                            tokenizer_path.display(),
+                            e
+                        ),
+                    )
+                })?;
 
-                    for warmup_text in benchmark_texts.iter().take(2) {
-                        let _ = super::inference::compute_embedding_with_session(
-                            &mut session,
-                            &tokenizer,
-                            warmup_text,
-                            EMBEDDING_BENCH_MAX_SEQ_LENGTH,
-                            embedding_dimensions,
-                        )?;
-                    }
+                let mut embedding_cache: HashMap<String, Vec<f32>> = HashMap::new();
 
-                    let mut timings_ms: Vec<f32> = Vec::with_capacity(benchmark_texts.len());
-                    for text in &benchmark_texts {
-                        let started = std::time::Instant::now();
-                        let embedding = super::inference::compute_embedding_with_session(
-                            &mut session,
-                            &tokenizer,
-                            text,
-                            EMBEDDING_BENCH_MAX_SEQ_LENGTH,
-                            embedding_dimensions,
-                        )?;
-                        let elapsed_ms = started.elapsed().as_secs_f32() * 1000.0;
-                        timings_ms.push(elapsed_ms);
-                        embedding_cache.insert((*text).to_string(), embedding);
-                    }
-
-                    for (_, doc_text) in &retrieval_docs {
-                        if embedding_cache.contains_key(*doc_text) {
-                            continue;
-                        }
-                        let embedding = super::inference::compute_embedding_with_session(
-                            &mut session,
-                            &tokenizer,
-                            doc_text,
-                            EMBEDDING_BENCH_MAX_SEQ_LENGTH,
-                            embedding_dimensions,
-                        )?;
-                        embedding_cache.insert((*doc_text).to_string(), embedding);
-                    }
-
-                    for case in &retrieval_cases {
-                        if embedding_cache.contains_key(case.query) {
-                            continue;
-                        }
-                        let embedding = super::inference::compute_embedding_with_session(
-                            &mut session,
-                            &tokenizer,
-                            case.query,
-                            EMBEDDING_BENCH_MAX_SEQ_LENGTH,
-                            embedding_dimensions,
-                        )?;
-                        embedding_cache.insert(case.query.to_string(), embedding);
-                    }
-
-                    let mut pair_scores = Vec::with_capacity(pair_definitions.len());
-                    let mut related_scores = Vec::new();
-                    let mut unrelated_scores = Vec::new();
-
-                    for pair in &pair_definitions {
-                        let e1 = embedding_cache.get(pair.a).ok_or_else(|| {
-                            crate::utils::err_msg(
-                                module_path!(),
-                                line!(),
-                                format!("Missing cached embedding for {}", pair.a),
-                            )
-                        })?;
-                        let e2 = embedding_cache.get(pair.b).ok_or_else(|| {
-                            crate::utils::err_msg(
-                                module_path!(),
-                                line!(),
-                                format!("Missing cached embedding for {}", pair.b),
-                            )
-                        })?;
-                        let similarity = super::util::cosine_similarity(e1, e2);
-                        pair_scores.push(BenchmarkPairScore {
-                            pair_name: pair.name.to_string(),
-                            category: pair.category.to_string(),
-                            similarity,
-                        });
-                        if pair.category == "related" {
-                            related_scores.push(similarity);
-                        } else {
-                            unrelated_scores.push(similarity);
-                        }
-                    }
-
-                    let mut top1_hits = 0usize;
-                    let mut reciprocal_rank_sum = 0.0f32;
-                    for case in &retrieval_cases {
-                        let query_embedding = embedding_cache.get(case.query).ok_or_else(|| {
-                            crate::utils::err_msg(
-                                module_path!(),
-                                line!(),
-                                format!("Missing cached retrieval query for {}", case.name),
-                            )
-                        })?;
-
-                        let mut scored_docs: Vec<(&str, f32)> = retrieval_docs
-                            .iter()
-                            .map(|(doc_id, doc_text)| {
-                                let doc_embedding =
-                                    embedding_cache.get(*doc_text).expect("retrieval doc cached");
-                                (*doc_id, super::util::cosine_similarity(query_embedding, doc_embedding))
-                            })
-                            .collect();
-                        scored_docs.sort_by(|a, b| {
-                            b.1.partial_cmp(&a.1)
-                                .unwrap_or(std::cmp::Ordering::Equal)
-                        });
-
-                        if scored_docs
-                            .first()
-                            .map(|(doc_id, _)| *doc_id == case.relevant_doc_id)
-                            .unwrap_or(false)
-                        {
-                            top1_hits += 1;
-                        }
-
-                        if let Some(rank) = scored_docs
-                            .iter()
-                            .position(|(doc_id, _)| *doc_id == case.relevant_doc_id)
-                        {
-                            reciprocal_rank_sum += 1.0 / (rank as f32 + 1.0);
-                        }
-                    }
-
-                    let sample_count = timings_ms.len();
-                    let average_ms = average(&timings_ms);
-                    let min_ms = timings_ms.iter().copied().reduce(f32::min).unwrap_or(0.0);
-                    let max_ms = timings_ms.iter().copied().reduce(f32::max).unwrap_or(0.0);
-                    let p95_ms = percentile_ms(&timings_ms, 95.0);
-                    let related_average = average(&related_scores);
-                    let unrelated_average = average(&unrelated_scores);
-                    let retrieval_case_count = retrieval_cases.len().max(1) as f32;
-
-                    Ok(BenchmarkVariantResult {
-                        version: version.to_string(),
-                        label: format!("{} ({}d)", version, embedding_dimensions),
+                for warmup_text in benchmark_texts.iter().take(2) {
+                    let _ = super::inference::compute_embedding_with_session(
+                        &mut session,
+                        &tokenizer,
+                        warmup_text,
+                        EMBEDDING_BENCH_MAX_SEQ_LENGTH,
                         embedding_dimensions,
-                        sample_count,
-                        average_ms,
-                        p95_ms,
-                        min_ms,
-                        max_ms,
-                        related_average,
-                        unrelated_average,
-                        separation_margin: related_average - unrelated_average,
-                        retrieval_top1: top1_hits as f32 / retrieval_case_count,
-                        retrieval_mrr: reciprocal_rank_sum / retrieval_case_count,
-                        pair_scores,
-                    })
-                };
+                    )?;
+                }
+
+                let mut timings_ms: Vec<f32> = Vec::with_capacity(benchmark_texts.len());
+                for text in &benchmark_texts {
+                    let started = std::time::Instant::now();
+                    let embedding = super::inference::compute_embedding_with_session(
+                        &mut session,
+                        &tokenizer,
+                        text,
+                        EMBEDDING_BENCH_MAX_SEQ_LENGTH,
+                        embedding_dimensions,
+                    )?;
+                    let elapsed_ms = started.elapsed().as_secs_f32() * 1000.0;
+                    timings_ms.push(elapsed_ms);
+                    embedding_cache.insert((*text).to_string(), embedding);
+                }
+
+                for (_, doc_text) in &retrieval_docs {
+                    if embedding_cache.contains_key(*doc_text) {
+                        continue;
+                    }
+                    let embedding = super::inference::compute_embedding_with_session(
+                        &mut session,
+                        &tokenizer,
+                        doc_text,
+                        EMBEDDING_BENCH_MAX_SEQ_LENGTH,
+                        embedding_dimensions,
+                    )?;
+                    embedding_cache.insert((*doc_text).to_string(), embedding);
+                }
+
+                for case in &retrieval_cases {
+                    if embedding_cache.contains_key(case.query) {
+                        continue;
+                    }
+                    let embedding = super::inference::compute_embedding_with_session(
+                        &mut session,
+                        &tokenizer,
+                        case.query,
+                        EMBEDDING_BENCH_MAX_SEQ_LENGTH,
+                        embedding_dimensions,
+                    )?;
+                    embedding_cache.insert(case.query.to_string(), embedding);
+                }
+
+                let mut pair_scores = Vec::with_capacity(pair_definitions.len());
+                let mut related_scores = Vec::new();
+                let mut unrelated_scores = Vec::new();
+
+                for pair in &pair_definitions {
+                    let e1 = embedding_cache.get(pair.a).ok_or_else(|| {
+                        crate::utils::err_msg(
+                            module_path!(),
+                            line!(),
+                            format!("Missing cached embedding for {}", pair.a),
+                        )
+                    })?;
+                    let e2 = embedding_cache.get(pair.b).ok_or_else(|| {
+                        crate::utils::err_msg(
+                            module_path!(),
+                            line!(),
+                            format!("Missing cached embedding for {}", pair.b),
+                        )
+                    })?;
+                    let similarity = super::util::cosine_similarity(e1, e2);
+                    pair_scores.push(BenchmarkPairScore {
+                        pair_name: pair.name.to_string(),
+                        category: pair.category.to_string(),
+                        similarity,
+                    });
+                    if pair.category == "related" {
+                        related_scores.push(similarity);
+                    } else {
+                        unrelated_scores.push(similarity);
+                    }
+                }
+
+                let mut top1_hits = 0usize;
+                let mut reciprocal_rank_sum = 0.0f32;
+                for case in &retrieval_cases {
+                    let query_embedding = embedding_cache.get(case.query).ok_or_else(|| {
+                        crate::utils::err_msg(
+                            module_path!(),
+                            line!(),
+                            format!("Missing cached retrieval query for {}", case.name),
+                        )
+                    })?;
+
+                    let mut scored_docs: Vec<(&str, f32)> = retrieval_docs
+                        .iter()
+                        .map(|(doc_id, doc_text)| {
+                            let doc_embedding = embedding_cache
+                                .get(*doc_text)
+                                .expect("retrieval doc cached");
+                            (
+                                *doc_id,
+                                super::util::cosine_similarity(query_embedding, doc_embedding),
+                            )
+                        })
+                        .collect();
+                    scored_docs
+                        .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+                    if scored_docs
+                        .first()
+                        .map(|(doc_id, _)| *doc_id == case.relevant_doc_id)
+                        .unwrap_or(false)
+                    {
+                        top1_hits += 1;
+                    }
+
+                    if let Some(rank) = scored_docs
+                        .iter()
+                        .position(|(doc_id, _)| *doc_id == case.relevant_doc_id)
+                    {
+                        reciprocal_rank_sum += 1.0 / (rank as f32 + 1.0);
+                    }
+                }
+
+                let sample_count = timings_ms.len();
+                let average_ms = average(&timings_ms);
+                let min_ms = timings_ms.iter().copied().reduce(f32::min).unwrap_or(0.0);
+                let max_ms = timings_ms.iter().copied().reduce(f32::max).unwrap_or(0.0);
+                let p95_ms = percentile_ms(&timings_ms, 95.0);
+                let related_average = average(&related_scores);
+                let unrelated_average = average(&unrelated_scores);
+                let retrieval_case_count = retrieval_cases.len().max(1) as f32;
+
+                Ok(BenchmarkVariantResult {
+                    version: version.to_string(),
+                    label: format!("{} ({}d)", version, embedding_dimensions),
+                    embedding_dimensions,
+                    sample_count,
+                    average_ms,
+                    p95_ms,
+                    min_ms,
+                    max_ms,
+                    related_average,
+                    unrelated_average,
+                    separation_margin: related_average - unrelated_average,
+                    retrieval_top1: top1_hits as f32 / retrieval_case_count,
+                    retrieval_mrr: reciprocal_rank_sum / retrieval_case_count,
+                    pair_scores,
+                })
+            };
 
             let v3_result = run_variant(
                 "v3",

@@ -6,7 +6,9 @@ use crate::chat_manager::types::{Model, Session, Settings};
 use super::{
     is_llama_cpp_model, llama_sampler_profile_defaults, resolve_context_length,
     resolve_frequency_penalty, resolve_llama_batch_size, resolve_llama_chat_template_override,
-    resolve_llama_chat_template_preset, resolve_llama_flash_attention, resolve_llama_gpu_layers,
+    resolve_llama_chat_template_preset, resolve_llama_dry_allowed_length, resolve_llama_dry_base,
+    resolve_llama_dry_multiplier, resolve_llama_dry_penalty_last_n,
+    resolve_llama_dry_sequence_breakers, resolve_llama_flash_attention, resolve_llama_gpu_layers,
     resolve_llama_kv_type, resolve_llama_mmproj_path, resolve_llama_offload_kqv,
     resolve_llama_profile_min_p, resolve_llama_profile_typical_p,
     resolve_llama_raw_completion_fallback, resolve_llama_rope_freq_base,
@@ -92,6 +94,21 @@ fn build_llama_extra_fields(
     }
     if let Some(v) = resolve_llama_profile_typical_p(session, model, settings) {
         extra.insert("llamaTypicalP".to_string(), json!(v));
+    }
+    if let Some(v) = resolve_llama_dry_multiplier(session, model, settings) {
+        extra.insert("llamaDryMultiplier".to_string(), json!(v));
+    }
+    if let Some(v) = resolve_llama_dry_base(session, model, settings) {
+        extra.insert("llamaDryBase".to_string(), json!(v));
+    }
+    if let Some(v) = resolve_llama_dry_allowed_length(session, model, settings) {
+        extra.insert("llamaDryAllowedLength".to_string(), json!(v));
+    }
+    if let Some(v) = resolve_llama_dry_penalty_last_n(session, model, settings) {
+        extra.insert("llamaDryPenaltyLastN".to_string(), json!(v));
+    }
+    if let Some(v) = resolve_llama_dry_sequence_breakers(session, model, settings) {
+        extra.insert("llamaDrySequenceBreakers".to_string(), json!(v));
     }
 
     if extra.is_empty() {

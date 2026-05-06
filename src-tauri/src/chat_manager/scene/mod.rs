@@ -1790,16 +1790,15 @@ pub async fn chat_generate_design_reference_description(
     }
 
     let system_role = adapter_for(credential).system_role().into_owned();
-    let streaming_enabled =
-        super::request_builder::effective_streaming_enabled_with_override(
-            credential,
-            stream.unwrap_or(true),
-            model
-                .advanced_model_settings
-                .as_ref()
-                .and_then(|cfg| cfg.llama_streaming_enabled)
-                .or(settings.advanced_model_settings.llama_streaming_enabled),
-        );
+    let streaming_enabled = super::request_builder::effective_streaming_enabled_with_override(
+        credential,
+        stream.unwrap_or(true),
+        model
+            .advanced_model_settings
+            .as_ref()
+            .and_then(|cfg| cfg.llama_streaming_enabled)
+            .or(settings.advanced_model_settings.llama_streaming_enabled),
+    );
     let prompt_entries = render_design_reference_prompt_entries(
         &app,
         settings,

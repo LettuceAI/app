@@ -75,7 +75,8 @@ pub async fn maybe_apply_gemini_explicit_cache(
     let tools = body_obj.get("tools").cloned();
 
     let api_key = extract_gemini_api_key(req).ok_or_else(|| {
-        "Gemini prompt caching requested, but no API key was available for cachedContents".to_string()
+        "Gemini prompt caching requested, but no API key was available for cachedContents"
+            .to_string()
     })?;
     let model_name = extract_gemini_model_name(&req.url).ok_or_else(|| {
         format!(
@@ -156,15 +157,12 @@ fn extract_gemini_api_key(req: &ApiRequest) -> Option<String> {
         .as_ref()
         .and_then(|headers| headers.get("x-goog-api-key").cloned())
         .or_else(|| {
-            req.url
-                .split('?')
-                .nth(1)
-                .and_then(|query| {
-                    query.split('&').find_map(|segment| {
-                        let (key, value) = segment.split_once('=')?;
-                        (key == "key").then(|| value.to_string())
-                    })
+            req.url.split('?').nth(1).and_then(|query| {
+                query.split('&').find_map(|segment| {
+                    let (key, value) = segment.split_once('=')?;
+                    (key == "key").then(|| value.to_string())
                 })
+            })
         })
 }
 
@@ -266,15 +264,17 @@ async fn create_gemini_cached_content(
         ),
     );
 
-    let response =
-        transport::send_with_retries(app, "gemini_cache_create", builder, 2, None).await;
+    let response = transport::send_with_retries(app, "gemini_cache_create", builder, 2, None).await;
     let response = match response {
         Ok(response) => response,
         Err(err) => {
             log_warn(
                 app,
                 "gemini_cache",
-                format!("Gemini cached content creation failed, falling back to uncached request: {}", err),
+                format!(
+                    "Gemini cached content creation failed, falling back to uncached request: {}",
+                    err
+                ),
             );
             return Err(err.to_string());
         }

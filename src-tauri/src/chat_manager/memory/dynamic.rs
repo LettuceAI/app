@@ -491,14 +491,12 @@ pub fn mark_memories_accessed<E: MemoryEntry>(
             mem.set_access_count(mem.access_count().saturating_add(1));
             let next_score = (mem.importance_score() + ACCESS_IMPORTANCE_BOOST).min(1.0);
             mem.set_importance_score(next_score);
-            updates.push(
-                crate::storage_manager::memory_embeddings::AccessUpdate {
-                    memory_id: mem.id().to_string(),
-                    importance_score: mem.importance_score(),
-                    last_accessed_at: mem.last_accessed_at(),
-                    access_count: mem.access_count(),
-                },
-            );
+            updates.push(crate::storage_manager::memory_embeddings::AccessUpdate {
+                memory_id: mem.id().to_string(),
+                importance_score: mem.importance_score(),
+                last_accessed_at: mem.last_accessed_at(),
+                access_count: mem.access_count(),
+            });
         }
     }
     updates
@@ -509,7 +507,12 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     if dim == 0 {
         return 0.0;
     }
-    let dot: f32 = a.iter().take(dim).zip(b.iter().take(dim)).map(|(x, y)| x * y).sum();
+    let dot: f32 = a
+        .iter()
+        .take(dim)
+        .zip(b.iter().take(dim))
+        .map(|(x, y)| x * y)
+        .sum();
     let norm_a: f32 = a.iter().take(dim).map(|x| x * x).sum::<f32>().sqrt();
     let norm_b: f32 = b.iter().take(dim).map(|x| x * x).sum::<f32>().sqrt();
     let denom = norm_a * norm_b;

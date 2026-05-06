@@ -878,7 +878,11 @@ fn score_configuration(
             } else {
                 1.0
             };
-            (78.0 + ram_fit_ratio * 12.0 + kv_fit_ratio * 10.0, false, "ramModelVramCtx")
+            (
+                78.0 + ram_fit_ratio * 12.0 + kv_fit_ratio * 10.0,
+                false,
+                "ramModelVramCtx",
+            )
         } else if model_fits_ram {
             let ram_fit_ratio = if model_size.saturating_add(overhead) > 0 {
                 (ram_budget as f64 / model_size.saturating_add(overhead) as f64).min(1.0)

@@ -28,10 +28,8 @@ pub const APP_LOREBOOK_KEYWORD_GENERATOR_TEMPLATE_ID: &str =
     "prompt_app_lorebook_keyword_generator";
 pub const APP_LOREBOOK_GENERATOR_PLANNER_TEMPLATE_ID: &str =
     "prompt_app_lorebook_generator_planner";
-pub const APP_LOREBOOK_GENERATOR_WRITER_TEMPLATE_ID: &str =
-    "prompt_app_lorebook_generator_writer";
-pub const APP_LOREBOOK_GENERATOR_REFINE_TEMPLATE_ID: &str =
-    "prompt_app_lorebook_generator_refine";
+pub const APP_LOREBOOK_GENERATOR_WRITER_TEMPLATE_ID: &str = "prompt_app_lorebook_generator_writer";
+pub const APP_LOREBOOK_GENERATOR_REFINE_TEMPLATE_ID: &str = "prompt_app_lorebook_generator_refine";
 pub const APP_LOREBOOK_GENERATOR_COHERENCE_TEMPLATE_ID: &str =
     "prompt_app_lorebook_generator_coherence";
 pub const APP_GROUP_CHAT_TEMPLATE_ID: &str = "prompt_app_group_chat";
@@ -89,7 +87,9 @@ pub fn template_prompt_type_from_id(id: &str) -> PromptTemplateType {
         APP_LOREBOOK_GENERATOR_PLANNER_TEMPLATE_ID => PromptTemplateType::LorebookGeneratorPlanner,
         APP_LOREBOOK_GENERATOR_WRITER_TEMPLATE_ID => PromptTemplateType::LorebookGeneratorWriter,
         APP_LOREBOOK_GENERATOR_REFINE_TEMPLATE_ID => PromptTemplateType::LorebookGeneratorRefine,
-        APP_LOREBOOK_GENERATOR_COHERENCE_TEMPLATE_ID => PromptTemplateType::LorebookGeneratorCoherence,
+        APP_LOREBOOK_GENERATOR_COHERENCE_TEMPLATE_ID => {
+            PromptTemplateType::LorebookGeneratorCoherence
+        }
         APP_AVATAR_GENERATION_TEMPLATE_ID => PromptTemplateType::AvatarGeneration,
         APP_AVATAR_EDIT_TEMPLATE_ID => PromptTemplateType::AvatarEditRequest,
         APP_SCENE_GENERATION_TEMPLATE_ID => PromptTemplateType::SceneGeneration,

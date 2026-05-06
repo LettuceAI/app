@@ -28,6 +28,10 @@ export const ADVANCED_LLAMA_SEED_RANGE = { min: 0, max: 2_147_483_647 };
 export const ADVANCED_LLAMA_ROPE_FREQ_BASE_RANGE = { min: 0, max: 1_000_000 };
 export const ADVANCED_LLAMA_ROPE_FREQ_SCALE_RANGE = { min: 0, max: 10 };
 export const ADVANCED_LLAMA_BATCH_SIZE_RANGE = { min: 1, max: 8192 };
+export const ADVANCED_LLAMA_DRY_MULTIPLIER_RANGE = { min: 0, max: 10 };
+export const ADVANCED_LLAMA_DRY_BASE_RANGE = { min: 0, max: 10 };
+export const ADVANCED_LLAMA_DRY_ALLOWED_LENGTH_RANGE = { min: 0, max: 128 };
+export const ADVANCED_LLAMA_DRY_PENALTY_LAST_N_RANGE = { min: -1, max: 262_144 };
 export const ADVANCED_OLLAMA_NUM_CTX_RANGE = { min: 0, max: 262_144 };
 export const ADVANCED_OLLAMA_NUM_PREDICT_RANGE = { min: 0, max: 131_072 };
 export const ADVANCED_OLLAMA_NUM_KEEP_RANGE = { min: 0, max: 32_768 };
@@ -69,6 +73,15 @@ export function sanitizeAdvancedModelSettings(input: AdvancedModelSettings): Adv
     const cleaned = value
       .map((v) => (typeof v === "string" ? v.trim() : ""))
       .filter((v) => v.length > 0);
+    return cleaned.length > 0 ? cleaned : null;
+  };
+
+  const normalizeStringList = (value: unknown): string[] | null => {
+    if (!Array.isArray(value)) return null;
+    const cleaned = value
+      .map((entry) => (typeof entry === "string" ? entry : ""))
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
     return cleaned.length > 0 ? cleaned : null;
   };
 
@@ -126,6 +139,23 @@ export function sanitizeAdvancedModelSettings(input: AdvancedModelSettings): Adv
     llamaSamplerOrder: normalizeLlamaSamplerOrder(input.llamaSamplerOrder),
     llamaMinP: sanitize(input.llamaMinP, ADVANCED_OLLAMA_MIN_P_RANGE, false),
     llamaTypicalP: sanitize(input.llamaTypicalP, ADVANCED_OLLAMA_TYPICAL_P_RANGE, false),
+    llamaDryMultiplier: sanitize(
+      input.llamaDryMultiplier,
+      ADVANCED_LLAMA_DRY_MULTIPLIER_RANGE,
+      false,
+    ),
+    llamaDryBase: sanitize(input.llamaDryBase, ADVANCED_LLAMA_DRY_BASE_RANGE, false),
+    llamaDryAllowedLength: sanitize(
+      input.llamaDryAllowedLength,
+      ADVANCED_LLAMA_DRY_ALLOWED_LENGTH_RANGE,
+      true,
+    ),
+    llamaDryPenaltyLastN: sanitize(
+      input.llamaDryPenaltyLastN,
+      ADVANCED_LLAMA_DRY_PENALTY_LAST_N_RANGE,
+      true,
+    ),
+    llamaDrySequenceBreakers: normalizeStringList(input.llamaDrySequenceBreakers),
     llamaLastRuntimeReport: input.llamaLastRuntimeReport ?? null,
     ollamaNumCtx: sanitize(input.ollamaNumCtx, ADVANCED_OLLAMA_NUM_CTX_RANGE, true),
     ollamaNumPredict: sanitize(input.ollamaNumPredict, ADVANCED_OLLAMA_NUM_PREDICT_RANGE, true),

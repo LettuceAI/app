@@ -654,7 +654,8 @@ async fn migrate_session_memory_embeddings_if_needed(
 
     for (idx, memory) in session.memory_embeddings.iter_mut().enumerate() {
         if memory_embedding_requires_migration(memory, &target_source_version, target_dimensions) {
-            memory.embedding = embedding::compute_embedding(app.clone(), memory.text.clone()).await?;
+            memory.embedding =
+                embedding::compute_embedding(app.clone(), memory.text.clone()).await?;
             memory.embedding_source_version = Some(target_source_version.clone());
             memory.embedding_dimensions = Some(target_dimensions);
         }
@@ -2723,6 +2724,11 @@ fn sanitize_dynamic_memory_extra_body_fields(
         "llamaSamplerOrder",
         "llamaMinP",
         "llamaTypicalP",
+        "llamaDryMultiplier",
+        "llamaDryBase",
+        "llamaDryAllowedLength",
+        "llamaDryPenaltyLastN",
+        "llamaDrySequenceBreakers",
         "llamaDisableSamplerProfileDefaults",
         "top_k",
         "frequency_penalty",
@@ -2744,6 +2750,7 @@ fn sanitize_dynamic_memory_extra_body_fields(
             "top_k",
             "top_p",
             "temp",
+            "dry",
             "min_p",
             "typical"
         ]),
@@ -2753,6 +2760,7 @@ fn sanitize_dynamic_memory_extra_body_fields(
     extra.insert("presence_penalty".to_string(), json!(0.0));
     extra.insert("min_p".to_string(), json!(0.0));
     extra.insert("typical_p".to_string(), json!(0.0));
+    extra.insert("llamaDryMultiplier".to_string(), json!(0.0));
 
     if extra.is_empty() {
         None

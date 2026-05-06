@@ -145,7 +145,10 @@ fn assign_duplicate_candidate_group_keys(items: &mut [ImageLibraryItem]) {
             item.updated_at / UPDATED_AT_BUCKET_MS
         };
         let candidate_key = format!("{width}x{height}:{updated_bucket}");
-        candidate_groups.entry(candidate_key).or_default().push(index);
+        candidate_groups
+            .entry(candidate_key)
+            .or_default()
+            .push(index);
     }
 
     for (_, indices) in candidate_groups {

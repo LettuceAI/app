@@ -410,7 +410,10 @@ pub async fn compute_embedding(app: AppHandle, text: String) -> Result<Vec<f32>,
     log_info(
         &app,
         "embedding_debug",
-        format!("selected_embedding_source={}", active_config.source.as_str()),
+        format!(
+            "selected_embedding_source={}",
+            active_config.source.as_str()
+        ),
     );
     log_info(
         &app,
@@ -427,7 +430,10 @@ pub async fn compute_embedding(app: AppHandle, text: String) -> Result<Vec<f32>,
     log_info(
         &app,
         "embedding_debug",
-        format!("model_path status {}", describe_path(&active_config.model_path)),
+        format!(
+            "model_path status {}",
+            describe_path(&active_config.model_path)
+        ),
     );
     log_info(
         &app,
@@ -452,8 +458,11 @@ pub async fn compute_embedding(app: AppHandle, text: String) -> Result<Vec<f32>,
         });
 
         if !reuse {
-            let (session, tokenizer) =
-                create_runtime(&app, &active_config.model_path, &active_config.tokenizer_path)?;
+            let (session, tokenizer) = create_runtime(
+                &app,
+                &active_config.model_path,
+                &active_config.tokenizer_path,
+            )?;
             *cache = Some(LoadedEmbeddingRuntime {
                 model_path: active_config.model_path.clone(),
                 tokenizer_path: active_config.tokenizer_path.clone(),
@@ -504,8 +513,11 @@ pub async fn compute_embedding(app: AppHandle, text: String) -> Result<Vec<f32>,
             }
         }
 
-        let (mut session, tokenizer) =
-            create_runtime(&app, &active_config.model_path, &active_config.tokenizer_path)?;
+        let (mut session, tokenizer) = create_runtime(
+            &app,
+            &active_config.model_path,
+            &active_config.tokenizer_path,
+        )?;
         log_info(
             &app,
             "embedding_debug",
@@ -636,7 +648,10 @@ pub async fn initialize_embedding_model(app: AppHandle) -> Result<(), String> {
             crate::utils::err_msg(
                 module_path!(),
                 line!(),
-                format!("Failed to load {} model: {}", active_config.version_label, e),
+                format!(
+                    "Failed to load {} model: {}",
+                    active_config.version_label, e
+                ),
             )
         })?;
     let _tokenizer = Tokenizer::from_file(&active_config.tokenizer_path).map_err(|e| {

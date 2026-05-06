@@ -2711,10 +2711,11 @@ pub async fn group_session_update_memory(
 
     if memory_index < memory_embeddings.len() {
         // Recompute embedding
-        let embedding = match crate::embedding::compute_embedding(app.clone(), new_memory.clone()).await {
-            Ok(vec) => vec,
-            Err(_) => memory_embeddings[memory_index].embedding.clone(),
-        };
+        let embedding =
+            match crate::embedding::compute_embedding(app.clone(), new_memory.clone()).await {
+                Ok(vec) => vec,
+                Err(_) => memory_embeddings[memory_index].embedding.clone(),
+            };
 
         let token_count = crate::embedding::tokenizer::count_tokens(&app, &new_memory).unwrap_or(0);
         let (embedding_source_version, embedding_dimensions) =

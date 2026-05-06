@@ -227,7 +227,10 @@ pub(crate) fn resolve_active_embedding_signature(
     app: &AppHandle,
 ) -> Result<(String, usize), String> {
     let active = resolve_runtime_model(app)?;
-    Ok((active.source.as_str().to_string(), active.embedding_dimensions))
+    Ok((
+        active.source.as_str().to_string(),
+        active.embedding_dimensions,
+    ))
 }
 
 #[tauri::command]

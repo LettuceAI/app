@@ -23,6 +23,10 @@ import {
   ADVANCED_LLAMA_ROPE_FREQ_BASE_RANGE,
   ADVANCED_LLAMA_ROPE_FREQ_SCALE_RANGE,
   ADVANCED_LLAMA_BATCH_SIZE_RANGE,
+  ADVANCED_LLAMA_DRY_MULTIPLIER_RANGE,
+  ADVANCED_LLAMA_DRY_BASE_RANGE,
+  ADVANCED_LLAMA_DRY_ALLOWED_LENGTH_RANGE,
+  ADVANCED_LLAMA_DRY_PENALTY_LAST_N_RANGE,
   ADVANCED_OLLAMA_NUM_CTX_RANGE,
   ADVANCED_OLLAMA_NUM_PREDICT_RANGE,
   ADVANCED_OLLAMA_NUM_KEEP_RANGE,
@@ -242,6 +246,8 @@ const normalizeSearchText = (value?: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
+const joinStringList = (value?: string[] | null) => (value?.length ? value.join(", ") : "");
+
 const getEditDistance = (a: string, b: string) => {
   if (a === b) return 0;
   if (!a.length) return b.length;
@@ -451,6 +457,11 @@ export function EditModelPage() {
     handleLlamaSamplerOrderChange,
     handleLlamaMinPChange,
     handleLlamaTypicalPChange,
+    handleLlamaDryMultiplierChange,
+    handleLlamaDryBaseChange,
+    handleLlamaDryAllowedLengthChange,
+    handleLlamaDryPenaltyLastNChange,
+    handleLlamaDrySequenceBreakersChange,
     handleLlamaChatTemplateOverrideChange,
     handleLlamaMmprojPathChange,
     handleLlamaChatTemplatePresetChange,
@@ -3750,6 +3761,142 @@ export function EditModelPage() {
                                       className={numberInputClassName}
                                     />
                                   </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-6">
+                                  <div className="space-y-4">
+                                    <div className="space-y-0.5">
+                                      <span className="block text-[13px] font-medium text-fg/70">
+                                        DRY Multiplier
+                                      </span>
+                                      <span className="block text-[13px] text-fg/40">
+                                        `0` disables sequence repetition control
+                                      </span>
+                                    </div>
+                                    <input
+                                      type="number"
+                                      inputMode="decimal"
+                                      min={ADVANCED_LLAMA_DRY_MULTIPLIER_RANGE.min}
+                                      max={ADVANCED_LLAMA_DRY_MULTIPLIER_RANGE.max}
+                                      step="0.05"
+                                      value={modelAdvancedDraft.llamaDryMultiplier ?? ""}
+                                      onChange={(e) => {
+                                        const raw = e.target.value.trim();
+                                        handleLlamaDryMultiplierChange(
+                                          raw === "" ? null : Number(raw),
+                                        );
+                                      }}
+                                      placeholder="0.80"
+                                      className={numberInputClassName}
+                                    />
+                                  </div>
+
+                                  <div className="space-y-4">
+                                    <div className="space-y-0.5">
+                                      <span className="block text-[13px] font-medium text-fg/70">
+                                        DRY Base
+                                      </span>
+                                      <span className="block text-[13px] text-fg/40">
+                                        Exponential growth factor
+                                      </span>
+                                    </div>
+                                    <input
+                                      type="number"
+                                      inputMode="decimal"
+                                      min={ADVANCED_LLAMA_DRY_BASE_RANGE.min}
+                                      max={ADVANCED_LLAMA_DRY_BASE_RANGE.max}
+                                      step="0.05"
+                                      value={modelAdvancedDraft.llamaDryBase ?? ""}
+                                      onChange={(e) => {
+                                        const raw = e.target.value.trim();
+                                        handleLlamaDryBaseChange(raw === "" ? null : Number(raw));
+                                      }}
+                                      placeholder="1.75"
+                                      className={numberInputClassName}
+                                    />
+                                  </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-6">
+                                  <div className="space-y-4">
+                                    <div className="space-y-0.5">
+                                      <span className="block text-[13px] font-medium text-fg/70">
+                                        DRY Allowed Length
+                                      </span>
+                                      <span className="block text-[13px] text-fg/40">
+                                        Ignore repeats shorter than this sequence length
+                                      </span>
+                                    </div>
+                                    <input
+                                      type="number"
+                                      inputMode="numeric"
+                                      min={ADVANCED_LLAMA_DRY_ALLOWED_LENGTH_RANGE.min}
+                                      max={ADVANCED_LLAMA_DRY_ALLOWED_LENGTH_RANGE.max}
+                                      step="1"
+                                      value={modelAdvancedDraft.llamaDryAllowedLength ?? ""}
+                                      onChange={(e) => {
+                                        const raw = e.target.value.trim();
+                                        handleLlamaDryAllowedLengthChange(
+                                          raw === "" ? null : Number(raw),
+                                        );
+                                      }}
+                                      placeholder="2"
+                                      className={numberInputClassName}
+                                    />
+                                  </div>
+
+                                  <div className="space-y-4">
+                                    <div className="space-y-0.5">
+                                      <span className="block text-[13px] font-medium text-fg/70">
+                                        DRY Penalty Last N
+                                      </span>
+                                      <span className="block text-[13px] text-fg/40">
+                                        Use `-1` to scan the full context
+                                      </span>
+                                    </div>
+                                    <input
+                                      type="number"
+                                      inputMode="numeric"
+                                      min={ADVANCED_LLAMA_DRY_PENALTY_LAST_N_RANGE.min}
+                                      max={ADVANCED_LLAMA_DRY_PENALTY_LAST_N_RANGE.max}
+                                      step="1"
+                                      value={modelAdvancedDraft.llamaDryPenaltyLastN ?? ""}
+                                      onChange={(e) => {
+                                        const raw = e.target.value.trim();
+                                        handleLlamaDryPenaltyLastNChange(
+                                          raw === "" ? null : Number(raw),
+                                        );
+                                      }}
+                                      placeholder="-1"
+                                      className={numberInputClassName}
+                                    />
+                                  </div>
+                                </div>
+
+                                <div className="space-y-4">
+                                  <div className="space-y-0.5">
+                                    <span className="block text-[13px] font-medium text-fg/70">
+                                      DRY Sequence Breakers
+                                    </span>
+                                    <span className="block text-[13px] text-fg/40">
+                                      Comma-separated boundaries like `\n`, `:`, `"`, `*`
+                                    </span>
+                                  </div>
+                                  <input
+                                    type="text"
+                                    value={joinStringList(modelAdvancedDraft.llamaDrySequenceBreakers)}
+                                    onChange={(e) => {
+                                      const next = e.target.value
+                                        .split(",")
+                                        .map((item) => item.trim())
+                                        .filter((item) => item.length > 0);
+                                      handleLlamaDrySequenceBreakersChange(
+                                        next.length ? next : null,
+                                      );
+                                    }}
+                                    placeholder={'\\n, :, ", *'}
+                                    className={textAreaInputClassName}
+                                  />
                                 </div>
 
                                 <div className="space-y-4">

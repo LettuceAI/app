@@ -46,11 +46,7 @@ pub fn build_digest(sources: &[SourceInput]) -> Result<WorldDigest, String> {
             return Err("Total source size exceeds 200 MB limit".to_string());
         }
 
-        excerpts.push(SourceExcerpt {
-            id,
-            label,
-            content,
-        });
+        excerpts.push(SourceExcerpt { id, label, content });
     }
 
     Ok(WorldDigest { excerpts })

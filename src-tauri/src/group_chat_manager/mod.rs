@@ -404,6 +404,17 @@ fn normalize_llama_sampler_profile(value: &str) -> Option<String> {
     }
 }
 
+fn decode_llama_sequence_breaker(value: &str) -> String {
+    match value.trim() {
+        "\\n" => "\n".to_string(),
+        "\\r" => "\r".to_string(),
+        "\\t" => "\t".to_string(),
+        "\\\"" => "\"".to_string(),
+        "\\\\" => "\\".to_string(),
+        other => other.to_string(),
+    }
+}
+
 fn resolve_llama_sampler_profile(model: &Model, settings: &Settings) -> String {
     model
         .advanced_model_settings
@@ -425,6 +436,27 @@ fn resolve_llama_sampler_order(model: &Model, settings: &Settings) -> Option<Vec
         .as_ref()
         .and_then(|a| a.llama_sampler_order.clone())
         .or_else(|| settings.advanced_model_settings.llama_sampler_order.clone())
+}
+
+fn resolve_llama_dry_sequence_breakers(model: &Model, settings: &Settings) -> Option<Vec<String>> {
+    model
+        .advanced_model_settings
+        .as_ref()
+        .and_then(|a| a.llama_dry_sequence_breakers.clone())
+        .or_else(|| {
+            settings
+                .advanced_model_settings
+                .llama_dry_sequence_breakers
+                .clone()
+        })
+        .map(|values| {
+            values
+                .into_iter()
+                .map(|value| decode_llama_sequence_breaker(&value))
+                .filter(|value| !value.is_empty())
+                .collect::<Vec<_>>()
+        })
+        .filter(|values| !values.is_empty())
 }
 
 fn llama_sampler_profile_defaults(profile: &str) -> LlamaSamplerProfileDefaults {
@@ -646,6 +678,41 @@ fn build_llama_extra_fields(model: &Model, settings: &Settings) -> Option<HashMa
     }
     if let Some(v) = explicit_typical_p.or(sampler_defaults.typical_p) {
         extra.insert("llamaTypicalP".to_string(), json!(v));
+    }
+    if let Some(v) = model
+        .advanced_model_settings
+        .as_ref()
+        .and_then(|a| a.llama_dry_multiplier)
+        .or(settings.advanced_model_settings.llama_dry_multiplier)
+    {
+        extra.insert("llamaDryMultiplier".to_string(), json!(v));
+    }
+    if let Some(v) = model
+        .advanced_model_settings
+        .as_ref()
+        .and_then(|a| a.llama_dry_base)
+        .or(settings.advanced_model_settings.llama_dry_base)
+    {
+        extra.insert("llamaDryBase".to_string(), json!(v));
+    }
+    if let Some(v) = model
+        .advanced_model_settings
+        .as_ref()
+        .and_then(|a| a.llama_dry_allowed_length)
+        .or(settings.advanced_model_settings.llama_dry_allowed_length)
+    {
+        extra.insert("llamaDryAllowedLength".to_string(), json!(v));
+    }
+    if let Some(v) = model
+        .advanced_model_settings
+        .as_ref()
+        .and_then(|a| a.llama_dry_penalty_last_n)
+        .or(settings.advanced_model_settings.llama_dry_penalty_last_n)
+    {
+        extra.insert("llamaDryPenaltyLastN".to_string(), json!(v));
+    }
+    if let Some(v) = resolve_llama_dry_sequence_breakers(model, settings) {
+        extra.insert("llamaDrySequenceBreakers".to_string(), json!(v));
     }
 
     if extra.is_empty() {
@@ -1802,6 +1869,11 @@ fn sanitize_dynamic_memory_extra_body_fields(
         "llamaSamplerOrder",
         "llamaMinP",
         "llamaTypicalP",
+        "llamaDryMultiplier",
+        "llamaDryBase",
+        "llamaDryAllowedLength",
+        "llamaDryPenaltyLastN",
+        "llamaDrySequenceBreakers",
         "llamaDisableSamplerProfileDefaults",
         "top_k",
         "frequency_penalty",
@@ -1823,6 +1895,7 @@ fn sanitize_dynamic_memory_extra_body_fields(
             "top_k",
             "top_p",
             "temp",
+            "dry",
             "min_p",
             "typical"
         ]),
@@ -1832,6 +1905,7 @@ fn sanitize_dynamic_memory_extra_body_fields(
     extra.insert("presence_penalty".to_string(), json!(0.0));
     extra.insert("min_p".to_string(), json!(0.0));
     extra.insert("typical_p".to_string(), json!(0.0));
+    extra.insert("llamaDryMultiplier".to_string(), json!(0.0));
 
     if extra.is_empty() {
         None
@@ -1923,7 +1997,8 @@ async fn migrate_group_memory_embeddings_if_needed(
 
     for (idx, memory) in session.memory_embeddings.iter_mut().enumerate() {
         if memory_embedding_requires_migration(memory, &target_source_version, target_dimensions) {
-            memory.embedding = embedding::compute_embedding(app.clone(), memory.text.clone()).await?;
+            memory.embedding =
+                embedding::compute_embedding(app.clone(), memory.text.clone()).await?;
             memory.embedding_source_version = Some(target_source_version.clone());
             memory.embedding_dimensions = Some(target_dimensions);
         }

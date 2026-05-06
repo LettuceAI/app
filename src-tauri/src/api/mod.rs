@@ -52,7 +52,8 @@ pub async fn api_request(app: tauri::AppHandle, req: ApiRequest) -> Result<ApiRe
     let mut req = req;
 
     if crate::gemini_cache::is_gemini_provider(req.provider_id.as_deref()) {
-        if let Err(err) = crate::gemini_cache::maybe_apply_gemini_explicit_cache(&app, &mut req).await
+        if let Err(err) =
+            crate::gemini_cache::maybe_apply_gemini_explicit_cache(&app, &mut req).await
         {
             log_warn(
                 &app,

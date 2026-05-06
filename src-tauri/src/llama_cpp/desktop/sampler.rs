@@ -1,12 +1,13 @@
 use super::*;
 
 pub(super) const DEFAULT_LLAMA_SAMPLER_PROFILE: &str = "balanced";
-pub(super) const DEFAULT_LLAMA_SAMPLER_ORDER: [&str; 7] = [
+pub(super) const DEFAULT_LLAMA_SAMPLER_ORDER: [&str; 8] = [
     "penalties",
     "grammar",
     "top_k",
     "top_p",
     "min_p",
+    "dry",
     "typical",
     "temp",
 ];
@@ -31,6 +32,11 @@ pub(super) struct ResolvedSamplerConfig {
     pub(super) top_k: Option<u32>,
     pub(super) min_p: Option<f64>,
     pub(super) typical_p: Option<f64>,
+    pub(super) dry_multiplier: Option<f64>,
+    pub(super) dry_base: Option<f64>,
+    pub(super) dry_allowed_length: Option<u32>,
+    pub(super) dry_penalty_last_n: Option<i32>,
+    pub(super) dry_sequence_breakers: Option<Vec<String>>,
     pub(super) frequency_penalty: Option<f64>,
     pub(super) presence_penalty: Option<f64>,
     pub(super) seed: Option<u32>,
@@ -158,6 +164,7 @@ fn normalize_sampler_stage(value: &str) -> Option<&'static str> {
         "top_k" | "topk" => Some("top_k"),
         "top_p" | "topp" => Some("top_p"),
         "min_p" | "minp" => Some("min_p"),
+        "dry" => Some("dry"),
         "typical" | "typ_p" | "typical_p" => Some("typical"),
         "temp" | "temperature" => Some("temp"),
         _ => None,
@@ -338,6 +345,38 @@ pub(super) fn build_sampler(
         .min_p
         .filter(|mp| *mp > 0.0)
         .map(|mp| LlamaSampler::min_p(mp as f32, 1));
+    let mut dry_sampler = config
+        .dry_multiplier
+        .filter(|multiplier| *multiplier > 0.0)
+        .map(|multiplier| {
+            let base = config.dry_base.unwrap_or(1.75).max(0.0);
+            let allowed_length = config
+                .dry_allowed_length
+                .and_then(|value| i32::try_from(value).ok())
+                .unwrap_or(2);
+            let penalty_last_n = config.dry_penalty_last_n.unwrap_or(-1);
+            let seq_breakers = config.dry_sequence_breakers.clone().unwrap_or_else(|| {
+                vec![
+                    "\n".to_string(),
+                    ":".to_string(),
+                    "\"".to_string(),
+                    "*".to_string(),
+                ]
+            });
+            active_params.insert("dry_multiplier".to_string(), json!(multiplier));
+            active_params.insert("dry_base".to_string(), json!(base));
+            active_params.insert("dry_allowed_length".to_string(), json!(allowed_length));
+            active_params.insert("dry_penalty_last_n".to_string(), json!(penalty_last_n));
+            active_params.insert("dry_sequence_breakers".to_string(), json!(seq_breakers));
+            LlamaSampler::dry(
+                model,
+                multiplier as f32,
+                base as f32,
+                allowed_length,
+                penalty_last_n,
+                seq_breakers,
+            )
+        });
     if let Some(tp) = config.typical_p {
         if tp > 0.0 && tp < 1.0 {
             active_params.insert("typical_p".to_string(), json!(tp));
@@ -380,6 +419,12 @@ pub(super) fn build_sampler(
                     samplers.push(sampler);
                 }
             }
+            "dry" => {
+                if let Some(sampler) = dry_sampler.take() {
+                    order.push("dry");
+                    samplers.push(sampler);
+                }
+            }
             "typical" => {
                 if let Some(sampler) = typical_sampler.take() {
                     order.push("typical");
@@ -390,17 +435,20 @@ pub(super) fn build_sampler(
                 if config.temperature > 0.0 {
                     order.push("temp");
                     samplers.push(LlamaSampler::temp(config.temperature as f32));
-                    order.push("dist");
-                    samplers.push(LlamaSampler::dist(
-                        config.seed.unwrap_or_else(rand::random::<u32>),
-                    ));
-                } else {
-                    order.push("greedy");
-                    samplers.push(LlamaSampler::greedy());
                 }
             }
             _ => {}
         }
+    }
+
+    if config.temperature > 0.0 {
+        order.push("dist");
+        samplers.push(LlamaSampler::dist(
+            config.seed.unwrap_or_else(rand::random::<u32>),
+        ));
+    } else {
+        order.push("greedy");
+        samplers.push(LlamaSampler::greedy());
     }
 
     Ok(BuiltSampler {

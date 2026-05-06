@@ -438,9 +438,7 @@ fn planner_tool_config() -> ToolConfig {
     ToolConfig {
         tools: vec![ToolDefinition {
             name: "propose_lorebook_outline".to_string(),
-            description: Some(
-                "Propose the full outline of lorebook entries to draft.".to_string(),
-            ),
+            description: Some("Propose the full outline of lorebook entries to draft.".to_string()),
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -568,7 +566,16 @@ pub async fn run_planner(app: &AppHandle, job: &JobState) -> Result<Vec<EntryPla
         "Call propose_lorebook_outline now with exactly the requested number of entries.",
     );
     let tool_config = planner_tool_config();
-    let calls = invoke_tool(app, credential, model, &api_key, &messages, &tool_config, resolve_max_tokens(&settings)).await?;
+    let calls = invoke_tool(
+        app,
+        credential,
+        model,
+        &api_key,
+        &messages,
+        &tool_config,
+        resolve_max_tokens(&settings),
+    )
+    .await?;
     let mut plan = parse_planner_result(&calls)?;
     if plan.is_empty() {
         return Err("Planner returned an empty outline".to_string());
@@ -695,7 +702,16 @@ pub async fn run_writer(
         "Call write_lorebook_entry now with the final entry.",
     );
     let tool_config = writer_tool_config();
-    let calls = invoke_tool(app, credential, model, &api_key, &messages, &tool_config, resolve_max_tokens(&settings)).await?;
+    let calls = invoke_tool(
+        app,
+        credential,
+        model,
+        &api_key,
+        &messages,
+        &tool_config,
+        resolve_max_tokens(&settings),
+    )
+    .await?;
     parse_writer_result(plan.idx, &calls)
 }
 
@@ -735,10 +751,7 @@ pub async fn run_refine(
                 draft.keywords.join(", ")
             },
         ),
-        (
-            "{{entry_always_active}}",
-            draft.always_active.to_string(),
-        ),
+        ("{{entry_always_active}}", draft.always_active.to_string()),
         ("{{entry_content}}", draft.content.clone()),
         ("{{user_feedback}}", feedback.to_string()),
         ("{{relevant_excerpts}}", plan_excerpts),
@@ -750,7 +763,16 @@ pub async fn run_refine(
         "Call write_lorebook_entry now with the revised entry.",
     );
     let tool_config = writer_tool_config();
-    let calls = invoke_tool(app, credential, model, &api_key, &messages, &tool_config, resolve_max_tokens(&settings)).await?;
+    let calls = invoke_tool(
+        app,
+        credential,
+        model,
+        &api_key,
+        &messages,
+        &tool_config,
+        resolve_max_tokens(&settings),
+    )
+    .await?;
     let mut revised = parse_writer_result(draft.plan_idx, &calls)?;
     revised.revisions = draft.revisions.clone();
     revised.revisions.push(super::state::DraftRevision {
@@ -970,7 +992,16 @@ pub async fn run_coherence(
         "Call propose_coherence_changes now with the list of changes.",
     );
     let tool_config = coherence_tool_config();
-    let calls = invoke_tool(app, credential, model, &api_key, &messages, &tool_config, resolve_max_tokens(&settings)).await?;
+    let calls = invoke_tool(
+        app,
+        credential,
+        model,
+        &api_key,
+        &messages,
+        &tool_config,
+        resolve_max_tokens(&settings),
+    )
+    .await?;
     parse_coherence_result(&calls)
 }
 
@@ -1029,7 +1060,7 @@ pub fn apply_coherence_changes(drafts: &mut [EntryDraft], changes: &[CoherenceCh
                     }
                 }
             }
-            CoherenceChange::FlagContradiction { .. } => { }
+            CoherenceChange::FlagContradiction { .. } => {}
             CoherenceChange::ToggleAlwaysActive {
                 entry_idx,
                 new_value,

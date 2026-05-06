@@ -117,10 +117,13 @@ fn build_request_cost(
     completion_cost: Option<f64>,
     total_cost: Option<f64>,
 ) -> Option<crate::models::types::RequestCost> {
-    let api_cost = usage.api_cost.or_else(|| parse_metadata_f64(&usage.metadata, &["api_cost"]));
+    let api_cost = usage
+        .api_cost
+        .or_else(|| parse_metadata_f64(&usage.metadata, &["api_cost"]));
     let prompt_cost = prompt_cost.unwrap_or(0.0);
     let completion_cost = completion_cost.unwrap_or_else(|| api_cost.unwrap_or(0.0));
-    let total_cost = total_cost.unwrap_or_else(|| api_cost.unwrap_or(prompt_cost + completion_cost));
+    let total_cost =
+        total_cost.unwrap_or_else(|| api_cost.unwrap_or(prompt_cost + completion_cost));
 
     if !total_cost.is_finite() {
         return None;
@@ -702,7 +705,8 @@ fn build_csv(records: &[RequestUsage]) -> String {
     let mut csv = String::from("timestamp,session_id,character_name,model_name,provider_label,operation_type,prompt_tokens,cached_prompt_tokens,cache_write_tokens,completion_tokens,reasoning_tokens,image_tokens,web_search_requests,total_tokens,memory_tokens,summary_tokens,input_image_count,output_image_count,prompt_cost,cache_read_cost,cache_write_cost,completion_cost,reasoning_cost,request_cost,web_search_cost,total_cost,api_cost,success,error_message\n");
 
     for record in records {
-        let input_image_count = parse_metadata_u64(&record.metadata, &["input_image_count"]).unwrap_or(0);
+        let input_image_count =
+            parse_metadata_u64(&record.metadata, &["input_image_count"]).unwrap_or(0);
         let output_image_count =
             parse_metadata_u64(&record.metadata, &["output_image_count"]).unwrap_or(0);
         let line = format!(

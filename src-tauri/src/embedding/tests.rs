@@ -154,56 +154,256 @@ struct RetrievalCase {
 
 fn retrieval_cases() -> Vec<RetrievalCase> {
     vec![
-        RetrievalCase { name: "Brass key", query: "Where did Mirelle hide the brass key?", expected_id: "tea-tin-key" },
-        RetrievalCase { name: "Crate pier", query: "Which pier did the contraband crate end up at before the storm?", expected_id: "pier-nine" },
-        RetrievalCase { name: "Meeting place", query: "Where is the secret meeting going to happen?", expected_id: "glasshouse" },
-        RetrievalCase { name: "Airship descent", query: "Why did the airship have to come down?", expected_id: "engine-resin" },
-        RetrievalCase { name: "Signet ring", query: "Where was the missing signet ring last seen?", expected_id: "signet-pears" },
-        RetrievalCase { name: "Watch shifts", query: "When does the watch captain switch shifts at the clocktower?", expected_id: "watch-shift" },
-        RetrievalCase { name: "Behind waterfall", query: "What is hidden behind the waterfall?", expected_id: "crystal-cave" },
-        RetrievalCase { name: "Burned map", query: "What did the burned map still show?", expected_id: "burnt-map" },
-        RetrievalCase { name: "Locket contents", query: "What was inside the silver locket?", expected_id: "locket-portrait" },
-        RetrievalCase { name: "Astronomy books", query: "What was tucked between the old astronomy books?", expected_id: "library-cipher" },
-        RetrievalCase { name: "Attic trunk", query: "What was inside the leather trunk in the attic?", expected_id: "attic-trunk" },
-        RetrievalCase { name: "Buried coin", query: "What was buried beneath the third rose bush?", expected_id: "garden-coin" },
-        RetrievalCase { name: "Apron blueprint", query: "What was folded in the blacksmith's apron?", expected_id: "forge-blueprint" },
-        RetrievalCase { name: "Lyra return", query: "When did Lyra say she would come back to the lighthouse?", expected_id: "lyra-promise" },
-        RetrievalCase { name: "Kael oath", query: "What did Kael swear on his father's grave?", expected_id: "kael-revenge" },
-        RetrievalCase { name: "Isolde refusal", query: "What did Isolde say when she refused the prince?", expected_id: "isolde-marriage" },
-        RetrievalCase { name: "Merrick debt", query: "How is Merrick going to pay back his gambling debt?", expected_id: "merrick-debt" },
-        RetrievalCase { name: "Rhys letters", query: "How often did Rhys promise to write?", expected_id: "rhys-letter" },
-        RetrievalCase { name: "Aelin secret", query: "Until when did Aelin ask you to keep her brother's truth hidden?", expected_id: "aelin-secret" },
-        RetrievalCase { name: "Captain warning", query: "What did the captain warn the first mate would happen?", expected_id: "captain-mutiny" },
-        RetrievalCase { name: "Northern Keep access", query: "How do you actually reach the Northern Keep?", expected_id: "northern-keep" },
-        RetrievalCase { name: "Rust Quarter detail", query: "What is unusual about the buildings in the Rust Quarter?", expected_id: "rust-quarter" },
-        RetrievalCase { name: "Twin Moons Inn", query: "Where is the Twin Moons Inn located?", expected_id: "twin-moons-inn" },
-        RetrievalCase { name: "Mining town", query: "What is past the abandoned mining town?", expected_id: "salt-flats" },
-        RetrievalCase { name: "Blackwater rumor", query: "What is the rumor about Blackwater Pond?", expected_id: "blackwater-pond" },
-        RetrievalCase { name: "Orchard shrine", query: "When do people visit the small shrine behind the apple orchard?", expected_id: "orchard-shrine" },
-        RetrievalCase { name: "Cathedral fate", query: "What happened to the old cathedral?", expected_id: "sunken-cathedral" },
-        RetrievalCase { name: "Courier ambush", query: "What happened to the courier on the way to the city?", expected_id: "courier-ambush" },
-        RetrievalCase { name: "Trade route vote", query: "How did the council vote on opening the trade route?", expected_id: "council-vote" },
-        RetrievalCase { name: "Plague onset", query: "When did the plague first appear in the city?", expected_id: "plague-arrival" },
-        RetrievalCase { name: "Astronomer find", query: "What did the court astronomer discover?", expected_id: "astronomer-discovery" },
-        RetrievalCase { name: "Treaty signing", query: "Where was the treaty signed and by whom?", expected_id: "treaty-signed" },
-        RetrievalCase { name: "Prince vanishing", query: "When did the young prince disappear?", expected_id: "prince-disappeared" },
-        RetrievalCase { name: "Forge incident", query: "What happened at the royal forge before the gala?", expected_id: "forge-explosion" },
-        RetrievalCase { name: "Wolf pact", query: "Who did the northern clan make a pact with?", expected_id: "wolf-pact" },
-        RetrievalCase { name: "Frost Festival", query: "How often is the Frost Festival held?", expected_id: "frost-festival" },
-        RetrievalCase { name: "Named blades rule", query: "What is the guild rule about forging named blades?", expected_id: "guild-rule" },
-        RetrievalCase { name: "Desert hospitality", query: "What do the desert tribes consider sacred?", expected_id: "desert-rite" },
-        RetrievalCase { name: "Old Tongue", query: "Where is the Old Tongue still spoken today?", expected_id: "old-tongue" },
-        RetrievalCase { name: "Twin stars meaning", query: "What do the twin stars in the southern sky signify?", expected_id: "twin-stars" },
-        RetrievalCase { name: "Ironwood ownership", query: "Who controls the ironwood forests?", expected_id: "ironwood-treaty" },
-        RetrievalCase { name: "Eira rivalry", query: "Who is Eira's long-standing rival?", expected_id: "eira-rival" },
-        RetrievalCase { name: "Tomen apprentice", query: "How did Tomen find the orphaned scribe?", expected_id: "tomen-mentor" },
-        RetrievalCase { name: "Silk pavilion dancer", query: "Who is the dancer at the silk pavilion really working for?", expected_id: "dancer-spy" },
-        RetrievalCase { name: "Blacksmith hearing", query: "Why is the old blacksmith deaf?", expected_id: "blacksmith-deaf" },
-        RetrievalCase { name: "Priest doubt", query: "What does the high priest privately doubt?", expected_id: "priest-doubts" },
-        RetrievalCase { name: "Twin reunion", query: "When did the twin brothers find each other again?", expected_id: "twin-brothers" },
-        RetrievalCase { name: "Famed archer", query: "Who was the most decorated archer of the previous war?", expected_id: "widow-archer" },
-        RetrievalCase { name: "Funeral attendance", query: "How many people came to the funeral?", expected_id: "rain-funeral" },
-        RetrievalCase { name: "Eclipse market", query: "What burned down on the day of the eclipse?", expected_id: "market-fire" },
+        RetrievalCase {
+            name: "Brass key",
+            query: "Where did Mirelle hide the brass key?",
+            expected_id: "tea-tin-key",
+        },
+        RetrievalCase {
+            name: "Crate pier",
+            query: "Which pier did the contraband crate end up at before the storm?",
+            expected_id: "pier-nine",
+        },
+        RetrievalCase {
+            name: "Meeting place",
+            query: "Where is the secret meeting going to happen?",
+            expected_id: "glasshouse",
+        },
+        RetrievalCase {
+            name: "Airship descent",
+            query: "Why did the airship have to come down?",
+            expected_id: "engine-resin",
+        },
+        RetrievalCase {
+            name: "Signet ring",
+            query: "Where was the missing signet ring last seen?",
+            expected_id: "signet-pears",
+        },
+        RetrievalCase {
+            name: "Watch shifts",
+            query: "When does the watch captain switch shifts at the clocktower?",
+            expected_id: "watch-shift",
+        },
+        RetrievalCase {
+            name: "Behind waterfall",
+            query: "What is hidden behind the waterfall?",
+            expected_id: "crystal-cave",
+        },
+        RetrievalCase {
+            name: "Burned map",
+            query: "What did the burned map still show?",
+            expected_id: "burnt-map",
+        },
+        RetrievalCase {
+            name: "Locket contents",
+            query: "What was inside the silver locket?",
+            expected_id: "locket-portrait",
+        },
+        RetrievalCase {
+            name: "Astronomy books",
+            query: "What was tucked between the old astronomy books?",
+            expected_id: "library-cipher",
+        },
+        RetrievalCase {
+            name: "Attic trunk",
+            query: "What was inside the leather trunk in the attic?",
+            expected_id: "attic-trunk",
+        },
+        RetrievalCase {
+            name: "Buried coin",
+            query: "What was buried beneath the third rose bush?",
+            expected_id: "garden-coin",
+        },
+        RetrievalCase {
+            name: "Apron blueprint",
+            query: "What was folded in the blacksmith's apron?",
+            expected_id: "forge-blueprint",
+        },
+        RetrievalCase {
+            name: "Lyra return",
+            query: "When did Lyra say she would come back to the lighthouse?",
+            expected_id: "lyra-promise",
+        },
+        RetrievalCase {
+            name: "Kael oath",
+            query: "What did Kael swear on his father's grave?",
+            expected_id: "kael-revenge",
+        },
+        RetrievalCase {
+            name: "Isolde refusal",
+            query: "What did Isolde say when she refused the prince?",
+            expected_id: "isolde-marriage",
+        },
+        RetrievalCase {
+            name: "Merrick debt",
+            query: "How is Merrick going to pay back his gambling debt?",
+            expected_id: "merrick-debt",
+        },
+        RetrievalCase {
+            name: "Rhys letters",
+            query: "How often did Rhys promise to write?",
+            expected_id: "rhys-letter",
+        },
+        RetrievalCase {
+            name: "Aelin secret",
+            query: "Until when did Aelin ask you to keep her brother's truth hidden?",
+            expected_id: "aelin-secret",
+        },
+        RetrievalCase {
+            name: "Captain warning",
+            query: "What did the captain warn the first mate would happen?",
+            expected_id: "captain-mutiny",
+        },
+        RetrievalCase {
+            name: "Northern Keep access",
+            query: "How do you actually reach the Northern Keep?",
+            expected_id: "northern-keep",
+        },
+        RetrievalCase {
+            name: "Rust Quarter detail",
+            query: "What is unusual about the buildings in the Rust Quarter?",
+            expected_id: "rust-quarter",
+        },
+        RetrievalCase {
+            name: "Twin Moons Inn",
+            query: "Where is the Twin Moons Inn located?",
+            expected_id: "twin-moons-inn",
+        },
+        RetrievalCase {
+            name: "Mining town",
+            query: "What is past the abandoned mining town?",
+            expected_id: "salt-flats",
+        },
+        RetrievalCase {
+            name: "Blackwater rumor",
+            query: "What is the rumor about Blackwater Pond?",
+            expected_id: "blackwater-pond",
+        },
+        RetrievalCase {
+            name: "Orchard shrine",
+            query: "When do people visit the small shrine behind the apple orchard?",
+            expected_id: "orchard-shrine",
+        },
+        RetrievalCase {
+            name: "Cathedral fate",
+            query: "What happened to the old cathedral?",
+            expected_id: "sunken-cathedral",
+        },
+        RetrievalCase {
+            name: "Courier ambush",
+            query: "What happened to the courier on the way to the city?",
+            expected_id: "courier-ambush",
+        },
+        RetrievalCase {
+            name: "Trade route vote",
+            query: "How did the council vote on opening the trade route?",
+            expected_id: "council-vote",
+        },
+        RetrievalCase {
+            name: "Plague onset",
+            query: "When did the plague first appear in the city?",
+            expected_id: "plague-arrival",
+        },
+        RetrievalCase {
+            name: "Astronomer find",
+            query: "What did the court astronomer discover?",
+            expected_id: "astronomer-discovery",
+        },
+        RetrievalCase {
+            name: "Treaty signing",
+            query: "Where was the treaty signed and by whom?",
+            expected_id: "treaty-signed",
+        },
+        RetrievalCase {
+            name: "Prince vanishing",
+            query: "When did the young prince disappear?",
+            expected_id: "prince-disappeared",
+        },
+        RetrievalCase {
+            name: "Forge incident",
+            query: "What happened at the royal forge before the gala?",
+            expected_id: "forge-explosion",
+        },
+        RetrievalCase {
+            name: "Wolf pact",
+            query: "Who did the northern clan make a pact with?",
+            expected_id: "wolf-pact",
+        },
+        RetrievalCase {
+            name: "Frost Festival",
+            query: "How often is the Frost Festival held?",
+            expected_id: "frost-festival",
+        },
+        RetrievalCase {
+            name: "Named blades rule",
+            query: "What is the guild rule about forging named blades?",
+            expected_id: "guild-rule",
+        },
+        RetrievalCase {
+            name: "Desert hospitality",
+            query: "What do the desert tribes consider sacred?",
+            expected_id: "desert-rite",
+        },
+        RetrievalCase {
+            name: "Old Tongue",
+            query: "Where is the Old Tongue still spoken today?",
+            expected_id: "old-tongue",
+        },
+        RetrievalCase {
+            name: "Twin stars meaning",
+            query: "What do the twin stars in the southern sky signify?",
+            expected_id: "twin-stars",
+        },
+        RetrievalCase {
+            name: "Ironwood ownership",
+            query: "Who controls the ironwood forests?",
+            expected_id: "ironwood-treaty",
+        },
+        RetrievalCase {
+            name: "Eira rivalry",
+            query: "Who is Eira's long-standing rival?",
+            expected_id: "eira-rival",
+        },
+        RetrievalCase {
+            name: "Tomen apprentice",
+            query: "How did Tomen find the orphaned scribe?",
+            expected_id: "tomen-mentor",
+        },
+        RetrievalCase {
+            name: "Silk pavilion dancer",
+            query: "Who is the dancer at the silk pavilion really working for?",
+            expected_id: "dancer-spy",
+        },
+        RetrievalCase {
+            name: "Blacksmith hearing",
+            query: "Why is the old blacksmith deaf?",
+            expected_id: "blacksmith-deaf",
+        },
+        RetrievalCase {
+            name: "Priest doubt",
+            query: "What does the high priest privately doubt?",
+            expected_id: "priest-doubts",
+        },
+        RetrievalCase {
+            name: "Twin reunion",
+            query: "When did the twin brothers find each other again?",
+            expected_id: "twin-brothers",
+        },
+        RetrievalCase {
+            name: "Famed archer",
+            query: "Who was the most decorated archer of the previous war?",
+            expected_id: "widow-archer",
+        },
+        RetrievalCase {
+            name: "Funeral attendance",
+            query: "How many people came to the funeral?",
+            expected_id: "rain-funeral",
+        },
+        RetrievalCase {
+            name: "Eclipse market",
+            query: "What burned down on the day of the eclipse?",
+            expected_id: "market-fire",
+        },
     ]
 }
 
@@ -309,7 +509,10 @@ pub async fn run_embedding_test(app: AppHandle) -> Result<TestResult, String> {
                 crate::utils::err_msg(
                     module_path!(),
                     line!(),
-                    format!("Failed to load {} model: {}", active_config.version_label, e),
+                    format!(
+                        "Failed to load {} model: {}",
+                        active_config.version_label, e
+                    ),
                 )
             })?;
 
@@ -362,7 +565,10 @@ pub async fn run_embedding_test(app: AppHandle) -> Result<TestResult, String> {
         log_info(
             &app_for_test,
             "embedding_test",
-            format!("health identity_cosine={} passed={}", identity_cosine, health_passed),
+            format!(
+                "health identity_cosine={} passed={}",
+                identity_cosine, health_passed
+            ),
         );
 
         // 2. Retrieval

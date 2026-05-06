@@ -31,7 +31,10 @@ fn registry<'a>(app: &'a AppHandle) -> State<'a, JobRegistry> {
 }
 
 fn snapshot(reg: &JobRegistry, job_id: &str) -> Result<JobState, String> {
-    let map = reg.jobs.lock().map_err(|_| "job registry poisoned".to_string())?;
+    let map = reg
+        .jobs
+        .lock()
+        .map_err(|_| "job registry poisoned".to_string())?;
     map.get(job_id)
         .cloned()
         .ok_or_else(|| format!("Job {} not found", job_id))
@@ -41,7 +44,10 @@ fn with_job<F, R>(reg: &JobRegistry, job_id: &str, f: F) -> Result<R, String>
 where
     F: FnOnce(&mut JobState) -> Result<R, String>,
 {
-    let mut map = reg.jobs.lock().map_err(|_| "job registry poisoned".to_string())?;
+    let mut map = reg
+        .jobs
+        .lock()
+        .map_err(|_| "job registry poisoned".to_string())?;
     let job = map
         .get_mut(job_id)
         .ok_or_else(|| format!("Job {} not found", job_id))?;
@@ -63,10 +69,7 @@ pub struct CreateJobArgs {
 }
 
 #[tauri::command]
-pub async fn lorebook_gen_create(
-    app: AppHandle,
-    args: CreateJobArgs,
-) -> Result<JobState, String> {
+pub async fn lorebook_gen_create(app: AppHandle, args: CreateJobArgs) -> Result<JobState, String> {
     let CreateJobArgs {
         brief,
         sources,
@@ -100,7 +103,10 @@ pub async fn lorebook_gen_create(
 
     let reg = registry(&app);
     {
-        let mut map = reg.jobs.lock().map_err(|_| "job registry poisoned".to_string())?;
+        let mut map = reg
+            .jobs
+            .lock()
+            .map_err(|_| "job registry poisoned".to_string())?;
         map.insert(id, job.clone());
     }
     Ok(job)
@@ -119,10 +125,7 @@ pub async fn lorebook_gen_default_target_count(app: AppHandle) -> Result<u32, St
 }
 
 #[tauri::command]
-pub async fn lorebook_gen_run_planner(
-    app: AppHandle,
-    job_id: String,
-) -> Result<JobState, String> {
+pub async fn lorebook_gen_run_planner(app: AppHandle, job_id: String) -> Result<JobState, String> {
     let snap = {
         let reg = registry(&app);
         snapshot(&reg, &job_id)?
@@ -205,10 +208,7 @@ pub async fn lorebook_gen_approve_outline(
 }
 
 #[tauri::command]
-pub async fn lorebook_gen_draft_next(
-    app: AppHandle,
-    job_id: String,
-) -> Result<JobState, String> {
+pub async fn lorebook_gen_draft_next(app: AppHandle, job_id: String) -> Result<JobState, String> {
     use futures::stream::{FuturesUnordered, StreamExt};
 
     let snap = {
@@ -471,10 +471,7 @@ pub struct CommitResult {
 }
 
 #[tauri::command]
-pub async fn lorebook_gen_commit(
-    app: AppHandle,
-    args: CommitArgs,
-) -> Result<CommitResult, String> {
+pub async fn lorebook_gen_commit(app: AppHandle, args: CommitArgs) -> Result<CommitResult, String> {
     let snap = {
         let reg = registry(&app);
         snapshot(&reg, &args.job_id)?
@@ -501,7 +498,9 @@ pub async fn lorebook_gen_commit(
                 .as_deref()
                 .map(str::trim)
                 .filter(|v| !v.is_empty()))
-            .ok_or_else(|| "A lorebook name is required when creating a new lorebook".to_string())?;
+            .ok_or_else(|| {
+                "A lorebook name is required when creating a new lorebook".to_string()
+            })?;
         let new_lb = Lorebook {
             id: Uuid::new_v4().to_string(),
             name: name.to_string(),
@@ -552,7 +551,10 @@ pub async fn lorebook_gen_commit(
 #[tauri::command]
 pub async fn lorebook_gen_cancel(app: AppHandle, job_id: String) -> Result<(), String> {
     let reg = registry(&app);
-    let mut map = reg.jobs.lock().map_err(|_| "job registry poisoned".to_string())?;
+    let mut map = reg
+        .jobs
+        .lock()
+        .map_err(|_| "job registry poisoned".to_string())?;
     map.remove(&job_id);
     Ok(())
 }

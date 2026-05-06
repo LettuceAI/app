@@ -3,9 +3,7 @@ use blake3::Hasher;
 use serde_json::{json, Value};
 use tauri::AppHandle;
 
-use super::lorebook_matcher::{
-    format_lorebook_for_prompt, get_active_lorebook_entries_for_ids,
-};
+use super::lorebook_matcher::{format_lorebook_for_prompt, get_active_lorebook_entries_for_ids};
 use super::prompts;
 use crate::chat_manager::companion;
 use crate::chat_manager::execution::RequestSettings;
@@ -1920,7 +1918,8 @@ fn get_lorebook_content(
         ),
     );
 
-    let active_entries = if let Some(lorebook_ids_override) = session.lorebook_ids_override.as_ref() {
+    let active_entries = if let Some(lorebook_ids_override) = session.lorebook_ids_override.as_ref()
+    {
         get_active_lorebook_entries_for_ids(
             &conn,
             lorebook_ids_override,

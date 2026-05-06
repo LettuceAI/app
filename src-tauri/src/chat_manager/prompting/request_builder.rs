@@ -157,8 +157,11 @@ pub fn build_chat_request(
         .as_ref()
         .and_then(|fields| fields.get("llamaStreamingEnabled"))
         .and_then(Value::as_bool);
-    let effective_stream =
-        effective_streaming_enabled_with_override(credential, should_stream, llama_streaming_enabled);
+    let effective_stream = effective_streaming_enabled_with_override(
+        credential,
+        should_stream,
+        llama_streaming_enabled,
+    );
     let url = adapter.build_url(&base_url, model_name, api_key, effective_stream);
     let headers = adapter.headers(api_key, credential.headers.as_ref());
     let mut body = adapter.body(
@@ -362,7 +365,10 @@ mod tests {
             Some(extra_body_fields),
         );
 
-        let body = built.body.as_object().expect("request body should be an object");
+        let body = built
+            .body
+            .as_object()
+            .expect("request body should be an object");
         assert!(!body.contains_key("llamaSamplerOrder"));
         assert!(!body.contains_key("llamaDisableSamplerProfileDefaults"));
         assert!(!body.contains_key("options"));
@@ -405,7 +411,10 @@ mod tests {
             Some(extra_body_fields),
         );
 
-        let body = built.body.as_object().expect("request body should be an object");
+        let body = built
+            .body
+            .as_object()
+            .expect("request body should be an object");
         assert_eq!(body.get("llamaSamplerOrder"), Some(&json!(["top_k"])));
         assert_eq!(
             body.get("llamaDisableSamplerProfileDefaults"),
@@ -416,8 +425,10 @@ mod tests {
     #[test]
     fn keeps_ollama_options_for_ollama_requests() {
         let credential = credential("ollama");
-        let extra_body_fields =
-            HashMap::from([("options".to_string(), json!({"num_ctx": 4096, "mirostat": 2}))]);
+        let extra_body_fields = HashMap::from([(
+            "options".to_string(),
+            json!({"num_ctx": 4096, "mirostat": 2}),
+        )]);
 
         let built = build_chat_request(
             &credential,
@@ -442,7 +453,10 @@ mod tests {
             Some(extra_body_fields),
         );
 
-        let body = built.body.as_object().expect("request body should be an object");
+        let body = built
+            .body
+            .as_object()
+            .expect("request body should be an object");
         assert_eq!(
             body.get("options"),
             Some(&json!({"num_ctx": 4096, "mirostat": 2}))
@@ -452,8 +466,7 @@ mod tests {
     #[test]
     fn keeps_openai_prompt_cache_retention_internal_key() {
         let credential = credential("openai");
-        let extra_body_fields =
-            HashMap::from([("promptCachingTtl".to_string(), json!("24h"))]);
+        let extra_body_fields = HashMap::from([("promptCachingTtl".to_string(), json!("24h"))]);
 
         let built = build_chat_request(
             &credential,
@@ -478,7 +491,10 @@ mod tests {
             Some(extra_body_fields),
         );
 
-        let body = built.body.as_object().expect("request body should be an object");
+        let body = built
+            .body
+            .as_object()
+            .expect("request body should be an object");
         assert_eq!(body.get("prompt_cache_retention"), Some(&json!("24h")));
         assert!(!body.contains_key("promptCachingTtl"));
     }

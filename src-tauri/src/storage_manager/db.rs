@@ -1368,7 +1368,10 @@ pub fn init_db(_app: &tauri::AppHandle, conn: &Connection) -> Result<(), String>
         );
     }
     if !has_session_advanced_model_settings {
-        let _ = conn.execute("ALTER TABLE sessions ADD COLUMN advanced_model_settings TEXT", []);
+        let _ = conn.execute(
+            "ALTER TABLE sessions ADD COLUMN advanced_model_settings TEXT",
+            [],
+        );
     }
 
     let mut stmt_sessions_mem = conn

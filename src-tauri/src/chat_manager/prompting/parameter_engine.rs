@@ -289,7 +289,11 @@ fn lorebook_keyword_generator_variables() -> Vec<PromptVariableDefinition> {
 
 fn lorebook_generator_planner_variables() -> Vec<PromptVariableDefinition> {
     vec![
-        variable("{{brief}}", "Brief", "User-written brief describing the world or topic."),
+        variable(
+            "{{brief}}",
+            "Brief",
+            "User-written brief describing the world or topic.",
+        ),
         variable(
             "{{target_count}}",
             "Target Count",
@@ -305,14 +309,26 @@ fn lorebook_generator_planner_variables() -> Vec<PromptVariableDefinition> {
 
 fn lorebook_generator_writer_variables() -> Vec<PromptVariableDefinition> {
     vec![
-        variable("{{brief}}", "Brief", "User-written brief describing the world or topic."),
+        variable(
+            "{{brief}}",
+            "Brief",
+            "User-written brief describing the world or topic.",
+        ),
         variable(
             "{{outline}}",
             "Outline",
             "Full planned outline (titles + categories + keys) for context.",
         ),
-        variable("{{entry_title}}", "Entry Title", "Title of the entry being written."),
-        variable("{{entry_category}}", "Entry Category", "Category of the entry being written."),
+        variable(
+            "{{entry_title}}",
+            "Entry Title",
+            "Title of the entry being written.",
+        ),
+        variable(
+            "{{entry_category}}",
+            "Entry Category",
+            "Category of the entry being written.",
+        ),
         variable(
             "{{entry_proposed_keys}}",
             "Entry Proposed Keys",
@@ -333,16 +349,32 @@ fn lorebook_generator_writer_variables() -> Vec<PromptVariableDefinition> {
 
 fn lorebook_generator_refine_variables() -> Vec<PromptVariableDefinition> {
     vec![
-        variable("{{brief}}", "Brief", "User-written brief describing the world or topic."),
-        variable("{{outline}}", "Outline", "Full planned outline for context."),
+        variable(
+            "{{brief}}",
+            "Brief",
+            "User-written brief describing the world or topic.",
+        ),
+        variable(
+            "{{outline}}",
+            "Outline",
+            "Full planned outline for context.",
+        ),
         variable("{{entry_title}}", "Entry Title", "Current entry title."),
-        variable("{{entry_keywords}}", "Entry Keywords", "Current entry keywords."),
+        variable(
+            "{{entry_keywords}}",
+            "Entry Keywords",
+            "Current entry keywords.",
+        ),
         variable(
             "{{entry_always_active}}",
             "Entry Always Active",
             "Current alwaysActive flag value.",
         ),
-        variable("{{entry_content}}", "Entry Content", "Current entry content body."),
+        variable(
+            "{{entry_content}}",
+            "Entry Content",
+            "Current entry content body.",
+        ),
         variable(
             "{{user_feedback}}",
             "User Feedback",
