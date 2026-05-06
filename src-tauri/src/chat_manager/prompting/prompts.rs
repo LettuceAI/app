@@ -26,6 +26,14 @@ pub const LEGACY_APP_LOREBOOK_ENTRY_GENERATOR_TEMPLATE_ID: &str =
     "prompt_app_lorebook_entry_generator";
 pub const APP_LOREBOOK_KEYWORD_GENERATOR_TEMPLATE_ID: &str =
     "prompt_app_lorebook_keyword_generator";
+pub const APP_LOREBOOK_GENERATOR_PLANNER_TEMPLATE_ID: &str =
+    "prompt_app_lorebook_generator_planner";
+pub const APP_LOREBOOK_GENERATOR_WRITER_TEMPLATE_ID: &str =
+    "prompt_app_lorebook_generator_writer";
+pub const APP_LOREBOOK_GENERATOR_REFINE_TEMPLATE_ID: &str =
+    "prompt_app_lorebook_generator_refine";
+pub const APP_LOREBOOK_GENERATOR_COHERENCE_TEMPLATE_ID: &str =
+    "prompt_app_lorebook_generator_coherence";
 pub const APP_GROUP_CHAT_TEMPLATE_ID: &str = "prompt_app_group_chat";
 pub const APP_GROUP_CHAT_ROLEPLAY_TEMPLATE_ID: &str = "prompt_app_group_chat_roleplay";
 pub const APP_AVATAR_GENERATION_TEMPLATE_ID: &str = "prompt_app_avatar_generation";
@@ -44,6 +52,10 @@ const APP_HELP_ME_REPLY_TEMPLATE_NAME: &str = "Reply Helper";
 const APP_HELP_ME_REPLY_CONVERSATIONAL_TEMPLATE_NAME: &str = "Reply Helper (Conversational)";
 const APP_LOREBOOK_ENTRY_WRITER_TEMPLATE_NAME: &str = "Lorebook Entry Writer";
 const APP_LOREBOOK_KEYWORD_GENERATOR_TEMPLATE_NAME: &str = "Lorebook Keyword Generator";
+const APP_LOREBOOK_GENERATOR_PLANNER_TEMPLATE_NAME: &str = "Lorebook Generator: Planner";
+const APP_LOREBOOK_GENERATOR_WRITER_TEMPLATE_NAME: &str = "Lorebook Generator: Writer";
+const APP_LOREBOOK_GENERATOR_REFINE_TEMPLATE_NAME: &str = "Lorebook Generator: Refine";
+const APP_LOREBOOK_GENERATOR_COHERENCE_TEMPLATE_NAME: &str = "Lorebook Generator: Coherence";
 const APP_GROUP_CHAT_TEMPLATE_NAME: &str = "Group Chat (Conversation)";
 const APP_GROUP_CHAT_ROLEPLAY_TEMPLATE_NAME: &str = "Group Chat (Roleplay)";
 const APP_AVATAR_GENERATION_TEMPLATE_NAME: &str = "Avatar Generation";
@@ -74,6 +86,10 @@ pub fn template_prompt_type_from_id(id: &str) -> PromptTemplateType {
             PromptTemplateType::LorebookEntryWriter
         }
         APP_LOREBOOK_KEYWORD_GENERATOR_TEMPLATE_ID => PromptTemplateType::LorebookKeywordGenerator,
+        APP_LOREBOOK_GENERATOR_PLANNER_TEMPLATE_ID => PromptTemplateType::LorebookGeneratorPlanner,
+        APP_LOREBOOK_GENERATOR_WRITER_TEMPLATE_ID => PromptTemplateType::LorebookGeneratorWriter,
+        APP_LOREBOOK_GENERATOR_REFINE_TEMPLATE_ID => PromptTemplateType::LorebookGeneratorRefine,
+        APP_LOREBOOK_GENERATOR_COHERENCE_TEMPLATE_ID => PromptTemplateType::LorebookGeneratorCoherence,
         APP_AVATAR_GENERATION_TEMPLATE_ID => PromptTemplateType::AvatarGeneration,
         APP_AVATAR_EDIT_TEMPLATE_ID => PromptTemplateType::AvatarEditRequest,
         APP_SCENE_GENERATION_TEMPLATE_ID => PromptTemplateType::SceneGeneration,
@@ -599,6 +615,10 @@ fn prompt_type_to_str(prompt_type: PromptTemplateType) -> &'static str {
         PromptTemplateType::ReplyHelperConversational => "replyHelperConversational",
         PromptTemplateType::LorebookEntryWriter => "lorebookEntryWriter",
         PromptTemplateType::LorebookKeywordGenerator => "lorebookKeywordGenerator",
+        PromptTemplateType::LorebookGeneratorPlanner => "lorebookGeneratorPlanner",
+        PromptTemplateType::LorebookGeneratorWriter => "lorebookGeneratorWriter",
+        PromptTemplateType::LorebookGeneratorRefine => "lorebookGeneratorRefine",
+        PromptTemplateType::LorebookGeneratorCoherence => "lorebookGeneratorCoherence",
         PromptTemplateType::AvatarGeneration => "avatarGeneration",
         PromptTemplateType::AvatarEditRequest => "avatarEditRequest",
         PromptTemplateType::SceneGeneration => "sceneGeneration",
@@ -624,6 +644,18 @@ fn str_to_prompt_type(s: &str) -> Result<PromptTemplateType, String> {
         }
         "lorebookKeywordGenerator" | "lorebook_keyword_generator" => {
             Ok(PromptTemplateType::LorebookKeywordGenerator)
+        }
+        "lorebookGeneratorPlanner" | "lorebook_generator_planner" => {
+            Ok(PromptTemplateType::LorebookGeneratorPlanner)
+        }
+        "lorebookGeneratorWriter" | "lorebook_generator_writer" => {
+            Ok(PromptTemplateType::LorebookGeneratorWriter)
+        }
+        "lorebookGeneratorRefine" | "lorebook_generator_refine" => {
+            Ok(PromptTemplateType::LorebookGeneratorRefine)
+        }
+        "lorebookGeneratorCoherence" | "lorebook_generator_coherence" => {
+            Ok(PromptTemplateType::LorebookGeneratorCoherence)
         }
         "avatarGeneration" => Ok(PromptTemplateType::AvatarGeneration),
         "avatarEditRequest" => Ok(PromptTemplateType::AvatarEditRequest),
@@ -670,6 +702,8 @@ pub fn load_templates(app: &AppHandle) -> Result<Vec<SystemPromptTemplate>, Stri
     let _ = ensure_companion_template(app)?;
     ensure_dynamic_memory_templates(app)?;
     ensure_lorebook_entry_writer_template(app)?;
+    ensure_lorebook_keyword_generator_template(app)?;
+    ensure_lorebook_generator_templates(app)?;
     ensure_group_chat_templates(app)?;
     ensure_companion_soul_writer_template(app)?;
     let conn = open_db(app)?;
@@ -1170,6 +1204,10 @@ pub fn is_app_default_template(id: &str) -> bool {
         || id == APP_SCENE_PROMPT_WRITER_TEMPLATE_ID
         || id == APP_DESIGN_REFERENCE_TEMPLATE_ID
         || id == APP_COMPANION_SOUL_WRITER_TEMPLATE_ID
+        || id == APP_LOREBOOK_GENERATOR_PLANNER_TEMPLATE_ID
+        || id == APP_LOREBOOK_GENERATOR_WRITER_TEMPLATE_ID
+        || id == APP_LOREBOOK_GENERATOR_REFINE_TEMPLATE_ID
+        || id == APP_LOREBOOK_GENERATOR_COHERENCE_TEMPLATE_ID
 }
 
 pub fn reset_app_default_template(app: &AppHandle) -> Result<SystemPromptTemplate, String> {
@@ -1414,6 +1452,72 @@ pub fn ensure_lorebook_keyword_generator_template(app: &AppHandle) -> Result<(),
         );
     }
 
+    Ok(())
+}
+
+fn ensure_lorebook_generator_template_inner(
+    app: &AppHandle,
+    id: &'static str,
+    name: &'static str,
+    template_type: PromptTemplateType,
+    prompt_type: PromptType,
+) -> Result<(), String> {
+    if get_template(app, id)?.is_none() {
+        let conn = open_db(app)?;
+        let now = now();
+        let content = get_base_prompt(prompt_type);
+        let entries = get_base_prompt_entries(prompt_type);
+        let entries_json = serde_json::to_string(&entries)
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        conn.execute(
+            "INSERT OR IGNORE INTO prompt_templates (id, name, prompt_type, content, entries, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
+            params![
+                id,
+                name,
+                prompt_type_to_str(template_type),
+                content,
+                entries_json,
+                now
+            ],
+        )
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    } else {
+        let _ = maybe_backfill_entries(app, id, prompt_type, get_base_prompt_entries(prompt_type));
+        let _ = maybe_backfill_template_name(app, id, name);
+    }
+
+    Ok(())
+}
+
+pub fn ensure_lorebook_generator_templates(app: &AppHandle) -> Result<(), String> {
+    ensure_lorebook_generator_template_inner(
+        app,
+        APP_LOREBOOK_GENERATOR_PLANNER_TEMPLATE_ID,
+        APP_LOREBOOK_GENERATOR_PLANNER_TEMPLATE_NAME,
+        PromptTemplateType::LorebookGeneratorPlanner,
+        PromptType::LorebookGeneratorPlannerPrompt,
+    )?;
+    ensure_lorebook_generator_template_inner(
+        app,
+        APP_LOREBOOK_GENERATOR_WRITER_TEMPLATE_ID,
+        APP_LOREBOOK_GENERATOR_WRITER_TEMPLATE_NAME,
+        PromptTemplateType::LorebookGeneratorWriter,
+        PromptType::LorebookGeneratorWriterPrompt,
+    )?;
+    ensure_lorebook_generator_template_inner(
+        app,
+        APP_LOREBOOK_GENERATOR_REFINE_TEMPLATE_ID,
+        APP_LOREBOOK_GENERATOR_REFINE_TEMPLATE_NAME,
+        PromptTemplateType::LorebookGeneratorRefine,
+        PromptType::LorebookGeneratorRefinePrompt,
+    )?;
+    ensure_lorebook_generator_template_inner(
+        app,
+        APP_LOREBOOK_GENERATOR_COHERENCE_TEMPLATE_ID,
+        APP_LOREBOOK_GENERATOR_COHERENCE_TEMPLATE_NAME,
+        PromptTemplateType::LorebookGeneratorCoherence,
+        PromptType::LorebookGeneratorCoherencePrompt,
+    )?;
     Ok(())
 }
 

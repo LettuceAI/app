@@ -70,6 +70,8 @@ fn manage_core_state(app: &mut tauri::App) -> Arc<usage::app_activity::AppActive
     let app_usage_service = Arc::new(usage::app_activity::AppActiveUsageService::new());
     app.manage(app_usage_service.clone());
 
+    app.manage(crate::chat_manager::lorebook_generator::JobRegistry::new());
+
     app.manage(sync::manager::SyncManagerState::new());
     app.manage(host_api::HostApiManager::default());
     app.manage(crate::asr_manager::WhisperRuntimeState::default());

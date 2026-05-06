@@ -19,6 +19,10 @@ pub enum PromptTemplateType {
     ReplyHelperConversational,
     LorebookEntryWriter,
     LorebookKeywordGenerator,
+    LorebookGeneratorPlanner,
+    LorebookGeneratorWriter,
+    LorebookGeneratorRefine,
+    LorebookGeneratorCoherence,
     AvatarGeneration,
     AvatarEditRequest,
     SceneGeneration,
@@ -341,6 +345,23 @@ pub struct AdvancedSettings {
     pub lorebook_entry_generator_prompt_template_id: Option<String>,
     #[serde(default)]
     pub lorebook_keyword_generator_prompt_template_id: Option<String>,
+    #[serde(default)]
+    pub lorebook_generator_model_id: Option<String>,
+    #[serde(default)]
+    pub lorebook_generator_structured_fallback_format:
+        Option<DynamicMemoryStructuredFallbackFormat>,
+    #[serde(default)]
+    pub lorebook_generator_default_target_count: Option<u32>,
+    #[serde(default)]
+    pub lorebook_generator_max_tokens: Option<u32>,
+    #[serde(default)]
+    pub lorebook_generator_planner_prompt_template_id: Option<String>,
+    #[serde(default)]
+    pub lorebook_generator_writer_prompt_template_id: Option<String>,
+    #[serde(default)]
+    pub lorebook_generator_refine_prompt_template_id: Option<String>,
+    #[serde(default)]
+    pub lorebook_generator_coherence_prompt_template_id: Option<String>,
     #[serde(default)]
     pub companion_soul_writer_model_id: Option<String>,
     #[serde(default)]

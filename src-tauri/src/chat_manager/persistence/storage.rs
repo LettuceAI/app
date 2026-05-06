@@ -31,6 +31,10 @@ pub enum PromptType {
     HelpMeReplyConversationalPrompt,
     LorebookEntryWriterPrompt,
     LorebookKeywordGeneratorPrompt,
+    LorebookGeneratorPlannerPrompt,
+    LorebookGeneratorWriterPrompt,
+    LorebookGeneratorRefinePrompt,
+    LorebookGeneratorCoherencePrompt,
     GroupChatPrompt,
     GroupChatRoleplayPrompt,
     AvatarGenerationPrompt,
@@ -60,6 +64,18 @@ pub fn get_base_prompt(prompt_type: PromptType) -> String {
         }
         PromptType::LorebookKeywordGeneratorPrompt => {
             prompt_engine::default_lorebook_keyword_generator_prompt()
+        }
+        PromptType::LorebookGeneratorPlannerPrompt => {
+            prompt_engine::default_lorebook_generator_planner_prompt()
+        }
+        PromptType::LorebookGeneratorWriterPrompt => {
+            prompt_engine::default_lorebook_generator_writer_prompt()
+        }
+        PromptType::LorebookGeneratorRefinePrompt => {
+            prompt_engine::default_lorebook_generator_refine_prompt()
+        }
+        PromptType::LorebookGeneratorCoherencePrompt => {
+            prompt_engine::default_lorebook_generator_coherence_prompt()
         }
         PromptType::GroupChatPrompt => prompt_engine::default_group_chat_system_prompt_template(),
         PromptType::GroupChatRoleplayPrompt => {
@@ -95,6 +111,18 @@ pub fn get_base_prompt_entries(prompt_type: PromptType) -> Vec<SystemPromptEntry
         }
         PromptType::LorebookKeywordGeneratorPrompt => {
             prompt_engine::default_lorebook_keyword_generator_entries()
+        }
+        PromptType::LorebookGeneratorPlannerPrompt => {
+            prompt_engine::default_lorebook_generator_planner_entries()
+        }
+        PromptType::LorebookGeneratorWriterPrompt => {
+            prompt_engine::default_lorebook_generator_writer_entries()
+        }
+        PromptType::LorebookGeneratorRefinePrompt => {
+            prompt_engine::default_lorebook_generator_refine_entries()
+        }
+        PromptType::LorebookGeneratorCoherencePrompt => {
+            prompt_engine::default_lorebook_generator_coherence_entries()
         }
         PromptType::GroupChatPrompt => prompt_engine::default_group_chat_entries(),
         PromptType::GroupChatRoleplayPrompt => prompt_engine::default_group_chat_roleplay_entries(),
@@ -212,6 +240,16 @@ fn default_settings() -> Settings {
             ),
             lorebook_entry_generator_prompt_template_id: None,
             lorebook_keyword_generator_prompt_template_id: None,
+            lorebook_generator_model_id: None,
+            lorebook_generator_structured_fallback_format: Some(
+                DynamicMemoryStructuredFallbackFormat::Json,
+            ),
+            lorebook_generator_default_target_count: Some(12),
+            lorebook_generator_max_tokens: Some(4096),
+            lorebook_generator_planner_prompt_template_id: None,
+            lorebook_generator_writer_prompt_template_id: None,
+            lorebook_generator_refine_prompt_template_id: None,
+            lorebook_generator_coherence_prompt_template_id: None,
             companion_soul_writer_model_id: None,
             companion_soul_writer_fallback_model_id: None,
             companion_soul_writer_prompt_template_id: None,

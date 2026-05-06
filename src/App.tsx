@@ -40,6 +40,8 @@ import { AdvancedPage } from "./ui/pages/settings/AdvancedPage";
 import { CreationHelperPage as AICreationHelperPage } from "./ui/pages/settings/CreationHelperPage";
 import { HelpMeReplyPage } from "./ui/pages/settings/HelpMeReplyPage";
 import { LorebookEntryGeneratorPage } from "./ui/pages/settings/LorebookEntryGeneratorPage";
+import { LorebookGeneratorPage } from "./ui/pages/settings/LorebookGeneratorPage";
+import { LorebookGeneratorFlowPage } from "./ui/pages/library/LorebookGeneratorFlowPage";
 import { CompanionSoulWriterPage } from "./ui/pages/settings/CompanionSoulWriterPage";
 import { CompanionDownloadQueuePage } from "./ui/pages/settings/CompanionDownloadQueuePage";
 import { HostApiPage } from "./ui/pages/settings/HostApiPage";
@@ -785,6 +787,7 @@ function AppContent() {
       /^\/group-chats\/[^/]+\/lorebook(\/preview|\/generate)?$/.test(location.pathname),
     [location.pathname],
   );
+  const isLorebookGeneratorRoute = location.pathname === "/library/lorebook/generate";
   const isTemplateEditorRoute = useMemo(
     () => /^\/settings\/characters\/[^/]+\/templates\/[^/]+$/.test(location.pathname),
     [location.pathname],
@@ -805,6 +808,7 @@ function AppContent() {
     !isSearchRoute &&
     !isAvatarLibraryPickerRoute &&
     !isLorebookEditorRoute &&
+    !isLorebookGeneratorRoute &&
     !isDiscoverySubRoute;
 
   const [showCreateMenu, setShowCreateMenu] = useState(false);
@@ -939,15 +943,17 @@ function AppContent() {
             titleOverride={
               isAvatarLibraryPickerRoute
                 ? t("common.nav.library")
-                : location.pathname === "/settings/models/installed"
-                  ? t("installedModels.title")
-                  : /^\/settings\/voices\/kokoro\/[^/]+\/blend$/.test(location.pathname)
-                    ? t("voices.extra.kokoro.newBlend")
-                    : /^\/settings\/voices\/kokoro\/[^/]+\/blend\/.+$/.test(location.pathname)
-                      ? t("voices.extra.kokoro.editBlend")
-                      : /^\/settings\/voices\/kokoro\/[^/]+$/.test(location.pathname)
-                        ? t("voices.extra.kokoro.title")
-                        : undefined
+                : isLorebookGeneratorRoute
+                  ? "Generate Lorebook"
+                  : location.pathname === "/settings/models/installed"
+                    ? t("installedModels.title")
+                    : /^\/settings\/voices\/kokoro\/[^/]+\/blend$/.test(location.pathname)
+                      ? t("voices.extra.kokoro.newBlend")
+                      : /^\/settings\/voices\/kokoro\/[^/]+\/blend\/.+$/.test(location.pathname)
+                        ? t("voices.extra.kokoro.editBlend")
+                        : /^\/settings\/voices\/kokoro\/[^/]+$/.test(location.pathname)
+                          ? t("voices.extra.kokoro.title")
+                          : undefined
             }
           />
         )}
@@ -1060,6 +1066,14 @@ function AppContent() {
               <Route
                 path="/settings/advanced/lorebook-entry-generator"
                 element={<LorebookEntryGeneratorPage />}
+              />
+              <Route
+                path="/settings/advanced/lorebook-generator"
+                element={<LorebookGeneratorPage />}
+              />
+              <Route
+                path="/library/lorebook/generate"
+                element={<LorebookGeneratorFlowPage />}
               />
               <Route
                 path="/settings/advanced/companion-soul-writer"

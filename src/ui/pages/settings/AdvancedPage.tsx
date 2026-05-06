@@ -544,6 +544,45 @@ export function AdvancedPage() {
             </div>
           </button>
 
+          <button
+            type="button"
+            onClick={() => navigate("/settings/advanced/lorebook-generator")}
+            className={cn(
+              "group w-full text-left",
+              "relative overflow-hidden rounded-xl border border-fg/10 bg-fg/5 px-4 py-3.5",
+              "transition-all duration-300 hover:border-fg/20",
+              interactive.active.scale,
+              interactive.focus.ring,
+            )}
+          >
+            <div className="relative flex items-start gap-3">
+              <div
+                className={cn(
+                  "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border",
+                  "border-accent/30 bg-accent/10 text-accent/90",
+                )}
+              >
+                <BookOpen className="h-4 w-4" />
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex-1">
+                    <span className={cn(typography.body.size, "font-medium text-fg")}>
+                      Lorebook Generator
+                    </span>
+                    <p className="mt-0.5 text-[11px] leading-relaxed text-fg/50">
+                      Plan and draft a full lorebook from a brief and source materials. Configure
+                      the model and prompts for the planner, writer, refine, and coherence stages.
+                    </p>
+                  </div>
+
+                  <ChevronRight className="h-4 w-4 shrink-0 text-fg/25 transition-colors group-hover:text-fg/50" />
+                </div>
+              </div>
+            </div>
+          </button>
+
         </SettingsSection>
 
         {/* Memory System Section */}

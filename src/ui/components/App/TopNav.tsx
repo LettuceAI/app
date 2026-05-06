@@ -295,6 +295,7 @@ export function TopNav({
     if (/^\/settings\/characters\/[^/]+\/templates$/.test(basePath)) return true;
     if (basePath === "/settings/advanced/lorebook-entry-generator") return false;
     if (basePath === "/settings/advanced/companion-soul-writer") return false;
+    if (basePath === "/library/lorebook/generate") return false;
     if (basePath.includes("/lorebook")) return true;
     return false;
   }, [basePath, hasAdvancedView]);

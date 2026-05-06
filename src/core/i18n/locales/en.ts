@@ -550,6 +550,7 @@ export const enMessages = {
       lorebookImport: "Import",
       lorebookCreating: "Creating...",
       lorebookCreate: "Create",
+      lorebookGenerateAi: "Generate with AI",
       editExistingDesc: "Pick a {{goal}} and edit it with Smart Creator",
       creatorTitle: "{{goal}} Creator",
       editTitle: "Edit {{goal}}",

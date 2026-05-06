@@ -296,6 +296,25 @@ export function CreateMenu({ isOpen, onClose }: { isOpen: boolean; onClose: () =
       }
       includeExitIcon={false}
       location="bottom"
+      rightAction={
+        mode === "lorebook-name" ? (
+          <button
+            type="button"
+            onClick={() => {
+              handleClose();
+              const params = new URLSearchParams();
+              if (lorebookName.trim()) params.set("name", lorebookName.trim());
+              navigate(
+                `/library/lorebook/generate${params.toString() ? `?${params.toString()}` : ""}`,
+              );
+            }}
+            className="flex items-center gap-1.5 rounded-full border border-purple-500/30 bg-purple-500/15 px-3 py-1.5 text-xs font-medium text-purple-100 transition hover:border-purple-500/50 hover:bg-purple-500/25"
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            {t("components.createMenu.lorebookGenerateAi")}
+          </button>
+        ) : undefined
+      }
     >
       {mode === "menu" ? (
         <MenuSection>

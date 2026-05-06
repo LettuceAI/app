@@ -59,6 +59,22 @@ pub fn default_lorebook_keyword_generator_prompt() -> String {
     join_entries(&default_lorebook_keyword_generator_entries())
 }
 
+pub fn default_lorebook_generator_planner_prompt() -> String {
+    join_entries(&default_lorebook_generator_planner_entries())
+}
+
+pub fn default_lorebook_generator_writer_prompt() -> String {
+    join_entries(&default_lorebook_generator_writer_entries())
+}
+
+pub fn default_lorebook_generator_refine_prompt() -> String {
+    join_entries(&default_lorebook_generator_refine_entries())
+}
+
+pub fn default_lorebook_generator_coherence_prompt() -> String {
+    join_entries(&default_lorebook_generator_coherence_entries())
+}
+
 pub fn default_group_chat_system_prompt_template() -> String {
     join_entries(&default_group_chat_entries())
 }
@@ -902,6 +918,123 @@ pub fn default_lorebook_keyword_generator_entries() -> Vec<SystemPromptEntry> {
             conditions: None,
             prompt_entry_payload: None,
         },
+    ]
+}
+
+fn lore_gen_entry(id: &str, name: &str, content: &str) -> SystemPromptEntry {
+    SystemPromptEntry {
+        id: id.to_string(),
+        name: name.to_string(),
+        role: PromptEntryRole::System,
+        content: content.to_string(),
+        enabled: true,
+        injection_position: PromptEntryPosition::Relative,
+        injection_depth: 0,
+        conditional_min_messages: None,
+        interval_turns: None,
+        system_prompt: true,
+        conditions: None,
+        prompt_entry_payload: None,
+    }
+}
+
+pub fn default_lorebook_generator_planner_entries() -> Vec<SystemPromptEntry> {
+    vec![
+        lore_gen_entry(
+            "lore_gen_planner_task",
+            "Task",
+            "You plan a lorebook from a brief and source materials. A lorebook is a set of entries injected into LLM context when their keywords are matched in conversation. Good lorebooks have entries that are distinct in scope, named with unambiguous keywords, and focused on durable facts (not transient events).",
+        ),
+        lore_gen_entry(
+            "lore_gen_planner_inputs",
+            "Inputs",
+            "# Brief\n{{brief}}\n\n# Target Entry Count\nProduce exactly {{target_count}} entries.\n\n# Source Excerpts\n{{source_excerpts}}",
+        ),
+        lore_gen_entry(
+            "lore_gen_planner_rules",
+            "Rules",
+            "Rules:\n- Cover the breadth of the brief before adding depth: world/setting before niche characters.\n- Prefer broader, evergreen entries over narrow scene-specific ones unless the brief asks otherwise.\n- No two entries may share a primary key. Resolve overlaps by scoping (e.g. \"Crimson Order's leader\" vs \"Crimson Order\").\n- Do not invent facts that contradict the sources. You may fill gaps with plausible inferences and mark them in rationale as \"inferred\".\n- For each entry produce: title (short, specific), category (one of character/location/faction/item/event/concept/rule/other), proposedKeys (1-4 trigger phrases), rationale (one sentence), sourceRefs (ids of source excerpts used, may be empty).",
+        ),
+        lore_gen_entry(
+            "lore_gen_planner_output",
+            "Output",
+            "Call the tool propose_lorebook_outline with the array of entries. Do not write entry bodies yet. Do not output commentary outside the tool result.",
+        ),
+    ]
+}
+
+pub fn default_lorebook_generator_writer_entries() -> Vec<SystemPromptEntry> {
+    vec![
+        lore_gen_entry(
+            "lore_gen_writer_task",
+            "Task",
+            "You write a single lorebook entry. The entry will be injected into an LLM's context to keep portrayal of this subject consistent across a roleplay or story.",
+        ),
+        lore_gen_entry(
+            "lore_gen_writer_inputs",
+            "Inputs",
+            "# Brief\n{{brief}}\n\n# Full Outline (for context only)\n{{outline}}\n\n# Entry to Write\nTitle: {{entry_title}}\nCategory: {{entry_category}}\nProposed keys: {{entry_proposed_keys}}\nRationale: {{entry_rationale}}\n\n# Relevant Source Excerpts\n{{relevant_excerpts}}",
+        ),
+        lore_gen_entry(
+            "lore_gen_writer_rules",
+            "Rules",
+            "Rules:\n- 80-220 words unless the category warrants more.\n- Concrete, declarative. No hedging (\"might\", \"perhaps\") unless the source itself is uncertain.\n- Third person, present tense.\n- No meta commentary, no markdown headers, no lists unless the entry is genuinely a list.\n- Stay grounded in source excerpts. Inferences are allowed but must be consistent with sources.\n- Refine the keys: keep, add, or replace from proposedKeys. Final keys must be phrases that would naturally occur in a chat referencing this entry. Avoid stop-words alone.\n- Set alwaysActive=true ONLY for one or two world-overview entries. Default false.",
+        ),
+        lore_gen_entry(
+            "lore_gen_writer_output",
+            "Output",
+            "Call the tool write_lorebook_entry with {title, keywords, content, alwaysActive}. Do not output commentary outside the tool result.",
+        ),
+    ]
+}
+
+pub fn default_lorebook_generator_refine_entries() -> Vec<SystemPromptEntry> {
+    vec![
+        lore_gen_entry(
+            "lore_gen_refine_task",
+            "Task",
+            "You revise an existing lorebook entry based on user feedback.",
+        ),
+        lore_gen_entry(
+            "lore_gen_refine_inputs",
+            "Inputs",
+            "# Brief\n{{brief}}\n\n# Full Outline (for context only)\n{{outline}}\n\n# Current Entry\nTitle: {{entry_title}}\nKeywords: {{entry_keywords}}\nAlwaysActive: {{entry_always_active}}\nContent:\n{{entry_content}}\n\n# User Feedback\n{{user_feedback}}\n\n# Relevant Source Excerpts\n{{relevant_excerpts}}",
+        ),
+        lore_gen_entry(
+            "lore_gen_refine_rules",
+            "Rules",
+            "Rules:\n- Apply the user's feedback. Change only what they asked about, plus minor edits required for coherence (e.g. fixing a sentence broken by a removal).\n- Do not rewrite the whole entry unless the feedback is \"rewrite\".\n- Preserve voice and length unless asked otherwise.\n- If the feedback contradicts a source excerpt, follow the user. Their intent overrides sources during refinement.",
+        ),
+        lore_gen_entry(
+            "lore_gen_refine_output",
+            "Output",
+            "Call the tool write_lorebook_entry with the revised {title, keywords, content, alwaysActive}. Do not output commentary outside the tool result.",
+        ),
+    ]
+}
+
+pub fn default_lorebook_generator_coherence_entries() -> Vec<SystemPromptEntry> {
+    vec![
+        lore_gen_entry(
+            "lore_gen_coherence_task",
+            "Task",
+            "You review a complete set of lorebook entries for internal consistency. You do not rewrite entry bodies; you propose surgical changes the user can accept or reject one by one.",
+        ),
+        lore_gen_entry(
+            "lore_gen_coherence_inputs",
+            "Inputs",
+            "# Drafted Entries\n{{drafted_entries}}",
+        ),
+        lore_gen_entry(
+            "lore_gen_coherence_rules",
+            "Rules",
+            "Look for:\n- Duplicate or overlapping keys across entries.\n- Contradictions in stated facts (e.g. character age, faction allegiance, event order).\n- Naming drift: same proper noun spelled differently across entries.\n- alwaysActive overuse: more than two entries flagged true is a smell.\n- Missing cross-references: an entry mentions something that has its own entry but does not name it.\n\nFor each issue propose ONE of:\n- mergeKeys {entryIdx, removeKeys, reason}\n- renameTerm {oldTerm, newTerm, affectedEntryIdxs, reason}\n- flagContradiction {entryIdxs, description}\n- toggleAlwaysActive {entryIdx, newValue, reason}",
+        ),
+        lore_gen_entry(
+            "lore_gen_coherence_output",
+            "Output",
+            "Call the tool propose_coherence_changes with the list of changes. If no issues, return an empty list. Do not output commentary outside the tool result.",
+        ),
     ]
 }
 

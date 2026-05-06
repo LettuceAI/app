@@ -287,6 +287,83 @@ fn lorebook_keyword_generator_variables() -> Vec<PromptVariableDefinition> {
     ]
 }
 
+fn lorebook_generator_planner_variables() -> Vec<PromptVariableDefinition> {
+    vec![
+        variable("{{brief}}", "Brief", "User-written brief describing the world or topic."),
+        variable(
+            "{{target_count}}",
+            "Target Count",
+            "Number of entries the planner must produce.",
+        ),
+        variable(
+            "{{source_excerpts}}",
+            "Source Excerpts",
+            "Concatenated excerpts from user-supplied sources, each tagged with a source id.",
+        ),
+    ]
+}
+
+fn lorebook_generator_writer_variables() -> Vec<PromptVariableDefinition> {
+    vec![
+        variable("{{brief}}", "Brief", "User-written brief describing the world or topic."),
+        variable(
+            "{{outline}}",
+            "Outline",
+            "Full planned outline (titles + categories + keys) for context.",
+        ),
+        variable("{{entry_title}}", "Entry Title", "Title of the entry being written."),
+        variable("{{entry_category}}", "Entry Category", "Category of the entry being written."),
+        variable(
+            "{{entry_proposed_keys}}",
+            "Entry Proposed Keys",
+            "Keys proposed by the planner for this entry.",
+        ),
+        variable(
+            "{{entry_rationale}}",
+            "Entry Rationale",
+            "Planner rationale for why this entry exists.",
+        ),
+        variable(
+            "{{relevant_excerpts}}",
+            "Relevant Excerpts",
+            "Source excerpts relevant to this specific entry.",
+        ),
+    ]
+}
+
+fn lorebook_generator_refine_variables() -> Vec<PromptVariableDefinition> {
+    vec![
+        variable("{{brief}}", "Brief", "User-written brief describing the world or topic."),
+        variable("{{outline}}", "Outline", "Full planned outline for context."),
+        variable("{{entry_title}}", "Entry Title", "Current entry title."),
+        variable("{{entry_keywords}}", "Entry Keywords", "Current entry keywords."),
+        variable(
+            "{{entry_always_active}}",
+            "Entry Always Active",
+            "Current alwaysActive flag value.",
+        ),
+        variable("{{entry_content}}", "Entry Content", "Current entry content body."),
+        variable(
+            "{{user_feedback}}",
+            "User Feedback",
+            "Feedback message describing the requested changes.",
+        ),
+        variable(
+            "{{relevant_excerpts}}",
+            "Relevant Excerpts",
+            "Source excerpts relevant to this entry.",
+        ),
+    ]
+}
+
+fn lorebook_generator_coherence_variables() -> Vec<PromptVariableDefinition> {
+    vec![variable(
+        "{{drafted_entries}}",
+        "Drafted Entries",
+        "Full set of drafted entries with title, keys, content, alwaysActive.",
+    )]
+}
+
 fn avatar_generation_variables() -> Vec<PromptVariableDefinition> {
     vec![
         variable(
@@ -486,6 +563,10 @@ pub fn prompt_type_label(prompt_type: PromptTemplateType) -> &'static str {
         PromptTemplateType::ReplyHelperConversational => "Reply Helper (Conversational)",
         PromptTemplateType::LorebookEntryWriter => "Lorebook Entry Writer",
         PromptTemplateType::LorebookKeywordGenerator => "Lorebook Keyword Generator",
+        PromptTemplateType::LorebookGeneratorPlanner => "Lorebook Generator: Planner",
+        PromptTemplateType::LorebookGeneratorWriter => "Lorebook Generator: Writer",
+        PromptTemplateType::LorebookGeneratorRefine => "Lorebook Generator: Refine",
+        PromptTemplateType::LorebookGeneratorCoherence => "Lorebook Generator: Coherence",
         PromptTemplateType::AvatarGeneration => "Avatar Generation",
         PromptTemplateType::AvatarEditRequest => "Avatar Edit Request",
         PromptTemplateType::SceneGeneration => "Scene Generation",
@@ -523,6 +604,10 @@ pub fn allowed_variables_for_prompt_type(
         PromptTemplateType::ReplyHelperConversational => reply_helper_variables(),
         PromptTemplateType::LorebookEntryWriter => lorebook_entry_writer_variables(),
         PromptTemplateType::LorebookKeywordGenerator => lorebook_keyword_generator_variables(),
+        PromptTemplateType::LorebookGeneratorPlanner => lorebook_generator_planner_variables(),
+        PromptTemplateType::LorebookGeneratorWriter => lorebook_generator_writer_variables(),
+        PromptTemplateType::LorebookGeneratorRefine => lorebook_generator_refine_variables(),
+        PromptTemplateType::LorebookGeneratorCoherence => lorebook_generator_coherence_variables(),
         PromptTemplateType::AvatarGeneration => avatar_generation_variables(),
         PromptTemplateType::AvatarEditRequest => avatar_edit_request_variables(),
         PromptTemplateType::SceneGeneration => scene_generation_variables(),
@@ -606,6 +691,28 @@ pub fn required_variables_for_prompt_type(prompt_type: PromptTemplateType) -> Ve
             "{{image[avatar]}}".to_string(),
         ],
         PromptTemplateType::CompanionSoulWriter => vec!["{{char.name}}".to_string()],
+        PromptTemplateType::LorebookGeneratorPlanner => vec![
+            "{{brief}}".to_string(),
+            "{{target_count}}".to_string(),
+            "{{source_excerpts}}".to_string(),
+        ],
+        PromptTemplateType::LorebookGeneratorWriter => vec![
+            "{{brief}}".to_string(),
+            "{{outline}}".to_string(),
+            "{{entry_title}}".to_string(),
+            "{{entry_category}}".to_string(),
+            "{{entry_proposed_keys}}".to_string(),
+            "{{entry_rationale}}".to_string(),
+            "{{relevant_excerpts}}".to_string(),
+        ],
+        PromptTemplateType::LorebookGeneratorRefine => vec![
+            "{{entry_title}}".to_string(),
+            "{{entry_keywords}}".to_string(),
+            "{{entry_content}}".to_string(),
+            "{{entry_always_active}}".to_string(),
+            "{{user_feedback}}".to_string(),
+        ],
+        PromptTemplateType::LorebookGeneratorCoherence => vec!["{{drafted_entries}}".to_string()],
     }
 }
 

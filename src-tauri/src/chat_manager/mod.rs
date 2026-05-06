@@ -4,6 +4,7 @@ pub mod companion_soul_writer;
 pub mod execution;
 pub mod flows;
 pub mod lorebook_entry_generator;
+pub mod lorebook_generator;
 pub mod memory;
 pub mod persistence;
 pub mod prompting;
