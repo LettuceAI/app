@@ -12,9 +12,11 @@
 
 ## Overview
 
-  LettuceAI is a free, open-source AI chat app built with Tauri v2, React, and TypeScript. It keeps all chats, characters, and API keys on your device — nothing is
-  sent to us. Bring your own keys from OpenAI, Anthropic, Google Gemini, DeepSeek, Mistral, Groq, or any of 20+ supported providers, or run local models with Ollama
-  and llama.cpp.
+LettuceAI is a privacy-focused, free and open-source AI character chat app for immersive roleplay, storytelling, and realistic AI companions with long-term memory that actually lasts.
+
+It is client-side first and supports 20+ AI providers with a bring-your-own-key setup, including OpenAI, Anthropic, Google Gemini, DeepSeek, Mistral, and Groq, plus local models through Ollama and `llama.cpp`.
+
+LettuceAI is fully free and open source with no paywalls or locked features. Your chats, characters, memories, and API keys stay on your device, so you control your data.
 
 ## Screenshots
 
