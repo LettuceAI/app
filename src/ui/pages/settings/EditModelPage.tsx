@@ -4436,14 +4436,24 @@ export function EditModelPage() {
                         {/* Reasoning Section (Thinking) */}
                         {activeDetailPanel === "reasoning" && showReasoningSection && (
                           <div className="space-y-4">
-                            <label className="text-[13px] font-bold tracking-wider text-fg/50 uppercase">
-                              {t("editModel.sections.reasoningThinking")}
-                            </label>
+                            <div className="flex items-center justify-between">
+                              <label className="text-[13px] font-bold tracking-wider text-fg/50 uppercase">
+                                {t("editModel.sections.reasoningThinking")}
+                              </label>
+                              <button
+                                type="button"
+                                onClick={() => openDocs("models", "reasoning-mode")}
+                                className="text-fg/40 hover:text-fg/60 transition"
+                                aria-label={t("editModel.reasoning.helpLabel")}
+                              >
+                                <HelpCircle size={14} />
+                              </button>
+                            </div>
 
                             <div className="space-y-6">
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                  <Brain size={14} className="text-warning" />
+                              <div className="flex items-center justify-between rounded-xl border border-fg/8 bg-surface-el/10 p-4">
+                                <div className="flex items-center gap-3 border-l-2 border-warning/40 pl-3">
+                                  <Brain size={16} className="text-warning/80" />
                                   <div className="space-y-0.5">
                                     <span className="block text-[13px] font-medium text-fg/70">
                                       {t("editModel.reasoning.enabled")}
