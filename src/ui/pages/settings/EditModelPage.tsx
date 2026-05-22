@@ -1224,13 +1224,13 @@ export function EditModelPage() {
   const promptCachingTtlOptions =
     editorModel?.providerId === "openai"
       ? [
-          { value: "in_memory", label: t("editModel.promptCaching.ttl.inMemory") },
-          { value: "24h", label: t("editModel.promptCaching.ttl.24h") },
-        ]
+        { value: "in_memory", label: t("editModel.promptCaching.ttl.inMemory") },
+        { value: "24h", label: t("editModel.promptCaching.ttl.24h") },
+      ]
       : [
-          { value: "5min", label: t("editModel.promptCaching.ttl.5min") },
-          { value: "1h", label: t("editModel.promptCaching.ttl.1h") },
-        ];
+        { value: "5min", label: t("editModel.promptCaching.ttl.5min") },
+        { value: "1h", label: t("editModel.promptCaching.ttl.1h") },
+      ];
   const selectedPromptCachingTtl =
     modelAdvancedDraft.promptCachingTtl ??
     (editorModel?.providerId === "openai" ? "in_memory" : "5min");
@@ -1289,10 +1289,10 @@ export function EditModelPage() {
     isCpuOnlyLlamaBackend
       ? t("editModel.runtimeSummary.ram")
       : modelAdvancedDraft.llamaOffloadKqv === true
-      ? t("editModel.runtimeSummary.vram")
-      : modelAdvancedDraft.llamaOffloadKqv === false
-        ? t("editModel.runtimeSummary.ram")
-        : t("common.labels.auto");
+        ? t("editModel.runtimeSummary.vram")
+        : modelAdvancedDraft.llamaOffloadKqv === false
+          ? t("editModel.runtimeSummary.ram")
+          : t("common.labels.auto");
   const selectedSamplerProfile = modelAdvancedDraft.llamaSamplerProfile ?? "balanced";
   const ollamaStopText = (modelAdvancedDraft.ollamaStop ?? []).join("\n");
   const selectedFetchedModel = fetchedModels.find((model) => model.id === editorModel?.name);
@@ -1324,72 +1324,72 @@ export function EditModelPage() {
   }
   const generationSummary = isAutomatic1111Provider
     ? [
-        modelAdvancedDraft.sdSteps != null ? `Steps ${modelAdvancedDraft.sdSteps}` : null,
-        modelAdvancedDraft.sdCfgScale != null
-          ? `CFG ${modelAdvancedDraft.sdCfgScale.toFixed(1)}`
-          : null,
-        modelAdvancedDraft.sdSampler ? modelAdvancedDraft.sdSampler : null,
-        modelAdvancedDraft.sdSize ? modelAdvancedDraft.sdSize : null,
-      ]
-        .filter(Boolean)
-        .join(" • ") || t("editModel.summaries.generationAutomatic1111")
+      modelAdvancedDraft.sdSteps != null ? `Steps ${modelAdvancedDraft.sdSteps}` : null,
+      modelAdvancedDraft.sdCfgScale != null
+        ? `CFG ${modelAdvancedDraft.sdCfgScale.toFixed(1)}`
+        : null,
+      modelAdvancedDraft.sdSampler ? modelAdvancedDraft.sdSampler : null,
+      modelAdvancedDraft.sdSize ? modelAdvancedDraft.sdSize : null,
+    ]
+      .filter(Boolean)
+      .join(" • ") || t("editModel.summaries.generationAutomatic1111")
     : [
-        modelAdvancedDraft.temperature != null
-          ? `Temp ${modelAdvancedDraft.temperature.toFixed(2)}`
-          : null,
-        modelAdvancedDraft.topP != null ? `Top P ${modelAdvancedDraft.topP.toFixed(2)}` : null,
-        modelAdvancedDraft.maxOutputTokens != null
-          ? `Max ${modelAdvancedDraft.maxOutputTokens.toLocaleString()}`
-          : null,
-      ]
-        .filter(Boolean)
-        .join(" • ") || t("editModel.summaries.generationDefault");
+      modelAdvancedDraft.temperature != null
+        ? `Temp ${modelAdvancedDraft.temperature.toFixed(2)}`
+        : null,
+      modelAdvancedDraft.topP != null ? `Top P ${modelAdvancedDraft.topP.toFixed(2)}` : null,
+      modelAdvancedDraft.maxOutputTokens != null
+        ? `Max ${modelAdvancedDraft.maxOutputTokens.toLocaleString()}`
+        : null,
+    ]
+      .filter(Boolean)
+      .join(" • ") || t("editModel.summaries.generationDefault");
   const runtimeSummary = isLocalModel
     ? [
-        modelAdvancedDraft.llamaBatchSize != null
-          ? `Batch ${modelAdvancedDraft.llamaBatchSize}`
+      modelAdvancedDraft.llamaBatchSize != null
+        ? `Batch ${modelAdvancedDraft.llamaBatchSize}`
+        : null,
+      modelAdvancedDraft.llamaKvType ? `KV ${modelAdvancedDraft.llamaKvType}` : null,
+      modelAdvancedDraft.llamaOffloadKqv === true
+        ? t("editModel.runtimeSummary.kvCacheInVram")
+        : modelAdvancedDraft.llamaOffloadKqv === false
+          ? t("editModel.runtimeSummary.kvCacheInRam")
           : null,
-        modelAdvancedDraft.llamaKvType ? `KV ${modelAdvancedDraft.llamaKvType}` : null,
-        modelAdvancedDraft.llamaOffloadKqv === true
-          ? t("editModel.runtimeSummary.kvCacheInVram")
-          : modelAdvancedDraft.llamaOffloadKqv === false
-            ? t("editModel.runtimeSummary.kvCacheInRam")
-            : null,
-      ]
-        .filter(Boolean)
-        .join(" • ") || t("editModel.summaries.runtimeLlama")
+    ]
+      .filter(Boolean)
+      .join(" • ") || t("editModel.summaries.runtimeLlama")
     : isOllamaModel
       ? [
-          modelAdvancedDraft.ollamaNumCtx != null
-            ? `Ctx ${modelAdvancedDraft.ollamaNumCtx.toLocaleString()}`
-            : null,
-          modelAdvancedDraft.ollamaNumPredict != null
-            ? `Predict ${modelAdvancedDraft.ollamaNumPredict.toLocaleString()}`
-            : null,
-          modelAdvancedDraft.ollamaNumThread != null
-            ? `Threads ${modelAdvancedDraft.ollamaNumThread}`
-            : null,
-        ]
-          .filter(Boolean)
-          .join(" • ") || t("editModel.summaries.runtimeOllama")
+        modelAdvancedDraft.ollamaNumCtx != null
+          ? `Ctx ${modelAdvancedDraft.ollamaNumCtx.toLocaleString()}`
+          : null,
+        modelAdvancedDraft.ollamaNumPredict != null
+          ? `Predict ${modelAdvancedDraft.ollamaNumPredict.toLocaleString()}`
+          : null,
+        modelAdvancedDraft.ollamaNumThread != null
+          ? `Threads ${modelAdvancedDraft.ollamaNumThread}`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" • ") || t("editModel.summaries.runtimeOllama")
       : "";
   const reasoningSummary = isAutoReasoning
     ? t("editModel.summaries.reasoningAlwaysEnabled")
     : modelAdvancedDraft.reasoningEnabled === false
       ? t("editModel.summaries.reasoningDisabled")
       : [
-          modelAdvancedDraft.reasoningEnabled
-            ? t("editModel.reasoning.enabled")
-            : t("editModel.reasoning.providerDefault"),
-          modelAdvancedDraft.reasoningEffort
-            ? `Effort ${modelAdvancedDraft.reasoningEffort}`
-            : null,
-          modelAdvancedDraft.reasoningBudgetTokens != null
-            ? `Budget ${modelAdvancedDraft.reasoningBudgetTokens.toLocaleString()}`
-            : null,
-        ]
-          .filter(Boolean)
-          .join(" • ") || t("editModel.summaries.reasoningDefault");
+        modelAdvancedDraft.reasoningEnabled
+          ? t("editModel.reasoning.enabled")
+          : t("editModel.reasoning.providerDefault"),
+        modelAdvancedDraft.reasoningEffort
+          ? `Effort ${modelAdvancedDraft.reasoningEffort}`
+          : null,
+        modelAdvancedDraft.reasoningBudgetTokens != null
+          ? `Budget ${modelAdvancedDraft.reasoningBudgetTokens.toLocaleString()}`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" • ") || t("editModel.summaries.reasoningDefault");
   const inputCapabilitySummary = (editorModel?.inputScopes ?? [])
     .filter((scope) => scope !== "text")
     .map((scope) => scope[0].toUpperCase() + scope.slice(1))
@@ -1719,7 +1719,7 @@ export function EditModelPage() {
                             )}
                           >
                             {llamaRuntimeReport.status === "succeeded" ||
-                            llamaRuntimeReport.status === "cpuFallbackSucceeded" ? (
+                              llamaRuntimeReport.status === "cpuFallbackSucceeded" ? (
                               <Check className="h-4 w-4" />
                             ) : (
                               <AlertTriangle className="h-4 w-4" />
@@ -1776,29 +1776,29 @@ export function EditModelPage() {
                             <div className="space-y-4 px-4 py-4">
                               {(llamaRuntimeReport.gpuFallbackReason ||
                                 llamaRuntimeReport.errorMessage) && (
-                                <div className="grid gap-3 lg:grid-cols-2">
-                                  {llamaRuntimeReport.gpuFallbackReason && (
-                                    <div className="rounded-lg border border-warning/25 bg-warning/8 px-3 py-2.5">
-                                      <div className="text-[11px] font-medium uppercase tracking-wide text-warning/90">
-                                        {t("editModel.runtime.gpuFallbackReason")}
+                                  <div className="grid gap-3 lg:grid-cols-2">
+                                    {llamaRuntimeReport.gpuFallbackReason && (
+                                      <div className="rounded-lg border border-warning/25 bg-warning/8 px-3 py-2.5">
+                                        <div className="text-[11px] font-medium uppercase tracking-wide text-warning/90">
+                                          {t("editModel.runtime.gpuFallbackReason")}
+                                        </div>
+                                        <p className="mt-1 text-[13px] leading-relaxed text-fg/78">
+                                          {llamaRuntimeReport.gpuFallbackReason}
+                                        </p>
                                       </div>
-                                      <p className="mt-1 text-[13px] leading-relaxed text-fg/78">
-                                        {llamaRuntimeReport.gpuFallbackReason}
-                                      </p>
-                                    </div>
-                                  )}
-                                  {llamaRuntimeReport.errorMessage && (
-                                    <div className="rounded-lg border border-danger/25 bg-danger/8 px-3 py-2.5">
-                                      <div className="text-[11px] font-medium uppercase tracking-wide text-danger/90">
-                                        {t("editModel.runtime.finalError")}
+                                    )}
+                                    {llamaRuntimeReport.errorMessage && (
+                                      <div className="rounded-lg border border-danger/25 bg-danger/8 px-3 py-2.5">
+                                        <div className="text-[11px] font-medium uppercase tracking-wide text-danger/90">
+                                          {t("editModel.runtime.finalError")}
+                                        </div>
+                                        <p className="mt-1 text-[13px] leading-relaxed text-fg/78">
+                                          {llamaRuntimeReport.errorMessage}
+                                        </p>
                                       </div>
-                                      <p className="mt-1 text-[13px] leading-relaxed text-fg/78">
-                                        {llamaRuntimeReport.errorMessage}
-                                      </p>
-                                    </div>
-                                  )}
-                                </div>
-                              )}
+                                    )}
+                                  </div>
+                                )}
 
                               <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
                                 {llamaRuntimeFacts.map((item) => (
@@ -2055,8 +2055,8 @@ export function EditModelPage() {
                         }
                       >
                         {modelFetchEnabledForSelectedProvider &&
-                        !isManualInput &&
-                        fetchedModels.length > 0 ? (
+                          !isManualInput &&
+                          fetchedModels.length > 0 ? (
                           <>
                             <button
                               type="button"
@@ -2105,20 +2105,20 @@ export function EditModelPage() {
                               renderModelMeta={
                                 isOpenRouterProvider
                                   ? (model: any) => {
-                                      const inputPrice = formatOpenRouterPricePerMillion(
-                                        model.inputPrice,
-                                      );
-                                      const outputPrice = formatOpenRouterPricePerMillion(
-                                        model.outputPrice,
-                                      );
-                                      if (!inputPrice && !outputPrice) return null;
-                                      return (
-                                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-fg/35">
-                                          {inputPrice && <span>Input {inputPrice}</span>}
-                                          {outputPrice && <span>Output {outputPrice}</span>}
-                                        </div>
-                                      );
-                                    }
+                                    const inputPrice = formatOpenRouterPricePerMillion(
+                                      model.inputPrice,
+                                    );
+                                    const outputPrice = formatOpenRouterPricePerMillion(
+                                      model.outputPrice,
+                                    );
+                                    if (!inputPrice && !outputPrice) return null;
+                                    return (
+                                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-fg/35">
+                                        {inputPrice && <span>Input {inputPrice}</span>}
+                                        {outputPrice && <span>Output {outputPrice}</span>}
+                                      </div>
+                                    );
+                                  }
                                   : undefined
                               }
                               renderEmptyState={() => (
@@ -3091,67 +3091,67 @@ export function EditModelPage() {
                                           availableRamGiB ||
                                           availableVramGiB ||
                                           modelSizeGiB) && (
-                                          <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-[13px] leading-5 text-fg/52 sm:grid-cols-3 lg:grid-cols-6">
-                                            <div>
-                                              <div className="text-fg/38">
-                                                {t("editModel.contextInfo.maxSupported")}
+                                            <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-[13px] leading-5 text-fg/52 sm:grid-cols-3 lg:grid-cols-6">
+                                              <div>
+                                                <div className="text-fg/38">
+                                                  {t("editModel.contextInfo.maxSupported")}
+                                                </div>
+                                                <div className="font-mono text-fg/78">
+                                                  {llamaContextInfo
+                                                    ? llamaContextInfo.maxContextLength.toLocaleString()
+                                                    : contextLimit.toLocaleString()}
+                                                </div>
                                               </div>
-                                              <div className="font-mono text-fg/78">
-                                                {llamaContextInfo
-                                                  ? llamaContextInfo.maxContextLength.toLocaleString()
-                                                  : contextLimit.toLocaleString()}
+                                              {recommendedContextLength !== null && (
+                                                <div>
+                                                  <div className="text-fg/38">
+                                                    {t("editModel.contextInfo.recommended")}
+                                                  </div>
+                                                  <div className="font-mono text-fg/78">
+                                                    {recommendedContextLength.toLocaleString()}
+                                                  </div>
+                                                </div>
+                                              )}
+                                              {availableRamGiB && (
+                                                <div>
+                                                  <div className="text-fg/38">
+                                                    {t("editModel.contextInfo.availableRam")}
+                                                  </div>
+                                                  <div className="font-mono text-fg/78">
+                                                    {availableRamGiB} GB
+                                                  </div>
+                                                </div>
+                                              )}
+                                              {availableVramGiB && (
+                                                <div>
+                                                  <div className="text-fg/38">
+                                                    {t("editModel.contextInfo.availableVram")}
+                                                  </div>
+                                                  <div className="font-mono text-fg/78">
+                                                    {availableVramGiB} GB
+                                                  </div>
+                                                </div>
+                                              )}
+                                              {modelSizeGiB && (
+                                                <div>
+                                                  <div className="text-fg/38">
+                                                    {t("editModel.contextInfo.modelSize")}
+                                                  </div>
+                                                  <div className="font-mono text-fg/78">
+                                                    {modelSizeGiB} GB
+                                                  </div>
+                                                </div>
+                                              )}
+                                              <div>
+                                                <div className="text-fg/38">
+                                                  {t("editModel.contextInfo.contextCache")}
+                                                </div>
+                                                <div className="font-mono text-fg/78">
+                                                  {contextCacheLocationLabel}
+                                                </div>
                                               </div>
                                             </div>
-                                            {recommendedContextLength !== null && (
-                                              <div>
-                                                <div className="text-fg/38">
-                                                  {t("editModel.contextInfo.recommended")}
-                                                </div>
-                                                <div className="font-mono text-fg/78">
-                                                  {recommendedContextLength.toLocaleString()}
-                                                </div>
-                                              </div>
-                                            )}
-                                            {availableRamGiB && (
-                                              <div>
-                                                <div className="text-fg/38">
-                                                  {t("editModel.contextInfo.availableRam")}
-                                                </div>
-                                                <div className="font-mono text-fg/78">
-                                                  {availableRamGiB} GB
-                                                </div>
-                                              </div>
-                                            )}
-                                            {availableVramGiB && (
-                                              <div>
-                                                <div className="text-fg/38">
-                                                  {t("editModel.contextInfo.availableVram")}
-                                                </div>
-                                                <div className="font-mono text-fg/78">
-                                                  {availableVramGiB} GB
-                                                </div>
-                                              </div>
-                                            )}
-                                            {modelSizeGiB && (
-                                              <div>
-                                                <div className="text-fg/38">
-                                                  {t("editModel.contextInfo.modelSize")}
-                                                </div>
-                                                <div className="font-mono text-fg/78">
-                                                  {modelSizeGiB} GB
-                                                </div>
-                                              </div>
-                                            )}
-                                            <div>
-                                              <div className="text-fg/38">
-                                                {t("editModel.contextInfo.contextCache")}
-                                              </div>
-                                              <div className="font-mono text-fg/78">
-                                                {contextCacheLocationLabel}
-                                              </div>
-                                            </div>
-                                          </div>
-                                        )}
+                                          )}
                                         {!selectedContextLength &&
                                           recommendedContextLength &&
                                           recommendedContextLength > 0 &&
@@ -3266,8 +3266,8 @@ export function EditModelPage() {
                                           e.target.value === "auto"
                                             ? null
                                             : (e.target.value as NonNullable<
-                                                typeof modelAdvancedDraft.llamaKvType
-                                              >),
+                                              typeof modelAdvancedDraft.llamaKvType
+                                            >),
                                         )
                                       }
                                       className={selectInputClassName}
@@ -3298,7 +3298,7 @@ export function EditModelPage() {
                                     <select
                                       value={
                                         modelAdvancedDraft.llamaOffloadKqv === null ||
-                                        modelAdvancedDraft.llamaOffloadKqv === undefined
+                                          modelAdvancedDraft.llamaOffloadKqv === undefined
                                           ? "auto"
                                           : modelAdvancedDraft.llamaOffloadKqv
                                             ? "on"
@@ -3453,7 +3453,7 @@ export function EditModelPage() {
                                       </div>
                                       <span className="rounded-lg bg-surface-el/30 px-2 py-1 font-mono text-[13px] text-accent">
                                         {modelAdvancedDraft.llamaGpuLayers !== null &&
-                                        modelAdvancedDraft.llamaGpuLayers !== undefined
+                                          modelAdvancedDraft.llamaGpuLayers !== undefined
                                           ? modelAdvancedDraft.llamaGpuLayers
                                           : "Auto"}
                                       </span>
@@ -3613,10 +3613,10 @@ export function EditModelPage() {
                                     onChange={(e) =>
                                       handleLlamaSamplerProfileChange(
                                         e.target.value as
-                                          | "balanced"
-                                          | "creative"
-                                          | "stable"
-                                          | "reasoning",
+                                        | "balanced"
+                                        | "creative"
+                                        | "stable"
+                                        | "reasoning",
                                       )
                                     }
                                     className={selectInputClassName}
@@ -3956,7 +3956,7 @@ export function EditModelPage() {
                                           modelAdvancedDraft.llamaRawCompletionFallback === true
                                             ? "enabled"
                                             : modelAdvancedDraft.llamaRawCompletionFallback ===
-                                                false
+                                              false
                                               ? "disabled"
                                               : "default"
                                         }
@@ -3978,12 +3978,12 @@ export function EditModelPage() {
                                           Disabled
                                         </option>
                                       </select>
+                                    </div>
                                   </div>
-                                </div>
 
-                                <div className="rounded-xl border border-danger/20 bg-danger/6 p-4">
-                                  <div className="flex items-start justify-between gap-4">
-                                    <div className="min-w-0 space-y-1.5">
+                                  <div className="rounded-xl border border-danger/20 bg-danger/6 p-4">
+                                    <div className="flex items-start justify-between gap-4">
+                                      <div className="min-w-0 space-y-1.5">
                                         <div className="flex items-start gap-3">
                                           <div className="mt-0.5 shrink-0 text-danger/80">
                                             <AlertTriangle className="h-4 w-4" />
@@ -4313,7 +4313,7 @@ export function EditModelPage() {
                                   <select
                                     value={
                                       modelAdvancedDraft.ollamaMirostat === null ||
-                                      modelAdvancedDraft.ollamaMirostat === undefined
+                                        modelAdvancedDraft.ollamaMirostat === undefined
                                         ? "auto"
                                         : modelAdvancedDraft.ollamaMirostat.toString()
                                     }
@@ -4508,32 +4508,32 @@ export function EditModelPage() {
 
                                   {(reasoningSupport === "budget-only" ||
                                     reasoningSupport === "dynamic") && (
-                                    <div className="space-y-4">
-                                      <div className="flex items-center justify-between">
-                                        <span className="text-[13px] font-bold text-fg/30 uppercase tracking-wider">
-                                          {t("editModel.reasoning.budgetTokens")}
-                                        </span>
-                                        <span className="font-mono text-[13px] text-warning">
-                                          {modelAdvancedDraft.reasoningBudgetTokens
-                                            ? modelAdvancedDraft.reasoningBudgetTokens.toLocaleString()
-                                            : t("common.labels.auto")}
-                                        </span>
+                                      <div className="space-y-4">
+                                        <div className="flex items-center justify-between">
+                                          <span className="text-[13px] font-bold text-fg/30 uppercase tracking-wider">
+                                            {t("editModel.reasoning.budgetTokens")}
+                                          </span>
+                                          <span className="font-mono text-[13px] text-warning">
+                                            {modelAdvancedDraft.reasoningBudgetTokens
+                                              ? modelAdvancedDraft.reasoningBudgetTokens.toLocaleString()
+                                              : t("common.labels.auto")}
+                                          </span>
+                                        </div>
+                                        <NumberInput
+                                          min={ADVANCED_REASONING_BUDGET_RANGE.min}
+                                          max={ADVANCED_REASONING_BUDGET_RANGE.max}
+                                          step={1024}
+                                          value={modelAdvancedDraft.reasoningBudgetTokens || null}
+                                          onChange={(next) =>
+                                            handleReasoningBudgetChange(
+                                              next === null || next === 0 ? null : Math.trunc(next),
+                                            )
+                                          }
+                                          placeholder={t("common.labels.auto")}
+                                          className={numberInputClassName}
+                                        />
                                       </div>
-                                      <NumberInput
-                                        min={ADVANCED_REASONING_BUDGET_RANGE.min}
-                                        max={ADVANCED_REASONING_BUDGET_RANGE.max}
-                                        step={1024}
-                                        value={modelAdvancedDraft.reasoningBudgetTokens || null}
-                                        onChange={(next) =>
-                                          handleReasoningBudgetChange(
-                                            next === null || next === 0 ? null : Math.trunc(next),
-                                          )
-                                        }
-                                        placeholder={t("common.labels.auto")}
-                                        className={numberInputClassName}
-                                      />
-                                    </div>
-                                  )}
+                                    )}
                                 </div>
                               )}
                             </div>
@@ -4585,13 +4585,13 @@ export function EditModelPage() {
                                     )}
                                     {(editorModel?.providerId === "gemini" ||
                                       editorModel?.providerId === "google") && (
-                                      <>
-                                        <strong className="text-fg/80">
-                                          {t("editModel.promptCaching.geminiLabel")}
-                                        </strong>{" "}
-                                        {t("editModel.promptCaching.geminiDescription")}
-                                      </>
-                                    )}
+                                        <>
+                                          <strong className="text-fg/80">
+                                            {t("editModel.promptCaching.geminiLabel")}
+                                          </strong>{" "}
+                                          {t("editModel.promptCaching.geminiDescription")}
+                                        </>
+                                      )}
                                   </div>
                                 </div>
                               ) : (
