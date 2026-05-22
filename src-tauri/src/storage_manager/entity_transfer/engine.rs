@@ -274,7 +274,7 @@ pub struct CharaCardCharacterBookEntry {
     #[serde(default)]
     pub constant: Option<bool>,
     #[serde(default)]
-    pub position: Option<String>,
+    pub position: Option<JsonValue>,
 }
 
 pub fn looks_like_chara_card_v2(value: &JsonValue) -> bool {
