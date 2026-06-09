@@ -61,6 +61,14 @@ cd mobile-app
 bun install
 ```
 
+### Nix
+
+You can run the app directly from the flake without a local install:
+
+```bash
+nix run github:LettuceAI/app
+```
+
 ## Development
 
 ### Common Commands
