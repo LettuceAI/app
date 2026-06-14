@@ -584,6 +584,7 @@ jobs:
             libspeechd-dev \
             libvulkan-dev \
             glslc \
+            spirv-headers \
             patchelf \
             zip
 
@@ -694,10 +695,17 @@ jobs:
     runs-on: windows-latest
     env:
       APTABASE_KEY: ${{ secrets.APTABASE_KEY }}
+      CARGO_NET_GIT_FETCH_WITH_CLI: "true"
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Enable Windows long paths
+        shell: pwsh
+        run: |
+          git config --system core.longpaths true
+          reg add "HKLM\SYSTEM\CurrentControlSet\Control\FileSystem" /v LongPathsEnabled /t REG_DWORD /d 1 /f
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -851,10 +859,17 @@ jobs:
     runs-on: windows-latest
     env:
       APTABASE_KEY: ${{ secrets.APTABASE_KEY }}
+      CARGO_NET_GIT_FETCH_WITH_CLI: "true"
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Enable Windows long paths
+        shell: pwsh
+        run: |
+          git config --system core.longpaths true
+          reg add "HKLM\SYSTEM\CurrentControlSet\Control\FileSystem" /v LongPathsEnabled /t REG_DWORD /d 1 /f
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -1026,10 +1041,17 @@ jobs:
     env:
       APTABASE_KEY: ${{ secrets.APTABASE_KEY }}
       WINDOWS_VULKAN_SDK_VERSION: "1.3.296.0"
+      CARGO_NET_GIT_FETCH_WITH_CLI: "true"
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Enable Windows long paths
+        shell: pwsh
+        run: |
+          git config --system core.longpaths true
+          reg add "HKLM\SYSTEM\CurrentControlSet\Control\FileSystem" /v LongPathsEnabled /t REG_DWORD /d 1 /f
 
       - name: Setup Node
         uses: actions/setup-node@v4
