@@ -313,7 +313,9 @@ pub fn parse_tool_calls(provider_id: &str, payload: &Value) -> Vec<ToolCall> {
     }
 
     // 3) Gemini function call parts
-    if provider_id.starts_with("google") || provider_id.contains("gemini") || calls.is_empty() {
+    if crate::chat_manager::provider_adapter::is_gemini_format_provider(provider_id)
+        || calls.is_empty()
+    {
         if let Some(candidates) = payload.get("candidates").and_then(|v| v.as_array()) {
             for candidate in candidates {
                 if let Some(content) = candidate.get("content").and_then(|v| v.as_object()) {

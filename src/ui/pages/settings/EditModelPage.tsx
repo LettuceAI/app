@@ -74,6 +74,7 @@ import type { LlamaLastRuntimeReport, ReasoningSupport } from "../../../core/sto
 import {
   getProviderReasoningSupport,
   getProviderCachingSupport,
+  isGeminiFamilyProvider,
 } from "../../../core/storage/schemas";
 import { getProviderIcon } from "../../../core/utils/providerIcons";
 import {
@@ -4932,8 +4933,9 @@ export function EditModelPage() {
                                         {t("editModel.promptCaching.groqDescription")}
                                       </>
                                     )}
-                                    {(editorModel?.providerId === "gemini" ||
-                                      editorModel?.providerId === "google") && (
+                                    {isGeminiFamilyProvider(
+                                      editorModel?.providerId,
+                                    ) && (
                                         <>
                                           <strong className="text-fg/80">
                                             {t("editModel.promptCaching.geminiLabel")}

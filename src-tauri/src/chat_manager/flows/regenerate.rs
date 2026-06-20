@@ -649,7 +649,8 @@ impl RegenerateFlow {
             Value::String(s) if s.contains("data:") => {
                 crate::chat_manager::sse::accumulate_image_data_urls_from_sse(s)
             }
-            _ => Vec::new(),
+            // non-streamed image responses come back as one JSON object
+            value => crate::chat_manager::sse::image_data_urls_from_response(value),
         };
 
         let text = extract_text(api_response.data(), Some(&selected_credential.provider_id))

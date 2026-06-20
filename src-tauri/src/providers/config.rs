@@ -63,6 +63,7 @@ fn supported_extra_body_keys(provider_id: &str) -> &'static [&'static str] {
             "chat_template_kwargs",
         ],
         "ollama" => &["options"],
+        // express omitted on purpose — it uses Gemini's implicit caching, no explicit toggle
         "anthropic" | "custom-anthropic" | "openrouter" | "openai" | "gemini" | "google"
         | "google-gemini" => &["promptCachingTtl"],
         _ => &[],
@@ -106,6 +107,11 @@ fn get_all_provider_configs_internal() -> Vec<ProviderConfig> {
             "gemini",
             "Google (Gemini)",
             "https://generativelanguage.googleapis.com/v1",
+        ),
+        (
+            "gemini-agent-platform-express",
+            "Gemini Agent Platform (Express)",
+            "https://aiplatform.googleapis.com",
         ),
         ("zai", "zAI (GLM)", "https://api.z.ai/api/coding/paas/v4"),
         (

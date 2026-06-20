@@ -126,10 +126,8 @@ fn supports_openai_prompt_cache_retention(credential: &ProviderCredential) -> bo
 }
 
 fn supports_gemini_explicit_prompt_caching(credential: &ProviderCredential) -> bool {
-    matches!(
-        credential.provider_id.as_str(),
-        "gemini" | "google" | "google-gemini"
-    )
+    // explicit cachedContents only — excludes express (it uses implicit caching)
+    crate::gemini_cache::is_gemini_provider(Some(&credential.provider_id))
 }
 
 fn apply_cache_control_to_system_message(
@@ -194,7 +192,7 @@ pub fn build_chat_request(
         credential,
         should_stream,
         llama_streaming_enabled,
-    );
+    ) && !adapter.disables_streaming_for_model(model_name);
     let url = adapter.build_url(&base_url, model_name, api_key, effective_stream);
     let headers = adapter.headers(api_key, credential.headers.as_ref());
     let mut body = adapter.body(

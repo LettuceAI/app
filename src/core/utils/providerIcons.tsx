@@ -46,6 +46,9 @@ const ICON_MAP: Record<string, ReactElement> = {
   zai: <img src={ZAIIcon} alt="ZAI" className="h-6 w-6" />,
   moonshot: <img src={MoonShotAIIcon} alt="Moonshot AI" className="h-6 w-6" />,
   gemini: <img src={GeminiIcon} alt="Gemini" className="h-6 w-6" />,
+  "gemini-agent-platform-express": (
+    <img src={GeminiIcon} alt="Gemini Agent Platform (Express)" className="h-6 w-6" />
+  ),
   qwen: <img src={QwenIcon} alt="Qwen" className="h-6 w-6" />,
   groq: <img src={GroqIcon} alt="Groq" className="h-6 w-6" />,
   featherless: <img src={FeatherlessIcon} alt="Featherless" className="h-6 w-6" />,

@@ -64,6 +64,16 @@ pub trait ProviderAdapter {
         reasoning_budget: Option<u32>,
     ) -> Value;
 
+    /// Static model list for providers that can't be listed remotely. Used instead of `list_models_endpoint` when non-empty.
+    fn known_models(&self) -> Vec<ModelInfo> {
+        Vec::new()
+    }
+
+    /// True for models that can't stream (e.g. Gemini image models); forces a non-streaming request.
+    fn disables_streaming_for_model(&self, _model_name: &str) -> bool {
+        false
+    }
+
     /// Endpoint to list models. Default implements OpenAI standard conventions.
     fn list_models_endpoint(&self, base_url: &str) -> String {
         let base = base_url.trim_end_matches('/');
@@ -279,6 +289,7 @@ mod cerebras;
 mod chutes;
 mod deepseek;
 mod featherless;
+mod gemini_agent_platform_express;
 pub mod google_gemini;
 mod groq;
 mod intenserp;
@@ -300,6 +311,12 @@ mod custom;
 mod custom_anthropic;
 mod lettuce_engine;
 
+// "speaks the Gemini wire format" — includes express. note: different from gemini_cache's check, which excludes express
+pub fn is_gemini_format_provider(provider_id: &str) -> bool {
+    let id = provider_id.to_ascii_lowercase();
+    id == "gemini" || id.starts_with("google") || id == "gemini-agent-platform-express"
+}
+
 pub fn adapter_for(credential: &ProviderCredential) -> Box<dyn ProviderAdapter + Send + Sync> {
     match credential.provider_id.as_str() {
         "custom" => Box::new(custom::CustomGenericAdapter::new(credential)),
@@ -319,6 +336,9 @@ pub fn adapter_for(credential: &ProviderCredential) -> Box<dyn ProviderAdapter +
         "xai" => Box::new(xai::XAIAdapter),
         "anannas" => Box::new(anannas::AnannasAdapter),
         "google" | "google-gemini" | "gemini" => Box::new(google_gemini::GoogleGeminiAdapter),
+        "gemini-agent-platform-express" => {
+            Box::new(gemini_agent_platform_express::GeminiAgentPlatformExpressAdapter::new())
+        }
         "zai" | "z.ai" => Box::new(zai::ZAIAdapter),
         "moonshot" | "moonshot-ai" => Box::new(moonshot::MoonshotAdapter),
         "featherless" => Box::new(featherless::FeatherlessAdapter),

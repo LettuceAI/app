@@ -54,6 +54,22 @@ pub async fn get_remote_models(
 
     // 2. Get adapter and endpoint
     let adapter = adapter_for(&credential);
+
+    // Providers with no listable endpoint (e.g. Gemini express) supply a static whitelist.
+    let known_models = adapter.known_models();
+    if !known_models.is_empty() {
+        log_info(
+            &app,
+            "get_remote_models",
+            format!(
+                "Using {} curated models for provider {}",
+                known_models.len(),
+                credential.provider_id
+            ),
+        );
+        return Ok(known_models);
+    }
+
     // Use the credential's base_url or default
     let base_url = credential.base_url.clone().unwrap_or_else(|| {
         crate::providers::config::resolve_base_url(

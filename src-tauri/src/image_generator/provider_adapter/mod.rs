@@ -76,6 +76,9 @@ pub fn get_adapter(provider_id: &str) -> Result<Box<dyn ImageProviderAdapter>, S
         "openrouter" => Ok(Box::new(openrouter::OpenRouterAdapter)),
         "pollinations" => Ok(Box::new(pollinations::PollinationsAdapter)),
         "gemini" => Ok(Box::new(google_gemini::GoogleGeminiAdapter)),
+        "gemini-agent-platform-express" => {
+            Ok(Box::new(google_gemini::GeminiAgentPlatformExpressAdapter))
+        }
         "stability" => Ok(Box::new(stability::StabilityAdapter)),
         "xai" => Ok(Box::new(xai::XAIAdapter)),
         "nanogpt" => Ok(Box::new(nanogpt::NanoGPTAdapter)),

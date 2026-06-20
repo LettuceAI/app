@@ -208,3 +208,58 @@ impl ImageProviderAdapter for GoogleGeminiAdapter {
         Ok(images)
     }
 }
+
+// Express variant: same Gemini payload, just aiplatform.googleapis.com + x-goog-api-key
+pub struct GeminiAgentPlatformExpressAdapter;
+
+impl ImageProviderAdapter for GeminiAgentPlatformExpressAdapter {
+    fn endpoint(&self, base_url: &str, request: &ImageGenerationRequest) -> String {
+        let trimmed = base_url.trim_end_matches('/');
+        let base = if trimmed.ends_with("/v1beta1") {
+            trimmed.to_string()
+        } else {
+            format!("{}/v1beta1", trimmed)
+        };
+        let bare = request
+            .model
+            .strip_prefix("publishers/google/models/")
+            .unwrap_or(&request.model);
+        format!(
+            "{}/publishers/google/models/{}:generateContent",
+            base,
+            urlencoding::encode(bare)
+        )
+    }
+
+    fn requires_api_key(&self) -> bool {
+        true
+    }
+
+    fn required_auth_headers(&self) -> &'static [&'static str] {
+        &["x-goog-api-key"]
+    }
+
+    fn headers(
+        &self,
+        api_key: &str,
+        extra: Option<&HashMap<String, String>>,
+    ) -> HashMap<String, String> {
+        let mut headers = HashMap::new();
+        headers.insert("Content-Type".into(), "application/json".into());
+        headers.insert("x-goog-api-key".into(), api_key.to_string());
+        if let Some(extra) = extra {
+            for (k, v) in extra.iter() {
+                headers.insert(k.clone(), v.clone());
+            }
+        }
+        headers
+    }
+
+    fn payload(&self, request: &ImageGenerationRequest) -> Result<ImageRequestPayload, String> {
+        GoogleGeminiAdapter.payload(request)
+    }
+
+    fn parse_response(&self, response: Value) -> Result<Vec<ImageResponseData>, String> {
+        GoogleGeminiAdapter.parse_response(response)
+    }
+}

@@ -2,6 +2,7 @@ import {
   PROVIDER_PARAMETER_SUPPORT,
   type AdvancedModelSettings,
   getProviderReasoningCapability,
+  resolveParameterSupport,
 } from "../../core/storage/schemas";
 import { useI18n } from "../../core/i18n/context";
 
@@ -164,8 +165,7 @@ export function ProviderParameterSupportInfo({
   compact = false,
 }: ProviderParameterSupportInfoProps) {
   const { t } = useI18n();
-  const provider =
-    PROVIDER_PARAMETER_SUPPORT[providerId as keyof typeof PROVIDER_PARAMETER_SUPPORT];
+  const provider = resolveParameterSupport(providerId);
 
   if (!provider) {
     return (

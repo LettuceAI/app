@@ -579,6 +579,53 @@ fn extract_image_data_urls_from_value(v: &Value, out: &mut Vec<String>) {
             }
         }
     }
+
+    // Gemini-style: candidates[].content.parts[].inlineData (base64 image, skip thought parts)
+    if let Some(candidates) = v.get("candidates").and_then(|c| c.as_array()) {
+        for candidate in candidates {
+            if let Some(parts) = candidate
+                .get("content")
+                .and_then(|c| c.get("parts"))
+                .and_then(|p| p.as_array())
+            {
+                for part in parts {
+                    let is_thought = part
+                        .get("thought")
+                        .and_then(|t| t.as_bool())
+                        .unwrap_or(false);
+                    if is_thought {
+                        continue;
+                    }
+                    // Responses use camelCase inlineData; accept snake_case defensively.
+                    let Some(inline) = part.get("inlineData").or_else(|| part.get("inline_data"))
+                    else {
+                        continue;
+                    };
+                    let mime = inline
+                        .get("mimeType")
+                        .or_else(|| inline.get("mime_type"))
+                        .and_then(|m| m.as_str())
+                        .unwrap_or("image/png");
+                    // Gemini can also return audio/other inlineData; only surface images.
+                    if !mime.starts_with("image/") {
+                        continue;
+                    }
+                    if let Some(data) = inline.get("data").and_then(|d| d.as_str()) {
+                        if !data.is_empty() {
+                            out.push(format!("data:{};base64,{}", mime, data));
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// pull image data-urls out of a non-streamed JSON body (Nano Banana models don't stream)
+pub fn image_data_urls_from_response(v: &Value) -> Vec<String> {
+    let mut out = Vec::new();
+    extract_image_data_urls_from_value(v, &mut out);
+    out
 }
 
 pub fn usage_from_value(v: &Value) -> Option<UsageSummary> {

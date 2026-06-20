@@ -2500,13 +2500,17 @@ fn should_force_post_tool_summary(initial_content: &str, final_content: &str) ->
     false
 }
 
+// delegate so all "is-Gemini?" checks agree (incl. express)
+fn is_gemini_like_provider(provider_id: &str) -> bool {
+    crate::chat_manager::provider_adapter::is_gemini_format_provider(provider_id)
+}
+
 fn extract_provider_semantic_error(provider_id: &str, data: &Value) -> Option<String> {
     if data.get("error").is_some() {
         return chat_request::extract_error_message(data);
     }
 
-    let is_gemini = provider_id.eq_ignore_ascii_case("gemini") || provider_id.starts_with("google");
-    if !is_gemini {
+    if !is_gemini_like_provider(provider_id) {
         return None;
     }
 
@@ -3060,7 +3064,7 @@ async fn process_assistant_turn_legacy(
         parse_tool_calls(provider_id, response_data)
     };
     let mut latest_gemini_function_call_content =
-        if provider_id.eq_ignore_ascii_case("gemini") || provider_id.starts_with("google") {
+        if is_gemini_like_provider(provider_id) {
             extract_latest_gemini_function_call_content(response_data)
         } else {
             None
@@ -3169,9 +3173,7 @@ async fn process_assistant_turn_legacy(
             })
             .collect();
 
-        if (provider_id.eq_ignore_ascii_case("gemini") || provider_id.starts_with("google"))
-            && latest_gemini_function_call_content.is_some()
-        {
+        if is_gemini_like_provider(provider_id) && latest_gemini_function_call_content.is_some() {
             api_messages.push(json!({
                 "role": "assistant",
                 "content": if current_step_content.is_empty() { Value::Null } else { json!(current_step_content) },
@@ -3281,7 +3283,7 @@ async fn process_assistant_turn_legacy(
         };
         let followup_provider_error = extract_provider_semantic_error(provider_id, followup_data);
         latest_gemini_function_call_content =
-            if provider_id.eq_ignore_ascii_case("gemini") || provider_id.starts_with("google") {
+            if is_gemini_like_provider(provider_id) {
                 extract_latest_gemini_function_call_content(followup_data)
             } else {
                 None
