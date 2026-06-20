@@ -2965,6 +2965,9 @@ pub async fn llamacpp_context_info(
         let _ = llama_offload_kqv;
         let _ = llama_kv_type;
         let _ = llama_gpu_layers;
+        let _ = llama_mmproj_path;
+        let _ = llama_mtp_enabled;
+        let _ = llama_mtp_model_path;
         Err(crate::utils::err_msg(
             module_path!(),
             line!(),
