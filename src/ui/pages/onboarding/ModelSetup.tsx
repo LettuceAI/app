@@ -77,10 +77,13 @@ export function ModelSetupPage() {
       setFetchedModels(models ?? []);
       if ((models ?? []).length > 0) {
         setIsManualInput(false);
+      } else {
+        setIsManualInput(true);
       }
     } catch (error) {
       console.error("Failed to fetch models:", error);
       setFetchedModels([]);
+      setIsManualInput(true);
     } finally {
       setFetchingModels(false);
     }
