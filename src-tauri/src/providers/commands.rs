@@ -24,6 +24,11 @@ pub async fn get_remote_models(
     if credential.provider_id == "ollama" {
         return crate::ollama::list_models(&app, &credential).await;
     }
+    // Express has no API-key-listable models endpoint; serve a curated (optionally
+    // remote-refreshed) manifest instead of hitting the network for a list.
+    if credential.provider_id == "gemini-agent-platform-express" {
+        return Ok(crate::providers::express_models::express_models(&app).await);
+    }
 
     let is_custom_provider =
         credential.provider_id == "custom" || credential.provider_id == "custom-anthropic";
@@ -54,21 +59,6 @@ pub async fn get_remote_models(
 
     // 2. Get adapter and endpoint
     let adapter = adapter_for(&credential);
-
-    // Providers with no listable endpoint (e.g. Gemini express) supply a static whitelist.
-    let known_models = adapter.known_models();
-    if !known_models.is_empty() {
-        log_info(
-            &app,
-            "get_remote_models",
-            format!(
-                "Using {} curated models for provider {}",
-                known_models.len(),
-                credential.provider_id
-            ),
-        );
-        return Ok(known_models);
-    }
 
     // Use the credential's base_url or default
     let base_url = credential.base_url.clone().unwrap_or_else(|| {

@@ -64,11 +64,6 @@ pub trait ProviderAdapter {
         reasoning_budget: Option<u32>,
     ) -> Value;
 
-    /// Static model list for providers that can't be listed remotely. Used instead of `list_models_endpoint` when non-empty.
-    fn known_models(&self) -> Vec<ModelInfo> {
-        Vec::new()
-    }
-
     /// True for models that can't stream (e.g. Gemini image models); forces a non-streaming request.
     fn disables_streaming_for_model(&self, _model_name: &str) -> bool {
         false
@@ -289,7 +284,7 @@ mod cerebras;
 mod chutes;
 mod deepseek;
 mod featherless;
-mod gemini_agent_platform_express;
+pub(crate) mod gemini_agent_platform_express;
 pub mod google_gemini;
 mod groq;
 mod intenserp;

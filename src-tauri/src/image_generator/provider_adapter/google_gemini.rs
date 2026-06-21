@@ -214,20 +214,16 @@ pub struct GeminiAgentPlatformExpressAdapter;
 
 impl ImageProviderAdapter for GeminiAgentPlatformExpressAdapter {
     fn endpoint(&self, base_url: &str, request: &ImageGenerationRequest) -> String {
-        let trimmed = base_url.trim_end_matches('/');
-        let base = if trimmed.ends_with("/v1beta1") {
-            trimmed.to_string()
-        } else {
-            format!("{}/v1beta1", trimmed)
+        // share the chat adapter's normalization so /v1 and /v1beta bases upgrade consistently
+        use crate::chat_manager::provider_adapter::gemini_agent_platform_express::{
+            bare_model_id, express_base, MODEL_RESOURCE_PREFIX,
         };
-        let bare = request
-            .model
-            .strip_prefix("publishers/google/models/")
-            .unwrap_or(&request.model);
+        let base = express_base(base_url);
         format!(
-            "{}/publishers/google/models/{}:generateContent",
+            "{}/{}{}:generateContent",
             base,
-            urlencoding::encode(bare)
+            MODEL_RESOURCE_PREFIX,
+            urlencoding::encode(bare_model_id(&request.model))
         )
     }
 
