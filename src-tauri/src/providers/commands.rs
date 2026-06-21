@@ -24,10 +24,10 @@ pub async fn get_remote_models(
     if credential.provider_id == "ollama" {
         return crate::ollama::list_models(&app, &credential).await;
     }
-    // Express has no API-key-listable models endpoint; serve a curated (optionally
-    // remote-refreshed) manifest instead of hitting the network for a list.
+    // Express has no API-key-listable models endpoint, so there's no catalog to
+    // fetch — the user enters the model id manually.
     if credential.provider_id == "gemini-agent-platform-express" {
-        return Ok(crate::providers::express_models::express_models(&app).await);
+        return Ok(Vec::new());
     }
 
     let is_custom_provider =

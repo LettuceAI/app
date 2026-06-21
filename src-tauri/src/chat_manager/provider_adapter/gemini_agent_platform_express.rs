@@ -151,6 +151,6 @@ impl ProviderAdapter for GeminiAgentPlatformExpressAdapter {
     }
 
     // No list_models_endpoint/parse_models_list: the Express endpoint can't list models
-    // with an API key, so the catalog is served from a manifest (see providers::express_models)
-    // and get_remote_models short-circuits this provider before the generic list path.
+    // with an API key, so there's no catalog to fetch — get_remote_models returns an empty
+    // list for this provider and the user enters the model id manually.
 }
