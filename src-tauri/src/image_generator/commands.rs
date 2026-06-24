@@ -79,6 +79,7 @@ fn record_image_generation_usage(
         summary_tokens: None,
         reasoning_tokens: usage_summary.and_then(|usage| usage.reasoning_tokens),
         image_tokens: usage_summary.and_then(|usage| usage.image_tokens),
+        audio_tokens: usage_summary.and_then(|usage| usage.audio_tokens),
         web_search_requests: usage_summary.and_then(|usage| usage.web_search_requests),
         api_cost: usage_summary.and_then(|usage| usage.api_cost),
         cost: None,

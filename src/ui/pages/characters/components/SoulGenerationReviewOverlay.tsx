@@ -27,6 +27,7 @@ type SoulTextKey =
   | "voice"
   | "relationalStyle"
   | "vulnerabilities"
+  | "fears"
   | "habits"
   | "boundaries";
 
@@ -61,6 +62,7 @@ const TEXT_FIELDS: Array<{
   { key: "voice", labelKey: "characters.soulFields.voice", rows: 3 },
   { key: "relationalStyle", labelKey: "characters.soulFields.relationalStyle", rows: 3 },
   { key: "vulnerabilities", labelKey: "characters.soulFields.vulnerabilities", rows: 2 },
+  { key: "fears", labelKey: "characters.soulFields.fears", rows: 2 },
   { key: "habits", labelKey: "characters.soulFields.habits", rows: 2 },
   { key: "boundaries", labelKey: "characters.soulFields.boundaries", rows: 2 },
 ];

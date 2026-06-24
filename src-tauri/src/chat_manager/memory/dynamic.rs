@@ -241,6 +241,7 @@ pub fn effective_dynamic_memory_settings(
         context_enrichment_enabled: true,
         recursive_memory_loops: false,
         recursive_memory_loop_hard_cap: 20,
+        run_mode: "auto".to_string(),
     }
 }
 

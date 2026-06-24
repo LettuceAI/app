@@ -105,7 +105,7 @@ fn dynamic_memory_manager_template_id(
         })
 }
 
-fn resolve_dynamic_memory_summarisation_model_id(
+pub(crate) fn resolve_dynamic_memory_summarisation_model_id(
     app: &AppHandle,
     settings: &Settings,
     override_model_id: Option<&str>,
@@ -1131,7 +1131,6 @@ fn fetch_conversation_messages_range(
                 attachments: Vec::new(),
                 reasoning: None,
                 model_id: None,
-                fallback_from_model_id: None,
             })
         })
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
@@ -1504,6 +1503,18 @@ pub fn abort_dynamic_memory(app: AppHandle, session_id: String) -> Result<(), St
     run_manager.cancel_run(&abort_registry, &run_key)
 }
 
+pub fn skip_dynamic_memory_cycle(app: AppHandle, session_id: String) -> Result<(), String> {
+    app.state::<crate::dynamic_memory_approval::DynamicMemoryApprovalManager>()
+        .mark_skipped(&session_id);
+    Ok(())
+}
+
+pub fn dynamic_memory_pending_approval(app: AppHandle, session_id: String) -> Option<u32> {
+    app.state::<crate::dynamic_memory_approval::DynamicMemoryApprovalManager>()
+        .pending(&session_id)
+        .map(|count| count as u32)
+}
+
 pub fn enqueue_post_turn_dynamic_memory(
     app: AppHandle,
     session_id: String,
@@ -1651,6 +1662,14 @@ pub fn enqueue_post_turn_dynamic_memory(
                 );
                 mark_jobs_failed(&app, &jobs, &err);
             } else {
+                run_growthcycle_for_turn(
+                    &app,
+                    &context,
+                    &mut session,
+                    &character,
+                    &before_memories,
+                )
+                .await;
                 finalize_companion_turn_effects(&app, &jobs, &before_memories, &session);
             }
 
@@ -1659,6 +1678,103 @@ pub fn enqueue_post_turn_dynamic_memory(
             }
         }
     });
+}
+
+async fn run_growthcycle_for_turn(
+    app: &AppHandle,
+    context: &ChatContext,
+    session: &mut Session,
+    character: &Character,
+    before_memories: &[MemoryEmbedding],
+) {
+    if !companion::is_companion_mode(session, character) {
+        return;
+    }
+
+    let before_ids: HashSet<&str> = before_memories
+        .iter()
+        .map(|memory| memory.id.as_str())
+        .collect();
+    let new_memories: Vec<MemoryEmbedding> = session
+        .memory_embeddings
+        .iter()
+        .filter(|memory| !before_ids.contains(memory.id.as_str()))
+        .cloned()
+        .collect();
+    if new_memories.is_empty() {
+        return;
+    }
+
+    match crate::chat_manager::companion_growth::run_growthcycle(
+        app,
+        context,
+        &context.settings,
+        session,
+        character,
+        &new_memories,
+    )
+    .await
+    {
+        Ok(applied) if applied > 0 => {
+            if let Err(err) = save_session(app, session) {
+                log_warn(
+                    app,
+                    "companion_growth",
+                    format!(
+                        "failed to persist soul growth for session {}: {}",
+                        session.id, err
+                    ),
+                );
+            }
+            run_consolidation_for_turn(app, context, session, character).await;
+        }
+        Ok(_) => {}
+        Err(err) => {
+            log_warn(
+                app,
+                "companion_growth",
+                format!("growthcycle failed for session {}: {}", session.id, err),
+            );
+        }
+    }
+}
+
+async fn run_consolidation_for_turn(
+    app: &AppHandle,
+    context: &ChatContext,
+    session: &mut Session,
+    character: &Character,
+) {
+    match crate::chat_manager::companion_consolidation::maybe_run_consolidation(
+        app,
+        context,
+        &context.settings,
+        session,
+        character,
+    )
+    .await
+    {
+        Ok(changed) if changed > 0 => {
+            if let Err(err) = save_session(app, session) {
+                log_warn(
+                    app,
+                    "companion_consolidation",
+                    format!(
+                        "failed to persist consolidation for session {}: {}",
+                        session.id, err
+                    ),
+                );
+            }
+        }
+        Ok(_) => {}
+        Err(err) => {
+            log_warn(
+                app,
+                "companion_consolidation",
+                format!("consolidation failed for session {}: {}", session.id, err),
+            );
+        }
+    }
 }
 
 fn mark_jobs_failed(app: &AppHandle, jobs: &[PostTurnMemoryJob], err: &str) {
@@ -2034,6 +2150,47 @@ async fn process_dynamic_memory_cycle_with_model(
             return Ok(());
         }
     }
+
+    if model_id_override.is_none() && !force && !cursor_rewound {
+        match dynamic.run_mode.as_str() {
+            "manual" => {
+                log_info(
+                    app,
+                    "dynamic_memory",
+                    "run_mode=manual; skipping automatic cycle",
+                );
+                return Ok(());
+            }
+            "askFirst" => {
+                let approval = app
+                    .state::<crate::dynamic_memory_approval::DynamicMemoryApprovalManager>();
+                if let Some(pending_count) = approval.should_prompt(
+                    &session.id,
+                    total_convo_at_start,
+                    last_window_end,
+                    window_size,
+                ) {
+                    log_info(
+                        app,
+                        "dynamic_memory",
+                        format!(
+                            "run_mode=askFirst; prompting for approval (pending_count={})",
+                            pending_count
+                        ),
+                    );
+                    let _ = app.emit(
+                        "dynamic-memory:approval-needed",
+                        json!({ "sessionId": session.id, "pendingCount": pending_count }),
+                    );
+                }
+                return Ok(());
+            }
+            _ => {}
+        }
+    }
+
+    app.state::<crate::dynamic_memory_approval::DynamicMemoryApprovalManager>()
+        .clear(&session.id);
 
     let mut window_start = if cursor_rewound {
         0

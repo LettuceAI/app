@@ -43,6 +43,8 @@ pub enum PromptType {
     ScenePromptWriterPrompt,
     DesignReferencePrompt,
     CompanionSoulWriterPrompt,
+    CompanionGrowthcyclePrompt,
+    CompanionConsolidationPrompt,
 }
 
 pub fn get_base_prompt(prompt_type: PromptType) -> String {
@@ -89,6 +91,12 @@ pub fn get_base_prompt(prompt_type: PromptType) -> String {
         PromptType::CompanionSoulWriterPrompt => {
             prompt_engine::default_companion_soul_writer_prompt()
         }
+        PromptType::CompanionGrowthcyclePrompt => {
+            prompt_engine::default_companion_growthcycle_prompt()
+        }
+        PromptType::CompanionConsolidationPrompt => {
+            prompt_engine::default_companion_consolidation_prompt()
+        }
     }
 }
 
@@ -133,6 +141,12 @@ pub fn get_base_prompt_entries(prompt_type: PromptType) -> Vec<SystemPromptEntry
         PromptType::DesignReferencePrompt => prompt_engine::default_design_reference_entries(),
         PromptType::CompanionSoulWriterPrompt => {
             prompt_engine::default_companion_soul_writer_entries()
+        }
+        PromptType::CompanionGrowthcyclePrompt => {
+            prompt_engine::default_companion_growthcycle_entries()
+        }
+        PromptType::CompanionConsolidationPrompt => {
+            prompt_engine::default_companion_consolidation_entries()
         }
     }
 }

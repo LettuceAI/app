@@ -1526,7 +1526,6 @@ fn load_selected_messages(
                     .unwrap_or_default(),
                 reasoning: row.get::<_, Option<String>>(13)?,
                 model_id: None,
-                fallback_from_model_id: None,
             })
         })
         .map_err(|err| crate::utils::err_to_string(module_path!(), line!(), err))?;

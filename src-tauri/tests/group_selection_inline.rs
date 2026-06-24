@@ -37,6 +37,7 @@ fn test_context(muted_character_ids: Vec<&str>) -> GroupChatContext {
     GroupChatContext {
         session: GroupSession {
             id: "session-1".to_string(),
+            author_note: None,
             memory_progress_step: None,
             name: "Test".to_string(),
             memory_type: "manual".to_string(),
@@ -165,6 +166,7 @@ fn test_build_selection_prompt_truncates_utf8_safely() {
             is_pinned: false,
             attachments: vec![],
             used_lorebook_entries: vec![],
+            memory_refs: vec![],
             reasoning: None,
             selection_reasoning: None,
             model_id: None,
@@ -201,6 +203,7 @@ fn test_round_robin_ignores_muted_participants() {
             is_pinned: false,
             attachments: vec![],
             used_lorebook_entries: vec![],
+            memory_refs: vec![],
             reasoning: None,
             selection_reasoning: None,
             model_id: None,
@@ -237,6 +240,7 @@ fn test_heuristic_does_not_treat_plain_name_as_forced_selection() {
         lettuceai_lib::storage_manager::group_sessions::GroupMessage {
             id: "m1".to_string(),
             session_id: "session-1".to_string(),
+            memory_refs: vec![],
             role: "assistant".to_string(),
             content: "Previous reply".to_string(),
             speaker_character_id: Some("char-1".to_string()),

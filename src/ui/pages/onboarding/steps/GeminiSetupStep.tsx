@@ -6,6 +6,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { cn, radius } from "../../../design-tokens";
 import { getPlatform } from "../../../../core/utils/platform";
 import { getProviderIcon } from "../../../../core/utils/providerIcons";
+import { openExternalUrl } from "../../../../core/utils/openExternal";
 import { useI18n, type TranslationKey } from "../../../../core/i18n/context";
 import { GuidedCarousel, type GuidedSlide } from "./GuidedCarousel";
 import { addOrUpdateProviderCredential, addOrUpdateModel } from "../../../../core/storage/repo";
@@ -42,15 +43,6 @@ const stepVariants = {
   center: { opacity: 1, y: 0 },
   exit: (dir: number) => ({ opacity: 0, y: dir * -14 }),
 };
-
-async function openExternal(url: string) {
-  try {
-    const { openUrl } = await import("@tauri-apps/plugin-opener");
-    await openUrl(url);
-  } catch {
-    window.open(url, "_blank");
-  }
-}
 
 type GuidedStep = { key: string; slides: GuidedSlide[]; openUrl?: string };
 
@@ -288,7 +280,7 @@ export function GeminiSetupStep({ onExitBack }: { onExitBack: () => void }) {
       {step.openUrl && (
         <button
           type="button"
-          onClick={() => void openExternal(step.openUrl!)}
+          onClick={() => void openExternalUrl(step.openUrl!)}
           className={cn(
             "flex items-center justify-center gap-2 border border-white/15 bg-black/55 shadow-lg backdrop-blur-md py-3 text-[14px] font-medium text-white transition hover:border-white/25 hover:bg-black/65 active:scale-[0.99]",
             radius.md,

@@ -35,6 +35,58 @@ pub struct LogSearchResult {
     pub total: usize,
 }
 
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LogSearchOptions {
+    #[serde(default)]
+    pub case_sensitive: bool,
+    #[serde(default)]
+    pub whole_word: bool,
+    #[serde(default)]
+    pub regex: bool,
+}
+
+enum LogMatcher {
+    Plain(String),
+    PlainCi(String),
+    Re(regex::Regex),
+}
+
+impl LogMatcher {
+    fn build(query: &str, options: LogSearchOptions) -> Result<Self, String> {
+        if options.regex || options.whole_word {
+            let pattern = if options.whole_word && !options.regex {
+                format!(r"\b{}\b", regex::escape(query))
+            } else {
+                query.to_string()
+            };
+            let re = regex::RegexBuilder::new(&pattern)
+                .case_insensitive(!options.case_sensitive)
+                .build()
+                .map_err(|e| {
+                    crate::utils::err_msg(
+                        module_path!(),
+                        line!(),
+                        format!("Invalid search pattern: {}", e),
+                    )
+                })?;
+            Ok(LogMatcher::Re(re))
+        } else if options.case_sensitive {
+            Ok(LogMatcher::Plain(query.to_string()))
+        } else {
+            Ok(LogMatcher::PlainCi(query.to_lowercase()))
+        }
+    }
+
+    fn is_match(&self, line: &str) -> bool {
+        match self {
+            LogMatcher::Plain(q) => line.contains(q.as_str()),
+            LogMatcher::PlainCi(q) => line.to_lowercase().contains(q.as_str()),
+            LogMatcher::Re(re) => re.is_match(line),
+        }
+    }
+}
+
 pub struct LogManager {
     file: Mutex<Option<File>>,
     log_dir: PathBuf,
@@ -297,9 +349,15 @@ impl LogManager {
         Ok(LogPage { total, lines })
     }
 
-    /// Search a log file for lines containing the query (case-insensitive).
-    /// Returns the 0-based line indices of all matching lines.
-    pub fn search_log_file(&self, filename: &str, query: &str) -> Result<LogSearchResult, String> {
+    /// Search a log file for lines matching the query, honoring the given options
+    /// (case sensitivity, whole-word, and regex). Returns the 0-based line indices
+    /// of all matching lines.
+    pub fn search_log_file(
+        &self,
+        filename: &str,
+        query: &str,
+        options: LogSearchOptions,
+    ) -> Result<LogSearchResult, String> {
         let path = self.log_dir.join(filename);
 
         if !path.exists() || !path.is_file() {
@@ -310,6 +368,8 @@ impl LogManager {
             ));
         }
 
+        let matcher = LogMatcher::build(query, options)?;
+
         let file = File::open(&path).map_err(|e| {
             crate::utils::err_msg(
                 module_path!(),
@@ -318,7 +378,6 @@ impl LogManager {
             )
         })?;
         let reader = BufReader::new(file);
-        let query_lower = query.to_lowercase();
         let mut matches = Vec::new();
         let mut total: usize = 0;
 
@@ -330,7 +389,7 @@ impl LogManager {
                     format!("Failed to read line: {}", e),
                 )
             })?;
-            if line.to_lowercase().contains(&query_lower) {
+            if matcher.is_match(&line) {
                 matches.push(total);
             }
             total += 1;
@@ -635,9 +694,10 @@ pub async fn search_log_file(
     app_handle: AppHandle,
     filename: String,
     query: String,
+    options: Option<LogSearchOptions>,
 ) -> Result<LogSearchResult, String> {
     let logger = app_handle.state::<LogManager>();
-    logger.search_log_file(&filename, &query)
+    logger.search_log_file(&filename, &query, options.unwrap_or_default())
 }
 
 #[tauri::command]

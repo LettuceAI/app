@@ -8,7 +8,7 @@ export type BoxVariant =
   | "success"
   | "danger";
 
-export type SelectorKind = "persona" | "model" | "fallback_model" | "author_note";
+export type SelectorKind = "persona" | "model" | "author_note";
 
 export type ButtonAction =
   | "regenerate"
@@ -228,7 +228,7 @@ export const widgetNodeSchema: z.ZodType<WidgetNode> = z.lazy(() =>
       id: z.string(),
       design: z.enum(["default", "minimal", "solid", "outline"]).optional(),
       type: z.literal("selector"),
-      kind: z.enum(["persona", "model", "fallback_model", "author_note"]),
+      kind: z.enum(["persona", "model", "author_note"]),
       title: z.string().optional(),
       description: z.string().optional(),
     }),

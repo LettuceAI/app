@@ -92,6 +92,16 @@ function translateWithLocale(
   return interpolate(resolved, params);
 }
 
+function getStoredLocale(): Locale {
+  if (typeof window === "undefined") return "en";
+  const saved = window.localStorage.getItem(STORAGE_KEY);
+  return isSupportedLocale(saved) ? saved : "en";
+}
+
+export function translateStatic(key: TranslationKey, params?: TranslateParams): string {
+  return translateWithLocale(getStoredLocale(), key, params);
+}
+
 interface I18nContextValue {
   locale: Locale;
   setLocale: (locale: Locale) => void;

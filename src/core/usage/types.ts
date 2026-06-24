@@ -44,6 +44,7 @@ export interface RequestUsage {
   cacheWriteTokens?: number;
   reasoningTokens?: number;
   imageTokens?: number;
+  audioTokens?: number;
   webSearchRequests?: number;
   apiCost?: number;
 

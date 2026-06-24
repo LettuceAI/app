@@ -33,7 +33,41 @@ pub fn push_prompt_entry_message(
     target.push(serde_json::json!({ "role": role, "content": entry.content }));
 }
 
-pub fn build_multimodal_content(text: &str, attachments: &[ImageAttachment]) -> Value {
+pub fn audio_format_from_mime(mime: &str) -> &'static str {
+    let mime = mime.to_ascii_lowercase();
+    if mime.contains("wav") {
+        "wav"
+    } else if mime.contains("mpeg") || mime.contains("mp3") {
+        "mp3"
+    } else if mime.contains("ogg") {
+        "ogg"
+    } else if mime.contains("flac") {
+        "flac"
+    } else if mime.contains("aac") {
+        "aac"
+    } else if mime.contains("aiff") || mime.contains("aif") {
+        "aiff"
+    } else if mime.contains("mp4") || mime.contains("m4a") {
+        "m4a"
+    } else {
+        "wav"
+    }
+}
+
+fn raw_base64(data: &str) -> &str {
+    if let Some(idx) = data.find(";base64,") {
+        &data[idx + ";base64,".len()..]
+    } else {
+        data
+    }
+}
+
+pub fn build_multimodal_content(
+    text: &str,
+    attachments: &[ImageAttachment],
+    allow_image: bool,
+    allow_audio: bool,
+) -> Value {
     let mut content_parts: Vec<Value> = Vec::new();
 
     if !text.is_empty() {
@@ -45,6 +79,25 @@ pub fn build_multimodal_content(text: &str, attachments: &[ImageAttachment]) -> 
 
     for attachment in attachments {
         if attachment.data.is_empty() {
+            continue;
+        }
+
+        if attachment.mime_type.starts_with("audio/") {
+            if !allow_audio {
+                continue;
+            }
+
+            content_parts.push(json!({
+                "type": "input_audio",
+                "input_audio": {
+                    "data": raw_base64(&attachment.data),
+                    "format": audio_format_from_mime(&attachment.mime_type)
+                }
+            }));
+            continue;
+        }
+
+        if !allow_image {
             continue;
         }
 
@@ -84,6 +137,7 @@ pub fn push_user_or_assistant_message_with_context(
     char_name: &str,
     persona_name: &str,
     allow_image_input: bool,
+    allow_audio_input: bool,
     time_frame_delta: i64,
     time_stamp_enabled: bool,
 ) {
@@ -110,8 +164,16 @@ pub fn push_user_or_assistant_message_with_context(
         };
     }
 
-    if allow_image_input && !message.attachments.is_empty() && message.role == "user" {
-        let content = build_multimodal_content(&text, &message.attachments);
+    if (allow_image_input || allow_audio_input)
+        && !message.attachments.is_empty()
+        && message.role == "user"
+    {
+        let content = build_multimodal_content(
+            &text,
+            &message.attachments,
+            allow_image_input,
+            allow_audio_input,
+        );
         target.push(json!({
             "role": message.role,
             "content": content

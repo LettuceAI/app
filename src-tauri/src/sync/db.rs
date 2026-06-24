@@ -2374,8 +2374,8 @@ fn apply_characters_snapshot(conn: &mut DbConnection, payload: &[u8]) -> Result<
         .collect::<Vec<_>>();
     for character in snapshot.characters {
         tx.execute(
-            r#"INSERT OR REPLACE INTO characters (id, name, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, design_description, design_reference_image_ids, background_image_path, definition, description, nickname, scenario, creator_notes, creator, creator_notes_multilingual, source, tags, default_scene_id, default_model_id, fallback_model_id, mode, companion, memory_type, active_lorebook_ids, prompt_template_id, group_chat_prompt_template_id, group_chat_roleplay_prompt_template_id, system_prompt, voice_config, voice_autoplay, disable_avatar_gradient, avatar_gradient_source, custom_gradient_enabled, custom_gradient_colors, custom_text_color, custom_text_secondary, chat_appearance, default_chat_template_id, created_at, updated_at)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35, ?36, ?37, ?38, ?39, ?40, ?41)"#,
+            r#"INSERT OR REPLACE INTO characters (id, name, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, design_description, design_reference_image_ids, background_image_path, definition, description, nickname, scenario, creator_notes, creator, creator_notes_multilingual, source, tags, default_scene_id, default_model_id, mode, companion, memory_type, active_lorebook_ids, prompt_template_id, group_chat_prompt_template_id, group_chat_roleplay_prompt_template_id, system_prompt, voice_config, voice_autoplay, disable_avatar_gradient, avatar_gradient_source, custom_gradient_enabled, custom_gradient_colors, custom_text_color, custom_text_secondary, chat_appearance, default_chat_template_id, created_at, updated_at)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35, ?36, ?37, ?38, ?39, ?40)"#,
             params![
                 character.id,
                 character.name,
@@ -2397,7 +2397,6 @@ fn apply_characters_snapshot(conn: &mut DbConnection, payload: &[u8]) -> Result<
                 character.tags,
                 character.default_scene_id,
                 character.default_model_id,
-                character.fallback_model_id,
                 character.mode,
                 character.companion,
                 character.memory_type,
@@ -2650,8 +2649,8 @@ fn apply_groups_snapshot(conn: &mut DbConnection, payload: &[u8]) -> Result<(), 
 
     for usage in snapshot.usage_records {
         tx.execute(
-            r#"INSERT OR REPLACE INTO usage_records (id, timestamp, session_id, character_id, character_name, model_id, model_name, provider_id, provider_label, operation_type, finish_reason, prompt_tokens, completion_tokens, total_tokens, memory_tokens, summary_tokens, reasoning_tokens, image_tokens, prompt_cost, completion_cost, total_cost, success, error_message)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)"#,
+            r#"INSERT OR REPLACE INTO usage_records (id, timestamp, session_id, character_id, character_name, model_id, model_name, provider_id, provider_label, operation_type, finish_reason, prompt_tokens, completion_tokens, total_tokens, memory_tokens, summary_tokens, reasoning_tokens, image_tokens, prompt_cost, completion_cost, total_cost, success, error_message, audio_tokens)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)"#,
             params![
                 usage.id,
                 usage.timestamp,
@@ -2675,7 +2674,8 @@ fn apply_groups_snapshot(conn: &mut DbConnection, payload: &[u8]) -> Result<(), 
                 usage.completion_cost,
                 usage.total_cost,
                 usage.success,
-                usage.error_message
+                usage.error_message,
+                usage.audio_tokens
             ],
         )
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
@@ -3008,8 +3008,8 @@ fn apply_messages_snapshot(conn: &mut DbConnection, payload: &[u8]) -> Result<()
 
     for usage in snapshot.usage_records {
         tx.execute(
-            r#"INSERT OR REPLACE INTO usage_records (id, timestamp, session_id, character_id, character_name, model_id, model_name, provider_id, provider_label, operation_type, finish_reason, prompt_tokens, completion_tokens, total_tokens, memory_tokens, summary_tokens, reasoning_tokens, image_tokens, prompt_cost, completion_cost, total_cost, success, error_message)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)"#,
+            r#"INSERT OR REPLACE INTO usage_records (id, timestamp, session_id, character_id, character_name, model_id, model_name, provider_id, provider_label, operation_type, finish_reason, prompt_tokens, completion_tokens, total_tokens, memory_tokens, summary_tokens, reasoning_tokens, image_tokens, prompt_cost, completion_cost, total_cost, success, error_message, audio_tokens)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)"#,
             params![
                 usage.id,
                 usage.timestamp,
@@ -3033,7 +3033,8 @@ fn apply_messages_snapshot(conn: &mut DbConnection, payload: &[u8]) -> Result<()
                 usage.completion_cost,
                 usage.total_cost,
                 usage.success,
-                usage.error_message
+                usage.error_message,
+                usage.audio_tokens
             ],
         )
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
@@ -3343,7 +3344,7 @@ fn fetch_characters_data(
     }
     let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
 
-    let sql = format!("SELECT id, name, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, design_description, design_reference_image_ids, background_image_path, definition, description, nickname, scenario, creator_notes, creator, creator_notes_multilingual, source, tags, default_scene_id, default_model_id, fallback_model_id, COALESCE(mode, 'roleplay'), companion, memory_type, COALESCE(active_lorebook_ids, '[]'), prompt_template_id, group_chat_prompt_template_id, group_chat_roleplay_prompt_template_id, system_prompt, voice_config, voice_autoplay, disable_avatar_gradient, COALESCE(avatar_gradient_source, 'base'), custom_gradient_enabled, custom_gradient_colors, custom_text_color, custom_text_secondary, chat_appearance, default_chat_template_id, created_at, updated_at FROM characters WHERE id IN ({})", placeholders);
+    let sql = format!("SELECT id, name, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, design_description, design_reference_image_ids, background_image_path, definition, description, nickname, scenario, creator_notes, creator, creator_notes_multilingual, source, tags, default_scene_id, default_model_id, COALESCE(mode, 'roleplay'), companion, memory_type, COALESCE(active_lorebook_ids, '[]'), prompt_template_id, group_chat_prompt_template_id, group_chat_roleplay_prompt_template_id, system_prompt, voice_config, voice_autoplay, disable_avatar_gradient, COALESCE(avatar_gradient_source, 'base'), custom_gradient_enabled, custom_gradient_colors, custom_text_color, custom_text_secondary, chat_appearance, default_chat_template_id, created_at, updated_at FROM characters WHERE id IN ({})", placeholders);
     let mut stmt = conn
         .prepare(&sql)
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
@@ -3370,27 +3371,26 @@ fn fetch_characters_data(
                 tags: r.get(17)?,
                 default_scene_id: r.get(18)?,
                 default_model_id: r.get(19)?,
-                fallback_model_id: r.get(20)?,
-                mode: r.get(21)?,
-                companion: r.get(22)?,
-                memory_type: r.get(23)?,
-                active_lorebook_ids: r.get(24)?,
-                prompt_template_id: r.get(25)?,
-                group_chat_prompt_template_id: r.get(26)?,
-                group_chat_roleplay_prompt_template_id: r.get(27)?,
-                system_prompt: r.get(28)?,
-                voice_config: r.get(29)?,
-                voice_autoplay: r.get(30)?,
-                disable_avatar_gradient: r.get(31)?,
-                avatar_gradient_source: r.get(32)?,
-                custom_gradient_enabled: r.get(33)?,
-                custom_gradient_colors: r.get(34)?,
-                custom_text_color: r.get(35)?,
-                custom_text_secondary: r.get(36)?,
-                chat_appearance: r.get(37)?,
-                default_chat_template_id: r.get(38)?,
-                created_at: r.get(39)?,
-                updated_at: r.get(40)?,
+                mode: r.get(20)?,
+                companion: r.get(21)?,
+                memory_type: r.get(22)?,
+                active_lorebook_ids: r.get(23)?,
+                prompt_template_id: r.get(24)?,
+                group_chat_prompt_template_id: r.get(25)?,
+                group_chat_roleplay_prompt_template_id: r.get(26)?,
+                system_prompt: r.get(27)?,
+                voice_config: r.get(28)?,
+                voice_autoplay: r.get(29)?,
+                disable_avatar_gradient: r.get(30)?,
+                avatar_gradient_source: r.get(31)?,
+                custom_gradient_enabled: r.get(32)?,
+                custom_gradient_colors: r.get(33)?,
+                custom_text_color: r.get(34)?,
+                custom_text_secondary: r.get(35)?,
+                chat_appearance: r.get(36)?,
+                default_chat_template_id: r.get(37)?,
+                created_at: r.get(38)?,
+                updated_at: r.get(39)?,
             })
         })
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
@@ -3623,7 +3623,7 @@ fn fetch_sessions_data(
         .map(|r| r.unwrap())
         .collect();
 
-    let sql_usage = format!("SELECT id, timestamp, session_id, character_id, character_name, model_id, model_name, provider_id, provider_label, operation_type, finish_reason, prompt_tokens, completion_tokens, total_tokens, memory_tokens, summary_tokens, reasoning_tokens, image_tokens, prompt_cost, completion_cost, total_cost, success, error_message FROM usage_records WHERE session_id IN ({})", placeholders);
+    let sql_usage = format!("SELECT id, timestamp, session_id, character_id, character_name, model_id, model_name, provider_id, provider_label, operation_type, finish_reason, prompt_tokens, completion_tokens, total_tokens, memory_tokens, summary_tokens, reasoning_tokens, image_tokens, prompt_cost, completion_cost, total_cost, success, error_message, audio_tokens FROM usage_records WHERE session_id IN ({})", placeholders);
     let mut stmt = conn
         .prepare(&sql_usage)
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
@@ -3653,6 +3653,7 @@ fn fetch_sessions_data(
                 total_cost: r.get(20)?,
                 success: r.get(21)?,
                 error_message: r.get(22)?,
+                audio_tokens: r.get(23)?,
             })
         })
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
@@ -3866,7 +3867,7 @@ fn fetch_group_sessions_data(
         .map(|r| r.unwrap())
         .collect();
 
-    let sql_usage = format!("SELECT id, timestamp, session_id, character_id, character_name, model_id, model_name, provider_id, provider_label, operation_type, finish_reason, prompt_tokens, completion_tokens, total_tokens, memory_tokens, summary_tokens, reasoning_tokens, image_tokens, prompt_cost, completion_cost, total_cost, success, error_message FROM usage_records WHERE session_id IN ({})", placeholders);
+    let sql_usage = format!("SELECT id, timestamp, session_id, character_id, character_name, model_id, model_name, provider_id, provider_label, operation_type, finish_reason, prompt_tokens, completion_tokens, total_tokens, memory_tokens, summary_tokens, reasoning_tokens, image_tokens, prompt_cost, completion_cost, total_cost, success, error_message, audio_tokens FROM usage_records WHERE session_id IN ({})", placeholders);
     let mut stmt = conn
         .prepare(&sql_usage)
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
@@ -3896,6 +3897,7 @@ fn fetch_group_sessions_data(
                 total_cost: r.get(20)?,
                 success: r.get(21)?,
                 error_message: r.get(22)?,
+                audio_tokens: r.get(23)?,
             })
         })
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?

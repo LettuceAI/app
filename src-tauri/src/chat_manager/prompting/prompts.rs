@@ -40,6 +40,8 @@ pub const APP_SCENE_GENERATION_TEMPLATE_ID: &str = "prompt_app_scene_generation"
 pub const APP_SCENE_PROMPT_WRITER_TEMPLATE_ID: &str = "prompt_app_scene_prompt_writer";
 pub const APP_DESIGN_REFERENCE_TEMPLATE_ID: &str = "prompt_app_design_reference";
 pub const APP_COMPANION_SOUL_WRITER_TEMPLATE_ID: &str = "prompt_app_companion_soul_writer";
+pub const APP_COMPANION_GROWTHCYCLE_TEMPLATE_ID: &str = "prompt_app_companion_growthcycle";
+pub const APP_COMPANION_CONSOLIDATION_TEMPLATE_ID: &str = "prompt_app_companion_consolidation";
 const APP_DEFAULT_TEMPLATE_NAME: &str = "App Default";
 const APP_LOCAL_ROLEPLAY_TEMPLATE_NAME: &str = "Local RP Default";
 const APP_COMPANION_TEMPLATE_NAME: &str = "Companion Default";
@@ -62,6 +64,8 @@ const APP_SCENE_GENERATION_TEMPLATE_NAME: &str = "Scene Generation";
 const APP_SCENE_PROMPT_WRITER_TEMPLATE_NAME: &str = "Scene Prompt Writer";
 const APP_DESIGN_REFERENCE_TEMPLATE_NAME: &str = "Design Reference Writer";
 const APP_COMPANION_SOUL_WRITER_TEMPLATE_NAME: &str = "Companion Soul Writer";
+const APP_COMPANION_GROWTHCYCLE_TEMPLATE_NAME: &str = "Companion Growthcycle";
+const APP_COMPANION_CONSOLIDATION_TEMPLATE_NAME: &str = "Companion Consolidation";
 const LEGACY_AVATAR_GENERATION_PROMPT_V1: &str = "You write a single high-quality image generation prompt for a character avatar. Your job is to turn the request into a clear visual prompt that preserves identity and produces a strong profile image.\n\n# Avatar Subject\nName: {{avatar_subject_name}}\n{{avatar_subject_description}}\n\n# Avatar Request\n{{avatar_request}}\n\nWrite one polished prompt for an image model.\n- Prioritize face, hair, clothing, expression, pose, and overall vibe.\n- Keep the subject centered and suitable for an avatar or profile image.\n- Preserve identity-defining traits from the context.\n- Do not add text, logos, watermarks, frames, UI, or split panels unless explicitly requested.\n- Do not explain your reasoning.\n\nOutput only the final image prompt text.";
 const LEGACY_AVATAR_EDIT_PROMPT_V1: &str = "You revise an existing avatar image prompt. The source image will be provided to you separately. Use that image and the edit request to produce one updated prompt for the next generation.\n\n# Avatar Subject\nName: {{avatar_subject_name}}\n{{avatar_subject_description}}\n\n# Current Avatar Prompt\n{{current_avatar_prompt}}\n\n# Edit Request\n{{edit_request}}\n\nUse the actual source image as the truth for current appearance. Preserve everything that should stay the same and change only what the edit request asks for.\n- Keep the character recognizable.\n- If the old prompt conflicts with the source image, trust the source image.\n- Do not restate unchanged details more than needed.\n- Do not explain what you changed.\n\nOutput only the revised image prompt text.";
 const LEGACY_SCENE_GENERATION_PROMPT_V1: &str = "You write a single high-quality image generation prompt for a roleplay scene. Your job is to convert the current conversation context and scene request into one clear visual prompt for an image model.\n\n# Scene Context\nCharacter: {{char.name}}\n{{char.desc}}\n\nPersona: {{persona.name}}\n{{persona.desc}}\n\nRecent Messages:\n{{recent_messages}}\n\n# Scene Request\n{{scene_request}}\n\nWrite one polished scene prompt for an image model.\n- Focus on who is present, what is happening, where the scene is set, mood, lighting, composition, camera framing, and key visual details.\n- Preserve identity-defining details from the conversation context.\n- Keep character and persona identities separate.\n- Do not swap, merge, or borrow features between them.\n- Prefer concrete visual details over abstract interpretation.\n- Do not add text, logos, watermarks, UI, split panels, or dialogue bubbles unless explicitly requested.\n- Do not explain your reasoning.\n\nOutput only the final image prompt text.";
@@ -96,6 +100,8 @@ pub fn template_prompt_type_from_id(id: &str) -> PromptTemplateType {
         APP_SCENE_PROMPT_WRITER_TEMPLATE_ID => PromptTemplateType::ScenePromptWriter,
         APP_DESIGN_REFERENCE_TEMPLATE_ID => PromptTemplateType::DesignReferenceWriter,
         APP_COMPANION_SOUL_WRITER_TEMPLATE_ID => PromptTemplateType::CompanionSoulWriter,
+        APP_COMPANION_GROWTHCYCLE_TEMPLATE_ID => PromptTemplateType::CompanionGrowthcycle,
+        APP_COMPANION_CONSOLIDATION_TEMPLATE_ID => PromptTemplateType::CompanionConsolidation,
         _ => PromptTemplateType::Undefined,
     }
 }
@@ -704,6 +710,8 @@ fn prompt_type_to_str(prompt_type: PromptTemplateType) -> &'static str {
         PromptTemplateType::ScenePromptWriter => "scenePromptWriter",
         PromptTemplateType::DesignReferenceWriter => "designReferenceWriter",
         PromptTemplateType::CompanionSoulWriter => "companionSoulWriter",
+        PromptTemplateType::CompanionGrowthcycle => "companionGrowthcycle",
+        PromptTemplateType::CompanionConsolidation => "companionConsolidation",
     }
 }
 
@@ -742,6 +750,8 @@ fn str_to_prompt_type(s: &str) -> Result<PromptTemplateType, String> {
         "scenePromptWriter" => Ok(PromptTemplateType::ScenePromptWriter),
         "designReferenceWriter" => Ok(PromptTemplateType::DesignReferenceWriter),
         "companionSoulWriter" => Ok(PromptTemplateType::CompanionSoulWriter),
+        "companionGrowthcycle" => Ok(PromptTemplateType::CompanionGrowthcycle),
+        "companionConsolidation" => Ok(PromptTemplateType::CompanionConsolidation),
         other => Err(crate::utils::err_msg(
             module_path!(),
             line!(),
@@ -785,6 +795,8 @@ pub fn load_templates(app: &AppHandle) -> Result<Vec<SystemPromptTemplate>, Stri
     ensure_lorebook_generator_templates(app)?;
     ensure_group_chat_templates(app)?;
     ensure_companion_soul_writer_template(app)?;
+    ensure_companion_growthcycle_template(app)?;
+    ensure_companion_consolidation_template(app)?;
     let conn = open_db(app)?;
     migrate_legacy_lorebook_entry_writer_template_id(&conn)?;
     let mut stmt = conn
@@ -1436,6 +1448,8 @@ pub fn is_app_default_template(id: &str) -> bool {
         || id == APP_SCENE_PROMPT_WRITER_TEMPLATE_ID
         || id == APP_DESIGN_REFERENCE_TEMPLATE_ID
         || id == APP_COMPANION_SOUL_WRITER_TEMPLATE_ID
+        || id == APP_COMPANION_GROWTHCYCLE_TEMPLATE_ID
+        || id == APP_COMPANION_CONSOLIDATION_TEMPLATE_ID
         || id == APP_LOREBOOK_GENERATOR_PLANNER_TEMPLATE_ID
         || id == APP_LOREBOOK_GENERATOR_WRITER_TEMPLATE_ID
         || id == APP_LOREBOOK_GENERATOR_REFINE_TEMPLATE_ID
@@ -2087,6 +2101,121 @@ pub fn ensure_companion_soul_writer_template(app: &AppHandle) -> Result<(), Stri
     }
 
     Ok(())
+}
+
+pub fn ensure_companion_growthcycle_template(app: &AppHandle) -> Result<(), String> {
+    let conn = open_db(app)?;
+    let now = now();
+    let entries = get_base_prompt_entries(PromptType::CompanionGrowthcyclePrompt);
+
+    if get_template(app, APP_COMPANION_GROWTHCYCLE_TEMPLATE_ID)?.is_none() {
+        let content = get_base_prompt(PromptType::CompanionGrowthcyclePrompt);
+        let entries_json = serde_json::to_string(&entries)
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        conn.execute(
+            "INSERT OR IGNORE INTO prompt_templates (id, name, prompt_type, content, entries, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
+            params![
+                APP_COMPANION_GROWTHCYCLE_TEMPLATE_ID,
+                APP_COMPANION_GROWTHCYCLE_TEMPLATE_NAME,
+                prompt_type_to_str(PromptTemplateType::CompanionGrowthcycle),
+                content,
+                entries_json,
+                now
+            ],
+        )
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    } else {
+        let _ = refresh_unedited_protected_template(
+            app,
+            APP_COMPANION_GROWTHCYCLE_TEMPLATE_ID,
+            APP_COMPANION_GROWTHCYCLE_TEMPLATE_NAME,
+            PromptTemplateType::CompanionGrowthcycle,
+            PromptType::CompanionGrowthcyclePrompt,
+            &entries,
+        )?;
+        let _ = maybe_backfill_entries(
+            app,
+            APP_COMPANION_GROWTHCYCLE_TEMPLATE_ID,
+            PromptType::CompanionGrowthcyclePrompt,
+            entries.clone(),
+        );
+        let _ =
+            backfill_missing_entry_conditions(app, APP_COMPANION_GROWTHCYCLE_TEMPLATE_ID, &entries);
+    }
+
+    Ok(())
+}
+
+pub fn reset_companion_growthcycle_template(
+    app: &AppHandle,
+) -> Result<SystemPromptTemplate, String> {
+    let content = get_base_prompt(PromptType::CompanionGrowthcyclePrompt);
+    let entries = get_base_prompt_entries(PromptType::CompanionGrowthcyclePrompt);
+    reset_protected_template_to_defaults(
+        app,
+        APP_COMPANION_GROWTHCYCLE_TEMPLATE_ID,
+        content,
+        entries,
+    )
+}
+
+pub fn ensure_companion_consolidation_template(app: &AppHandle) -> Result<(), String> {
+    let conn = open_db(app)?;
+    let now = now();
+    let entries = get_base_prompt_entries(PromptType::CompanionConsolidationPrompt);
+
+    if get_template(app, APP_COMPANION_CONSOLIDATION_TEMPLATE_ID)?.is_none() {
+        let content = get_base_prompt(PromptType::CompanionConsolidationPrompt);
+        let entries_json = serde_json::to_string(&entries)
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        conn.execute(
+            "INSERT OR IGNORE INTO prompt_templates (id, name, prompt_type, content, entries, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
+            params![
+                APP_COMPANION_CONSOLIDATION_TEMPLATE_ID,
+                APP_COMPANION_CONSOLIDATION_TEMPLATE_NAME,
+                prompt_type_to_str(PromptTemplateType::CompanionConsolidation),
+                content,
+                entries_json,
+                now
+            ],
+        )
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    } else {
+        let _ = refresh_unedited_protected_template(
+            app,
+            APP_COMPANION_CONSOLIDATION_TEMPLATE_ID,
+            APP_COMPANION_CONSOLIDATION_TEMPLATE_NAME,
+            PromptTemplateType::CompanionConsolidation,
+            PromptType::CompanionConsolidationPrompt,
+            &entries,
+        )?;
+        let _ = maybe_backfill_entries(
+            app,
+            APP_COMPANION_CONSOLIDATION_TEMPLATE_ID,
+            PromptType::CompanionConsolidationPrompt,
+            entries.clone(),
+        );
+        let _ = backfill_missing_entry_conditions(
+            app,
+            APP_COMPANION_CONSOLIDATION_TEMPLATE_ID,
+            &entries,
+        );
+    }
+
+    Ok(())
+}
+
+pub fn reset_companion_consolidation_template(
+    app: &AppHandle,
+) -> Result<SystemPromptTemplate, String> {
+    let content = get_base_prompt(PromptType::CompanionConsolidationPrompt);
+    let entries = get_base_prompt_entries(PromptType::CompanionConsolidationPrompt);
+    reset_protected_template_to_defaults(
+        app,
+        APP_COMPANION_CONSOLIDATION_TEMPLATE_ID,
+        content,
+        entries,
+    )
 }
 
 pub fn reset_help_me_reply_template(app: &AppHandle) -> Result<SystemPromptTemplate, String> {

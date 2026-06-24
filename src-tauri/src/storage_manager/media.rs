@@ -576,6 +576,315 @@ pub fn storage_list_image_library(app: tauri::AppHandle) -> Result<Vec<ImageLibr
     Ok(items)
 }
 
+#[derive(serde::Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioLibraryItem {
+    pub id: String,
+    pub storage_path: String,
+    pub file_path: String,
+    pub filename: String,
+    pub mime_type: String,
+    pub size_bytes: u64,
+    pub updated_at: i64,
+    pub source: String,
+    pub character_id: Option<String>,
+    pub character_name: Option<String>,
+    pub session_id: Option<String>,
+    pub session_title: Option<String>,
+    pub message_id: Option<String>,
+    pub role: Option<String>,
+}
+
+fn audio_mime_type_from_extension(extension: &str) -> &'static str {
+    match extension.to_ascii_lowercase().as_str() {
+        "mp3" => "audio/mpeg",
+        "wav" | "wave" => "audio/wav",
+        "ogg" | "oga" => "audio/ogg",
+        "flac" => "audio/flac",
+        "aac" => "audio/aac",
+        "aiff" | "aif" => "audio/aiff",
+        "m4a" => "audio/mp4",
+        "webm" => "audio/webm",
+        "opus" => "audio/opus",
+        _ => "audio/mpeg",
+    }
+}
+
+fn is_supported_audio_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| {
+            matches!(
+                ext.to_ascii_lowercase().as_str(),
+                "mp3" | "wav" | "wave" | "ogg" | "oga" | "flac" | "aac" | "aiff" | "aif" | "m4a"
+                    | "webm" | "opus"
+            )
+        })
+        .unwrap_or(false)
+}
+
+fn collect_uploaded_audio(
+    app: &tauri::AppHandle,
+    root: &Path,
+    out: &mut Vec<AudioLibraryItem>,
+) -> Result<(), String> {
+    let conn = crate::storage_manager::db::open_db(app)?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT m.id, m.session_id, m.created_at, m.role, m.attachments, s.character_id, s.title, c.name
+             FROM messages m
+             JOIN sessions s ON m.session_id = s.id
+             LEFT JOIN characters c ON s.character_id = c.id
+             WHERE m.attachments LIKE '%audio/%'",
+        )
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+
+    let rows = stmt
+        .query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, i64>(2)?,
+                r.get::<_, String>(3)?,
+                r.get::<_, String>(4)?,
+                r.get::<_, Option<String>>(5)?,
+                r.get::<_, Option<String>>(6)?,
+                r.get::<_, Option<String>>(7)?,
+            ))
+        })
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+
+    for row in rows {
+        let (
+            message_id,
+            session_id,
+            created_at,
+            role,
+            attachments_json,
+            character_id,
+            session_title,
+            char_name,
+        ) = row.map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+
+        let attachments: Vec<crate::chat_manager::types::ImageAttachment> =
+            serde_json::from_str(&attachments_json).unwrap_or_default();
+
+        for attachment in attachments {
+            if !attachment.mime_type.starts_with("audio/") {
+                continue;
+            }
+            let Some(storage_path) = attachment.storage_path.clone() else {
+                continue;
+            };
+            let abs = root.join(&storage_path);
+            if !abs.exists() {
+                continue;
+            }
+            let size_bytes = fs::metadata(&abs).map(|m| m.len()).unwrap_or(0);
+
+            out.push(AudioLibraryItem {
+                id: storage_path.clone(),
+                file_path: abs.to_string_lossy().to_string(),
+                storage_path,
+                filename: attachment
+                    .filename
+                    .clone()
+                    .filter(|name| !name.trim().is_empty())
+                    .unwrap_or_else(|| "Audio".to_string()),
+                mime_type: attachment.mime_type.clone(),
+                size_bytes,
+                updated_at: created_at,
+                source: "upload".to_string(),
+                character_id: character_id.clone(),
+                character_name: char_name.clone(),
+                session_id: Some(session_id.clone()),
+                session_title: session_title.clone(),
+                message_id: Some(message_id.clone()),
+                role: Some(role.clone()),
+            });
+        }
+    }
+
+    Ok(())
+}
+
+fn scan_tts_audio(root: &Path, out: &mut Vec<AudioLibraryItem>) -> Result<(), String> {
+    let dir = root.join("tts_audio");
+    if !dir.exists() {
+        return Ok(());
+    }
+
+    let entries =
+        fs::read_dir(&dir).map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        let path = entry.path();
+        if !path.is_file() || !is_supported_audio_file(&path) {
+            continue;
+        }
+
+        let filename = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default()
+            .to_string();
+        let storage_path = format!("tts_audio/{}", filename);
+        let metadata = fs::metadata(&path)
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        let updated_at = metadata
+            .modified()
+            .ok()
+            .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+            .map(|duration| duration.as_millis() as i64)
+            .unwrap_or(0);
+
+        out.push(AudioLibraryItem {
+            id: storage_path.clone(),
+            file_path: path.to_string_lossy().to_string(),
+            storage_path,
+            filename,
+            mime_type: audio_mime_type_from_extension(
+                path.extension().and_then(|ext| ext.to_str()).unwrap_or(""),
+            )
+            .to_string(),
+            size_bytes: metadata.len(),
+            updated_at,
+            source: "tts".to_string(),
+            character_id: None,
+            character_name: None,
+            session_id: None,
+            session_title: None,
+            message_id: None,
+            role: None,
+        });
+    }
+
+    Ok(())
+}
+
+fn is_safe_audio_library_path(storage_path: &str) -> bool {
+    let path = PathBuf::from(storage_path);
+    if path.is_absolute() {
+        return false;
+    }
+    let mut components = path.components();
+    let Some(Component::Normal(first)) = components.next() else {
+        return false;
+    };
+    let bucket = first.to_string_lossy();
+    if !matches!(bucket.as_ref(), "sessions" | "tts_audio") {
+        return false;
+    }
+    path.components()
+        .all(|component| matches!(component, Component::Normal(_)))
+}
+
+fn remove_audio_attachment_reference(
+    app: &tauri::AppHandle,
+    storage_path: &str,
+) -> Result<(), String> {
+    let conn = crate::storage_manager::db::open_db(app)?;
+    let like = format!("%{}%", storage_path);
+    let mut stmt = conn
+        .prepare("SELECT id, attachments FROM messages WHERE attachments LIKE ?1")
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    let rows = stmt
+        .query_map([&like], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        })
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+
+    let mut updates: Vec<(String, String)> = Vec::new();
+    for row in rows {
+        let (id, attachments_json) =
+            row.map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        let mut attachments: Vec<crate::chat_manager::types::ImageAttachment> =
+            serde_json::from_str(&attachments_json).unwrap_or_default();
+        let before = attachments.len();
+        attachments.retain(|a| a.storage_path.as_deref() != Some(storage_path));
+        if attachments.len() != before {
+            let new_json = serde_json::to_string(&attachments).unwrap_or_else(|_| "[]".to_string());
+            updates.push((id, new_json));
+        }
+    }
+    drop(stmt);
+
+    for (id, json) in updates {
+        conn.execute(
+            "UPDATE messages SET attachments = ?1 WHERE id = ?2",
+            rusqlite::params![json, id],
+        )
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn storage_delete_audio_library_item(
+    app: tauri::AppHandle,
+    storage_path: String,
+) -> Result<(), String> {
+    if !is_safe_audio_library_path(&storage_path) {
+        return Err(crate::utils::err_msg(
+            module_path!(),
+            line!(),
+            format!("Unsafe audio library path: {}", storage_path),
+        ));
+    }
+
+    let root = storage_root(&app)?;
+    let full_path = root.join(&storage_path);
+
+    if full_path.exists() {
+        if !is_supported_audio_file(&full_path) {
+            return Err(crate::utils::err_msg(
+                module_path!(),
+                line!(),
+                format!("Unsupported audio library file: {}", storage_path),
+            ));
+        }
+        fs::remove_file(&full_path)
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    }
+
+    if storage_path.starts_with("sessions/") {
+        if let Err(err) = remove_audio_attachment_reference(&app, &storage_path) {
+            log_warn(
+                &app,
+                "audio_library",
+                format!("failed to clean audio attachment reference: {}", err),
+            );
+        }
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn storage_list_audio_library(app: tauri::AppHandle) -> Result<Vec<AudioLibraryItem>, String> {
+    let root = storage_root(&app)?;
+    let mut items = Vec::new();
+
+    if let Err(err) = collect_uploaded_audio(&app, &root, &mut items) {
+        log_warn(
+            &app,
+            "audio_library",
+            format!("failed to collect uploaded audio: {}", err),
+        );
+    }
+
+    scan_tts_audio(&root, &mut items)?;
+
+    items.sort_by(|a, b| {
+        b.updated_at
+            .cmp(&a.updated_at)
+            .then_with(|| a.storage_path.cmp(&b.storage_path))
+    });
+
+    Ok(items)
+}
+
 #[tauri::command]
 pub fn storage_download_image_to_downloads(
     app: tauri::AppHandle,
@@ -1692,6 +2001,19 @@ fn create_default_gradient() -> AvatarGradient {
     }
 }
 
+fn audio_extension_from_mime(mime: &str) -> &'static str {
+    match mime {
+        "audio/wav" | "audio/x-wav" | "audio/wave" => "wav",
+        "audio/mpeg" | "audio/mp3" => "mp3",
+        "audio/ogg" | "audio/vorbis" => "ogg",
+        "audio/flac" | "audio/x-flac" => "flac",
+        "audio/aac" => "aac",
+        "audio/aiff" | "audio/x-aiff" => "aiff",
+        "audio/mp4" | "audio/x-m4a" | "audio/m4a" => "m4a",
+        _ => "wav",
+    }
+}
+
 #[tauri::command]
 pub fn storage_save_session_attachment(
     app: tauri::AppHandle,
@@ -1707,6 +2029,15 @@ pub fn storage_save_session_attachment(
     } else {
         &base64_data
     };
+
+    let declared_mime = base64_data
+        .strip_prefix("data:")
+        .and_then(|rest| rest.split(";base64,").next())
+        .map(|s| s.trim().to_ascii_lowercase());
+    let is_audio = declared_mime
+        .as_deref()
+        .map(|m| m.starts_with("audio/"))
+        .unwrap_or(false);
 
     let bytes = general_purpose::STANDARD.decode(data).map_err(|e| {
         crate::utils::err_msg(
@@ -1724,6 +2055,25 @@ pub fn storage_save_session_attachment(
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 
     let role_prefix = if role == "assistant" { "ai" } else { "user" };
+
+    if is_audio {
+        let extension = audio_extension_from_mime(declared_mime.as_deref().unwrap_or(""));
+        let filename = format!(
+            "{}_{}_{}.{}",
+            role_prefix, message_id, attachment_id, extension
+        );
+        let audio_path = sessions_dir.join(&filename);
+        fs::write(&audio_path, &bytes)
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+
+        let relative_path = format!("sessions/{}/{}/{}", character_id, session_id, filename);
+        log_debug(
+            &app,
+            "session_attachment",
+            format!("Saved audio attachment: {}", relative_path),
+        );
+        return Ok(relative_path);
+    }
 
     let webp_bytes = match image::load_from_memory(&bytes) {
         Ok(img) => {
@@ -1785,6 +2135,20 @@ pub fn storage_load_session_attachment(
         "image/jpeg"
     } else if storage_path.ends_with(".gif") {
         "image/gif"
+    } else if storage_path.ends_with(".wav") {
+        "audio/wav"
+    } else if storage_path.ends_with(".mp3") {
+        "audio/mpeg"
+    } else if storage_path.ends_with(".ogg") {
+        "audio/ogg"
+    } else if storage_path.ends_with(".flac") {
+        "audio/flac"
+    } else if storage_path.ends_with(".aac") {
+        "audio/aac"
+    } else if storage_path.ends_with(".aiff") {
+        "audio/aiff"
+    } else if storage_path.ends_with(".m4a") {
+        "audio/mp4"
     } else {
         "image/webp"
     };

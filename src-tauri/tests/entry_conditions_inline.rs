@@ -2,7 +2,7 @@
 
 use lettuceai_lib::chat_manager::prompting::entry_conditions::*;
 use lettuceai_lib::chat_manager::types::{
-    PromptEntryChatMode, PromptEntryCondition, PromptEntryInfoSource, SystemPromptEntry,
+    PromptEntryChatMode, PromptEntryCondition, PromptEntryInfoSource,
 };
 
 fn sample_context<'a>() -> PromptEntryConditionContext<'a> {

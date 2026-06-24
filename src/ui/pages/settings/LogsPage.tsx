@@ -45,6 +45,7 @@ const PAGE_SIZE = 2000;
 
 type LogPageResult = { total: number; lines: string[] };
 type LogSearchResultType = { matches: number[]; total: number };
+type SearchOptions = { caseSensitive: boolean; wholeWord: boolean; regex: boolean };
 
 function ColoredLine({
   text,
@@ -133,6 +134,10 @@ function VirtualizedLogViewer({
   const [lines, setLines] = useState<string[]>([]);
   const [total, setTotal] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
+  const linesRef = useRef(lines);
+  linesRef.current = lines;
+  const totalRef = useRef(total);
+  totalRef.current = total;
   const [fontIdx, setFontIdx] = useState(DEFAULT_FONT_IDX);
   const fontSize = FONT_SIZES[fontIdx];
   const lineHeight = Math.round(LOG_LINE_HEIGHT_BASE * (fontSize / FONT_SIZE_BASE));
@@ -255,13 +260,25 @@ function VirtualizedLogViewer({
   }, [lines, hiddenLevels, hiddenComponents, timeFrom, timeTo, isolatedLines]);
 
   const displayCount = filteredIndices ? filteredIndices.length : lines.length;
+  const filteredIndicesRef = useRef(filteredIndices);
+  filteredIndicesRef.current = filteredIndices;
 
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchMatches, setSearchMatches] = useState<number[]>([]);
   const [activeMatchIdx, setActiveMatchIdx] = useState(-1);
   const [searching, setSearching] = useState(false);
+  const [searchOpts, setSearchOpts] = useState<SearchOptions>({
+    caseSensitive: false,
+    wholeWord: false,
+    regex: false,
+  });
+  const [searchError, setSearchError] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchOptsRef = useRef(searchOpts);
+  searchOptsRef.current = searchOpts;
+  const searchQueryRef = useRef(searchQuery);
+  searchQueryRef.current = searchQuery;
   const searchMatchSet = useMemo(() => new Set(searchMatches), [searchMatches]);
 
   useEffect(() => {
@@ -296,6 +313,7 @@ function VirtualizedLogViewer({
     setSearchQuery("");
     setSearchMatches([]);
     setActiveMatchIdx(-1);
+    setSearchError(null);
     setTimeFrom("");
     setTimeTo("");
     setIsolatedLines(null);
@@ -319,36 +337,83 @@ function VirtualizedLogViewer({
     }
   }, [filename, lines.length, total, loadingMore]);
 
-  const runSearch = useCallback(async (query: string) => {
+  const ensureLoaded = useCallback(async (index: number) => {
+    if (!filename) return;
+    const extra: string[] = [];
+    let tot = totalRef.current;
+    while (linesRef.current.length + extra.length <= index && linesRef.current.length + extra.length < tot) {
+      const page = await invoke<LogPageResult>("read_log_file_page", {
+        filename,
+        offset: linesRef.current.length + extra.length,
+        limit: PAGE_SIZE,
+      });
+      tot = page.total;
+      if (page.lines.length === 0) break;
+      extra.push(...page.lines);
+    }
+    if (extra.length > 0) {
+      const next = [...linesRef.current, ...extra];
+      linesRef.current = next;
+      totalRef.current = tot;
+      setLines(next);
+      setTotal(tot);
+    }
+  }, [filename]);
+
+  const scrollToGlobalLine = useCallback(async (globalIdx: number) => {
+    await ensureLoaded(globalIdx);
+    requestAnimationFrame(() => {
+      const fi = filteredIndicesRef.current;
+      const displayIdx = fi ? fi.indexOf(globalIdx) : globalIdx;
+      if (displayIdx >= 0) virtualizer.scrollToIndex(displayIdx, { align: "center" });
+    });
+  }, [ensureLoaded]);
+
+  const runSearch = useCallback(async (query: string, opts: SearchOptions) => {
     if (!filename || !query.trim()) {
       setSearchMatches([]);
       setActiveMatchIdx(-1);
+      setSearchError(null);
       return;
     }
     setSearching(true);
+    setSearchError(null);
     try {
       const result = await invoke<LogSearchResultType>("search_log_file", {
         filename,
         query: query.trim(),
+        options: opts,
       });
       setSearchMatches(result.matches);
       setActiveMatchIdx(result.matches.length > 0 ? 0 : -1);
       if (result.matches.length > 0) {
-        virtualizer.scrollToIndex(result.matches[0], { align: "center" });
+        void scrollToGlobalLine(result.matches[0]);
       }
-    } catch {
+    } catch (e) {
       setSearchMatches([]);
       setActiveMatchIdx(-1);
+      if (opts.regex) setSearchError("Invalid regex pattern");
+      else logger.error("Log search failed", e);
     } finally {
       setSearching(false);
     }
-  }, [filename]);
+  }, [filename, scrollToGlobalLine]);
 
   const searchTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const handleSearchChange = useCallback((value: string) => {
     setSearchQuery(value);
     clearTimeout(searchTimerRef.current);
-    searchTimerRef.current = setTimeout(() => runSearch(value), 300);
+    searchTimerRef.current = setTimeout(() => runSearch(value, searchOptsRef.current), 300);
+  }, [runSearch]);
+
+  const toggleSearchOpt = useCallback((key: keyof SearchOptions) => {
+    setSearchOpts((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      if (key === "regex" && next.regex) next.wholeWord = false;
+      searchOptsRef.current = next;
+      void runSearch(searchQueryRef.current, next);
+      return next;
+    });
   }, [runSearch]);
 
   const goToMatch = useCallback((direction: "next" | "prev") => {
@@ -357,14 +422,15 @@ function VirtualizedLogViewer({
       ? (activeMatchIdx + 1) % searchMatches.length
       : (activeMatchIdx - 1 + searchMatches.length) % searchMatches.length;
     setActiveMatchIdx(nextIdx);
-    virtualizer.scrollToIndex(searchMatches[nextIdx], { align: "center" });
-  }, [searchMatches, activeMatchIdx]);
+    void scrollToGlobalLine(searchMatches[nextIdx]);
+  }, [searchMatches, activeMatchIdx, scrollToGlobalLine]);
 
   const closeSearch = useCallback(() => {
     setSearchOpen(false);
     setSearchQuery("");
     setSearchMatches([]);
     setActiveMatchIdx(-1);
+    setSearchError(null);
   }, []);
 
   const handleContextMenu = useCallback((e: React.MouseEvent, originalIdx: number) => {
@@ -793,17 +859,50 @@ function VirtualizedLogViewer({
               "flex-1 bg-transparent text-fg outline-none placeholder:text-fg/30",
             )}
           />
+          <div className="flex items-center gap-0.5 shrink-0">
+            {([
+              { key: "caseSensitive", label: "Aa", title: "Match case" },
+              { key: "wholeWord", label: "W", title: "Whole word" },
+              { key: "regex", label: ".*", title: "Use regular expression" },
+            ] as const).map((opt) => {
+              const active = searchOpts[opt.key];
+              const disabled = opt.key === "wholeWord" && searchOpts.regex;
+              return (
+                <button
+                  key={opt.key}
+                  onClick={() => toggleSearchOpt(opt.key)}
+                  disabled={disabled}
+                  title={opt.title}
+                  className={cn(
+                    "rounded px-1 py-0.5 text-[10px] font-mono font-semibold leading-none",
+                    interactive.transition.default,
+                    disabled
+                      ? "text-fg/15 cursor-not-allowed"
+                      : active
+                        ? "text-info bg-info/15"
+                        : "text-fg/35 hover:text-fg/60 hover:bg-fg/10",
+                  )}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
           {searching && <Loader2 className="h-3 w-3 animate-spin text-fg/30 shrink-0" />}
           {searchMatches.length > 0 && (
             <span className={cn(typography.caption.size, "text-fg/40 shrink-0")}>
               {activeMatchIdx + 1}/{searchMatches.length}
             </span>
           )}
-          {searchQuery && searchMatches.length === 0 && !searching && (
+          {searchError ? (
+            <span className={cn(typography.caption.size, "text-danger/70 shrink-0")}>
+              {searchError}
+            </span>
+          ) : searchQuery && searchMatches.length === 0 && !searching ? (
             <span className={cn(typography.caption.size, "text-danger/60 shrink-0")}>
               No matches
             </span>
-          )}
+          ) : null}
           <button
             onClick={() => goToMatch("prev")}
             disabled={searchMatches.length === 0}
@@ -1248,6 +1347,14 @@ function LogsPageInner() {
   };
 
   const deleteLogFile = async (filename: string) => {
+    const friendly = filename.replace(/^app-/, "").replace(/\.log$/, "");
+    const confirmed = await confirmBottomMenu({
+      title: "Delete this log?",
+      message: `Permanently delete the log file from ${friendly}?`,
+      confirmLabel: "Delete",
+      destructive: true,
+    });
+    if (!confirmed) return;
     try {
       await invoke("delete_log_file", { filename });
       await loadLogFiles();
@@ -1447,7 +1554,7 @@ function LogsPageInner() {
 
   if (isDesktop) {
     return (
-      <div className="flex h-[calc(100dvh-72px-env(safe-area-inset-top))] overflow-hidden">
+      <div className="flex h-[calc(100dvh-var(--titlebar-h,0px)-72px-env(safe-area-inset-top))] overflow-hidden">
         {/* Left sidebar */}
         <div className="w-48 shrink-0 flex flex-col border-r border-fg/10">
           <div className="shrink-0 px-3 pt-3 pb-1 flex items-center justify-between">
@@ -1482,7 +1589,7 @@ function LogsPageInner() {
   const fileTabsRef = useRef<HTMLDivElement>(null);
 
   return (
-    <div className="flex h-[calc(100dvh-72px-env(safe-area-inset-top))] flex-col overflow-hidden">
+    <div className="flex h-[calc(100dvh-var(--titlebar-h,0px)-72px-env(safe-area-inset-top))] flex-col overflow-hidden">
       {/* Header bar: file tabs + action buttons */}
       <div className="flex items-center gap-1 px-3 py-1.5 border-b border-fg/10 shrink-0 min-w-0">
         <div ref={fileTabsRef} className="flex-1 flex gap-1 overflow-x-auto scrollbar-hide min-w-0">
@@ -1529,7 +1636,7 @@ class LogsErrorBoundary extends Component<
   render() {
     if (this.state.error) {
       return (
-        <div className="flex h-[calc(100dvh-72px-env(safe-area-inset-bottom))] flex-col items-center justify-center gap-4 px-6 text-center">
+        <div className="flex h-[calc(100dvh-var(--titlebar-h,0px)-72px-env(safe-area-inset-bottom))] flex-col items-center justify-center gap-4 px-6 text-center">
           <div className="rounded-xl border border-danger/20 bg-danger/5 p-6 max-w-md">
             <h2 className="text-sm font-semibold text-danger mb-2">Logs page crashed</h2>
             <pre className="text-[11px] font-mono text-fg/50 whitespace-pre-wrap break-all mb-4">

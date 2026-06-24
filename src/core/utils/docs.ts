@@ -1,3 +1,5 @@
+import { openExternalUrl } from "./openExternal";
+
 export const BASE_DOCS_URL = "https://www.lettuceai.app/docs";
 
 interface Docs {
@@ -59,11 +61,5 @@ export async function openDocs(key: DocsKey, section?: string) {
         url += `#${section}`;
     };
 
-    try {
-        const { openUrl } = await import('@tauri-apps/plugin-opener');
-        await openUrl(url);
-    } catch (error) {
-        console.error('Failed to open URL:', error);
-        window.open(url, '_blank');
-    };
+    await openExternalUrl(url);
 };

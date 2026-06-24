@@ -63,8 +63,7 @@ export function featuresUsing(id: string, refs: Ref[]): string[] {
 export async function getModelUsage(modelId: string): Promise<EntityUsage> {
   const [characters, settings] = await Promise.all([listCharacters(), readSettings()]);
   const charCount = characters.filter(
-    (character) =>
-      character.defaultModelId === modelId || character.fallbackModelId === modelId,
+    (character) => character.defaultModelId === modelId,
   ).length;
   return { characters: charCount, features: featuresUsing(modelId, modelFeatureRefs(settings)) };
 }

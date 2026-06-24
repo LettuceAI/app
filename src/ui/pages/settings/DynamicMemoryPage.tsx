@@ -94,7 +94,46 @@ const DEFAULT_DYNAMIC_MEMORY_SETTINGS: DynamicMemorySettings = {
   contextEnrichmentEnabled: true,
   recursiveMemoryLoops: false,
   recursiveMemoryLoopHardCap: 20,
+  runMode: "auto",
 };
+
+function ModeOption({
+  title,
+  description,
+  active,
+  onClick,
+}: {
+  title: string;
+  description: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "w-full rounded-[10px] border px-4 py-3 text-left transition-colors duration-150",
+        active ? "border-accent/40 bg-accent/10" : "border-fg/10 bg-fg/5 hover:bg-fg/8",
+      )}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-fg">{title}</div>
+          <p className="mt-1 text-xs leading-5 text-fg/52">{description}</p>
+        </div>
+        <div
+          className={cn(
+            "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-colors",
+            active ? "border-accent/70 bg-accent/15 text-accent" : "border-fg/18 text-transparent",
+          )}
+        >
+          <Check className="h-3.5 w-3.5" />
+        </div>
+      </div>
+    </button>
+  );
+}
 
 type MemoryPreset = "minimal" | "balanced" | "comprehensive" | "custom";
 type SelectableEmbeddingVersion = "v3" | "v4";
@@ -785,6 +824,32 @@ export function DynamicMemoryPage() {
               )}
 
               <div className={cn(!currentEnabled && "opacity-50 pointer-events-none", "space-y-4")}>
+                <div className="space-y-3">
+                  <h3 className="text-[10px] font-semibold uppercase tracking-[0.25em] text-fg/35 px-1">
+                    {t("dynamicMemory.mode.title")}
+                  </h3>
+                  <p className="px-1 text-xs leading-5 text-fg/50">
+                    {t("dynamicMemory.mode.description")}
+                  </p>
+                  <div className="grid grid-cols-1 gap-2">
+                    {(["auto", "askFirst", "manual"] as const).map((mode) => (
+                      <ModeOption
+                        key={mode}
+                        title={t(`dynamicMemory.mode.${mode}` as TranslationKey)}
+                        description={t(`dynamicMemory.mode.${mode}Description` as TranslationKey)}
+                        active={(currentSettings.runMode ?? "auto") === mode}
+                        onClick={() => {
+                          if (activeTab === "direct") {
+                            void handleDirectSettingChange("runMode", mode);
+                          } else {
+                            void handleGroupSettingChange("runMode", mode);
+                          }
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+
                 {/* Presets */}
                 <div className="space-y-3">
                   <h3 className="text-[10px] font-semibold uppercase tracking-[0.25em] text-fg/35 px-1">

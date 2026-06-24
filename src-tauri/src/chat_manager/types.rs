@@ -29,6 +29,8 @@ pub enum PromptTemplateType {
     ScenePromptWriter,
     DesignReferenceWriter,
     CompanionSoulWriter,
+    CompanionGrowthcycle,
+    CompanionConsolidation,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
@@ -533,6 +535,12 @@ pub struct DynamicMemorySettings {
     pub recursive_memory_loops: bool,
     #[serde(default = "default_recursive_memory_loop_hard_cap")]
     pub recursive_memory_loop_hard_cap: u32,
+    #[serde(default = "default_run_mode")]
+    pub run_mode: String,
+}
+
+fn default_run_mode() -> String {
+    "auto".to_string()
 }
 
 fn default_min_similarity() -> f32 {
@@ -809,9 +817,6 @@ pub struct StoredMessage {
     /// Model used to generate this message (assistant messages)
     #[serde(default)]
     pub model_id: Option<String>,
-    /// Primary model that failed before falling back for this message
-    #[serde(default)]
-    pub fallback_from_model_id: Option<String>,
 }
 
 #[derive(Deserialize, Serialize, Clone)]
@@ -1036,8 +1041,6 @@ pub struct Character {
     pub default_scene_id: Option<String>,
     #[serde(default)]
     pub default_model_id: Option<String>,
-    #[serde(default)]
-    pub fallback_model_id: Option<String>,
     #[serde(default = "default_character_mode")]
     pub mode: String,
     #[serde(default)]
@@ -1108,6 +1111,8 @@ pub struct UsageSummary {
     pub reasoning_tokens: Option<u64>,
     #[serde(default)]
     pub image_tokens: Option<u64>,
+    #[serde(default)]
+    pub audio_tokens: Option<u64>,
     #[serde(default)]
     pub web_search_requests: Option<u64>,
     #[serde(default)]

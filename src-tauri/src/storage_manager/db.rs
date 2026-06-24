@@ -484,7 +484,6 @@ pub fn init_db(_app: &tauri::AppHandle, conn: &Connection) -> Result<(), String>
           tags TEXT,
           default_scene_id TEXT,
           default_model_id TEXT,
-          fallback_model_id TEXT,
           mode TEXT NOT NULL DEFAULT 'roleplay',
           companion TEXT,
           memory_type TEXT NOT NULL DEFAULT 'manual',
@@ -772,6 +771,7 @@ pub fn init_db(_app: &tauri::AppHandle, conn: &Connection) -> Result<(), String>
           summary_tokens INTEGER,
           reasoning_tokens INTEGER,
           image_tokens INTEGER,
+          audio_tokens INTEGER,
           prompt_cost REAL,
           completion_cost REAL,
           total_cost REAL,
@@ -1258,6 +1258,13 @@ pub fn init_db(_app: &tauri::AppHandle, conn: &Connection) -> Result<(), String>
         )
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     }
+    if !cols.contains("audio_tokens") {
+        conn.execute(
+            "ALTER TABLE usage_records ADD COLUMN audio_tokens INTEGER",
+            [],
+        )
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    }
 
     // Migrations: add memory_refs to messages if missing
     let mut stmt = conn
@@ -1675,9 +1682,9 @@ pub fn init_db(_app: &tauri::AppHandle, conn: &Connection) -> Result<(), String>
             [],
         );
     }
-    if !has_fallback_model_id {
+    if has_fallback_model_id {
         let _ = conn.execute(
-            "ALTER TABLE characters ADD COLUMN fallback_model_id TEXT",
+            "ALTER TABLE characters DROP COLUMN fallback_model_id",
             [],
         );
     }

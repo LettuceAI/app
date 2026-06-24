@@ -1,8 +1,6 @@
 //! Gathered from inline tests in src/storage_manager/system_cards.rs.
 
-use lettuceai_lib::chat_manager::types::{
-    AdvancedModelSettings, Model, PromptTemplateType, SystemPromptEntry, SystemPromptTemplate,
-};
+use lettuceai_lib::chat_manager::types::{Model, PromptTemplateType};
 use lettuceai_lib::storage_manager::lorebook::{Lorebook, LorebookEntry};
 use lettuceai_lib::storage_manager::system_cards::*;
 use lettuceai_lib::sync::models::{ChatTemplate, ChatTemplateMessage};

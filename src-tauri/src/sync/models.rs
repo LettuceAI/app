@@ -243,8 +243,6 @@ pub struct Character {
     pub tags: Option<String>,
     pub default_scene_id: Option<String>,
     pub default_model_id: Option<String>,
-    #[serde(default)]
-    pub fallback_model_id: Option<String>,
     #[serde(default = "default_character_mode")]
     pub mode: String,
     #[serde(default)]
@@ -452,6 +450,8 @@ pub struct UsageRecord {
     pub summary_tokens: Option<i64>,
     pub reasoning_tokens: Option<i64>,
     pub image_tokens: Option<i64>,
+    #[serde(default)]
+    pub audio_tokens: Option<i64>,
     pub prompt_cost: Option<f64>,
     pub completion_cost: Option<f64>,
     pub total_cost: Option<f64>,

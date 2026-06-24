@@ -150,7 +150,7 @@ pub(super) fn inject_media_markers(messages: &[Value]) -> Vec<Value> {
                             }
                         }
                     }
-                    Some("image_url") => {
+                    Some("image_url") | Some("input_audio") => {
                         text_parts.push(llama_cpp_2::mtmd::mtmd_default_marker().to_string())
                     }
                     _ => {}

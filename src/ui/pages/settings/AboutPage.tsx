@@ -19,6 +19,7 @@ import {
   GITHUB_REPO_LINK,
 } from "../../../core/utils/links";
 import { getPlatform } from "../../../core/utils/platform";
+import { openExternalUrl } from "../../../core/utils/openExternal";
 import { isDevelopmentMode, setDeveloperModeOverride } from "../../../core/utils/env";
 import { toast } from "../../components/toast";
 import { cn, interactive, typography } from "../../design-tokens";
@@ -210,14 +211,7 @@ export function AboutPage() {
     }
   };
 
-  const openExternal = async (url: string) => {
-    try {
-      const { openUrl } = await import("@tauri-apps/plugin-opener");
-      await openUrl(url);
-    } catch {
-      window.open(url, "_blank");
-    }
-  };
+  const openExternal = (url: string) => openExternalUrl(url);
 
   const openChangelog = () => {
     void openExternal("https://www.lettuceai.app/changelog");

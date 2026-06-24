@@ -620,6 +620,56 @@ fn companion_soul_writer_variables() -> Vec<PromptVariableDefinition> {
     ]
 }
 
+fn companion_growthcycle_variables() -> Vec<PromptVariableDefinition> {
+    vec![
+        variable(
+            "{{companion.name}}",
+            "Companion Name",
+            "Name of the companion character.",
+        ),
+        variable(
+            "{{changeable_categories}}",
+            "Changeable Categories",
+            "The companion's changeable soul categories with their current values.",
+        ),
+        variable(
+            "{{current_growth}}",
+            "Current Growth Entries",
+            "Existing active growth entries with ids, so the model can supersede or revise them.",
+        ),
+        variable(
+            "{{new_memories}}",
+            "New Memories",
+            "Memories freshly created during the latest exchange, each with a leading index.",
+        ),
+    ]
+}
+
+fn companion_consolidation_variables() -> Vec<PromptVariableDefinition> {
+    vec![
+        variable(
+            "{{companion.name}}",
+            "Companion Name",
+            "Name of the companion character.",
+        ),
+        variable(
+            "{{authored_core}}",
+            "Authored Core",
+            "The character's authored essence and traits (the original identity).",
+        ),
+        variable(
+            "{{current_core}}",
+            "Current Core Overlay",
+            "Active essence/traits growth entries with ids, so they can be revised or superseded.",
+        ),
+        variable(
+            "{{accumulated_growth}}",
+            "Accumulated Growth",
+            "The accumulated changeable growth entries with ids that the model may fold or retire.",
+        ),
+    ]
+}
+
 fn dedupe_variables(
     groups: impl IntoIterator<Item = Vec<PromptVariableDefinition>>,
 ) -> Vec<PromptVariableDefinition> {
@@ -658,6 +708,8 @@ pub fn prompt_type_label(prompt_type: PromptTemplateType) -> &'static str {
         PromptTemplateType::ScenePromptWriter => "Scene Prompt Writer",
         PromptTemplateType::DesignReferenceWriter => "Design Reference Writer",
         PromptTemplateType::CompanionSoulWriter => "Companion Soul Writer",
+        PromptTemplateType::CompanionGrowthcycle => "Companion Growthcycle",
+        PromptTemplateType::CompanionConsolidation => "Companion Consolidation",
     }
 }
 
@@ -739,6 +791,12 @@ pub fn allowed_variables_for_prompt_type(
         }
         PromptTemplateType::CompanionSoulWriter => {
             dedupe_variables([time_variables(), companion_soul_writer_variables()])
+        }
+        PromptTemplateType::CompanionGrowthcycle => {
+            dedupe_variables([time_variables(), companion_growthcycle_variables()])
+        }
+        PromptTemplateType::CompanionConsolidation => {
+            dedupe_variables([time_variables(), companion_consolidation_variables()])
         }
     }
 }
@@ -839,6 +897,14 @@ pub fn required_variables_for_prompt_type(prompt_type: PromptTemplateType) -> Ve
             "{{user_feedback}}".to_string(),
         ],
         PromptTemplateType::LorebookGeneratorCoherence => vec!["{{drafted_entries}}".to_string()],
+        PromptTemplateType::CompanionGrowthcycle => vec![
+            "{{changeable_categories}}".to_string(),
+            "{{new_memories}}".to_string(),
+        ],
+        PromptTemplateType::CompanionConsolidation => vec![
+            "{{authored_core}}".to_string(),
+            "{{accumulated_growth}}".to_string(),
+        ],
     }
 }
 
@@ -904,6 +970,8 @@ pub fn build_parameter_engine() -> PromptParameterEngine {
         PromptTemplateType::ScenePromptWriter,
         PromptTemplateType::DesignReferenceWriter,
         PromptTemplateType::CompanionSoulWriter,
+        PromptTemplateType::CompanionGrowthcycle,
+        PromptTemplateType::CompanionConsolidation,
     ]
     .into_iter()
     .map(|prompt_type| PromptTypeDefinition {

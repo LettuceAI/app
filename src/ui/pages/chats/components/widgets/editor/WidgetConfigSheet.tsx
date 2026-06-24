@@ -897,7 +897,6 @@ function SelectorForm({
           options={[
             { value: "persona", label: t("chats.widgets.config.selector.persona") },
             { value: "model", label: t("chats.widgets.config.selector.model") },
-            { value: "fallback_model", label: t("chats.widgets.config.selector.fallback") },
             { value: "author_note", label: t("chats.widgets.config.selector.authorNote") },
           ]}
           onChange={(v) => setNode({ ...node, kind: v })}

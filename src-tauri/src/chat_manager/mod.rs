@@ -1,5 +1,7 @@
 mod commands;
 pub mod companion;
+pub mod companion_consolidation;
+pub mod companion_growth;
 pub mod companion_soul_writer;
 pub mod execution;
 pub mod flows;
@@ -25,7 +27,9 @@ pub use prompting::{
 
 pub use commands::{
     __cmd__abort_dynamic_memory, __cmd__chat_add_message_attachment, __cmd__chat_completion,
-    __cmd__chat_continue, __cmd__chat_generate_companion_soul,
+    __cmd__dynamic_memory_pending_approval, __cmd__skip_dynamic_memory_cycle,
+    __cmd__chat_continue, __cmd__chat_generate_companion_soul, __cmd__companion_clear_soul_growth,
+    __cmd__companion_remove_soul_growth,
     __cmd__chat_generate_design_reference_description, __cmd__chat_generate_lorebook_entry_draft,
     __cmd__chat_generate_lorebook_keyword_draft, __cmd__chat_generate_scene_image,
     __cmd__chat_generate_scene_prompt, __cmd__chat_generate_user_reply,
@@ -47,7 +51,8 @@ pub use commands::{
     __cmd__reset_scene_prompt_writer_template, __cmd__retry_dynamic_memory, __cmd__search_messages,
     __cmd__trigger_dynamic_memory, __cmd__update_prompt_template,
     __cmd__validate_template_variables, abort_dynamic_memory, chat_add_message_attachment,
-    chat_completion, chat_continue, chat_generate_companion_soul,
+    chat_completion, chat_continue, chat_generate_companion_soul, companion_clear_soul_growth,
+    companion_remove_soul_growth,
     chat_generate_design_reference_description, chat_generate_lorebook_entry_draft,
     chat_generate_lorebook_keyword_draft, chat_generate_scene_image, chat_generate_scene_prompt,
     chat_generate_user_reply, chat_message_debug_snapshot, chat_regenerate,
@@ -64,5 +69,6 @@ pub use commands::{
     reset_local_roleplay_template, reset_lorebook_entry_writer_template,
     reset_lorebook_keyword_generator_template, reset_scene_generation_template,
     reset_scene_prompt_writer_template, retry_dynamic_memory, search_messages,
-    trigger_dynamic_memory, update_prompt_template, validate_template_variables,
+    skip_dynamic_memory_cycle, dynamic_memory_pending_approval, trigger_dynamic_memory,
+    update_prompt_template, validate_template_variables,
 };

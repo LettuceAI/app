@@ -4,8 +4,9 @@ use std::time::Duration;
 use tauri::Manager;
 
 use crate::{
-    abort_manager, chat_manager, content_filter, dynamic_memory_run_manager, host_api, logger,
-    migrations, post_turn_memory_scheduler, storage_manager, sync, usage, utils,
+    abort_manager, chat_manager, content_filter, dynamic_memory_approval,
+    dynamic_memory_run_manager, host_api, logger, migrations, post_turn_memory_scheduler,
+    storage_manager, sync, usage, utils,
 };
 
 use super::runtime::configure_onnxruntime_dylib;
@@ -66,6 +67,10 @@ fn manage_core_state(app: &mut tauri::App) -> Arc<usage::app_activity::AppActive
 
     let post_turn_memory_scheduler = post_turn_memory_scheduler::PostTurnMemoryScheduler::new();
     app.manage(post_turn_memory_scheduler);
+
+    let dynamic_memory_approval =
+        dynamic_memory_approval::DynamicMemoryApprovalManager::new();
+    app.manage(dynamic_memory_approval);
 
     let app_usage_service = Arc::new(usage::app_activity::AppActiveUsageService::new());
     app.manage(app_usage_service.clone());

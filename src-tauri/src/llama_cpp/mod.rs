@@ -13,9 +13,7 @@ use tauri::Emitter;
 
 use crate::api::{ApiRequest, ApiResponse};
 #[cfg(not(mobile))]
-use crate::chat_manager::provider_adapter::{
-    extract_image_data_urls, extract_text_content, parse_data_url,
-};
+use crate::chat_manager::provider_adapter::{extract_text_content, parse_data_url};
 #[cfg(not(mobile))]
 use crate::chat_manager::thinking::{normalize_thinking_content, ThinkingTagStreamParser};
 #[cfg(not(mobile))]
@@ -435,90 +433,143 @@ mod desktop {
         Vision(MtmdInputChunks),
     }
 
-    fn extract_inline_image_bytes(messages: &[Value]) -> Result<Vec<Vec<u8>>, String> {
-        let mut images = Vec::new();
+    enum InlineMedia {
+        Image(Vec<u8>),
+        Audio(Vec<u8>),
+    }
+
+    fn extract_inline_media(messages: &[Value]) -> Result<Vec<InlineMedia>, String> {
+        let mut media = Vec::new();
 
         for (message_index, message) in messages.iter().enumerate() {
-            let image_urls = extract_image_data_urls(message.get("content"));
-            for (image_index, image_url) in image_urls.iter().enumerate() {
-                if image_url.starts_with("http://") || image_url.starts_with("https://") {
-                    return Err(crate::utils::err_msg(
-                        module_path!(),
-                        line!(),
-                        format!(
-                            "llama.cpp local vision only supports inline data URLs; message {} image {} used remote URL",
-                            message_index, image_index
-                        ),
-                    ));
-                }
+            let Some(parts) = message.get("content").and_then(|v| v.as_array()) else {
+                continue;
+            };
 
-                let Some((mime_type, data)) = parse_data_url(image_url) else {
-                    return Err(crate::utils::err_msg(
-                        module_path!(),
-                        line!(),
-                        format!(
-                            "Invalid inline image data URL in message {} image {}",
-                            message_index, image_index
-                        ),
-                    ));
-                };
+            for (part_index, part) in parts.iter().enumerate() {
+                match part.get("type").and_then(|v| v.as_str()) {
+                    Some("image_url") => {
+                        let image_url = part
+                            .get("image_url")
+                            .and_then(|v| v.as_object())
+                            .and_then(|obj| obj.get("url"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or_default();
 
-                if !mime_type.starts_with("image/") {
-                    return Err(crate::utils::err_msg(
-                        module_path!(),
-                        line!(),
-                        format!(
-                            "llama.cpp local vision only supports image data URLs; got '{}' in message {} image {}",
-                            mime_type, message_index, image_index
-                        ),
-                    ));
-                }
-
-                let decoded = base64::engine::general_purpose::STANDARD
-                    .decode(data)
-                    .map_err(|e| {
-                        crate::utils::err_msg(
-                            module_path!(),
-                            line!(),
-                            format!(
-                                "Failed to decode inline image in message {} image {}: {}",
-                                message_index, image_index, e
-                            ),
-                        )
-                    })?;
-                let normalized = if mime_type.eq_ignore_ascii_case("image/png") {
-                    decoded
-                } else {
-                    let image = image::load_from_memory(&decoded).map_err(|e| {
-                        crate::utils::err_msg(
-                            module_path!(),
-                            line!(),
-                            format!(
-                                "Failed to decode non-PNG inline image in message {} image {}: {}",
-                                message_index, image_index, e
-                            ),
-                        )
-                    })?;
-                    let mut png_bytes = Cursor::new(Vec::new());
-                    image
-                        .write_to(&mut png_bytes, image::ImageFormat::Png)
-                        .map_err(|e| {
-                            crate::utils::err_msg(
+                        if image_url.starts_with("http://") || image_url.starts_with("https://") {
+                            return Err(crate::utils::err_msg(
                                 module_path!(),
                                 line!(),
                                 format!(
-                                    "Failed to normalize inline image to PNG in message {} image {}: {}",
-                                    message_index, image_index, e
+                                    "llama.cpp local vision only supports inline data URLs; message {} part {} used remote URL",
+                                    message_index, part_index
                                 ),
-                            )
-                        })?;
-                    png_bytes.into_inner()
-                };
-                images.push(normalized);
+                            ));
+                        }
+
+                        let Some((mime_type, data)) = parse_data_url(image_url) else {
+                            return Err(crate::utils::err_msg(
+                                module_path!(),
+                                line!(),
+                                format!(
+                                    "Invalid inline image data URL in message {} part {}",
+                                    message_index, part_index
+                                ),
+                            ));
+                        };
+
+                        if !mime_type.starts_with("image/") {
+                            return Err(crate::utils::err_msg(
+                                module_path!(),
+                                line!(),
+                                format!(
+                                    "llama.cpp local vision only supports image data URLs; got '{}' in message {} part {}",
+                                    mime_type, message_index, part_index
+                                ),
+                            ));
+                        }
+
+                        let decoded = base64::engine::general_purpose::STANDARD
+                            .decode(data)
+                            .map_err(|e| {
+                                crate::utils::err_msg(
+                                    module_path!(),
+                                    line!(),
+                                    format!(
+                                        "Failed to decode inline image in message {} part {}: {}",
+                                        message_index, part_index, e
+                                    ),
+                                )
+                            })?;
+                        let normalized = if mime_type.eq_ignore_ascii_case("image/png") {
+                            decoded
+                        } else {
+                            let image = image::load_from_memory(&decoded).map_err(|e| {
+                                crate::utils::err_msg(
+                                    module_path!(),
+                                    line!(),
+                                    format!(
+                                        "Failed to decode non-PNG inline image in message {} part {}: {}",
+                                        message_index, part_index, e
+                                    ),
+                                )
+                            })?;
+                            let mut png_bytes = Cursor::new(Vec::new());
+                            image
+                                .write_to(&mut png_bytes, image::ImageFormat::Png)
+                                .map_err(|e| {
+                                    crate::utils::err_msg(
+                                        module_path!(),
+                                        line!(),
+                                        format!(
+                                            "Failed to normalize inline image to PNG in message {} part {}: {}",
+                                            message_index, part_index, e
+                                        ),
+                                    )
+                                })?;
+                            png_bytes.into_inner()
+                        };
+                        media.push(InlineMedia::Image(normalized));
+                    }
+                    Some("input_audio") => {
+                        let data = part
+                            .get("input_audio")
+                            .and_then(|v| v.as_object())
+                            .and_then(|obj| obj.get("data"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or_default();
+
+                        if data.is_empty() {
+                            return Err(crate::utils::err_msg(
+                                module_path!(),
+                                line!(),
+                                format!(
+                                    "Missing inline audio data in message {} part {}",
+                                    message_index, part_index
+                                ),
+                            ));
+                        }
+
+                        let decoded = base64::engine::general_purpose::STANDARD
+                            .decode(data)
+                            .map_err(|e| {
+                                crate::utils::err_msg(
+                                    module_path!(),
+                                    line!(),
+                                    format!(
+                                        "Failed to decode inline audio in message {} part {}: {}",
+                                        message_index, part_index, e
+                                    ),
+                                )
+                            })?;
+                        media.push(InlineMedia::Audio(decoded));
+                    }
+                    _ => {}
+                }
             }
         }
 
-        Ok(images)
+        Ok(media)
     }
 
     fn ensure_assistant_role(message: &mut Value) {
@@ -624,16 +675,24 @@ mod desktop {
             .and_then(|v| v.as_str())
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty());
-        let image_bytes = extract_inline_image_bytes(messages)?;
-        let vision_requested = !image_bytes.is_empty();
-        if vision_requested && llama_mmproj_path.is_none() {
+        let media_items = extract_inline_media(messages)?;
+        let image_count = media_items
+            .iter()
+            .filter(|m| matches!(m, InlineMedia::Image(_)))
+            .count();
+        let audio_count = media_items
+            .iter()
+            .filter(|m| matches!(m, InlineMedia::Audio(_)))
+            .count();
+        let media_requested = !media_items.is_empty();
+        if media_requested && llama_mmproj_path.is_none() {
             return Err(crate::utils::err_msg(
                 module_path!(),
                 line!(),
-                "llama.cpp vision requests require `llamaMmprojPath` (or `llama_mmproj_path`) to load the multimodal projector",
+                "llama.cpp multimodal requests require `llamaMmprojPath` (or `llama_mmproj_path`) to load the multimodal projector",
             ));
         }
-        let prompt_messages_owned = if vision_requested {
+        let prompt_messages_owned = if media_requested {
             Some(inject_media_markers(messages))
         } else {
             None
@@ -1142,23 +1201,30 @@ mod desktop {
             let model = engine.model.as_ref();
             let backend = engine.backend.as_ref();
             let mtmd_ctx = engine.mtmd_ctx.as_ref();
-            if vision_requested && mtmd_ctx.is_none() {
+            if media_requested && mtmd_ctx.is_none() {
                 return Err(crate::utils::err_msg(
                     module_path!(),
                     line!(),
-                    "llama.cpp vision request could not initialize the multimodal projector context",
+                    "llama.cpp multimodal request could not initialize the multimodal projector context",
                 ));
             }
             if let Some(mtmd_ctx) = mtmd_ctx {
-                if vision_requested && !mtmd_ctx.support_vision() {
+                if image_count > 0 && !mtmd_ctx.support_vision() {
                     return Err(crate::utils::err_msg(
                         module_path!(),
                         line!(),
                         "The loaded llama.cpp mmproj/model pair does not support vision input",
                     ));
                 }
+                if audio_count > 0 && !mtmd_ctx.support_audio() {
+                    return Err(crate::utils::err_msg(
+                        module_path!(),
+                        line!(),
+                        "The loaded llama.cpp mmproj/model pair does not support audio input",
+                    ));
+                }
             }
-            let use_vision = vision_requested && mtmd_ctx.is_some();
+            let use_vision = media_requested && mtmd_ctx.is_some();
             let llama_mtp_active = llama_mtp_enabled
                 && !use_vision
                 && {
@@ -1469,18 +1535,34 @@ mod desktop {
                         "llama.cpp multimodal context unavailable",
                     )
                 })?;
-                let mut bitmaps = Vec::with_capacity(image_bytes.len());
-                for (index, bytes) in image_bytes.iter().enumerate() {
-                    let bitmap = decode_mtmd_bitmap(mtmd_ctx, bytes).map_err(|e| {
-                        crate::utils::err_msg(
-                            module_path!(),
-                            line!(),
-                            format!(
-                                "Failed to decode image {} for llama.cpp vision: {}",
-                                index, e
-                            ),
-                        )
-                    })?;
+                let mut bitmaps = Vec::with_capacity(media_items.len());
+                for (index, item) in media_items.iter().enumerate() {
+                    let bitmap = match item {
+                        InlineMedia::Image(bytes) => {
+                            decode_mtmd_bitmap(mtmd_ctx, bytes).map_err(|e| {
+                                crate::utils::err_msg(
+                                    module_path!(),
+                                    line!(),
+                                    format!(
+                                        "Failed to decode image {} for llama.cpp vision: {}",
+                                        index, e
+                                    ),
+                                )
+                            })?
+                        }
+                        InlineMedia::Audio(bytes) => {
+                            MtmdBitmap::from_buffer(mtmd_ctx, bytes).map_err(|e| {
+                                crate::utils::err_msg(
+                                    module_path!(),
+                                    line!(),
+                                    format!(
+                                        "Failed to decode audio {} for llama.cpp: {}",
+                                        index, e
+                                    ),
+                                )
+                            })?
+                        }
+                    };
                     bitmaps.push(bitmap);
                 }
                 let bitmap_refs: Vec<&MtmdBitmap> = bitmaps.iter().collect();
@@ -1891,9 +1973,10 @@ mod desktop {
                     } else {
                         "none"
                     },
-                    "visionRequested": vision_requested,
+                    "visionRequested": media_requested,
                     "visionActive": use_vision,
-                    "imageCount": image_bytes.len(),
+                    "imageCount": image_count,
+                    "audioCount": audio_count,
                 }
             });
             update_runtime_report_field(&mut runtime_report, "actualContextUsed", json!(ctx_size));
@@ -2785,6 +2868,7 @@ mod desktop {
                     cache_write_tokens: None,
                     reasoning_tokens: None,
                     image_tokens: None,
+                    audio_tokens: None,
                     web_search_requests: None,
                     api_cost: None,
                     response_id: None,

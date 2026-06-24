@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { ChevronRight, Cpu, NotebookPen, TriangleAlert, User } from "lucide-react";
+import { ChevronRight, Cpu, NotebookPen, User } from "lucide-react";
 import type { SelectorNode } from "../../../../../core/storage/chatWidgetSchemas";
 import { cn, interactive, radius, typography } from "../../../../design-tokens";
 import { useI18n, type TranslationKey } from "../../../../../core/i18n/context";
@@ -19,7 +19,6 @@ interface WidgetSelectorProps {
 const DEFAULT_LABEL = {
   persona: "chats.widgets.selector.persona",
   model: "chats.widgets.selector.model",
-  fallback_model: "chats.widgets.selector.fallbackModel",
   author_note: "chats.widgets.selector.authorNote",
 } satisfies Record<SelectorNode["kind"], TranslationKey>;
 
@@ -61,19 +60,16 @@ export function WidgetSelector({ node }: WidgetSelectorProps) {
     );
   }
 
-  const isFallback = node.kind === "fallback_model";
-  const currentId = isFallback ? ctx.fallbackModelId : ctx.currentModelId;
+  const currentId = ctx.currentModelId;
   const current = ctx.models.find((m) => m.id === currentId);
   const value =
-    current?.displayName ??
-    current?.name ??
-    (isFallback ? t("common.labels.none") : t("chats.widgets.selector.appDefault"));
-  const onSelect = isFallback ? ctx.onSelectFallbackModel : ctx.onSelectModel;
+    current?.displayName ?? current?.name ?? t("chats.widgets.selector.appDefault");
+  const onSelect = ctx.onSelectModel;
 
   return (
     <>
       <ChipRow
-        icon={isFallback ? <TriangleAlert className="h-4 w-4" /> : <Cpu className="h-4 w-4" />}
+        icon={<Cpu className="h-4 w-4" />}
         label={label}
         value={value}
         onClick={() => setOpen(true)}
@@ -95,9 +91,7 @@ export function WidgetSelector({ node }: WidgetSelectorProps) {
           setOpen(false);
         }}
         clearOption={{
-          label: isFallback
-            ? t("chats.widgets.selector.noFallbackModel")
-            : t("chats.widgets.selector.useGlobalDefault"),
+          label: t("chats.widgets.selector.useGlobalDefault"),
           icon: Cpu,
           selected: !currentId,
           onClick: () => {

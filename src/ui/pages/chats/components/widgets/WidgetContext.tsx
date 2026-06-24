@@ -20,7 +20,6 @@ export interface WidgetActionContext {
   personas: Persona[];
   models: Model[];
   currentModelId: string | null;
-  fallbackModelId: string | null;
   swapPlacesActive: boolean;
   voiceAutoplayActive: boolean;
   canRegenerate: boolean;
@@ -28,7 +27,6 @@ export interface WidgetActionContext {
   isGenerating: boolean;
   onSelectPersona: (personaId: string | null) => void | Promise<void>;
   onSelectModel: (modelId: string | null) => void | Promise<void>;
-  onSelectFallbackModel: (modelId: string | null) => void | Promise<void>;
   onAuthorNoteSaved: (session: Session | null) => void;
   onRegenerate: () => void | Promise<void>;
   onToggleSwapPlaces: () => void;

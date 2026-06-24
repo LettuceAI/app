@@ -14,7 +14,6 @@ import {
   Users,
   Paintbrush,
   Image,
-  TriangleAlert,
   HeartPulse,
   type LucideIcon,
 } from "lucide-react";
@@ -312,7 +311,6 @@ export function MessageActionsBottomSheet({
 
   const modelLabel =
     modelName ?? (settings ? t("chats.actions.unknownModel") : t("chats.actions.loadingModel"));
-  const usedFallback = Boolean(messageAction?.message.fallbackFromModelId);
   const usedLorebookEntries = messageAction?.message.usedLorebookEntries ?? [];
   const firstTokenMs = messageAction?.message.usage?.firstTokenMs;
   const tokensPerSecond = messageAction?.message.usage?.tokensPerSecond;
@@ -379,14 +377,6 @@ export function MessageActionsBottomSheet({
                 </div>
                 <div className="flex-1">
                   <span className="inline-flex items-center gap-1 text-white/60">
-                    {usedFallback && (
-                      <span
-                        title={t("chats.actions.fallbackModelUsed")}
-                        aria-label={t("chats.actions.fallbackModelUsed")}
-                      >
-                        <TriangleAlert size={12} className="text-amber-300" />
-                      </span>
-                    )}
                     <span>{modelLabel}</span>
                   </span>
                 </div>

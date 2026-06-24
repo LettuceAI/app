@@ -4,7 +4,7 @@ use serde::Serialize;
 use serde_json::{json, Map, Value};
 
 use super::{
-    extract_image_data_urls, extract_text_content, parse_data_url,
+    extract_image_data_urls, extract_input_audio, extract_text_content, parse_data_url,
     visible_chat_system_instruction_text, ProviderAdapter,
 };
 use crate::chat_manager::tooling::{gemini_tool_config, gemini_tools, ToolConfig};
@@ -268,7 +268,8 @@ impl ProviderAdapter for GoogleGeminiAdapter {
 
             let text = extract_text_content(msg.get("content")).unwrap_or_default();
             let image_urls = extract_image_data_urls(msg.get("content"));
-            if text.trim().is_empty() && image_urls.is_empty() {
+            let audio_inputs = extract_input_audio(msg.get("content"));
+            if text.trim().is_empty() && image_urls.is_empty() && audio_inputs.is_empty() {
                 continue;
             }
 
@@ -291,6 +292,15 @@ impl ProviderAdapter for GoogleGeminiAdapter {
                         }
                     }));
                 }
+            }
+
+            for (format, data) in audio_inputs {
+                parts.push(json!({
+                    "inline_data": {
+                        "mime_type": gemini_audio_mime(&format),
+                        "data": data,
+                    }
+                }));
             }
 
             if parts.is_empty() {
@@ -412,6 +422,18 @@ impl ProviderAdapter for GoogleGeminiAdapter {
             }
         }
         models
+    }
+}
+
+fn gemini_audio_mime(format: &str) -> &'static str {
+    match format.to_ascii_lowercase().as_str() {
+        "mp3" | "mpeg" => "audio/mp3",
+        "ogg" => "audio/ogg",
+        "flac" => "audio/flac",
+        "aac" => "audio/aac",
+        "aiff" | "aif" => "audio/aiff",
+        "m4a" | "mp4" => "audio/aac",
+        _ => "audio/wav",
     }
 }
 

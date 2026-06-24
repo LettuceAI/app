@@ -189,6 +189,7 @@ export function useProvidersPageController(): ControllerReturn {
           "cerebras",
           "anthropic",
           "openrouter",
+          "literouter",
           "groq",
           "mistral",
           "gemini",

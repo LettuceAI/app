@@ -219,8 +219,8 @@ impl UsageRepository {
         tx.execute(
             r#"INSERT OR REPLACE INTO usage_records (
                 id, timestamp, session_id, character_id, character_name, model_id, model_name, provider_id, provider_label,
-                operation_type, finish_reason, prompt_tokens, completion_tokens, total_tokens, memory_tokens, summary_tokens, reasoning_tokens, image_tokens, prompt_cost, completion_cost, total_cost, success, error_message
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
+                operation_type, finish_reason, prompt_tokens, completion_tokens, total_tokens, memory_tokens, summary_tokens, reasoning_tokens, image_tokens, prompt_cost, completion_cost, total_cost, success, error_message, audio_tokens
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
             rusqlite::params![
                 usage.id,
                 usage.timestamp as i64,
@@ -245,6 +245,7 @@ impl UsageRepository {
                 usage.cost.as_ref().map(|c| c.total_cost),
                 if usage.success { 1 } else { 0 },
                 usage.error_message,
+                usage.audio_tokens.map(|v| v as i64),
             ],
         )
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
@@ -300,7 +301,7 @@ impl UsageRepository {
         }
 
         let sql = format!(
-            "SELECT id, timestamp, session_id, character_id, character_name, model_id, model_name, provider_id, provider_label, operation_type, finish_reason, prompt_tokens, completion_tokens, total_tokens, memory_tokens, summary_tokens, reasoning_tokens, image_tokens, prompt_cost, completion_cost, total_cost, success, error_message FROM usage_records {} ORDER BY timestamp ASC",
+            "SELECT id, timestamp, session_id, character_id, character_name, model_id, model_name, provider_id, provider_label, operation_type, finish_reason, prompt_tokens, completion_tokens, total_tokens, memory_tokens, summary_tokens, reasoning_tokens, image_tokens, prompt_cost, completion_cost, total_cost, success, error_message, audio_tokens FROM usage_records {} ORDER BY timestamp ASC",
             if where_clauses.is_empty() { String::new() } else { format!("WHERE {}", where_clauses.join(" AND ")) }
         );
         let mut stmt = conn
@@ -332,6 +333,7 @@ impl UsageRepository {
                     r.get::<_, Option<f64>>(20)?,    // total_cost
                     r.get::<_, i64>(21)?,            // success
                     r.get::<_, Option<String>>(22)?, // error_message
+                    r.get::<_, Option<i64>>(23)?,
                 ))
             })
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
@@ -363,6 +365,7 @@ impl UsageRepository {
                 tc,
                 success,
                 err,
+                at,
             ) = row.map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
             ids.push(id.clone());
             out.push(RequestUsage {
@@ -388,6 +391,7 @@ impl UsageRepository {
                 summary_tokens: st.map(|v| v as u64),
                 reasoning_tokens: rt.map(|v| v as u64),
                 image_tokens: it.map(|v| v as u64),
+                audio_tokens: at.map(|v| v as u64),
                 web_search_requests: None,
                 api_cost: None,
                 cost: match (pc, cc, tc) {
@@ -702,7 +706,7 @@ fn csv_escape(value: &str) -> String {
 }
 
 fn build_csv(records: &[RequestUsage]) -> String {
-    let mut csv = String::from("timestamp,session_id,character_name,model_name,provider_label,operation_type,prompt_tokens,cached_prompt_tokens,cache_write_tokens,completion_tokens,reasoning_tokens,image_tokens,web_search_requests,total_tokens,memory_tokens,summary_tokens,input_image_count,output_image_count,prompt_cost,cache_read_cost,cache_write_cost,completion_cost,reasoning_cost,request_cost,web_search_cost,total_cost,api_cost,success,error_message\n");
+    let mut csv = String::from("timestamp,session_id,character_name,model_name,provider_label,operation_type,prompt_tokens,cached_prompt_tokens,cache_write_tokens,completion_tokens,reasoning_tokens,image_tokens,audio_tokens,web_search_requests,total_tokens,memory_tokens,summary_tokens,input_image_count,output_image_count,prompt_cost,cache_read_cost,cache_write_cost,completion_cost,reasoning_cost,request_cost,web_search_cost,total_cost,api_cost,success,error_message\n");
 
     for record in records {
         let input_image_count =
@@ -710,7 +714,7 @@ fn build_csv(records: &[RequestUsage]) -> String {
         let output_image_count =
             parse_metadata_u64(&record.metadata, &["output_image_count"]).unwrap_or(0);
         let line = format!(
-            "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
+            "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
             record.timestamp,
             csv_escape(&record.session_id),
             csv_escape(&record.character_name),
@@ -723,6 +727,7 @@ fn build_csv(records: &[RequestUsage]) -> String {
             record.completion_tokens.unwrap_or(0),
             record.reasoning_tokens.unwrap_or(0),
             record.image_tokens.unwrap_or(0),
+            record.audio_tokens.unwrap_or(0),
             record.web_search_requests.unwrap_or(0),
             record.total_tokens.unwrap_or(0),
             record.memory_tokens.unwrap_or(0),

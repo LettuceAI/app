@@ -246,6 +246,31 @@ pub(crate) fn extract_image_data_urls(value: Option<&Value>) -> Vec<String> {
         .collect()
 }
 
+pub(crate) fn extract_input_audio(value: Option<&Value>) -> Vec<(String, String)> {
+    let Some(Value::Array(parts)) = value else {
+        return Vec::new();
+    };
+
+    parts
+        .iter()
+        .filter_map(|part| {
+            let obj = part.as_object()?;
+            if obj.get("type").and_then(|v| v.as_str()) != Some("input_audio") {
+                return None;
+            }
+
+            let input_audio = obj.get("input_audio").and_then(|v| v.as_object())?;
+            let data = input_audio.get("data").and_then(|v| v.as_str())?.to_string();
+            let format = input_audio
+                .get("format")
+                .and_then(|v| v.as_str())
+                .unwrap_or("wav")
+                .to_string();
+            Some((format, data))
+        })
+        .collect()
+}
+
 pub(crate) fn parse_data_url(data_url: &str) -> Option<(String, String)> {
     let (prefix, data) = data_url.split_once(";base64,")?;
     let mime_type = prefix.strip_prefix("data:")?;
@@ -288,6 +313,7 @@ pub(crate) mod gemini_agent_platform_express;
 pub mod google_gemini;
 mod groq;
 mod intenserp;
+mod literouter;
 mod llamacpp;
 mod lmstudio;
 mod mistral;
@@ -341,6 +367,7 @@ pub fn adapter_for(credential: &ProviderCredential) -> Box<dyn ProviderAdapter +
         "qwen" => Box::new(qwen::QwenAdapter),
         "stability" => Box::new(stability::StabilityAdapter),
         "openrouter" => Box::new(openai::OpenRouterAdapter),
+        "literouter" => Box::new(literouter::LiteRouterAdapter),
         "pollinations" => Box::new(pollinations::PollinationsAdapter),
         "lettuce-host" => Box::new(openai::OpenAIAdapter),
         "lettuce-engine" => Box::new(lettuce_engine::LettuceEngineAdapter),

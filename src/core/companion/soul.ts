@@ -31,6 +31,17 @@ export async function generateCompanionSoulDraft(
   });
 }
 
+export async function clearCompanionSoulGrowth(sessionId: string): Promise<number> {
+  return await invoke<number>("companion_clear_soul_growth", { sessionId });
+}
+
+export async function removeCompanionSoulGrowth(
+  sessionId: string,
+  index: number,
+): Promise<boolean> {
+  return await invoke<boolean>("companion_remove_soul_growth", { sessionId, index });
+}
+
 export function mergeCompanionSoulDraft(
   current: CompanionConfig | null | undefined,
   draft: Partial<CompanionConfig>,
@@ -70,6 +81,7 @@ function createDefaultCompanionConfig(): CompanionConfig {
       voice: "",
       relationalStyle: "",
       vulnerabilities: "",
+      fears: "",
       habits: "",
       boundaries: "",
       baselineAffect: {

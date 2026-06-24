@@ -163,6 +163,7 @@ pub async fn usage_recalculate_costs(app: AppHandle, api_key: String) -> Result<
             }),
             reasoning_tokens: record.reasoning_tokens,
             image_tokens: record.image_tokens,
+            audio_tokens: record.audio_tokens,
             web_search_requests: record.web_search_requests.or_else(|| {
                 record
                     .metadata

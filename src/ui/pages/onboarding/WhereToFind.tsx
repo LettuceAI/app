@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, ExternalLink } from "lucide-react";
 import { DISCORD_SERVER_LINK } from "../../../core/utils/links";
+import { openExternalUrl } from "../../../core/utils/openExternal";
 import { useI18n, type TranslationKey, type TranslateParams } from "../../../core/i18n/context";
 
 type TFunction = (key: TranslationKey, params?: TranslateParams) => string;
@@ -122,15 +123,7 @@ export function WhereToFindPage() {
     return guides[providerId] || guides.default;
   }, [providerId, t]);
 
-  const openLink = async (url: string) => {
-    try {
-      const { openUrl } = await import("@tauri-apps/plugin-opener");
-      await openUrl(url);
-    } catch (error) {
-      console.error("Failed to open URL:", error);
-      window.open(url, "_blank");
-    }
-  };
+  const openLink = (url: string) => openExternalUrl(url);
 
   return (
     <div className="flex min-h-screen flex-col bg-black text-white px-4 pb-12 pt-[calc(env(safe-area-inset-top)+12px)]">

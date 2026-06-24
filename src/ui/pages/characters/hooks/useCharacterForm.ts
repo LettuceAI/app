@@ -73,7 +73,6 @@ interface CharacterFormState {
   tagsText: string;
   importedCharacterBook: CharacterBookImport | null;
   selectedModelId: string | null;
-  selectedFallbackModelId: string | null;
   systemPromptTemplateId: string | null;
   companionPromptTemplateId: string | null;
   groupChatPromptTemplateId: string | null;
@@ -126,7 +125,6 @@ type CharacterFormAction =
   | { type: "SET_TAGS_TEXT"; payload: string }
   | { type: "SET_IMPORTED_CHARACTER_BOOK"; payload: CharacterBookImport | null }
   | { type: "SET_SELECTED_MODEL_ID"; payload: string | null }
-  | { type: "SET_SELECTED_FALLBACK_MODEL_ID"; payload: string | null }
   | { type: "SET_SYSTEM_PROMPT_TEMPLATE_ID"; payload: string | null }
   | { type: "SET_COMPANION_PROMPT_TEMPLATE_ID"; payload: string | null }
   | { type: "SET_GROUP_CHAT_PROMPT_TEMPLATE_ID"; payload: string | null }
@@ -173,7 +171,6 @@ const initialState: CharacterFormState = {
   tagsText: "",
   importedCharacterBook: null,
   selectedModelId: null,
-  selectedFallbackModelId: null,
   systemPromptTemplateId: null,
   companionPromptTemplateId: null,
   groupChatPromptTemplateId: null,
@@ -246,8 +243,6 @@ function characterFormReducer(
       return { ...state, importedCharacterBook: action.payload };
     case "SET_SELECTED_MODEL_ID":
       return { ...state, selectedModelId: action.payload };
-    case "SET_SELECTED_FALLBACK_MODEL_ID":
-      return { ...state, selectedFallbackModelId: action.payload };
     case "SET_SYSTEM_PROMPT_TEMPLATE_ID":
       return { ...state, systemPromptTemplateId: action.payload };
     case "SET_COMPANION_PROMPT_TEMPLATE_ID":
@@ -400,10 +395,6 @@ export function useCharacterForm(draftCharacter?: any) {
               settings.defaultModelId ||
               settings.models[0]?.id ||
               null,
-          });
-          dispatch({
-            type: "SET_SELECTED_FALLBACK_MODEL_ID",
-            payload: draftCharacter.fallbackModelId || null,
           });
           dispatch({
             type: "SET_SYSTEM_PROMPT_TEMPLATE_ID",
@@ -572,18 +563,8 @@ export function useCharacterForm(draftCharacter?: any) {
     dispatch({ type: "SET_DEFINITION", payload: definition });
   }, []);
 
-  const setSelectedModelId = useCallback(
-    (id: string | null) => {
-      dispatch({ type: "SET_SELECTED_MODEL_ID", payload: id });
-      if (id && state.selectedFallbackModelId === id) {
-        dispatch({ type: "SET_SELECTED_FALLBACK_MODEL_ID", payload: null });
-      }
-    },
-    [state.selectedFallbackModelId],
-  );
-
-  const setSelectedFallbackModelId = useCallback((id: string | null) => {
-    dispatch({ type: "SET_SELECTED_FALLBACK_MODEL_ID", payload: id });
+  const setSelectedModelId = useCallback((id: string | null) => {
+    dispatch({ type: "SET_SELECTED_MODEL_ID", payload: id });
   }, []);
 
   const setSystemPromptTemplateId = useCallback((id: string | null) => {
@@ -1081,7 +1062,6 @@ export function useCharacterForm(draftCharacter?: any) {
         defaultSceneId: state.defaultSceneId || state.scenes[0]?.id || null,
         defaultChatTemplateId: null,
         defaultModelId: state.selectedModelId,
-        fallbackModelId: state.selectedFallbackModelId,
         promptTemplateId: state.systemPromptTemplateId,
         groupChatPromptTemplateId: state.groupChatPromptTemplateId,
         groupChatRoleplayPromptTemplateId: state.groupChatRoleplayPromptTemplateId,
@@ -1168,7 +1148,6 @@ export function useCharacterForm(draftCharacter?: any) {
     state.tagsText,
     state.importedCharacterBook,
     state.selectedModelId,
-    state.selectedFallbackModelId,
     state.systemPromptTemplateId,
     state.companionPromptTemplateId,
     state.groupChatPromptTemplateId,
@@ -1223,7 +1202,6 @@ export function useCharacterForm(draftCharacter?: any) {
       setCreatorNotesMultilingualText,
       setTagsText,
       setSelectedModelId,
-      setSelectedFallbackModelId,
       setSystemPromptTemplateId,
       setCompanionPromptTemplateId,
       setGroupChatPromptTemplateId,

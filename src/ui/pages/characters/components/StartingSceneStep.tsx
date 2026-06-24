@@ -14,6 +14,12 @@ import {
   buildCharacterCreateLibraryReturnKey,
   type BackgroundLibrarySelectionPayload,
 } from "../../../components/AvatarPicker/librarySelection";
+import {
+  insertSceneImageToken,
+  storeSceneImageFromFile,
+  storeSceneImageFromFilePath,
+  type StoredSceneImage,
+} from "../../../../core/scene/inlineImages";
 
 interface SceneEditorDraft {
   target: "new" | "edit";
@@ -26,9 +32,12 @@ interface SceneEditorDraft {
   editingSceneBackgroundImagePath: string;
   showNewDirectionInput: boolean;
   editDirectionExpanded: boolean;
+  inlineImageTarget?: "new" | "edit";
+  inlineImageCursor?: number;
 }
 
 const CREATE_SCENE_BACKGROUND_SELECTION_KEY = "create-character-scene-background";
+const CREATE_SCENE_INLINE_IMAGE_SELECTION_KEY = "create-character-scene-inline-image";
 const CREATE_SCENE_EDITOR_DRAFT_KEY = "create-character-scene-editor-draft";
 const CREATE_SCENE_EDITOR_RETURN_KEY = "create-character-scene-editor-return";
 
@@ -112,6 +121,10 @@ export function StartingSceneStep({
   const [expandedSceneId, setExpandedSceneId] = React.useState<string | null>(null);
   const newSceneBackgroundInputRef = React.useRef<HTMLInputElement | null>(null);
   const editSceneBackgroundInputRef = React.useRef<HTMLInputElement | null>(null);
+  const newSceneContentRef = React.useRef<HTMLTextAreaElement | null>(null);
+  const editSceneContentRef = React.useRef<HTMLTextAreaElement | null>(null);
+  const newSceneInlineInputRef = React.useRef<HTMLInputElement | null>(null);
+  const editSceneInlineInputRef = React.useRef<HTMLInputElement | null>(null);
 
   React.useEffect(() => {
     const rawSelection = sessionStorage.getItem(
@@ -294,6 +307,146 @@ export function StartingSceneStep({
       showNewDirectionInput,
     ],
   );
+
+  const insertInlineImageAt = React.useCallback(
+    (target: "new" | "edit", stored: StoredSceneImage, cursorIndex: number) => {
+      if (target === "edit") {
+        setEditingSceneContent((prev) => {
+          const { content, nextCursor } = insertSceneImageToken(
+            prev,
+            cursorIndex,
+            stored.imageId,
+            stored.ext,
+          );
+          requestAnimationFrame(() => {
+            const el = editSceneContentRef.current;
+            if (el) {
+              el.focus();
+              el.setSelectionRange(nextCursor, nextCursor);
+            }
+          });
+          return content;
+        });
+      } else {
+        setNewSceneContent((prev) => {
+          const { content, nextCursor } = insertSceneImageToken(
+            prev,
+            cursorIndex,
+            stored.imageId,
+            stored.ext,
+          );
+          requestAnimationFrame(() => {
+            const el = newSceneContentRef.current;
+            if (el) {
+              el.focus();
+              el.setSelectionRange(nextCursor, nextCursor);
+            }
+          });
+          return content;
+        });
+      }
+    },
+    [],
+  );
+
+  const handleInlineImageUpload = React.useCallback(
+    async (event: React.ChangeEvent<HTMLInputElement>, target: "new" | "edit") => {
+      const file = event.target.files?.[0];
+      const input = event.target;
+      if (!file) return;
+      const ref = target === "edit" ? editSceneContentRef : newSceneContentRef;
+      const cursor = ref.current?.selectionStart ?? ref.current?.value.length ?? 0;
+      try {
+        const stored = await storeSceneImageFromFile(file);
+        if (stored) insertInlineImageAt(target, stored, cursor);
+      } catch (error) {
+        console.warn("StartingSceneStep: failed to store inline scene image", error);
+      } finally {
+        input.value = "";
+      }
+    },
+    [insertInlineImageAt],
+  );
+
+  const handleChooseInlineImageFromLibrary = React.useCallback(
+    (target: "new" | "edit") => {
+      const ref = target === "edit" ? editSceneContentRef : newSceneContentRef;
+      const cursor = ref.current?.selectionStart ?? ref.current?.value.length ?? 0;
+      const draft: SceneEditorDraft = {
+        target,
+        editingSceneId,
+        newSceneContent,
+        newSceneDirection,
+        newSceneBackgroundImagePath,
+        editingSceneContent,
+        editingSceneDirection,
+        editingSceneBackgroundImagePath,
+        showNewDirectionInput,
+        editDirectionExpanded,
+        inlineImageTarget: target,
+        inlineImageCursor: cursor,
+      };
+      sessionStorage.setItem(CREATE_SCENE_EDITOR_DRAFT_KEY, JSON.stringify(draft));
+      sessionStorage.setItem(CREATE_SCENE_EDITOR_RETURN_KEY, "true");
+      sessionStorage.setItem(buildCharacterCreateLibraryReturnKey(returnPath), "true");
+      navigate("/library/images/pick", {
+        state: {
+          returnPath,
+          selectionStorageKey: CREATE_SCENE_INLINE_IMAGE_SELECTION_KEY,
+          selectionKind: "background",
+        },
+      });
+    },
+    [
+      editDirectionExpanded,
+      editingSceneBackgroundImagePath,
+      editingSceneContent,
+      editingSceneDirection,
+      editingSceneId,
+      navigate,
+      newSceneBackgroundImagePath,
+      newSceneContent,
+      newSceneDirection,
+      returnPath,
+      showNewDirectionInput,
+    ],
+  );
+
+  React.useEffect(() => {
+    const selectionKey = buildBackgroundLibrarySelectionKey(
+      CREATE_SCENE_INLINE_IMAGE_SELECTION_KEY,
+    );
+    const rawSelection = sessionStorage.getItem(selectionKey);
+    if (!rawSelection) return;
+
+    let cancelled = false;
+    const clearTimeout = window.setTimeout(() => {
+      sessionStorage.removeItem(selectionKey);
+    }, 0);
+
+    let parsed: BackgroundLibrarySelectionPayload | null = null;
+    try {
+      parsed = JSON.parse(rawSelection) as BackgroundLibrarySelectionPayload;
+    } catch (error) {
+      console.error("Failed to parse starting scene inline image library selection:", error);
+    }
+
+    if (parsed?.filePath) {
+      const filePath = parsed.filePath;
+      const target = initialSceneEditorDraft?.inlineImageTarget ?? "new";
+      const cursor = initialSceneEditorDraft?.inlineImageCursor ?? 0;
+      void (async () => {
+        const stored = await storeSceneImageFromFilePath(filePath);
+        if (!stored || cancelled) return;
+        insertInlineImageAt(target, stored, cursor);
+      })();
+    }
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(clearTimeout);
+    };
+  }, [initialSceneEditorDraft, insertInlineImageAt]);
 
   return (
     <div className={cn(spacing.section, "flex flex-col flex-1 min-h-0")}>
@@ -495,6 +648,7 @@ export function StartingSceneStep({
         {/* Right: Add New Scene */}
         <div className={cn("lg:flex-1 lg:min-w-0 mt-3 lg:mt-0", spacing.item)}>
           <textarea
+            ref={newSceneContentRef}
             value={newSceneContent}
             onChange={(e) => setNewSceneContent(e.target.value)}
             rows={6}
@@ -524,6 +678,25 @@ export function StartingSceneStep({
             <code className="text-accent/80">{"{{user}}"}</code> (alias{" "}
             <code className="text-accent/80">{"{{persona}}"}</code>) for the persona.
           </div>
+
+          <input
+            ref={newSceneInlineInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(event) => {
+              void handleInlineImageUpload(event, "new");
+            }}
+          />
+
+          <InlineImageToolbar
+            addLabel={t("sceneImage.add")}
+            uploadLabel={t("sceneImage.upload")}
+            libraryLabel={t("sceneImage.fromLibrary")}
+            hint={t("sceneImage.hint")}
+            onUpload={() => newSceneInlineInputRef.current?.click()}
+            onLibrary={() => handleChooseInlineImageFromLibrary("new")}
+          />
 
           <input
             ref={newSceneBackgroundInputRef}
@@ -660,6 +833,7 @@ export function StartingSceneStep({
           {/* Scene Content */}
           <div>
             <textarea
+              ref={editSceneContentRef}
               value={editingSceneContent}
               onChange={(e) => setEditingSceneContent(e.target.value)}
               rows={10}
@@ -669,6 +843,23 @@ export function StartingSceneStep({
             <div className="mt-1 flex justify-end text-[11px] text-fg/40">
               {t("characters.startingScene.wordsCount", { count: wordCount(editingSceneContent) })}
             </div>
+            <input
+              ref={editSceneInlineInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(event) => {
+                void handleInlineImageUpload(event, "edit");
+              }}
+            />
+            <InlineImageToolbar
+              addLabel={t("sceneImage.add")}
+              uploadLabel={t("sceneImage.upload")}
+              libraryLabel={t("sceneImage.fromLibrary")}
+              hint={t("sceneImage.hint")}
+              onUpload={() => editSceneInlineInputRef.current?.click()}
+              onLibrary={() => handleChooseInlineImageFromLibrary("edit")}
+            />
           </div>
 
           {/* Scene Direction - Collapsible */}
@@ -783,6 +974,52 @@ const wordCount = (text: string) => {
   if (!trimmed) return 0;
   return trimmed.split(/\s+/).length;
 };
+
+function InlineImageToolbar({
+  addLabel,
+  uploadLabel,
+  libraryLabel,
+  hint,
+  onUpload,
+  onLibrary,
+}: {
+  addLabel: string;
+  uploadLabel: string;
+  libraryLabel?: string;
+  hint: string;
+  onUpload: () => void;
+  onLibrary?: () => void;
+}) {
+  return (
+    <div className="mt-2 rounded-xl border border-fg/10 bg-fg/5 px-3 py-2.5">
+      <div className="flex items-center gap-2">
+        <ImageIcon className="h-3.5 w-3.5 text-fg/50" />
+        <span className="text-xs font-medium text-fg/70">{addLabel}</span>
+        <div className="ml-auto flex items-center gap-2">
+          {onLibrary && libraryLabel ? (
+            <button
+              type="button"
+              onClick={onLibrary}
+              className="flex items-center gap-1.5 rounded-lg border border-fg/10 bg-fg/5 px-2.5 py-1.5 text-[11px] font-medium text-fg/70 transition active:scale-95 active:bg-fg/10"
+            >
+              <FolderOpen className="h-3.5 w-3.5" />
+              {libraryLabel}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={onUpload}
+            className="flex items-center gap-1.5 rounded-lg border border-accent/30 bg-accent/10 px-2.5 py-1.5 text-[11px] font-medium text-accent/90 transition active:scale-95 active:bg-accent/20"
+          >
+            <Upload className="h-3.5 w-3.5" />
+            {uploadLabel}
+          </button>
+        </div>
+      </div>
+      <p className="mt-1.5 text-[10px] text-fg/40">{hint}</p>
+    </div>
+  );
+}
 
 function SceneBackgroundPreview({
   path,

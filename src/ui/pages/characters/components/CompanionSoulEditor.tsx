@@ -34,6 +34,7 @@ type SoulTextKey =
   | "voice"
   | "relationalStyle"
   | "vulnerabilities"
+  | "fears"
   | "habits"
   | "boundaries";
 
@@ -127,6 +128,13 @@ const SOUL_TEXT_FIELDS: TextField[] = [
     rows: 2,
     placeholderKey: "characters.soulFields.vulnerabilitiesPlaceholder",
     exampleKey: "characters.soulFields.vulnerabilitiesExample",
+  },
+  {
+    key: "fears",
+    labelKey: "characters.soulFields.fears",
+    rows: 2,
+    placeholderKey: "characters.soulFields.fearsPlaceholder",
+    exampleKey: "characters.soulFields.fearsExample",
   },
   {
     key: "habits",

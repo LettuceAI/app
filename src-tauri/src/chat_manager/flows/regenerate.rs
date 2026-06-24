@@ -9,7 +9,7 @@ use crate::chat_manager::attachments::{
 use crate::chat_manager::commands::take_aborted_request;
 use crate::chat_manager::companion;
 use crate::chat_manager::execution::{
-    build_model_attempts, build_provider_extra_fields, emit_fallback_retry_toast, RequestSettings,
+    build_provider_extra_fields, RequestSettings,
 };
 use crate::chat_manager::memory::dynamic::{
     context_enrichment_enabled, dynamic_min_similarity, dynamic_retrieval_limit,
@@ -331,6 +331,10 @@ impl RegenerateFlow {
                 .input_scopes
                 .iter()
                 .any(|scope| scope.eq_ignore_ascii_case("image"));
+            let allow_audio_input = model
+                .input_scopes
+                .iter()
+                .any(|scope| scope.eq_ignore_ascii_case("audio"));
 
             let messages_before_target: Vec<StoredMessage> = session
                 .messages
@@ -367,6 +371,7 @@ impl RegenerateFlow {
                         char_name,
                         persona_name,
                         allow_image_input,
+                        allow_audio_input,
                         time_frame_delta,
                         time_stamp_enabled,
                     );
@@ -381,6 +386,7 @@ impl RegenerateFlow {
                         char_name,
                         persona_name,
                         allow_image_input,
+                        allow_audio_input,
                         time_frame_delta,
                         time_stamp_enabled,
                     );
@@ -405,6 +411,7 @@ impl RegenerateFlow {
                         char_name,
                         persona_name,
                         allow_image_input,
+                        allow_audio_input,
                         time_frame_delta,
                         time_stamp_enabled,
                     );
@@ -433,22 +440,13 @@ impl RegenerateFlow {
             None
         };
 
-        let attempts = build_model_attempts(
-            &app,
-            settings,
-            &character,
-            &model,
-            &credential,
-            "chat_regenerate",
-        );
+        let attempts = vec![(&model, &credential, false)];
 
         let mut selected_model = &model;
         let mut selected_credential = &credential;
         let mut selected_api_key = String::new();
-        let mut fallback_from_model_id: Option<String> = None;
         let mut successful_response = None;
         let mut last_error = "request failed".to_string();
-        let mut fallback_toast_shown = false;
 
         {
             let message = session
@@ -469,7 +467,6 @@ impl RegenerateFlow {
                 Err(err) => {
                     last_error = err;
                     if has_next_attempt {
-                        emit_fallback_retry_toast(&app, &mut fallback_toast_shown);
                         continue;
                     }
                     return Err(last_error);
@@ -558,7 +555,6 @@ impl RegenerateFlow {
                 Err(err) => {
                     last_error = err;
                     if has_next_attempt {
-                        emit_fallback_retry_toast(&app, &mut fallback_toast_shown);
                         continue;
                     }
                     return Err(last_error);
@@ -618,7 +614,6 @@ impl RegenerateFlow {
                     format!("{} (status {})", err_message, api_response.status)
                 };
                 if has_next_attempt {
-                    emit_fallback_retry_toast(&app, &mut fallback_toast_shown);
                     continue;
                 }
                 return Err(last_error);
@@ -627,11 +622,6 @@ impl RegenerateFlow {
             selected_model = attempt_model;
             selected_credential = attempt_credential;
             selected_api_key = attempt_api_key;
-            fallback_from_model_id = if *is_fallback_attempt {
-                Some(model.id.clone())
-            } else {
-                None
-            };
             successful_response = Some(api_response);
             break;
         }
@@ -749,7 +739,6 @@ impl RegenerateFlow {
             assistant_message.usage = usage.clone();
             assistant_message.reasoning = reasoning.clone();
             assistant_message.model_id = Some(selected_model.id.clone());
-            assistant_message.fallback_from_model_id = fallback_from_model_id.clone();
             push_assistant_variant(assistant_message, new_variant);
 
             if dynamic_memory_enabled {

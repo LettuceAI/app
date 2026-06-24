@@ -36,6 +36,7 @@ export interface AdvancedSettings {
     decayRate: number;
     coldThreshold: number;
     contextEnrichmentEnabled?: boolean;
+    runMode?: "auto" | "askFirst" | "manual";
   };
   dynamicMemorySummarizerPromptTemplateId?: string;
   dynamicMemoryManagerPromptTemplateId?: string;
@@ -50,6 +51,7 @@ export interface AdvancedSettings {
     decayRate: number;
     coldThreshold: number;
     contextEnrichmentEnabled?: boolean;
+    runMode?: "auto" | "askFirst" | "manual";
   };
 }
 

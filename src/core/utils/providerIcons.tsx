@@ -15,6 +15,7 @@ import OpenAIIcon from "../../assets/openai_light.svg";
 import CerebrasIcon from "../../assets/cerebras.svg";
 import AnthropicIcon from "../../assets/anthropic_light.svg";
 import OpenRouterIcon from "../../assets/openrouter_light.svg";
+import LiteRouterIcon from "../../assets/literouter.png";
 import MistralAIIcon from "../../assets/mistralai_light.svg";
 import DeepseekIcon from "../../assets/deepseek.svg";
 import NanoGPTIcon from "../../assets/nanogpt.png";
@@ -38,6 +39,7 @@ const ICON_MAP: Record<string, ReactElement> = {
   cerebras: <img src={CerebrasIcon} alt="Cerebras" className="h-6 w-6" />,
   anthropic: <img src={AnthropicIcon} alt="Anthropic" className="h-6 w-6" />,
   openrouter: <img src={OpenRouterIcon} alt="OpenRouter" className="h-6 w-6" />,
+  literouter: <img src={LiteRouterIcon} alt="LiteRouter" className="h-6 w-6" />,
   pollinations: <img src={PollinationsIcon} alt="Pollinations AI" className="h-6 w-6" />,
   mistral: <img src={MistralAIIcon} alt="MistralAI" className="h-6 w-6" />,
   deepseek: <img src={DeepseekIcon} alt="Deepseek" className="h-6 w-6" />,

@@ -4,6 +4,7 @@ import { ArrowLeft, ChevronDown, ChevronRight, HelpCircle, ExternalLink } from "
 import { motion, AnimatePresence } from "framer-motion";
 import { cn, typography } from "../../design-tokens";
 import { DISCORD_SERVER_LINK } from "../../../core/utils/links";
+import { openExternalUrl } from "../../../core/utils/openExternal";
 import { useI18n, type TranslationKey } from "../../../core/i18n/context";
 
 type Translate = (key: TranslationKey, params?: Record<string, string | number>) => string;
@@ -236,14 +237,7 @@ const DOCS_URL = "https://www.lettuceai.app/docs";
 const DISCORD_URL = DISCORD_SERVER_LINK;
 
 function openExternal(url: string) {
-  void (async () => {
-    try {
-      const { openUrl } = await import("@tauri-apps/plugin-opener");
-      await openUrl(url);
-    } catch {
-      window.open(url, "_blank");
-    }
-  })();
+  void openExternalUrl(url);
 }
 
 function FaqRow({

@@ -484,6 +484,9 @@ fn build_usage_json(usage: &UsageSummary) -> Value {
     if let Some(tokens) = usage.image_tokens {
         value.insert("image_tokens".to_string(), Value::from(tokens));
     }
+    if let Some(tokens) = usage.audio_tokens {
+        value.insert("audio_tokens".to_string(), Value::from(tokens));
+    }
     if let Some(tokens) = usage.cached_prompt_tokens {
         value.insert("cached_prompt_tokens".to_string(), Value::from(tokens));
     }

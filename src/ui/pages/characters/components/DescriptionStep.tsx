@@ -49,8 +49,6 @@ interface DescriptionStepProps {
   loadingModels: boolean;
   selectedModelId: string | null;
   onSelectModel: (value: string | null) => void;
-  selectedFallbackModelId: string | null;
-  onSelectFallbackModel: (value: string | null) => void;
   memoryType: "manual" | "dynamic";
   dynamicMemoryEnabled: boolean;
   onMemoryTypeChange: (value: "manual" | "dynamic") => void;
@@ -97,8 +95,6 @@ export function DescriptionStep({
   loadingModels,
   selectedModelId,
   onSelectModel,
-  selectedFallbackModelId,
-  onSelectFallbackModel,
   memoryType,
   dynamicMemoryEnabled,
   onMemoryTypeChange,
@@ -131,7 +127,6 @@ export function DescriptionStep({
   const resolvedSubmitLabel = submitLabel ?? t("characters.identity.title");
   const wordCount = definition.trim().split(/\s+/).filter(Boolean).length;
   const [showModelMenu, setShowModelMenu] = useState(false);
-  const [showFallbackModelMenu, setShowFallbackModelMenu] = useState(false);
   const [showVoiceMenu, setShowVoiceMenu] = useState(false);
   const [voiceSearchQuery, setVoiceSearchQuery] = useState("");
   const directPromptTemplates = promptTemplates.filter(
@@ -219,7 +214,7 @@ export function DescriptionStep({
                 rows={8}
                 placeholder={t("characters.details.definitionPlaceholder")}
                 className={cn(
-                  "w-full resize-none border bg-surface-el/20 px-4 py-3 text-base leading-relaxed text-fg placeholder-fg/40 backdrop-blur-xl lg:rows-12",
+                  "w-full resize-y border bg-surface-el/20 px-4 py-3 text-base leading-relaxed text-fg placeholder-fg/40 backdrop-blur-xl lg:rows-12",
                   radius.md,
                   interactive.transition.default,
                   "focus:bg-surface-el/30 focus:outline-none",
@@ -229,23 +224,6 @@ export function DescriptionStep({
                 )}
                 autoFocus
               />
-              {definition.trim() && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="pointer-events-none absolute bottom-3 right-3"
-                >
-                  <div
-                    className={cn(
-                      "flex h-7 w-7 items-center justify-center",
-                      radius.full,
-                      "border border-accent/30 bg-accent/15",
-                    )}
-                  >
-                    <Sparkles className="h-3.5 w-3.5 text-accent/80" />
-                  </div>
-                </motion.div>
-              )}
             </div>
             <p className={cn(typography.bodySmall.size, "text-fg/40")}>
               {t("characters.details.definitionDesc")}
@@ -287,7 +265,7 @@ export function DescriptionStep({
               rows={3}
               placeholder={t("characters.description.descriptionPlaceholder")}
               className={cn(
-                "w-full resize-none border bg-surface-el/20 px-4 py-3 text-base leading-relaxed text-fg placeholder-fg/40 backdrop-blur-xl",
+                "w-full resize-y border bg-surface-el/20 px-4 py-3 text-base leading-relaxed text-fg placeholder-fg/40 backdrop-blur-xl",
                 radius.md,
                 interactive.transition.default,
                 "focus:bg-surface-el/30 focus:outline-none",
@@ -301,206 +279,149 @@ export function DescriptionStep({
             </p>
           </div>
 
+        </div>
+
+        {/* Right sidebar: Settings (desktop) / continues stacked (mobile) */}
+        <div className="lg:w-80 lg:shrink-0 space-y-6 mt-6 lg:mt-0">
+          {/* Model Selection */}
           <div className={spacing.field}>
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <div className="rounded-lg border border-fg/10 bg-fg/5 p-1.5">
-                  <Image className="h-4 w-4 text-fg/60" />
-                </div>
-                <h3 className="text-sm font-semibold text-fg">{t("characters.description.designReferencesLabel")}</h3>
+            <label
+              className={cn(
+                typography.label.size,
+                typography.label.weight,
+                typography.label.tracking,
+                "uppercase text-fg/70",
+              )}
+            >
+              {t("characters.description.aiModelLabel")}
+            </label>
+            {loadingModels ? (
+              <div
+                className={cn(
+                  "flex items-center gap-3 border border-fg/10 bg-surface-el/20 px-4 py-3 backdrop-blur-xl",
+                  radius.md,
+                )}
+              >
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-fg/10 border-t-white/60" />
+                <span className={cn(typography.body.size, "text-fg/60")}>{t("characters.description.loadingModels")}</span>
               </div>
-              <DesignReferenceEditor
-                designDescription={designDescription}
-                onDesignDescriptionChange={onDesignDescriptionChange}
-                referenceImages={designReferenceImageIds}
-                onReferenceImagesChange={onDesignReferenceImageIdsChange}
-                subjectName={name}
-                subjectDescription={definition || description}
-                avatarImage={avatarPath}
-                showHeader={false}
-                description={t("characters.description.designReferencesEditorHint")}
-              />
+            ) : models.length ? (
+              <button
+                type="button"
+                onClick={() => setShowModelMenu(true)}
+                className={cn(
+                  "flex w-full items-center justify-between border bg-surface-el/20 px-4 py-3.5 text-left backdrop-blur-xl",
+                  radius.md,
+                  interactive.transition.default,
+                  "focus:border-fg/30 focus:bg-surface-el/30 focus:outline-none hover:bg-surface-el/30",
+                  selectedModelId ? "border-fg/20" : "border-fg/10",
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  {selectedModelId ? (
+                    getProviderIcon(models.find((m) => m.id === selectedModelId)?.providerId || "")
+                  ) : (
+                    <Cpu className="h-5 w-5 text-fg/40" />
+                  )}
+                  <span className={cn("text-sm", selectedModelId ? "text-fg" : "text-fg/50")}>
+                    {selectedModelId
+                      ? models.find((m) => m.id === selectedModelId)?.displayName ||
+                        t("characters.description.selectedModelFallback")
+                      : t("characters.description.selectModelPlaceholder")}
+                  </span>
+                </div>
+                <ChevronDown className="h-4 w-4 text-fg/40" />
+              </button>
+            ) : (
+              <div
+                className={cn(
+                  "border border-warning/20 bg-warning/10 px-4 py-3 backdrop-blur-xl",
+                  radius.md,
+                )}
+              >
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-warning" />
+                  <div>
+                    <p className={cn(typography.body.size, typography.h3.weight, "text-warning/90")}>
+                      {t("characters.description.noModelsConfigured")}
+                    </p>
+                    <p className={cn(typography.bodySmall.size, "mt-1 text-warning/70")}>
+                      {t("characters.description.noModelsHint")}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+            <p className={cn(typography.bodySmall.size, "text-fg/40")}>
+              {t("characters.description.aiModelHint")}
+            </p>
+          </div>
+
+          {/* Memory Mode */}
+          <div className={spacing.field}>
+            <div className="flex items-center justify-between">
+              <label
+                className={cn(
+                  typography.label.size,
+                  typography.label.weight,
+                  typography.label.tracking,
+                  "uppercase text-fg/70",
+                )}
+              >
+                {t("characters.description.memoryModeLabel")}
+              </label>
+              {!dynamicMemoryEnabled && (
+                <span className="text-[11px] text-fg/45">{t("characters.description.enableInSettingsHint")}</span>
+              )}
             </div>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Prompt Selection */}
-          <div className={spacing.field}>
-            <label
-              className={cn(
-                typography.label.size,
-                typography.label.weight,
-                typography.label.tracking,
-                "uppercase text-fg/70",
-              )}
-            >
-              {mode === "companion"
-                ? t("characters.description.companionPromptLabel")
-                : t("characters.description.systemPromptLabel")}
-            </label>
-            {loadingTemplates ? (
-              <div
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => onMemoryTypeChange("manual")}
                 className={cn(
-                  "flex items-center gap-3 border border-fg/10 bg-surface-el/20 px-4 py-3 backdrop-blur-xl",
-                  radius.md,
+                  "flex flex-col items-start gap-1 rounded-xl border px-3 py-3 text-left transition",
+                  memoryType === "manual"
+                    ? "border-accent/50 bg-accent/10 text-accent/70 shadow-[0_0_0_1px_rgba(16,185,129,0.2)]"
+                    : "border-fg/10 bg-fg/5 text-fg/70 hover:border-fg/20 hover:bg-fg/10",
                 )}
               >
-                <Loader2 className="h-4 w-4 animate-spin text-fg/60" />
-                <span className={cn(typography.body.size, "text-fg/60")}>{t("characters.description.loadingTemplates")}</span>
-              </div>
-            ) : (
-              <div className="relative">
-                <select
-                  value={
-                    mode === "companion"
-                      ? (companionPromptTemplateId ?? "")
-                      : (systemPromptTemplateId ?? "")
-                  }
-                  onChange={(e) => {
-                    const next = e.target.value || null;
-                    if (mode === "companion") {
-                      onSelectCompanionPrompt(next);
-                    } else {
-                      onSelectSystemPrompt(next);
-                    }
-                  }}
-                  className={cn(
-                    "w-full appearance-none border bg-surface-el/20 px-4 py-3.5 pr-10 text-sm text-fg backdrop-blur-xl",
-                    radius.md,
-                    interactive.transition.default,
-                    "focus:border-fg/30 focus:bg-surface-el/30 focus:outline-none",
-                    (mode === "companion" ? companionPromptTemplateId : systemPromptTemplateId)
-                      ? "border-fg/20"
-                      : "border-fg/10",
-                  )}
-                >
-                  <option value="" className="bg-surface-el text-fg">
-                    {mode === "companion"
-                      ? t("characters.description.useAppCompanionDefault")
-                      : t("characters.description.useAppDefault")}
-                  </option>
-                  {(mode === "companion" ? companionPromptTemplates : directPromptTemplates).map((template) => (
-                    <option key={template.id} value={template.id} className="bg-surface-el text-fg">
-                      {template.name}
-                    </option>
-                  ))}
-                </select>
-                {/* Custom dropdown icon */}
-                <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
-                  <FileText className="h-4 w-4 text-fg/40" />
+                <div className="flex items-center gap-2">
+                  <Layers className="h-4 w-4" />
+                  <span className="text-sm font-semibold">{t("characters.description.memoryManual")}</span>
                 </div>
-              </div>
-            )}
-            <p className={cn(typography.bodySmall.size, "text-fg/40")}>
-              {mode === "companion"
-                ? t("characters.description.companionPromptHint")
-                : t("characters.description.systemPromptHint")}
-            </p>
-          </div>
-
-          <div className={spacing.field}>
-            <label
-              className={cn(
-                typography.label.size,
-                typography.label.weight,
-                typography.label.tracking,
-                "uppercase text-fg/70",
-              )}
-            >
-              {t("characters.description.groupChatConvLabel")}
-            </label>
-            {loadingTemplates ? (
-              <div
+                <p className="text-xs text-fg/60 hidden lg:block">
+                  {t("characters.description.memoryManualDescDesktop")}
+                </p>
+                <p className="text-xs text-fg/60 lg:hidden">
+                  {t("characters.description.memoryManualDescMobile")}
+                </p>
+              </button>
+              <button
+                type="button"
+                disabled={!dynamicMemoryEnabled}
+                onClick={() => dynamicMemoryEnabled && onMemoryTypeChange("dynamic")}
                 className={cn(
-                  "flex items-center gap-3 border border-fg/10 bg-surface-el/20 px-4 py-3 backdrop-blur-xl",
-                  radius.md,
+                  "flex flex-col items-start gap-1 rounded-xl border px-3 py-3 text-left transition",
+                  memoryType === "dynamic" && dynamicMemoryEnabled
+                    ? "border-info/60 bg-info/15 text-info shadow-[0_0_0_1px_rgba(96,165,250,0.3)]"
+                    : "border-fg/10 bg-fg/5 text-fg/60",
+                  !dynamicMemoryEnabled && "cursor-not-allowed opacity-50",
                 )}
               >
-                <Loader2 className="h-4 w-4 animate-spin text-fg/60" />
-                <span className={cn(typography.body.size, "text-fg/60")}>{t("characters.description.loadingTemplates")}</span>
-              </div>
-            ) : (
-              <div className="relative">
-                <select
-                  value={groupChatPromptTemplateId ?? ""}
-                  onChange={(e) => onSelectGroupChatPrompt(e.target.value || null)}
-                  className={cn(
-                    "w-full appearance-none border bg-surface-el/20 px-4 py-3.5 pr-10 text-sm text-fg backdrop-blur-xl",
-                    radius.md,
-                    interactive.transition.default,
-                    "focus:border-fg/30 focus:bg-surface-el/30 focus:outline-none",
-                    groupChatPromptTemplateId ? "border-fg/20" : "border-fg/10",
-                  )}
-                >
-                  <option value="" className="bg-surface-el text-fg">
-                    {t("characters.description.useAppDefault")}
-                  </option>
-                  {groupChatTemplates.map((template) => (
-                    <option key={template.id} value={template.id} className="bg-surface-el text-fg">
-                      {template.name}
-                    </option>
-                  ))}
-                </select>
-                <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
-                  <FileText className="h-4 w-4 text-fg/40" />
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4" />
+                  <span className="text-sm font-semibold">{t("characters.description.memoryDynamic")}</span>
                 </div>
-              </div>
-            )}
+                <p className="text-xs text-fg/60 hidden lg:block">
+                  {t("characters.description.memoryDynamicDescDesktop")}
+                </p>
+                <p className="text-xs text-fg/60 lg:hidden">
+                  {t("characters.description.memoryDynamicDescMobile")}
+                </p>
+              </button>
+            </div>
             <p className={cn(typography.bodySmall.size, "text-fg/40")}>
-              {t("characters.description.groupChatConvHint")}
-            </p>
-          </div>
-
-          <div className={spacing.field}>
-            <label
-              className={cn(
-                typography.label.size,
-                typography.label.weight,
-                typography.label.tracking,
-                "uppercase text-fg/70",
-              )}
-            >
-              {t("characters.description.groupChatRpLabel")}
-            </label>
-            {loadingTemplates ? (
-              <div
-                className={cn(
-                  "flex items-center gap-3 border border-fg/10 bg-surface-el/20 px-4 py-3 backdrop-blur-xl",
-                  radius.md,
-                )}
-              >
-                <Loader2 className="h-4 w-4 animate-spin text-fg/60" />
-                <span className={cn(typography.body.size, "text-fg/60")}>{t("characters.description.loadingTemplates")}</span>
-              </div>
-            ) : (
-              <div className="relative">
-                <select
-                  value={groupChatRoleplayPromptTemplateId ?? ""}
-                  onChange={(e) => onSelectGroupChatRoleplayPrompt(e.target.value || null)}
-                  className={cn(
-                    "w-full appearance-none border bg-surface-el/20 px-4 py-3.5 pr-10 text-sm text-fg backdrop-blur-xl",
-                    radius.md,
-                    interactive.transition.default,
-                    "focus:border-fg/30 focus:bg-surface-el/30 focus:outline-none",
-                    groupChatRoleplayPromptTemplateId ? "border-fg/20" : "border-fg/10",
-                  )}
-                >
-                  <option value="" className="bg-surface-el text-fg">
-                    {t("characters.description.useAppDefault")}
-                  </option>
-                  {groupChatRoleplayTemplates.map((template) => (
-                    <option key={template.id} value={template.id} className="bg-surface-el text-fg">
-                      {template.name}
-                    </option>
-                  ))}
-                </select>
-                <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
-                  <FileText className="h-4 w-4 text-fg/40" />
-                </div>
-              </div>
-            )}
-            <p className={cn(typography.bodySmall.size, "text-fg/40")}>
-              {t("characters.description.groupChatRpHint")}
+              {t("characters.description.memoryHint")}
             </p>
           </div>
 
@@ -599,215 +520,253 @@ export function DescriptionStep({
               />
             </div>
           </div>
-          </div>
         </div>
+      </div>
 
-        {/* Right sidebar: Settings (desktop) / continues stacked (mobile) */}
-        <div className="lg:w-80 lg:shrink-0 space-y-6 mt-6 lg:mt-0">
-          {/* Model Selection */}
-          <div className={spacing.field}>
-            <label
+      {/* Design references */}
+      <div className={spacing.field}>
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <div className="rounded-lg border border-fg/10 bg-fg/5 p-1.5">
+              <Image className="h-4 w-4 text-fg/60" />
+            </div>
+            <h3 className="text-sm font-semibold text-fg">{t("characters.description.designReferencesLabel")}</h3>
+          </div>
+          <DesignReferenceEditor
+            designDescription={designDescription}
+            onDesignDescriptionChange={onDesignDescriptionChange}
+            referenceImages={designReferenceImageIds}
+            onReferenceImagesChange={onDesignReferenceImageIdsChange}
+            subjectName={name}
+            subjectDescription={definition || description}
+            avatarImage={avatarPath}
+            showHeader={false}
+            description={t("characters.description.designReferencesEditorHint")}
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* System Prompt */}
+      <div className={spacing.field}>
+        <label
+          className={cn(
+            typography.label.size,
+            typography.label.weight,
+            typography.label.tracking,
+            "uppercase text-fg/70",
+          )}
+        >
+          {t("characters.description.systemPromptLabel")}
+        </label>
+        {loadingTemplates ? (
+          <div
+            className={cn(
+              "flex items-center gap-3 border border-fg/10 bg-surface-el/20 px-4 py-3 backdrop-blur-xl",
+              radius.md,
+            )}
+          >
+            <Loader2 className="h-4 w-4 animate-spin text-fg/60" />
+            <span className={cn(typography.body.size, "text-fg/60")}>{t("characters.description.loadingTemplates")}</span>
+          </div>
+        ) : (
+          <div className="relative">
+            <select
+              value={systemPromptTemplateId ?? ""}
+              onChange={(e) => onSelectSystemPrompt(e.target.value || null)}
               className={cn(
-                typography.label.size,
-                typography.label.weight,
-                typography.label.tracking,
-                "uppercase text-fg/70",
+                "w-full appearance-none border bg-surface-el/20 px-4 py-3.5 pr-10 text-sm text-fg backdrop-blur-xl",
+                radius.md,
+                interactive.transition.default,
+                "focus:border-fg/30 focus:bg-surface-el/30 focus:outline-none",
+                systemPromptTemplateId ? "border-fg/20" : "border-fg/10",
               )}
             >
-              {t("characters.description.aiModelLabel")}
-            </label>
-            {loadingModels ? (
-              <div
-                className={cn(
-                  "flex items-center gap-3 border border-fg/10 bg-surface-el/20 px-4 py-3 backdrop-blur-xl",
-                  radius.md,
-                )}
-              >
-                <div className="h-4 w-4 animate-spin rounded-full border-2 border-fg/10 border-t-white/60" />
-                <span className={cn(typography.body.size, "text-fg/60")}>{t("characters.description.loadingModels")}</span>
-              </div>
-            ) : models.length ? (
-              <button
-                type="button"
-                onClick={() => setShowModelMenu(true)}
-                className={cn(
-                  "flex w-full items-center justify-between border bg-surface-el/20 px-4 py-3.5 text-left backdrop-blur-xl",
-                  radius.md,
-                  interactive.transition.default,
-                  "focus:border-fg/30 focus:bg-surface-el/30 focus:outline-none hover:bg-surface-el/30",
-                  selectedModelId ? "border-fg/20" : "border-fg/10",
-                )}
-              >
-                <div className="flex items-center gap-2">
-                  {selectedModelId ? (
-                    getProviderIcon(models.find((m) => m.id === selectedModelId)?.providerId || "")
-                  ) : (
-                    <Cpu className="h-5 w-5 text-fg/40" />
-                  )}
-                  <span className={cn("text-sm", selectedModelId ? "text-fg" : "text-fg/50")}>
-                    {selectedModelId
-                      ? models.find((m) => m.id === selectedModelId)?.displayName ||
-                        t("characters.description.selectedModelFallback")
-                      : t("characters.description.selectModelPlaceholder")}
-                  </span>
-                </div>
-                <ChevronDown className="h-4 w-4 text-fg/40" />
-              </button>
-            ) : (
-              <div
-                className={cn(
-                  "border border-warning/20 bg-warning/10 px-4 py-3 backdrop-blur-xl",
-                  radius.md,
-                )}
-              >
-                <div className="flex items-start gap-3">
-                  <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-warning" />
-                  <div>
-                    <p className={cn(typography.body.size, typography.h3.weight, "text-warning/90")}>
-                      {t("characters.description.noModelsConfigured")}
-                    </p>
-                    <p className={cn(typography.bodySmall.size, "mt-1 text-warning/70")}>
-                      {t("characters.description.noModelsHint")}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-            <p className={cn(typography.bodySmall.size, "text-fg/40")}>
-              {t("characters.description.aiModelHint")}
-            </p>
+              <option value="" className="bg-surface-el text-fg">
+                {t("characters.description.useAppDefault")}
+              </option>
+              {directPromptTemplates.map((template) => (
+                <option key={template.id} value={template.id} className="bg-surface-el text-fg">
+                  {template.name}
+                </option>
+              ))}
+            </select>
+            {/* Custom dropdown icon */}
+            <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
+              <FileText className="h-4 w-4 text-fg/40" />
+            </div>
           </div>
+        )}
+        <p className={cn(typography.bodySmall.size, "text-fg/40")}>
+          {t("characters.description.systemPromptHint")}
+        </p>
+      </div>
 
-          {/* Fallback Model Selection */}
-          <div className={spacing.field}>
-            <label
+      <div className={spacing.field}>
+        <label
+          className={cn(
+            typography.label.size,
+            typography.label.weight,
+            typography.label.tracking,
+            "uppercase text-fg/70",
+          )}
+        >
+          {t("characters.description.groupChatConvLabel")}
+        </label>
+        {loadingTemplates ? (
+          <div
+            className={cn(
+              "flex items-center gap-3 border border-fg/10 bg-surface-el/20 px-4 py-3 backdrop-blur-xl",
+              radius.md,
+            )}
+          >
+            <Loader2 className="h-4 w-4 animate-spin text-fg/60" />
+            <span className={cn(typography.body.size, "text-fg/60")}>{t("characters.description.loadingTemplates")}</span>
+          </div>
+        ) : (
+          <div className="relative">
+            <select
+              value={groupChatPromptTemplateId ?? ""}
+              onChange={(e) => onSelectGroupChatPrompt(e.target.value || null)}
               className={cn(
-                typography.label.size,
-                typography.label.weight,
-                typography.label.tracking,
-                "uppercase text-fg/70",
+                "w-full appearance-none border bg-surface-el/20 px-4 py-3.5 pr-10 text-sm text-fg backdrop-blur-xl",
+                radius.md,
+                interactive.transition.default,
+                "focus:border-fg/30 focus:bg-surface-el/30 focus:outline-none",
+                groupChatPromptTemplateId ? "border-fg/20" : "border-fg/10",
               )}
             >
-              {t("characters.description.fallbackModelLabel")}
-            </label>
-            {loadingModels ? (
-              <div
-                className={cn(
-                  "flex items-center gap-3 border border-fg/10 bg-surface-el/20 px-4 py-3 backdrop-blur-xl",
-                  radius.md,
-                )}
-              >
-                <div className="h-4 w-4 animate-spin rounded-full border-2 border-fg/10 border-t-white/60" />
-                <span className={cn(typography.body.size, "text-fg/60")}>{t("characters.description.loadingModels")}</span>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setShowFallbackModelMenu(true)}
-                className={cn(
-                  "flex w-full items-center justify-between border bg-surface-el/20 px-4 py-3.5 text-left backdrop-blur-xl",
-                  radius.md,
-                  interactive.transition.default,
-                  "focus:border-fg/30 focus:bg-surface-el/30 focus:outline-none hover:bg-surface-el/30",
-                  selectedFallbackModelId ? "border-fg/20" : "border-fg/10",
-                )}
-              >
-                <div className="flex items-center gap-2">
-                  {selectedFallbackModelId ? (
-                    getProviderIcon(
-                      models.find((m) => m.id === selectedFallbackModelId)?.providerId || "",
-                    )
-                  ) : (
-                    <Cpu className="h-5 w-5 text-fg/40" />
-                  )}
-                  <span
-                    className={cn(
-                      "text-sm",
-                      selectedFallbackModelId ? "text-fg" : "text-fg/50",
-                    )}
-                  >
-                    {selectedFallbackModelId
-                      ? models.find((m) => m.id === selectedFallbackModelId)?.displayName ||
-                        t("characters.description.selectedFallbackFallback")
-                      : t("characters.description.fallbackOff")}
-                  </span>
-                </div>
-                <ChevronDown className="h-4 w-4 text-fg/40" />
-              </button>
-            )}
-            <p className={cn(typography.bodySmall.size, "text-fg/40")}>
-              {t("characters.description.fallbackHint")}
-            </p>
+              <option value="" className="bg-surface-el text-fg">
+                {t("characters.description.useAppDefault")}
+              </option>
+              {groupChatTemplates.map((template) => (
+                <option key={template.id} value={template.id} className="bg-surface-el text-fg">
+                  {template.name}
+                </option>
+              ))}
+            </select>
+            <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
+              <FileText className="h-4 w-4 text-fg/40" />
+            </div>
           </div>
+        )}
+        <p className={cn(typography.bodySmall.size, "text-fg/40")}>
+          {t("characters.description.groupChatConvHint")}
+        </p>
+      </div>
 
-          {/* Memory Mode */}
-          <div className={spacing.field}>
-            <div className="flex items-center justify-between">
-              <label
-                className={cn(
-                  typography.label.size,
-                  typography.label.weight,
-                  typography.label.tracking,
-                  "uppercase text-fg/70",
-                )}
-              >
-                {t("characters.description.memoryModeLabel")}
-              </label>
-              {!dynamicMemoryEnabled && (
-                <span className="text-[11px] text-fg/45">{t("characters.description.enableInSettingsHint")}</span>
-              )}
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => onMemoryTypeChange("manual")}
-                className={cn(
-                  "flex flex-col items-start gap-1 rounded-xl border px-3 py-3 text-left transition",
-                  memoryType === "manual"
-                    ? "border-accent/50 bg-accent/10 text-accent/70 shadow-[0_0_0_1px_rgba(16,185,129,0.2)]"
-                    : "border-fg/10 bg-fg/5 text-fg/70 hover:border-fg/20 hover:bg-fg/10",
-                )}
-              >
-                <div className="flex items-center gap-2">
-                  <Layers className="h-4 w-4" />
-                  <span className="text-sm font-semibold">{t("characters.description.memoryManual")}</span>
-                </div>
-                <p className="text-xs text-fg/60 hidden lg:block">
-                  {t("characters.description.memoryManualDescDesktop")}
-                </p>
-                <p className="text-xs text-fg/60 lg:hidden">
-                  {t("characters.description.memoryManualDescMobile")}
-                </p>
-              </button>
-              <button
-                type="button"
-                disabled={!dynamicMemoryEnabled}
-                onClick={() => dynamicMemoryEnabled && onMemoryTypeChange("dynamic")}
-                className={cn(
-                  "flex flex-col items-start gap-1 rounded-xl border px-3 py-3 text-left transition",
-                  memoryType === "dynamic" && dynamicMemoryEnabled
-                    ? "border-info/60 bg-info/15 text-info shadow-[0_0_0_1px_rgba(96,165,250,0.3)]"
-                    : "border-fg/10 bg-fg/5 text-fg/60",
-                  !dynamicMemoryEnabled && "cursor-not-allowed opacity-50",
-                )}
-              >
-                <div className="flex items-center gap-2">
-                  <Sparkles className="h-4 w-4" />
-                  <span className="text-sm font-semibold">{t("characters.description.memoryDynamic")}</span>
-                </div>
-                <p className="text-xs text-fg/60 hidden lg:block">
-                  {t("characters.description.memoryDynamicDescDesktop")}
-                </p>
-                <p className="text-xs text-fg/60 lg:hidden">
-                  {t("characters.description.memoryDynamicDescMobile")}
-                </p>
-              </button>
-            </div>
-            <p className={cn(typography.bodySmall.size, "text-fg/40")}>
-              {t("characters.description.memoryHint")}
-            </p>
+      <div className={spacing.field}>
+        <label
+          className={cn(
+            typography.label.size,
+            typography.label.weight,
+            typography.label.tracking,
+            "uppercase text-fg/70",
+          )}
+        >
+          {t("characters.description.groupChatRpLabel")}
+        </label>
+        {loadingTemplates ? (
+          <div
+            className={cn(
+              "flex items-center gap-3 border border-fg/10 bg-surface-el/20 px-4 py-3 backdrop-blur-xl",
+              radius.md,
+            )}
+          >
+            <Loader2 className="h-4 w-4 animate-spin text-fg/60" />
+            <span className={cn(typography.body.size, "text-fg/60")}>{t("characters.description.loadingTemplates")}</span>
           </div>
+        ) : (
+          <div className="relative">
+            <select
+              value={groupChatRoleplayPromptTemplateId ?? ""}
+              onChange={(e) => onSelectGroupChatRoleplayPrompt(e.target.value || null)}
+              className={cn(
+                "w-full appearance-none border bg-surface-el/20 px-4 py-3.5 pr-10 text-sm text-fg backdrop-blur-xl",
+                radius.md,
+                interactive.transition.default,
+                "focus:border-fg/30 focus:bg-surface-el/30 focus:outline-none",
+                groupChatRoleplayPromptTemplateId ? "border-fg/20" : "border-fg/10",
+              )}
+            >
+              <option value="" className="bg-surface-el text-fg">
+                {t("characters.description.useAppDefault")}
+              </option>
+              {groupChatRoleplayTemplates.map((template) => (
+                <option key={template.id} value={template.id} className="bg-surface-el text-fg">
+                  {template.name}
+                </option>
+              ))}
+            </select>
+            <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
+              <FileText className="h-4 w-4 text-fg/40" />
+            </div>
+          </div>
+        )}
+        <p className={cn(typography.bodySmall.size, "text-fg/40")}>
+          {t("characters.description.groupChatRpHint")}
+        </p>
+      </div>
+
+      {/* Companion Prompt */}
+      <div className={cn(spacing.field, mode !== "companion" && "pointer-events-none opacity-50")}>
+        <div className="flex items-center justify-between">
+          <label
+            className={cn(
+              typography.label.size,
+              typography.label.weight,
+              typography.label.tracking,
+              "uppercase text-fg/70",
+            )}
+          >
+            {t("characters.description.companionPromptLabel")}
+          </label>
+          {mode !== "companion" && (
+            <span className="text-[11px] text-fg/45">{t("characters.description.companionModeRequiredHint")}</span>
+          )}
         </div>
+        {loadingTemplates ? (
+          <div
+            className={cn(
+              "flex items-center gap-3 border border-fg/10 bg-surface-el/20 px-4 py-3 backdrop-blur-xl",
+              radius.md,
+            )}
+          >
+            <Loader2 className="h-4 w-4 animate-spin text-fg/60" />
+            <span className={cn(typography.body.size, "text-fg/60")}>{t("characters.description.loadingTemplates")}</span>
+          </div>
+        ) : (
+          <div className="relative">
+            <select
+              value={companionPromptTemplateId ?? ""}
+              disabled={mode !== "companion"}
+              onChange={(e) => onSelectCompanionPrompt(e.target.value || null)}
+              className={cn(
+                "w-full appearance-none border bg-surface-el/20 px-4 py-3.5 pr-10 text-sm text-fg backdrop-blur-xl",
+                radius.md,
+                interactive.transition.default,
+                "focus:border-fg/30 focus:bg-surface-el/30 focus:outline-none",
+                companionPromptTemplateId ? "border-fg/20" : "border-fg/10",
+              )}
+            >
+              <option value="" className="bg-surface-el text-fg">
+                {t("characters.description.useAppCompanionDefault")}
+              </option>
+              {companionPromptTemplates.map((template) => (
+                <option key={template.id} value={template.id} className="bg-surface-el text-fg">
+                  {template.name}
+                </option>
+              ))}
+            </select>
+            <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
+              <FileText className="h-4 w-4 text-fg/40" />
+            </div>
+          </div>
+        )}
+        <p className={cn(typography.bodySmall.size, "text-fg/40")}>
+          {t("characters.description.companionPromptHint")}
+        </p>
+      </div>
       </div>
 
       {/* Error Display */}
@@ -870,28 +829,6 @@ export function DescriptionStep({
         onSelectModel={(modelId) => {
           onSelectModel(modelId);
           setShowModelMenu(false);
-        }}
-      />
-
-      <ModelSelectionBottomMenu
-        isOpen={showFallbackModelMenu}
-        onClose={() => setShowFallbackModelMenu(false)}
-        title={t("characters.description.selectFallbackModelTitle")}
-        models={models.filter((m) => m.id !== selectedModelId)}
-        selectedModelIds={selectedFallbackModelId ? [selectedFallbackModelId] : []}
-        searchPlaceholder={t("characters.description.searchModelsPlaceholder")}
-        onSelectModel={(modelId) => {
-          onSelectFallbackModel(modelId);
-          setShowFallbackModelMenu(false);
-        }}
-        clearOption={{
-          label: t("characters.description.fallbackOff"),
-          icon: Cpu,
-          selected: !selectedFallbackModelId,
-          onClick: () => {
-            onSelectFallbackModel(null);
-            setShowFallbackModelMenu(false);
-          },
         }}
       />
 

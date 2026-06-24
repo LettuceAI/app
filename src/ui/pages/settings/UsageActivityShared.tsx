@@ -254,6 +254,7 @@ export function UsageRequestDetailSheet({
           { label: t("usageAnalytics.shared.stats.completion"), value: request.completionTokens ?? 0 },
           { label: t("usageAnalytics.shared.stats.reasoning"), value: request.reasoningTokens ?? 0 },
           { label: t("usageAnalytics.shared.stats.image"), value: request.imageTokens ?? 0 },
+          { label: t("usageAnalytics.shared.stats.audio"), value: request.audioTokens ?? 0 },
           { label: t("usageAnalytics.shared.stats.memory"), value: request.memoryTokens ?? 0 },
           { label: t("usageAnalytics.shared.stats.summary"), value: request.summaryTokens ?? 0 },
         ];

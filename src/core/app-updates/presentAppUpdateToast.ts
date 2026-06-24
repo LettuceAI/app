@@ -1,5 +1,6 @@
 import { toast } from "../../ui/components/toast";
 import { setTooltipSeen } from "../storage/appState";
+import { openExternalUrl } from "../utils/openExternal";
 import type { AppUpdateInfo } from "./checkForAppUpdate";
 
 type UpdateToastLabels = {
@@ -8,15 +9,6 @@ type UpdateToastLabels = {
   viewLabel: string;
   laterLabel: string;
 };
-
-async function openExternalUrl(url: string) {
-  try {
-    const { openUrl } = await import("@tauri-apps/plugin-opener");
-    await openUrl(url);
-  } catch {
-    window.open(url, "_blank");
-  }
-}
 
 export function presentAppUpdateToast(
   update: AppUpdateInfo,

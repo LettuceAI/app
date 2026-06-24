@@ -69,7 +69,6 @@ type EditCharacterState = {
   newSceneDirection: string;
   newSceneBackgroundImagePath: string;
   selectedModelId: string | null;
-  selectedFallbackModelId: string | null;
   systemPromptTemplateId: string | null;
   companionPromptTemplateId: string | null;
   groupChatPromptTemplateId: string | null;
@@ -139,7 +138,6 @@ const initialState: EditCharacterState = {
   newSceneDirection: "",
   newSceneBackgroundImagePath: "",
   selectedModelId: null,
-  selectedFallbackModelId: null,
   systemPromptTemplateId: null,
   companionPromptTemplateId: null,
   groupChatPromptTemplateId: null,
@@ -218,7 +216,6 @@ export function useEditCharacterForm(characterId: string | undefined) {
     defaultSceneId: string | null;
     defaultChatTemplateId: string | null;
     selectedModelId: string | null;
-    selectedFallbackModelId: string | null;
     systemPromptTemplateId: string | null;
     companionPromptTemplateId: string | null;
     groupChatPromptTemplateId: string | null;
@@ -373,7 +370,6 @@ export function useEditCharacterForm(characterId: string | undefined) {
         defaultSceneId: character.defaultSceneId || null,
         defaultChatTemplateId: character.defaultChatTemplateId || null,
         selectedModelId: character.defaultModelId || null,
-        selectedFallbackModelId: character.fallbackModelId || null,
         systemPromptTemplateId: character.promptTemplateId || null,
         companionPromptTemplateId: companion?.prompting?.promptTemplateId ?? null,
         groupChatPromptTemplateId: character.groupChatPromptTemplateId || null,
@@ -424,7 +420,6 @@ export function useEditCharacterForm(characterId: string | undefined) {
         defaultSceneId: character.defaultSceneId || null,
         defaultChatTemplateId: character.defaultChatTemplateId || null,
         selectedModelId: character.defaultModelId || null,
-        selectedFallbackModelId: character.fallbackModelId || null,
         systemPromptTemplateId: character.promptTemplateId || null,
         companionPromptTemplateId: companion?.prompting?.promptTemplateId ?? null,
         groupChatPromptTemplateId: character.groupChatPromptTemplateId || null,
@@ -631,7 +626,6 @@ export function useEditCharacterForm(characterId: string | undefined) {
         defaultSceneId: state.defaultSceneId,
         defaultChatTemplateId: state.defaultChatTemplateId,
         defaultModelId: state.selectedModelId,
-        fallbackModelId: state.selectedFallbackModelId,
         promptTemplateId: state.systemPromptTemplateId,
         groupChatPromptTemplateId: state.groupChatPromptTemplateId,
         groupChatRoleplayPromptTemplateId: state.groupChatRoleplayPromptTemplateId,
@@ -695,7 +689,6 @@ export function useEditCharacterForm(characterId: string | undefined) {
         defaultSceneId: state.defaultSceneId,
         defaultChatTemplateId: state.defaultChatTemplateId,
         selectedModelId: state.selectedModelId,
-        selectedFallbackModelId: state.selectedFallbackModelId,
         systemPromptTemplateId: state.systemPromptTemplateId,
         companionPromptTemplateId: state.companionPromptTemplateId,
         groupChatPromptTemplateId: state.groupChatPromptTemplateId,
@@ -913,7 +906,6 @@ export function useEditCharacterForm(characterId: string | undefined) {
       scenes: JSON.parse(initial.scenes) as Scene[],
       defaultSceneId: initial.defaultSceneId,
       selectedModelId: initial.selectedModelId,
-      selectedFallbackModelId: initial.selectedFallbackModelId,
       systemPromptTemplateId: initial.systemPromptTemplateId,
       companionPromptTemplateId: initial.companionPromptTemplateId,
       groupChatPromptTemplateId: initial.groupChatPromptTemplateId,
@@ -990,7 +982,6 @@ export function useEditCharacterForm(characterId: string | undefined) {
           state.defaultSceneId !== initial.defaultSceneId ||
           state.defaultChatTemplateId !== initial.defaultChatTemplateId ||
           state.selectedModelId !== initial.selectedModelId ||
-          state.selectedFallbackModelId !== initial.selectedFallbackModelId ||
           state.systemPromptTemplateId !== initial.systemPromptTemplateId ||
           state.companionPromptTemplateId !== initial.companionPromptTemplateId ||
           state.groupChatPromptTemplateId !== initial.groupChatPromptTemplateId ||

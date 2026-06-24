@@ -27,6 +27,8 @@ import {
   FolderOpen,
   Heart,
   Trash2,
+  Users,
+  Drama,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useEditCharacterForm } from "./hooks/useEditCharacterForm";
@@ -49,6 +51,11 @@ import { getProviderIcon } from "../../../core/utils/providerIcons";
 import { useI18n } from "../../../core/i18n/context";
 import type { CharacterFileFormat } from "../../../core/storage/characterTransfer";
 import { convertFilePathToDataUrl } from "../../../core/storage/images";
+import {
+  insertSceneImageToken,
+  storeSceneImageFromFile,
+  storeSceneImageFromFilePath,
+} from "../../../core/scene/inlineImages";
 import {
   buildBackgroundLibrarySelectionKey,
   type BackgroundLibrarySelectionPayload,
@@ -201,14 +208,14 @@ export function EditCharacterPage() {
   const [soulDraft, setSoulDraft] = React.useState<Partial<import("../../../core/storage/schemas").CompanionConfig> | null>(null);
   const [soulDirection, setSoulDirection] = React.useState("");
   const [showModelMenu, setShowModelMenu] = React.useState(false);
-  const [showFallbackModelMenu, setShowFallbackModelMenu] = React.useState(false);
   const [showVoiceMenu, setShowVoiceMenu] = React.useState(false);
   const [voiceSearchQuery, setVoiceSearchQuery] = React.useState("");
   const [exportMenuOpen, setExportMenuOpen] = React.useState(false);
   const [recalculatingGradient, setRecalculatingGradient] = React.useState(false);
-  const [sceneBackgroundLibraryTarget, setSceneBackgroundLibraryTarget] = React.useState<
-    "new" | "edit" | null
-  >(null);
+  const sceneContentRef = React.useRef<HTMLTextAreaElement | null>(null);
+  const sceneInlineImageInputRef = React.useRef<HTMLInputElement | null>(null);
+  const sceneNavRestoredRef = React.useRef(false);
+  const EDIT_CHARACTER_SCENE_DRAFT_KEY = "edit-character-scene-draft";
   const tabsId = React.useId();
   const tabPanelId = `${tabsId}-panel`;
   const characterTabId = `${tabsId}-tab-character`;
@@ -216,6 +223,7 @@ export function EditCharacterPage() {
   const settingsTabId = `${tabsId}-tab-settings`;
   const returnPath = `${location.pathname}${location.search}`;
   const sceneBackgroundLibraryReturnPath = `${returnPath}:scene-background`;
+  const sceneInlineImageLibraryReturnPath = `${returnPath}:scene-inline-image`;
 
   const {
     loading,
@@ -248,7 +256,6 @@ export function EditCharacterPage() {
     newSceneDirection,
     newSceneBackgroundImagePath,
     selectedModelId,
-    selectedFallbackModelId,
     groupChatPromptTemplateId,
     groupChatRoleplayPromptTemplateId,
     activeLorebookIds,
@@ -421,6 +428,85 @@ export function EditCharacterPage() {
     [editingSceneId, setFields],
   );
 
+  const handleInlineImageUpload = React.useCallback(
+    async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      const input = event.target;
+      if (!file) return;
+      const el = sceneContentRef.current;
+      const cursor = el?.selectionStart ?? el?.value.length ?? 0;
+      const current = el?.value ?? "";
+      try {
+        const stored = await storeSceneImageFromFile(file);
+        if (!stored) return;
+        const { content, nextCursor } = insertSceneImageToken(
+          current,
+          cursor,
+          stored.imageId,
+          stored.ext,
+        );
+        setFields(
+          editingSceneId !== null
+            ? { editingSceneContent: content }
+            : { newSceneContent: content },
+        );
+        requestAnimationFrame(() => {
+          const target = sceneContentRef.current;
+          if (target) {
+            target.focus();
+            target.setSelectionRange(nextCursor, nextCursor);
+          }
+        });
+      } catch (error) {
+        console.warn("EditCharacter: failed to store inline scene image", error);
+      } finally {
+        input.value = "";
+      }
+    },
+    [editingSceneId, setFields],
+  );
+
+  const buildSceneDraft = (extra: Record<string, unknown>) => ({
+    characterId,
+    editingSceneId,
+    editingSceneContent,
+    editingSceneDirection,
+    editingSceneBackgroundImagePath,
+    newSceneContent,
+    newSceneDirection,
+    newSceneBackgroundImagePath,
+    newSceneEditorOpen,
+    ...extra,
+  });
+
+  const persistSceneDraft = (extra: Record<string, unknown>) => {
+    sceneNavRestoredRef.current = false;
+    try {
+      sessionStorage.setItem(
+        EDIT_CHARACTER_SCENE_DRAFT_KEY,
+        JSON.stringify(buildSceneDraft(extra)),
+      );
+    } catch (error) {
+      console.error("Failed to persist scene editor draft:", error);
+    }
+  };
+
+  const handleChooseInlineImageFromLibrary = () => {
+    const el = sceneContentRef.current;
+    const cursor = el?.selectionStart ?? el?.value.length ?? 0;
+    persistSceneDraft({
+      inlineImageTarget: editingSceneId !== null ? "edit" : "new",
+      inlineImageCursor: cursor,
+    });
+    navigate("/library/images/pick", {
+      state: {
+        returnPath,
+        selectionStorageKey: sceneInlineImageLibraryReturnPath,
+        selectionKind: "background",
+      },
+    });
+  };
+
   const handleExportFormat = React.useCallback(
     async (format: CharacterFileFormat) => {
       await handleExport(format);
@@ -557,40 +643,106 @@ export function EditCharacterPage() {
   }, [loading, returnPath, setFields]);
 
   React.useEffect(() => {
-    if (loading) return;
+    if (loading || sceneNavRestoredRef.current) return;
 
-    const storageKey = buildBackgroundLibrarySelectionKey(sceneBackgroundLibraryReturnPath);
-    const rawSelection = sessionStorage.getItem(storageKey);
-    if (!rawSelection) return;
+    const draftRaw = sessionStorage.getItem(EDIT_CHARACTER_SCENE_DRAFT_KEY);
+    const bgKey = buildBackgroundLibrarySelectionKey(sceneBackgroundLibraryReturnPath);
+    const inlineKey = buildBackgroundLibrarySelectionKey(sceneInlineImageLibraryReturnPath);
+    const bgRaw = sessionStorage.getItem(bgKey);
+    const inlineRaw = sessionStorage.getItem(inlineKey);
 
-    sessionStorage.removeItem(storageKey);
+    if (!draftRaw && !bgRaw && !inlineRaw) return;
+    sceneNavRestoredRef.current = true;
 
-    let parsed: BackgroundLibrarySelectionPayload | null = null;
-    try {
-      parsed = JSON.parse(rawSelection) as BackgroundLibrarySelectionPayload;
-    } catch (error) {
-      console.error("Failed to parse scene background library selection:", error);
-      return;
+    sessionStorage.removeItem(EDIT_CHARACTER_SCENE_DRAFT_KEY);
+    sessionStorage.removeItem(bgKey);
+    sessionStorage.removeItem(inlineKey);
+
+    let draft: any = null;
+    if (draftRaw) {
+      try {
+        draft = JSON.parse(draftRaw);
+      } catch (error) {
+        console.error("Failed to parse scene editor draft:", error);
+      }
     }
+    if (draft && draft.characterId && draft.characterId !== characterId) return;
 
-    if (!parsed?.filePath) return;
+    const parseSelection = (raw: string | null): BackgroundLibrarySelectionPayload | null => {
+      if (!raw) return null;
+      try {
+        const parsed = JSON.parse(raw) as BackgroundLibrarySelectionPayload;
+        return parsed?.filePath ? parsed : null;
+      } catch {
+        return null;
+      }
+    };
+    const inlineSel = parseSelection(inlineRaw);
+    const bgSel = parseSelection(bgRaw);
 
     let cancelled = false;
     void (async () => {
-      const dataUrl = await convertFilePathToDataUrl(parsed.filePath);
-      if (!dataUrl || cancelled) return;
-      setFields(
-        sceneBackgroundLibraryTarget === "edit"
-          ? { editingSceneBackgroundImagePath: dataUrl }
-          : { newSceneBackgroundImagePath: dataUrl },
-      );
-      setSceneBackgroundLibraryTarget(null);
+      const next: Parameters<typeof setFields>[0] = {};
+      if (draft) {
+        next.editingSceneId = draft.editingSceneId ?? null;
+        next.editingSceneContent = draft.editingSceneContent ?? "";
+        next.editingSceneDirection = draft.editingSceneDirection ?? "";
+        next.editingSceneBackgroundImagePath = draft.editingSceneBackgroundImagePath ?? "";
+        next.newSceneContent = draft.newSceneContent ?? "";
+        next.newSceneDirection = draft.newSceneDirection ?? "";
+        next.newSceneBackgroundImagePath = draft.newSceneBackgroundImagePath ?? "";
+      }
+      const editing = (draft ? draft.editingSceneId : editingSceneId) !== null;
+
+      if (inlineSel) {
+        const stored = await storeSceneImageFromFilePath(inlineSel.filePath);
+        if (stored && !cancelled) {
+          const target = (draft?.inlineImageTarget ?? (editing ? "edit" : "new")) as "edit" | "new";
+          const cursor = typeof draft?.inlineImageCursor === "number" ? draft.inlineImageCursor : 0;
+          const baseContent =
+            target === "edit"
+              ? next.editingSceneContent ?? editingSceneContent
+              : next.newSceneContent ?? newSceneContent;
+          const { content } = insertSceneImageToken(
+            baseContent,
+            cursor,
+            stored.imageId,
+            stored.ext,
+          );
+          if (target === "edit") next.editingSceneContent = content;
+          else next.newSceneContent = content;
+        }
+      }
+
+      if (bgSel) {
+        const dataUrl = await convertFilePathToDataUrl(bgSel.filePath);
+        if (dataUrl && !cancelled) {
+          const bgTarget = (draft?.sceneBackgroundTarget ?? (editing ? "edit" : "new")) as
+            | "edit"
+            | "new";
+          if (bgTarget === "edit") next.editingSceneBackgroundImagePath = dataUrl;
+          else next.newSceneBackgroundImagePath = dataUrl;
+        }
+      }
+
+      if (cancelled) return;
+      if (Object.keys(next).length > 0) setFields(next);
+      if (draft?.newSceneEditorOpen) setNewSceneEditorOpen(true);
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [loading, sceneBackgroundLibraryReturnPath, sceneBackgroundLibraryTarget, setFields]);
+  }, [
+    loading,
+    characterId,
+    sceneBackgroundLibraryReturnPath,
+    sceneInlineImageLibraryReturnPath,
+    editingSceneId,
+    editingSceneContent,
+    newSceneContent,
+    setFields,
+  ]);
 
   const handleChooseBackgroundFromLibrary = React.useCallback(() => {
     navigate("/library/images/pick", {
@@ -601,19 +753,16 @@ export function EditCharacterPage() {
     });
   }, [navigate, returnPath]);
 
-  const handleChooseSceneBackgroundFromLibrary = React.useCallback(
-    (target: "new" | "edit") => {
-      setSceneBackgroundLibraryTarget(target);
-      navigate("/library/images/pick", {
-        state: {
-          returnPath,
-          selectionStorageKey: sceneBackgroundLibraryReturnPath,
-          selectionKind: "background",
-        },
-      });
-    },
-    [navigate, sceneBackgroundLibraryReturnPath],
-  );
+  const handleChooseSceneBackgroundFromLibrary = (target: "new" | "edit") => {
+    persistSceneDraft({ sceneBackgroundTarget: target });
+    navigate("/library/images/pick", {
+      state: {
+        returnPath,
+        selectionStorageKey: sceneBackgroundLibraryReturnPath,
+        selectionKind: "background",
+      },
+    });
+  };
 
   const loadVoices = React.useCallback(async () => {
     setLoadingVoices(true);
@@ -1775,102 +1924,6 @@ export function EditCharacterPage() {
           {activeTab === "settings" && (
             <>
               <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                {/* Model Selection Section */}
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2">
-                    <div className="rounded-lg border border-secondary/30 bg-secondary/10 p-1.5">
-                      <Cpu className="h-4 w-4 text-secondary" />
-                    </div>
-                    <h3 className="text-sm font-semibold text-fg">{t("characters.edit.defaultModelTitle")}</h3>
-                    <span className="ml-auto text-xs text-fg/40">{t("characters.edit.optionalSuffix")}</span>
-                  </div>
-
-                  {loadingModels ? (
-                    <div className="flex items-center gap-2 rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3">
-                      <Loader2 className="h-4 w-4 animate-spin text-fg/50" />
-                      <span className="text-sm text-fg/50">{t("characters.edit.loadingModels")}</span>
-                    </div>
-                  ) : models.length > 0 ? (
-                    <button
-                      type="button"
-                      onClick={() => setShowModelMenu(true)}
-                      className="flex w-full items-center justify-between rounded-xl border border-fg/10 bg-surface-el/20 px-3.5 py-3 text-left transition hover:bg-surface-el/30 focus:border-fg/25 focus:outline-none"
-                    >
-                      <div className="flex items-center gap-2">
-                        {selectedModelId ? (
-                          getProviderIcon(
-                            models.find((m) => m.id === selectedModelId)?.providerId || "",
-                          )
-                        ) : (
-                          <Cpu className="h-5 w-5 text-fg/40" />
-                        )}
-                        <span className={`text-sm ${selectedModelId ? "text-fg" : "text-fg/50"}`}>
-                          {selectedModelId
-                            ? models.find((m) => m.id === selectedModelId)?.displayName ||
-                              t("characters.edit.selectedModelFallback")
-                            : t("characters.edit.useGlobalDefaultModel")}
-                        </span>
-                      </div>
-                      <ChevronDown className="h-4 w-4 text-fg/40" />
-                    </button>
-                  ) : (
-                    <div className="rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3">
-                      <p className="text-sm text-fg/50">{t("characters.edit.noModelsAvailable")}</p>
-                    </div>
-                  )}
-                  <p className="text-xs text-fg/50">
-                    {t("characters.edit.defaultModelHint")}
-                  </p>
-                </div>
-
-                {/* Fallback Model Section */}
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2">
-                    <div className="rounded-lg border border-info/30 bg-info/10 p-1.5">
-                      <Cpu className="h-4 w-4 text-info" />
-                    </div>
-                    <h3 className="text-sm font-semibold text-fg">{t("characters.edit.fallbackModelTitle")}</h3>
-                    <span className="ml-auto text-xs text-fg/40">{t("characters.edit.optionalSuffix")}</span>
-                  </div>
-
-                  {loadingModels ? (
-                    <div className="flex items-center gap-2 rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3">
-                      <Loader2 className="h-4 w-4 animate-spin text-fg/50" />
-                      <span className="text-sm text-fg/50">{t("characters.edit.loadingModels")}</span>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => setShowFallbackModelMenu(true)}
-                      className="flex w-full items-center justify-between rounded-xl border border-fg/10 bg-surface-el/20 px-3.5 py-3 text-left transition hover:bg-surface-el/30 focus:border-fg/25 focus:outline-none"
-                    >
-                      <div className="flex items-center gap-2">
-                        {selectedFallbackModelId ? (
-                          getProviderIcon(
-                            models.find((m) => m.id === selectedFallbackModelId)?.providerId || "",
-                          )
-                        ) : (
-                          <Cpu className="h-5 w-5 text-fg/40" />
-                        )}
-                        <span
-                          className={`text-sm ${selectedFallbackModelId ? "text-fg" : "text-fg/50"}`}
-                        >
-                          {selectedFallbackModelId
-                            ? models.find((m) => m.id === selectedFallbackModelId)?.displayName ||
-                              t("characters.edit.selectedFallbackFallback")
-                            : t("characters.edit.fallbackOff")}
-                        </span>
-                      </div>
-                      <ChevronDown className="h-4 w-4 text-fg/40" />
-                    </button>
-                  )}
-                  <p className="text-xs text-fg/50">
-                    {t("characters.edit.fallbackModelHint")}
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
                 <div className="space-y-4">
                   {/* Voice Selection */}
                   <div className="space-y-3">
@@ -2010,17 +2063,71 @@ export function EditCharacterPage() {
                 </div>
 
                 <div className="space-y-4">
-                  {/* Prompt Template Section */}
+                  {/* Default Model */}
                   <div className="space-y-3">
-                  <div className="flex items-center gap-2">
-                    <div className="rounded-lg border border-info/30 bg-info/10 p-1.5">
-                      <BookOpen className="h-4 w-4 text-info" />
+                    <div className="flex items-center gap-2">
+                      <div className="rounded-lg border border-secondary/30 bg-secondary/10 p-1.5">
+                        <Cpu className="h-4 w-4 text-secondary" />
+                      </div>
+                      <h3 className="text-sm font-semibold text-fg">{t("characters.edit.defaultModelTitle")}</h3>
+                      <span className="ml-auto text-xs text-fg/40">{t("characters.edit.optionalSuffix")}</span>
                     </div>
-                    <h3 className="text-sm font-semibold text-fg">
-                      {mode === "companion"
-                        ? t("characters.edit.companionPromptTitle")
-                        : t("characters.edit.systemPromptTitle")}
-                    </h3>
+
+                    {loadingModels ? (
+                      <div className="flex items-center gap-2 rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3">
+                        <Loader2 className="h-4 w-4 animate-spin text-fg/50" />
+                        <span className="text-sm text-fg/50">{t("characters.edit.loadingModels")}</span>
+                      </div>
+                    ) : models.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => setShowModelMenu(true)}
+                        className="flex w-full items-center justify-between rounded-xl border border-fg/10 bg-surface-el/20 px-3.5 py-3 text-left transition hover:bg-surface-el/30 focus:border-fg/25 focus:outline-none"
+                      >
+                        <div className="flex items-center gap-2">
+                          {selectedModelId ? (
+                            getProviderIcon(
+                              models.find((m) => m.id === selectedModelId)?.providerId || "",
+                            )
+                          ) : (
+                            <Cpu className="h-5 w-5 text-fg/40" />
+                          )}
+                          <span className={`text-sm ${selectedModelId ? "text-fg" : "text-fg/50"}`}>
+                            {selectedModelId
+                              ? models.find((m) => m.id === selectedModelId)?.displayName ||
+                                t("characters.edit.selectedModelFallback")
+                              : t("characters.edit.useGlobalDefaultModel")}
+                          </span>
+                        </div>
+                        <ChevronDown className="h-4 w-4 text-fg/40" />
+                      </button>
+                    ) : (
+                      <div className="rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3">
+                        <p className="text-sm text-fg/50">{t("characters.edit.noModelsAvailable")}</p>
+                      </div>
+                    )}
+                    <p className="text-xs text-fg/50">
+                      {t("characters.edit.defaultModelHint")}
+                    </p>
+                  </div>
+
+                  <ActiveLorebooksSelector
+                    selectedIds={activeLorebookIds}
+                    onChange={(ids) => setFields({ activeLorebookIds: ids })}
+                    disabled={saving}
+                  />
+                </div>
+              </div>
+
+              {/* Prompt Templates */}
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                {/* System Prompt */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <div className="rounded-lg border border-secondary/30 bg-secondary/10 p-1.5">
+                      <MessageSquare className="h-4 w-4 text-secondary" />
+                    </div>
+                    <h3 className="text-sm font-semibold text-fg">{t("characters.edit.systemPromptTitle")}</h3>
                     <span className="ml-auto text-xs text-fg/40">{t("characters.edit.optionalSuffix")}</span>
                   </div>
 
@@ -2031,26 +2138,14 @@ export function EditCharacterPage() {
                     </div>
                   ) : promptTemplates.length > 0 ? (
                     <select
-                      value={
-                        mode === "companion"
-                          ? companionPromptTemplateId || ""
-                          : systemPromptTemplateId || ""
-                      }
+                      value={systemPromptTemplateId || ""}
                       onChange={(e) =>
-                        setFields(
-                          mode === "companion"
-                            ? { companionPromptTemplateId: e.target.value || null }
-                            : { systemPromptTemplateId: e.target.value || null },
-                        )
+                        setFields({ systemPromptTemplateId: e.target.value || null })
                       }
                       className="w-full appearance-none rounded-xl border border-fg/10 bg-surface-el/20 px-3.5 py-3 text-sm text-fg transition focus:border-fg/25 focus:outline-none"
                     >
-                      <option value="">
-                        {mode === "companion"
-                          ? t("characters.edit.useDefaultCompanionPrompt")
-                          : t("characters.edit.useDefaultSystemPrompt")}
-                      </option>
-                      {(mode === "companion" ? companionPromptTemplates : directPromptTemplates).map((template) => (
+                      <option value="">{t("characters.edit.useDefaultSystemPrompt")}</option>
+                      {directPromptTemplates.map((template) => (
                         <option key={template.id} value={template.id}>
                           {template.name}
                         </option>
@@ -2059,30 +2154,67 @@ export function EditCharacterPage() {
                   ) : (
                     <div className="rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3">
                       <p className="text-sm text-fg/50">{t("characters.edit.usingAppDefault")}</p>
-                      <p className="mt-1 text-xs text-fg/40">
-                        {mode === "companion"
-                          ? t("characters.edit.noCompanionTemplatesHint")
-                          : t("characters.edit.noDirectTemplatesHint")}
-                      </p>
+                      <p className="mt-1 text-xs text-fg/40">{t("characters.edit.noDirectTemplatesHint")}</p>
                     </div>
                   )}
-                  <p className="text-xs text-fg/50">
-                    {mode === "companion"
-                      ? t("characters.edit.companionPromptStoredHint")
-                      : t("characters.edit.systemPromptOverrideHint")}
-                  </p>
+                  <p className="text-xs text-fg/50">{t("characters.edit.systemPromptOverrideHint")}</p>
                 </div>
 
-                <ActiveLorebooksSelector
-                  selectedIds={activeLorebookIds}
-                  onChange={(ids) => setFields({ activeLorebookIds: ids })}
-                  disabled={saving}
-                />
+                {/* Companion Prompt */}
+                <div
+                  className={cn(
+                    "space-y-3",
+                    mode !== "companion" && "pointer-events-none opacity-50",
+                  )}
+                  aria-disabled={mode !== "companion"}
+                >
+                  <div className="flex items-center gap-2">
+                    <div className="rounded-lg border border-danger/30 bg-danger/10 p-1.5">
+                      <Heart className="h-4 w-4 text-danger" />
+                    </div>
+                    <h3 className="text-sm font-semibold text-fg">{t("characters.edit.companionPromptTitle")}</h3>
+                    <span className="ml-auto text-xs text-fg/40">
+                      {mode === "companion"
+                        ? t("characters.edit.optionalSuffix")
+                        : t("characters.edit.companionModeRequiredHint")}
+                    </span>
+                  </div>
 
+                  {loadingTemplates ? (
+                    <div className="flex items-center gap-2 rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3">
+                      <Loader2 className="h-4 w-4 animate-spin text-fg/50" />
+                      <span className="text-sm text-fg/50">{t("characters.edit.loadingTemplates")}</span>
+                    </div>
+                  ) : promptTemplates.length > 0 ? (
+                    <select
+                      value={companionPromptTemplateId || ""}
+                      disabled={mode !== "companion"}
+                      onChange={(e) =>
+                        setFields({ companionPromptTemplateId: e.target.value || null })
+                      }
+                      className="w-full appearance-none rounded-xl border border-fg/10 bg-surface-el/20 px-3.5 py-3 text-sm text-fg transition focus:border-fg/25 focus:outline-none"
+                    >
+                      <option value="">{t("characters.edit.useDefaultCompanionPrompt")}</option>
+                      {companionPromptTemplates.map((template) => (
+                        <option key={template.id} value={template.id}>
+                          {template.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="rounded-xl border border-fg/10 bg-surface-el/20 px-4 py-3">
+                      <p className="text-sm text-fg/50">{t("characters.edit.usingAppDefault")}</p>
+                      <p className="mt-1 text-xs text-fg/40">{t("characters.edit.noCompanionTemplatesHint")}</p>
+                    </div>
+                  )}
+                  <p className="text-xs text-fg/50">{t("characters.edit.companionPromptStoredHint")}</p>
+                </div>
+
+                {/* Group Chat Prompt (Conversation) */}
                 <div className="space-y-3">
                   <div className="flex items-center gap-2">
                     <div className="rounded-lg border border-info/30 bg-info/10 p-1.5">
-                      <BookOpen className="h-4 w-4 text-info" />
+                      <Users className="h-4 w-4 text-info" />
                     </div>
                     <h3 className="text-sm font-semibold text-fg">{t("characters.edit.groupChatPromptTitle")}</h3>
                     <span className="ml-auto text-xs text-fg/40">{t("characters.edit.conversationSuffix")}</span>
@@ -2121,10 +2253,11 @@ export function EditCharacterPage() {
                   </p>
                 </div>
 
+                {/* Group Chat Prompt (Roleplay) */}
                 <div className="space-y-3">
                   <div className="flex items-center gap-2">
-                    <div className="rounded-lg border border-info/30 bg-info/10 p-1.5">
-                      <BookOpen className="h-4 w-4 text-info" />
+                    <div className="rounded-lg border border-warning/30 bg-warning/10 p-1.5">
+                      <Drama className="h-4 w-4 text-warning" />
                     </div>
                     <h3 className="text-sm font-semibold text-fg">{t("characters.edit.groupChatPromptTitle")}</h3>
                     <span className="ml-auto text-xs text-fg/40">{t("characters.edit.roleplaySuffix")}</span>
@@ -2164,7 +2297,6 @@ export function EditCharacterPage() {
                     {t("characters.edit.groupRoleplayOverrideHint")}
                   </p>
                 </div>
-              </div>
               </div>
             </>
           )}
@@ -2284,6 +2416,7 @@ export function EditCharacterPage() {
                 <div className="space-y-2">
                   <div className="text-sm font-medium text-fg/80">{t("characters.edit.sceneLabel")}</div>
                   <textarea
+                    ref={sceneContentRef}
                     value={editingSceneId !== null ? editingSceneContent : newSceneContent}
                     onChange={(e) =>
                       setFields(
@@ -2310,6 +2443,23 @@ export function EditCharacterPage() {
                       <code className="text-accent/80">{"{{user}}"}</code>
                     </span>
                   </div>
+                  <input
+                    ref={sceneInlineImageInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(event) => {
+                      void handleInlineImageUpload(event);
+                    }}
+                  />
+                  <InlineImageToolbar
+                    addLabel={t("sceneImage.add")}
+                    uploadLabel={t("sceneImage.upload")}
+                    libraryLabel={t("sceneImage.fromLibrary")}
+                    hint={t("sceneImage.hint")}
+                    onUpload={() => sceneInlineImageInputRef.current?.click()}
+                    onLibrary={handleChooseInlineImageFromLibrary}
+                  />
                 </div>
 
                 <div className="space-y-2">
@@ -2473,11 +2623,7 @@ export function EditCharacterPage() {
         selectedModelIds={selectedModelId ? [selectedModelId] : []}
         searchPlaceholder={t("characters.edit.searchModelsPlaceholder")}
         onSelectModel={(modelId) => {
-          setFields({
-            selectedModelId: modelId,
-            selectedFallbackModelId:
-              selectedFallbackModelId === modelId ? null : selectedFallbackModelId,
-          });
+          setFields({ selectedModelId: modelId });
           setShowModelMenu(false);
         }}
         clearOption={{
@@ -2487,28 +2633,6 @@ export function EditCharacterPage() {
           onClick: () => {
             setFields({ selectedModelId: null });
             setShowModelMenu(false);
-          },
-        }}
-      />
-
-      <ModelSelectionBottomMenu
-        isOpen={showFallbackModelMenu}
-        onClose={() => setShowFallbackModelMenu(false)}
-        title={t("characters.edit.selectFallbackModelTitle")}
-        models={models.filter((m) => m.id !== selectedModelId)}
-        selectedModelIds={selectedFallbackModelId ? [selectedFallbackModelId] : []}
-        searchPlaceholder={t("characters.edit.searchModelsPlaceholder")}
-        onSelectModel={(modelId) => {
-          setFields({ selectedFallbackModelId: modelId });
-          setShowFallbackModelMenu(false);
-        }}
-        clearOption={{
-          label: t("characters.edit.fallbackOff"),
-          icon: Cpu,
-          selected: !selectedFallbackModelId,
-          onClick: () => {
-            setFields({ selectedFallbackModelId: null });
-            setShowFallbackModelMenu(false);
           },
         }}
       />
@@ -2689,6 +2813,50 @@ function SceneBackgroundCard({
         className={cn("w-full object-cover", compact ? "h-24" : "h-32")}
       />
       <div className="border-t border-fg/10 px-4 py-3 text-sm text-fg/60">{label}</div>
+    </div>
+  );
+}
+
+function InlineImageToolbar({
+  addLabel,
+  uploadLabel,
+  libraryLabel,
+  hint,
+  onUpload,
+  onLibrary,
+}: {
+  addLabel: string;
+  uploadLabel: string;
+  libraryLabel: string;
+  hint: string;
+  onUpload: () => void;
+  onLibrary: () => void;
+}) {
+  return (
+    <div className="rounded-xl border border-fg/10 bg-fg/5 px-3 py-2.5">
+      <div className="flex items-center gap-2">
+        <Image className="h-3.5 w-3.5 text-fg/50" />
+        <span className="text-xs font-medium text-fg/70">{addLabel}</span>
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onLibrary}
+            className="flex items-center gap-1.5 rounded-lg border border-fg/10 bg-fg/5 px-2.5 py-1.5 text-[11px] font-medium text-fg/70 transition active:scale-95 active:bg-fg/10"
+          >
+            <FolderOpen className="h-3.5 w-3.5" />
+            {libraryLabel}
+          </button>
+          <button
+            type="button"
+            onClick={onUpload}
+            className="flex items-center gap-1.5 rounded-lg border border-accent/30 bg-accent/10 px-2.5 py-1.5 text-[11px] font-medium text-accent/90 transition active:scale-95 active:bg-accent/20"
+          >
+            <Upload className="h-3.5 w-3.5" />
+            {uploadLabel}
+          </button>
+        </div>
+      </div>
+      <p className="mt-1.5 text-[10px] text-fg/40">{hint}</p>
     </div>
   );
 }

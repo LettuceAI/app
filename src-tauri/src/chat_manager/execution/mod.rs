@@ -900,11 +900,9 @@ pub(crate) fn prepare_default_sampling_request(
     )
 }
 
-mod fallback;
+mod model_resolution;
 
-pub(crate) use fallback::{
-    build_model_attempts, emit_fallback_retry_toast, find_model_with_credential,
-};
+pub(crate) use model_resolution::find_model_with_credential;
 
 mod provider_fields;
 pub(crate) use provider_fields::{build_provider_extra_fields, RequestSettings};

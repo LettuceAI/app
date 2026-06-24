@@ -19,7 +19,8 @@ fn make_character() -> Character {
         scenes: vec![],
         default_scene_id: None,
         default_model_id: None,
-        fallback_model_id: None,
+        lora_name: None,
+        lora_strength: None,
         mode: "roleplay".into(),
         companion: None,
         memory_type: "manual".into(),
@@ -111,6 +112,8 @@ fn renders_simple_placeholders() {
         description: "Persona Bob".into(),
         avatar_path: None,
         design_description: None,
+        lora_name: None,
+        lora_strength: None,
         design_reference_image_ids: vec![],
         active_lorebook_ids: vec![],
         nickname: None,
@@ -181,7 +184,6 @@ fn renders_simple_placeholders() {
         attachments: vec![],
         reasoning: None,
         model_id: None,
-        fallback_from_model_id: None,
     });
     let rendered2_edited = render_with_context_internal(
         None,

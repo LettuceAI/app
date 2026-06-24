@@ -177,19 +177,27 @@ export function useSessionAttachments(
       for (const att of toLoad) {
         if (!att.storagePath) continue;
 
-        invoke<string>("storage_get_session_attachment_path", { storagePath: att.storagePath })
-          .then((filePath) => {
+        const isAudio = att.mimeType?.startsWith("audio/") ?? false;
+        const loader = isAudio
+          ? invoke<string>("storage_load_session_attachment", {
+              storagePath: att.storagePath,
+            })
+          : invoke<string>("storage_get_session_attachment_path", {
+              storagePath: att.storagePath,
+            }).then((filePath) => withCacheBust(convertFileSrc(filePath), requestVersion));
+
+        loader
+          .then((resolvedData) => {
             if (cancelled || requestVersionRef.current !== requestVersion) {
               return;
             }
-            const assetUrl = withCacheBust(convertFileSrc(filePath), requestVersion);
             dataMapRef.current.set(att.id, {
-              data: assetUrl,
+              data: resolvedData,
               storagePath: att.storagePath ?? null,
             });
 
             setLoadedAttachments((prev) =>
-              prev.map((a) => (a.id === att.id ? { ...a, data: assetUrl } : a)),
+              prev.map((a) => (a.id === att.id ? { ...a, data: resolvedData } : a)),
             );
             trimCacheToLimit(dataMapRef.current, MAX_ATTACHMENT_CACHE_ENTRIES);
           })

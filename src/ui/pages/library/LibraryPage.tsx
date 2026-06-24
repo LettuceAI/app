@@ -22,6 +22,7 @@ import { NoModelMenu } from "../../components/CreateMenus/NoModelMenu";
 import { hasConfiguredModel } from "../../../core/storage/repo";
 import { LorebookAvatar } from "../../components/LorebookAvatar";
 import { ImageLibraryPanel } from "./ImageLibraryPage";
+import { AudioLibraryPanel } from "./AudioLibraryPanel";
 import {
   MessageCircle,
   Edit2,
@@ -46,7 +47,7 @@ import { listen } from "@tauri-apps/api/event";
 import { useI18n } from "../../../core/i18n/context";
 import { isRenderableImageUrl } from "../../../core/utils/image";
 
-type FilterOption = "All" | "Characters" | "Personas" | "Lorebooks" | "Images";
+type FilterOption = "All" | "Characters" | "Personas" | "Lorebooks" | "Images" | "Audio";
 type LibraryItem = (Character | Persona | Lorebook) & {
   itemType: "character" | "persona" | "lorebook";
 };
@@ -57,6 +58,7 @@ const FILTER_QUERY_VALUES: Record<FilterOption, string | null> = {
   Personas: "personas",
   Lorebooks: "lorebooks",
   Images: "images",
+  Audio: "audio",
 };
 
 function resolveLibraryFilter(search: string): FilterOption {
@@ -332,7 +334,7 @@ export function LibraryPage() {
       <main ref={mainRef} className="flex-1 overflow-y-auto px-4 pt-4">
         <div className="mb-4 flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-3">
           <div className="flex shrink-0 gap-2 overflow-x-auto pb-1 lg:pb-0 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {(["All", "Characters", "Personas", "Lorebooks", "Images"] as FilterOption[]).map(
+            {(["All", "Characters", "Personas", "Lorebooks", "Images", "Audio"] as FilterOption[]).map(
               (option) => {
                 const filterLabels: Record<FilterOption, string> = {
                   All: t("library.filters.all"),
@@ -340,6 +342,7 @@ export function LibraryPage() {
                   Personas: t("library.filters.personas"),
                   Lorebooks: t("library.filters.lorebooks"),
                   Images: t("library.filters.images"),
+                  Audio: t("library.filters.audio"),
                 };
 
                 return (
@@ -371,6 +374,8 @@ export function LibraryPage() {
             scrollContainerRef={mainRef}
             toolbarHost={isDesktop ? toolbarHost : null}
           />
+        ) : filter === "Audio" ? (
+          <AudioLibraryPanel />
         ) : loading ? (
           <LibraryGridSkeleton />
         ) : filteredItems.length === 0 ? (

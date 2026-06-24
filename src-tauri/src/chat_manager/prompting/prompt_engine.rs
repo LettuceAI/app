@@ -109,6 +109,162 @@ pub fn default_companion_soul_writer_prompt() -> String {
     join_entries(&default_companion_soul_writer_entries())
 }
 
+pub fn default_companion_growthcycle_prompt() -> String {
+    join_entries(&default_companion_growthcycle_entries())
+}
+
+pub fn default_companion_consolidation_prompt() -> String {
+    join_entries(&default_companion_consolidation_entries())
+}
+
+pub fn default_companion_consolidation_entries() -> Vec<SystemPromptEntry> {
+    fn system_entry(id: &str, name: &str, content: &str) -> SystemPromptEntry {
+        SystemPromptEntry {
+            id: id.to_string(),
+            name: name.to_string(),
+            role: PromptEntryRole::System,
+            content: content.to_string(),
+            enabled: true,
+            injection_position: PromptEntryPosition::Relative,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: true,
+            conditions: None,
+            prompt_entry_payload: None,
+        }
+    }
+
+    fn user_entry(id: &str, name: &str, content: &str) -> SystemPromptEntry {
+        SystemPromptEntry {
+            id: id.to_string(),
+            name: name.to_string(),
+            role: PromptEntryRole::User,
+            content: content.to_string(),
+            enabled: true,
+            injection_position: PromptEntryPosition::Relative,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: false,
+            conditions: None,
+            prompt_entry_payload: None,
+        }
+    }
+
+    vec![
+        system_entry(
+            "companion_consolidation_task",
+            "Task",
+            r#"You run Consolidation: a rare, deep pass over a companion's accumulated personality growth. The character has an authored core (essence and traits) plus a stack of smaller accumulated changes called growth. Your job is to decide, only when a clear and sustained pattern has formed across many of those changes, whether the character's CORE identity has genuinely shifted, and to fold redundant growth into a cleaner state.
+
+Most of the time the core does not move. A core change must reflect a long arc across multiple growth entries, never a single moment."#,
+        ),
+        system_entry(
+            "companion_consolidation_rules",
+            "Rules",
+            r#"RULES:
+- Only adjust essence or traits when several accumulated growth entries point the same direction over time. Evolve the core, never replace it: keep what is still true and add or revise only the part that genuinely changed.
+- Never invent traits that the accumulated growth does not support.
+- When revising an existing core overlay entry, put its id in supersedes.
+- In retire, list the ids of accumulated growth entries whose meaning is now absorbed into the core or has become stable/redundant, so they can be retired and the log stays small.
+- Backstory and history are never changed here.
+
+OUTPUT DISCIPLINE: call consolidate_soul exactly once. Both coreAdjustments and retire may be empty if nothing has consolidated. Do not write prose, JSON, or markdown outside the tool call."#,
+        ),
+        user_entry(
+            "companion_consolidation_payload",
+            "Payload",
+            r#"Companion: {{companion.name}}
+
+Authored core identity (the original essence and traits):
+{{authored_core}}
+
+Current core overlay (essence/traits changes already applied; revise one via supersedes):
+{{current_core}}
+
+Accumulated changeable growth (the evidence; reference ids in retire to fold them):
+{{accumulated_growth}}
+
+Decide whether the core has genuinely shifted, and which accumulated growth to retire."#,
+        ),
+    ]
+}
+
+pub fn default_companion_growthcycle_entries() -> Vec<SystemPromptEntry> {
+    fn system_entry(id: &str, name: &str, content: &str) -> SystemPromptEntry {
+        SystemPromptEntry {
+            id: id.to_string(),
+            name: name.to_string(),
+            role: PromptEntryRole::System,
+            content: content.to_string(),
+            enabled: true,
+            injection_position: PromptEntryPosition::Relative,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: true,
+            conditions: None,
+            prompt_entry_payload: None,
+        }
+    }
+
+    fn user_entry(id: &str, name: &str, content: &str) -> SystemPromptEntry {
+        SystemPromptEntry {
+            id: id.to_string(),
+            name: name.to_string(),
+            role: PromptEntryRole::User,
+            content: content.to_string(),
+            enabled: true,
+            injection_position: PromptEntryPosition::Relative,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: false,
+            conditions: None,
+            prompt_entry_payload: None,
+        }
+    }
+
+    vec![
+        system_entry(
+            "companion_growthcycle_task",
+            "Task",
+            r#"You run the Growthcycle: a second pass over a roleplay companion's freshly created memories that decides whether those memories should change the companion's evolving personality. You are given the companion's changeable personality categories with their current values, and the new memories from the latest exchange.
+
+For each category, decide whether the new memories justify an adjustment. Most turns change nothing — only record a change when a memory plainly supports it (for example, sharing that a new dish was enjoyed can add to Likes, but says nothing about Appearance). Never invent facts that are not present in the memories."#,
+        ),
+        system_entry(
+            "companion_growthcycle_rules",
+            "Rules",
+            r#"RULES:
+- Identity-core categories (essence, traits, backstory) are fixed and are never listed here. Never attempt to change them.
+- Phrase every value as a short additive clause describing the new or revised trait, written in third person about the character.
+- Use kind "add" for a new detail and "adjust" for revising an existing one.
+- When a new memory contradicts or updates an existing growth entry, use kind "adjust" and put that entry's id in supersedes so the old version is retired instead of stacked.
+- Cite the leading index of each supporting memory in sourceIndices.
+
+OUTPUT DISCIPLINE: call record_growth exactly once with an adjustments array. The array may be empty when nothing changed. Do not write prose, JSON, or markdown outside the tool call."#,
+        ),
+        user_entry(
+            "companion_growthcycle_payload",
+            "Payload",
+            r#"Companion: {{companion.name}}
+
+Changeable personality categories (use the bracketed key as category):
+{{changeable_categories}}
+
+Existing growth entries (to revise or replace one, set kind to adjust and list its id in supersedes):
+{{current_growth}}
+
+New memories from the latest exchange (cite their leading number in sourceIndices):
+{{new_memories}}
+
+Decide which categories, if any, the new memories should change."#,
+        ),
+    ]
+}
+
 pub fn default_creation_helper_system_prompt() -> String {
     join_entries(&default_creation_helper_system_entries())
 }
@@ -184,7 +340,7 @@ A Companion Soul IS NOT:
             r#"OUTPUT DISCIPLINE: you MUST author the Soul by issuing tool calls — never by writing prose, JSON, or markdown in plain text. Each call updates a section of the Soul; later calls overwrite earlier values for the same field. End with `done`. Do not include commentary outside tool calls.
 
 TOOLS — call in any order across one or more turns. Every field is OPTIONAL on a single call; you may split a section across multiple calls.
-- set_identity(essence?, traits?, backstory?, appearance?, goals?, likes?, voice?, relationalStyle?, vulnerabilities?, habits?, boundaries?) — text fields describing the durable identity.
+- set_identity(essence?, traits?, backstory?, appearance?, goals?, likes?, voice?, relationalStyle?, vulnerabilities?, fears?, habits?, boundaries?) — text fields describing the durable identity.
 - set_baseline_affect(warmth?, trust?, calm?, vulnerability?, longing?, hurt?, tension?, irritation?, affectionIntensity?, reassuranceNeed?) — floats in [0,1].
 - set_regulation_style(suppression?, volatility?, recoverySpeed?, conflictAvoidance?, reassuranceSeeking?, protestBehavior?, emotionalTransparency?, attachmentActivation?, pride?) — floats in [0,1].
 - set_relationship_defaults(closeness?, trust?, affection?, tension?) — floats in [0,1] describing the starting state with a NEW user.
@@ -203,6 +359,7 @@ TOOLS — call in any order across one or more turns. Every field is OPTIONAL on
 - voice (1–3 sentences): how they sound in close conversation — cadence, vocabulary register, what they do with silence. Not what they say, how they say it.
 - relationalStyle (2–4 sentences): how they attach, trust, comfort, tease, withdraw, and repair. Include their default move when distance opens up.
 - vulnerabilities (1–3 sentences): real soft spots. What hurts when poked. What they hide. What they fear being seen as.
+- fears (1–3 sentences): what they can be pressured on — literal fears and what unsettles them. Not the same as vulnerabilities: these are the things that frighten or destabilize them, named concretely.
 - habits (1–3 sentences): observable recurring tells — physical, verbal, conversational. "Replies with questions when overwhelmed" beats "is thoughtful".
 - boundaries (1–3 sentences): refusal lines, pace limits, what they shut down. Concrete edges, not platitudes."#,
         ),
@@ -3854,8 +4011,14 @@ pub fn render_with_context_internal(
         );
     }
 
-    result = result.replace("{{scene}}", &scene_content);
-    result = result.replace("{{scene_direction}}", &scene_direction);
+    result = result.replace(
+        "{{scene}}",
+        &crate::chat_manager::request::strip_inline_image_tokens(&scene_content),
+    );
+    result = result.replace(
+        "{{scene_direction}}",
+        &crate::chat_manager::request::strip_inline_image_tokens(&scene_direction),
+    );
     result = result.replace("{{char.name}}", char_name);
     result = result.replace("{{char.desc}}", &char_desc);
     result = result.replace("{{persona.name}}", persona_name);

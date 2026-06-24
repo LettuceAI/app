@@ -282,6 +282,11 @@ export const storageBridge = {
       asOfMs,
     }).then((s) => JSON.parse(s)),
   imageLibraryList: () => invoke<unknown[]>("storage_list_image_library"),
+  audioLibraryList: () => invoke<unknown[]>("storage_list_audio_library"),
+  audioLibraryLoadData: (storagePath: string) =>
+    invoke<string>("storage_load_session_attachment", { storagePath }),
+  audioLibraryDeleteItem: (storagePath: string) =>
+    invoke("storage_delete_audio_library_item", { storagePath }) as Promise<void>,
   imageLibraryDownloadToDownloads: (filePath: string, filename?: string | null) =>
     invoke<string>("storage_download_image_to_downloads", {
       filePath,
@@ -467,6 +472,10 @@ export const storageBridge = {
     invoke("trigger_dynamic_memory", { sessionId }) as Promise<void>,
   abortDynamicMemory: (sessionId: string) =>
     invoke("abort_dynamic_memory", { sessionId }) as Promise<void>,
+  skipDynamicMemoryCycle: (sessionId: string) =>
+    invoke("skip_dynamic_memory_cycle", { sessionId }) as Promise<void>,
+  dynamicMemoryPendingApproval: (sessionId: string) =>
+    invoke("dynamic_memory_pending_approval", { sessionId }) as Promise<number | null>,
   usageSummary: () =>
     invoke("storage_usage_summary") as Promise<{
       fileCount: number;
@@ -897,6 +906,10 @@ export const storageBridge = {
     invoke("group_chat_retry_dynamic_memory", { sessionId }) as Promise<void>,
   groupChatAbortDynamicMemory: (sessionId: string) =>
     invoke("group_chat_abort_dynamic_memory", { sessionId }) as Promise<void>,
+  groupChatSkipDynamicMemory: (sessionId: string) =>
+    invoke("group_chat_skip_dynamic_memory", { sessionId }) as Promise<void>,
+  groupChatDynamicMemoryPendingApproval: (sessionId: string) =>
+    invoke("group_chat_dynamic_memory_pending_approval", { sessionId }) as Promise<number | null>,
 
   // Group Session Memory Operations
   groupSessionUpdateMemories: (

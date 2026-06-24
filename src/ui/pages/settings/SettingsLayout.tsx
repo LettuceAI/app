@@ -36,6 +36,7 @@ import { useI18n } from "../../../core/i18n/context";
 import { useSettingsSummary } from "./hooks/useSettingsSummary";
 import { useNavigationManager } from "../../navigation";
 import { isDevelopmentMode } from "../../../core/utils/env";
+import { openExternalUrl } from "../../../core/utils/openExternal";
 
 interface NavItem {
   key: string;
@@ -263,15 +264,7 @@ export function SettingsLayout() {
         key: "convert",
         icon: <ArrowLeftRight />,
         label: t("settings.items.convert.title"),
-        onSelect: async () => {
-          const url = "https://www.lettuceai.app/convert";
-          try {
-            const { openUrl } = await import("@tauri-apps/plugin-opener");
-            await openUrl(url);
-          } catch {
-            window.open(url, "_blank");
-          }
-        },
+        onSelect: () => void openExternalUrl("https://www.lettuceai.app/convert"),
       },
       {
         key: "security",
@@ -368,30 +361,14 @@ export function SettingsLayout() {
         icon: <ScrollText />,
         label: t("settings.items.changelog.title"),
         matchPath: "/settings/changelog",
-        onSelect: async () => {
-          try {
-            const { openUrl } = await import("@tauri-apps/plugin-opener");
-            await openUrl("https://www.lettuceai.app/changelog");
-          } catch (error) {
-            console.error("Failed to open URL:", error);
-            window.open("https://www.lettuceai.app/changelog", "_blank");
-          }
-        },
+        onSelect: () => void openExternalUrl("https://www.lettuceai.app/changelog"),
       },
       {
         key: "docs",
         icon: <HelpCircle />,
         label: t("settings.items.docs.title"),
         matchPath: "__never__",
-        onSelect: async () => {
-          try {
-            const { openUrl } = await import("@tauri-apps/plugin-opener");
-            await openUrl("https://www.lettuceai.app/docs");
-          } catch (error) {
-            console.error("Failed to open URL:", error);
-            window.open("https://www.lettuceai.app/docs", "_blank");
-          }
-        },
+        onSelect: () => void openExternalUrl("https://www.lettuceai.app/docs"),
       },
       {
         key: "logs",

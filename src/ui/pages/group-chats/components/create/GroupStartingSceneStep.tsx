@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { motion } from "framer-motion";
-import { Ban, BookOpen, Check, Copy, PenLine } from "lucide-react";
+import { Ban, BookOpen, Check, Copy, Image as ImageIcon, PenLine, Upload } from "lucide-react";
 import { useI18n } from "../../../../../core/i18n/context";
+import { insertSceneImageToken, storeSceneImageFromFile } from "../../../../../core/scene/inlineImages";
 import { typography, radius, spacing, interactive, cn } from "../../../../design-tokens";
 import type { Character } from "../../../../../core/storage/schemas";
 import { getPlatform } from "../../../../../core/utils/platform";
@@ -140,6 +141,7 @@ export function GroupStartingSceneStep({
   const [autocompleteSearch, setAutocompleteSearch] = useState("");
   const [autocompleteIndex, setAutocompleteIndex] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const inlineImageInputRef = useRef<HTMLInputElement>(null);
 
   const filteredCharacters = selectedCharacters.filter((c) =>
     c.name.toLowerCase().includes(autocompleteSearch.toLowerCase()),
@@ -209,6 +211,36 @@ export function GroupStartingSceneStep({
       textarea.setSelectionRange(newCursorPos, newCursorPos);
       textarea.focus();
     }, 0);
+  };
+
+  const handleInlineImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    const input = event.target;
+    if (!file) return;
+    const cursor = textareaRef.current?.selectionStart ?? customScene.length;
+    try {
+      const stored = await storeSceneImageFromFile(file);
+      if (stored) {
+        const { content, nextCursor } = insertSceneImageToken(
+          customScene,
+          cursor,
+          stored.imageId,
+          stored.ext,
+        );
+        onCustomSceneChange(content);
+        setTimeout(() => {
+          const el = textareaRef.current;
+          if (el) {
+            el.setSelectionRange(nextCursor, nextCursor);
+            el.focus();
+          }
+        }, 0);
+      }
+    } catch (error) {
+      console.warn("GroupStartingSceneStep: failed to store inline scene image", error);
+    } finally {
+      input.value = "";
+    }
   };
 
   useEffect(() => {
@@ -329,6 +361,31 @@ export function GroupStartingSceneStep({
               )}
             />
           </div>
+
+          <input
+            ref={inlineImageInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(event) => {
+              void handleInlineImageUpload(event);
+            }}
+          />
+          <div className="flex items-center gap-2 rounded-xl border border-fg/10 bg-fg/5 px-3 py-2.5">
+            <ImageIcon className="h-3.5 w-3.5 text-fg/50" />
+            <span className="text-xs font-medium text-fg/70">{t("sceneImage.add")}</span>
+            <button
+              type="button"
+              onClick={() => inlineImageInputRef.current?.click()}
+              className="ml-auto flex items-center gap-1.5 rounded-lg border border-accent/30 bg-accent/10 px-2.5 py-1.5 text-[11px] font-medium text-accent/90 transition active:scale-95 active:bg-accent/20"
+            >
+              <Upload className="h-3.5 w-3.5" />
+              {t("sceneImage.upload")}
+            </button>
+          </div>
+          <p className={cn(typography.bodySmall.size, "text-fg/40")}>
+            {t("sceneImage.hint")}
+          </p>
 
           <p className={cn(typography.bodySmall.size, "text-fg/40")}>
             {t("groupChats.create.startingScene.sceneReferenceTip")}

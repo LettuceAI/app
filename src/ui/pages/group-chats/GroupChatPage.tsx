@@ -48,6 +48,7 @@ import { useBeetrootRain } from "../chats/components/BeetrootRain";
 import { getChatColumnLayout } from "../chats/utils/chatColumnLayout";
 import { useBeetrootEasterEgg } from "../chats/hooks/useBeetrootEasterEgg";
 import { BottomMenu, MenuButton } from "../../components/BottomMenu";
+import { DynamicMemoryApprovalGate } from "../../components/DynamicMemoryApprovalGate";
 import {
   asrCorrectionUpsert,
   asrIgnoreSuggestion,
@@ -1947,7 +1948,6 @@ export function GroupChatPage() {
       personas,
       models: settings?.models ?? [],
       currentModelId: widgetCharacter?.defaultModelId ?? null,
-      fallbackModelId: widgetCharacter?.fallbackModelId ?? null,
       swapPlacesActive: false,
       voiceAutoplayActive: false,
       canRegenerate: !!lastAssistant && !sending,
@@ -1966,11 +1966,6 @@ export function GroupChatPage() {
       onSelectModel: async (modelId) => {
         if (!widgetCharacter) return;
         await saveCharacter({ id: widgetCharacter.id, defaultModelId: modelId ?? null });
-        reloadSession();
-      },
-      onSelectFallbackModel: async (modelId) => {
-        if (!widgetCharacter) return;
-        await saveCharacter({ id: widgetCharacter.id, fallbackModelId: modelId });
         reloadSession();
       },
       onAuthorNoteSaved: () => {},
@@ -2302,6 +2297,8 @@ export function GroupChatPage() {
 
         {!footerInside && footerNode}
       </div>
+
+      <DynamicMemoryApprovalGate sessionId={groupSessionId ?? null} variant="group" />
 
       {/* Plus Menu - Upload Image & Help Me Reply */}
       <BottomMenu isOpen={showPlusMenu} onClose={() => setShowPlusMenu(false)} title={t("groupChats.addContentMenu.title")}>

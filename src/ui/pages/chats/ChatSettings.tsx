@@ -11,7 +11,6 @@ import {
   Trash2,
   Sparkles,
   Heart,
-  TriangleAlert,
   Upload,
   NotebookPen,
 } from "lucide-react";
@@ -297,7 +296,6 @@ export function ChatSettingsContent({
   );
   const { backgroundImageData, reloadCharacter } = useChatLayoutContext();
   const [showModelSelector, setShowModelSelector] = useState(false);
-  const [modelSelectorTarget, setModelSelectorTarget] = useState<"primary" | "fallback">("primary");
   const [personas, setPersonas] = useState<Persona[]>([]);
   const [currentSession, setCurrentSession] = useState<Session | null>(null);
   const [showPersonaSelector, setShowPersonaSelector] = useState(false);
@@ -406,7 +404,6 @@ export function ChatSettingsContent({
   }, [currentCharacter?.defaultModelId, globalDefaultModelId]);
 
   const selectedModelId = currentCharacter?.defaultModelId ?? null;
-  const selectedFallbackModelId = currentCharacter?.fallbackModelId ?? null;
   const effectiveModelId = getEffectiveModelId();
   const currentModel = useMemo(
     () => models.find((m) => m.id === effectiveModelId),
@@ -471,21 +468,6 @@ export function ChatSettingsContent({
       reloadCharacter();
     } catch (error) {
       console.error("Failed to change character model:", error);
-    }
-  };
-
-  const handleChangeFallbackModel = async (modelId: string | null) => {
-    if (!characterId) return;
-
-    try {
-      const updatedCharacter = await saveCharacter({
-        ...currentCharacter,
-        fallbackModelId: modelId,
-      });
-      setCurrentCharacter(updatedCharacter);
-      reloadCharacter();
-    } catch (error) {
-      console.error("Failed to change fallback model:", error);
     }
   };
 
@@ -829,12 +811,6 @@ export function ChatSettingsContent({
     return currentModel.displayName + (!currentCharacter?.defaultModelId ? ` ${t("chats.settings.appDefaultSuffix")}` : "");
   };
 
-  const getFallbackModelDisplay = () => {
-    if (!selectedFallbackModelId) return t("chats.settings.fallbackNone");
-    const fallback = models.find((m) => m.id === selectedFallbackModelId);
-    return fallback?.displayName || fallback?.name || t("chats.settings.unknownModel");
-  };
-
   const isDrawer = mode === "drawer";
 
   return (
@@ -1035,16 +1011,6 @@ export function ChatSettingsContent({
                 label={t("chats.settings.model")}
                 value={getModelDisplay()}
                 onClick={() => {
-                  setModelSelectorTarget("primary");
-                  setShowModelSelector(true);
-                }}
-              />
-              <QuickChip
-                icon={<TriangleAlert className="h-4 w-4" />}
-                label={t("chats.settings.fallbackModel")}
-                value={getFallbackModelDisplay()}
-                onClick={() => {
-                  setModelSelectorTarget("fallback");
                   setShowModelSelector(true);
                 }}
               />
@@ -1321,48 +1287,24 @@ export function ChatSettingsContent({
       <ModelSelectionBottomMenu
         isOpen={showModelSelector}
         onClose={() => setShowModelSelector(false)}
-        title={
-          modelSelectorTarget === "fallback"
-            ? t("chats.settings.selectFallbackModel")
-            : t("chats.settings.selectModel")
-        }
+        title={t("chats.settings.selectModel")}
         models={models}
-        selectedModelIds={
-          modelSelectorTarget === "fallback"
-            ? selectedFallbackModelId
-              ? [selectedFallbackModelId]
-              : []
-            : selectedModelId
-              ? [selectedModelId]
-              : []
-        }
+        selectedModelIds={selectedModelId ? [selectedModelId] : []}
         searchPlaceholder={t("chats.settings.searchModels")}
         theme="dark"
         tone="emerald"
         includeExitIcon={false}
         location="bottom"
         onSelectModel={(modelId) => {
-          if (modelSelectorTarget === "fallback") {
-            void handleChangeFallbackModel(modelId);
-          } else {
-            void handleChangeModel(modelId);
-          }
+          void handleChangeModel(modelId);
           setShowModelSelector(false);
         }}
         clearOption={{
-          label:
-            modelSelectorTarget === "fallback"
-              ? t("chats.settings.noFallbackModel")
-              : t("chats.settings.useGlobalDefaultModel"),
+          label: t("chats.settings.useGlobalDefaultModel"),
           icon: Cpu,
-          selected:
-            modelSelectorTarget === "fallback" ? !selectedFallbackModelId : !selectedModelId,
+          selected: !selectedModelId,
           onClick: () => {
-            if (modelSelectorTarget === "fallback") {
-              void handleChangeFallbackModel(null);
-            } else {
-              void handleChangeModel(null);
-            }
+            void handleChangeModel(null);
             setShowModelSelector(false);
           },
         }}

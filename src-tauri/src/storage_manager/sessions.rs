@@ -486,6 +486,7 @@ fn typed_usage_summary(
         cache_write_tokens: None,
         reasoning_tokens: None,
         image_tokens: None,
+        audio_tokens: None,
         web_search_requests: None,
         api_cost: None,
         response_id: None,
@@ -902,7 +903,6 @@ fn fetch_messages_page_typed(
             ),
             reasoning,
             model_id: None,
-            fallback_from_model_id: None,
         });
     }
 
@@ -1066,7 +1066,6 @@ fn fetch_pinned_messages_typed(
             ),
             reasoning,
             model_id: None,
-            fallback_from_model_id: None,
         });
     }
 

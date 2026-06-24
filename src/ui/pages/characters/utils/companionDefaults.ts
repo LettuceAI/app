@@ -14,6 +14,7 @@ export function createDefaultCompanionConfig(
       voice: "",
       relationalStyle: "",
       vulnerabilities: "",
+      fears: "",
       habits: "",
       boundaries: "",
       baselineAffect: {

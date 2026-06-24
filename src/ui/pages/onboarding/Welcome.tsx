@@ -168,11 +168,12 @@ export function WelcomePage({ onContinue, onGoToSync }: WelcomePageProps = {}) {
 
           {/* Primary CTA */}
           <motion.button
-            className="group mt-6 lg:mt-10 inline-flex items-center gap-2.5 w-full justify-between cursor-pointer rounded-xl border border-[rgba(0,210,148,0.45)] bg-[linear-gradient(180deg,rgba(0,210,148,0.28),rgba(0,210,148,0.16))] backdrop-blur-[10px] transition-all py-3 px-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.10),0_10px_28px_-8px_rgba(0,210,148,0.40),0_18px_44px_-12px_rgba(0,0,0,0.6)] hover:border-[rgba(0,210,148,0.65)] hover:bg-[linear-gradient(180deg,rgba(0,210,148,0.36),rgba(0,210,148,0.22))] active:scale-[0.985] lg:w-auto lg:justify-start lg:py-3 lg:pr-[18px] lg:pl-[22px]"
+            className="group mt-6 lg:mt-10 inline-flex items-center gap-2.5 w-full justify-between cursor-pointer rounded-xl border border-[rgba(0,210,148,0.45)] bg-[linear-gradient(180deg,rgba(0,210,148,0.28),rgba(0,210,148,0.16))] backdrop-blur-[10px] transition-colors py-3 px-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.10),0_10px_28px_-8px_rgba(0,210,148,0.40),0_18px_44px_-12px_rgba(0,0,0,0.6)] hover:border-[rgba(0,210,148,0.65)] hover:bg-[linear-gradient(180deg,rgba(0,210,148,0.36),rgba(0,210,148,0.22))] lg:w-auto lg:justify-start lg:py-3 lg:pr-[18px] lg:pl-[22px]"
             onClick={handleAddProvider}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.22 }}
+            whileTap={{ scale: 0.985 }}
+            transition={{ duration: 0.5, delay: 0.22, scale: { duration: 0.12, delay: 0 } }}
           >
             <span className="text-[16px] font-semibold tracking-[-0.005em] text-white">{t("onboarding.welcome.getStarted")}</span>
             <span className="inline-flex h-[22px] w-[22px] items-center justify-center rounded-full bg-white/10 text-white transition group-hover:translate-x-0.5 group-hover:bg-white/[0.18]">

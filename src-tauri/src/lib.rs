@@ -39,8 +39,8 @@ pub mod tts_manager;
 mod usage;
 
 pub(crate) use infra::{
-    abort_manager, dynamic_memory_run_manager, error, logger, post_turn_memory_scheduler,
-    serde_utils, utils,
+    abort_manager, dynamic_memory_approval, dynamic_memory_run_manager, error, logger,
+    post_turn_memory_scheduler, serde_utils, utils,
 };
 pub(crate) use platform::android_monitor;
 

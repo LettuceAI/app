@@ -94,6 +94,7 @@ fn get_all_provider_configs_internal() -> Vec<ProviderConfig> {
         ("cerebras", "Cerebras", "https://api.cerebras.ai/v1"),
         ("anthropic", "Anthropic", "https://api.anthropic.com"),
         ("openrouter", "OpenRouter", "https://openrouter.ai/api"),
+        ("literouter", "LiteRouter", "https://api.literouter.com/v1"),
         (
             "pollinations",
             "Pollinations AI",
