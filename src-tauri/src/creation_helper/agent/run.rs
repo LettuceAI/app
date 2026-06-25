@@ -4,14 +4,15 @@ use uuid::Uuid;
 
 use crate::chat_manager::request as chat_request;
 use crate::chat_manager::sse::accumulate_tool_calls_from_sse;
-use crate::chat_manager::tooling::{parse_tool_calls, ToolCall, ToolChoice, ToolConfig};
+use crate::chat_manager::tooling::{
+    parse_tool_calls, tool_call_message_payload, ToolCall, ToolChoice, ToolConfig,
+};
 use crate::creation_helper::service::{
-    creation_tool_call_payload, creation_tool_result_message, emit_creation_helper_step,
-    emit_creation_helper_turn_start, emit_creation_helper_update, emit_creation_segment_boundary,
-    send_creation_api_request,
+    creation_tool_result_message, emit_creation_helper_step, emit_creation_helper_turn_start,
+    emit_creation_helper_update, emit_creation_segment_boundary, send_creation_api_request,
 };
 use crate::creation_helper::types::{
-    CreationMessageRole, CreationSession, CreationToolCall, CreationToolResult,
+    CreationMessageRole, CreationSession, CreationToolResult,
 };
 use crate::utils::{log_info, log_warn};
 
@@ -191,7 +192,7 @@ pub async fn run_agent_turn(
             push_user_segment(&mut turn, visible_reply.clone());
         }
 
-        let mut creation_calls: Vec<CreationToolCall> = Vec::with_capacity(tool_calls.len());
+        let mut creation_calls: Vec<ToolCall> = Vec::with_capacity(tool_calls.len());
         let mut creation_results: Vec<CreationToolResult> = Vec::with_capacity(tool_calls.len());
         let mut terminal_hit = false;
 
@@ -204,10 +205,12 @@ pub async fn run_agent_turn(
                         "creation_helper.agent",
                         format!("ignoring unknown tool: {}", tc.name),
                     );
-                    creation_calls.push(CreationToolCall {
+                    creation_calls.push(ToolCall {
                         id: tc.id.clone(),
                         name: tc.name.clone(),
                         arguments: tc.arguments.clone(),
+                        raw_arguments: None,
+                        thought_signature: tc.thought_signature.clone(),
                     });
                     creation_results.push(CreationToolResult {
                         tool_call_id: tc.id.clone(),
@@ -298,10 +301,12 @@ pub async fn run_agent_turn(
                 Some(&result_value),
             );
 
-            creation_calls.push(CreationToolCall {
+            creation_calls.push(ToolCall {
                 id: tc.id.clone(),
                 name: tc.name.clone(),
                 arguments: tc.arguments.clone(),
+                raw_arguments: None,
+                thought_signature: tc.thought_signature.clone(),
             });
             creation_results.push(CreationToolResult {
                 tool_call_id: tc.id.clone(),
@@ -327,9 +332,7 @@ pub async fn run_agent_turn(
         let tool_calls_json: Vec<Value> = creation_calls
             .iter()
             .enumerate()
-            .map(|(i, c)| {
-                creation_tool_call_payload(&ctx.provider_id, &c.id, i, &c.name, &c.arguments)
-            })
+            .map(|(i, c)| tool_call_message_payload(&ctx.provider_id, c, i))
             .collect();
         api_messages.push(json!({
             "role": "assistant",

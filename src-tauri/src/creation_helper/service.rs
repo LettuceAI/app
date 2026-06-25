@@ -14,7 +14,9 @@ use crate::chat_manager::service::{
     apply_openrouter_cost_to_usage, insert_extended_usage_metadata,
 };
 use crate::chat_manager::sse::accumulate_tool_calls_from_sse;
-use crate::chat_manager::tooling::{parse_tool_calls, ToolChoice, ToolConfig};
+use crate::chat_manager::tooling::{
+    parse_tool_calls, tool_call_message_payload, ToolCall, ToolChoice, ToolConfig,
+};
 use crate::image_generator::commands::generate_image;
 use crate::image_generator::types::ImageGenerationRequest;
 use crate::storage_manager::characters as characters_storage;
@@ -128,7 +130,7 @@ pub(crate) fn emit_creation_helper_update(
     app: &AppHandle,
     session_id: &str,
     session: &CreationSession,
-    active_tool_calls: Option<&[CreationToolCall]>,
+    active_tool_calls: Option<&[ToolCall]>,
     active_tool_results: Option<&[CreationToolResult]>,
 ) {
     let active_tool_calls = active_tool_calls.map(|calls| calls.to_vec());
@@ -212,40 +214,6 @@ pub(crate) fn emit_creation_segment_boundary(app: &AppHandle, request_id: &str) 
 
 fn is_ollama_provider(provider_id: &str) -> bool {
     provider_id.eq_ignore_ascii_case("ollama")
-}
-
-pub(crate) fn creation_tool_call_payload(
-    provider_id: &str,
-    id: &str,
-    index: usize,
-    name: &str,
-    arguments: &Value,
-) -> Value {
-    let arguments = if is_ollama_provider(provider_id) {
-        arguments.clone()
-    } else {
-        Value::String(serde_json::to_string(arguments).unwrap_or_default())
-    };
-
-    if is_ollama_provider(provider_id) {
-        json!({
-            "type": "function",
-            "function": {
-                "index": index,
-                "name": name,
-                "arguments": arguments
-            }
-        })
-    } else {
-        json!({
-            "id": id,
-            "type": "function",
-            "function": {
-                "name": name,
-                "arguments": arguments
-            }
-        })
-    }
 }
 
 pub(crate) fn creation_tool_result_message(
@@ -2731,10 +2699,12 @@ async fn process_assistant_turn(
         } else {
             step.raw_args.clone()
         };
-        tool_calls.push(CreationToolCall {
+        tool_calls.push(ToolCall {
             id: call_id.clone(),
             name: step.verb.clone(),
             arguments,
+            raw_arguments: None,
+            thought_signature: None,
         });
         let success = matches!(
             step.status,
@@ -2927,9 +2897,7 @@ async fn process_assistant_turn_legacy(
                 .tool_calls
                 .iter()
                 .enumerate()
-                .map(|(index, tc)| {
-                    creation_tool_call_payload(provider_id, &tc.id, index, &tc.name, &tc.arguments)
-                })
+                .map(|(index, tc)| tool_call_message_payload(provider_id, tc, index))
                 .collect();
 
             api_messages.push(json!({
@@ -3137,12 +3105,14 @@ async fn process_assistant_turn_legacy(
             emit_creation_segment_boundary(&app, &stream_request_id);
         }
 
-        let current_batch_calls: Vec<CreationToolCall> = tool_calls
+        let current_batch_calls: Vec<ToolCall> = tool_calls
             .iter()
-            .map(|tc| CreationToolCall {
+            .map(|tc| ToolCall {
                 id: tc.id.clone(),
                 name: tc.name.clone(),
                 arguments: tc.arguments.clone(),
+                raw_arguments: None,
+                thought_signature: tc.thought_signature.clone(),
             })
             .collect();
         all_tool_calls.extend(current_batch_calls);
@@ -3169,9 +3139,7 @@ async fn process_assistant_turn_legacy(
         let tool_calls_json: Vec<Value> = tool_calls
             .iter()
             .enumerate()
-            .map(|(index, tc)| {
-                creation_tool_call_payload(provider_id, &tc.id, index, &tc.name, &tc.arguments)
-            })
+            .map(|(index, tc)| tool_call_message_payload(provider_id, tc, index))
             .collect();
 
         if is_gemini_like_provider(provider_id) && latest_gemini_function_call_content.is_some() {

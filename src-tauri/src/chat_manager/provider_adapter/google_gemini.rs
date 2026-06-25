@@ -215,9 +215,17 @@ impl ProviderAdapter for GoogleGeminiAdapter {
                             function_call["id"] = Value::String(id);
                         }
 
-                        parts.push(json!({
-                            "functionCall": function_call
-                        }));
+                        let mut part = json!({ "functionCall": function_call });
+                        // echo thought signature, else thinking models reject the replay
+                        if let Some(sig) = tool_call
+                            .get("thoughtSignature")
+                            .or_else(|| tool_call.get("thought_signature"))
+                            .and_then(|v| v.as_str())
+                            .filter(|s| !s.is_empty())
+                        {
+                            part["thoughtSignature"] = Value::String(sig.to_string());
+                        }
+                        parts.push(part);
                     }
 
                     if !parts.is_empty() {

@@ -16,7 +16,7 @@ use crate::chat_manager::storage::{
     get_base_prompt_entries, resolve_credential_for_model, PromptType,
 };
 use crate::chat_manager::tooling::{
-    parse_tool_calls, ToolCall, ToolChoice, ToolConfig, ToolDefinition,
+    parse_tool_calls, tool_call_message_payload, ToolCall, ToolChoice, ToolConfig, ToolDefinition,
 };
 use crate::chat_manager::types::{
     ChatGenerateCompanionSoulArgs, DynamicMemoryStructuredFallbackFormat, Model,
@@ -733,39 +733,6 @@ fn parallel_tool_calls_requires_disable(error: &str) -> bool {
             || lower.contains("must be"))
 }
 
-fn tool_call_payload(provider_id: &str, call: &ToolCall, index: usize) -> Value {
-    let is_ollama = crate::ollama::is_ollama_provider(Some(provider_id));
-    let arguments = if is_ollama {
-        call.arguments.clone()
-    } else {
-        Value::String(
-            call.raw_arguments
-                .clone()
-                .unwrap_or_else(|| serde_json::to_string(&call.arguments).unwrap_or_default()),
-        )
-    };
-
-    if is_ollama {
-        json!({
-            "type": "function",
-            "function": {
-                "index": index,
-                "name": call.name,
-                "arguments": arguments,
-            }
-        })
-    } else {
-        json!({
-            "id": call.id,
-            "type": "function",
-            "function": {
-                "name": call.name,
-                "arguments": arguments,
-            }
-        })
-    }
-}
-
 fn tool_result_message(
     provider_id: &str,
     tool_call_id: &str,
@@ -946,7 +913,7 @@ async fn run_with_target(
         let tool_calls_json: Vec<Value> = calls
             .iter()
             .enumerate()
-            .map(|(idx, call)| tool_call_payload(&credential.provider_id, call, idx))
+            .map(|(idx, call)| tool_call_message_payload(&credential.provider_id, call, idx))
             .collect();
         let mut tool_results: Vec<Value> = Vec::new();
 
@@ -1360,6 +1327,7 @@ fn parse_fallback_json(raw: &str) -> Result<Vec<ToolCall>, String> {
             name: name.to_string(),
             arguments,
             raw_arguments: None,
+            thought_signature: None,
         });
     }
 
@@ -1446,6 +1414,7 @@ fn parse_fallback_xml(raw: &str) -> Result<Vec<ToolCall>, String> {
                         name: tag,
                         arguments: Value::Object(args),
                         raw_arguments: None,
+                        thought_signature: None,
                     });
                 }
             }
@@ -1479,6 +1448,7 @@ fn parse_fallback_xml(raw: &str) -> Result<Vec<ToolCall>, String> {
                         name: current_op.take().unwrap_or_default(),
                         arguments: Value::Object(std::mem::take(&mut current_args)),
                         raw_arguments: None,
+                        thought_signature: None,
                     });
                 }
             }

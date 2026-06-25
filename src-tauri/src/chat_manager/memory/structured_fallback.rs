@@ -272,6 +272,7 @@ fn parse_memory_operations_from_json(raw: &str) -> Result<Vec<ToolCall>, String>
             name: name.to_string(),
             raw_arguments: None,
             arguments,
+            thought_signature: None,
         });
     }
 
@@ -404,6 +405,7 @@ fn parse_memory_operations_from_xml(raw: &str) -> Result<Vec<ToolCall>, String> 
                             name: op_name,
                             arguments: Value::Object(args),
                             raw_arguments: None,
+                            thought_signature: None,
                         });
                     }
                 }
@@ -443,6 +445,7 @@ fn parse_memory_operations_from_xml(raw: &str) -> Result<Vec<ToolCall>, String> 
                         name: current_op_name.take().unwrap_or_default(),
                         arguments: Value::Object(std::mem::take(&mut current_args)),
                         raw_arguments: None,
+                        thought_signature: None,
                     });
                 }
             }

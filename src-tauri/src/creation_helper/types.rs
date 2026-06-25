@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::chat_manager::tooling::ToolCall;
+
 /// Draft character being built by the creation helper
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -33,7 +35,7 @@ pub struct CreationMessage {
     pub role: CreationMessageRole,
     pub content: String,
     #[serde(default)]
-    pub tool_calls: Vec<CreationToolCall>,
+    pub tool_calls: Vec<ToolCall>,
     #[serde(default)]
     pub tool_results: Vec<CreationToolResult>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -59,14 +61,6 @@ pub enum CreationMessageRole {
     User,
     Assistant,
     System,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CreationToolCall {
-    pub id: String,
-    pub name: String,
-    pub arguments: serde_json::Value,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

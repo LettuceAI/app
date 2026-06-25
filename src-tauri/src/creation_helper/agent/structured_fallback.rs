@@ -215,6 +215,7 @@ fn parse_json(raw: &str) -> Result<ParsedFallback, String> {
             name,
             arguments,
             raw_arguments: None,
+            thought_signature: None,
         });
     }
     Ok(out)
@@ -281,6 +282,7 @@ fn parse_xml(raw: &str) -> Result<ParsedFallback, String> {
                     name: n,
                     arguments: Value::Object(args),
                     raw_arguments: None,
+                    thought_signature: None,
                 });
             }
         }

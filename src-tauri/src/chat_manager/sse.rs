@@ -140,6 +140,7 @@ pub fn accumulate_tool_calls_from_sse(raw: &str, provider_id: &str) -> Vec<ToolC
                         name: String::new(),
                         arguments: Value::Null,
                         raw_arguments: None,
+                        thought_signature: None,
                     });
                     if entry.id.is_empty() {
                         if let Some(id) = id_chunk {

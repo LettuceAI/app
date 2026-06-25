@@ -38,8 +38,51 @@ pub struct ToolCall {
     pub name: String,
     #[serde(default)]
     pub arguments: Value,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub raw_arguments: Option<String>,
+    /// Gemini thought signature; must be echoed back when the call is replayed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thought_signature: Option<String>,
+}
+
+/// Serialize a tool call into the OpenAI-style `tool_calls` entry used when
+/// replaying it in request history. For Gemini this carries `thoughtSignature`,
+/// which thinking models require echoed back on replayed function calls.
+pub fn tool_call_message_payload(provider_id: &str, call: &ToolCall, index: usize) -> Value {
+    let is_ollama = crate::ollama::is_ollama_provider(Some(provider_id));
+    let arguments = if is_ollama {
+        call.arguments.clone()
+    } else {
+        Value::String(
+            call.raw_arguments
+                .clone()
+                .unwrap_or_else(|| serde_json::to_string(&call.arguments).unwrap_or_default()),
+        )
+    };
+
+    if is_ollama {
+        json!({
+            "type": "function",
+            "function": {
+                "index": index,
+                "name": call.name,
+                "arguments": arguments,
+            }
+        })
+    } else {
+        let mut payload = json!({
+            "id": call.id,
+            "type": "function",
+            "function": {
+                "name": call.name,
+                "arguments": arguments,
+            }
+        });
+        if let Some(sig) = call.thought_signature.as_deref().filter(|s| !s.is_empty()) {
+            payload["thoughtSignature"] = Value::String(sig.to_string());
+        }
+        payload
+    }
 }
 
 fn has_tools(cfg: &ToolConfig) -> bool {
@@ -305,6 +348,7 @@ pub fn parse_tool_calls(provider_id: &str, payload: &Value) -> Vec<ToolCall> {
                             name: name.to_string(),
                             arguments,
                             raw_arguments,
+                            thought_signature: None,
                         });
                     }
                 }
@@ -342,11 +386,19 @@ pub fn parse_tool_calls(provider_id: &str, payload: &Value) -> Vec<ToolCall> {
                                         .unwrap_or_else(|| {
                                             format!("func_call_{}", calls.len() + 1)
                                         });
+                                    // sibling of functionCall on the part
+                                    let thought_signature = part
+                                        .get("thoughtSignature")
+                                        .or_else(|| part.get("thought_signature"))
+                                        .and_then(|v| v.as_str())
+                                        .filter(|s| !s.is_empty())
+                                        .map(|s| s.to_string());
                                     calls.push(ToolCall {
                                         id: call_id,
                                         name: name.to_string(),
                                         arguments: args,
                                         raw_arguments: None,
+                                        thought_signature,
                                     });
                                 }
                             }
@@ -499,6 +551,7 @@ fn parse_tool_call_block_function_tag(block: &str, index: usize) -> Option<ToolC
         name: name.to_string(),
         arguments,
         raw_arguments,
+        thought_signature: None,
     })
 }
 
@@ -566,6 +619,7 @@ fn parse_json_tool_call_object(value: &Value, index: usize) -> Option<ToolCall> 
         name: name.to_string(),
         arguments,
         raw_arguments,
+        thought_signature: None,
     })
 }
 
@@ -599,6 +653,7 @@ fn extract_openai_legacy_function_call(node: &Value, out: &mut Vec<ToolCall>) {
         name: name.to_string(),
         arguments,
         raw_arguments,
+        thought_signature: None,
     });
 }
 
@@ -621,6 +676,7 @@ fn extract_openai_calls(node: &Value, out: &mut Vec<ToolCall>) {
                         name: name.to_string(),
                         arguments,
                         raw_arguments,
+                        thought_signature: None,
                     });
                 }
             }
@@ -635,5 +691,57 @@ fn extract_openai_calls(node: &Value, out: &mut Vec<ToolCall>) {
 
     if let Some(delta) = node.get("delta") {
         extract_openai_calls(delta, out);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn call_with_signature(sig: Option<&str>) -> ToolCall {
+        ToolCall {
+            id: "call_1".to_string(),
+            name: "set_name".to_string(),
+            arguments: json!({ "value": "Aria" }),
+            raw_arguments: None,
+            thought_signature: sig.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn emits_thought_signature_for_gemini_replay() {
+        let payload = tool_call_message_payload(
+            "gemini-agent-platform-express",
+            &call_with_signature(Some("sig-abc")),
+            0,
+        );
+        assert_eq!(payload["thoughtSignature"], json!("sig-abc"));
+        assert_eq!(payload["id"], json!("call_1"));
+        assert_eq!(payload["function"]["name"], json!("set_name"));
+    }
+
+    #[test]
+    fn omits_thought_signature_when_absent_or_empty() {
+        let none = tool_call_message_payload("openai", &call_with_signature(None), 0);
+        assert!(none.get("thoughtSignature").is_none());
+
+        let empty = tool_call_message_payload("openai", &call_with_signature(Some("")), 0);
+        assert!(empty.get("thoughtSignature").is_none());
+    }
+
+    #[test]
+    fn ollama_payload_has_index_and_never_signature() {
+        let payload = tool_call_message_payload("ollama", &call_with_signature(Some("sig-abc")), 3);
+        assert!(payload.get("id").is_none());
+        assert_eq!(payload["function"]["index"], json!(3));
+        assert!(payload.get("thoughtSignature").is_none());
+    }
+
+    #[test]
+    fn prefers_raw_arguments_over_restringified() {
+        let mut call = call_with_signature(None);
+        call.raw_arguments = Some("{\"value\":\"raw\"}".to_string());
+        let payload = tool_call_message_payload("openai", &call, 0);
+        assert_eq!(payload["function"]["arguments"], json!("{\"value\":\"raw\"}"));
     }
 }
