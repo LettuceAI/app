@@ -6910,6 +6910,12 @@ pub async fn group_chat_send(
         &memory_refs,
     )?;
 
+    let _ = crate::storage_manager::llm_metrics::llm_metrics_attach_message(
+        app.clone(),
+        req_id.clone(),
+        message.id.clone(),
+    );
+
     let participation_stats =
         group_sessions::group_participation_stats_internal_typed(&conn, &session_id)?;
 
@@ -7452,6 +7458,12 @@ pub async fn group_chat_continue(
         &used_lorebook_entries,
         &memory_refs,
     )?;
+
+    let _ = crate::storage_manager::llm_metrics::llm_metrics_attach_message(
+        app.clone(),
+        req_id.clone(),
+        message.id.clone(),
+    );
 
     let participation_stats =
         group_sessions::group_participation_stats_internal_typed(&conn, &session_id)?;
