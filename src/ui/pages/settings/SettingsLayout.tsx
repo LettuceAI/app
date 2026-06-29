@@ -9,6 +9,7 @@ import {
   Shield,
   RotateCcw,
   BookOpen,
+  Activity,
   BarChart3,
   FileText,
   Wrench,
@@ -34,6 +35,7 @@ import {
 import { typography, cn } from "../../design-tokens";
 import { useI18n } from "../../../core/i18n/context";
 import { useSettingsSummary } from "./hooks/useSettingsSummary";
+import { hasLlmMetrics } from "../../../core/storage/metrics";
 import { useNavigationManager } from "../../navigation";
 import { isDevelopmentMode } from "../../../core/utils/env";
 import { openExternalUrl } from "../../../core/utils/openExternal";
@@ -189,6 +191,17 @@ export function SettingsLayout() {
   const providerCount = providers.length;
   const modelCount = models.length;
 
+  const [hasMetrics, setHasMetrics] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    void hasLlmMetrics().then((value) => {
+      if (!cancelled) setHasMetrics(value);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const groups = useMemo<NavGroup[]>(() => {
     const main: NavItem[] = [
       {
@@ -215,6 +228,17 @@ export function SettingsLayout() {
         matchPath: "/settings/image-generation",
         onSelect: () => navigate("/settings/image-generation"),
       },
+      ...(hasMetrics
+        ? [
+            {
+              key: "performance",
+              icon: <Activity />,
+              label: t("settings.items.performance.title"),
+              matchPath: "/settings/performance",
+              onSelect: () => navigate("/settings/performance"),
+            },
+          ]
+        : []),
       {
         key: "prompts",
         icon: <FileText />,

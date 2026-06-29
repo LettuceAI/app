@@ -19,6 +19,7 @@ import { ModelsPage } from "./ui/pages/settings/ModelsPage";
 import { EditModelPage } from "./ui/pages/settings/EditModelPage";
 import { HuggingFaceBrowserPage } from "./ui/pages/settings/HuggingFaceBrowserPage";
 import { InstalledModelsPage } from "./ui/pages/settings/InstalledModelsPage";
+import PerformancePage from "./ui/pages/settings/PerformancePage";
 import { LocalRuntimeDefaultsPage } from "./ui/pages/settings/LocalRuntimeDefaultsPage";
 import { ImageGenerationPage } from "./ui/pages/settings/ImageGenerationPage";
 import { SystemPromptsPage } from "./ui/pages/settings/SystemPromptsPage";
@@ -1181,6 +1182,7 @@ function AppContent() {
               <Route path="/settings/security" element={<SecurityPage />} />
               <Route path="/settings/usage" element={<UsagePage />} />
               <Route path="/settings/usage/activity" element={<UsageActivityPage />} />
+              <Route path="/settings/performance" element={<PerformancePage />} />
               <Route path="/settings/customization" element={<CustomizationPage />} />
               <Route path="/settings/speech-recognition" element={<SpeechRecognitionPage />} />
               <Route path="/settings/customization/colors" element={<ColorCustomizationPage />} />

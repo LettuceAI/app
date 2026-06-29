@@ -131,6 +131,14 @@ export const storageBridge = {
     }>("embedding_download_progress", (event) => callback(event.payload)),
   cancelEmbeddingDownload: () => invoke("cancel_embedding_download") as Promise<void>,
   computeEmbedding: (text: string) => invoke<number[]>("compute_embedding", { text }),
+  llmMetricsList: (limit?: number) =>
+    invoke<unknown[]>("llm_metrics_list", { limit: limit ?? null }),
+  llmMetricsGet: (id: string) => invoke<unknown | null>("llm_metrics_get", { id }),
+  llmMetricsGetByMessage: (messageId: string) =>
+    invoke<unknown | null>("llm_metrics_get_by_message", { messageId }),
+  llmMetricsAttachMessage: (id: string, messageId: string) =>
+    invoke("llm_metrics_attach_message", { id, messageId }) as Promise<void>,
+  llmMetricsClear: () => invoke("llm_metrics_clear") as Promise<void>,
   initializeEmbeddingModel: () => invoke("initialize_embedding_model") as Promise<void>,
   clearEmbeddingRuntimeCache: () => invoke("clear_embedding_runtime_cache") as Promise<void>,
   runEmbeddingTest: () =>

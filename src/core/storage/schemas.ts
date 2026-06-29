@@ -347,6 +347,40 @@ export const LlamaLastRuntimeReportSchema = z.object({
 });
 export type LlamaLastRuntimeReport = z.infer<typeof LlamaLastRuntimeReportSchema>;
 
+export const LlmMetricSampleSchema = z.object({
+  tMs: z.number().nonnegative(),
+  tokens: z.number().int().nonnegative(),
+  tps: z.number().nonnegative(),
+  ctxFill: z.number().min(0).max(1),
+});
+export type LlmMetricSample = z.infer<typeof LlmMetricSampleSchema>;
+
+export const LlmMetricSummarySchema = z.object({
+  id: z.string(),
+  createdAt: z.number().int().nonnegative(),
+  modelName: z.string().nullable().optional(),
+  backend: z.string().nullable().optional(),
+  gpuLayers: z.number().int().nonnegative().nullable().optional(),
+  nCtx: z.number().int().nonnegative().nullable().optional(),
+  nBatch: z.number().int().nonnegative().nullable().optional(),
+  kvType: z.string().nullable().optional(),
+  modelSizeBytes: z.number().int().nonnegative().nullable().optional(),
+  promptTokens: z.number().int().nonnegative().nullable().optional(),
+  completionTokens: z.number().int().nonnegative().nullable().optional(),
+  totalTokens: z.number().int().nonnegative().nullable().optional(),
+  ttftMs: z.number().nonnegative().nullable().optional(),
+  decodeTokensPerSecond: z.number().nonnegative().nullable().optional(),
+  generationElapsedMs: z.number().nonnegative().nullable().optional(),
+  finishReason: z.string().nullable().optional(),
+  mtpStats: z.unknown().nullable().optional(),
+});
+export type LlmMetricSummary = z.infer<typeof LlmMetricSummarySchema>;
+
+export const LlmMetricDetailSchema = LlmMetricSummarySchema.extend({
+  samples: z.array(LlmMetricSampleSchema).default([]),
+});
+export type LlmMetricDetail = z.infer<typeof LlmMetricDetailSchema>;
+
 export const AdvancedModelSettingsSchema = z.object({
   temperature: z.number().min(0).max(2).nullable().optional(),
   topP: z.number().min(0).max(1).nullable().optional(),

@@ -108,6 +108,55 @@ pub fn llm_metrics_get(app: tauri::AppHandle, id: String) -> Result<Option<JsonV
 }
 
 #[tauri::command]
+pub fn llm_metrics_attach_message(
+    app: tauri::AppHandle,
+    id: String,
+    message_id: String,
+) -> Result<(), String> {
+    let conn = open_db(&app)?;
+    conn.execute(
+        "UPDATE llm_generation_metrics SET message_id = ?2 WHERE id = ?1",
+        params![id, message_id],
+    )
+    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn llm_metrics_get_by_message(
+    app: tauri::AppHandle,
+    message_id: String,
+) -> Result<Option<JsonValue>, String> {
+    let conn = open_db(&app)?;
+    let row: Option<(String, i64, String, String)> = conn
+        .query_row(
+            "SELECT id, created_at, summary_json, samples_json
+             FROM llm_generation_metrics
+             WHERE message_id = ?1
+             ORDER BY created_at DESC
+             LIMIT 1",
+            params![message_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .optional()
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+
+    let Some((id, created_at, summary_json, samples_json)) = row else {
+        return Ok(None);
+    };
+
+    let mut summary = serde_json::from_str::<JsonValue>(&summary_json).unwrap_or_else(|_| json!({}));
+    let samples = serde_json::from_str::<JsonValue>(&samples_json).unwrap_or_else(|_| json!([]));
+    if let Some(obj) = summary.as_object_mut() {
+        obj.insert("id".into(), json!(id));
+        obj.insert("createdAt".into(), json!(created_at));
+        obj.insert("samples".into(), samples);
+    }
+
+    Ok(Some(summary))
+}
+
+#[tauri::command]
 pub fn llm_metrics_clear(app: tauri::AppHandle) -> Result<(), String> {
     let conn = open_db(&app)?;
     conn.execute("DELETE FROM llm_generation_metrics", [])

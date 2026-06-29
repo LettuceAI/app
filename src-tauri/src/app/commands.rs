@@ -52,6 +52,8 @@ macro_rules! invoke_handler {
             crate::storage_manager::models::model_export_as_usc,
             crate::storage_manager::llm_metrics::llm_metrics_list,
             crate::storage_manager::llm_metrics::llm_metrics_get,
+            crate::storage_manager::llm_metrics::llm_metrics_get_by_message,
+            crate::storage_manager::llm_metrics::llm_metrics_attach_message,
             crate::storage_manager::llm_metrics::llm_metrics_clear,
             crate::storage_manager::settings::settings_set_advanced,
             crate::storage_manager::settings::settings_set_advanced_model_settings,
