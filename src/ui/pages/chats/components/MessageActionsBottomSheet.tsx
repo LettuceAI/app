@@ -15,9 +15,13 @@ import {
   Paintbrush,
   Image,
   HeartPulse,
+  Activity,
   type LucideIcon,
 } from "lucide-react";
 import { BottomMenu } from "../../../components/BottomMenu";
+import { GenerationDetailContent } from "../../../components/GenerationDetailView";
+import { getLlmMetricByMessage } from "../../../../core/storage/metrics";
+import type { LlmMetricDetail } from "../../../../core/storage/schemas";
 import type {
   StoredMessage,
   Settings,
@@ -212,6 +216,23 @@ export function MessageActionsBottomSheet({
   const [companionEffect, setCompanionEffect] = useState<CompanionTurnEffect | null>(null);
   const [companionEffectLoading, setCompanionEffectLoading] = useState(false);
   const [companionEffectError, setCompanionEffectError] = useState<string | null>(null);
+  const [perfDetail, setPerfDetail] = useState<LlmMetricDetail | null>(null);
+  const [perfOpen, setPerfOpen] = useState(false);
+
+  useEffect(() => {
+    const message = messageAction?.message;
+    if (!message || message.role !== "assistant") {
+      setPerfDetail(null);
+      return;
+    }
+    let cancelled = false;
+    void getLlmMetricByMessage(message.id).then((detail) => {
+      if (!cancelled) setPerfDetail(detail);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [messageAction?.message?.id, messageAction?.message?.role]);
   const isSceneMessage = messageAction?.message.role === "scene";
   const isVisibleSystemMessage =
     messageAction?.message.role === "system" && Boolean(messageAction.message.visibleInChat);
@@ -642,6 +663,15 @@ export function MessageActionsBottomSheet({
                 />
               )}
 
+              {perfDetail && (
+                <ActionRow
+                  icon={Activity}
+                  label={t("chats.actions.performance")}
+                  iconBg="bg-emerald-500/20"
+                  onClick={() => setPerfOpen(true)}
+                />
+              )}
+
               {!isSceneMessage && (
                 <ActionRow
                   icon={messageAction.message.isPinned ? PinOff : Pin}
@@ -929,6 +959,16 @@ export function MessageActionsBottomSheet({
             </div>
           </div>
         )}
+      </BottomMenu>
+
+      <BottomMenu
+        isOpen={perfOpen}
+        onClose={() => setPerfOpen(false)}
+        title={t("performance.charts.detailTitle")}
+      >
+        <div className="text-white">
+          {perfDetail && <GenerationDetailContent detail={perfDetail} />}
+        </div>
       </BottomMenu>
     </>
   );

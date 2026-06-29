@@ -8,6 +8,7 @@ import {
   sendChatTurn,
 } from "../../../../core/chat/manager";
 import { getSessionMeta, listMessages } from "../../../../core/storage/repo";
+import { attachLlmMetricMessage } from "../../../../core/storage/metrics";
 import type { ImageAttachment, StoredMessage } from "../../../../core/storage/schemas";
 import {
   consumeThinkDelta,
@@ -270,6 +271,8 @@ export function useChatStreamingController({
           cleanContent === result.assistantMessage.content
             ? result.assistantMessage
             : { ...result.assistantMessage, content: cleanContent };
+
+        void attachLlmMetricMessage(requestId, finalAssistantMessage.id);
 
         const replaced = messagesRef.current.map((msg) => {
           if (msg.id === userPlaceholder.id) return result.userMessage;
@@ -548,6 +551,8 @@ export function useChatStreamingController({
           cleanContent === result.assistantMessage.content
             ? result.assistantMessage
             : { ...result.assistantMessage, content: cleanContent };
+
+        void attachLlmMetricMessage(requestId, finalAssistantMessage.id);
 
         const replaced = messagesRef.current.map((msg) =>
           msg.id === assistantPlaceholder.id ? finalAssistantMessage : msg,
