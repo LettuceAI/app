@@ -87,6 +87,14 @@ export function sanitizeAdvancedModelSettings(input: AdvancedModelSettings): Adv
     return cleaned.length > 0 ? cleaned : null;
   };
 
+  const normalizeNumberList = (value: unknown): number[] | null => {
+    if (!Array.isArray(value)) return null;
+    const cleaned = value
+      .map((entry) => Number(entry))
+      .filter((entry) => Number.isInteger(entry) && entry >= 0);
+    return cleaned.length > 0 ? Array.from(new Set(cleaned)) : null;
+  };
+
   const normalizeSdSize = (value: unknown): string | null => {
     if (typeof value !== "string") return null;
     const trimmed = value.trim().toLowerCase().replace(/\s+/g, "");
@@ -114,6 +122,9 @@ export function sanitizeAdvancedModelSettings(input: AdvancedModelSettings): Adv
     ),
     sdSize: normalizeSdSize(input.sdSize),
     llamaGpuLayers: sanitize(input.llamaGpuLayers, ADVANCED_LLAMA_GPU_LAYERS_RANGE, true),
+    llamaMultiGpuEnabled: input.llamaMultiGpuEnabled ?? null,
+    llamaGpuDeviceIds: normalizeNumberList(input.llamaGpuDeviceIds),
+    llamaGpuSplitMode: input.llamaGpuSplitMode ?? null,
     llamaThreads: sanitize(input.llamaThreads, ADVANCED_LLAMA_THREADS_RANGE, true),
     llamaThreadsBatch: sanitize(input.llamaThreadsBatch, ADVANCED_LLAMA_THREADS_BATCH_RANGE, true),
     llamaSeed: sanitize(input.llamaSeed, ADVANCED_LLAMA_SEED_RANGE, true),

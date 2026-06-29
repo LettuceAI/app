@@ -25,6 +25,20 @@ pub(crate) struct LlamaCppContextInfo {
     available_vram_bytes: Option<u64>,
     model_size_bytes: Option<u64>,
     layer_count: Option<u32>,
+    supports_gpu_offload: Option<bool>,
+    selected_gpu_device_ids: Option<Vec<usize>>,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LlamaGpuDeviceInfo {
+    index: usize,
+    name: String,
+    description: String,
+    backend: String,
+    memory_total: u64,
+    memory_free: u64,
+    device_type: String,
 }
 
 fn push_unique_u32(out: &mut Vec<u32>, value: u32) {
@@ -240,6 +254,69 @@ fn windows_local_vram_cap_bytes() -> Option<u64> {
 
 pub(crate) fn get_available_vram_bytes() -> Option<u64> {
     choose_effective_vram_bytes(ggml_available_vram_bytes(), windows_local_vram_cap_bytes())
+}
+
+pub(crate) fn list_gpu_devices() -> Vec<LlamaGpuDeviceInfo> {
+    llama_cpp_2::list_llama_ggml_backend_devices()
+        .into_iter()
+        .filter(|device| {
+            matches!(
+                device.device_type,
+                llama_cpp_2::LlamaBackendDeviceType::Gpu
+                    | llama_cpp_2::LlamaBackendDeviceType::IntegratedGpu
+                    | llama_cpp_2::LlamaBackendDeviceType::Accelerator
+            )
+        })
+        .map(|device| LlamaGpuDeviceInfo {
+            index: device.index,
+            name: device.name,
+            description: device.description,
+            backend: device.backend,
+            memory_total: device.memory_total as u64,
+            memory_free: device.memory_free as u64,
+            device_type: format!("{:?}", device.device_type),
+        })
+        .collect()
+}
+
+pub(crate) fn get_available_vram_bytes_for_devices(device_ids: &[usize]) -> Option<u64> {
+    if device_ids.is_empty() {
+        return None;
+    }
+    let mut total_free: u64 = 0;
+    let mut found = false;
+    unsafe {
+        let count = ggml_backend_dev_count();
+        for device_id in device_ids {
+            if *device_id >= count {
+                continue;
+            }
+            let dev = ggml_backend_dev_get(*device_id);
+            if dev.is_null() {
+                continue;
+            }
+            let dev_type = ggml_backend_dev_type(dev);
+            let is_gpu_like = dev_type == GGML_BACKEND_DEVICE_TYPE_GPU
+                || dev_type == GGML_BACKEND_DEVICE_TYPE_IGPU
+                || dev_type == GGML_BACKEND_DEVICE_TYPE_ACCEL;
+            if !is_gpu_like {
+                continue;
+            }
+            let mut free: usize = 0;
+            let mut total: usize = 0;
+            ggml_backend_dev_memory(dev, &mut free, &mut total);
+            if total == 0 {
+                continue;
+            }
+            found = true;
+            total_free = total_free.saturating_add(free as u64);
+        }
+    }
+    if found && total_free > 0 {
+        Some(total_free)
+    } else {
+        None
+    }
 }
 
 /// Detect if the system uses unified memory (shared RAM/VRAM).
@@ -510,6 +587,8 @@ pub(crate) async fn llamacpp_context_info(
     llama_offload_kqv: Option<bool>,
     llama_kv_type: Option<String>,
     llama_gpu_layers: Option<u32>,
+    llama_multi_gpu_enabled: Option<bool>,
+    llama_gpu_device_ids: Option<Vec<usize>>,
     llama_mmproj_path: Option<String>,
     llama_mtp_enabled: Option<bool>,
     llama_mtp_model_path: Option<String>,
@@ -533,7 +612,15 @@ pub(crate) async fn llamacpp_context_info(
     let metadata = load_model_metadata(&model_path)?;
     let max_ctx = metadata.max_context_length.max(1);
     let available_memory_bytes = get_available_memory_bytes();
-    let available_vram_bytes = get_available_vram_bytes();
+    let selected_gpu_device_ids = llama_gpu_device_ids.unwrap_or_default();
+    let multi_gpu_active =
+        llama_multi_gpu_enabled == Some(true) && selected_gpu_device_ids.len() >= 2;
+    let available_vram_bytes = if multi_gpu_active {
+        get_available_vram_bytes_for_devices(&selected_gpu_device_ids)
+            .or_else(get_available_vram_bytes)
+    } else {
+        get_available_vram_bytes()
+    };
     let supports_gpu_offload = shared_backend()?.supports_gpu_offload();
     let sidecar_vram_reserve_bytes = if supports_gpu_offload {
         let mmproj_reserve = llama_mmproj_path
@@ -616,5 +703,11 @@ pub(crate) async fn llamacpp_context_info(
         available_vram_bytes,
         model_size_bytes: Some(metadata.model_size_bytes),
         layer_count: Some(metadata.layer_count),
+        supports_gpu_offload: Some(supports_gpu_offload),
+        selected_gpu_device_ids: if multi_gpu_active {
+            Some(selected_gpu_device_ids)
+        } else {
+            None
+        },
     })
 }

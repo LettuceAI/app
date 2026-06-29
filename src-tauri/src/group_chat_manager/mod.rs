@@ -596,6 +596,43 @@ fn build_llama_extra_fields(model: &Model, settings: &Settings) -> Option<HashMa
     if let Some(v) = model
         .advanced_model_settings
         .as_ref()
+        .and_then(|a| a.llama_multi_gpu_enabled)
+        .or(settings.advanced_model_settings.llama_multi_gpu_enabled)
+    {
+        extra.insert("llamaMultiGpuEnabled".to_string(), json!(v));
+    }
+    if let Some(v) = model
+        .advanced_model_settings
+        .as_ref()
+        .and_then(|a| a.llama_gpu_device_ids.clone())
+        .or_else(|| {
+            settings
+                .advanced_model_settings
+                .llama_gpu_device_ids
+                .clone()
+        })
+        .filter(|ids| !ids.is_empty())
+    {
+        extra.insert("llamaGpuDeviceIds".to_string(), json!(v));
+    }
+    if let Some(v) = model
+        .advanced_model_settings
+        .as_ref()
+        .and_then(|a| a.llama_gpu_split_mode.clone())
+        .or_else(|| {
+            settings
+                .advanced_model_settings
+                .llama_gpu_split_mode
+                .clone()
+        })
+        .map(|v| v.trim().to_ascii_lowercase())
+        .filter(|v| matches!(v.as_str(), "layer" | "row" | "tensor"))
+    {
+        extra.insert("llamaGpuSplitMode".to_string(), json!(v));
+    }
+    if let Some(v) = model
+        .advanced_model_settings
+        .as_ref()
         .and_then(|a| a.llama_threads)
         .or(settings.advanced_model_settings.llama_threads)
     {

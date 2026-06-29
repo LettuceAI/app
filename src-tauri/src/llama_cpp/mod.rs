@@ -64,6 +64,7 @@ mod desktop {
     use engine::{
         consume_kqv_fallback_toast, emit_model_load_complete, emit_model_load_failed,
         emit_model_load_finalizing, load_engine, shared_backend, using_rocm_backend,
+        LlamaGpuConfig,
     };
     use offload::{context_bucket_upper, merge_cached_candidate_layers, plan_smart_gpu_offload};
     use prompt::{
@@ -814,6 +815,33 @@ mod desktop {
             .or_else(|| body.get("llama_gpu_layers"))
             .and_then(|v| v.as_u64())
             .and_then(|v| u32::try_from(v).ok());
+        let llama_multi_gpu_enabled = body
+            .get("llamaMultiGpuEnabled")
+            .or_else(|| body.get("llama_multi_gpu_enabled"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let llama_gpu_device_ids = body
+            .get("llamaGpuDeviceIds")
+            .or_else(|| body.get("llama_gpu_device_ids"))
+            .and_then(|v| v.as_array())
+            .map(|items| {
+                let mut out = Vec::new();
+                for item in items {
+                    if let Some(value) = item.as_u64().and_then(|v| usize::try_from(v).ok()) {
+                        if !out.contains(&value) {
+                            out.push(value);
+                        }
+                    }
+                }
+                out
+            })
+            .unwrap_or_default();
+        let llama_gpu_split_mode = body
+            .get("llamaGpuSplitMode")
+            .or_else(|| body.get("llama_gpu_split_mode"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.trim().to_ascii_lowercase())
+            .filter(|s| matches!(s.as_str(), "layer" | "row" | "tensor"));
         let top_k = body
             .get("top_k")
             .or_else(|| body.get("topK"))
@@ -1005,7 +1033,13 @@ mod desktop {
                 LLAMA_FLASH_ATTN_TYPE_AUTO
             };
             let available_memory_bytes = get_available_memory_bytes();
-            let available_vram_bytes = get_available_vram_bytes();
+            let multi_gpu_active = llama_multi_gpu_enabled && llama_gpu_device_ids.len() >= 2;
+            let available_vram_bytes = if multi_gpu_active {
+                context::get_available_vram_bytes_for_devices(&llama_gpu_device_ids)
+                    .or_else(get_available_vram_bytes)
+            } else {
+                get_available_vram_bytes()
+            };
             let mut effective_gpu_layers = llama_gpu_layers;
             let mut smart_gpu_layer_candidates: Option<Vec<u32>> = None;
             let cached_runtime_report =
@@ -1207,6 +1241,15 @@ mod desktop {
                 model_path,
                 effective_gpu_layers,
                 smart_gpu_layer_candidates.as_deref(),
+                LlamaGpuConfig {
+                    multi_gpu_enabled: multi_gpu_active,
+                    device_ids: if multi_gpu_active {
+                        llama_gpu_device_ids.clone()
+                    } else {
+                        Vec::new()
+                    },
+                    split_mode: llama_gpu_split_mode.clone(),
+                },
                 llama_strict_mode,
                 llama_mmproj_path.as_deref(),
                 llama_mtp_external_path.as_deref(),
@@ -1365,6 +1408,29 @@ mod desktop {
                 &mut runtime_report,
                 "availableVramBytes",
                 json!(available_vram_bytes),
+            );
+            update_runtime_report_field(
+                &mut runtime_report,
+                "llamaMultiGpuEnabled",
+                json!(multi_gpu_active),
+            );
+            update_runtime_report_field(
+                &mut runtime_report,
+                "selectedGpuDeviceIds",
+                json!(if multi_gpu_active {
+                    Some(llama_gpu_device_ids.clone())
+                } else {
+                    None
+                }),
+            );
+            update_runtime_report_field(
+                &mut runtime_report,
+                "llamaGpuSplitMode",
+                json!(if multi_gpu_active {
+                    llama_gpu_split_mode.as_deref().unwrap_or("layer")
+                } else {
+                    "single"
+                }),
             );
             update_runtime_report_field(&mut runtime_report, "modelSizeBytes", json!(model.size()));
             update_runtime_report_field(
@@ -3084,6 +3150,8 @@ pub async fn llamacpp_context_info(
     llama_offload_kqv: Option<bool>,
     llama_kv_type: Option<String>,
     llama_gpu_layers: Option<u32>,
+    llama_multi_gpu_enabled: Option<bool>,
+    llama_gpu_device_ids: Option<Vec<usize>>,
     llama_mmproj_path: Option<String>,
     llama_mtp_enabled: Option<bool>,
     llama_mtp_model_path: Option<String>,
@@ -3096,6 +3164,8 @@ pub async fn llamacpp_context_info(
             llama_offload_kqv,
             llama_kv_type,
             llama_gpu_layers,
+            llama_multi_gpu_enabled,
+            llama_gpu_device_ids,
             llama_mmproj_path,
             llama_mtp_enabled,
             llama_mtp_model_path,
@@ -3116,6 +3186,8 @@ pub async fn llamacpp_context_info(
         let _ = llama_offload_kqv;
         let _ = llama_kv_type;
         let _ = llama_gpu_layers;
+        let _ = llama_multi_gpu_enabled;
+        let _ = llama_gpu_device_ids;
         let _ = llama_mmproj_path;
         let _ = llama_mtp_enabled;
         let _ = llama_mtp_model_path;
@@ -3124,6 +3196,24 @@ pub async fn llamacpp_context_info(
             line!(),
             "llama.cpp is only supported on desktop builds",
         ))
+    }
+}
+
+#[tauri::command]
+pub async fn llamacpp_backend_devices() -> Result<serde_json::Value, String> {
+    #[cfg(not(mobile))]
+    {
+        serde_json::to_value(desktop::context::list_gpu_devices()).map_err(|e| {
+            crate::utils::err_msg(
+                module_path!(),
+                line!(),
+                format!("Failed to serialize llama.cpp backend devices: {e}"),
+            )
+        })
+    }
+    #[cfg(mobile)]
+    {
+        Ok(serde_json::Value::Array(Vec::new()))
     }
 }
 

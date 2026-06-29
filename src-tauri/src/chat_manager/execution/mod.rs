@@ -313,6 +313,82 @@ pub(super) fn resolve_llama_gpu_layers(
         .or(settings.advanced_model_settings.llama_gpu_layers)
 }
 
+pub(super) fn resolve_llama_multi_gpu_enabled(
+    session: &Session,
+    model: &Model,
+    settings: &Settings,
+) -> Option<bool> {
+    session
+        .advanced_model_settings
+        .as_ref()
+        .and_then(|cfg| cfg.llama_multi_gpu_enabled)
+        .or_else(|| {
+            model
+                .advanced_model_settings
+                .as_ref()
+                .and_then(|cfg| cfg.llama_multi_gpu_enabled)
+        })
+        .or(settings.advanced_model_settings.llama_multi_gpu_enabled)
+}
+
+pub(super) fn resolve_llama_gpu_device_ids(
+    session: &Session,
+    model: &Model,
+    settings: &Settings,
+) -> Option<Vec<usize>> {
+    session
+        .advanced_model_settings
+        .as_ref()
+        .and_then(|cfg| cfg.llama_gpu_device_ids.clone())
+        .or_else(|| {
+            model
+                .advanced_model_settings
+                .as_ref()
+                .and_then(|cfg| cfg.llama_gpu_device_ids.clone())
+        })
+        .or_else(|| {
+            settings
+                .advanced_model_settings
+                .llama_gpu_device_ids
+                .clone()
+        })
+        .map(|ids| {
+            let mut deduped = Vec::new();
+            for id in ids {
+                if !deduped.contains(&id) {
+                    deduped.push(id);
+                }
+            }
+            deduped
+        })
+        .filter(|ids| !ids.is_empty())
+}
+
+pub(super) fn resolve_llama_gpu_split_mode(
+    session: &Session,
+    model: &Model,
+    settings: &Settings,
+) -> Option<String> {
+    session
+        .advanced_model_settings
+        .as_ref()
+        .and_then(|cfg| cfg.llama_gpu_split_mode.clone())
+        .or_else(|| {
+            model
+                .advanced_model_settings
+                .as_ref()
+                .and_then(|cfg| cfg.llama_gpu_split_mode.clone())
+        })
+        .or_else(|| {
+            settings
+                .advanced_model_settings
+                .llama_gpu_split_mode
+                .clone()
+        })
+        .map(|v| v.trim().to_ascii_lowercase())
+        .filter(|v| matches!(v.as_str(), "layer" | "row" | "tensor"))
+}
+
 pub(super) fn resolve_llama_threads(
     session: &Session,
     model: &Model,

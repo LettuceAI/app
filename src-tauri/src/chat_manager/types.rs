@@ -614,6 +614,12 @@ pub struct AdvancedModelSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sd_prompt_writer_instructions: Option<String>,
     pub llama_gpu_layers: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub llama_multi_gpu_enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub llama_gpu_device_ids: Option<Vec<usize>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub llama_gpu_split_mode: Option<String>,
     pub llama_threads: Option<u32>,
     pub llama_threads_batch: Option<u32>,
     pub llama_seed: Option<u32>,
@@ -719,6 +725,9 @@ impl Default for AdvancedModelSettings {
             sd_denoising_strength: None,
             sd_size: None,
             llama_gpu_layers: None,
+            llama_multi_gpu_enabled: None,
+            llama_gpu_device_ids: None,
+            llama_gpu_split_mode: None,
             llama_threads: None,
             llama_threads_batch: None,
             llama_seed: None,

@@ -347,6 +347,7 @@ macro_rules! invoke_handler {
             crate::discovery::discovery_fetch_tags,
             crate::discovery::discovery_fetch_author_info,
             crate::discovery::discovery_import_character,
+            crate::llama_cpp::llamacpp_backend_devices,
             crate::llama_cpp::llamacpp_context_info,
             crate::llama_cpp::llamacpp_unload,
             crate::hf_browser::hf_search_models,

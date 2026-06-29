@@ -1,6 +1,10 @@
 use super::*;
 use llama_cpp_2::llama_backend::LlamaBackend;
 use llama_cpp_2::mtmd::{MtmdContext, MtmdContextParams};
+use llama_cpp_sys_2::{
+    ggml_backend_dev_count, ggml_backend_dev_get, ggml_backend_dev_type,
+    GGML_BACKEND_DEVICE_TYPE_ACCEL, GGML_BACKEND_DEVICE_TYPE_GPU, GGML_BACKEND_DEVICE_TYPE_IGPU,
+};
 use serde_json::json;
 use std::ffi::{c_void, CString};
 use std::path::Path;
@@ -42,6 +46,13 @@ pub(super) struct LlamaState {
     pub(super) mtp_model: Option<Arc<LlamaModel>>,
     pub(super) mtp_model_path: Option<String>,
     pub(super) kqv_fallback_toast_shown: bool,
+}
+
+#[derive(Clone, Debug, Default)]
+pub(super) struct LlamaGpuConfig {
+    pub(super) multi_gpu_enabled: bool,
+    pub(super) device_ids: Vec<usize>,
+    pub(super) split_mode: Option<String>,
 }
 
 const LLAMA_MODEL_LOAD_PROGRESS_EVENT: &str = "llama-model-load-progress";
@@ -200,6 +211,7 @@ fn load_model_with_progress(
     request_id: Option<&str>,
     model_path: &str,
     n_gpu_layers: Option<u32>,
+    gpu_config: &LlamaGpuConfig,
     backend_path: &str,
     stage: u8,
 ) -> Result<LlamaModel, String> {
@@ -214,6 +226,53 @@ fn load_model_with_progress(
     let mut params = unsafe { llama_cpp_sys_2::llama_model_default_params() };
     if let Some(n_gpu_layers) = n_gpu_layers {
         params.n_gpu_layers = i32::try_from(n_gpu_layers).unwrap_or(i32::MAX);
+    }
+    let mut selected_devices = Vec::new();
+    if gpu_config.multi_gpu_enabled {
+        if gpu_config.device_ids.len() < 2 {
+            return Err(crate::utils::err_msg(
+                module_path!(),
+                line!(),
+                "Multi-GPU mode requires at least two selected GPU devices.",
+            ));
+        }
+        let count = unsafe { ggml_backend_dev_count() };
+        for device_id in &gpu_config.device_ids {
+            if *device_id >= count {
+                return Err(crate::utils::err_msg(
+                    module_path!(),
+                    line!(),
+                    format!("Selected GPU device index {} is not available.", device_id),
+                ));
+            }
+            let dev = unsafe { ggml_backend_dev_get(*device_id) };
+            if dev.is_null() {
+                return Err(crate::utils::err_msg(
+                    module_path!(),
+                    line!(),
+                    format!("Selected GPU device index {} resolved to null.", device_id),
+                ));
+            }
+            let dev_type = unsafe { ggml_backend_dev_type(dev) };
+            let is_gpu_like = dev_type == GGML_BACKEND_DEVICE_TYPE_GPU
+                || dev_type == GGML_BACKEND_DEVICE_TYPE_IGPU
+                || dev_type == GGML_BACKEND_DEVICE_TYPE_ACCEL;
+            if !is_gpu_like {
+                return Err(crate::utils::err_msg(
+                    module_path!(),
+                    line!(),
+                    format!("Selected device index {} is not a GPU device.", device_id),
+                ));
+            }
+            selected_devices.push(dev);
+        }
+        selected_devices.push(std::ptr::null_mut());
+        params.devices = selected_devices.as_mut_ptr();
+        params.split_mode = match gpu_config.split_mode.as_deref() {
+            Some("row") => llama_cpp_sys_2::LLAMA_SPLIT_MODE_ROW,
+            Some("tensor") => llama_cpp_sys_2::LLAMA_SPLIT_MODE_TENSOR,
+            _ => llama_cpp_sys_2::LLAMA_SPLIT_MODE_LAYER,
+        };
     }
 
     let progress_ctx = app.map(|app| {
@@ -310,6 +369,7 @@ pub(super) fn load_engine(
     model_path: &str,
     requested_gpu_layers: Option<u32>,
     auto_gpu_layer_candidates: Option<&[u32]>,
+    gpu_config: LlamaGpuConfig,
     strict_mode: bool,
     mmproj_path: Option<&str>,
     mtp_model_path: Option<&str>,
@@ -401,8 +461,16 @@ pub(super) fn load_engine(
             .unwrap_or_else(|| "auto".to_string())
     };
     let model_params_key = format!(
-        "requested_gpu_layers={requested_gpu_layers_key};strict_mode={}",
-        strict_mode
+        "requested_gpu_layers={requested_gpu_layers_key};strict_mode={};multi_gpu={};devices={};split_mode={}",
+        strict_mode,
+        gpu_config.multi_gpu_enabled,
+        gpu_config
+            .device_ids
+            .iter()
+            .map(|value| value.to_string())
+            .collect::<Vec<_>>()
+            .join(","),
+        gpu_config.split_mode.as_deref().unwrap_or("layer"),
     );
     let mut should_reload = guard.model.is_none()
         || guard.model_path.as_deref() != Some(model_path)
@@ -503,6 +571,7 @@ pub(super) fn load_engine(
                         request_id,
                         model_path,
                         Some(candidate),
+                        &gpu_config,
                         "gpu_offload",
                         MODEL_LOAD_STAGE_GPU_OFFLOAD,
                     ) {
@@ -599,6 +668,7 @@ pub(super) fn load_engine(
                             request_id,
                             model_path,
                             Some(0),
+                            &LlamaGpuConfig::default(),
                             "cpu",
                             if attempted_gpu_candidate {
                                 MODEL_LOAD_STAGE_CPU_FALLBACK
@@ -631,6 +701,7 @@ pub(super) fn load_engine(
                     request_id,
                     model_path,
                     requested_gpu_layers,
+                    &gpu_config,
                     "gpu_offload",
                     MODEL_LOAD_STAGE_GPU_OFFLOAD,
                 ) {
@@ -712,6 +783,7 @@ pub(super) fn load_engine(
                                 request_id,
                                 model_path,
                                 Some(0),
+                                &LlamaGpuConfig::default(),
                                 "cpu",
                                 MODEL_LOAD_STAGE_CPU_FALLBACK,
                             )
@@ -740,6 +812,7 @@ pub(super) fn load_engine(
                     request_id,
                     model_path,
                     Some(0),
+                    &LlamaGpuConfig::default(),
                     "cpu",
                     MODEL_LOAD_STAGE_CPU,
                 )
@@ -849,6 +922,7 @@ pub(super) fn load_engine(
                 None,
                 mtp_path,
                 drafter_gpu_layers,
+                &LlamaGpuConfig::default(),
                 guard.backend_path_used.as_deref().unwrap_or("cpu"),
                 MODEL_LOAD_STAGE_FINALIZING,
             )?;

@@ -11,6 +11,7 @@ import {
   LorebookEntrySchema,
   SessionSchema,
   SettingsSchema,
+  AdvancedModelSettingsSchema,
   ProviderCredentialSchema,
   ModelSchema,
   AppStateSchema,
@@ -259,6 +260,9 @@ function salvageSettingsPayload(input: unknown): Settings | null {
   const advancedSettingsResult = SettingsSchema.shape.advancedSettings.safeParse(
     root.advancedSettings,
   );
+  const advancedModelSettingsResult = AdvancedModelSettingsSchema.safeParse(
+    root.advancedModelSettings,
+  );
   const defaultProviderCredentialId =
     typeof root.defaultProviderCredentialId === "string" &&
     providerById.has(root.defaultProviderCredentialId)
@@ -280,6 +284,9 @@ function salvageSettingsPayload(input: unknown): Settings | null {
     advancedSettings: advancedSettingsResult.success
       ? advancedSettingsResult.data
       : defaults.advancedSettings,
+    advancedModelSettings: advancedModelSettingsResult.success
+      ? advancedModelSettingsResult.data
+      : defaults.advancedModelSettings,
     promptTemplateId: typeof root.promptTemplateId === "string" ? root.promptTemplateId : null,
     systemPrompt: typeof root.systemPrompt === "string" ? root.systemPrompt : null,
     migrationVersion:
@@ -1305,6 +1312,16 @@ export async function saveAdvancedSettings(settings: Settings["advancedSettings"
     current.advancedSettings = settings ? cloneSerializable(settings) : settings;
   });
   setDeveloperModeOverride(settings?.developerModeEnabled === true);
+  broadcastSettingsUpdated();
+}
+
+export async function saveAdvancedModelSettings(
+  settings: Settings["advancedModelSettings"],
+): Promise<void> {
+  await storageBridge.settingsSetAdvancedModelSettings(settings);
+  updateCachedSettings((current) => {
+    current.advancedModelSettings = settings ? cloneSerializable(settings) : settings;
+  });
   broadcastSettingsUpdated();
 }
 
