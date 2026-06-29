@@ -973,6 +973,7 @@ mod desktop {
         let inference_started_at = Instant::now();
         let mut first_token_ms: Option<u64> = None;
         let mut generation_elapsed_ms: Option<u64> = None;
+        let mut metric_samples: Vec<Value> = Vec::new();
         let mut finish_reason = "stop";
         let mut stream_emitted_len = 0usize;
         let mut final_message = json!({ "role": "assistant", "content": "" });
@@ -2424,6 +2425,17 @@ mod desktop {
                     } else {
                         0.0
                     };
+                    let ctx_fill = if ctx_size > 0 {
+                        (n_cur as f64) / (ctx_size as f64)
+                    } else {
+                        0.0
+                    };
+                    metric_samples.push(json!({
+                        "tMs": elapsed_ms,
+                        "tokens": completion_tokens,
+                        "tps": tps,
+                        "ctxFill": ctx_fill,
+                    }));
                     if let Some(ref id) = request_id {
                         let _ = app.emit(
                             "llm-generation-heartbeat",
@@ -2872,6 +2884,44 @@ mod desktop {
         } else {
             update_runtime_report_field(&mut runtime_report, "status", json!("succeeded"));
             persist_runtime_report(&app, model_path, Some(&runtime_report));
+        }
+
+        if completion_tokens > 0 {
+            let rr = |key: &str| runtime_report.get(key).cloned().unwrap_or(Value::Null);
+            let summary = json!({
+                "modelName": model_path,
+                "backend": rr("backendPathUsed"),
+                "gpuLayers": rr("actualGpuLayersUsed"),
+                "nCtx": rr("actualContextUsed"),
+                "nBatch": rr("actualBatchUsed"),
+                "kvType": rr("actualKvTypeUsed"),
+                "modelSizeBytes": rr("modelSizeBytes"),
+                "promptTokens": prompt_tokens,
+                "completionTokens": completion_tokens,
+                "totalTokens": prompt_tokens + completion_tokens,
+                "ttftMs": first_token_ms,
+                "decodeTokensPerSecond": tokens_per_second,
+                "generationElapsedMs": generation_elapsed_ms,
+                "finishReason": finish_reason,
+                "mtpStats": rr("mtpStats"),
+            });
+            let metric_id = request_id
+                .clone()
+                .unwrap_or_else(|| format!("gen-{}", runtime_report_timestamp_ms()));
+            let samples = Value::Array(std::mem::take(&mut metric_samples));
+            if let Err(err) = crate::storage_manager::llm_metrics::llm_metrics_insert(
+                &app,
+                &metric_id,
+                Some(model_path),
+                &summary,
+                &samples,
+            ) {
+                log_warn(
+                    &app,
+                    "llama_cpp",
+                    format!("failed to persist llm metrics: {}", err),
+                );
+            }
         }
 
         if stream {
