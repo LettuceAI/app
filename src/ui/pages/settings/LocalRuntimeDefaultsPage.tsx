@@ -32,6 +32,10 @@ type RuntimeDefaults = {
   llamaDefaultKvCacheType: "auto" | "f16" | "q8_0" | "q4_0";
   llamaMultiGpuEnabled: boolean | null;
   llamaGpuDeviceIds: number[] | null;
+  llamaGpuDistributionMode: "balanced" | "proportional" | "priority" | "manual" | null;
+  llamaKvPlacement: "auto" | "split" | "systemRam" | "pin" | null;
+  llamaMainGpu: number | null;
+  llamaPriorityVramLimitBytes: number | null;
 };
 
 type LlamaGpuDevice = {
@@ -187,6 +191,10 @@ export function LocalRuntimeDefaultsPage() {
           llamaDefaultKvCacheType: advanced.llamaDefaultKvCacheType ?? "auto",
           llamaMultiGpuEnabled: advancedModel.llamaMultiGpuEnabled ?? null,
           llamaGpuDeviceIds: advancedModel.llamaGpuDeviceIds ?? null,
+          llamaGpuDistributionMode: advancedModel.llamaGpuDistributionMode ?? null,
+          llamaKvPlacement: advancedModel.llamaKvPlacement ?? null,
+          llamaMainGpu: advancedModel.llamaMainGpu ?? null,
+          llamaPriorityVramLimitBytes: advancedModel.llamaPriorityVramLimitBytes ?? null,
         });
       })
       .catch(() => {});
@@ -213,6 +221,10 @@ export function LocalRuntimeDefaultsPage() {
             next.llamaGpuDeviceIds && next.llamaGpuDeviceIds.length > 0
               ? next.llamaGpuDeviceIds
               : undefined,
+          llamaGpuDistributionMode: next.llamaGpuDistributionMode ?? undefined,
+          llamaKvPlacement: next.llamaKvPlacement ?? undefined,
+          llamaMainGpu: next.llamaMainGpu ?? undefined,
+          llamaPriorityVramLimitBytes: next.llamaPriorityVramLimitBytes ?? undefined,
         });
       } catch (err) {
         toast.error(
@@ -288,6 +300,9 @@ export function LocalRuntimeDefaultsPage() {
     (device) => device.deviceType !== "IntegratedGpu",
   );
   const multiGpuAvailable = eligibleGpuDevices.length >= 2;
+  const selectedEligibleDevices = eligibleGpuDevices.filter((device) =>
+    selectedGpuIds.includes(device.index),
+  );
   const toggleGpuDevice = (index: number) => {
     const nextIds = selectedGpuIds.includes(index)
       ? selectedGpuIds.filter((id) => id !== index)
@@ -460,6 +475,135 @@ export function LocalRuntimeDefaultsPage() {
                     {t("runtimeDefaults.llamaGpuMinTwo")}
                   </p>
                 )}
+
+                <div className="mt-4 space-y-3 border-t border-fg/10 pt-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <span className="block text-sm font-medium text-fg">
+                        {t("runtimeDefaults.llamaDistributionTitle")}
+                      </span>
+                      <p className="text-[11px] text-fg/45">
+                        {t("runtimeDefaults.llamaDistributionDescription")}
+                      </p>
+                    </div>
+                    <select
+                      value={defaults.llamaGpuDistributionMode ?? "balanced"}
+                      onChange={(event) =>
+                        void persistDefaults({
+                          ...defaults,
+                          llamaGpuDistributionMode: event.target
+                            .value as RuntimeDefaults["llamaGpuDistributionMode"],
+                        })
+                      }
+                      className={cn(controlClassName, "shrink-0")}
+                    >
+                      <option value="balanced">
+                        {t("runtimeDefaults.llamaDistBalanced")}
+                      </option>
+                      <option value="proportional">
+                        {t("runtimeDefaults.llamaDistProportional")}
+                      </option>
+                      <option value="priority">
+                        {t("runtimeDefaults.llamaDistPriority")}
+                      </option>
+                    </select>
+                  </div>
+
+                  {defaults.llamaGpuDistributionMode === "priority" && (
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <span className="block text-sm font-medium text-fg">
+                          {t("runtimeDefaults.llamaPriorityVramTitle")}
+                        </span>
+                        <p className="text-[11px] text-fg/45">
+                          {t("runtimeDefaults.llamaPriorityVramDescription")}
+                        </p>
+                      </div>
+                      <div className="w-28 shrink-0">
+                        <NumberInput
+                          min={0}
+                          max={1024}
+                          step={0.5}
+                          value={
+                            defaults.llamaPriorityVramLimitBytes != null
+                              ? Number(
+                                  (defaults.llamaPriorityVramLimitBytes / 1024 ** 3).toFixed(2),
+                                )
+                              : null
+                          }
+                          onChange={(next) =>
+                            void persistDefaults({
+                              ...defaults,
+                              llamaPriorityVramLimitBytes:
+                                next === null || next <= 0
+                                  ? null
+                                  : Math.round(next * 1024 ** 3),
+                            })
+                          }
+                          placeholder={t("common.labels.auto")}
+                          className={controlClassName}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <span className="block text-sm font-medium text-fg">
+                        {t("runtimeDefaults.llamaKvPlacementTitle")}
+                      </span>
+                      <p className="text-[11px] text-fg/45">
+                        {t("runtimeDefaults.llamaKvPlacementDescription")}
+                      </p>
+                    </div>
+                    <select
+                      value={defaults.llamaKvPlacement ?? "auto"}
+                      onChange={(event) =>
+                        void persistDefaults({
+                          ...defaults,
+                          llamaKvPlacement: event.target
+                            .value as RuntimeDefaults["llamaKvPlacement"],
+                        })
+                      }
+                      className={cn(controlClassName, "shrink-0")}
+                    >
+                      <option value="auto">{t("runtimeDefaults.llamaKvAuto")}</option>
+                      <option value="split">{t("runtimeDefaults.llamaKvSplit")}</option>
+                      <option value="systemRam">{t("runtimeDefaults.llamaKvSystemRam")}</option>
+                      <option value="pin">{t("runtimeDefaults.llamaKvPin")}</option>
+                    </select>
+                  </div>
+
+                  {defaults.llamaKvPlacement === "pin" && selectedEligibleDevices.length > 0 && (
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="text-sm font-medium text-fg">
+                        {t("runtimeDefaults.llamaPinnedGpu")}
+                      </span>
+                      <select
+                        value={String(
+                          defaults.llamaMainGpu ?? selectedEligibleDevices[0]?.index ?? 0,
+                        )}
+                        onChange={(event) =>
+                          void persistDefaults({
+                            ...defaults,
+                            llamaMainGpu: Number(event.target.value),
+                          })
+                        }
+                        className={cn(controlClassName, "shrink-0")}
+                      >
+                        {selectedEligibleDevices.map((device) => (
+                          <option key={device.index} value={String(device.index)}>
+                            {device.description || device.name || `GPU ${device.index}`}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <p className="text-[11px] text-fg/40">
+                    {t("runtimeDefaults.llamaManualPerModelNote")}
+                  </p>
+                </div>
               </div>
             )}
           </div>
