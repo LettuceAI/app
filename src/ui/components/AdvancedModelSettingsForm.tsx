@@ -22,6 +22,7 @@ export const ADVANCED_SD_SEED_RANGE = { min: 0, max: 2_147_483_647 };
 export const ADVANCED_SD_DENOISING_STRENGTH_RANGE = { min: 0, max: 1 };
 export const ADVANCED_REASONING_BUDGET_RANGE = { min: 1024, max: 32768 };
 export const ADVANCED_LLAMA_GPU_LAYERS_RANGE = { min: 0, max: 512 };
+export const ADVANCED_LLAMA_MAIN_GPU_RANGE = { min: 0, max: 64 };
 export const ADVANCED_LLAMA_THREADS_RANGE = { min: 1, max: 256 };
 export const ADVANCED_LLAMA_THREADS_BATCH_RANGE = { min: 1, max: 256 };
 export const ADVANCED_LLAMA_SEED_RANGE = { min: 0, max: 2_147_483_647 };
@@ -95,6 +96,24 @@ export function sanitizeAdvancedModelSettings(input: AdvancedModelSettings): Adv
     return cleaned.length > 0 ? Array.from(new Set(cleaned)) : null;
   };
 
+  const normalizeManualLayers = (
+    value: unknown,
+  ): { deviceId: number; layers: number }[] | null => {
+    if (!Array.isArray(value)) return null;
+    const seen = new Set<number>();
+    const cleaned: { deviceId: number; layers: number }[] = [];
+    for (const entry of value) {
+      if (!entry || typeof entry !== "object") continue;
+      const deviceId = Number((entry as { deviceId?: unknown }).deviceId);
+      const layers = Number((entry as { layers?: unknown }).layers);
+      if (!Number.isInteger(deviceId) || deviceId < 0 || seen.has(deviceId)) continue;
+      if (!Number.isFinite(layers)) continue;
+      seen.add(deviceId);
+      cleaned.push({ deviceId, layers: clampValue(Math.round(layers), 0, 512) });
+    }
+    return cleaned.length > 0 ? cleaned : null;
+  };
+
   const normalizeSdSize = (value: unknown): string | null => {
     if (typeof value !== "string") return null;
     const trimmed = value.trim().toLowerCase().replace(/\s+/g, "");
@@ -124,7 +143,15 @@ export function sanitizeAdvancedModelSettings(input: AdvancedModelSettings): Adv
     llamaGpuLayers: sanitize(input.llamaGpuLayers, ADVANCED_LLAMA_GPU_LAYERS_RANGE, true),
     llamaMultiGpuEnabled: input.llamaMultiGpuEnabled ?? null,
     llamaGpuDeviceIds: normalizeNumberList(input.llamaGpuDeviceIds),
-    llamaGpuSplitMode: input.llamaGpuSplitMode ?? null,
+    llamaGpuDistributionMode: input.llamaGpuDistributionMode ?? null,
+    llamaGpuManualLayers: normalizeManualLayers(input.llamaGpuManualLayers),
+    llamaCpuLayers: sanitize(input.llamaCpuLayers, ADVANCED_LLAMA_GPU_LAYERS_RANGE, true),
+    llamaKvPlacement: input.llamaKvPlacement ?? null,
+    llamaMainGpu: sanitize(input.llamaMainGpu, ADVANCED_LLAMA_MAIN_GPU_RANGE, true),
+    llamaPriorityVramLimitBytes:
+      input.llamaPriorityVramLimitBytes != null && Number.isFinite(input.llamaPriorityVramLimitBytes)
+        ? Math.max(0, Math.round(input.llamaPriorityVramLimitBytes))
+        : null,
     llamaThreads: sanitize(input.llamaThreads, ADVANCED_LLAMA_THREADS_RANGE, true),
     llamaThreadsBatch: sanitize(input.llamaThreadsBatch, ADVANCED_LLAMA_THREADS_BATCH_RANGE, true),
     llamaSeed: sanitize(input.llamaSeed, ADVANCED_LLAMA_SEED_RANGE, true),

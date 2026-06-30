@@ -585,6 +585,13 @@ fn default_context_enrichment() -> bool {
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
+pub struct GpuLayerAssignment {
+    pub device_id: usize,
+    pub layers: u32,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct AdvancedModelSettings {
     pub temperature: Option<f64>,
     pub top_p: Option<f64>,
@@ -619,7 +626,17 @@ pub struct AdvancedModelSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub llama_gpu_device_ids: Option<Vec<usize>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub llama_gpu_split_mode: Option<String>,
+    pub llama_gpu_distribution_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub llama_gpu_manual_layers: Option<Vec<GpuLayerAssignment>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub llama_cpu_layers: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub llama_kv_placement: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub llama_main_gpu: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub llama_priority_vram_limit_bytes: Option<u64>,
     pub llama_threads: Option<u32>,
     pub llama_threads_batch: Option<u32>,
     pub llama_seed: Option<u32>,
@@ -727,7 +744,12 @@ impl Default for AdvancedModelSettings {
             llama_gpu_layers: None,
             llama_multi_gpu_enabled: None,
             llama_gpu_device_ids: None,
-            llama_gpu_split_mode: None,
+            llama_gpu_distribution_mode: None,
+            llama_gpu_manual_layers: None,
+            llama_cpu_layers: None,
+            llama_kv_placement: None,
+            llama_main_gpu: None,
+            llama_priority_vram_limit_bytes: None,
             llama_threads: None,
             llama_threads_batch: None,
             llama_seed: None,

@@ -9,10 +9,13 @@ use super::{
     resolve_llama_chat_template_preset, resolve_llama_dry_allowed_length, resolve_llama_dry_base,
     resolve_llama_dry_multiplier, resolve_llama_dry_penalty_last_n,
     resolve_llama_dry_sequence_breakers, resolve_llama_flash_attention,
-    resolve_llama_gpu_device_ids, resolve_llama_gpu_layers, resolve_llama_gpu_split_mode,
-    resolve_llama_kv_type, resolve_llama_mmproj_path, resolve_llama_mtp_draft_tokens,
-    resolve_llama_mtp_enabled, resolve_llama_mtp_model_path, resolve_llama_multi_gpu_enabled,
-    resolve_llama_offload_kqv, resolve_llama_profile_min_p, resolve_llama_profile_typical_p,
+    resolve_llama_gpu_device_ids, resolve_llama_gpu_distribution_mode, resolve_llama_gpu_layers,
+    resolve_llama_gpu_manual_layers, resolve_llama_kv_placement, resolve_llama_kv_type,
+    resolve_llama_main_gpu, resolve_llama_mmproj_path,
+    resolve_llama_mtp_draft_tokens, resolve_llama_mtp_enabled, resolve_llama_mtp_model_path,
+    resolve_llama_multi_gpu_enabled, resolve_llama_offload_kqv,
+    resolve_llama_priority_vram_limit_bytes, resolve_llama_profile_min_p,
+    resolve_llama_profile_typical_p,
     resolve_llama_raw_completion_fallback, resolve_llama_rope_freq_base,
     resolve_llama_rope_freq_scale, resolve_llama_sampler_order, resolve_llama_sampler_profile,
     resolve_llama_seed, resolve_llama_streaming_enabled, resolve_llama_strict_mode,
@@ -47,8 +50,20 @@ fn build_llama_extra_fields(
     if let Some(v) = resolve_llama_gpu_device_ids(session, model, settings) {
         extra.insert("llamaGpuDeviceIds".to_string(), json!(v));
     }
-    if let Some(v) = resolve_llama_gpu_split_mode(session, model, settings) {
-        extra.insert("llamaGpuSplitMode".to_string(), json!(v));
+    if let Some(v) = resolve_llama_gpu_distribution_mode(session, model, settings) {
+        extra.insert("llamaGpuDistributionMode".to_string(), json!(v));
+    }
+    if let Some(v) = resolve_llama_gpu_manual_layers(session, model, settings) {
+        extra.insert("llamaGpuManualLayers".to_string(), json!(v));
+    }
+    if let Some(v) = resolve_llama_kv_placement(session, model, settings) {
+        extra.insert("llamaKvPlacement".to_string(), json!(v));
+    }
+    if let Some(v) = resolve_llama_main_gpu(session, model, settings) {
+        extra.insert("llamaMainGpu".to_string(), json!(v));
+    }
+    if let Some(v) = resolve_llama_priority_vram_limit_bytes(session, model, settings) {
+        extra.insert("llamaPriorityVramLimitBytes".to_string(), json!(v));
     }
     if let Some(v) = resolve_llama_threads(session, model, settings) {
         extra.insert("llamaThreads".to_string(), json!(v));

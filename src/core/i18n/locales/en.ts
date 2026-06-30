@@ -5891,13 +5891,13 @@ export const enMessages = {
     llamaMultiGpuEnabled: "Enabled",
     llamaMultiGpuDisabled: "Disabled",
     llamaGpuDevicesTitle: "GPU Devices",
-    llamaGpuDevicesDescription: "Select two or more GPU devices. CPU devices are never shown here.",
-    llamaGpuSplitLayer: "Layer split",
-    llamaGpuSplitRow: "Row split",
-    llamaGpuSplitTensor: "Tensor split",
-    llamaGpuNone: "No GPU devices reported by llama.cpp.",
+    llamaGpuDevicesDescription:
+      "Select two or more discrete GPU devices. Integrated and CPU devices are never shown here.",
+    llamaGpuNone: "No discrete GPU devices reported by llama.cpp.",
     llamaGpuMemory: "{{free}} / {{total}} GB free",
     llamaGpuMinTwo: "Select at least two GPUs to activate multi-GPU loading.",
+    llamaMultiGpuRequiresTwo:
+      "Requires two or more discrete GPUs. Integrated GPUs are never used.",
   },
   loraSelector: {
     title: "Design LoRA",

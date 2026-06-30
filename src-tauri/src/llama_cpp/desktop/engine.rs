@@ -3,7 +3,7 @@ use llama_cpp_2::llama_backend::LlamaBackend;
 use llama_cpp_2::mtmd::{MtmdContext, MtmdContextParams};
 use llama_cpp_sys_2::{
     ggml_backend_dev_count, ggml_backend_dev_get, ggml_backend_dev_type,
-    GGML_BACKEND_DEVICE_TYPE_ACCEL, GGML_BACKEND_DEVICE_TYPE_GPU, GGML_BACKEND_DEVICE_TYPE_IGPU,
+    GGML_BACKEND_DEVICE_TYPE_ACCEL, GGML_BACKEND_DEVICE_TYPE_GPU,
 };
 use serde_json::json;
 use std::ffi::{c_void, CString};
@@ -52,7 +52,9 @@ pub(super) struct LlamaState {
 pub(super) struct LlamaGpuConfig {
     pub(super) multi_gpu_enabled: bool,
     pub(super) device_ids: Vec<usize>,
-    pub(super) split_mode: Option<String>,
+    pub(super) tensor_split: Vec<f32>,
+    pub(super) main_gpu: Option<i32>,
+    pub(super) distribution_mode: Option<String>,
 }
 
 const LLAMA_MODEL_LOAD_PROGRESS_EVENT: &str = "llama-model-load-progress";
@@ -228,6 +230,9 @@ fn load_model_with_progress(
         params.n_gpu_layers = i32::try_from(n_gpu_layers).unwrap_or(i32::MAX);
     }
     let mut selected_devices = Vec::new();
+    // Must outlive the model-load call below: llama.cpp reads `params.tensor_split`
+    // during load, so the backing buffer cannot be dropped before then.
+    let tensor_split_storage: Vec<f32> = gpu_config.tensor_split.clone();
     if gpu_config.multi_gpu_enabled {
         if gpu_config.device_ids.len() < 2 {
             return Err(crate::utils::err_msg(
@@ -255,24 +260,29 @@ fn load_model_with_progress(
             }
             let dev_type = unsafe { ggml_backend_dev_type(dev) };
             let is_gpu_like = dev_type == GGML_BACKEND_DEVICE_TYPE_GPU
-                || dev_type == GGML_BACKEND_DEVICE_TYPE_IGPU
                 || dev_type == GGML_BACKEND_DEVICE_TYPE_ACCEL;
             if !is_gpu_like {
                 return Err(crate::utils::err_msg(
                     module_path!(),
                     line!(),
-                    format!("Selected device index {} is not a GPU device.", device_id),
+                    format!(
+                        "Selected device index {} is not a discrete GPU device.",
+                        device_id
+                    ),
                 ));
             }
             selected_devices.push(dev);
         }
         selected_devices.push(std::ptr::null_mut());
         params.devices = selected_devices.as_mut_ptr();
-        params.split_mode = match gpu_config.split_mode.as_deref() {
-            Some("row") => llama_cpp_sys_2::LLAMA_SPLIT_MODE_ROW,
-            Some("tensor") => llama_cpp_sys_2::LLAMA_SPLIT_MODE_TENSOR,
-            _ => llama_cpp_sys_2::LLAMA_SPLIT_MODE_LAYER,
-        };
+        // Only layer split is supported: GPUs hold whole layers (low PCIe traffic).
+        params.split_mode = llama_cpp_sys_2::LLAMA_SPLIT_MODE_LAYER;
+        if !tensor_split_storage.is_empty() {
+            params.tensor_split = tensor_split_storage.as_ptr();
+        }
+        if let Some(main_gpu) = gpu_config.main_gpu {
+            params.main_gpu = main_gpu;
+        }
     }
 
     let progress_ctx = app.map(|app| {
@@ -461,7 +471,7 @@ pub(super) fn load_engine(
             .unwrap_or_else(|| "auto".to_string())
     };
     let model_params_key = format!(
-        "requested_gpu_layers={requested_gpu_layers_key};strict_mode={};multi_gpu={};devices={};split_mode={}",
+        "requested_gpu_layers={requested_gpu_layers_key};strict_mode={};multi_gpu={};devices={};distribution={};tensor_split={};main_gpu={}",
         strict_mode,
         gpu_config.multi_gpu_enabled,
         gpu_config
@@ -470,7 +480,17 @@ pub(super) fn load_engine(
             .map(|value| value.to_string())
             .collect::<Vec<_>>()
             .join(","),
-        gpu_config.split_mode.as_deref().unwrap_or("layer"),
+        gpu_config.distribution_mode.as_deref().unwrap_or("balanced"),
+        gpu_config
+            .tensor_split
+            .iter()
+            .map(|value| format!("{value:.4}"))
+            .collect::<Vec<_>>()
+            .join(","),
+        gpu_config
+            .main_gpu
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "auto".to_string()),
     );
     let mut should_reload = guard.model.is_none()
         || guard.model_path.as_deref() != Some(model_path)

@@ -32,7 +32,6 @@ type RuntimeDefaults = {
   llamaDefaultKvCacheType: "auto" | "f16" | "q8_0" | "q4_0";
   llamaMultiGpuEnabled: boolean | null;
   llamaGpuDeviceIds: number[] | null;
-  llamaGpuSplitMode: "layer" | "row" | "tensor" | null;
 };
 
 type LlamaGpuDevice = {
@@ -188,7 +187,6 @@ export function LocalRuntimeDefaultsPage() {
           llamaDefaultKvCacheType: advanced.llamaDefaultKvCacheType ?? "auto",
           llamaMultiGpuEnabled: advancedModel.llamaMultiGpuEnabled ?? null,
           llamaGpuDeviceIds: advancedModel.llamaGpuDeviceIds ?? null,
-          llamaGpuSplitMode: advancedModel.llamaGpuSplitMode ?? null,
         });
       })
       .catch(() => {});
@@ -215,7 +213,6 @@ export function LocalRuntimeDefaultsPage() {
             next.llamaGpuDeviceIds && next.llamaGpuDeviceIds.length > 0
               ? next.llamaGpuDeviceIds
               : undefined,
-          llamaGpuSplitMode: next.llamaGpuSplitMode ?? undefined,
         });
       } catch (err) {
         toast.error(
@@ -287,6 +284,10 @@ export function LocalRuntimeDefaultsPage() {
   }
 
   const selectedGpuIds = defaults.llamaGpuDeviceIds ?? [];
+  const eligibleGpuDevices = gpuDevices.filter(
+    (device) => device.deviceType !== "IntegratedGpu",
+  );
+  const multiGpuAvailable = eligibleGpuDevices.length >= 2;
   const toggleGpuDevice = (index: number) => {
     const nextIds = selectedGpuIds.includes(index)
       ? selectedGpuIds.filter((id) => id !== index)
@@ -369,7 +370,8 @@ export function LocalRuntimeDefaultsPage() {
               description={t("runtimeDefaults.llamaMultiGpuDescription")}
             >
               <Switch
-                checked={defaults.llamaMultiGpuEnabled === true}
+                checked={defaults.llamaMultiGpuEnabled === true && multiGpuAvailable}
+                disabled={!multiGpuAvailable}
                 onChange={(next) =>
                   void persistDefaults({
                     ...defaults,
@@ -380,9 +382,15 @@ export function LocalRuntimeDefaultsPage() {
               />
             </SettingRow>
 
-            {defaults.llamaMultiGpuEnabled === true && (
+            {!multiGpuAvailable && (
+              <p className="-mt-1 px-1 text-[11px] text-fg/45">
+                {t("runtimeDefaults.llamaMultiGpuRequiresTwo")}
+              </p>
+            )}
+
+            {defaults.llamaMultiGpuEnabled === true && multiGpuAvailable && (
               <div className="rounded-xl border border-fg/10 bg-fg/5 px-4 py-3">
-                <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-3">
                   <div className="flex min-w-0 items-center gap-3">
                     <div className="rounded-lg border border-warning/30 bg-warning/10 p-1.5">
                       <Cpu className="h-4 w-4 text-warning/80" />
@@ -396,30 +404,15 @@ export function LocalRuntimeDefaultsPage() {
                       </p>
                     </div>
                   </div>
-                  <select
-                    value={defaults.llamaGpuSplitMode ?? "layer"}
-                    onChange={(event) =>
-                      void persistDefaults({
-                        ...defaults,
-                        llamaGpuSplitMode: event.target
-                          .value as RuntimeDefaults["llamaGpuSplitMode"],
-                      })
-                    }
-                    className={cn(controlClassName, "shrink-0")}
-                  >
-                    <option value="layer">{t("runtimeDefaults.llamaGpuSplitLayer")}</option>
-                    <option value="row">{t("runtimeDefaults.llamaGpuSplitRow")}</option>
-                    <option value="tensor">{t("runtimeDefaults.llamaGpuSplitTensor")}</option>
-                  </select>
                 </div>
 
                 <div className="mt-3 space-y-2">
-                  {gpuDevices.length === 0 ? (
+                  {eligibleGpuDevices.length === 0 ? (
                     <p className="rounded-lg border border-dashed border-fg/10 bg-fg/[0.03] px-3 py-4 text-center text-[13px] text-fg/45">
                       {t("runtimeDefaults.llamaGpuNone")}
                     </p>
                   ) : (
-                    gpuDevices.map((device) => {
+                    eligibleGpuDevices.map((device) => {
                       const checked = selectedGpuIds.includes(device.index);
                       return (
                         <button

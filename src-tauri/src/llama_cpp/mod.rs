@@ -836,12 +836,53 @@ mod desktop {
                 out
             })
             .unwrap_or_default();
-        let llama_gpu_split_mode = body
-            .get("llamaGpuSplitMode")
-            .or_else(|| body.get("llama_gpu_split_mode"))
+        let llama_gpu_distribution_mode = body
+            .get("llamaGpuDistributionMode")
+            .or_else(|| body.get("llama_gpu_distribution_mode"))
             .and_then(|v| v.as_str())
             .map(|s| s.trim().to_ascii_lowercase())
-            .filter(|s| matches!(s.as_str(), "layer" | "row" | "tensor"));
+            .filter(|s| matches!(s.as_str(), "balanced" | "proportional" | "priority" | "manual"));
+        let llama_gpu_manual_layers: Vec<(usize, u32)> = body
+            .get("llamaGpuManualLayers")
+            .or_else(|| body.get("llama_gpu_manual_layers"))
+            .and_then(|v| v.as_array())
+            .map(|items| {
+                let mut out: Vec<(usize, u32)> = Vec::new();
+                for item in items {
+                    let device_id = item
+                        .get("deviceId")
+                        .or_else(|| item.get("device_id"))
+                        .and_then(|v| v.as_u64())
+                        .and_then(|v| usize::try_from(v).ok());
+                    let layers = item
+                        .get("layers")
+                        .and_then(|v| v.as_u64())
+                        .and_then(|v| u32::try_from(v).ok());
+                    if let (Some(device_id), Some(layers)) = (device_id, layers) {
+                        if !out.iter().any(|(id, _)| *id == device_id) {
+                            out.push((device_id, layers));
+                        }
+                    }
+                }
+                out
+            })
+            .unwrap_or_default();
+        let llama_kv_placement = body
+            .get("llamaKvPlacement")
+            .or_else(|| body.get("llama_kv_placement"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.trim().to_string())
+            .filter(|s| matches!(s.as_str(), "auto" | "split" | "systemRam" | "pin"));
+        let llama_main_gpu = body
+            .get("llamaMainGpu")
+            .or_else(|| body.get("llama_main_gpu"))
+            .and_then(|v| v.as_u64())
+            .and_then(|v| i32::try_from(v).ok());
+        let llama_priority_vram_limit_bytes = body
+            .get("llamaPriorityVramLimitBytes")
+            .or_else(|| body.get("llama_priority_vram_limit_bytes"))
+            .and_then(|v| v.as_u64())
+            .filter(|v| *v > 0);
         let top_k = body
             .get("top_k")
             .or_else(|| body.get("topK"))
@@ -1017,7 +1058,26 @@ mod desktop {
 
         let result = (|| -> Result<(), String> {
             check_abort_signal(abort_rx.as_mut())?;
-            let resolved_offload_kqv = if llama_offload_kqv.is_some() {
+            let multi_gpu_active = llama_multi_gpu_enabled && llama_gpu_device_ids.len() >= 2;
+            // KV cache placement (multi-GPU only): drives both planning and the
+            // runtime context's offload_kqv, and pins the KV cache to a GPU.
+            let mut kv_main_gpu: Option<i32> = None;
+            let kv_placement_offload_kqv: Option<bool> = if multi_gpu_active {
+                match llama_kv_placement.as_deref() {
+                    Some("split") => Some(true),
+                    Some("systemRam") => Some(false),
+                    Some("pin") => {
+                        kv_main_gpu = llama_main_gpu;
+                        Some(true)
+                    }
+                    _ => None,
+                }
+            } else {
+                None
+            };
+            let resolved_offload_kqv = if let Some(placement) = kv_placement_offload_kqv {
+                Some(placement)
+            } else if llama_offload_kqv.is_some() {
                 llama_offload_kqv
             } else if using_rocm_backend() {
                 Some(false)
@@ -1033,13 +1093,48 @@ mod desktop {
                 LLAMA_FLASH_ATTN_TYPE_AUTO
             };
             let available_memory_bytes = get_available_memory_bytes();
-            let multi_gpu_active = llama_multi_gpu_enabled && llama_gpu_device_ids.len() >= 2;
             let available_vram_bytes = if multi_gpu_active {
                 context::get_available_vram_bytes_for_devices(&llama_gpu_device_ids)
                     .or_else(get_available_vram_bytes)
             } else {
                 get_available_vram_bytes()
             };
+            let distribution_mode = llama_gpu_distribution_mode
+                .clone()
+                .unwrap_or_else(|| "balanced".to_string());
+            let manual_distribution = multi_gpu_active && distribution_mode == "manual";
+            // Per-device free VRAM and manual layer counts, aligned to the selected
+            // device-id order so they line up with `params.devices` at load time.
+            let device_free_aligned: Vec<u64> = if multi_gpu_active {
+                let per_device = context::get_per_device_free_vram(&llama_gpu_device_ids);
+                llama_gpu_device_ids
+                    .iter()
+                    .map(|id| {
+                        per_device
+                            .iter()
+                            .find(|(dev, _, _)| dev == id)
+                            .map(|(_, free, _)| *free)
+                            .unwrap_or(0)
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            let manual_layers_aligned: Vec<u32> = if manual_distribution {
+                llama_gpu_device_ids
+                    .iter()
+                    .map(|id| {
+                        llama_gpu_manual_layers
+                            .iter()
+                            .find(|(dev, _)| dev == id)
+                            .map(|(_, layers)| *layers)
+                            .unwrap_or(0)
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            let mut multi_gpu_distribution: Option<offload::MultiGpuDistribution> = None;
             let mut effective_gpu_layers = llama_gpu_layers;
             let mut smart_gpu_layer_candidates: Option<Vec<u32>> = None;
             let cached_runtime_report =
@@ -1079,7 +1174,22 @@ mod desktop {
                 0
             };
 
-            if llama_gpu_layers.is_none() && !llama_strict_mode && backend_supports_gpu_offload {
+            if manual_distribution && backend_supports_gpu_offload {
+                // Manual mode: fixed per-GPU layer counts, no smart backoff ladder.
+                let dist = offload::plan_multi_gpu_distribution(
+                    "manual",
+                    &device_free_aligned,
+                    u32::MAX,
+                    0,
+                    0,
+                    Some(&manual_layers_aligned),
+                    None,
+                );
+                effective_gpu_layers = Some(dist.n_gpu_layers);
+                smart_gpu_layer_candidates = None;
+                multi_gpu_distribution = Some(dist);
+            } else if llama_gpu_layers.is_none() && !llama_strict_mode && backend_supports_gpu_offload
+            {
                 let mut smart_offload_plan = plan_smart_gpu_offload(
                     model_path,
                     available_memory_bytes,
@@ -1158,6 +1268,19 @@ mod desktop {
                 }
                 effective_gpu_layers = smart_offload_plan.candidate_gpu_layers.first().copied();
                 smart_gpu_layer_candidates = Some(smart_offload_plan.candidate_gpu_layers.clone());
+                if multi_gpu_active {
+                    // Auto strategy: fixed proportions valid across the shrinking
+                    // candidate ladder; only the total changes on fallback.
+                    multi_gpu_distribution = Some(offload::plan_multi_gpu_distribution(
+                        &distribution_mode,
+                        &device_free_aligned,
+                        smart_offload_plan.total_layers,
+                        smart_offload_plan.bytes_per_layer,
+                        smart_offload_plan.estimated_gpu_layers,
+                        None,
+                        llama_priority_vram_limit_bytes,
+                    ));
+                }
                 update_runtime_report_field(
                     &mut runtime_report,
                     "smartOffloadPlannedContext",
@@ -1234,6 +1357,27 @@ mod desktop {
             }
 
             check_abort_signal(abort_rx.as_mut())?;
+            if multi_gpu_active && multi_gpu_distribution.is_none() {
+                // Smart planning did not run (explicit layers / strict / no offload):
+                // still honor the chosen strategy with whatever total we have.
+                multi_gpu_distribution = Some(offload::plan_multi_gpu_distribution(
+                    &distribution_mode,
+                    &device_free_aligned,
+                    u32::MAX,
+                    0,
+                    effective_gpu_layers.unwrap_or(0),
+                    None,
+                    llama_priority_vram_limit_bytes,
+                ));
+            }
+            let multi_gpu_tensor_split = multi_gpu_distribution
+                .as_ref()
+                .map(|dist| dist.tensor_split.clone())
+                .unwrap_or_default();
+            // KV pin takes precedence over a priority-fill primary GPU.
+            let multi_gpu_main_gpu = kv_main_gpu
+                .or_else(|| multi_gpu_distribution.as_ref().and_then(|dist| dist.main_gpu));
+
             log_info(&app, "llama_cpp", "loading llama.cpp engine/model");
             let engine = load_engine(
                 Some(&app),
@@ -1248,7 +1392,21 @@ mod desktop {
                     } else {
                         Vec::new()
                     },
-                    split_mode: llama_gpu_split_mode.clone(),
+                    tensor_split: if multi_gpu_active {
+                        multi_gpu_tensor_split
+                    } else {
+                        Vec::new()
+                    },
+                    main_gpu: if multi_gpu_active {
+                        multi_gpu_main_gpu
+                    } else {
+                        None
+                    },
+                    distribution_mode: if multi_gpu_active {
+                        Some(distribution_mode.clone())
+                    } else {
+                        None
+                    },
                 },
                 llama_strict_mode,
                 llama_mmproj_path.as_deref(),
@@ -1316,6 +1474,8 @@ mod desktop {
                 || !engine.supports_gpu_offload
             {
                 Some(false)
+            } else if let Some(placement) = kv_placement_offload_kqv {
+                Some(placement)
             } else if llama_offload_kqv.is_some() {
                 llama_offload_kqv
             } else if using_rocm_backend() {
@@ -1425,11 +1585,36 @@ mod desktop {
             );
             update_runtime_report_field(
                 &mut runtime_report,
-                "llamaGpuSplitMode",
+                "llamaGpuDistributionMode",
                 json!(if multi_gpu_active {
-                    llama_gpu_split_mode.as_deref().unwrap_or("layer")
+                    Some(distribution_mode.clone())
                 } else {
-                    "single"
+                    None
+                }),
+            );
+            update_runtime_report_field(
+                &mut runtime_report,
+                "llamaKvPlacement",
+                json!(if multi_gpu_active {
+                    llama_kv_placement.clone().or_else(|| Some("auto".to_string()))
+                } else {
+                    None
+                }),
+            );
+            update_runtime_report_field(
+                &mut runtime_report,
+                "llamaMainGpu",
+                json!(multi_gpu_main_gpu),
+            );
+            update_runtime_report_field(
+                &mut runtime_report,
+                "gpuDeviceLayerPlacement",
+                json!(if multi_gpu_active {
+                    multi_gpu_distribution
+                        .as_ref()
+                        .map(|dist| dist.per_device_layers.clone())
+                } else {
+                    None
                 }),
             );
             update_runtime_report_field(&mut runtime_report, "modelSizeBytes", json!(model.size()));
@@ -3152,6 +3337,11 @@ pub async fn llamacpp_context_info(
     llama_gpu_layers: Option<u32>,
     llama_multi_gpu_enabled: Option<bool>,
     llama_gpu_device_ids: Option<Vec<usize>>,
+    llama_gpu_distribution_mode: Option<String>,
+    llama_gpu_manual_layers: Option<Vec<crate::chat_manager::types::GpuLayerAssignment>>,
+    llama_main_gpu: Option<i32>,
+    llama_kv_placement: Option<String>,
+    llama_priority_vram_limit_bytes: Option<u64>,
     llama_mmproj_path: Option<String>,
     llama_mtp_enabled: Option<bool>,
     llama_mtp_model_path: Option<String>,
@@ -3166,6 +3356,11 @@ pub async fn llamacpp_context_info(
             llama_gpu_layers,
             llama_multi_gpu_enabled,
             llama_gpu_device_ids,
+            llama_gpu_distribution_mode,
+            llama_gpu_manual_layers,
+            llama_main_gpu,
+            llama_kv_placement,
+            llama_priority_vram_limit_bytes,
             llama_mmproj_path,
             llama_mtp_enabled,
             llama_mtp_model_path,
@@ -3188,6 +3383,11 @@ pub async fn llamacpp_context_info(
         let _ = llama_gpu_layers;
         let _ = llama_multi_gpu_enabled;
         let _ = llama_gpu_device_ids;
+        let _ = llama_gpu_distribution_mode;
+        let _ = llama_gpu_manual_layers;
+        let _ = llama_main_gpu;
+        let _ = llama_kv_placement;
+        let _ = llama_priority_vram_limit_bytes;
         let _ = llama_mmproj_path;
         let _ = llama_mtp_enabled;
         let _ = llama_mtp_model_path;

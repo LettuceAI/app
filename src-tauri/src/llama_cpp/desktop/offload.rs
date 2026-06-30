@@ -27,6 +27,7 @@ pub(super) struct SmartGpuOffloadPlan {
     pub(super) estimated_sidecar_vram_reserve_bytes: u64,
     pub(super) estimated_runtime_reserve_bytes: u64,
     pub(super) effective_vram_budget_bytes: u64,
+    pub(super) bytes_per_layer: u64,
 }
 
 static MODEL_METADATA_CACHE: OnceLock<Mutex<HashMap<String, LlamaModelMetadata>>> = OnceLock::new();
@@ -381,5 +382,161 @@ pub(super) fn plan_smart_gpu_offload(
         estimated_sidecar_vram_reserve_bytes: sidecar_vram_reserve_bytes,
         estimated_runtime_reserve_bytes,
         effective_vram_budget_bytes,
+        bytes_per_layer,
     })
+}
+
+#[derive(Debug, Clone, Default)]
+pub(super) struct MultiGpuDistribution {
+    pub(super) n_gpu_layers: u32,
+    pub(super) tensor_split: Vec<f32>,
+    pub(super) main_gpu: Option<i32>,
+    pub(super) per_device_layers: Vec<u32>,
+}
+
+fn normalize_weights(weights: &[f32]) -> Vec<f32> {
+    let n = weights.len();
+    if n == 0 {
+        return Vec::new();
+    }
+    let sum: f32 = weights.iter().copied().filter(|w| *w > 0.0).sum();
+    if sum <= 0.0 {
+        return vec![1.0 / n as f32; n];
+    }
+    weights.iter().map(|w| w.max(0.0) / sum).collect()
+}
+
+/// Split `total` whole layers across devices following `weights`, summing exactly
+/// to `total` (largest-remainder method). Used for the UI placement estimate.
+fn distribute_by_weights(total: u32, weights: &[f32]) -> Vec<u32> {
+    let n = weights.len();
+    if n == 0 {
+        return Vec::new();
+    }
+    if total == 0 {
+        return vec![0u32; n];
+    }
+    let sum: f32 = weights.iter().copied().filter(|w| *w > 0.0).sum();
+    let raw: Vec<f32> = if sum <= 0.0 {
+        vec![total as f32 / n as f32; n]
+    } else {
+        weights
+            .iter()
+            .map(|w| (w.max(0.0) / sum) * total as f32)
+            .collect()
+    };
+    let mut out: Vec<u32> = raw.iter().map(|r| r.floor() as u32).collect();
+    let assigned: u32 = out.iter().copied().sum();
+    let mut remainder = total.saturating_sub(assigned);
+    let mut order: Vec<usize> = (0..n).collect();
+    order.sort_by(|a, b| {
+        let fa = raw[*a] - raw[*a].floor();
+        let fb = raw[*b] - raw[*b].floor();
+        fb.partial_cmp(&fa).unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let mut i = 0;
+    while remainder > 0 {
+        let idx = order[i % n];
+        out[idx] += 1;
+        remainder -= 1;
+        i += 1;
+    }
+    out
+}
+
+/// Translate a distribution strategy into concrete llama.cpp load parameters.
+/// `device_free_vram` and `manual` are aligned to the selected-device order.
+pub(super) fn plan_multi_gpu_distribution(
+    mode: &str,
+    device_free_vram: &[u64],
+    total_layers: u32,
+    bytes_per_layer: u64,
+    smart_total_estimate: u32,
+    manual: Option<&[u32]>,
+    priority_limit_bytes: Option<u64>,
+) -> MultiGpuDistribution {
+    let n = device_free_vram.len();
+    if n == 0 {
+        return MultiGpuDistribution::default();
+    }
+    let auto_total = smart_total_estimate.min(total_layers);
+
+    match mode {
+        "manual" => {
+            let counts: Vec<u32> = (0..n)
+                .map(|i| manual.and_then(|m| m.get(i).copied()).unwrap_or(0))
+                .collect();
+            let total: u32 = counts.iter().copied().sum::<u32>().min(total_layers);
+            let weights: Vec<f32> = counts.iter().map(|c| *c as f32).collect();
+            MultiGpuDistribution {
+                n_gpu_layers: total,
+                tensor_split: if total > 0 {
+                    normalize_weights(&weights)
+                } else {
+                    Vec::new()
+                },
+                main_gpu: None,
+                per_device_layers: counts,
+            }
+        }
+        "priority" => {
+            let mut remaining = auto_total;
+            let mut per_device = vec![0u32; n];
+            for (i, free) in device_free_vram.iter().enumerate() {
+                if remaining == 0 {
+                    break;
+                }
+                let budget = if i == 0 {
+                    priority_limit_bytes.map(|lim| lim.min(*free)).unwrap_or(*free)
+                } else {
+                    *free
+                };
+                let cap = if bytes_per_layer == 0 {
+                    remaining
+                } else {
+                    u32::try_from(budget / bytes_per_layer).unwrap_or(remaining)
+                };
+                let assigned = cap.min(remaining);
+                per_device[i] = assigned;
+                remaining -= assigned;
+            }
+            if remaining > 0 {
+                if let Some(last) = per_device.last_mut() {
+                    *last += remaining;
+                }
+            }
+            let total: u32 = per_device.iter().copied().sum::<u32>().min(total_layers);
+            let weights: Vec<f32> = per_device.iter().map(|c| *c as f32).collect();
+            MultiGpuDistribution {
+                n_gpu_layers: total,
+                tensor_split: if total > 0 {
+                    normalize_weights(&weights)
+                } else {
+                    Vec::new()
+                },
+                main_gpu: Some(0),
+                per_device_layers: per_device,
+            }
+        }
+        "proportional" => {
+            let weights: Vec<f32> = device_free_vram.iter().map(|f| *f as f32).collect();
+            let split = normalize_weights(&weights);
+            MultiGpuDistribution {
+                n_gpu_layers: auto_total,
+                per_device_layers: distribute_by_weights(auto_total, &split),
+                tensor_split: if auto_total > 0 { split } else { Vec::new() },
+                main_gpu: None,
+            }
+        }
+        // "balanced" and any unknown strategy fall through to an even split.
+        _ => {
+            let split = vec![1.0f32; n];
+            MultiGpuDistribution {
+                n_gpu_layers: auto_total,
+                per_device_layers: distribute_by_weights(auto_total, &split),
+                tensor_split: if auto_total > 0 { split } else { Vec::new() },
+                main_gpu: None,
+            }
+        }
+    }
 }
