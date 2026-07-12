@@ -41,6 +41,8 @@ struct GeminiGenerationConfig {
     response_modalities: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     response_format: Option<GeminiResponseFormat>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    image_config: Option<GeminiImageConfig>,
 }
 
 #[derive(Serialize)]
@@ -53,6 +55,19 @@ struct GeminiResponseFormat {
 #[serde(rename_all = "camelCase")]
 struct GeminiImageFormat {
     aspect_ratio: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GeminiImageConfig {
+    aspect_ratio: String,
+}
+
+/// Developer API wants `responseFormat.image.aspectRatio`; Vertex/Express wants
+/// `imageConfig.aspectRatio` and 400s on `responseFormat`.
+enum GeminiAspectRatioStyle {
+    ResponseFormat,
+    ImageConfig,
 }
 
 fn gemini_aspect_ratio(size: Option<&str>) -> Option<String> {
@@ -73,18 +88,100 @@ fn gemini_aspect_ratio(size: Option<&str>) -> Option<String> {
         .then_some(ratio)
 }
 
+fn build_gemini_payload(
+    request: &ImageGenerationRequest,
+    aspect_ratio_style: GeminiAspectRatioStyle,
+) -> Result<ImageRequestPayload, String> {
+    let mut parts = Vec::new();
+    parts.push(GeminiPart {
+        text: Some(&request.prompt),
+        inline_data: None,
+    });
+
+    if let Some(input_images) = &request.input_images {
+        for image in input_images {
+            let Some((mime_type, data)) = image
+                .strip_prefix("data:")
+                .and_then(|rest| rest.split_once(";base64,"))
+            else {
+                return Err(
+                    "Gemini image editing requires each input image as a base64 data URL"
+                        .to_string(),
+                );
+            };
+            if mime_type.is_empty() || data.is_empty() {
+                return Err("Gemini image editing received an empty image data URL".to_string());
+            }
+            parts.push(GeminiPart {
+                text: None,
+                inline_data: Some(GeminiInlineDataRequest { mime_type, data }),
+            });
+        }
+    }
+
+    let content = GeminiContent {
+        role: "user",
+        parts,
+    };
+
+    let supports_text = request
+        .output_modalities
+        .as_ref()
+        .map(|scopes| scopes.iter().any(|s| s.eq_ignore_ascii_case("text")))
+        .unwrap_or(false);
+    let mut response_modalities = Vec::new();
+    if supports_text {
+        response_modalities.push("TEXT".to_string());
+    }
+    response_modalities.push("IMAGE".to_string());
+
+    let aspect_ratio = gemini_aspect_ratio(request.size.as_deref());
+    let (response_format, image_config) = match aspect_ratio_style {
+        GeminiAspectRatioStyle::ResponseFormat => (
+            aspect_ratio.map(|aspect_ratio| GeminiResponseFormat {
+                image: GeminiImageFormat { aspect_ratio },
+            }),
+            None,
+        ),
+        GeminiAspectRatioStyle::ImageConfig => (
+            None,
+            aspect_ratio.map(|aspect_ratio| GeminiImageConfig { aspect_ratio }),
+        ),
+    };
+
+    let req = GeminiRequest {
+        contents: vec![content],
+        generation_config: Some(GeminiGenerationConfig {
+            response_modalities,
+            response_format,
+            image_config,
+        }),
+    };
+
+    Ok(ImageRequestPayload::Json(
+        serde_json::to_value(req).unwrap_or_else(|_| json!({})),
+    ))
+}
+
 #[derive(Deserialize)]
 struct GeminiResponse {
     candidates: Vec<GeminiCandidate>,
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct GeminiCandidate {
+    #[serde(default)]
     content: GeminiResponseContent,
+    #[serde(default)]
+    finish_reason: Option<String>,
+    #[serde(default)]
+    finish_message: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Default)]
 struct GeminiResponseContent {
+    #[serde(default)]
     parts: Vec<GeminiResponsePart>,
 }
 
@@ -135,61 +232,7 @@ impl ImageProviderAdapter for GoogleGeminiAdapter {
     }
 
     fn payload(&self, request: &ImageGenerationRequest) -> Result<ImageRequestPayload, String> {
-        let mut parts = Vec::new();
-        parts.push(GeminiPart {
-            text: Some(&request.prompt),
-            inline_data: None,
-        });
-
-        if let Some(input_images) = &request.input_images {
-            for image in input_images {
-                let Some((mime_type, data)) = image
-                    .strip_prefix("data:")
-                    .and_then(|rest| rest.split_once(";base64,"))
-                else {
-                    return Err("Gemini image editing requires each input image as a base64 data URL".to_string());
-                };
-                if mime_type.is_empty() || data.is_empty() {
-                    return Err("Gemini image editing received an empty image data URL".to_string());
-                }
-                parts.push(GeminiPart {
-                    text: None,
-                    inline_data: Some(GeminiInlineDataRequest { mime_type, data }),
-                });
-            }
-        }
-
-        let content = GeminiContent {
-            role: "user",
-            parts,
-        };
-
-        let supports_text = request
-            .output_modalities
-            .as_ref()
-            .map(|scopes| scopes.iter().any(|s| s.eq_ignore_ascii_case("text")))
-            .unwrap_or(false);
-        let mut response_modalities = Vec::new();
-        if supports_text {
-            response_modalities.push("TEXT".to_string());
-        }
-        response_modalities.push("IMAGE".to_string());
-
-        let req = GeminiRequest {
-            contents: vec![content],
-            generation_config: Some(GeminiGenerationConfig {
-                response_modalities,
-                response_format: gemini_aspect_ratio(request.size.as_deref()).map(|aspect_ratio| {
-                    GeminiResponseFormat {
-                        image: GeminiImageFormat { aspect_ratio },
-                    }
-                }),
-            }),
-        };
-
-        Ok(ImageRequestPayload::Json(
-            serde_json::to_value(req).unwrap_or_else(|_| json!({})),
-        ))
+        build_gemini_payload(request, GeminiAspectRatioStyle::ResponseFormat)
     }
 
     fn parse_response(&self, response: Value) -> Result<Vec<ImageResponseData>, String> {
@@ -210,6 +253,7 @@ impl ImageProviderAdapter for GoogleGeminiAdapter {
         }
 
         let mut images = Vec::new();
+        let mut block_reason: Option<String> = None;
         for candidate in &gemini_response.candidates {
             let text = candidate.content.parts.first().and_then(|p| p.text.clone());
             let mut image_data_found = false;
@@ -234,11 +278,28 @@ impl ImageProviderAdapter for GoogleGeminiAdapter {
                         b64_json: None,
                         text: Some(t),
                     });
+                } else if candidate.finish_reason.as_deref().is_some_and(|r| r != "STOP") {
+                    // Gemini blocked the request entirely (e.g. IMAGE_PROHIBITED_CONTENT):
+                    // content has no parts at all, only a finishReason/finishMessage.
+                    block_reason = Some(
+                        candidate
+                            .finish_message
+                            .clone()
+                            .or_else(|| candidate.finish_reason.clone())
+                            .unwrap_or_default(),
+                    );
                 }
             }
         }
 
         if images.is_empty() {
+            if let Some(reason) = block_reason {
+                return Err(crate::utils::err_msg(
+                    module_path!(),
+                    line!(),
+                    format!("Gemini declined to generate the image: {}", reason),
+                ));
+            }
             return Err(crate::utils::err_msg(
                 module_path!(),
                 line!(),
@@ -250,7 +311,8 @@ impl ImageProviderAdapter for GoogleGeminiAdapter {
     }
 }
 
-// Express variant: same Gemini payload, just aiplatform.googleapis.com + x-goog-api-key
+// Express variant: aiplatform.googleapis.com + x-goog-api-key, and imageConfig
+// instead of responseFormat for aspect ratio (see GeminiAspectRatioStyle)
 pub struct GeminiAgentPlatformExpressAdapter;
 
 impl ImageProviderAdapter for GeminiAgentPlatformExpressAdapter {
@@ -293,7 +355,7 @@ impl ImageProviderAdapter for GeminiAgentPlatformExpressAdapter {
     }
 
     fn payload(&self, request: &ImageGenerationRequest) -> Result<ImageRequestPayload, String> {
-        GoogleGeminiAdapter.payload(request)
+        build_gemini_payload(request, GeminiAspectRatioStyle::ImageConfig)
     }
 
     fn parse_response(&self, response: Value) -> Result<Vec<ImageResponseData>, String> {
@@ -303,12 +365,86 @@ impl ImageProviderAdapter for GeminiAgentPlatformExpressAdapter {
 
 #[cfg(test)]
 mod tests {
-    use super::gemini_aspect_ratio;
+    use super::*;
 
     #[test]
     fn converts_dimensions_to_supported_gemini_aspect_ratios() {
         assert_eq!(gemini_aspect_ratio(Some("1024x576")), Some("16:9".to_string()));
         assert_eq!(gemini_aspect_ratio(Some("1024x1024")), Some("1:1".to_string()));
         assert_eq!(gemini_aspect_ratio(Some("800x600")), Some("4:3".to_string()));
+    }
+
+    fn request_with_size(size: &str) -> ImageGenerationRequest {
+        ImageGenerationRequest {
+            prompt: "a cat".to_string(),
+            model: "gemini-3.1-flash-image".to_string(),
+            provider_id: "gemini".to_string(),
+            credential_id: "cred".to_string(),
+            advanced_model_settings: None,
+            input_images: None,
+            output_modalities: None,
+            size: Some(size.to_string()),
+            quality: None,
+            style: None,
+            n: None,
+            session_id: None,
+            character_id: None,
+            character_name: None,
+            usage_source: None,
+        }
+    }
+
+    fn payload_json(payload: ImageRequestPayload) -> Value {
+        match payload {
+            ImageRequestPayload::Json(v) => v,
+            ImageRequestPayload::Multipart(_) => panic!("expected JSON payload"),
+        }
+    }
+
+    #[test]
+    fn developer_api_sends_response_format_aspect_ratio() {
+        let body = payload_json(
+            GoogleGeminiAdapter
+                .payload(&request_with_size("1024x1024"))
+                .unwrap(),
+        );
+        assert_eq!(
+            body["generationConfig"]["responseFormat"]["image"]["aspectRatio"],
+            "1:1"
+        );
+        assert!(body["generationConfig"]["imageConfig"].is_null());
+    }
+
+    #[test]
+    fn express_adapter_sends_image_config_aspect_ratio() {
+        let body = payload_json(
+            GeminiAgentPlatformExpressAdapter
+                .payload(&request_with_size("1024x1024"))
+                .unwrap(),
+        );
+        assert_eq!(body["generationConfig"]["imageConfig"]["aspectRatio"], "1:1");
+        assert!(body["generationConfig"]["responseFormat"].is_null());
+    }
+
+    #[test]
+    fn surfaces_block_reason_when_content_has_no_parts() {
+        // Captured verbatim from a real IMAGE_PROHIBITED_CONTENT response.
+        let response = json!({
+            "candidates": [{
+                "content": {"role": "model"},
+                "finishMessage": "Unable to show the generated image. The image was filtered out because it violated Google's Responsible AI practices. Try rephrasing the prompt. If you think this was an error, send feedback. Support code: 11030041.",
+                "finishReason": "IMAGE_PROHIBITED_CONTENT"
+            }],
+            "createTime": "2026-07-11T15:14:35.409613Z",
+            "modelVersion": "gemini-3.1-flash-image",
+            "responseId": "211Sao2AGf-HoLAP_svcmA4",
+            "usageMetadata": {"promptTokenCount": 2658, "totalTokenCount": 2658}
+        });
+
+        let err = GoogleGeminiAdapter.parse_response(response).unwrap_err();
+        assert!(
+            err.contains("Responsible AI practices"),
+            "expected block reason in error, got: {err}"
+        );
     }
 }
