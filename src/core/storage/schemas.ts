@@ -2951,11 +2951,39 @@ export const NavigationStyleSchema = z.enum([
   "dock",
   "sidebar",
   "floatingSidebar",
+  "header",
 ]);
 export type NavigationStyle = z.infer<typeof NavigationStyleSchema>;
 
 export const NavigationSideSchema = z.enum(["left", "right"]);
 export type NavigationSide = z.infer<typeof NavigationSideSchema>;
+
+export const HeaderStyleSchema = z.enum(["auto", "attached", "floating"]);
+export type HeaderStyle = z.infer<typeof HeaderStyleSchema>;
+
+export const NavAlignSchema = z.enum(["start", "center", "end"]);
+export type NavAlign = z.infer<typeof NavAlignSchema>;
+
+export const NavEdgeSchema = z.enum(["top", "bottom"]);
+export type NavEdge = z.infer<typeof NavEdgeSchema>;
+
+export const NavItemIdSchema = z.enum([
+  "chats",
+  "groups",
+  "create",
+  "discover",
+  "library",
+  "search",
+  "settings",
+]);
+export type NavItemId = z.infer<typeof NavItemIdSchema>;
+export const DEFAULT_NAV_ITEMS: readonly NavItemId[] = [
+  "chats",
+  "groups",
+  "create",
+  "discover",
+  "library",
+];
 
 export const AccessibilitySettingsSchema = z.object({
   send: AccessibilitySoundSchema.default({ enabled: false, volume: 0.5 }),
@@ -3239,6 +3267,10 @@ export const SettingsSchema = z.object({
       accessibility: AccessibilitySettingsSchema.optional(),
       navigationStyle: NavigationStyleSchema.optional(),
       navigationSide: NavigationSideSchema.optional(),
+      headerStyle: HeaderStyleSchema.optional(),
+      navItems: z.array(NavItemIdSchema).min(1).max(7).optional(),
+      navAlign: NavAlignSchema.optional(),
+      navEdge: NavEdgeSchema.optional(),
       chatAppearance: ChatAppearanceSettingsSchema.optional(),
     })
     .optional(),
