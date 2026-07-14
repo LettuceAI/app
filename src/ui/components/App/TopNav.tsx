@@ -701,7 +701,7 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
   return (
     <header
       ref={headerRef}
-      className="fixed left-0 right-0 top-[var(--titlebar-h,0px)] z-40 border-b border-fg/10 backdrop-blur-md bg-nav/80"
+      className="fixed left-[var(--appnav-top-w,0px)] right-[var(--appnav-top-wr,0px)] top-[var(--titlebar-h,0px)] z-40 border-b border-fg/10 backdrop-blur-md bg-nav/80"
       style={{
         paddingTop: isDesktop ? "8px" : "calc(env(safe-area-inset-top) + 12px)",
         paddingBottom: isDesktop ? "8px" : "12px",

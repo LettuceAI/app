@@ -308,6 +308,8 @@ pub(crate) fn default_settings() -> Settings {
                     volume: 0.6,
                 },
             }),
+            navigation_style: None,
+            navigation_side: None,
             chat_appearance: None,
         }),
         prompt_template_id: None,

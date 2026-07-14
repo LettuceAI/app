@@ -434,6 +434,10 @@ pub struct AdvancedSettings {
     #[serde(default)]
     pub accessibility: Option<AccessibilitySettings>,
     #[serde(default)]
+    pub navigation_style: Option<String>,
+    #[serde(default)]
+    pub navigation_side: Option<String>,
+    #[serde(default)]
     pub chat_appearance: Option<Value>,
 }
 

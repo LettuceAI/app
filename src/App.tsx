@@ -123,7 +123,7 @@ import { V3UpgradeToast } from "./ui/components/V3UpgradeToast";
 import { ConfirmBottomMenuHost } from "./ui/components/ConfirmBottomMenu";
 import { getLastSeenAppVersion, isOnboardingCompleted } from "./core/storage/appState";
 import { WhatsNewDrawer, WHATS_NEW_OPEN_EVENT } from "./ui/pages/whats-new/WhatsNewPage";
-import { TopNav, BottomNav, TitleBar, WindowResizeHandles } from "./ui/components/App";
+import { TopNav, AppNav, TitleBar, WindowResizeHandles } from "./ui/components/App";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen, UnlistenFn } from "@tauri-apps/api/event";
 import { useAndroidBackHandler } from "./ui/hooks/useAndroidBackHandler";
@@ -136,9 +136,11 @@ import { detectUpdateChannel } from "./core/app-updates/checkForAppUpdate";
 import { presentAppUpdateToast } from "./core/app-updates/presentAppUpdateToast";
 import {
   readSettings,
+  readSettingsCached,
   refreshSettingsFromStorage,
   SETTINGS_UPDATED_EVENT,
 } from "./core/storage/repo";
+import type { NavigationSide, NavigationStyle } from "./core/storage/schemas";
 import { recordChatDebugEvent } from "./core/debug/chatDebugStore";
 
 const chatLog = logManager({ component: "Chat" });
@@ -836,6 +838,21 @@ function AppContent() {
     }
   }, [isSettingRoute, location.pathname, location.search]);
 
+  const [navStyle, setNavStyle] = useState<NavigationStyle>(
+    () => readSettingsCached()?.advancedSettings?.navigationStyle ?? "bottom",
+  );
+  const [navSide, setNavSide] = useState<NavigationSide>(
+    () => readSettingsCached()?.advancedSettings?.navigationSide ?? "left",
+  );
+  useEffect(() => {
+    const syncNavStyle = () => {
+      setNavStyle(readSettingsCached()?.advancedSettings?.navigationStyle ?? "bottom");
+      setNavSide(readSettingsCached()?.advancedSettings?.navigationSide ?? "left");
+    };
+    syncNavStyle();
+    window.addEventListener(SETTINGS_UPDATED_EVENT, syncNavStyle);
+    return () => window.removeEventListener(SETTINGS_UPDATED_EVENT, syncNavStyle);
+  }, []);
   const [isLgViewport, setIsLgViewport] = useState(() =>
     typeof window === "undefined" ? false : window.matchMedia("(min-width: 1024px)").matches,
   );
@@ -1009,7 +1026,7 @@ function AppContent() {
             : isSettingRoute
               ? "max-w-md min-h-[calc(100dvh-var(--titlebar-h,0px))] lg:max-w-none lg:h-[calc(100dvh-var(--titlebar-h,0px))] lg:min-h-0"
               : "max-w-md lg:max-w-none min-h-[calc(100dvh-var(--titlebar-h,0px))]"
-        } flex-col ${showBottomNav ? "pb-[calc(72px+env(safe-area-inset-bottom))]" : "pb-0"}`}
+        } flex-col pl-[var(--appnav-w,0px)] pr-[var(--appnav-wr,0px)] ${showBottomNav ? "pb-[calc(var(--appnav-h,0px)+8px)]" : "pb-0"}`}
       >
         {showTopNav && (
           <TopNav
@@ -1071,7 +1088,7 @@ function AppContent() {
                                 ? "overflow-hidden px-0 pt-0 pb-0"
                                 : isSettingRoute
                                   ? "overflow-y-auto px-4 pt-4 pb-6 lg:overflow-hidden lg:p-0 lg:mt-(--topnav-h,72px)"
-                                  : `overflow-y-auto px-4 pt-4 ${showBottomNav ? "pb-[calc(96px+env(safe-area-inset-bottom))]" : "pb-6"}`
+                                  : `overflow-y-auto px-4 pt-4 ${showBottomNav ? "pb-[calc(var(--appnav-h,0px)+32px)]" : "pb-6"}`
           }`}
         >
           <div
@@ -1295,7 +1312,19 @@ function AppContent() {
           </div>
         </main>
 
-        {showBottomNav && <BottomNav onCreateClick={() => setShowCreateMenu(true)} />}
+        {showBottomNav && (
+          <AppNav
+            style={
+              !isLgViewport && navStyle === "sidebar"
+                ? "bottom"
+                : !isLgViewport && navStyle === "floatingSidebar"
+                  ? "dock"
+                  : navStyle
+            }
+            side={navSide}
+            onCreateClick={() => setShowCreateMenu(true)}
+          />
+        )}
       </div>
 
       {showBottomNav && (

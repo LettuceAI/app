@@ -2945,6 +2945,18 @@ export const AccessibilitySoundSchema = z.object({
 });
 export type AccessibilitySound = z.infer<typeof AccessibilitySoundSchema>;
 
+export const NavigationStyleSchema = z.enum([
+  "bottom",
+  "bottomLabels",
+  "dock",
+  "sidebar",
+  "floatingSidebar",
+]);
+export type NavigationStyle = z.infer<typeof NavigationStyleSchema>;
+
+export const NavigationSideSchema = z.enum(["left", "right"]);
+export type NavigationSide = z.infer<typeof NavigationSideSchema>;
+
 export const AccessibilitySettingsSchema = z.object({
   send: AccessibilitySoundSchema.default({ enabled: false, volume: 0.5 }),
   success: AccessibilitySoundSchema.default({ enabled: false, volume: 0.6 }),
@@ -3225,6 +3237,8 @@ export const SettingsSchema = z.object({
       dynamicMemory: DynamicMemorySettingsSchema.optional(),
       groupDynamicMemory: DynamicMemorySettingsSchema.optional(),
       accessibility: AccessibilitySettingsSchema.optional(),
+      navigationStyle: NavigationStyleSchema.optional(),
+      navigationSide: NavigationSideSchema.optional(),
       chatAppearance: ChatAppearanceSettingsSchema.optional(),
     })
     .optional(),

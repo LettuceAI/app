@@ -1,0 +1,115 @@
+import { Plus } from "lucide-react";
+import { useEffect, useRef } from "react";
+import { useLocation } from "react-router-dom";
+
+import { TabItem } from "./NavItem";
+import {
+  NAV_LEADING_DESTINATIONS,
+  NAV_TRAILING_DESTINATIONS,
+  resolveCreateAction,
+} from "./navDestinations";
+import { useI18n } from "../../../core/i18n/context";
+import type { NavigationSide } from "../../../core/storage/schemas";
+
+function useAppNavSideVar(
+  ref: React.RefObject<HTMLElement | null>,
+  side: NavigationSide,
+  floating: boolean,
+) {
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    const root = document.documentElement;
+    const contentVar = side === "right" ? "--appnav-wr" : "--appnav-w";
+    const topVar = side === "right" ? "--appnav-top-wr" : "--appnav-top-w";
+    const update = () => {
+      const rect = element.getBoundingClientRect();
+      const width =
+        side === "right" ? window.innerWidth - rect.left : rect.right;
+      const value = `${Math.max(0, Math.ceil(width))}px`;
+      root.style.setProperty(contentVar, value);
+      if (!floating) {
+        root.style.setProperty(topVar, value);
+      }
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    window.addEventListener("resize", update);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", update);
+      root.style.setProperty(contentVar, "0px");
+      root.style.setProperty(topVar, "0px");
+    };
+  }, [ref, side, floating]);
+}
+
+export function SidebarNav({
+  onCreateClick,
+  side = "left",
+  floating = false,
+}: {
+  onCreateClick: () => void;
+  side?: NavigationSide;
+  floating?: boolean;
+}) {
+  const { pathname } = useLocation();
+  const { t } = useI18n();
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  useAppNavSideVar(containerRef, side, floating);
+
+  const layoutId = floating ? "activeTabSidebarFloating" : "activeTabSidebar";
+  const itemRounded = floating ? "rounded-full" : "rounded-2xl";
+  const containerClassName = floating
+    ? `fixed top-1/2 z-30 flex -translate-y-1/2 flex-col items-center gap-1 rounded-full border border-fg/10 bg-nav/95 px-1.5 py-2 text-fg shadow-[0_12px_32px_rgba(0,0,0,0.35)] backdrop-blur-md ${
+        side === "right" ? "right-3" : "left-3"
+      }`
+    : `fixed bottom-0 top-[var(--titlebar-h,0px)] z-30 flex w-16 flex-col items-center gap-1 bg-nav/95 py-3 text-fg ${
+        side === "right" ? "right-0 border-l border-fg/8" : "left-0 border-r border-fg/8"
+      }`;
+
+  return (
+    <div ref={containerRef} className={containerClassName}>
+      {NAV_LEADING_DESTINATIONS.map((destination) => (
+        <TabItem
+          key={destination.id}
+          to={destination.to}
+          icon={destination.icon}
+          label={t(destination.labelKey)}
+          active={destination.isActive(pathname)}
+          className="h-12 w-12"
+          dataTourId={destination.dataTourId}
+          layoutId={layoutId}
+          rounded={itemRounded}
+        />
+      ))}
+
+      <button
+        onClick={() => resolveCreateAction(pathname, onCreateClick)}
+        data-tour-id="nav-create"
+        title={t("common.bottomNav.create")}
+        className={`flex h-12 w-12 items-center justify-center ${
+          floating ? "rounded-full" : "rounded-2xl"
+        } border border-fg/15 bg-fg/10 text-fg shadow-[0_8px_20px_rgba(0,0,0,0.25)] transition hover:border-fg/25 hover:bg-fg/20`}
+        aria-label={t("common.bottomNav.create")}
+      >
+        <Plus size={20} />
+      </button>
+
+      {NAV_TRAILING_DESTINATIONS.map((destination) => (
+        <TabItem
+          key={destination.id}
+          to={destination.to}
+          icon={destination.icon}
+          label={t(destination.labelKey)}
+          active={destination.isActive(pathname)}
+          className="h-12 w-12"
+          dataTourId={destination.dataTourId}
+          layoutId={layoutId}
+          rounded={itemRounded}
+        />
+      ))}
+    </div>
+  );
+}

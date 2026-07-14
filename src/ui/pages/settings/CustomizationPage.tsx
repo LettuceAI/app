@@ -15,6 +15,8 @@ import { readSettings, saveAdvancedSettings } from "../../../core/storage/repo";
 import {
   createDefaultAccessibilitySettings,
   type AccessibilitySettings,
+  type NavigationSide,
+  type NavigationStyle,
 } from "../../../core/storage/schemas";
 import { playAccessibilitySound } from "../../../core/utils/accessibilityAudio";
 import { cn, radius, colors, interactive } from "../../design-tokens";
@@ -63,6 +65,60 @@ const TITLE_BAR_OPTIONS = [
     descKey: "accessibility.titleBar.nativeDesc" as const,
   },
 ] as const;
+
+const NAV_STYLE_OPTIONS = [
+  {
+    value: "bottom" as const,
+    labelKey: "accessibility.navigation.bottom" as const,
+    descKey: "accessibility.navigation.bottomDesc" as const,
+  },
+  {
+    value: "bottomLabels" as const,
+    labelKey: "accessibility.navigation.bottomLabels" as const,
+    descKey: "accessibility.navigation.bottomLabelsDesc" as const,
+  },
+  {
+    value: "dock" as const,
+    labelKey: "accessibility.navigation.dock" as const,
+    descKey: "accessibility.navigation.dockDesc" as const,
+  },
+  {
+    value: "sidebar" as const,
+    labelKey: "accessibility.navigation.sidebar" as const,
+    descKey: "accessibility.navigation.sidebarDesc" as const,
+  },
+  {
+    value: "floatingSidebar" as const,
+    labelKey: "accessibility.navigation.floatingSidebar" as const,
+    descKey: "accessibility.navigation.floatingSidebarDesc" as const,
+  },
+] as const;
+
+const SIDEBAR_NAV_STYLES: readonly NavigationStyle[] = ["sidebar", "floatingSidebar"];
+
+function NavStylePreview({ style }: { style: NavigationStyle }) {
+  return (
+    <span className="relative block h-7 w-11 shrink-0 overflow-hidden rounded border border-fg/20">
+      {style === "sidebar" ? (
+        <span className="absolute bottom-0 left-0 top-0 w-2 border-r border-fg/20 bg-fg/15" />
+      ) : style === "floatingSidebar" ? (
+        <span className="absolute left-1 top-1/2 h-4 w-1.5 -translate-y-1/2 rounded-full bg-fg/25" />
+      ) : style === "dock" ? (
+        <span className="absolute bottom-1 left-1/2 h-1.5 w-6 -translate-x-1/2 rounded-full bg-fg/25" />
+      ) : (
+        <span className="absolute bottom-0 left-0 right-0 flex h-2 items-center justify-center gap-0.5 border-t border-fg/20 bg-fg/15">
+          {style === "bottomLabels" && (
+            <>
+              <span className="h-0.5 w-0.5 rounded-full bg-fg/50" />
+              <span className="h-0.5 w-0.5 rounded-full bg-fg/50" />
+              <span className="h-0.5 w-0.5 rounded-full bg-fg/50" />
+            </>
+          )}
+        </span>
+      )}
+    </span>
+  );
+}
 
 function TitleBarDesignPreview({ design }: { design: TitleBarDesign }) {
   if (design === "lights") {
@@ -152,6 +208,8 @@ export function CustomizationPage() {
   const [platform, setPlatform] = useState<string>("");
   const [isBeetrootEnabled, setIsBeetrootEnabled] = useState(true);
   const [titleBarDesign, setTitleBarDesignState] = useState<TitleBarDesign>(readTitleBarDesign);
+  const [navStyle, setNavStyleState] = useState<NavigationStyle>("bottom");
+  const [navSide, setNavSideState] = useState<NavigationSide>("left");
   const [titleBarSide, setTitleBarSideState] = useState<TitleBarSide>(readTitleBarSide);
   const [titleBarSize, setTitleBarSizeState] = useState<TitleBarSize>(readTitleBarSize);
 
@@ -185,6 +243,8 @@ export function CustomizationPage() {
         const next =
           settings.advancedSettings?.accessibility ?? createDefaultAccessibilitySettings();
         setAccessibility(next);
+        setNavStyleState(settings.advancedSettings?.navigationStyle ?? "bottom");
+        setNavSideState(settings.advancedSettings?.navigationSide ?? "left");
       } catch (error) {
         console.error("Failed to load accessibility settings:", error);
       } finally {
@@ -229,6 +289,36 @@ export function CustomizationPage() {
       await saveAdvancedSettings(advancedSettings);
     } catch (error) {
       console.error("Failed to save accessibility settings:", error);
+    }
+  };
+
+  const persistNavigationStyle = async (next: NavigationStyle) => {
+    const previous = navStyle;
+    setNavStyleState(next);
+    try {
+      const settings = await readSettings();
+      await saveAdvancedSettings({
+        ...(settings.advancedSettings ?? {}),
+        navigationStyle: next,
+      });
+    } catch (error) {
+      console.error("Failed to save navigation style:", error);
+      setNavStyleState(previous);
+    }
+  };
+
+  const persistNavigationSide = async (next: NavigationSide) => {
+    const previous = navSide;
+    setNavSideState(next);
+    try {
+      const settings = await readSettings();
+      await saveAdvancedSettings({
+        ...(settings.advancedSettings ?? {}),
+        navigationSide: next,
+      });
+    } catch (error) {
+      console.error("Failed to save navigation side:", error);
+      setNavSideState(previous);
     }
   };
 
@@ -444,6 +534,86 @@ export function CustomizationPage() {
             </p>
           </div>
         )}
+
+        <div>
+          <h2 className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-fg/35">
+            {t("accessibility.sectionTitles.navigation")}
+          </h2>
+          <div className="space-y-2">
+            {NAV_STYLE_OPTIONS.filter(
+              (option) => !(isMobile && SIDEBAR_NAV_STYLES.includes(option.value)),
+            ).map((option) => {
+              const selected = navStyle === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => void persistNavigationStyle(option.value)}
+                  className={cn(
+                    "flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-left",
+                    interactive.transition.fast,
+                    selected
+                      ? "border-accent/25 bg-fg/6"
+                      : "border-fg/10 bg-fg/5 hover:border-fg/20",
+                  )}
+                >
+                  <div className="min-w-0 flex-1">
+                    <div
+                      className={cn("text-sm font-medium", selected ? "text-accent" : "text-fg")}
+                    >
+                      {t(option.labelKey)}
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-fg/45">{t(option.descKey)}</div>
+                  </div>
+                  <NavStylePreview style={option.value} />
+                  <span
+                    className={cn(
+                      "flex h-4 w-4 shrink-0 items-center justify-center rounded-full border",
+                      selected ? "border-accent" : "border-fg/25",
+                    )}
+                  >
+                    {selected && <span className="h-2 w-2 rounded-full bg-accent" />}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          {SIDEBAR_NAV_STYLES.includes(navStyle) && (
+            <div className="mt-2 flex items-center justify-between gap-3 rounded-xl border border-fg/10 bg-fg/5 px-4 py-3">
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-fg">
+                  {t("accessibility.navigation.side")}
+                </div>
+                <div className="mt-0.5 text-[11px] text-fg/45">
+                  {t("accessibility.navigation.sideDesc")}
+                </div>
+              </div>
+              <div className="flex shrink-0 gap-1 rounded-lg border border-fg/10 bg-fg/5 p-1">
+                {(["left", "right"] as const).map((side) => (
+                  <button
+                    key={side}
+                    type="button"
+                    onClick={() => void persistNavigationSide(side)}
+                    className={cn(
+                      "rounded-md px-3 py-1 text-xs font-medium",
+                      interactive.transition.fast,
+                      navSide === side
+                        ? "bg-accent/20 text-accent"
+                        : "text-fg/60 hover:text-fg",
+                    )}
+                  >
+                    {t(`accessibility.titleBar.${side}` as const)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {!isMobile && (
+            <p className="mt-2 px-1 text-[11px] text-fg/40">
+              {t("accessibility.navigation.sidebarFallbackNote")}
+            </p>
+          )}
+        </div>
 
         <div>
           <h2 className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-fg/35">
