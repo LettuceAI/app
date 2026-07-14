@@ -22,7 +22,7 @@ export function AppNav({
     case "header":
       return null;
     case "sidebar":
-      return <SidebarNav onCreateClick={onCreateClick} side={side} items={items} />;
+      return <SidebarNav onCreateClick={onCreateClick} side={side} align={align} items={items} />;
     case "floatingSidebar":
       return <SidebarNav onCreateClick={onCreateClick} side={side} floating align={align} items={items} />;
     case "dock":

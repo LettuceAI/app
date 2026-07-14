@@ -743,7 +743,10 @@ export function CustomizationPage() {
               </div>
             </div>
           )}
-          {!isMobile && (navStyle === "dock" || navStyle === "floatingSidebar") && (
+          {!isMobile &&
+            (navStyle === "dock" ||
+              navStyle === "floatingSidebar" ||
+              navStyle === "sidebar") && (
             <div className="mt-2 flex items-center justify-between gap-3 rounded-xl border border-fg/10 bg-fg/5 px-4 py-3">
               <div className="min-w-0">
                 <div className="text-sm font-medium text-fg">

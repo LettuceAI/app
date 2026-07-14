@@ -78,8 +78,8 @@ export function SidebarNav({
         side === "right" ? "right-8" : "left-8"
       }`
     : `fixed bottom-0 top-[var(--titlebar-h,0px)] z-30 flex w-16 flex-col items-center gap-1 bg-nav/95 py-3 text-fg ${
-        side === "right" ? "right-0 border-l border-fg/8" : "left-0 border-r border-fg/8"
-      }`;
+        align === "center" ? "justify-center" : align === "end" ? "justify-end" : "justify-start"
+      } ${side === "right" ? "right-0 border-l border-fg/8" : "left-0 border-r border-fg/8"}`;
 
   return (
     <div ref={containerRef} className={containerClassName}>

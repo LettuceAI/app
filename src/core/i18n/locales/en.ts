@@ -307,7 +307,7 @@ export const enMessages = {
       side: "Sidebar position",
       sideDesc: "Which edge holds the sidebar",
       placement: "Placement",
-      placementDesc: "Where the floating navigation sits",
+      placementDesc: "Where the navigation sits along its edge",
       posTop: "Top",
       posMiddle: "Middle",
       posBottom: "Bottom",
