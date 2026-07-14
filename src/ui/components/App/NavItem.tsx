@@ -11,6 +11,7 @@ export function TabItem({
   layoutId = "activeTab",
   showLabel = false,
   rounded = "rounded-2xl",
+  iconSize,
 }: {
   to: string;
   icon: any;
@@ -21,6 +22,7 @@ export function TabItem({
   layoutId?: string;
   showLabel?: boolean;
   rounded?: string;
+  iconSize?: number;
 }) {
   return (
     <Link
@@ -43,7 +45,7 @@ export function TabItem({
             transition={{ type: "spring", stiffness: 320, damping: 28 }}
           />
         )}
-        <Icon size={showLabel ? 20 : 22} className="relative z-10" />
+        <Icon size={iconSize ?? (showLabel ? 20 : 22)} className="relative z-10" />
         {showLabel ? (
           <span className="relative z-10 text-[10px] leading-none">{label}</span>
         ) : (

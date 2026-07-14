@@ -1,15 +1,16 @@
-import { Compass, Library, MessageCircle, Users } from "lucide-react";
+import { Compass, Library, MessageCircle, Search, Settings, Users } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 import type { TranslationKey } from "../../../core/i18n/context";
+import { DEFAULT_NAV_ITEMS, type NavItemId } from "../../../core/storage/schemas";
 
 export type NavDestination = {
-  id: string;
+  id: NavItemId;
   to: string;
   icon: LucideIcon;
   labelKey: TranslationKey;
   isActive: (pathname: string) => boolean;
-  dataTourId: string;
+  dataTourId?: string;
 };
 
 export const NAV_DESTINATIONS: readonly NavDestination[] = [
@@ -45,10 +46,45 @@ export const NAV_DESTINATIONS: readonly NavDestination[] = [
     isActive: (pathname) => pathname.startsWith("/library"),
     dataTourId: "nav-library",
   },
+  {
+    id: "search",
+    to: "/search",
+    icon: Search,
+    labelKey: "topNav.search",
+    isActive: (pathname) => pathname === "/search",
+  },
+  {
+    id: "settings",
+    to: "/settings",
+    icon: Settings,
+    labelKey: "common.nav.settings",
+    isActive: (pathname) => pathname.startsWith("/settings"),
+  },
 ];
 
-export const NAV_LEADING_DESTINATIONS = NAV_DESTINATIONS.slice(0, 2);
-export const NAV_TRAILING_DESTINATIONS = NAV_DESTINATIONS.slice(2);
+export type NavEntry =
+  | { kind: "destination"; destination: NavDestination }
+  | { kind: "create" };
+
+export function resolveNavEntries(ids?: readonly NavItemId[] | null): NavEntry[] {
+  const source = ids && ids.length > 0 ? ids : DEFAULT_NAV_ITEMS;
+  const seen = new Set<NavItemId>();
+  const entries: NavEntry[] = [];
+  for (const id of source) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    if (id === "create") {
+      entries.push({ kind: "create" });
+      continue;
+    }
+    const destination = NAV_DESTINATIONS.find((entry) => entry.id === id);
+    if (destination) entries.push({ kind: "destination", destination });
+  }
+  if (!seen.has("create")) {
+    entries.push({ kind: "create" });
+  }
+  return entries;
+}
 
 export function resolveCreateAction(pathname: string, fallback: () => void): void {
   if (typeof window !== "undefined") {

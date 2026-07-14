@@ -127,6 +127,11 @@ import { TopNav, AppNav, TitleBar, WindowResizeHandles } from "./ui/components/A
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen, UnlistenFn } from "@tauri-apps/api/event";
 import { useAndroidBackHandler } from "./ui/hooks/useAndroidBackHandler";
+import {
+  readCachedNavPrefs,
+  writeCachedNavPrefs,
+  type NavPrefs,
+} from "./ui/components/App/navPrefs";
 import { logManager, isLoggingEnabled } from "./core/utils/logger";
 import { getPlatform } from "./core/utils/platform";
 import { I18nProvider, useI18n } from "./core/i18n/context";
@@ -140,11 +145,12 @@ import {
   refreshSettingsFromStorage,
   SETTINGS_UPDATED_EVENT,
 } from "./core/storage/repo";
-import type { NavigationSide, NavigationStyle } from "./core/storage/schemas";
+import type { HeaderStyle, NavAlign, NavEdge, NavigationSide, NavigationStyle, NavItemId } from "./core/storage/schemas";
 import { recordChatDebugEvent } from "./core/debug/chatDebugStore";
 
 const chatLog = logManager({ component: "Chat" });
 const FIRST_RUN_TOUR_STORAGE_KEY = "app_tour_v1";
+const isDesktopPlatform = getPlatform().type === "desktop";
 
 function getPayloadObject(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object") return null;
@@ -839,15 +845,53 @@ function AppContent() {
   }, [isSettingRoute, location.pathname, location.search]);
 
   const [navStyle, setNavStyle] = useState<NavigationStyle>(
-    () => readSettingsCached()?.advancedSettings?.navigationStyle ?? "bottom",
+    () =>
+      readSettingsCached()?.advancedSettings?.navigationStyle ?? readCachedNavPrefs().style,
   );
   const [navSide, setNavSide] = useState<NavigationSide>(
-    () => readSettingsCached()?.advancedSettings?.navigationSide ?? "left",
+    () => readSettingsCached()?.advancedSettings?.navigationSide ?? readCachedNavPrefs().side,
+  );
+  const [headerStyle, setHeaderStyle] = useState<HeaderStyle>(
+    () => readSettingsCached()?.advancedSettings?.headerStyle ?? readCachedNavPrefs().header,
+  );
+  const [navItems, setNavItems] = useState<NavItemId[] | null>(
+    () => readSettingsCached()?.advancedSettings?.navItems ?? readCachedNavPrefs().items,
+  );
+  const [navAlign, setNavAlign] = useState<NavAlign>(
+    () => readSettingsCached()?.advancedSettings?.navAlign ?? readCachedNavPrefs().align,
+  );
+  const [navEdge, setNavEdge] = useState<NavEdge>(
+    () => readSettingsCached()?.advancedSettings?.navEdge ?? readCachedNavPrefs().edge,
   );
   useEffect(() => {
     const syncNavStyle = () => {
-      setNavStyle(readSettingsCached()?.advancedSettings?.navigationStyle ?? "bottom");
-      setNavSide(readSettingsCached()?.advancedSettings?.navigationSide ?? "left");
+      const advanced = readSettingsCached()?.advancedSettings;
+      if (!advanced) return;
+      const cached = readCachedNavPrefs();
+      const next: NavPrefs = {
+        style: advanced.navigationStyle ?? "bottom",
+        side: advanced.navigationSide ?? "left",
+        header: advanced.headerStyle ?? "auto",
+        items: advanced.navItems ?? null,
+        align: advanced.navAlign ?? "start",
+        edge: advanced.navEdge ?? "bottom",
+      };
+      setNavStyle(next.style);
+      setNavSide(next.side);
+      setHeaderStyle(next.header);
+      setNavItems(next.items);
+      setNavAlign(next.align);
+      setNavEdge(next.edge);
+      if (
+        next.style !== cached.style ||
+        next.side !== cached.side ||
+        next.header !== cached.header ||
+        JSON.stringify(next.items) !== JSON.stringify(cached.items) ||
+        next.align !== cached.align ||
+        next.edge !== cached.edge
+      ) {
+        writeCachedNavPrefs(next);
+      }
     };
     syncNavStyle();
     window.addEventListener(SETTINGS_UPDATED_EVENT, syncNavStyle);
@@ -862,6 +906,14 @@ function AppContent() {
     mq.addEventListener("change", handler);
     return () => mq.removeEventListener("change", handler);
   }, []);
+  const effectiveNavStyle: NavigationStyle =
+    !isLgViewport && navStyle === "sidebar"
+      ? "bottom"
+      : !isLgViewport && (navStyle === "floatingSidebar" || navStyle === "header")
+        ? navStyle === "header"
+          ? "bottom"
+          : "dock"
+        : navStyle;
 
   const isLogsRoute = location.pathname === "/settings/logs";
 
@@ -1026,10 +1078,20 @@ function AppContent() {
             : isSettingRoute
               ? "max-w-md min-h-[calc(100dvh-var(--titlebar-h,0px))] lg:max-w-none lg:h-[calc(100dvh-var(--titlebar-h,0px))] lg:min-h-0"
               : "max-w-md lg:max-w-none min-h-[calc(100dvh-var(--titlebar-h,0px))]"
-        } flex-col pl-[var(--appnav-w,0px)] pr-[var(--appnav-wr,0px)] ${showBottomNav ? "pb-[calc(var(--appnav-h,0px)+8px)]" : "pb-0"}`}
+        } flex-col pl-[var(--appnav-w,0px)] pr-[var(--appnav-wr,0px)] pt-[var(--appnav-ht,0px)] ${showBottomNav ? "pb-[calc(var(--appnav-h,0px)+8px)]" : "pb-0"}`}
       >
         {showTopNav && (
           <TopNav
+            floating={
+              showBottomNav &&
+              headerStyle !== "attached" &&
+              (headerStyle === "floating" ||
+                effectiveNavStyle === "dock" ||
+                effectiveNavStyle === "floatingSidebar")
+            }
+            showNavItems={showBottomNav && effectiveNavStyle === "header"}
+            navItems={isDesktopPlatform ? navItems : null}
+            onCreateClick={() => setShowCreateMenu(true)}
             currentPath={location.pathname + location.search}
             onBackOverride={
               isPersonaEditRoute
@@ -1312,16 +1374,13 @@ function AppContent() {
           </div>
         </main>
 
-        {showBottomNav && (
+        {showBottomNav && effectiveNavStyle !== "header" && (
           <AppNav
-            style={
-              !isLgViewport && navStyle === "sidebar"
-                ? "bottom"
-                : !isLgViewport && navStyle === "floatingSidebar"
-                  ? "dock"
-                  : navStyle
-            }
+            style={effectiveNavStyle}
             side={navSide}
+            align={isDesktopPlatform ? navAlign : "start"}
+            edge={isDesktopPlatform ? navEdge : "bottom"}
+            items={isDesktopPlatform ? navItems : null}
             onCreateClick={() => setShowCreateMenu(true)}
           />
         )}

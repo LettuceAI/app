@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useCallback, useRef } from "react";
+import { useMemo, useState, useEffect, useLayoutEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { resolveBackTarget } from "../../navigation";
 import {
@@ -21,6 +21,9 @@ import {
 import { motion } from "framer-motion";
 import { typography, interactive, cn } from "../../design-tokens";
 import { dragRegionAttr } from "./TitleBar";
+import { TabItem } from "./NavItem";
+import { resolveCreateAction, resolveNavEntries } from "./navDestinations";
+import type { NavItemId } from "../../../core/storage/schemas";
 import { toast } from "../toast";
 import { openDocs } from "../../../core/utils/docs";
 import { type TranslationKey, useI18n } from "../../../core/i18n/context";
@@ -31,13 +34,26 @@ interface TopNavProps {
   onBackOverride?: () => void;
   titleOverride?: string;
   rightAction?: React.ReactNode;
+  floating?: boolean;
+  showNavItems?: boolean;
+  onCreateClick?: () => void;
+  navItems?: readonly NavItemId[] | null;
 }
 
 const appPlatform = getPlatform();
 const isDesktop = appPlatform.type === "desktop";
 const isMacOS = appPlatform.os === "macos";
 
-export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction }: TopNavProps) {
+export function TopNav({
+  currentPath,
+  onBackOverride,
+  titleOverride,
+  rightAction,
+  floating = false,
+  showNavItems = false,
+  onCreateClick,
+  navItems,
+}: TopNavProps) {
   const navigate = useNavigate();
   const { t } = useI18n();
   const basePath = useMemo(() => currentPath.split("?")[0], [currentPath]);
@@ -684,11 +700,12 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
   };
 
   const headerRef = useRef<HTMLElement | null>(null);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = headerRef.current;
     if (!el) return;
+    const gap = floating ? 12 : 0;
     const publish = () => {
-      document.documentElement.style.setProperty("--topnav-h", `${el.offsetHeight}px`);
+      document.documentElement.style.setProperty("--topnav-h", `${el.offsetHeight + gap}px`);
     };
     publish();
     const ro = new ResizeObserver(publish);
@@ -696,12 +713,16 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
     return () => {
       ro.disconnect();
     };
-  }, []);
+  }, [floating]);
 
   return (
     <header
       ref={headerRef}
-      className="fixed left-[var(--appnav-top-w,0px)] right-[var(--appnav-top-wr,0px)] top-[var(--titlebar-h,0px)] z-40 border-b border-fg/10 backdrop-blur-md bg-nav/80"
+      className={
+        floating
+          ? "fixed left-[calc(var(--appnav-top-w,0px)+2rem)] right-[calc(var(--appnav-top-wr,0px)+2rem)] top-[calc(var(--titlebar-h,0px)+12px)] z-40 rounded-full border border-fg/10 shadow-[0_12px_32px_rgba(0,0,0,0.35)] backdrop-blur-md bg-nav/90"
+          : "fixed left-[var(--appnav-top-w,0px)] right-[var(--appnav-top-wr,0px)] top-[var(--titlebar-h,0px)] z-40 border-b border-fg/10 backdrop-blur-md bg-nav/80"
+      }
       style={{
         paddingTop: isDesktop ? "8px" : "calc(env(safe-area-inset-top) + 12px)",
         paddingBottom: isDesktop ? "8px" : "12px",
@@ -713,6 +734,36 @@ export function TopNav({ currentPath, onBackOverride, titleOverride, rightAction
         style={isMacOS ? { paddingLeft: "72px" } : undefined}
         {...dragRegionAttr}
       >
+        {showNavItems && (
+          <div className="absolute left-1/2 top-1/2 z-10 flex -translate-x-1/2 -translate-y-1/2 items-center gap-2">
+            {resolveNavEntries(navItems).map((entry, index) =>
+              entry.kind === "create" ? (
+                <button
+                  key={`create-${index}`}
+                  onClick={() => resolveCreateAction(basePath, () => onCreateClick?.())}
+                  data-tour-id="nav-create"
+                  className="mx-0.5 flex h-9 w-10 items-center justify-center rounded-xl border border-fg/15 bg-fg/10 text-fg transition hover:border-fg/25 hover:bg-fg/20"
+                  aria-label={t("common.bottomNav.create")}
+                >
+                  <Plus size={18} />
+                </button>
+              ) : (
+                <TabItem
+                  key={entry.destination.id}
+                  to={entry.destination.to}
+                  icon={entry.destination.icon}
+                  label={t(entry.destination.labelKey)}
+                  active={entry.destination.isActive(basePath)}
+                  className="h-9 w-11"
+                  dataTourId={entry.destination.dataTourId}
+                  layoutId="activeTabHeader"
+                  rounded="rounded-xl"
+                  iconSize={20}
+                />
+              ),
+            )}
+          </div>
+        )}
         {/* Left side: */}
         <div className="flex items-center gap-1 overflow-hidden h-full" {...dragRegionAttr}>
           <div
