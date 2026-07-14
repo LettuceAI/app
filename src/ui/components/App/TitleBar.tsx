@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Copy, Minus, Plus, Square, X } from "lucide-react";
 import { getCurrentWindow, PhysicalSize } from "@tauri-apps/api/window";
 
@@ -461,7 +461,7 @@ export function TitleBar() {
     !maximized &&
     !fullscreen;
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     document.documentElement.style.setProperty("--titlebar-h", showStrip ? "32px" : "0px");
     return () => {
       document.documentElement.style.setProperty("--titlebar-h", "0px");
