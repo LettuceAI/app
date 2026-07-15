@@ -8,6 +8,7 @@ import {
   Settings,
   Sparkles,
   Volume2,
+  Wand2,
   Wrench,
 } from "lucide-react";
 
@@ -62,6 +63,7 @@ const ICON_MAP: Record<string, ReactElement> = {
   llamacpp: <img src={LlamaCppIcon} alt="llama.cpp" className="h-6 w-6 object-contain" />,
   "lettuce-host": <EthernetPort className="h-6 w-6 text-emerald-300" />,
   automatic1111: <Cpu className="h-6 w-6 text-orange-400" />,
+  sdcpp: <Wand2 className="h-6 w-6 text-indigo-400" />,
   localdiffusion: <ImageIcon className="h-6 w-6 text-emerald-300" />,
   stability: <Sparkles className="h-6 w-6 text-sky-400" />,
   "lettuce-engine": <Leaf className="h-6 w-6 text-emerald-400" />,

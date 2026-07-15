@@ -134,7 +134,9 @@ function getHardCappedScopes(
 }
 
 function isImageOnlyProvider(providerId?: string | null): boolean {
-  return providerId === "automatic1111" || providerId === "stability";
+  return (
+    providerId === "automatic1111" || providerId === "stability" || providerId === "sdcpp"
+  );
 }
 
 function cloneSnapshot<T>(value: T): T {
@@ -182,6 +184,7 @@ export function useModelEditorController(): ControllerReturn {
           ? providers.filter(
               (provider) =>
                 provider.providerId === localProvider.providerId ||
+                provider.providerId === "sdcpp" ||
                 capabilityIds.has(provider.providerId),
             )
           : providers;
@@ -189,7 +192,8 @@ export function useModelEditorController(): ControllerReturn {
       if (isMobile) {
         return filteredProviders.filter(
           (provider) =>
-            provider.providerId !== localProvider.providerId,
+            provider.providerId !== localProvider.providerId &&
+            provider.providerId !== "sdcpp",
         );
       }
       const result = [...filteredProviders];
@@ -1538,6 +1542,7 @@ export function useModelEditorController(): ControllerReturn {
     if (!editorModel) return;
     if (
       editorModel.providerId === "llamacpp" ||
+      editorModel.providerId === "sdcpp" ||
       editorModel.providerId === "intenserp" ||
       editorModel.providerId === "stability"
     ) {

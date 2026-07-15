@@ -4179,6 +4179,9 @@ export const enMessages = {
       description:
         "Choose the platform, give this entry a readable name, and connect it to the model identifier or file you want to use.",
       selectPlatform: "Select platform",
+      sdcppManaged:
+        "Choose from the models installed on this device. The entry and its files are managed automatically.",
+      sdcppSelectModel: "Select installed model",
     },
     errors: {
       loadFailed: "Failed to load model settings",

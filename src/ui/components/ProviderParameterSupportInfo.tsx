@@ -11,7 +11,7 @@ interface ProviderParameterSupportInfoProps {
   compact?: boolean;
 }
 
-type StaticParameter = Exclude<keyof AdvancedModelSettings, "llamaNPenRange">;
+type StaticParameter = Exclude<keyof AdvancedModelSettings, "llamaNPenRange" | `sdcpp${string}`>;
 
 const PARAMETER_LABELS: Record<StaticParameter, string> = {
   temperature: "Temperature",

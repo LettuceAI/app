@@ -114,6 +114,21 @@ type DownloadedGgufModel = {
   isMtp?: boolean;
 };
 
+type SdcppInstalledModel = {
+  profileId: string;
+  variantId: string;
+  displayName: string;
+  runtimeRelease: string | null;
+  runtimeAsset: string | null;
+  runtimeBackend: string | null;
+  componentBytesOnDisk: number;
+  modelId: string | null;
+  supportsTextToImage: boolean;
+  supportsImageEdit: boolean;
+  recommendedForScenes: boolean;
+  requiresReferenceImage: boolean;
+};
+
 type LocalLibraryPickerMode = "model" | "mmproj" | "mtp";
 
 type OpenRouterEndpoint = {
@@ -509,6 +524,12 @@ export function EditModelPage() {
     "balanced" | "throughput" | "vram" | "cpu_ram" | null
   >(null);
   const [showPlatformSelector, setShowPlatformSelector] = useState(false);
+  const [sdcppInstalled, setSdcppInstalled] = useState<SdcppInstalledModel[]>([]);
+  const [sdcppActiveRuntime, setSdcppActiveRuntime] = useState<{
+    release: string;
+    asset: string;
+  } | null>(null);
+  const [showSdcppModelPicker, setShowSdcppModelPicker] = useState(false);
   const [showProviderPicker, setShowProviderPicker] = useState(false);
   const [openRouterEndpoints, setOpenRouterEndpoints] = useState<OpenRouterEndpoint[]>([]);
   const [providerEndpointsLoading, setProviderEndpointsLoading] = useState(false);
@@ -1299,6 +1320,7 @@ export function EditModelPage() {
     if (!selectedProviderCredential) return false;
     if (
       selectedProviderCredential.providerId === "llamacpp" ||
+      selectedProviderCredential.providerId === "sdcpp" ||
       selectedProviderCredential.providerId === "intenserp" ||
       selectedProviderCredential.providerId === "stability"
     ) {
@@ -1563,8 +1585,54 @@ export function EditModelPage() {
         ? "Download the mtp-*.gguf sidecar from the model's repository in the model browser."
         : t("hfBrowser.libraryEmptyHint");
   const isAutomatic1111Provider = editorModel?.providerId === "automatic1111";
+  const isSdcppModel = editorModel?.providerId === "sdcpp";
   const isLocalDiffusionModel = false;
-  const isFixedImageProvider = isAutomatic1111Provider || isLocalDiffusionModel;
+  const isFixedImageProvider = isAutomatic1111Provider || isLocalDiffusionModel || isSdcppModel;
+
+  useEffect(() => {
+    if (!isSdcppModel) return;
+    let cancelled = false;
+    invoke<SdcppInstalledModel[]>("sdcpp_installed")
+      .then((models) => {
+        if (!cancelled) setSdcppInstalled(models);
+      })
+      .catch(() => {
+        if (!cancelled) setSdcppInstalled([]);
+      });
+    invoke<{ active: { release: string; asset: string } | null }>("sdcpp_runtime_inventory")
+      .then((inventory) => {
+        if (!cancelled) setSdcppActiveRuntime(inventory.active);
+      })
+      .catch(() => {
+        if (!cancelled) setSdcppActiveRuntime(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isSdcppModel]);
+
+  const selectSdcppModel = (entry: SdcppInstalledModel) => {
+    updateEditorModel({
+      name: `sdcpp:${entry.profileId}:${entry.variantId}`,
+      inputScopes: entry.supportsImageEdit ? ["text", "image"] : ["text"],
+      outputScopes: ["image"],
+      ...(editorModel?.displayName?.trim() ? {} : { displayName: entry.displayName }),
+    });
+    setModelAdvancedDraft({
+      ...modelAdvancedDraft,
+      sdcppProfileId: entry.profileId,
+      sdcppVariantId: entry.variantId,
+      sdcppRuntimeRelease: sdcppActiveRuntime?.release ?? entry.runtimeRelease ?? null,
+      sdcppRuntimeAsset: sdcppActiveRuntime?.asset ?? entry.runtimeAsset ?? null,
+      sdcppRuntimeBackend: entry.runtimeBackend,
+      sdcppSupportsLora: true,
+      sdcppSupportsTextToImage: entry.supportsTextToImage,
+      sdcppSupportsImageEdit: entry.supportsImageEdit,
+      sdcppRecommendedForScenes: entry.recommendedForScenes,
+      sdcppRequiresReferenceImage: entry.requiresReferenceImage,
+    });
+    setShowSdcppModelPicker(false);
+  };
 
   useEffect(() => {
     if (!isLocalDiffusionModel || sdEntries !== null) return;
@@ -2458,8 +2526,12 @@ export function EditModelPage() {
                       <>
                         <button
                           type="button"
-                          onClick={() => setShowPlatformSelector(true)}
-                          className="flex w-full items-center justify-between rounded-lg border border-fg/10 bg-surface-el/20 px-4 py-3 text-fg transition hover:bg-surface-el/30"
+                          onClick={isSdcppModel ? undefined : () => setShowPlatformSelector(true)}
+                          disabled={isSdcppModel}
+                          className={cn(
+                            "flex w-full items-center justify-between rounded-lg border border-fg/10 bg-surface-el/20 px-4 py-3 text-fg transition",
+                            isSdcppModel ? "cursor-default" : "hover:bg-surface-el/30",
+                          )}
                         >
                           <div className="flex min-w-0 items-center gap-3">
                             <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-fg/10 bg-fg/5 text-fg/60">
@@ -2469,7 +2541,7 @@ export function EditModelPage() {
                               {selectedProviderLabel}
                             </span>
                           </div>
-                          <ChevronDown className="h-4 w-4 text-fg/40" />
+                          {!isSdcppModel ? <ChevronDown className="h-4 w-4 text-fg/40" /> : null}
                         </button>
 
                         <BottomMenu
@@ -2700,6 +2772,83 @@ export function EditModelPage() {
                                       }}
                                     />
                                   ))
+                              )}
+                            </MenuSection>
+                          </BottomMenu>
+                        </div>
+                      </FieldBlock>
+                    </div>
+                  ) : isSdcppModel ? (
+                    <div className="grid items-start grid-cols-1 gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+                      <FieldBlock label={t("editModel.fields.displayName")}>
+                        <input
+                          type="text"
+                          value={editorModel.displayName}
+                          onChange={(e) => handleDisplayNameChange(e.target.value)}
+                          placeholder={t("editModel.placeholders.displayName")}
+                          className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-4 py-3 text-fg placeholder-fg/40 transition focus:border-fg/30 focus:outline-none"
+                        />
+                      </FieldBlock>
+
+                      <FieldBlock label={modelIdLabel}>
+                        <div className="space-y-3">
+                          <button
+                            type="button"
+                            onClick={() => setShowSdcppModelPicker(true)}
+                            className="flex w-full items-center justify-between rounded-lg border border-fg/10 bg-surface-el/20 px-4 py-3 text-left transition hover:bg-surface-el/30"
+                          >
+                            <span
+                              className={cn(
+                                "truncate font-mono text-[13px]",
+                                editorModel.name ? "text-fg/85" : "text-fg/40",
+                              )}
+                            >
+                              {editorModel.name || t("editModel.setup.sdcppSelectModel")}
+                            </span>
+                            <ChevronDown className="h-4 w-4 shrink-0 text-fg/40" />
+                          </button>
+                          <p className="text-[13px] leading-relaxed text-fg/45">
+                            {t("editModel.setup.sdcppManaged")}
+                          </p>
+
+                          <BottomMenu
+                            isOpen={showSdcppModelPicker}
+                            onClose={() => setShowSdcppModelPicker(false)}
+                            title={t("editModel.setup.sdcppSelectModel")}
+                          >
+                            <MenuSection>
+                              {sdcppInstalled.length === 0 ? (
+                                <div className="flex flex-col items-center gap-2 py-16 text-center">
+                                  <HardDrive size={32} className="text-fg/20" />
+                                  <p className="px-6 text-[13px] text-fg/40">
+                                    {t("imageGeneration.local.noModels")}
+                                  </p>
+                                </div>
+                              ) : (
+                                sdcppInstalled.map((entry) => {
+                                  const entryName = `sdcpp:${entry.profileId}:${entry.variantId}`;
+                                  return (
+                                    <MenuButton
+                                      key={entryName}
+                                      icon={<HardDrive className="h-5 w-5 text-accent/60" />}
+                                      title={entry.displayName}
+                                      description={`${
+                                        entry.runtimeBackend
+                                          ? `${entry.runtimeBackend.toUpperCase()} · `
+                                          : ""
+                                      }${formatBytes(entry.componentBytesOnDisk)}`}
+                                      color="from-accent/20 to-accent/10"
+                                      rightElement={
+                                        editorModel.name === entryName ? (
+                                          <Check className="h-4 w-4 text-accent" />
+                                        ) : (
+                                          <ArrowRight className="h-4 w-4 text-fg/20" />
+                                        )
+                                      }
+                                      onClick={() => selectSdcppModel(entry)}
+                                    />
+                                  );
+                                })
                               )}
                             </MenuSection>
                           </BottomMenu>
@@ -3249,7 +3398,7 @@ export function EditModelPage() {
                             {isFixedImageProvider ? (
                               <div className="space-y-5">
                                 <div className="text-[13px] leading-relaxed text-fg/55">
-                                  {isLocalDiffusionModel
+                                  {isSdcppModel || isLocalDiffusionModel
                                     ? t("editModel.generation.localDiffusionHelp")
                                     : t("editModel.generation.automatic1111Help")}
                                 </div>
@@ -3397,38 +3546,40 @@ export function EditModelPage() {
                                     </div>
                                   </div>
 
-                                  <div className="space-y-4">
-                                    <div className="flex items-center justify-between">
-                                      <div className="space-y-0.5">
-                                        <span className="block text-[13px] font-medium text-fg/70">
-                                          {t("editModel.genLabels.img2imgDenoise")}
-                                        </span>
-                                        <span className="block text-[13px] text-fg/40">
-                                          {t("editModel.generationDescriptions.sdDenoise")}
+                                  {!isSdcppModel ? (
+                                    <div className="space-y-4">
+                                      <div className="flex items-center justify-between">
+                                        <div className="space-y-0.5">
+                                          <span className="block text-[13px] font-medium text-fg/70">
+                                            {t("editModel.genLabels.img2imgDenoise")}
+                                          </span>
+                                          <span className="block text-[13px] text-fg/40">
+                                            {t("editModel.generationDescriptions.sdDenoise")}
+                                          </span>
+                                        </div>
+                                        <span className="font-mono text-[13px] text-fg/55">
+                                          {modelAdvancedDraft.sdDenoisingStrength?.toFixed(2) ??
+                                            "0.75"}
                                         </span>
                                       </div>
-                                      <span className="font-mono text-[13px] text-fg/55">
-                                        {modelAdvancedDraft.sdDenoisingStrength?.toFixed(2) ??
-                                          "0.75"}
-                                      </span>
+                                      <NumberInput
+                                        min={ADVANCED_SD_DENOISING_STRENGTH_RANGE.min}
+                                        max={ADVANCED_SD_DENOISING_STRENGTH_RANGE.max}
+                                        step={0.01}
+                                        decimals={2}
+                                        value={modelAdvancedDraft.sdDenoisingStrength ?? null}
+                                        onChange={(next) =>
+                                          updateSdSetting("sdDenoisingStrength", next)
+                                        }
+                                        placeholder={t("editModel.placeholders.sdDenoise")}
+                                        className={numberInputClassName}
+                                      />
+                                      <div className="flex justify-between text-[13px] text-fg/30 px-0.5 mt-1">
+                                        <span>{ADVANCED_SD_DENOISING_STRENGTH_RANGE.min}</span>
+                                        <span>{ADVANCED_SD_DENOISING_STRENGTH_RANGE.max}</span>
+                                      </div>
                                     </div>
-                                    <NumberInput
-                                      min={ADVANCED_SD_DENOISING_STRENGTH_RANGE.min}
-                                      max={ADVANCED_SD_DENOISING_STRENGTH_RANGE.max}
-                                      step={0.01}
-                                      decimals={2}
-                                      value={modelAdvancedDraft.sdDenoisingStrength ?? null}
-                                      onChange={(next) =>
-                                        updateSdSetting("sdDenoisingStrength", next)
-                                      }
-                                      placeholder={t("editModel.placeholders.sdDenoise")}
-                                      className={numberInputClassName}
-                                    />
-                                    <div className="flex justify-between text-[13px] text-fg/30 px-0.5 mt-1">
-                                      <span>{ADVANCED_SD_DENOISING_STRENGTH_RANGE.min}</span>
-                                      <span>{ADVANCED_SD_DENOISING_STRENGTH_RANGE.max}</span>
-                                    </div>
-                                  </div>
+                                  ) : null}
                                 </div>
 
                                 <div className="space-y-4">
@@ -3451,47 +3602,54 @@ export function EditModelPage() {
                                   />
                                 </div>
 
-                                <div className="space-y-4">
-                                  <div className="space-y-0.5">
-                                    <span className="block text-[13px] font-medium text-fg/70">
-                                      {t("editModel.generationDescriptions.sdExtraPromptTitle")}
-                                    </span>
-                                    <span className="block text-[13px] text-fg/40">
-                                      {t("editModel.generationDescriptions.sdExtraPrompt")}
-                                    </span>
-                                  </div>
-                                  <textarea
-                                    value={modelAdvancedDraft.sdExtraPrompt ?? ""}
-                                    onChange={(e) =>
-                                      updateSdSetting("sdExtraPrompt", e.target.value)
-                                    }
-                                    placeholder={t("editModel.placeholders.sdExtraPrompt")}
-                                    rows={4}
-                                    className={textAreaInputClassName}
-                                  />
-                                </div>
+                                {!isSdcppModel ? (
+                                  <>
+                                    <div className="space-y-4">
+                                      <div className="space-y-0.5">
+                                        <span className="block text-[13px] font-medium text-fg/70">
+                                          {t("editModel.generationDescriptions.sdExtraPromptTitle")}
+                                        </span>
+                                        <span className="block text-[13px] text-fg/40">
+                                          {t("editModel.generationDescriptions.sdExtraPrompt")}
+                                        </span>
+                                      </div>
+                                      <textarea
+                                        value={modelAdvancedDraft.sdExtraPrompt ?? ""}
+                                        onChange={(e) =>
+                                          updateSdSetting("sdExtraPrompt", e.target.value)
+                                        }
+                                        placeholder={t("editModel.placeholders.sdExtraPrompt")}
+                                        rows={4}
+                                        className={textAreaInputClassName}
+                                      />
+                                    </div>
 
-                                <div className="space-y-4">
-                                  <div className="space-y-0.5">
-                                    <span className="block text-[13px] font-medium text-fg/70">
-                                      {t(
-                                        "editModel.generationDescriptions.sdWriterInstructionsTitle",
-                                      )}
-                                    </span>
-                                    <span className="block text-[13px] text-fg/40">
-                                      {t("editModel.generationDescriptions.sdWriterInstructions")}
-                                    </span>
-                                  </div>
-                                  <textarea
-                                    value={modelAdvancedDraft.sdPromptWriterInstructions ?? ""}
-                                    onChange={(e) =>
-                                      updateSdSetting("sdPromptWriterInstructions", e.target.value)
-                                    }
-                                    placeholder={t("editModel.placeholders.sdWriterInstructions")}
-                                    rows={4}
-                                    className={textAreaInputClassName}
-                                  />
-                                </div>
+                                    <div className="space-y-4">
+                                      <div className="space-y-0.5">
+                                        <span className="block text-[13px] font-medium text-fg/70">
+                                          {t(
+                                            "editModel.generationDescriptions.sdWriterInstructionsTitle",
+                                          )}
+                                        </span>
+                                        <span className="block text-[13px] text-fg/40">
+                                          {t("editModel.generationDescriptions.sdWriterInstructions")}
+                                        </span>
+                                      </div>
+                                      <textarea
+                                        value={modelAdvancedDraft.sdPromptWriterInstructions ?? ""}
+                                        onChange={(e) =>
+                                          updateSdSetting(
+                                            "sdPromptWriterInstructions",
+                                            e.target.value,
+                                          )
+                                        }
+                                        placeholder={t("editModel.placeholders.sdWriterInstructions")}
+                                        rows={4}
+                                        className={textAreaInputClassName}
+                                      />
+                                    </div>
+                                  </>
+                                ) : null}
 
                                 {isLocalDiffusionModel ? (
                                   <div className="space-y-4">
@@ -6767,7 +6925,7 @@ export function EditModelPage() {
                             </div>
                             {isFixedImageProvider && (
                               <p className="text-[12px] leading-relaxed text-fg/45">
-                                {isLocalDiffusionModel
+                                {isSdcppModel || isLocalDiffusionModel
                                   ? t("editModel.capabilities.localDiffusionFixed")
                                   : t("editModel.capabilities.automatic1111Fixed")}
                               </p>
