@@ -131,3 +131,6 @@ tauri-plugin-haptics = "2"
 esaxx-rs = { path = "crates/esaxx-rs-0.1.10" }
 whisper-rs = { git = "https://codeberg.org/MegalithOfficial/whisper-rs.git" }
 whisper-rs-sys = { git = "https://codeberg.org/MegalithOfficial/whisper-rs.git" }
+
+[profile.dev.package.sha2]
+opt-level = 3

@@ -203,6 +203,7 @@ pub struct QueuedDownload {
     pub model_id: String,
     pub filename: String,
     pub status: String, // "queued" | "downloading" | "complete" | "error" | "cancelled"
+    pub phase: Option<String>, // null | "verifying"
     pub downloaded: u64,
     pub total: u64,
     pub speed_bytes_per_sec: u64,
@@ -448,6 +449,7 @@ pub(crate) async fn finish_external_item(
     let mut state = HF_DOWNLOAD_QUEUE.lock().await;
     if let Some(item) = state.queue.iter_mut().find(|d| d.id == queue_id) {
         item.status = if success { "complete" } else { "error" }.to_string();
+        item.phase = None;
         item.error = error;
         if success && item.total > 0 {
             item.downloaded = item.total;
@@ -462,6 +464,7 @@ pub(crate) async fn cancel_external_item(app: &AppHandle, queue_id: &str) {
     let mut state = HF_DOWNLOAD_QUEUE.lock().await;
     if let Some(item) = state.queue.iter_mut().find(|d| d.id == queue_id) {
         item.status = "cancelled".to_string();
+        item.phase = None;
         item.speed_bytes_per_sec = 0;
     }
     state.cancel_ids.remove(queue_id);
@@ -2306,6 +2309,7 @@ pub async fn hf_queue_download(
             model_id: model_id.clone(),
             filename: filename.clone(),
             status: "queued".to_string(),
+            phase: None,
             downloaded: 0,
             total: metadata.expected_size.unwrap_or(0),
             speed_bytes_per_sec: 0,
@@ -2416,6 +2420,7 @@ async fn process_download_queue(app: &AppHandle) {
             let mut state = HF_DOWNLOAD_QUEUE.lock().await;
             if let Some(d) = state.queue.iter_mut().find(|d| d.id == item.id) {
                 d.status = "downloading".to_string();
+                d.phase = None;
             }
             emit_queue(app, &state.queue);
         }
@@ -2434,14 +2439,20 @@ async fn process_download_queue(app: &AppHandle) {
                 match result {
                     Ok(path) => {
                         d.status = "complete".to_string();
+                        d.phase = None;
                         d.downloaded = d.total;
+                        d.speed_bytes_per_sec = 0;
                         d.result_path = Some(path);
                     }
                     Err(ref e) if e.contains("cancelled") => {
                         d.status = "cancelled".to_string();
+                        d.phase = None;
+                        d.speed_bytes_per_sec = 0;
                     }
                     Err(ref e) => {
                         d.status = "error".to_string();
+                        d.phase = None;
+                        d.speed_bytes_per_sec = 0;
                         d.error = Some(e.clone());
                     }
                 }
@@ -2493,6 +2504,16 @@ async fn do_queue_download(app: &AppHandle, item: &QueuedDownload) -> Result<Str
             };
             let size_matches = item.expected_size.map_or(true, |size| m.len() == size);
             let hash_matches = if size_matches {
+                if item.sha256.is_some() {
+                    let mut state = HF_DOWNLOAD_QUEUE.lock().await;
+                    if let Some(d) = state.queue.iter_mut().find(|d| d.id == queue_id) {
+                        d.phase = Some("verifying".to_string());
+                        d.total = m.len();
+                        d.downloaded = m.len();
+                        d.speed_bytes_per_sec = 0;
+                    }
+                    emit_queue(app, &state.queue);
+                }
                 verify_sha256(&dest_path, item.sha256.as_deref()).await?
             } else {
                 false
@@ -2581,6 +2602,9 @@ async fn do_queue_download(app: &AppHandle, item: &QueuedDownload) -> Result<Str
         let mut state = HF_DOWNLOAD_QUEUE.lock().await;
         if let Some(d) = state.queue.iter_mut().find(|d| d.id == queue_id) {
             d.total = total_size;
+            d.downloaded = 0;
+            d.speed_bytes_per_sec = 0;
+            d.phase = None;
         }
         state.last_speed_sample = std::time::Instant::now();
         state.speed_bytes_window = 0;
@@ -2676,9 +2700,29 @@ async fn do_queue_download(app: &AppHandle, item: &QueuedDownload) -> Result<Str
             ));
         }
     }
+    if item.sha256.is_some() {
+        let mut state = HF_DOWNLOAD_QUEUE.lock().await;
+        if let Some(d) = state.queue.iter_mut().find(|d| d.id == queue_id) {
+            d.phase = Some("verifying".to_string());
+            d.downloaded = downloaded_size;
+            if d.total == 0 {
+                d.total = downloaded_size;
+            }
+            d.speed_bytes_per_sec = 0;
+        }
+        emit_queue(app, &state.queue);
+    }
     if !verify_sha256(&temp_path, item.sha256.as_deref()).await? {
         let _ = tokio::fs::remove_file(&temp_path).await;
         return Err("Downloaded file failed SHA-256 validation".to_string());
+    }
+    {
+        let state = HF_DOWNLOAD_QUEUE.lock().await;
+        if state.cancel_ids.contains(queue_id) {
+            drop(state);
+            let _ = tokio::fs::remove_file(&temp_path).await;
+            return Err("Download cancelled".to_string());
+        }
     }
 
     tokio::fs::rename(&temp_path, &dest_path)
@@ -2711,22 +2755,25 @@ async fn verify_sha256(path: &Path, expected: Option<&str>) -> Result<bool, Stri
         return Err("Invalid expected SHA-256 digest".to_string());
     }
 
-    let mut file = tokio::fs::File::open(path)
-        .await
-        .map_err(|e| format!("Failed to open file for integrity validation: {}", e))?;
-    let mut hasher = Sha256::new();
-    let mut buffer = vec![0_u8; 1024 * 1024];
-    loop {
-        let read = tokio::io::AsyncReadExt::read(&mut file, &mut buffer)
-            .await
-            .map_err(|e| format!("Failed to validate downloaded file: {}", e))?;
-        if read == 0 {
-            break;
+    let path = path.to_path_buf();
+    tokio::task::spawn_blocking(move || {
+        let mut file = std::fs::File::open(path)
+            .map_err(|e| format!("Failed to open file for integrity validation: {}", e))?;
+        let mut hasher = Sha256::new();
+        let mut buffer = vec![0_u8; 1024 * 1024];
+        loop {
+            let read = std::io::Read::read(&mut file, &mut buffer)
+                .map_err(|e| format!("Failed to validate downloaded file: {}", e))?;
+            if read == 0 {
+                break;
+            }
+            hasher.update(&buffer[..read]);
         }
-        hasher.update(&buffer[..read]);
-    }
-    let actual = format!("{:x}", hasher.finalize());
-    Ok(actual == expected)
+        let actual = format!("{:x}", hasher.finalize());
+        Ok(actual == expected)
+    })
+    .await
+    .map_err(|e| format!("File integrity validation task failed: {}", e))?
 }
 
 #[tauri::command]

@@ -287,6 +287,8 @@ macro_rules! invoke_handler {
             crate::image_generator::sdcpp::sdcpp_runtime_install,
             crate::image_generator::sdcpp::sdcpp_runtime_switch,
             crate::image_generator::sdcpp::sdcpp_runtime_delete,
+            crate::image_generator::sdcpp::sdcpp_compute_policy,
+            crate::image_generator::sdcpp::sdcpp_compute_policy_save,
             crate::image_generator::sdcpp::sdcpp_install,
             crate::image_generator::sdcpp::sdcpp_runnability,
             crate::image_generator::sdcpp::sdcpp_disk_usage,

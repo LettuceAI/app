@@ -844,6 +844,7 @@ pub async fn ollama_pull_model(
         model_id: trimmed_ref.to_string(),
         filename: display_name.clone(),
         status: "queued".to_string(),
+        phase: None,
         downloaded: 0,
         total: 0,
         speed_bytes_per_sec: 0,

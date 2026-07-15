@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Check,
@@ -8,6 +8,7 @@ import {
   HardDrive,
   Loader2,
   RefreshCw,
+  Settings2,
   Trash2,
 } from "lucide-react";
 
@@ -104,8 +105,42 @@ type RunnabilityEstimate = {
   availableRamBytes: number | null;
   planMode: string;
   deviceSource: string;
-  devices: { name: string; description: string; freeBytes: number; budgetBytes: number }[];
+  devices: ComputeDevice[];
   placements: RunnabilityPlacement[];
+};
+
+type ComputeDevice = {
+  id: number;
+  name: string;
+  description: string;
+  totalBytes: number;
+  freeBytes: number;
+  budgetBytes: number;
+};
+
+type ComputePolicy = {
+  multiGpuEnabled: boolean;
+  gpuDeviceIds: number[];
+  singleGpuDeviceId: number | null;
+  deviceBudgetsGib: Record<string, number>;
+  splitMode: "layer" | "row";
+};
+
+type ComputeMode = "auto" | "single" | "multi";
+
+function computePolicyMode(policy: ComputePolicy): ComputeMode {
+  if (policy.multiGpuEnabled) return "multi";
+  if (policy.singleGpuDeviceId !== null) return "single";
+  return "auto";
+}
+
+type ComputePolicyInfo = {
+  runtimeRelease: string;
+  runtimeAsset: string;
+  backend: string;
+  supportsRowSplit: boolean;
+  policy: ComputePolicy;
+  devices: ComputeDevice[];
 };
 
 type Runnability = {
@@ -298,6 +333,7 @@ function modelInstallGroups(queue: QueuedDownload[]): ModelInstall[] {
   const groups = new Map<string, QueuedDownload[]>();
   for (const item of queue) {
     if (item.queueKind !== "sdcpp") continue;
+    if (item.downloadRole === "runtime" || item.downloadRole === "runtime_dependency") continue;
     const id = item.installId ?? item.id;
     if (!id.startsWith("sdcpp:")) continue;
     groups.set(id, [...(groups.get(id) ?? []), item]);
@@ -502,6 +538,318 @@ function RunnabilityDetailsMenu({
   );
 }
 
+function ComputePolicyMenu({
+  info,
+  isOpen,
+  saving,
+  onClose,
+  onSave,
+}: {
+  info: ComputePolicyInfo | null;
+  isOpen: boolean;
+  saving: boolean;
+  onClose: () => void;
+  onSave: (policy: ComputePolicy) => void;
+}) {
+  const { t } = useI18n();
+  const [draft, setDraft] = useState<ComputePolicy | null>(null);
+
+  useEffect(() => {
+    if (!isOpen || !info) return;
+    setDraft({
+      ...info.policy,
+      gpuDeviceIds: [...info.policy.gpuDeviceIds],
+      deviceBudgetsGib: { ...info.policy.deviceBudgetsGib },
+    });
+  }, [info, isOpen]);
+
+  const setMode = (mode: ComputeMode) => {
+    if (!info) return;
+    setDraft((current) => {
+      if (!current) return current;
+      const available = info.devices.map((device) => device.id);
+      const selected = current.gpuDeviceIds.filter((id) => available.includes(id));
+      const gpuDeviceIds =
+        mode === "multi" ? (selected.length >= 2 ? selected : available.slice(0, 2)) : selected;
+      return {
+        ...current,
+        multiGpuEnabled: mode === "multi",
+        gpuDeviceIds,
+        singleGpuDeviceId:
+          mode === "single"
+            ? (current.singleGpuDeviceId ?? selected[0] ?? available[0] ?? null)
+            : null,
+      };
+    });
+  };
+
+  const toggleDevice = (id: number) => {
+    setDraft((current) => {
+      if (!current || computePolicyMode(current) === "auto") return current;
+      if (computePolicyMode(current) === "single") {
+        return {
+          ...current,
+          singleGpuDeviceId: id,
+        };
+      }
+      return {
+        ...current,
+        gpuDeviceIds: current.gpuDeviceIds.includes(id)
+          ? current.gpuDeviceIds.filter((deviceId) => deviceId !== id)
+          : [...current.gpuDeviceIds, id].sort((left, right) => left - right),
+      };
+    });
+  };
+
+  const setBudget = (id: number, value: string) => {
+    setDraft((current) => {
+      if (!current) return current;
+      const budgets = { ...current.deviceBudgetsGib };
+      if (value === "") delete budgets[id];
+      else budgets[id] = Number(value);
+      return { ...current, deviceBudgetsGib: budgets };
+    });
+  };
+
+  const mode = draft ? computePolicyMode(draft) : "auto";
+  const valid = Boolean(
+    draft &&
+    (mode === "auto" ||
+      (mode === "single" && draft.singleGpuDeviceId !== null) ||
+      (mode === "multi" && draft.gpuDeviceIds.length >= 2)) &&
+    Object.values(draft.deviceBudgetsGib).every(
+      (budget) => Number.isFinite(budget) && budget > 0,
+    ) &&
+    Object.entries(draft.deviceBudgetsGib).every(([id, budget]) => {
+      const device = info?.devices.find((candidate) => candidate.id === Number(id));
+      return Boolean(device && budget <= device.totalBytes / 1024 ** 3);
+    }),
+  );
+
+  return (
+    <BottomMenu
+      isOpen={isOpen}
+      onClose={saving ? () => undefined : onClose}
+      title={t("imageGeneration.local.engineManager.computePolicyTitle")}
+    >
+      {info && draft ? (
+        <div className="space-y-6 pb-2">
+          <p className="text-sm leading-6 text-fg/50">
+            {t("imageGeneration.local.engineManager.computePolicyDescription")}
+          </p>
+
+          <section>
+            <h4 className="text-xs font-semibold text-fg/75">
+              {t("imageGeneration.local.engineManager.computeMode")}
+            </h4>
+            <div className="mt-2 divide-y divide-fg/8 border-y border-fg/8">
+              {(
+                [
+                  ["auto", "computeModeAuto", "computeModeAutoDescription"],
+                  ["single", "computeModeSingle", "computeModeSingleDescription"],
+                  ["multi", "computeModeMulti", "computeModeMultiDescription"],
+                ] as const
+              ).map(([mode, titleKey, descriptionKey]) => {
+                const disabled = mode === "multi" && info.devices.length < 2;
+                return (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setMode(mode)}
+                    disabled={disabled}
+                    aria-pressed={computePolicyMode(draft) === mode}
+                    className={cn(
+                      "flex w-full items-start gap-3 py-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-35",
+                      !disabled && "hover:bg-fg/[0.025]",
+                      focusRing,
+                    )}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={cn(
+                        "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border",
+                        computePolicyMode(draft) === mode ? "border-accent" : "border-fg/25",
+                      )}
+                    >
+                      {computePolicyMode(draft) === mode ? (
+                        <span className="h-2 w-2 rounded-full bg-accent" />
+                      ) : null}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-sm font-medium text-fg/80">
+                        {t(`imageGeneration.local.engineManager.${titleKey}` as TranslationKey)}
+                      </span>
+                      <span className="mt-0.5 block text-xs leading-5 text-fg/45">
+                        {t(
+                          `imageGeneration.local.engineManager.${descriptionKey}` as TranslationKey,
+                        )}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          <section>
+            <div className="flex items-baseline justify-between gap-3">
+              <h4 className="text-xs font-semibold text-fg/75">
+                {t("imageGeneration.local.engineManager.eligibleGpus")}
+              </h4>
+              <span className="text-[11px] text-fg/35">{info.backend.toUpperCase()}</span>
+            </div>
+            {info.devices.length > 0 ? (
+              <div className="mt-2 divide-y divide-fg/8 border-y border-fg/8">
+                {info.devices.map((device) => {
+                  const selected =
+                    mode === "auto" ||
+                    (mode === "single"
+                      ? draft.singleGpuDeviceId === device.id
+                      : draft.gpuDeviceIds.includes(device.id));
+                  const budget = draft.deviceBudgetsGib[device.id];
+                  return (
+                    <div key={device.id} className="py-3">
+                      <button
+                        type="button"
+                        disabled={mode === "auto"}
+                        onClick={() => toggleDevice(device.id)}
+                        aria-pressed={selected}
+                        className={cn(
+                          "flex w-full items-start gap-3 text-left disabled:cursor-default",
+                          focusRing,
+                        )}
+                      >
+                        <span
+                          aria-hidden="true"
+                          className={cn(
+                            "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center border",
+                            mode === "single" ? "rounded-full" : "rounded",
+                            selected ? "border-accent bg-accent text-bg" : "border-fg/25",
+                          )}
+                        >
+                          {selected ? <Check className="h-3 w-3" /> : null}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-medium text-fg/80">
+                            {device.description || device.name}
+                          </span>
+                          <span className="mt-0.5 block font-mono text-[10px] text-fg/35">
+                            #{device.id} · {device.name} · {formatBytes(device.freeBytes)} /{" "}
+                            {formatBytes(device.totalBytes)}
+                          </span>
+                        </span>
+                      </button>
+                      {selected ? (
+                        <label className="mt-3 flex items-center justify-between gap-4 pl-7">
+                          <span className="min-w-0">
+                            <span className="block text-xs font-medium text-fg/60">
+                              {t("imageGeneration.local.engineManager.vramBudget")}
+                            </span>
+                            <span className="mt-0.5 block text-[11px] text-fg/35">
+                              {t("imageGeneration.local.engineManager.vramBudgetHint", {
+                                available: formatBytes(device.freeBytes),
+                              })}
+                            </span>
+                          </span>
+                          <span className="flex shrink-0 items-center gap-2">
+                            <input
+                              type="number"
+                              inputMode="decimal"
+                              min="0.1"
+                              max={device.totalBytes / 1024 ** 3}
+                              step="0.1"
+                              value={budget ?? ""}
+                              onChange={(event) => setBudget(device.id, event.target.value)}
+                              placeholder={t("imageGeneration.local.engineManager.vramBudgetAuto")}
+                              aria-label={t("imageGeneration.local.engineManager.vramBudgetFor", {
+                                device: device.description || device.name,
+                              })}
+                              className={cn(
+                                "h-9 w-24 rounded-lg border border-fg/12 bg-surface px-2 text-right text-sm tabular-nums text-fg placeholder:text-fg/30",
+                                focusRing,
+                              )}
+                            />
+                            <span className="text-xs text-fg/40">GiB</span>
+                          </span>
+                        </label>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="mt-2 border-y border-fg/8 py-3 text-xs text-fg/45">
+                {t("imageGeneration.local.engineManager.noEligibleGpus")}
+              </p>
+            )}
+          </section>
+
+          <section>
+            <h4 className="text-xs font-semibold text-fg/75">
+              {t("imageGeneration.local.engineManager.splitMode")}
+            </h4>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              {(
+                [
+                  ["layer", "splitLayer", "splitLayerDescription"],
+                  ["row", "splitRow", "splitRowDescription"],
+                ] as const
+              ).map(([mode, titleKey, descriptionKey]) => {
+                const disabled = mode === "row" && !info.supportsRowSplit;
+                return (
+                  <button
+                    key={mode}
+                    type="button"
+                    disabled={disabled}
+                    onClick={() =>
+                      setDraft((current) => current && { ...current, splitMode: mode })
+                    }
+                    aria-pressed={draft.splitMode === mode}
+                    className={cn(
+                      "rounded-lg border px-3 py-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-35",
+                      draft.splitMode === mode
+                        ? "border-accent/50 bg-accent/8"
+                        : "border-fg/10 hover:bg-fg/[0.025]",
+                      focusRing,
+                    )}
+                  >
+                    <span className="block text-xs font-semibold text-fg/75">
+                      {t(`imageGeneration.local.engineManager.${titleKey}` as TranslationKey)}
+                    </span>
+                    <span className="mt-1 block text-[11px] leading-4 text-fg/40">
+                      {t(`imageGeneration.local.engineManager.${descriptionKey}` as TranslationKey)}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            {!info.supportsRowSplit ? (
+              <p className="mt-2 text-[11px] text-fg/35">
+                {t("imageGeneration.local.engineManager.rowCudaOnly")}
+              </p>
+            ) : null}
+          </section>
+
+          <button
+            type="button"
+            onClick={() => onSave(draft)}
+            disabled={!valid || saving}
+            className={cn(
+              "inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 text-sm font-semibold text-bg transition-[filter] hover:brightness-110 disabled:opacity-50",
+              focusRing,
+            )}
+          >
+            {saving ? (
+              <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" />
+            ) : null}
+            {t("imageGeneration.local.engineManager.computePolicySave")}
+          </button>
+        </div>
+      ) : null}
+    </BottomMenu>
+  );
+}
+
 export function StableDiffusionSettingsPage() {
   const { t } = useI18n();
   const platform = useMemo(() => getPlatform(), []);
@@ -523,7 +871,14 @@ export function StableDiffusionSettingsPage() {
   const [installingModelKey, setInstallingModelKey] = useState<string | null>(null);
   const [uninstallingModelKey, setUninstallingModelKey] = useState<string | null>(null);
   const [runnability, setRunnability] = useState<Record<string, Runnability | "loading">>({});
+  const runnabilityRevision = useRef(0);
+  const [modelHardwareRefreshing, setModelHardwareRefreshing] = useState(false);
   const [fitDetails, setFitDetails] = useState<FitDetailsSelection | null>(null);
+  const [computePolicyInfo, setComputePolicyInfo] = useState<ComputePolicyInfo | null>(null);
+  const [computePolicyLoading, setComputePolicyLoading] = useState(false);
+  const [computePolicyOpen, setComputePolicyOpen] = useState(false);
+  const [computePolicySaving, setComputePolicySaving] = useState(false);
+  const [computePolicyError, setComputePolicyError] = useState<string | null>(null);
 
   const installs = useMemo(
     () => runtimeInstallGroups(downloadQueue?.queue ?? []),
@@ -635,18 +990,29 @@ export function StableDiffusionSettingsPage() {
   );
   const discreteGpu = usableGpuDevices(gpuDevices)[0] ?? null;
 
-  const runtimePairing = useMemo<{ release: string; asset: string } | null>(() => {
-    if (inventory?.active) return inventory.active;
-    const installedRuntime = inventory?.installed[0];
-    if (installedRuntime) {
-      return { release: installedRuntime.release, asset: installedRuntime.asset };
-    }
-    const latest = catalog?.runtimeReleases[0];
-    const recommended = latest ? recommendAsset(platform.os, gpuDevices, latest.assets) : null;
-    if (latest && recommended) return { release: latest.tag, asset: recommended.name };
-    return null;
-  }, [inventory, catalog, gpuDevices, platform.os]);
   const hasInstalledEngine = (inventory?.installed.length ?? 0) > 0;
+
+  useEffect(() => {
+    if (!downloadQueue || inventoryLoading || hasInstalledEngine) return;
+    const legacyInstallIds = new Set(
+      downloadQueue.queue
+        .filter(
+          (item) =>
+            item.queueKind === "sdcpp" &&
+            item.installKind !== "runtime" &&
+            (item.downloadRole === "runtime" || item.downloadRole === "runtime_dependency"),
+        )
+        .map((item) => item.installId)
+        .filter((installId): installId is string => Boolean(installId)),
+    );
+    const activeLegacyItems = downloadQueue.queue.filter(
+      (item) =>
+        item.installId !== null &&
+        legacyInstallIds.has(item.installId) &&
+        (item.status === "queued" || item.status === "downloading"),
+    );
+    for (const item of activeLegacyItems) void downloadQueue.cancelItem(item.id);
+  }, [downloadQueue, hasInstalledEngine, inventoryLoading]);
 
   const installedEnginePairing = useMemo<{ release: string; asset: string } | null>(() => {
     if (inventory?.active) return inventory.active;
@@ -655,6 +1021,85 @@ export function StableDiffusionSettingsPage() {
       ? { release: installedRuntime.release, asset: installedRuntime.asset }
       : null;
   }, [inventory]);
+  const runtimePairing = installedEnginePairing;
+
+  const loadComputePolicy = useCallback(async (pairing: { release: string; asset: string }) => {
+    setComputePolicyLoading(true);
+    setComputePolicyError(null);
+    try {
+      const info = await invoke<ComputePolicyInfo>("sdcpp_compute_policy", {
+        request: {
+          runtimeRelease: pairing.release,
+          runtimeAsset: pairing.asset,
+        },
+      });
+      setComputePolicyInfo(info);
+    } catch (error) {
+      setComputePolicyInfo(null);
+      setComputePolicyError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setComputePolicyLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!installedEnginePairing) {
+      setComputePolicyInfo(null);
+      setComputePolicyError(null);
+      setComputePolicyOpen(false);
+      return;
+    }
+    void loadComputePolicy(installedEnginePairing);
+  }, [installedEnginePairing, loadComputePolicy]);
+
+  const saveComputePolicy = async (policy: ComputePolicy) => {
+    if (!installedEnginePairing) return;
+    setComputePolicySaving(true);
+    try {
+      const info = await invoke<ComputePolicyInfo>("sdcpp_compute_policy_save", {
+        request: {
+          runtimeRelease: installedEnginePairing.release,
+          runtimeAsset: installedEnginePairing.asset,
+          policy,
+        },
+      });
+      setComputePolicyInfo(info);
+      runnabilityRevision.current += 1;
+      setRunnability({});
+      setFitDetails(null);
+      setComputePolicyOpen(false);
+      toast.success(t("imageGeneration.local.engineManager.computePolicySaved"));
+    } catch (error) {
+      toast.error(
+        t("imageGeneration.local.engineManager.computePolicySaveFailed"),
+        error instanceof Error ? error.message : String(error),
+      );
+    } finally {
+      setComputePolicySaving(false);
+    }
+  };
+
+  const computePolicySummary = useMemo(() => {
+    if (!computePolicyInfo) return null;
+    const policy = computePolicyInfo.policy;
+    const mode = computePolicyMode(policy);
+    if (mode === "auto") {
+      return t("imageGeneration.local.engineManager.computeSummaryAuto", {
+        count: computePolicyInfo.devices.length,
+      });
+    }
+    if (mode === "single") {
+      const selected = computePolicyInfo.devices.find(
+        (device) => device.id === policy.singleGpuDeviceId,
+      );
+      return t("imageGeneration.local.engineManager.computeSummarySingle", {
+        device: selected?.description || selected?.name || "—",
+      });
+    }
+    return t("imageGeneration.local.engineManager.computeSummaryMulti", {
+      count: policy.gpuDeviceIds.length,
+    });
+  }, [computePolicyInfo, t]);
 
   const fitKey = useCallback(
     (profileId: string, variantId: string) =>
@@ -665,7 +1110,12 @@ export function StableDiffusionSettingsPage() {
   );
 
   const checkRunnability = useCallback(
-    async (profileId: string, variantId: string, pairing: { release: string; asset: string }) => {
+    async (
+      profileId: string,
+      variantId: string,
+      pairing: { release: string; asset: string },
+      revision = runnabilityRevision.current,
+    ) => {
       const key = `${profileId}:${variantId}@${pairing.release}:${pairing.asset}`;
       setRunnability((current) => ({ ...current, [key]: "loading" }));
       const result = await invoke<Runnability>("sdcpp_runnability", {
@@ -676,6 +1126,7 @@ export function StableDiffusionSettingsPage() {
           runtimeAsset: pairing.asset,
         },
       }).catch(() => null);
+      if (revision !== runnabilityRevision.current) return;
       setRunnability((current) => {
         const next = { ...current };
         if (result) next[key] = result;
@@ -685,6 +1136,47 @@ export function StableDiffusionSettingsPage() {
     },
     [],
   );
+
+  const refreshModelHardware = useCallback(async () => {
+    if (modelHardwareRefreshing) return;
+    const revision = runnabilityRevision.current + 1;
+    runnabilityRevision.current = revision;
+    setModelHardwareRefreshing(true);
+    setFitDetails(null);
+    try {
+      const devices = await invoke<GpuDevice[]>("llamacpp_backend_devices");
+      setGpuDevices(devices);
+
+      if (!installedEnginePairing || !catalog) {
+        setRunnability({});
+        return;
+      }
+
+      await loadComputePolicy(installedEnginePairing);
+      const checks = catalog.profiles.flatMap((profile) => {
+        const variant = selectedVariant(profile, selectedVariants);
+        if (!variant || installedModelKeys.has(`${profile.id}:${variant.id}`)) return [];
+        return [checkRunnability(profile.id, variant.id, installedEnginePairing, revision)];
+      });
+      await Promise.all(checks);
+    } catch (error) {
+      toast.error(
+        t("imageGeneration.local.modelLibrary.refreshFailed"),
+        error instanceof Error ? error.message : String(error),
+      );
+    } finally {
+      setModelHardwareRefreshing(false);
+    }
+  }, [
+    catalog,
+    checkRunnability,
+    installedEnginePairing,
+    installedModelKeys,
+    loadComputePolicy,
+    modelHardwareRefreshing,
+    selectedVariants,
+    t,
+  ]);
 
   useEffect(() => {
     if (!installedEnginePairing || !catalog) return;
@@ -948,78 +1440,130 @@ export function StableDiffusionSettingsPage() {
               ))}
             </div>
           ) : inventory && inventory.installed.length > 0 ? (
-            <div className="divide-y divide-fg/8 overflow-hidden rounded-lg border border-fg/10">
-              {inventory.installed.map((runtime) => {
-                const key = `${runtime.release}:${runtime.asset}`;
-                const switching = switchingKey === key;
-                const deleting = deletingKey === key;
-                return (
-                  <div
-                    key={key}
-                    className="flex flex-wrap items-center justify-between gap-4 bg-fg/[0.025] px-4 py-4"
-                  >
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-mono text-sm font-semibold text-fg">
-                          {runtime.release}
-                        </span>
-                        {runtime.active ? (
-                          <span className="inline-flex items-center gap-1 text-xs font-medium text-success">
-                            <Check aria-hidden="true" className="h-3.5 w-3.5" />
-                            {t("imageGeneration.local.engineManager.active")}
+            <div className="space-y-3">
+              <div className="divide-y divide-fg/8 overflow-hidden rounded-lg border border-fg/10">
+                {inventory.installed.map((runtime) => {
+                  const key = `${runtime.release}:${runtime.asset}`;
+                  const switching = switchingKey === key;
+                  const deleting = deletingKey === key;
+                  return (
+                    <div
+                      key={key}
+                      className="flex flex-wrap items-center justify-between gap-4 bg-fg/[0.025] px-4 py-4"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-mono text-sm font-semibold text-fg">
+                            {runtime.release}
                           </span>
-                        ) : null}
+                          {runtime.active ? (
+                            <span className="inline-flex items-center gap-1 text-xs font-medium text-success">
+                              <Check aria-hidden="true" className="h-3.5 w-3.5" />
+                              {t("imageGeneration.local.engineManager.active")}
+                            </span>
+                          ) : null}
+                        </div>
+                        <p className="mt-1 break-all text-xs text-fg/45">
+                          {runtime.backend.toUpperCase()} · {formatBytes(runtime.sizeBytes)} ·{" "}
+                          {runtime.asset}
+                        </p>
                       </div>
-                      <p className="mt-1 break-all text-xs text-fg/45">
-                        {runtime.backend.toUpperCase()} · {formatBytes(runtime.sizeBytes)} ·{" "}
-                        {runtime.asset}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {!runtime.active ? (
+                      <div className="flex items-center gap-2">
+                        {!runtime.active ? (
+                          <button
+                            type="button"
+                            onClick={() => void switchRuntime(runtime)}
+                            disabled={switching || deleting}
+                            className={cn(
+                              "inline-flex h-8 items-center gap-2 rounded-lg border border-fg/12 px-3 text-xs font-medium text-fg/70 transition-colors hover:bg-fg/5 disabled:opacity-50",
+                              focusRing,
+                            )}
+                          >
+                            {switching ? (
+                              <Loader2
+                                aria-hidden="true"
+                                className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none"
+                              />
+                            ) : null}
+                            {t("imageGeneration.local.engineManager.useVersion")}
+                          </button>
+                        ) : null}
                         <button
                           type="button"
-                          onClick={() => void switchRuntime(runtime)}
+                          onClick={() => void deleteRuntime(runtime)}
                           disabled={switching || deleting}
+                          aria-label={t("imageGeneration.local.engineManager.deleteVersion", {
+                            version: runtime.release,
+                          })}
                           className={cn(
-                            "inline-flex h-8 items-center gap-2 rounded-lg border border-fg/12 px-3 text-xs font-medium text-fg/70 transition-colors hover:bg-fg/5 disabled:opacity-50",
+                            "rounded-lg p-2 text-fg/42 transition-colors hover:bg-danger/8 hover:text-danger disabled:opacity-50",
                             focusRing,
                           )}
                         >
-                          {switching ? (
+                          {deleting ? (
                             <Loader2
                               aria-hidden="true"
-                              className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none"
+                              className="h-4 w-4 animate-spin motion-reduce:animate-none"
                             />
-                          ) : null}
-                          {t("imageGeneration.local.engineManager.useVersion")}
+                          ) : (
+                            <Trash2 aria-hidden="true" className="h-4 w-4" />
+                          )}
                         </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {installedEnginePairing ? (
+                <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-fg/10 bg-fg/[0.025] px-4 py-3.5">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <Settings2 aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-fg/40" />
+                    <div className="min-w-0">
+                      <h3 className="text-sm font-medium text-fg/80">
+                        {t("imageGeneration.local.engineManager.computePolicyTitle")}
+                      </h3>
+                      {computePolicyLoading ? (
+                        <p className="mt-1 text-xs text-fg/35">
+                          {t("imageGeneration.local.engineManager.computePolicyLoading")}
+                        </p>
+                      ) : computePolicyError ? (
+                        <p className="mt-1 break-words text-xs text-danger/70">
+                          {computePolicyError}
+                        </p>
+                      ) : computePolicyInfo ? (
+                        <p className="mt-1 text-xs text-fg/45">
+                          {computePolicySummary}
+                          <span className="mx-1.5 text-fg/25">·</span>
+                          {computePolicyInfo.policy.splitMode === "row"
+                            ? t("imageGeneration.local.engineManager.splitRow")
+                            : t("imageGeneration.local.engineManager.splitLayer")}
+                          <span className="mx-1.5 text-fg/25">·</span>
+                          {computePolicyInfo.backend.toUpperCase()}
+                        </p>
                       ) : null}
-                      <button
-                        type="button"
-                        onClick={() => void deleteRuntime(runtime)}
-                        disabled={switching || deleting}
-                        aria-label={t("imageGeneration.local.engineManager.deleteVersion", {
-                          version: runtime.release,
-                        })}
-                        className={cn(
-                          "rounded-lg p-2 text-fg/42 transition-colors hover:bg-danger/8 hover:text-danger disabled:opacity-50",
-                          focusRing,
-                        )}
-                      >
-                        {deleting ? (
-                          <Loader2
-                            aria-hidden="true"
-                            className="h-4 w-4 animate-spin motion-reduce:animate-none"
-                          />
-                        ) : (
-                          <Trash2 aria-hidden="true" className="h-4 w-4" />
-                        )}
-                      </button>
                     </div>
                   </div>
-                );
-              })}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (computePolicyInfo) setComputePolicyOpen(true);
+                      else void loadComputePolicy(installedEnginePairing);
+                    }}
+                    disabled={computePolicyLoading}
+                    className={cn(
+                      "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-fg/12 px-3 text-xs font-medium text-fg/70 transition-colors hover:bg-fg/5 disabled:opacity-50",
+                      focusRing,
+                    )}
+                  >
+                    {computePolicyLoading ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />
+                    ) : null}
+                    {computePolicyError
+                      ? t("common.buttons.retry")
+                      : t("imageGeneration.local.engineManager.computePolicyConfigure")}
+                  </button>
+                </div>
+              ) : null}
             </div>
           ) : (
             <div className="rounded-lg border border-fg/10 bg-fg/[0.025] px-4 py-5">
@@ -1198,12 +1742,37 @@ export function StableDiffusionSettingsPage() {
         </section>
 
         <section className="border-t border-fg/8 pt-5">
-          <h2 className="text-sm font-semibold text-fg">
-            {t("imageGeneration.local.modelLibrary.title")}
-          </h2>
-          <p className="mt-1 max-w-2xl text-sm leading-6 text-fg/50">
-            {t("imageGeneration.local.modelLibrary.description")}
-          </p>
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <h2 className="text-sm font-semibold text-fg">
+                {t("imageGeneration.local.modelLibrary.title")}
+              </h2>
+              <p className="mt-1 max-w-2xl text-sm leading-6 text-fg/50">
+                {t("imageGeneration.local.modelLibrary.description")}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void refreshModelHardware()}
+              disabled={modelHardwareRefreshing || catalogLoading}
+              title={t("imageGeneration.local.modelLibrary.refreshHardwareDescription")}
+              className={cn(
+                "inline-flex h-8 shrink-0 items-center gap-2 rounded-lg border border-fg/12 px-3 text-xs font-medium text-fg/60 transition-colors hover:bg-fg/5 hover:text-fg/80 disabled:opacity-50",
+                focusRing,
+              )}
+            >
+              <RefreshCw
+                aria-hidden="true"
+                className={cn(
+                  "h-3.5 w-3.5",
+                  modelHardwareRefreshing && "animate-spin motion-reduce:animate-none",
+                )}
+              />
+              {modelHardwareRefreshing
+                ? t("imageGeneration.local.modelLibrary.refreshingHardware")
+                : t("imageGeneration.local.modelLibrary.refreshHardware")}
+            </button>
+          </div>
 
           {downloadQueue && modelInstallItemIds.size > 0 ? (
             <div className="mt-3">
@@ -1355,7 +1924,12 @@ export function StableDiffusionSettingsPage() {
                             <button
                               type="button"
                               onClick={() => void installModel(profile, variant, fit)}
-                              disabled={installing}
+                              disabled={installing || !runtimePairing}
+                              title={
+                                runtimePairing
+                                  ? undefined
+                                  : t("imageGeneration.local.modelLibrary.noRuntime")
+                              }
                               className={cn(
                                 "inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-accent px-4 text-sm font-semibold text-bg transition-[filter] hover:brightness-110 disabled:opacity-50 sm:min-w-36",
                                 focusRing,
@@ -1371,7 +1945,9 @@ export function StableDiffusionSettingsPage() {
                               )}
                               {installing
                                 ? t("imageGeneration.local.modelLibrary.installing")
-                                : t("imageGeneration.local.modelLibrary.download")}
+                                : runtimePairing
+                                  ? t("imageGeneration.local.modelLibrary.download")
+                                  : t("imageGeneration.local.modelLibrary.engineRequired")}
                             </button>
                           )}
                         </div>
@@ -1425,6 +2001,13 @@ export function StableDiffusionSettingsPage() {
         </section>
       </div>
       <RunnabilityDetailsMenu selection={fitDetails} onClose={() => setFitDetails(null)} />
+      <ComputePolicyMenu
+        info={computePolicyInfo}
+        isOpen={computePolicyOpen}
+        saving={computePolicySaving}
+        onClose={() => setComputePolicyOpen(false)}
+        onSave={(policy) => void saveComputePolicy(policy)}
+      />
     </main>
   );
 }

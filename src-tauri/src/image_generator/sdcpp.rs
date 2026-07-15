@@ -401,6 +401,98 @@ struct RuntimeManifest {
     archives: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+#[serde(default)]
+pub struct ComputePolicy {
+    multi_gpu_enabled: bool,
+    gpu_device_ids: Vec<usize>,
+    single_gpu_device_id: Option<usize>,
+    device_budgets_gib: std::collections::BTreeMap<usize, f64>,
+    split_mode: String,
+}
+
+impl Default for ComputePolicy {
+    fn default() -> Self {
+        Self {
+            multi_gpu_enabled: false,
+            gpu_device_ids: Vec::new(),
+            single_gpu_device_id: None,
+            device_budgets_gib: std::collections::BTreeMap::new(),
+            split_mode: "layer".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LegacyComputePolicy {
+    mode: String,
+    selected_devices: Vec<String>,
+    device_budgets_gib: std::collections::BTreeMap<String, f64>,
+    split_mode: String,
+}
+
+fn backend_device_index(name: &str) -> Option<usize> {
+    let digits = name
+        .chars()
+        .rev()
+        .take_while(char::is_ascii_digit)
+        .collect::<String>()
+        .chars()
+        .rev()
+        .collect::<String>();
+    (!digits.is_empty()).then(|| digits.parse().ok()).flatten()
+}
+
+fn migrate_legacy_compute_policy(policy: LegacyComputePolicy) -> ComputePolicy {
+    let gpu_device_ids = policy
+        .selected_devices
+        .iter()
+        .filter_map(|name| backend_device_index(name))
+        .collect::<Vec<_>>();
+    let device_budgets_gib = policy
+        .device_budgets_gib
+        .into_iter()
+        .filter_map(|(name, budget)| backend_device_index(&name).map(|id| (id, budget)))
+        .collect();
+    ComputePolicy {
+        multi_gpu_enabled: policy.mode == "multi",
+        single_gpu_device_id: (policy.mode == "single")
+            .then(|| gpu_device_ids.first().copied())
+            .flatten(),
+        gpu_device_ids,
+        device_budgets_gib,
+        split_mode: policy.split_mode,
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComputePolicyRequest {
+    runtime_release: String,
+    runtime_asset: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveComputePolicyRequest {
+    runtime_release: String,
+    runtime_asset: String,
+    policy: ComputePolicy,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComputePolicyInfo {
+    runtime_release: String,
+    runtime_asset: String,
+    backend: String,
+    supports_row_split: bool,
+    policy: ComputePolicy,
+    devices: Vec<RunnabilityDevice>,
+}
+
 async fn fetch_runtime_releases() -> Result<Vec<(GithubRelease, Vec<RuntimeAsset>)>, String> {
     let url = format!(
         "https://api.github.com/repos/{}/releases?per_page=20",
@@ -815,10 +907,7 @@ pub async fn sdcpp_runtime_install(
     if runtime_is_installed(&app, &runtime.release, &runtime.asset_name) {
         return Err("This stable-diffusion.cpp engine build is already installed.".to_string());
     }
-    let install_id = format!(
-        "sdcpp-runtime:{}:{}",
-        runtime.release, runtime.asset_name
-    );
+    let install_id = format!("sdcpp-runtime:{}:{}", runtime.release, runtime.asset_name);
     let display_name = format!("stable-diffusion.cpp {}", runtime.release);
     queue_runtime_install(&app, &runtime, &install_id, &display_name, "runtime").await
 }
@@ -828,22 +917,18 @@ pub async fn sdcpp_install(app: AppHandle, request: InstallRequest) -> Result<Ve
     if cfg!(mobile) {
         return Err("Local stable-diffusion.cpp image generation is desktop-only.".to_string());
     }
-    let runtime =
-        resolve_runtime_selection(&request.runtime_release, &request.runtime_asset).await?;
+    if !runtime_is_installed(&app, &request.runtime_release, &request.runtime_asset) {
+        return Err(
+            "Install a stable-diffusion.cpp engine build before downloading a model.".to_string(),
+        );
+    }
     let (profile, variant) = find_profile_variant(&request.profile_id, &request.variant_id)?;
     let install_id = format!(
         "sdcpp:{}:{}:{}:{}",
-        profile.id, variant.id, runtime.release, runtime.asset_name
+        profile.id, variant.id, request.runtime_release, request.runtime_asset
     );
     let image_root = image_root(&app)?;
-    let mut queue_ids = queue_runtime_install(
-        &app,
-        &runtime,
-        &install_id,
-        profile.display_name,
-        profile.id,
-    )
-    .await?;
+    let mut queue_ids = Vec::new();
 
     for component in all_components(profile, variant) {
         let destination = component_path(&app, component)?;
@@ -868,8 +953,8 @@ pub async fn sdcpp_install(app: AppHandle, request: InstallRequest) -> Result<Ve
                     destination_path: Some(destination.to_string_lossy().to_string()),
                     expected_size: Some(component.bytes),
                     sha256: Some(component.sha256.to_string()),
-                    runtime_release: Some(runtime.release.clone()),
-                    runtime_asset: Some(runtime.asset_name.clone()),
+                    runtime_release: Some(request.runtime_release.clone()),
+                    runtime_asset: Some(request.runtime_asset.clone()),
                     ..Default::default()
                 }),
             )
@@ -940,8 +1025,10 @@ const SDCPP_AUTO_FIT_CONDITIONER_RESERVE_BYTES: u64 = 2048 * MIB;
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct HardwareGpuDevice {
+    index: usize,
     name: String,
     description: String,
+    memory_total: u64,
     memory_free: u64,
 }
 
@@ -954,8 +1041,10 @@ struct RuntimeDevice {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct RunnabilityDevice {
+    id: usize,
     name: String,
     description: String,
+    total_bytes: u64,
     free_bytes: u64,
     budget_bytes: u64,
 }
@@ -1252,13 +1341,11 @@ async fn runtime_devices(
         .collect())
 }
 
-async fn preinstall_estimate(
+async fn matched_runtime_devices(
     app: &AppHandle,
-    profile: &ProfileSpec,
-    variant: &VariantSpec,
     runtime_release: &str,
     runtime_asset: &str,
-) -> Result<RunnabilityEstimate, String> {
+) -> Result<Vec<RunnabilityDevice>, String> {
     let hardware_value = crate::llama_cpp::llamacpp_backend_devices().await?;
     let hardware = serde_json::from_value::<Vec<HardwareGpuDevice>>(hardware_value)
         .map_err(|error| format!("Failed to read GPU memory information: {error}"))?;
@@ -1298,8 +1385,10 @@ async fn preinstall_estimate(
                 used_hardware.insert(hardware_index);
                 let device = &hardware[hardware_index];
                 matched.push(RunnabilityDevice {
+                    id: device.index,
                     name: runtime_device.name,
                     description: runtime_device.description,
+                    total_bytes: device.memory_total,
                     free_bytes: device.memory_free,
                     budget_bytes: device
                         .memory_free
@@ -1316,11 +1405,185 @@ async fn preinstall_estimate(
         matched
     };
 
+    Ok(matched)
+}
+
+fn validate_compute_policy(
+    policy: &ComputePolicy,
+    backend: &str,
+    devices: &[RunnabilityDevice],
+) -> Result<(), String> {
+    if !matches!(policy.split_mode.as_str(), "layer" | "row") {
+        return Err("Split mode must be layer or row.".to_string());
+    }
+    if policy.split_mode == "row" && backend != "cuda" {
+        return Err("Row splitting is available only with a CUDA engine build.".to_string());
+    }
+
+    let available = devices
+        .iter()
+        .map(|device| device.id)
+        .collect::<std::collections::HashSet<_>>();
+    let selected = policy
+        .gpu_device_ids
+        .iter()
+        .copied()
+        .collect::<std::collections::HashSet<_>>();
+    if selected.len() != policy.gpu_device_ids.len() {
+        return Err("Selected GPU devices must be unique.".to_string());
+    }
+    if let Some(missing) = selected.iter().find(|id| !available.contains(id)) {
+        return Err(format!(
+            "GPU device #{missing} is not available to this engine."
+        ));
+    }
+    if let Some(single_gpu_device_id) = policy.single_gpu_device_id {
+        if !available.contains(&single_gpu_device_id) {
+            return Err(format!(
+                "GPU device #{single_gpu_device_id} is not available to this engine."
+            ));
+        }
+        if policy.multi_gpu_enabled {
+            return Err(
+                "A single-GPU override cannot be active while multi-GPU is enabled.".to_string(),
+            );
+        }
+    }
+    if policy.multi_gpu_enabled && policy.gpu_device_ids.len() < 2 {
+        return Err("Multi-GPU mode requires at least two selected GPUs.".to_string());
+    }
+
+    for (id, budget) in &policy.device_budgets_gib {
+        let device = devices
+            .iter()
+            .find(|device| device.id == *id)
+            .ok_or_else(|| format!("A VRAM budget was provided for unavailable GPU #{id}."))?;
+        if !budget.is_finite() || *budget <= 0.0 {
+            return Err(format!(
+                "The VRAM budget for GPU #{id} must be greater than zero."
+            ));
+        }
+        let total_gib = device.total_bytes as f64 / 1024_f64.powi(3);
+        if *budget > total_gib {
+            return Err(format!(
+                "The VRAM budget for GPU #{id} exceeds its total memory ({total_gib:.1} GiB)."
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn devices_for_policy(
+    policy: &ComputePolicy,
+    mut devices: Vec<RunnabilityDevice>,
+) -> Vec<RunnabilityDevice> {
+    if policy.multi_gpu_enabled {
+        devices.retain(|device| policy.gpu_device_ids.contains(&device.id));
+    } else if let Some(single_gpu_device_id) = policy.single_gpu_device_id {
+        devices.retain(|device| device.id == single_gpu_device_id);
+    }
+    apply_policy_budgets(policy, &mut devices);
+    devices
+}
+
+#[derive(Debug, Clone)]
+struct ResolvedComputePolicy {
+    backend: String,
+    automatic: bool,
+    available_devices: Vec<RunnabilityDevice>,
+    effective_devices: Vec<RunnabilityDevice>,
+}
+
+async fn resolve_compute_policy(
+    app: &AppHandle,
+    runtime_release: &str,
+    runtime_asset: &str,
+    policy: &ComputePolicy,
+) -> Result<ResolvedComputePolicy, String> {
+    let backend = runtime_backend_for_current_platform(runtime_asset).ok_or_else(|| {
+        "The selected engine variant is not supported on this platform.".to_string()
+    })?;
+    let mut available_devices =
+        matched_runtime_devices(app, runtime_release, runtime_asset).await?;
+    validate_compute_policy(policy, &backend, &available_devices)?;
+    let effective_devices = devices_for_policy(policy, available_devices.clone());
+    apply_policy_budgets(policy, &mut available_devices);
+    Ok(ResolvedComputePolicy {
+        backend,
+        automatic: !policy.multi_gpu_enabled && policy.single_gpu_device_id.is_none(),
+        available_devices,
+        effective_devices,
+    })
+}
+
+fn apply_policy_budgets(policy: &ComputePolicy, devices: &mut [RunnabilityDevice]) {
+    for device in devices.iter_mut() {
+        if let Some(gib) = policy.device_budgets_gib.get(&device.id) {
+            let requested = (*gib * 1024_f64.powi(3)).round() as u64;
+            device.budget_bytes = requested.min(device.free_bytes);
+        }
+    }
+}
+
+fn max_vram_spec(policy: &ComputePolicy, devices: &[RunnabilityDevice]) -> Option<String> {
+    let assignments = devices
+        .iter()
+        .filter_map(|device| {
+            let budget = policy.device_budgets_gib.get(&device.id)?;
+            let mut value = format!("{budget:.3}");
+            while value.contains('.') && value.ends_with('0') {
+                value.pop();
+            }
+            if value.ends_with('.') {
+                value.pop();
+            }
+            Some(format!("{}={value}", device.name.to_ascii_lowercase()))
+        })
+        .collect::<Vec<_>>();
+    (!assignments.is_empty()).then(|| assignments.join(","))
+}
+
+fn manual_backend_specs(estimate: &RunnabilityEstimate) -> (String, Option<String>) {
+    let mut runtime = Vec::new();
+    let mut params = Vec::new();
+    for placement in &estimate.placements {
+        let module = match placement.component {
+            "DiT" => "diffusion",
+            "Conditioner" => "te",
+            "VAE" => "vae",
+            _ => continue,
+        };
+        let target = if placement.cpu {
+            "cpu".to_string()
+        } else {
+            placement.targets.join("&")
+        };
+        runtime.push(format!("{module}={target}"));
+        if estimate.plan_mode == "timeShare" && !placement.cpu {
+            params.push(format!("{module}=disk"));
+        }
+    }
+    (
+        runtime.join(","),
+        (!params.is_empty()).then(|| params.join(",")),
+    )
+}
+
+async fn estimate_with_compute_policy(
+    app: &AppHandle,
+    profile: &ProfileSpec,
+    variant: &VariantSpec,
+    runtime_release: &str,
+    runtime_asset: &str,
+    policy: &ComputePolicy,
+) -> Result<RunnabilityEstimate, String> {
+    let resolved = resolve_compute_policy(app, runtime_release, runtime_asset, policy).await?;
+
     Ok(compute_auto_fit_estimate(
         &estimate_components(profile, variant),
-        matched,
+        resolved.effective_devices,
         crate::llama_cpp::available_memory_bytes(),
-        "selectedEngine",
+        "configuredEnginePolicy",
     ))
 }
 
@@ -1346,6 +1609,8 @@ pub async fn sdcpp_runnability(
             estimate: None,
         });
     }
+    let compute_policy =
+        load_compute_policy(&app, &request.runtime_release, &request.runtime_asset);
     let model_installed = is_variant_installed(
         &app,
         profile,
@@ -1402,12 +1667,13 @@ pub async fn sdcpp_runnability(
     if !model_installed {
         let started = Instant::now();
         return Ok(
-            match preinstall_estimate(
+            match estimate_with_compute_policy(
                 &app,
                 profile,
                 variant,
                 &request.runtime_release,
                 &request.runtime_asset,
+                &compute_policy,
             )
             .await
             {
@@ -1416,22 +1682,22 @@ pub async fn sdcpp_runnability(
                     let uses_split = estimate.placements.iter().any(|placement| placement.split);
                     Runnability {
                         status: "estimatedRunnable".to_string(),
-                        method: "stableDiffusionCppAutoFitEstimate",
+                        method: "stableDiffusionCppConfiguredPlacementEstimate",
                         exact: false,
                         scope: "preInstallEstimate",
-                        placement_policy: "sdCppAutoFitEstimate",
+                        placement_policy: "sdCppConfiguredPolicyEstimate",
                         elapsed_ms: Some(started.elapsed().as_millis() as u64),
                         reason: if uses_cpu {
-                            "Estimated runnable using stable-diffusion.cpp's CPU fallback for at least one model component. This is not a GPU-fit or speed guarantee; install the model to run the exact execution probe."
+                            "Estimated runnable using the configured Stable Diffusion compute policy with CPU fallback for at least one model component. This is not a speed guarantee; install the model to run the exact execution probe."
                             .to_string()
                         } else if uses_split {
-                            "Estimated to fit by splitting at least one model component across the selected engine's GPUs using stable-diffusion.cpp auto-fit. Install the model to verify with a real execution probe."
+                            "Estimated to fit by splitting at least one model component across the GPUs selected by the configured compute policy. Install the model to verify with a real execution probe."
                             .to_string()
                         } else if estimate.plan_mode == "timeShare" {
-                            "Estimated to fit on the selected engine's GPU devices by loading model components per phase, matching stable-diffusion.cpp auto-fit. Install the model to verify with a real execution probe."
+                            "Estimated to fit on the configured GPU devices by loading model components per phase. Install the model to verify with a real execution probe."
                             .to_string()
                         } else {
-                            "Estimated to fit concurrently on the selected engine's GPU devices using live free memory and stable-diffusion.cpp auto-fit rules. Install the model to verify with a real execution probe."
+                            "Estimated to fit concurrently on the GPU devices selected by the configured compute policy. Install the model to verify with a real execution probe."
                             .to_string()
                         },
                         estimate: Some(estimate),
@@ -1439,10 +1705,10 @@ pub async fn sdcpp_runnability(
                 }
                 Err(error) => Runnability {
                     status: "inconclusive".to_string(),
-                    method: "stableDiffusionCppAutoFitEstimate",
+                    method: "stableDiffusionCppConfiguredPlacementEstimate",
                     exact: false,
                     scope: "preInstallEstimate",
-                    placement_policy: "sdCppAutoFitEstimate",
+                    placement_policy: "sdCppConfiguredPolicyEstimate",
                     elapsed_ms: Some(started.elapsed().as_millis() as u64),
                     reason: format!(
                         "The pre-install runnability estimate could not be completed: {error}"
@@ -1459,6 +1725,13 @@ pub async fn sdcpp_runnability(
         sdcpp_runtime_release: request.runtime_release,
         sdcpp_runtime_asset: request.runtime_asset,
     };
+    let automatic_placement =
+        !compute_policy.multi_gpu_enabled && compute_policy.single_gpu_device_id.is_none();
+    let runtime_placement_policy = if automatic_placement {
+        "sdCppAutoFit"
+    } else {
+        "sdCppConfiguredPolicy"
+    };
     let started = Instant::now();
     let base_url = match ensure_server(&app, &config, profile, variant).await {
         Ok(base_url) => base_url,
@@ -1468,7 +1741,7 @@ pub async fn sdcpp_runnability(
                 method: "stableDiffusionCppExecutionProbe",
                 exact: false,
                 scope: "serverStartup",
-                placement_policy: "sdCppAutoFit",
+                placement_policy: runtime_placement_policy,
                 elapsed_ms: Some(started.elapsed().as_millis() as u64),
                 reason: format!(
                     "The sd.cpp server could not be prepared, so no runnability verdict was made: {}",
@@ -1523,11 +1796,16 @@ pub async fn sdcpp_runnability(
             } else {
                 "executionProbe"
             },
-            placement_policy: "sdCppAutoFit",
+            placement_policy: runtime_placement_policy,
             elapsed_ms: Some(started.elapsed().as_millis() as u64),
             reason: if request_matched {
-                "stable-diffusion.cpp completed the full supplied generation request using its real auto-fit placement."
-                    .to_string()
+                if automatic_placement {
+                    "stable-diffusion.cpp completed the full supplied generation request using its real auto-fit placement."
+                        .to_string()
+                } else {
+                    "stable-diffusion.cpp completed the full supplied generation request using the configured GPU placement policy."
+                        .to_string()
+                }
             } else if request.full_execution {
                 "stable-diffusion.cpp completed a full representative generation, but generated placeholders were used for request data that was not supplied."
                     .to_string()
@@ -1546,7 +1824,7 @@ pub async fn sdcpp_runnability(
             } else {
                 "executionProbe"
             },
-            placement_policy: "sdCppAutoFit",
+            placement_policy: runtime_placement_policy,
             elapsed_ms: Some(started.elapsed().as_millis() as u64),
             reason: error,
             estimate: None,
@@ -1556,7 +1834,7 @@ pub async fn sdcpp_runnability(
             method: "stableDiffusionCppExecutionProbe",
             exact: false,
             scope: "probeInfrastructure",
-            placement_policy: "sdCppAutoFit",
+            placement_policy: runtime_placement_policy,
             elapsed_ms: Some(started.elapsed().as_millis() as u64),
             reason: format!(
                 "The execution probe could not produce a runnability verdict: {}",
@@ -1710,7 +1988,9 @@ fn clear_active_runtime(app: &AppHandle) -> Result<(), String> {
     match std::fs::remove_file(path) {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(format!("Failed to clear the active engine selection: {error}")),
+        Err(error) => Err(format!(
+            "Failed to clear the active engine selection: {error}"
+        )),
     }
 }
 
@@ -1746,6 +2026,69 @@ pub async fn sdcpp_runtime_inventory(app: AppHandle) -> Result<RuntimeInventory,
         }
     }
     Ok(RuntimeInventory { installed, active })
+}
+
+async fn compute_policy_info(
+    app: &AppHandle,
+    runtime_release: &str,
+    runtime_asset: &str,
+    policy: ComputePolicy,
+) -> Result<ComputePolicyInfo, String> {
+    if !runtime_is_installed(app, runtime_release, runtime_asset) {
+        return Err("The selected stable-diffusion.cpp engine build is not installed.".to_string());
+    }
+    let resolved = resolve_compute_policy(app, runtime_release, runtime_asset, &policy).await?;
+    Ok(ComputePolicyInfo {
+        runtime_release: runtime_release.to_string(),
+        runtime_asset: runtime_asset.to_string(),
+        supports_row_split: resolved.backend == "cuda",
+        backend: resolved.backend,
+        policy,
+        devices: resolved.available_devices,
+    })
+}
+
+#[tauri::command]
+pub async fn sdcpp_compute_policy(
+    app: AppHandle,
+    request: ComputePolicyRequest,
+) -> Result<ComputePolicyInfo, String> {
+    if cfg!(mobile) {
+        return Err("Local stable-diffusion.cpp image generation is desktop-only.".to_string());
+    }
+    let policy = load_compute_policy(&app, &request.runtime_release, &request.runtime_asset);
+    compute_policy_info(
+        &app,
+        &request.runtime_release,
+        &request.runtime_asset,
+        policy,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn sdcpp_compute_policy_save(
+    app: AppHandle,
+    request: SaveComputePolicyRequest,
+) -> Result<ComputePolicyInfo, String> {
+    if cfg!(mobile) {
+        return Err("Local stable-diffusion.cpp image generation is desktop-only.".to_string());
+    }
+    let info = compute_policy_info(
+        &app,
+        &request.runtime_release,
+        &request.runtime_asset,
+        request.policy,
+    )
+    .await?;
+    save_compute_policy(
+        &app,
+        &request.runtime_release,
+        &request.runtime_asset,
+        &info.policy,
+    )?;
+    stop_managed_server().await;
+    Ok(info)
 }
 
 #[tauri::command]
@@ -2309,9 +2652,20 @@ async fn ensure_server(
     profile: &ProfileSpec,
     variant: &VariantSpec,
 ) -> Result<String, String> {
+    let compute_policy = load_compute_policy(
+        app,
+        &config.sdcpp_runtime_release,
+        &config.sdcpp_runtime_asset,
+    );
+    let policy_key = serde_json::to_string(&compute_policy)
+        .map_err(|error| format!("Failed to fingerprint the compute policy: {error}"))?;
     let key = format!(
-        "{}:{}:{}:{}",
-        profile.id, variant.id, config.sdcpp_runtime_release, config.sdcpp_runtime_asset
+        "{}:{}:{}:{}:{}",
+        profile.id,
+        variant.id,
+        config.sdcpp_runtime_release,
+        config.sdcpp_runtime_asset,
+        policy_key
     );
     let mut managed = MANAGED_SERVER.lock().await;
     if let Some(server) = managed.as_mut() {
@@ -2340,6 +2694,21 @@ async fn ensure_server(
             executable.display()
         ));
     }
+    let resolved_policy = resolve_compute_policy(
+        app,
+        &config.sdcpp_runtime_release,
+        &config.sdcpp_runtime_asset,
+        &compute_policy,
+    )
+    .await?;
+    let manual_estimate = (!resolved_policy.automatic).then(|| {
+        compute_auto_fit_estimate(
+            &estimate_components(profile, variant),
+            resolved_policy.effective_devices.clone(),
+            crate::llama_cpp::available_memory_bytes(),
+            "configuredEnginePolicy",
+        )
+    });
     let diffusion = selected_component_path(app, profile, variant, "diffusion_model")?;
     let text_encoder = selected_component_path(app, profile, variant, "text_encoder")?;
     let vae = selected_component_path(app, profile, variant, "vae")?;
@@ -2381,11 +2750,23 @@ async fn ensure_server(
         .arg("127.0.0.1")
         .arg("--listen-port")
         .arg(port.to_string())
-        .arg("--auto-fit")
         .arg("--diffusion-fa")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .kill_on_drop(true);
+    if let Some(estimate) = &manual_estimate {
+        let (backend_spec, params_backend_spec) = manual_backend_specs(estimate);
+        command.arg("--backend").arg(backend_spec);
+        if let Some(params_backend_spec) = params_backend_spec {
+            command.arg("--params-backend").arg(params_backend_spec);
+        }
+    } else {
+        command.arg("--auto-fit");
+    }
+    command.arg("--split-mode").arg(&compute_policy.split_mode);
+    if let Some(max_vram) = max_vram_spec(&compute_policy, &resolved_policy.effective_devices) {
+        command.arg("--max-vram").arg(max_vram);
+    }
     if let Some(vision_encoder) = vision_encoder {
         command.arg("--llm_vision").arg(vision_encoder);
     }
@@ -2843,6 +3224,48 @@ fn runtime_root(app: &AppHandle, release: &str, asset: &str) -> Result<PathBuf, 
         .join(safe_path_segment(asset)))
 }
 
+fn compute_policy_path(app: &AppHandle, release: &str, asset: &str) -> Result<PathBuf, String> {
+    Ok(runtime_root(app, release, asset)?.join(".lettuce-compute-policy.json"))
+}
+
+fn load_compute_policy(app: &AppHandle, release: &str, asset: &str) -> ComputePolicy {
+    compute_policy_path(app, release, asset)
+        .ok()
+        .and_then(|path| std::fs::read(path).ok())
+        .and_then(|bytes| {
+            let value = serde_json::from_slice::<serde_json::Value>(&bytes).ok()?;
+            if value.get("mode").is_some() {
+                serde_json::from_value::<LegacyComputePolicy>(value)
+                    .ok()
+                    .map(migrate_legacy_compute_policy)
+            } else {
+                serde_json::from_value::<ComputePolicy>(value).ok()
+            }
+        })
+        .unwrap_or_default()
+}
+
+fn save_compute_policy(
+    app: &AppHandle,
+    release: &str,
+    asset: &str,
+    policy: &ComputePolicy,
+) -> Result<(), String> {
+    let path = compute_policy_path(app, release, asset)?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| "Invalid Stable Diffusion compute policy path.".to_string())?;
+    std::fs::create_dir_all(parent)
+        .map_err(|error| format!("Failed to create the compute policy directory: {error}"))?;
+    let bytes = serde_json::to_vec_pretty(policy)
+        .map_err(|error| format!("Failed to serialize the compute policy: {error}"))?;
+    let temporary = path.with_extension("json.tmp");
+    std::fs::write(&temporary, bytes)
+        .map_err(|error| format!("Failed to write the compute policy: {error}"))?;
+    std::fs::rename(&temporary, &path)
+        .map_err(|error| format!("Failed to finalize the compute policy: {error}"))
+}
+
 fn runtime_archive_path(app: &AppHandle, runtime: &SelectedRuntime) -> Result<PathBuf, String> {
     Ok(crate::utils::lettuce_dir(app)?
         .join("downloads")
@@ -3048,18 +3471,29 @@ async fn extract_runtime(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_generation_payload, compute_auto_fit_estimate, EstimateComponent, RunnabilityDevice,
-        SdGenerationPayload, MIB,
+        build_generation_payload, compute_auto_fit_estimate, devices_for_policy,
+        manual_backend_specs, max_vram_spec, migrate_legacy_compute_policy,
+        validate_compute_policy, ComputePolicy, EstimateComponent, LegacyComputePolicy,
+        RunnabilityDevice, RunnabilityEstimate, RunnabilityPlacement, SdGenerationPayload, MIB,
     };
+    use std::collections::BTreeMap;
 
     fn gib(value: u64) -> u64 {
         value * 1024 * MIB
     }
 
     fn device(name: &str, budget_gib: u64) -> RunnabilityDevice {
+        let id = name
+            .chars()
+            .filter(char::is_ascii_digit)
+            .collect::<String>()
+            .parse()
+            .unwrap_or(0);
         RunnabilityDevice {
+            id,
             name: name.to_string(),
             description: name.to_string(),
+            total_bytes: gib(budget_gib + 1),
             free_bytes: gib(budget_gib) + 512 * MIB,
             budget_bytes: gib(budget_gib),
         }
@@ -3147,6 +3581,161 @@ mod tests {
         assert_eq!(estimate.plan_mode, "defaultBackend");
         assert!(estimate.placements[0].cpu);
         assert_eq!(estimate.placements[0].targets, ["CPU"]);
+    }
+
+    #[test]
+    fn compute_policy_validates_manual_device_counts_and_split_support() {
+        let devices = vec![device("Vulkan0", 8), device("Vulkan1", 8)];
+        let conflicting_modes = ComputePolicy {
+            multi_gpu_enabled: true,
+            gpu_device_ids: vec![0, 1],
+            single_gpu_device_id: Some(0),
+            device_budgets_gib: BTreeMap::new(),
+            split_mode: "layer".to_string(),
+        };
+        assert!(validate_compute_policy(&conflicting_modes, "vulkan", &devices).is_err());
+
+        let multi_with_one_device = ComputePolicy {
+            multi_gpu_enabled: true,
+            gpu_device_ids: vec![0],
+            single_gpu_device_id: None,
+            device_budgets_gib: BTreeMap::new(),
+            split_mode: "layer".to_string(),
+        };
+        assert!(validate_compute_policy(&multi_with_one_device, "vulkan", &devices).is_err());
+
+        let row_split = ComputePolicy {
+            multi_gpu_enabled: true,
+            gpu_device_ids: vec![0, 1],
+            single_gpu_device_id: None,
+            device_budgets_gib: BTreeMap::new(),
+            split_mode: "row".to_string(),
+        };
+        assert!(validate_compute_policy(&row_split, "vulkan", &devices).is_err());
+        assert!(validate_compute_policy(&row_split, "cuda", &devices).is_ok());
+    }
+
+    #[test]
+    fn compute_policy_filters_devices_and_applies_per_device_budgets() {
+        let policy = ComputePolicy {
+            multi_gpu_enabled: true,
+            gpu_device_ids: vec![0, 2],
+            single_gpu_device_id: None,
+            device_budgets_gib: BTreeMap::from([(0, 4.5)]),
+            split_mode: "layer".to_string(),
+        };
+        let selected = devices_for_policy(
+            &policy,
+            vec![
+                device("Vulkan0", 8),
+                device("Vulkan1", 8),
+                device("Vulkan2", 8),
+            ],
+        );
+
+        assert_eq!(
+            selected
+                .iter()
+                .map(|device| device.name.as_str())
+                .collect::<Vec<_>>(),
+            ["Vulkan0", "Vulkan2"]
+        );
+        assert_eq!(
+            selected[0].budget_bytes,
+            (4.5 * 1024_f64.powi(3)).round() as u64
+        );
+        assert_eq!(selected[1].budget_bytes, gib(8));
+    }
+
+    #[test]
+    fn compute_policy_single_gpu_override_uses_the_hardware_device_id() {
+        let policy = ComputePolicy {
+            multi_gpu_enabled: false,
+            gpu_device_ids: vec![0, 2],
+            single_gpu_device_id: Some(2),
+            device_budgets_gib: BTreeMap::new(),
+            split_mode: "layer".to_string(),
+        };
+        let selected = devices_for_policy(
+            &policy,
+            vec![
+                device("Vulkan0", 8),
+                device("Vulkan1", 8),
+                device("Vulkan2", 8),
+            ],
+        );
+
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].id, 2);
+        assert_eq!(selected[0].name, "Vulkan2");
+    }
+
+    #[test]
+    fn max_vram_uses_runtime_names_for_hardware_id_budgets() {
+        let policy = ComputePolicy {
+            multi_gpu_enabled: true,
+            gpu_device_ids: vec![0, 2],
+            single_gpu_device_id: None,
+            device_budgets_gib: BTreeMap::from([(0, 4.5), (2, 7.0)]),
+            split_mode: "layer".to_string(),
+        };
+        let devices = devices_for_policy(
+            &policy,
+            vec![device("CUDA0", 8), device("CUDA1", 8), device("CUDA2", 8)],
+        );
+
+        assert_eq!(
+            max_vram_spec(&policy, &devices).as_deref(),
+            Some("cuda0=4.5,cuda2=7")
+        );
+    }
+
+    #[test]
+    fn legacy_name_based_policy_migrates_to_hardware_device_ids() {
+        let migrated = migrate_legacy_compute_policy(LegacyComputePolicy {
+            mode: "multi".to_string(),
+            selected_devices: vec!["Vulkan0".to_string(), "Vulkan2".to_string()],
+            device_budgets_gib: BTreeMap::from([("Vulkan2".to_string(), 6.5)]),
+            split_mode: "layer".to_string(),
+        });
+
+        assert!(migrated.multi_gpu_enabled);
+        assert_eq!(migrated.gpu_device_ids, [0, 2]);
+        assert_eq!(migrated.single_gpu_device_id, None);
+        assert_eq!(migrated.device_budgets_gib.get(&2), Some(&6.5));
+    }
+
+    #[test]
+    fn manual_backend_specs_preserve_split_targets_and_time_shared_parameters() {
+        let estimate = RunnabilityEstimate {
+            model_bytes: gib(8),
+            available_ram_bytes: Some(gib(16)),
+            plan_mode: "timeShare",
+            device_source: "test",
+            devices: vec![device("Vulkan0", 6), device("Vulkan1", 6)],
+            placements: vec![
+                RunnabilityPlacement {
+                    component: "DiT",
+                    params_bytes: gib(7),
+                    compute_reserve_bytes: gib(2),
+                    targets: vec!["Vulkan0".to_string(), "Vulkan1".to_string()],
+                    cpu: false,
+                    split: true,
+                },
+                RunnabilityPlacement {
+                    component: "VAE",
+                    params_bytes: gib(1),
+                    compute_reserve_bytes: gib(1),
+                    targets: vec!["CPU".to_string()],
+                    cpu: true,
+                    split: false,
+                },
+            ],
+        };
+
+        let (backend, params_backend) = manual_backend_specs(&estimate);
+        assert_eq!(backend, "diffusion=Vulkan0&Vulkan1,vae=cpu");
+        assert_eq!(params_backend.as_deref(), Some("diffusion=disk"));
     }
 
     #[test]

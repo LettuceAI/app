@@ -12,6 +12,7 @@ export interface QueuedDownload {
   modelId: string;
   filename: string;
   status: "queued" | "downloading" | "complete" | "error" | "cancelled";
+  phase?: "verifying" | null;
   downloaded: number;
   total: number;
   speedBytesPerSec: number;
