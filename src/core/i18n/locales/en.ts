@@ -3990,9 +3990,9 @@ export const enMessages = {
       chatEndpoint: "Chat Endpoint",
       resolvedChatUrl: "Requests will go to",
       resolvedChatUrlDuplicate:
-        "\"{{segment}}\" is at the end of the Base URL and the start of the Chat Endpoint, so it will be sent twice. Remove it from one of them.",
+        '"{{segment}}" is at the end of the Base URL and the start of the Chat Endpoint, so it will be sent twice. Remove it from one of them.',
       resolvedModelsUrlDuplicate:
-        "\"{{segment}}\" is at the end of the Base URL and the start of the Models Endpoint, so it will be sent twice. Remove it from one of them.",
+        '"{{segment}}" is at the end of the Base URL and the start of the Models Endpoint, so it will be sent twice. Remove it from one of them.',
       fetchModels: "Fetch Models",
       fetchModelsDesc: "Enable model discovery for this custom endpoint",
       authMode: "Auth Mode",
@@ -4696,7 +4696,8 @@ export const enMessages = {
       minP: "Min P",
       typicalP: "Typical P",
       penaltyRange: "Penalty Range",
-      penaltyRangeDescription: "Recent tokens used by repeat, frequency, and presence penalties; `-1` uses the full context",
+      penaltyRangeDescription:
+        "Recent tokens used by repeat, frequency, and presence penalties; `-1` uses the full context",
       xtcProbability: "XTC Probability",
       xtcThreshold: "XTC Threshold",
       localOverride: "Local override",
@@ -5333,8 +5334,7 @@ export const enMessages = {
     },
     groupChats: {
       title: "Group Chats",
-      description:
-        "Choose which model and sampling settings pick the next speaker in group chats.",
+      description: "Choose which model and sampling settings pick the next speaker in group chats.",
     },
     usageAnalytics: {
       recalculateTitle: "Recalculate Usage Costs",
@@ -6454,7 +6454,8 @@ export const enMessages = {
       fitResolution: "Test resolution",
       fitReferences: "References",
       testExactFit: "Test exact fit",
-      fitTestDescription: "The fit test unloads local text generation and runs a real one-step sd.cpp graph. It does not use a VRAM estimate.",
+      fitTestDescription:
+        "The fit test unloads local text generation and runs a real one-step sd.cpp graph. It does not use a VRAM estimate.",
       engineDownloading: "Downloading engine...",
       engineLoadingVariants: "Checking available builds...",
       engineInstalled: "Engine installed",
@@ -6510,6 +6511,57 @@ export const enMessages = {
         deleteFailed: "Could not delete engine version",
         inventoryFailed: "Installed engine versions could not be read",
         catalogFailed: "Available engine versions could not be loaded",
+      },
+      modelLibrary: {
+        title: "Models",
+        description: "Download models to generate images locally on this device.",
+        variant: "Variant",
+        download: "Download",
+        installing: "Downloading",
+        installedShort: "Installed",
+        needsReference: "Requires a reference image to generate.",
+        engineBundleNote:
+          "Downloading a model also installs the recommended engine build automatically.",
+        engineNeededForFit:
+          "Install an engine build above to check which models fit your hardware. Downloading a model also installs the recommended engine automatically.",
+        noRuntime: "No compatible engine build is available to pair with this model.",
+        fitChecking: "Checking hardware fit...",
+        fitFitsGpu: "Fits your GPU",
+        fitPhased: "Fits your GPU, loaded in phases",
+        fitCpuOffload: "Runs with CPU offload, slower",
+        fitInconclusive: "Hardware fit unknown",
+        fitVerified: "Verified on your hardware",
+        fitFailed: "Did not run on your hardware",
+        more: "More",
+        memorySummary: "Memory summary",
+        modelWeights: "Model weight files",
+        gpuPlacedWeights: "Placed on GPU",
+        cpuOffloadedWeights: "Offloaded to CPU",
+        availableRam: "Available RAM",
+        strategy: "Strategy",
+        planConcurrent: "Concurrent GPU",
+        planTimeShare: "GPU, loaded in phases",
+        planDefaultBackend: "CPU fallback",
+        deviceMemory: "GPU memory",
+        freeMemory: "Free",
+        usableBudget: "Usable budget",
+        noGpuPlacement: "No discrete GPU placement is available for this plan.",
+        componentPlacement: "Component placement",
+        weights: "Weights",
+        computeReserve: "Compute reserve",
+        singleGpuNeed: "Single-GPU need",
+        split: "split",
+        offloadConfirmTitle: "Download {{model}}?",
+        offloadConfirm:
+          "This model does not fit your GPU and will offload to the CPU and system RAM, so generation will be slow. Download anyway?",
+        modelCard: "Model card",
+        queued: "Model download queued",
+        installFailed: "Model download failed",
+        uninstallFailed: "Could not remove model",
+        uninstallModel: "Remove {{model}}",
+        uninstallConfirmTitle: "Remove {{model}}?",
+        uninstallConfirm:
+          "This deletes the model weights from disk. Shared components used by other installed models are kept.",
       },
       entryCard: {
         manage: "Manage",
@@ -8427,13 +8479,11 @@ export const enMessages = {
     hfBrowser: {
       panel: {
         title: "Your personal fit report",
-        body:
-          "Everything here is sized to this machine: the verdict up top says whether the model will run, and how comfortably. Change any setting and the verdict updates live.",
+        body: "Everything here is sized to this machine: the verdict up top says whether the model will run, and how comfortably. Change any setting and the verdict updates live.",
       },
       tabs: {
         title: "Two ways to browse",
-        body:
-          "Recommended Settings picks and tunes a file for you. Available Files lists every download in the repo when you'd rather choose by hand.",
+        body: "Recommended Settings picks and tunes a file for you. Available Files lists every download in the repo when you'd rather choose by hand.",
       },
       quant: {
         title: "Pick a quantization",

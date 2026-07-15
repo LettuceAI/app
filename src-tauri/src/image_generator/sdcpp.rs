@@ -893,7 +893,25 @@ pub struct RunnabilityRequest {
     #[serde(default)]
     reference_image_count: Option<u8>,
     #[serde(default)]
+    reference_images: Vec<String>,
+    #[serde(default)]
     loras: Vec<super::types::ImageLora>,
+    #[serde(default)]
+    prompt: Option<String>,
+    #[serde(default)]
+    negative_prompt: Option<String>,
+    #[serde(default)]
+    sample_steps: Option<u32>,
+    #[serde(default)]
+    cfg_scale: Option<f64>,
+    #[serde(default)]
+    seed: Option<i64>,
+    #[serde(default)]
+    sample_method: Option<String>,
+    #[serde(default)]
+    batch_count: Option<u32>,
+    #[serde(default)]
+    full_execution: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -902,8 +920,408 @@ pub struct Runnability {
     status: String,
     method: &'static str,
     exact: bool,
+    scope: &'static str,
+    placement_policy: &'static str,
     elapsed_ms: Option<u64>,
     reason: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    estimate: Option<RunnabilityEstimate>,
+}
+
+const MIB: u64 = 1024 * 1024;
+// Mirrors stable-diffusion.cpp src/core/backend_fit.cpp. The catalog file sizes
+// are conservative stand-ins for the tensor byte counts that are unavailable
+// until the model has been downloaded.
+const SDCPP_AUTO_FIT_GPU_MARGIN_BYTES: u64 = 512 * MIB;
+const SDCPP_AUTO_FIT_DIT_RESERVE_BYTES: u64 = 2048 * MIB;
+const SDCPP_AUTO_FIT_VAE_RESERVE_BYTES: u64 = 1024 * MIB;
+const SDCPP_AUTO_FIT_CONDITIONER_RESERVE_BYTES: u64 = 2048 * MIB;
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HardwareGpuDevice {
+    name: String,
+    description: String,
+    memory_free: u64,
+}
+
+#[derive(Debug, Clone)]
+struct RuntimeDevice {
+    name: String,
+    description: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RunnabilityDevice {
+    name: String,
+    description: String,
+    free_bytes: u64,
+    budget_bytes: u64,
+}
+
+#[derive(Debug, Clone)]
+struct EstimateComponent {
+    name: &'static str,
+    params_bytes: u64,
+    compute_reserve_bytes: u64,
+    splittable: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RunnabilityPlacement {
+    component: &'static str,
+    params_bytes: u64,
+    compute_reserve_bytes: u64,
+    targets: Vec<String>,
+    cpu: bool,
+    split: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RunnabilityEstimate {
+    model_bytes: u64,
+    available_ram_bytes: Option<u64>,
+    plan_mode: &'static str,
+    device_source: &'static str,
+    devices: Vec<RunnabilityDevice>,
+    placements: Vec<RunnabilityPlacement>,
+}
+
+fn estimate_components(profile: &ProfileSpec, variant: &VariantSpec) -> Vec<EstimateComponent> {
+    let mut conditioner_bytes = 0_u64;
+    let mut vae_bytes = 0_u64;
+    for component in profile.shared_components {
+        match component.role {
+            "text_encoder" | "vision_encoder" => {
+                conditioner_bytes = conditioner_bytes.saturating_add(component.bytes)
+            }
+            "vae" => vae_bytes = vae_bytes.saturating_add(component.bytes),
+            _ => {}
+        }
+    }
+    vec![
+        EstimateComponent {
+            name: "DiT",
+            params_bytes: variant.diffusion.bytes,
+            compute_reserve_bytes: SDCPP_AUTO_FIT_DIT_RESERVE_BYTES,
+            splittable: true,
+        },
+        EstimateComponent {
+            name: "VAE",
+            params_bytes: vae_bytes,
+            compute_reserve_bytes: SDCPP_AUTO_FIT_VAE_RESERVE_BYTES,
+            splittable: false,
+        },
+        EstimateComponent {
+            name: "Conditioner",
+            params_bytes: conditioner_bytes,
+            compute_reserve_bytes: SDCPP_AUTO_FIT_CONDITIONER_RESERVE_BYTES,
+            splittable: true,
+        },
+    ]
+}
+
+fn compute_auto_fit_estimate(
+    components: &[EstimateComponent],
+    devices: Vec<RunnabilityDevice>,
+    available_ram_bytes: Option<u64>,
+    device_source: &'static str,
+) -> RunnabilityEstimate {
+    let model_bytes = components
+        .iter()
+        .map(|component| component.params_bytes)
+        .sum();
+    if devices.is_empty() {
+        return RunnabilityEstimate {
+            model_bytes,
+            available_ram_bytes,
+            plan_mode: "defaultBackend",
+            device_source,
+            devices,
+            placements: components
+                .iter()
+                .filter(|component| component.params_bytes > 0)
+                .map(|component| RunnabilityPlacement {
+                    component: component.name,
+                    params_bytes: component.params_bytes,
+                    compute_reserve_bytes: component.compute_reserve_bytes,
+                    targets: vec!["CPU".to_string()],
+                    cpu: true,
+                    split: false,
+                })
+                .collect(),
+        };
+    }
+
+    let mut order = (0..components.len()).collect::<Vec<_>>();
+    order.sort_by_key(|index| std::cmp::Reverse(components[*index].params_bytes));
+
+    let mut params_sum = vec![0_u64; devices.len()];
+    let mut max_reserve = vec![0_u64; devices.len()];
+    let mut concurrent_targets = vec![Vec::<usize>::new(); components.len()];
+    let mut concurrent = true;
+    for component_index in &order {
+        let component = &components[*component_index];
+        if component.params_bytes == 0 {
+            continue;
+        }
+        let mut best = None;
+        for (device_index, device) in devices.iter().enumerate() {
+            let need = params_sum[device_index]
+                .saturating_add(component.params_bytes)
+                .saturating_add(max_reserve[device_index].max(component.compute_reserve_bytes));
+            if need > device.budget_bytes {
+                continue;
+            }
+            let remaining = device.budget_bytes.saturating_sub(params_sum[device_index]);
+            if best.is_none_or(|current: usize| {
+                remaining
+                    > devices[current]
+                        .budget_bytes
+                        .saturating_sub(params_sum[current])
+            }) {
+                best = Some(device_index);
+            }
+        }
+        let Some(best) = best else {
+            concurrent = false;
+            break;
+        };
+        params_sum[best] = params_sum[best].saturating_add(component.params_bytes);
+        max_reserve[best] = max_reserve[best].max(component.compute_reserve_bytes);
+        concurrent_targets[*component_index].push(best);
+    }
+
+    if concurrent {
+        return RunnabilityEstimate {
+            model_bytes,
+            available_ram_bytes,
+            plan_mode: "concurrent",
+            device_source,
+            placements: components
+                .iter()
+                .enumerate()
+                .filter(|(_, component)| component.params_bytes > 0)
+                .map(|(index, component)| RunnabilityPlacement {
+                    component: component.name,
+                    params_bytes: component.params_bytes,
+                    compute_reserve_bytes: component.compute_reserve_bytes,
+                    targets: concurrent_targets[index]
+                        .iter()
+                        .map(|device_index| devices[*device_index].name.clone())
+                        .collect(),
+                    cpu: false,
+                    split: false,
+                })
+                .collect(),
+            devices,
+        };
+    }
+
+    let mut targets = vec![Vec::<usize>::new(); components.len()];
+    let mut cpu = vec![false; components.len()];
+    for component_index in &order {
+        let component = &components[*component_index];
+        if component.params_bytes == 0 {
+            continue;
+        }
+        let best = devices
+            .iter()
+            .enumerate()
+            .filter(|(_, device)| {
+                component
+                    .params_bytes
+                    .saturating_add(component.compute_reserve_bytes)
+                    <= device.budget_bytes
+            })
+            .max_by_key(|(_, device)| device.budget_bytes)
+            .map(|(index, _)| index);
+        if let Some(best) = best {
+            targets[*component_index].push(best);
+            continue;
+        }
+        if component.splittable && devices.len() > 1 {
+            let capacity = devices
+                .iter()
+                .map(|device| {
+                    device
+                        .budget_bytes
+                        .saturating_sub(component.compute_reserve_bytes)
+                })
+                .sum::<u64>();
+            if component.params_bytes <= capacity {
+                let mut device_order = (0..devices.len()).collect::<Vec<_>>();
+                device_order.sort_by_key(|index| std::cmp::Reverse(devices[*index].budget_bytes));
+                targets[*component_index] = device_order;
+                continue;
+            }
+        }
+        cpu[*component_index] = true;
+    }
+
+    RunnabilityEstimate {
+        model_bytes,
+        available_ram_bytes,
+        plan_mode: "timeShare",
+        device_source,
+        placements: components
+            .iter()
+            .enumerate()
+            .filter(|(_, component)| component.params_bytes > 0)
+            .map(|(index, component)| {
+                let on_cpu = cpu[index];
+                RunnabilityPlacement {
+                    component: component.name,
+                    params_bytes: component.params_bytes,
+                    compute_reserve_bytes: component.compute_reserve_bytes,
+                    targets: if on_cpu {
+                        vec!["CPU".to_string()]
+                    } else {
+                        targets[index]
+                            .iter()
+                            .map(|device_index| devices[*device_index].name.clone())
+                            .collect()
+                    },
+                    cpu: on_cpu,
+                    split: targets[index].len() > 1,
+                }
+            })
+            .collect(),
+        devices,
+    }
+}
+
+fn normalized_device_identity(value: &str) -> String {
+    value
+        .chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+async fn runtime_devices(
+    app: &AppHandle,
+    runtime_release: &str,
+    runtime_asset: &str,
+) -> Result<Vec<RuntimeDevice>, String> {
+    let executable = runtime_executable(app, runtime_release, runtime_asset)?;
+    let runtime_dir = runtime_root(app, runtime_release, runtime_asset)?;
+    let mut command = tokio::process::Command::new(&executable);
+    command
+        .current_dir(&runtime_dir)
+        .arg("--list-devices")
+        .kill_on_drop(true);
+    #[cfg(target_os = "linux")]
+    {
+        let existing = std::env::var_os("LD_LIBRARY_PATH").unwrap_or_default();
+        let mut paths = vec![runtime_dir];
+        paths.extend(std::env::split_paths(&existing));
+        let joined = std::env::join_paths(paths)
+            .map_err(|error| format!("Failed to configure engine libraries: {error}"))?;
+        command.env("LD_LIBRARY_PATH", joined);
+    }
+    let output = tokio::time::timeout(Duration::from_secs(10), command.output())
+        .await
+        .map_err(|_| "Timed out while asking the selected engine for its devices.".to_string())?
+        .map_err(|error| format!("Failed to query the selected engine devices: {error}"))?;
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(if detail.is_empty() {
+            format!(
+                "The selected engine device query exited with {}.",
+                output.status
+            )
+        } else {
+            format!("The selected engine device query failed: {detail}")
+        });
+    }
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| {
+            let (name, description) = line.split_once('\t')?;
+            let name = name.trim();
+            let description = description.trim();
+            (!name.is_empty() && !name.eq_ignore_ascii_case("cpu")).then(|| RuntimeDevice {
+                name: name.to_string(),
+                description: description.to_string(),
+            })
+        })
+        .collect())
+}
+
+async fn preinstall_estimate(
+    app: &AppHandle,
+    profile: &ProfileSpec,
+    variant: &VariantSpec,
+    runtime_release: &str,
+    runtime_asset: &str,
+) -> Result<RunnabilityEstimate, String> {
+    let hardware_value = crate::llama_cpp::llamacpp_backend_devices().await?;
+    let hardware = serde_json::from_value::<Vec<HardwareGpuDevice>>(hardware_value)
+        .map_err(|error| format!("Failed to read GPU memory information: {error}"))?;
+    let runtime_backend = runtime_backend_for_current_platform(runtime_asset).ok_or_else(|| {
+        "The selected engine variant is not supported on this platform.".to_string()
+    })?;
+
+    let matched = if runtime_backend == "cpu" {
+        Vec::new()
+    } else {
+        let runtime_devices = runtime_devices(app, runtime_release, runtime_asset).await?;
+        let runtime_has_gpu = !runtime_devices.is_empty();
+        let mut matched = Vec::new();
+        let mut used_hardware = std::collections::HashSet::new();
+        for runtime_device in runtime_devices {
+            let runtime_name = normalized_device_identity(&runtime_device.name);
+            let runtime_description = normalized_device_identity(&runtime_device.description);
+            let hardware_index = hardware
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| !used_hardware.contains(index))
+                .find(|(_, device)| normalized_device_identity(&device.name) == runtime_name)
+                .map(|(index, _)| index)
+                .or_else(|| {
+                    hardware
+                        .iter()
+                        .enumerate()
+                        .filter(|(index, _)| !used_hardware.contains(index))
+                        .find(|(_, device)| {
+                            !runtime_description.is_empty()
+                                && normalized_device_identity(&device.description)
+                                    == runtime_description
+                        })
+                        .map(|(index, _)| index)
+                });
+            if let Some(hardware_index) = hardware_index {
+                used_hardware.insert(hardware_index);
+                let device = &hardware[hardware_index];
+                matched.push(RunnabilityDevice {
+                    name: runtime_device.name,
+                    description: runtime_device.description,
+                    free_bytes: device.memory_free,
+                    budget_bytes: device
+                        .memory_free
+                        .saturating_sub(SDCPP_AUTO_FIT_GPU_MARGIN_BYTES),
+                });
+            }
+        }
+        if runtime_has_gpu && matched.is_empty() {
+            return Err(
+                "The selected engine reported GPU devices, but their live memory could not be matched to the system GPU inventory."
+                    .to_string(),
+            );
+        }
+        matched
+    };
+
+    Ok(compute_auto_fit_estimate(
+        &estimate_components(profile, variant),
+        matched,
+        crate::llama_cpp::available_memory_bytes(),
+        "selectedEngine",
+    ))
 }
 
 #[tauri::command]
@@ -915,16 +1333,52 @@ pub async fn sdcpp_runnability(
         return Err("Local stable-diffusion.cpp image generation is desktop-only.".to_string());
     }
     let (profile, variant) = find_profile_variant(&request.profile_id, &request.variant_id)?;
-    let refs = request.reference_image_count.unwrap_or(0);
-    if let Some(maximum) = profile.max_reference_images {
-        if refs > maximum {
-            return Err(format!(
-                "{} accepts at most {} reference images.",
-                profile.display_name, maximum
-            ));
+    if !runtime_is_installed(&app, &request.runtime_release, &request.runtime_asset) {
+        return Ok(Runnability {
+            status: "notInstalled".to_string(),
+            method: "stableDiffusionCppAutoFitEstimate",
+            exact: false,
+            scope: "engineUnavailable",
+            placement_policy: "notRun",
+            elapsed_ms: None,
+            reason: "Install the selected stable-diffusion.cpp engine build before checking model runnability. The model itself does not need to be installed."
+                .to_string(),
+            estimate: None,
+        });
+    }
+    let model_installed = is_variant_installed(
+        &app,
+        profile,
+        variant,
+        Some(&request.runtime_release),
+        Some(&request.runtime_asset),
+    );
+    let refs = if request.reference_images.is_empty() {
+        request.reference_image_count.unwrap_or(0) as usize
+    } else {
+        if model_installed
+            && request
+                .reference_image_count
+                .is_some_and(|count| count as usize != request.reference_images.len())
+        {
+            return Err(
+                "referenceImageCount must match the number of supplied referenceImages."
+                    .to_string(),
+            );
+        }
+        request.reference_images.len()
+    };
+    if model_installed {
+        if let Some(maximum) = profile.max_reference_images {
+            if refs > maximum as usize {
+                return Err(format!(
+                    "{} accepts at most {} reference images.",
+                    profile.display_name, maximum
+                ));
+            }
         }
     }
-    if profile.requires_reference_image && refs == 0 {
+    if model_installed && profile.requires_reference_image && refs == 0 {
         return Err(format!(
             "{} requires at least one reference image.",
             profile.display_name
@@ -934,22 +1388,69 @@ pub async fn sdcpp_runnability(
         request.width.unwrap_or(profile.default_width),
         request.height.unwrap_or(profile.default_height),
     );
-    let installed = is_variant_installed(
-        &app,
-        profile,
-        variant,
-        Some(&request.runtime_release),
-        Some(&request.runtime_asset),
-    );
-    if !installed {
-        return Ok(Runnability {
-            status: "notInstalled".to_string(),
-            method: "stableDiffusionCppRuntimeProbe",
-            exact: false,
-            elapsed_ms: None,
-            reason: "Install the selected model and runtime before running the exact fit test. No file-size or VRAM formula was used."
-                .to_string(),
-        });
+    if model_installed && (width == 0 || height == 0) {
+        return Err("Fit-test width and height must be greater than zero.".to_string());
+    }
+    let requested_steps = request.sample_steps.unwrap_or(profile.default_steps as u32);
+    if model_installed && requested_steps == 0 {
+        return Err("Fit-test sampleSteps must be greater than zero.".to_string());
+    }
+    let batch_count = request.batch_count.unwrap_or(1);
+    if model_installed && batch_count == 0 {
+        return Err("Fit-test batchCount must be greater than zero.".to_string());
+    }
+    if !model_installed {
+        let started = Instant::now();
+        return Ok(
+            match preinstall_estimate(
+                &app,
+                profile,
+                variant,
+                &request.runtime_release,
+                &request.runtime_asset,
+            )
+            .await
+            {
+                Ok(estimate) => {
+                    let uses_cpu = estimate.placements.iter().any(|placement| placement.cpu);
+                    let uses_split = estimate.placements.iter().any(|placement| placement.split);
+                    Runnability {
+                        status: "estimatedRunnable".to_string(),
+                        method: "stableDiffusionCppAutoFitEstimate",
+                        exact: false,
+                        scope: "preInstallEstimate",
+                        placement_policy: "sdCppAutoFitEstimate",
+                        elapsed_ms: Some(started.elapsed().as_millis() as u64),
+                        reason: if uses_cpu {
+                            "Estimated runnable using stable-diffusion.cpp's CPU fallback for at least one model component. This is not a GPU-fit or speed guarantee; install the model to run the exact execution probe."
+                            .to_string()
+                        } else if uses_split {
+                            "Estimated to fit by splitting at least one model component across the selected engine's GPUs using stable-diffusion.cpp auto-fit. Install the model to verify with a real execution probe."
+                            .to_string()
+                        } else if estimate.plan_mode == "timeShare" {
+                            "Estimated to fit on the selected engine's GPU devices by loading model components per phase, matching stable-diffusion.cpp auto-fit. Install the model to verify with a real execution probe."
+                            .to_string()
+                        } else {
+                            "Estimated to fit concurrently on the selected engine's GPU devices using live free memory and stable-diffusion.cpp auto-fit rules. Install the model to verify with a real execution probe."
+                            .to_string()
+                        },
+                        estimate: Some(estimate),
+                    }
+                }
+                Err(error) => Runnability {
+                    status: "inconclusive".to_string(),
+                    method: "stableDiffusionCppAutoFitEstimate",
+                    exact: false,
+                    scope: "preInstallEstimate",
+                    placement_policy: "sdCppAutoFitEstimate",
+                    elapsed_ms: Some(started.elapsed().as_millis() as u64),
+                    reason: format!(
+                        "The pre-install runnability estimate could not be completed: {error}"
+                    ),
+                    estimate: None,
+                },
+            },
+        );
     }
 
     let config = InstalledModelConfig {
@@ -963,56 +1464,105 @@ pub async fn sdcpp_runnability(
         Ok(base_url) => base_url,
         Err(error) => {
             return Ok(Runnability {
-                status: "failed".to_string(),
-                method: "stableDiffusionCppRuntimeProbe",
-                exact: true,
+                status: "inconclusive".to_string(),
+                method: "stableDiffusionCppExecutionProbe",
+                exact: false,
+                scope: "serverStartup",
+                placement_policy: "sdCppAutoFit",
                 elapsed_ms: Some(started.elapsed().as_millis() as u64),
-                reason: error,
+                reason: format!(
+                    "The sd.cpp server could not be prepared, so no runnability verdict was made: {}",
+                    error
+                ),
+                estimate: None,
             });
         }
     };
-    let reference = blank_reference_data_url(width, height)?;
+    let supplied_references = !request.reference_images.is_empty();
+    let references = if supplied_references {
+        request.reference_images
+    } else if refs > 0 {
+        let reference = blank_reference_data_url(width, height)?;
+        vec![reference; refs]
+    } else {
+        Vec::new()
+    };
     let loras = normalize_loras(&app, &request.loras)?;
-    let payload = serde_json::json!({
-        "prompt": "runnability probe",
-        "negative_prompt": "",
-        "width": width,
-        "height": height,
-        "seed": 1,
-        "batch_count": 1,
-        "auto_resize_ref_image": true,
-        "ref_images": vec![reference; refs as usize],
-        "sample_params": {
-            "scheduler": "discrete",
-            "sample_method": "euler",
-            "sample_steps": 1,
-            "guidance": {
-                "txt_cfg": profile.default_cfg,
-                "img_cfg": profile.default_cfg,
-                "distilled_guidance": 0.0
-            }
-        },
-        "lora": loras,
-        "vae_tiling_params": { "enabled": true },
-        "output_format": "png",
-        "output_compression": 1
+    let supplied_prompt = request.prompt.is_some();
+    let prompt = request
+        .prompt
+        .unwrap_or_else(|| "runnability probe".to_string());
+    let sample_steps = if request.full_execution {
+        requested_steps
+    } else {
+        1
+    };
+    let payload = build_generation_payload(SdGenerationPayload {
+        prompt: &prompt,
+        negative_prompt: request.negative_prompt.as_deref().unwrap_or(""),
+        width,
+        height,
+        seed: request.seed.unwrap_or(-1),
+        batch_count,
+        references: &references,
+        sample_method: request.sample_method.as_deref().unwrap_or("euler"),
+        sample_steps,
+        cfg: request.cfg_scale.unwrap_or(profile.default_cfg as f64),
+        loras: &loras,
     });
     let result = run_probe_job(&base_url, payload).await;
+    let request_matched =
+        request.full_execution && supplied_prompt && (refs == 0 || supplied_references);
     Ok(match result {
         Ok(()) => Runnability {
             status: "passed".to_string(),
-            method: "stableDiffusionCppRuntimeProbe",
-            exact: true,
+            method: "stableDiffusionCppExecutionProbe",
+            exact: request_matched,
+            scope: if request_matched {
+                "fullRequest"
+            } else {
+                "executionProbe"
+            },
+            placement_policy: "sdCppAutoFit",
             elapsed_ms: Some(started.elapsed().as_millis() as u64),
-            reason: "stable-diffusion.cpp loaded the selected components and completed a one-step graph execution at the requested resolution with the requested reference count and LoRAs."
-                .to_string(),
+            reason: if request_matched {
+                "stable-diffusion.cpp completed the full supplied generation request using its real auto-fit placement."
+                    .to_string()
+            } else if request.full_execution {
+                "stable-diffusion.cpp completed a full representative generation, but generated placeholders were used for request data that was not supplied."
+                    .to_string()
+            } else {
+                "stable-diffusion.cpp completed a one-step execution probe at the requested shape. This proves the tested graph ran, but it is not a full-request guarantee."
+                    .to_string()
+            },
+            estimate: None,
         },
-        Err(error) => Runnability {
+        Err(ProbeJobError::Execution(error)) => Runnability {
             status: "failed".to_string(),
-            method: "stableDiffusionCppRuntimeProbe",
-            exact: true,
+            method: "stableDiffusionCppExecutionProbe",
+            exact: request_matched,
+            scope: if request_matched {
+                "fullRequest"
+            } else {
+                "executionProbe"
+            },
+            placement_policy: "sdCppAutoFit",
             elapsed_ms: Some(started.elapsed().as_millis() as u64),
             reason: error,
+            estimate: None,
+        },
+        Err(ProbeJobError::Infrastructure(error)) => Runnability {
+            status: "inconclusive".to_string(),
+            method: "stableDiffusionCppExecutionProbe",
+            exact: false,
+            scope: "probeInfrastructure",
+            placement_policy: "sdCppAutoFit",
+            elapsed_ms: Some(started.elapsed().as_millis() as u64),
+            reason: format!(
+                "The execution probe could not produce a runnability verdict: {}",
+                error
+            ),
+            estimate: None,
         },
     })
 }
@@ -1569,27 +2119,84 @@ fn blank_reference_data_url(width: u32, height: u32) -> Result<String, String> {
     ))
 }
 
-async fn run_probe_job(base_url: &str, payload: Value) -> Result<(), String> {
+struct SdGenerationPayload<'a> {
+    prompt: &'a str,
+    negative_prompt: &'a str,
+    width: u32,
+    height: u32,
+    seed: i64,
+    batch_count: u32,
+    references: &'a [String],
+    sample_method: &'a str,
+    sample_steps: u32,
+    cfg: f64,
+    loras: &'a [Value],
+}
+
+fn build_generation_payload(params: SdGenerationPayload<'_>) -> Value {
+    serde_json::json!({
+        "prompt": params.prompt,
+        "negative_prompt": params.negative_prompt,
+        "width": params.width,
+        "height": params.height,
+        "seed": params.seed,
+        "batch_count": params.batch_count,
+        "auto_resize_ref_image": true,
+        "ref_images": params.references,
+        "sample_params": {
+            "scheduler": "discrete",
+            "sample_method": params.sample_method,
+            "sample_steps": params.sample_steps,
+            "guidance": {
+                "txt_cfg": params.cfg,
+                "img_cfg": params.cfg,
+                "distilled_guidance": 0.0
+            }
+        },
+        "lora": params.loras,
+        "vae_tiling_params": { "enabled": true },
+        "output_format": "png",
+        "output_compression": 100
+    })
+}
+
+enum ProbeJobError {
+    Execution(String),
+    Infrastructure(String),
+}
+
+async fn run_probe_job(base_url: &str, payload: Value) -> Result<(), ProbeJobError> {
     let client = reqwest::Client::new();
     let response = client
         .post(format!("{}/sdcpp/v1/img_gen", base_url))
         .json(&payload)
         .send()
         .await
-        .map_err(|e| format!("Failed to submit stable-diffusion.cpp fit test: {}", e))?;
+        .map_err(|e| {
+            ProbeJobError::Infrastructure(format!(
+                "Failed to submit stable-diffusion.cpp fit test: {}",
+                e
+            ))
+        })?;
     if !response.status().is_success() {
         let status = response.status();
         let detail = response.text().await.unwrap_or_default();
-        return Err(format!("Fit test was rejected ({}): {}", status, detail));
+        return Err(ProbeJobError::Execution(format!(
+            "Fit test was rejected ({}): {}",
+            status, detail
+        )));
     }
-    let accepted = response
-        .json::<Value>()
-        .await
-        .map_err(|e| format!("Failed to parse fit-test response: {}", e))?;
+    let accepted = response.json::<Value>().await.map_err(|e| {
+        ProbeJobError::Infrastructure(format!("Failed to parse fit-test response: {}", e))
+    })?;
     let poll_path = accepted
         .get("poll_url")
         .and_then(Value::as_str)
-        .ok_or_else(|| "Fit-test response did not include a poll URL".to_string())?;
+        .ok_or_else(|| {
+            ProbeJobError::Infrastructure(
+                "Fit-test response did not include a poll URL".to_string(),
+            )
+        })?;
     let poll_url = if poll_path.starts_with("http://") || poll_path.starts_with("https://") {
         poll_path.to_string()
     } else {
@@ -1597,29 +2204,40 @@ async fn run_probe_job(base_url: &str, payload: Value) -> Result<(), String> {
     };
     for _ in 0..1_200 {
         tokio::time::sleep(Duration::from_millis(500)).await;
-        let response = client
-            .get(&poll_url)
-            .send()
-            .await
-            .map_err(|e| format!("Failed to poll stable-diffusion.cpp fit test: {}", e))?;
-        let job = response
-            .json::<Value>()
-            .await
-            .map_err(|e| format!("Failed to parse stable-diffusion.cpp fit test: {}", e))?;
+        let response = client.get(&poll_url).send().await.map_err(|e| {
+            ProbeJobError::Infrastructure(format!(
+                "Failed to poll stable-diffusion.cpp fit test: {}",
+                e
+            ))
+        })?;
+        let job = response.json::<Value>().await.map_err(|e| {
+            ProbeJobError::Infrastructure(format!(
+                "Failed to parse stable-diffusion.cpp fit test: {}",
+                e
+            ))
+        })?;
         match job.get("status").and_then(Value::as_str) {
             Some("queued") | Some("generating") | Some("running") => continue,
             Some("completed") => return Ok(()),
             Some("failed") | Some("cancelled") => {
-                return Err(job
-                    .pointer("/error/message")
-                    .and_then(Value::as_str)
-                    .unwrap_or("stable-diffusion.cpp fit test failed")
-                    .to_string());
+                return Err(ProbeJobError::Execution(
+                    job.pointer("/error/message")
+                        .and_then(Value::as_str)
+                        .unwrap_or("stable-diffusion.cpp fit test failed")
+                        .to_string(),
+                ));
             }
-            status => return Err(format!("Unknown fit-test job status: {:?}", status)),
+            status => {
+                return Err(ProbeJobError::Infrastructure(format!(
+                    "Unknown fit-test job status: {:?}",
+                    status
+                )))
+            }
         }
     }
-    Err("stable-diffusion.cpp fit test timed out after ten minutes".to_string())
+    Err(ProbeJobError::Infrastructure(
+        "stable-diffusion.cpp fit test timed out after ten minutes".to_string(),
+    ))
 }
 
 #[derive(Debug, Deserialize)]
@@ -1890,29 +2508,18 @@ pub async fn generate(
 
     let loras = normalize_loras(app, request.loras.as_deref().unwrap_or_default())?;
     let base_url = ensure_server(app, &config, profile, variant).await?;
-    let payload = serde_json::json!({
-        "prompt": request.prompt,
-        "negative_prompt": negative_prompt,
-        "width": width,
-        "height": height,
-        "seed": seed,
-        "batch_count": request.n.unwrap_or(1),
-        "auto_resize_ref_image": true,
-        "ref_images": references,
-        "sample_params": {
-            "scheduler": "discrete",
-            "sample_method": sample_method,
-            "sample_steps": steps,
-            "guidance": {
-                "txt_cfg": cfg,
-                "img_cfg": cfg,
-                "distilled_guidance": 0.0
-            }
-        },
-        "lora": loras,
-        "vae_tiling_params": { "enabled": true },
-        "output_format": "png",
-        "output_compression": 100
+    let payload = build_generation_payload(SdGenerationPayload {
+        prompt: &request.prompt,
+        negative_prompt: &negative_prompt,
+        width,
+        height,
+        seed,
+        batch_count: request.n.unwrap_or(1),
+        references: &references,
+        sample_method: &sample_method,
+        sample_steps: steps,
+        cfg,
+        loras: &loras,
     });
     let client = reqwest::Client::new();
     let response = client
@@ -2436,4 +3043,146 @@ async fn extract_runtime(
     })
     .await
     .map_err(|e| format!("Runtime extraction task failed: {}", e))?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        build_generation_payload, compute_auto_fit_estimate, EstimateComponent, RunnabilityDevice,
+        SdGenerationPayload, MIB,
+    };
+
+    fn gib(value: u64) -> u64 {
+        value * 1024 * MIB
+    }
+
+    fn device(name: &str, budget_gib: u64) -> RunnabilityDevice {
+        RunnabilityDevice {
+            name: name.to_string(),
+            description: name.to_string(),
+            free_bytes: gib(budget_gib) + 512 * MIB,
+            budget_bytes: gib(budget_gib),
+        }
+    }
+
+    fn component(
+        name: &'static str,
+        params_gib: u64,
+        reserve_gib: u64,
+        splittable: bool,
+    ) -> EstimateComponent {
+        EstimateComponent {
+            name,
+            params_bytes: gib(params_gib),
+            compute_reserve_bytes: gib(reserve_gib),
+            splittable,
+        }
+    }
+
+    #[test]
+    fn auto_fit_estimate_uses_concurrent_placement_when_everything_fits_together() {
+        let components = vec![
+            component("DiT", 3, 2, true),
+            component("VAE", 1, 1, false),
+            component("Conditioner", 2, 2, true),
+        ];
+        let estimate =
+            compute_auto_fit_estimate(&components, vec![device("Vulkan0", 8)], None, "test");
+
+        assert_eq!(estimate.plan_mode, "concurrent");
+        assert!(estimate
+            .placements
+            .iter()
+            .all(|placement| placement.targets == ["Vulkan0"] && !placement.cpu));
+    }
+
+    #[test]
+    fn auto_fit_estimate_time_shares_components_that_fit_individually() {
+        let components = vec![
+            component("DiT", 3, 2, true),
+            component("VAE", 1, 1, false),
+            component("Conditioner", 2, 2, true),
+        ];
+        let estimate =
+            compute_auto_fit_estimate(&components, vec![device("Vulkan0", 6)], None, "test");
+
+        assert_eq!(estimate.plan_mode, "timeShare");
+        assert!(estimate
+            .placements
+            .iter()
+            .all(|placement| placement.targets == ["Vulkan0"] && !placement.cpu));
+    }
+
+    #[test]
+    fn auto_fit_estimate_splits_only_splittable_components() {
+        let components = vec![component("DiT", 7, 2, true), component("VAE", 6, 1, false)];
+        let estimate = compute_auto_fit_estimate(
+            &components,
+            vec![device("Vulkan0", 6), device("Vulkan1", 6)],
+            None,
+            "test",
+        );
+
+        let dit = estimate
+            .placements
+            .iter()
+            .find(|placement| placement.component == "DiT")
+            .unwrap();
+        let vae = estimate
+            .placements
+            .iter()
+            .find(|placement| placement.component == "VAE")
+            .unwrap();
+        assert!(dit.split);
+        assert_eq!(dit.targets, ["Vulkan0", "Vulkan1"]);
+        assert!(vae.cpu);
+        assert_eq!(vae.targets, ["CPU"]);
+    }
+
+    #[test]
+    fn auto_fit_estimate_matches_upstream_default_backend_without_a_gpu() {
+        let components = vec![component("DiT", 3, 2, true)];
+        let estimate = compute_auto_fit_estimate(&components, Vec::new(), Some(gib(16)), "test");
+
+        assert_eq!(estimate.plan_mode, "defaultBackend");
+        assert!(estimate.placements[0].cpu);
+        assert_eq!(estimate.placements[0].targets, ["CPU"]);
+    }
+
+    #[test]
+    fn generation_payload_preserves_every_memory_relevant_request_field() {
+        let references = vec!["data:image/png;base64,reference".to_string()];
+        let loras = vec![serde_json::json!({
+            "path": "style.safetensors",
+            "multiplier": 0.75,
+            "is_high_noise": false
+        })];
+        let payload = build_generation_payload(SdGenerationPayload {
+            prompt: "a detailed prompt",
+            negative_prompt: "blur",
+            width: 1280,
+            height: 768,
+            seed: 42,
+            batch_count: 2,
+            references: &references,
+            sample_method: "dpm++2m",
+            sample_steps: 24,
+            cfg: 3.5,
+            loras: &loras,
+        });
+
+        assert_eq!(payload["prompt"], "a detailed prompt");
+        assert_eq!(payload["negative_prompt"], "blur");
+        assert_eq!(payload["width"], 1280);
+        assert_eq!(payload["height"], 768);
+        assert_eq!(payload["seed"], 42);
+        assert_eq!(payload["batch_count"], 2);
+        assert_eq!(payload["ref_images"], serde_json::json!(references));
+        assert_eq!(payload["sample_params"]["sample_method"], "dpm++2m");
+        assert_eq!(payload["sample_params"]["sample_steps"], 24);
+        assert_eq!(payload["sample_params"]["guidance"]["txt_cfg"], 3.5);
+        assert_eq!(payload["lora"], serde_json::json!(loras));
+        assert_eq!(payload["vae_tiling_params"]["enabled"], true);
+        assert_eq!(payload["output_compression"], 100);
+    }
 }
