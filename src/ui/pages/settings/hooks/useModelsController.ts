@@ -9,6 +9,7 @@ import {
   SETTINGS_UPDATED_EVENT,
 } from "../../../../core/storage/repo";
 import { initialModelsState, modelsReducer, type ModelsState } from "./modelsReducer";
+import { getPlatform } from "../../../../core/utils/platform";
 
 type ControllerReturn = {
   state: ModelsState;
@@ -17,12 +18,18 @@ type ControllerReturn = {
   handleDelete: (modelId: string) => Promise<void>;
 };
 
+function hideDesktopImageRuntimeOnMobile(providerId: string): boolean {
+  return getPlatform().type === "mobile" && providerId === "sdcpp";
+}
+
 function getInitialState(): ModelsState {
   const cached = readSettingsCached();
   if (cached) {
     return {
-      providers: cached.providerCredentials,
-      models: cached.models,
+      providers: cached.providerCredentials.filter(
+        (provider) => !hideDesktopImageRuntimeOnMobile(provider.providerId),
+      ),
+      models: cached.models.filter((model) => !hideDesktopImageRuntimeOnMobile(model.providerId)),
       defaultModelId: cached.defaultModelId ?? null,
       loading: false,
     };
@@ -36,8 +43,12 @@ export function useModelsController(): ControllerReturn {
   const reload = useCallback(async () => {
     try {
       const settings = await readSettings();
-      const providers = settings.providerCredentials;
-      const models = settings.models;
+      const providers = settings.providerCredentials.filter(
+        (provider) => !hideDesktopImageRuntimeOnMobile(provider.providerId),
+      );
+      const models = settings.models.filter(
+        (model) => !hideDesktopImageRuntimeOnMobile(model.providerId),
+      );
       const defaultModelId = settings.defaultModelId ?? null;
 
       dispatch({

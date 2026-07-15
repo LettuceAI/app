@@ -2298,6 +2298,7 @@ fn build_image_request(
             credential_id: credential_id.to_string(),
             advanced_model_settings: None,
             input_images: None,
+            loras: None,
             output_modalities: None,
             size: arguments
                 .get("size")

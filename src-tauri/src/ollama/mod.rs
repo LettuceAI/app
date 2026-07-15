@@ -868,6 +868,10 @@ pub async fn ollama_pull_model(
         voice_id: metadata.voice_id.clone(),
         download_url: Some(format!("ollama://{}/{}", credential.id, trimmed_ref)),
         destination_path: metadata.destination_path.clone(),
+        expected_size: metadata.expected_size,
+        sha256: metadata.sha256.clone(),
+        runtime_release: metadata.runtime_release.clone(),
+        runtime_asset: metadata.runtime_asset.clone(),
         force_redownload: metadata.force_redownload,
     };
 

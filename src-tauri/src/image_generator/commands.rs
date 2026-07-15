@@ -153,6 +153,11 @@ pub async fn generate_image(
         )?;
         provider_label = provider_cred.label.clone();
 
+        if request.provider_id == "sdcpp" {
+            let response = super::sdcpp::generate(&app, &request).await?;
+            return Ok((response, None));
+        }
+
         if request.provider_id == "comfyui" {
             let api_key = provider_cred.api_key.clone().unwrap_or_default();
             let base_url = resolve_base_url(

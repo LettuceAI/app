@@ -1,5 +1,6 @@
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::io::Read;
 use std::path::Path;
@@ -226,6 +227,10 @@ pub struct QueuedDownload {
     pub voice_id: Option<String>,
     pub download_url: Option<String>,
     pub destination_path: Option<String>,
+    pub expected_size: Option<u64>,
+    pub sha256: Option<String>,
+    pub runtime_release: Option<String>,
+    pub runtime_asset: Option<String>,
     pub force_redownload: bool,
 }
 
@@ -283,6 +288,14 @@ pub struct QueueDownloadMetadata {
     pub download_url: Option<String>,
     #[serde(default)]
     pub destination_path: Option<String>,
+    #[serde(default)]
+    pub expected_size: Option<u64>,
+    #[serde(default)]
+    pub sha256: Option<String>,
+    #[serde(default)]
+    pub runtime_release: Option<String>,
+    #[serde(default)]
+    pub runtime_asset: Option<String>,
     #[serde(default)]
     pub force_redownload: bool,
 }
@@ -2317,6 +2330,10 @@ pub async fn hf_queue_download(
             voice_id: metadata.voice_id,
             download_url: metadata.download_url,
             destination_path: metadata.destination_path,
+            expected_size: metadata.expected_size,
+            sha256: metadata.sha256,
+            runtime_release: metadata.runtime_release,
+            runtime_asset: metadata.runtime_asset,
             force_redownload: metadata.force_redownload,
         });
         emit_queue(&app, &state.queue);
@@ -2403,7 +2420,12 @@ async fn process_download_queue(app: &AppHandle) {
             emit_queue(app, &state.queue);
         }
 
-        let result = do_queue_download(app, &item).await;
+        let result = match do_queue_download(app, &item).await {
+            Ok(path) => crate::image_generator::sdcpp::handle_download_completed(app, &item, &path)
+                .await
+                .map(|_| path),
+            Err(error) => Err(error),
+        };
 
         {
             let mut state = HF_DOWNLOAD_QUEUE.lock().await;
@@ -2469,7 +2491,13 @@ async fn do_queue_download(app: &AppHandle, item: &QueuedDownload) -> Result<Str
             } else {
                 1_000_000
             };
-            if m.len() >= min_existing_size {
+            let size_matches = item.expected_size.map_or(true, |size| m.len() == size);
+            let hash_matches = if size_matches {
+                verify_sha256(&dest_path, item.sha256.as_deref()).await?
+            } else {
+                false
+            };
+            if m.len() >= min_existing_size && size_matches && hash_matches {
                 log_info(
                     app,
                     "hf_browser",
@@ -2488,6 +2516,14 @@ async fn do_queue_download(app: &AppHandle, item: &QueuedDownload) -> Result<Str
                 }
                 return Ok(dest_path.to_string_lossy().to_string());
             }
+            log_info(
+                app,
+                "hf_browser",
+                format!(
+                    "Existing file failed integrity validation; downloading again: {}",
+                    dest_path.display()
+                ),
+            );
         }
     }
 
@@ -2531,6 +2567,14 @@ async fn do_queue_download(app: &AppHandle, item: &QueuedDownload) -> Result<Str
     }
 
     let total_size = response.content_length().unwrap_or(0);
+    if let (Some(expected), true) = (item.expected_size, total_size > 0) {
+        if total_size != expected {
+            return Err(format!(
+                "Download size mismatch before transfer: expected {} bytes, server reported {} bytes",
+                expected, total_size
+            ));
+        }
+    }
 
     {
         let mut state = HF_DOWNLOAD_QUEUE.lock().await;
@@ -2618,6 +2662,24 @@ async fn do_queue_download(app: &AppHandle, item: &QueuedDownload) -> Result<Str
     })?;
     drop(file);
 
+    let downloaded_size = tokio::fs::metadata(&temp_path)
+        .await
+        .map_err(|e| format!("Failed to inspect downloaded file: {}", e))?
+        .len();
+    if let Some(expected) = item.expected_size {
+        if downloaded_size != expected {
+            let _ = tokio::fs::remove_file(&temp_path).await;
+            return Err(format!(
+                "Downloaded file has the wrong size: expected {} bytes, received {} bytes",
+                expected, downloaded_size
+            ));
+        }
+    }
+    if !verify_sha256(&temp_path, item.sha256.as_deref()).await? {
+        let _ = tokio::fs::remove_file(&temp_path).await;
+        return Err("Downloaded file failed SHA-256 validation".to_string());
+    }
+
     tokio::fs::rename(&temp_path, &dest_path)
         .await
         .map_err(|e| {
@@ -2637,6 +2699,33 @@ async fn do_queue_download(app: &AppHandle, item: &QueuedDownload) -> Result<Str
     );
 
     Ok(final_path)
+}
+
+async fn verify_sha256(path: &Path, expected: Option<&str>) -> Result<bool, String> {
+    let Some(expected) = expected else {
+        return Ok(true);
+    };
+    let expected = expected.trim().to_ascii_lowercase();
+    if expected.len() != 64 || !expected.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err("Invalid expected SHA-256 digest".to_string());
+    }
+
+    let mut file = tokio::fs::File::open(path)
+        .await
+        .map_err(|e| format!("Failed to open file for integrity validation: {}", e))?;
+    let mut hasher = Sha256::new();
+    let mut buffer = vec![0_u8; 1024 * 1024];
+    loop {
+        let read = tokio::io::AsyncReadExt::read(&mut file, &mut buffer)
+            .await
+            .map_err(|e| format!("Failed to validate downloaded file: {}", e))?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    let actual = format!("{:x}", hasher.finalize());
+    Ok(actual == expected)
 }
 
 #[tauri::command]

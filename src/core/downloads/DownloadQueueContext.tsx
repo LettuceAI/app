@@ -5,6 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "../../ui/components/toast";
 import { Routes } from "../../ui/navigation";
+import { SETTINGS_UPDATED_EVENT } from "../storage/repo";
 
 export interface QueuedDownload {
   id: string;
@@ -27,12 +28,26 @@ export interface QueuedDownload {
   llamaOffloadKqv: boolean | null;
   llamaGpuLayers: number | null;
   llamaModelOffloadMode: "auto" | "cpu" | "gpu" | "mixed" | null;
-  downloadRole: "model" | "mmproj" | "mtp" | null;
+  downloadRole:
+    | "model"
+    | "diffusion_model"
+    | "mmproj"
+    | "mtp"
+    | "vae"
+    | "text_encoder"
+    | "vision_encoder"
+    | "runtime"
+    | "runtime_dependency"
+    | null;
   queueKind?: string | null;
   assetRoot?: string | null;
   installKind?: string | null;
   variant?: string | null;
   voiceId?: string | null;
+  expectedSize?: number | null;
+  sha256?: string | null;
+  runtimeRelease?: string | null;
+  runtimeAsset?: string | null;
 }
 
 interface DownloadQueueContextValue {
@@ -131,6 +146,7 @@ export function groupQueueDownloads(queue: QueuedDownload[]): {
     }
     const model =
       items.find((item) => item.downloadRole === "model") ??
+      items.find((item) => item.downloadRole === "diffusion_model") ??
       items.find((item) => !isSidecarDownload(item)) ??
       null;
     groups.push({ installId, model, items });
@@ -139,7 +155,9 @@ export function groupQueueDownloads(queue: QueuedDownload[]): {
 }
 
 async function registerCompletedSdDownload(item: QueuedDownload): Promise<void> {
-  void item;
+  if (item.queueKind === "sdcpp") {
+    window.dispatchEvent(new CustomEvent(SETTINGS_UPDATED_EVENT));
+  }
 }
 
 export function DownloadQueueProvider({ children }: { children: ReactNode }) {

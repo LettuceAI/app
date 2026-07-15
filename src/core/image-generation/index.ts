@@ -10,6 +10,7 @@ import type {
 import { convertToImageUrl } from "../storage/images";
 import { getPromptTemplate } from "../prompts/service";
 import { isRenderableImageUrl } from "../utils/image";
+import { getPlatform } from "../utils/platform";
 import {
   APP_AVATAR_EDIT_TEMPLATE_ID,
   APP_AVATAR_GENERATION_TEMPLATE_ID,
@@ -25,6 +26,7 @@ export interface ImageGenerationRequest {
   credentialId: string;
   advancedModelSettings?: AdvancedModelSettings | null;
   inputImages?: string[];
+  loras?: { path: string; multiplier: number; isHighNoise?: boolean }[];
   outputModalities?: string[];
   size?: string;
   quality?: string;
@@ -80,10 +82,16 @@ export async function generateImage(
       credentialId: request.credentialId,
       advancedModelSettings: request.advancedModelSettings ?? null,
       inputImages: request.inputImages ?? null,
+      loras: request.loras ?? null,
+      outputModalities: request.outputModalities ?? null,
       size: request.size ?? null,
       quality: request.quality ?? null,
       style: request.style ?? null,
       n: request.n ?? 1,
+      sessionId: request.sessionId ?? null,
+      characterId: request.characterId ?? null,
+      characterName: request.characterName ?? null,
+      usageSource: request.usageSource ?? null,
     },
   });
 }
@@ -250,13 +258,22 @@ export function isImageTextToTextModel(model: Model): boolean {
   );
 }
 
+export function isImageGenerationModelAvailable(model: Model): boolean {
+  return (
+    model.outputScopes?.includes("image") === true &&
+    (getPlatform().type !== "mobile" || model.providerId !== "sdcpp")
+  );
+}
+
 function resolveImageGenerationOptionsWithPreference(
   settings: Settings,
   preferredModelId?: string | null,
   enabled = true,
 ): ImageGenerationOptions {
-  const models = settings.models.filter((model) => model.outputScopes?.includes("image"));
-  const providers = settings.providerCredentials;
+  const models = settings.models.filter(isImageGenerationModelAvailable);
+  const providers = settings.providerCredentials.filter(
+    (provider) => getPlatform().type !== "mobile" || provider.providerId !== "sdcpp",
+  );
   if (!enabled) {
     return {
       models,
@@ -376,7 +393,7 @@ export function getModelSizes(providerId: string, modelId: string): readonly str
     return ["512x512", "768x768", "1024x1024", "1152x896", "896x1152"];
   }
 
-  if (providerId === "comfyui" || providerId === "diffusers") {
+  if (providerId === "comfyui" || providerId === "diffusers" || providerId === "sdcpp") {
     return ["512x512", "768x768", "1024x1024", "1152x896", "896x1152"];
   }
 

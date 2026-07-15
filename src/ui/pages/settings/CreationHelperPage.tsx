@@ -1,18 +1,12 @@
 import { useState, useEffect, useMemo } from "react";
-import {
-  Sparkles,
-  Cpu,
-  Image,
-  Zap,
-  MessageSquare,
-  ChevronDown,
-} from "lucide-react";
+import { Sparkles, Cpu, Image, Zap, MessageSquare, ChevronDown } from "lucide-react";
 import { readSettings, saveAdvancedSettings } from "../../../core/storage/repo";
 import type { Model } from "../../../core/storage/schemas";
 import { cn } from "../../design-tokens";
 import { getProviderIcon } from "../../../core/utils/providerIcons";
 import { ModelSelectionBottomMenu } from "../../components/ModelSelectionBottomMenu";
 import { useI18n } from "../../../core/i18n/context";
+import { isImageGenerationModelAvailable } from "../../../core/image-generation";
 
 export function CreationHelperPage() {
   const { t } = useI18n();
@@ -89,14 +83,13 @@ export function CreationHelperPage() {
     [models],
   );
 
-  const imageModels = useMemo(
-    () => models.filter((m) => m.outputScopes?.includes("image")),
-    [models],
-  );
+  const imageModels = useMemo(() => models.filter(isImageGenerationModelAvailable), [models]);
 
   const selectedModel = selectedModelId ? models.find((m) => m.id === selectedModelId) : null;
   const defaultModel = defaultModelId ? models.find((m) => m.id === defaultModelId) : null;
-  const selectedImageModel = imageModelId ? models.find((m) => m.id === imageModelId) : null;
+  const selectedImageModel = imageModelId
+    ? (imageModels.find((m) => m.id === imageModelId) ?? null)
+    : null;
   const selectedModelLabel = selectedModel?.displayName || t("creationHelper.page.selectedModel");
   const chatDefaultLabel = t("creationHelper.page.useAppDefault", {
     model: defaultModel ? ` (${defaultModel.displayName})` : "",
@@ -252,7 +245,6 @@ export function CreationHelperPage() {
               </div>
             </div>
           </div>
-
         </div>
       </main>
 

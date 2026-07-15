@@ -248,6 +248,10 @@ async fn queue_download_plan(
             voice_id: voice_id.clone(),
             download_url: Some(format!("{HF_RESOLVE_BASE}/{}", spec.remote_path)),
             destination_path: Some(destination_path.to_string_lossy().to_string()),
+            expected_size: None,
+            sha256: None,
+            runtime_release: None,
+            runtime_asset: None,
             force_redownload: true,
         };
 
