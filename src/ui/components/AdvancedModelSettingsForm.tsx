@@ -21,7 +21,7 @@ export const ADVANCED_FREQUENCY_PENALTY_RANGE = { min: -2, max: 2 };
 export const ADVANCED_PRESENCE_PENALTY_RANGE = { min: -2, max: 2 };
 export const ADVANCED_TOP_K_RANGE = { min: 1, max: 500 };
 export const ADVANCED_SD_STEPS_RANGE = { min: 1, max: 150 };
-export const ADVANCED_SD_CFG_SCALE_RANGE = { min: 1, max: 30 };
+export const ADVANCED_SD_CFG_SCALE_RANGE = { min: 0, max: 30 };
 export const ADVANCED_SD_SEED_RANGE = { min: 0, max: 2_147_483_647 };
 export const ADVANCED_SD_DENOISING_STRENGTH_RANGE = { min: 0, max: 1 };
 export const ADVANCED_REASONING_BUDGET_RANGE = { min: 1024, max: 32768 };
@@ -199,6 +199,29 @@ export function sanitizeAdvancedModelSettings(input: AdvancedModelSettings): Adv
     return /^\d+x\d+$/.test(trimmed) ? trimmed : null;
   };
 
+  const normalizeBaseLoras = (
+    value: unknown,
+  ): Array<{ path: string; multiplier: number; isHighNoise?: boolean }> | null => {
+    if (!Array.isArray(value)) return null;
+    const seen = new Set<string>();
+    const cleaned: Array<{ path: string; multiplier: number; isHighNoise?: boolean }> = [];
+    for (const entry of value) {
+      if (!entry || typeof entry !== "object") continue;
+      const path = String((entry as { path?: unknown }).path ?? "").trim();
+      const multiplier = Number((entry as { multiplier?: unknown }).multiplier);
+      const isHighNoise = (entry as { isHighNoise?: unknown }).isHighNoise === true;
+      const key = `${path}\u0000${isHighNoise}`;
+      if (!path || !Number.isFinite(multiplier) || seen.has(key)) continue;
+      seen.add(key);
+      cleaned.push({
+        path,
+        multiplier: Number(clampValue(multiplier, 0, 2).toFixed(3)),
+        ...(isHighNoise ? { isHighNoise: true } : {}),
+      });
+    }
+    return cleaned.length > 0 ? cleaned : null;
+  };
+
   return {
     temperature: sanitize(input.temperature, ADVANCED_TEMPERATURE_RANGE, false),
     topP: sanitize(input.topP, ADVANCED_TOP_P_RANGE, false),
@@ -218,6 +241,7 @@ export function sanitizeAdvancedModelSettings(input: AdvancedModelSettings): Adv
       false,
     ),
     sdSize: normalizeSdSize(input.sdSize),
+    sdBaseLoras: normalizeBaseLoras(input.sdBaseLoras),
     sdcppProfileId: input.sdcppProfileId ?? null,
     sdcppVariantId: input.sdcppVariantId ?? null,
     sdcppRuntimeRelease: input.sdcppRuntimeRelease ?? null,

@@ -127,6 +127,21 @@ type SdcppInstalledModel = {
   supportsImageEdit: boolean;
   recommendedForScenes: boolean;
   requiresReferenceImage: boolean;
+  modelPath: string;
+  components: SdcppInstalledComponent[];
+};
+
+type SdcppInstalledComponent = {
+  role: string;
+  filename: string;
+  path: string;
+  bytesOnDisk: number;
+};
+
+type SdcppLoraFile = {
+  filename: string;
+  path: string;
+  bytesOnDisk: number;
 };
 
 type LocalLibraryPickerMode = "model" | "mmproj" | "mtp";
@@ -530,6 +545,9 @@ export function EditModelPage() {
     asset: string;
   } | null>(null);
   const [showSdcppModelPicker, setShowSdcppModelPicker] = useState(false);
+  const [showSdcppLoraPicker, setShowSdcppLoraPicker] = useState(false);
+  const [sdcppLoras, setSdcppLoras] = useState<SdcppLoraFile[]>([]);
+  const [importingSdcppLora, setImportingSdcppLora] = useState(false);
   const [showProviderPicker, setShowProviderPicker] = useState(false);
   const [openRouterEndpoints, setOpenRouterEndpoints] = useState<OpenRouterEndpoint[]>([]);
   const [providerEndpointsLoading, setProviderEndpointsLoading] = useState(false);
@@ -1606,10 +1624,68 @@ export function EditModelPage() {
       .catch(() => {
         if (!cancelled) setSdcppActiveRuntime(null);
       });
+    invoke<SdcppLoraFile[]>("sdcpp_loras")
+      .then((files) => {
+        if (!cancelled) setSdcppLoras(files);
+      })
+      .catch(() => {
+        if (!cancelled) setSdcppLoras([]);
+      });
     return () => {
       cancelled = true;
     };
   }, [isSdcppModel]);
+
+  const selectedSdcppEntry =
+    sdcppInstalled.find(
+      (entry) => `sdcpp:${entry.profileId}:${entry.variantId}` === editorModel?.name,
+    ) ?? null;
+
+  const updateBaseLoras = (
+    next: NonNullable<typeof modelAdvancedDraft.sdBaseLoras> | null,
+  ) => {
+    setModelAdvancedDraft({
+      ...modelAdvancedDraft,
+      sdBaseLoras: next && next.length > 0 ? next : null,
+    });
+  };
+
+  const addBaseLora = (file: SdcppLoraFile) => {
+    const current = modelAdvancedDraft.sdBaseLoras ?? [];
+    if (!current.some((lora) => lora.path === file.path && !lora.isHighNoise)) {
+      updateBaseLoras([...current, { path: file.path, multiplier: 0.8 }]);
+    }
+    setShowSdcppLoraPicker(false);
+  };
+
+  const importBaseLora = async () => {
+    const selection = await open({
+      multiple: false,
+      filters: [
+        {
+          name: t("editModel.sdcpp.loraFiles"),
+          extensions: ["safetensors", "ckpt", "pt"],
+        },
+      ],
+    });
+    if (typeof selection !== "string") return;
+    setImportingSdcppLora(true);
+    try {
+      const imported = await invoke<SdcppLoraFile>("sdcpp_import_lora", {
+        sourcePath: selection,
+      });
+      const files = await invoke<SdcppLoraFile[]>("sdcpp_loras");
+      setSdcppLoras(files);
+      addBaseLora(imported);
+    } catch (error: any) {
+      toast.error(
+        t("editModel.sdcpp.importFailed"),
+        typeof error === "string" ? error : error?.message || String(error),
+      );
+    } finally {
+      setImportingSdcppLora(false);
+    }
+  };
 
   const selectSdcppModel = (entry: SdcppInstalledModel) => {
     updateEditorModel({
@@ -1863,7 +1939,7 @@ export function EditModelPage() {
   const activeDetailPanel = activePanel;
   const editorPanels: { key: EditorSectionKey; label: string }[] = [
     { key: "generation", label: t("editModel.sections.generation") },
-    ...(isLocalDiffusionModel
+    ...(isLocalDiffusionModel || isSdcppModel
       ? [{ key: "configuration" as const, label: t("editModel.sections.configuration") }]
       : []),
     ...(hasRuntimePanel
@@ -2171,14 +2247,21 @@ export function EditModelPage() {
   useEffect(() => {
     if (activePanel === "runtime" && !hasRuntimePanel) {
       setActivePanel(showReasoningSection ? "reasoning" : "generation");
-    } else if (activePanel === "configuration" && !isLocalDiffusionModel) {
+    } else if (activePanel === "configuration" && !isLocalDiffusionModel && !isSdcppModel) {
       setActivePanel("generation");
     } else if (activePanel === "reasoning" && !showReasoningSection) {
       setActivePanel(hasRuntimePanel ? "runtime" : "generation");
     } else if (activePanel === "caching" && !showCachingSection) {
       setActivePanel("generation");
     }
-  }, [activePanel, hasRuntimePanel, isLocalDiffusionModel, showReasoningSection, showCachingSection]);
+  }, [
+    activePanel,
+    hasRuntimePanel,
+    isLocalDiffusionModel,
+    isSdcppModel,
+    showReasoningSection,
+    showCachingSection,
+  ]);
 
   useEffect(() => {
     if (!showLlamaRuntimeReport) return;
@@ -4516,6 +4599,182 @@ export function EditModelPage() {
                             )}
                               </>
                             )}
+                          </div>
+                        )}
+
+                        {activeDetailPanel === "configuration" && isSdcppModel && (
+                          <div className="space-y-10">
+                            <section className="space-y-4">
+                              <div className="flex items-start justify-between gap-4">
+                                <div className="space-y-1">
+                                  <h3 className="text-[13px] font-semibold text-fg/82">
+                                    {t("editModel.sdcpp.baseLoras")}
+                                  </h3>
+                                  <p className="max-w-2xl text-[13px] leading-relaxed text-fg/45">
+                                    {t("editModel.sdcpp.baseLorasDescription")}
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowSdcppLoraPicker(true)}
+                                  className="shrink-0 rounded-md border border-fg/12 bg-fg/5 px-3 py-1.5 text-[12px] font-medium text-fg/72 transition hover:border-fg/22 hover:bg-fg/8 hover:text-fg"
+                                >
+                                  {t("editModel.sdcpp.addLora")}
+                                </button>
+                              </div>
+
+                              {(modelAdvancedDraft.sdBaseLoras ?? []).length === 0 ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setShowSdcppLoraPicker(true)}
+                                  className="flex w-full items-center justify-between rounded-lg border border-dashed border-fg/12 px-4 py-3.5 text-left transition hover:border-fg/22 hover:bg-fg/[0.025]"
+                                >
+                                  <span className="text-[13px] text-fg/45">
+                                    {t("editModel.sdcpp.noBaseLoras")}
+                                  </span>
+                                  <span className="text-[12px] font-medium text-accent/75">
+                                    {t("editModel.sdcpp.chooseLora")}
+                                  </span>
+                                </button>
+                              ) : (
+                                <div className="divide-y divide-fg/8 rounded-lg border border-fg/10">
+                                  {(modelAdvancedDraft.sdBaseLoras ?? []).map((lora, index) => (
+                                    <div
+                                      key={`${lora.path}:${lora.isHighNoise === true}`}
+                                      className="grid gap-4 px-4 py-4 md:grid-cols-[minmax(0,1fr)_9rem_auto] md:items-end"
+                                    >
+                                      <FieldBlock label={t("editModel.sdcpp.loraPath")}>
+                                        <input
+                                          type="text"
+                                          readOnly
+                                          value={lora.path}
+                                          title={lora.path}
+                                          className="w-full rounded-lg border border-fg/10 bg-surface-el/15 px-3 py-2.5 font-mono text-[12px] text-fg/72 focus:outline-none"
+                                        />
+                                      </FieldBlock>
+                                      <FieldBlock label={t("editModel.sdcpp.strength")}>
+                                        <NumberInput
+                                          min={0}
+                                          max={2}
+                                          step={0.05}
+                                          value={lora.multiplier}
+                                          onChange={(value) => {
+                                            const next = [...(modelAdvancedDraft.sdBaseLoras ?? [])];
+                                            next[index] = { ...next[index], multiplier: value ?? 0.8 };
+                                            updateBaseLoras(next);
+                                          }}
+                                          className={numberInputClassName}
+                                        />
+                                      </FieldBlock>
+                                      <button
+                                        type="button"
+                                        onClick={() => updateBaseLoras(
+                                          (modelAdvancedDraft.sdBaseLoras ?? []).filter(
+                                            (_, itemIndex) => itemIndex !== index,
+                                          ),
+                                        )}
+                                        aria-label={t("editModel.sdcpp.removeLora")}
+                                        title={t("editModel.sdcpp.removeLora")}
+                                        className="mb-0.5 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-fg/10 text-fg/38 transition hover:border-danger/30 hover:bg-danger/8 hover:text-danger"
+                                      >
+                                        <X className="h-4 w-4" />
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </section>
+
+                            <section className="space-y-4">
+                              <div className="space-y-1">
+                                <h3 className="text-[13px] font-semibold text-fg/82">
+                                  {t("editModel.sdcpp.installedFiles")}
+                                </h3>
+                                <p className="max-w-2xl text-[13px] leading-relaxed text-fg/45">
+                                  {t("editModel.sdcpp.installedFilesDescription")}
+                                </p>
+                              </div>
+                              {selectedSdcppEntry ? (
+                                <div className="grid grid-cols-1 gap-x-6 gap-y-5 lg:grid-cols-2">
+                                  <FieldBlock label={t("editModel.sdcpp.modelPath")}>
+                                    <input
+                                      type="text"
+                                      readOnly
+                                      value={selectedSdcppEntry.modelPath}
+                                      title={selectedSdcppEntry.modelPath}
+                                      className="w-full rounded-lg border border-fg/10 bg-surface-el/15 px-3 py-2.5 font-mono text-[12px] text-fg/72 focus:outline-none"
+                                    />
+                                  </FieldBlock>
+                                  {selectedSdcppEntry.components
+                                    .filter((component) => component.role !== "diffusion_model")
+                                    .map((component) => (
+                                      <FieldBlock
+                                        key={component.role}
+                                        label={
+                                          component.role === "text_encoder"
+                                            ? t("editModel.sdcpp.textEncoderPath")
+                                            : component.role === "vision_encoder"
+                                              ? t("editModel.sdcpp.visionEncoderPath")
+                                              : component.role === "vae"
+                                                ? t("editModel.sdcpp.vaePath")
+                                                : component.role
+                                        }
+                                      >
+                                        <input
+                                          type="text"
+                                          readOnly
+                                          value={component.path}
+                                          title={component.path}
+                                          className="w-full rounded-lg border border-fg/10 bg-surface-el/15 px-3 py-2.5 font-mono text-[12px] text-fg/72 focus:outline-none"
+                                        />
+                                        <p className="text-[11px] text-fg/35">
+                                          {component.filename} · {formatBytes(component.bytesOnDisk)}
+                                        </p>
+                                      </FieldBlock>
+                                    ))}
+                                </div>
+                              ) : (
+                                <p className="rounded-lg border border-fg/10 px-4 py-3 text-[13px] text-fg/45">
+                                  {t("editModel.sdcpp.noInstalledFiles")}
+                                </p>
+                              )}
+                            </section>
+
+                            <BottomMenu
+                              isOpen={showSdcppLoraPicker}
+                              onClose={() => setShowSdcppLoraPicker(false)}
+                              title={t("editModel.sdcpp.chooseLora")}
+                            >
+                              <MenuSection>
+                                <MenuButton
+                                  icon={<FolderOpen className="h-5 w-5 text-accent/70" />}
+                                  title={t("editModel.sdcpp.importLora")}
+                                  description={t("editModel.sdcpp.importLoraDescription")}
+                                  color="from-accent/20 to-accent/10"
+                                  onClick={() => void importBaseLora()}
+                                  loading={importingSdcppLora}
+                                  disabled={importingSdcppLora}
+                                />
+                                {sdcppLoras.map((file) => {
+                                  const selected = (modelAdvancedDraft.sdBaseLoras ?? []).some(
+                                    (lora) => lora.path === file.path && !lora.isHighNoise,
+                                  );
+                                  return (
+                                    <MenuButton
+                                      key={file.path}
+                                      icon={<Layers className="h-5 w-5 text-accent/60" />}
+                                      title={file.filename}
+                                      description={`${file.path} · ${formatBytes(file.bytesOnDisk)}`}
+                                      color="from-accent/15 to-accent/5"
+                                      rightElement={selected
+                                        ? <Check className="h-4 w-4 text-accent" />
+                                        : <ArrowRight className="h-4 w-4 text-fg/25" />}
+                                      onClick={() => addBaseLora(file)}
+                                    />
+                                  );
+                                })}
+                              </MenuSection>
+                            </BottomMenu>
                           </div>
                         )}
 

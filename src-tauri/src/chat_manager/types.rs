@@ -719,6 +719,8 @@ pub struct AdvancedModelSettings {
     pub sd_extra_prompt: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sd_prompt_writer_instructions: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sd_base_loras: Option<Vec<crate::image_generator::types::ImageLora>>,
     pub llama_gpu_layers: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub llama_multi_gpu_enabled: Option<bool>,
@@ -867,6 +869,7 @@ impl Default for AdvancedModelSettings {
             sd_offload_mode: None,
             sd_extra_prompt: None,
             sd_prompt_writer_instructions: None,
+            sd_base_loras: None,
             sd_cfg_scale: None,
             sd_sampler: None,
             sd_seed: None,

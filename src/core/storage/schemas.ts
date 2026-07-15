@@ -504,6 +504,16 @@ export const AdvancedModelSettingsSchema = z.object({
   sdOffloadMode: z.enum(["auto", "gpu", "mixed"]).nullable().optional(),
   sdExtraPrompt: z.string().trim().min(1).nullable().optional(),
   sdPromptWriterInstructions: z.string().trim().min(1).nullable().optional(),
+  sdBaseLoras: z
+    .array(
+      z.object({
+        path: z.string().trim().min(1),
+        multiplier: z.number().min(0).max(2),
+        isHighNoise: z.boolean().optional(),
+      }),
+    )
+    .nullable()
+    .optional(),
   sdcppProfileId: z.string().trim().min(1).nullable().optional(),
   sdcppVariantId: z.string().trim().min(1).nullable().optional(),
   sdcppRuntimeRelease: z.string().trim().min(1).nullable().optional(),

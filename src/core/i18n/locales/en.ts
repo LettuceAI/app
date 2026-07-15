@@ -4396,6 +4396,29 @@ export const enMessages = {
       configurationHelp:
         "Files this model passes to the engine. A checkpoint or diffusion model is required; encoders and VAE depend on the architecture. Changes apply immediately.",
     },
+    sdcpp: {
+      baseLoras: "Base LoRAs",
+      baseLorasDescription:
+        "These LoRAs are loaded for every generation made with this model. Character and style LoRAs are added on top.",
+      addLora: "Add LoRA",
+      noBaseLoras: "No model-level LoRAs configured",
+      chooseLora: "Choose LoRA",
+      loraPath: "LoRA path",
+      strength: "Strength",
+      removeLora: "Remove LoRA",
+      installedFiles: "Installed files",
+      installedFilesDescription:
+        "The managed model and component paths currently passed to stable-diffusion.cpp.",
+      modelPath: "Model path",
+      textEncoderPath: "Text encoder path",
+      visionEncoderPath: "Vision encoder path",
+      vaePath: "VAE path",
+      noInstalledFiles: "Select an installed local image model to inspect its files.",
+      loraFiles: "LoRA files",
+      importLora: "Import LoRA file",
+      importLoraDescription: "Copy a LoRA into the local image-generation library",
+      importFailed: "LoRA import failed",
+    },
     modelSource: {
       useCatalog: "Use catalog",
       enterManually: "Enter manually",

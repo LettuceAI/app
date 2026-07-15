@@ -230,11 +230,14 @@ export function AvatarGenerationSheet({
     setOperationLabel(t("components.avatarGeneration.inProgress"));
 
     try {
-      const renderedPrompt = await buildAvatarGenerationPrompt({
-        subjectName,
-        subjectDescription,
-        avatarRequest: prompt.trim(),
-      });
+      const renderedPrompt =
+        selectedModel.providerId === "sdcpp"
+          ? prompt.trim()
+          : await buildAvatarGenerationPrompt({
+              subjectName,
+              subjectDescription,
+              avatarRequest: prompt.trim(),
+            });
       const request: ImageGenerationRequest = {
         prompt: renderedPrompt,
         model: selectedModel.name,
@@ -298,12 +301,15 @@ export function AvatarGenerationSheet({
     setOperationLabel(t("components.avatarGeneration.editingInProgress"));
 
     try {
-      const renderedPrompt = await buildAvatarEditPrompt({
-        subjectName,
-        subjectDescription,
-        currentAvatarPrompt: currentVariant.renderedPrompt,
-        editRequest: editRequest.trim(),
-      });
+      const renderedPrompt =
+        selectedModel.providerId === "sdcpp"
+          ? editRequest.trim()
+          : await buildAvatarEditPrompt({
+              subjectName,
+              subjectDescription,
+              currentAvatarPrompt: currentVariant.renderedPrompt,
+              editRequest: editRequest.trim(),
+            });
 
       const request: ImageGenerationRequest = {
         prompt: renderedPrompt,

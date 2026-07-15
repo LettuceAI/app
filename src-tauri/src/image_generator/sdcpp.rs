@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 use tauri::AppHandle;
+use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
 use tokio::process::Child;
 use tokio::sync::Mutex;
 
@@ -22,6 +23,20 @@ struct ManagedServer {
 
 lazy_static::lazy_static! {
     static ref MANAGED_SERVER: Mutex<Option<ManagedServer>> = Mutex::new(None);
+}
+
+fn forward_lora_runtime_output<R>(app: AppHandle, stream: R)
+where
+    R: AsyncRead + Unpin + Send + 'static,
+{
+    tokio::spawn(async move {
+        let mut lines = BufReader::new(stream).lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            if line.to_ascii_lowercase().contains("lora") {
+                crate::utils::log_info(&app, "sdcpp_runtime", line);
+            }
+        }
+    });
 }
 
 #[derive(Clone, Copy)]
@@ -2499,6 +2514,17 @@ pub struct InstalledModel {
     supports_image_edit: bool,
     recommended_for_scenes: bool,
     requires_reference_image: bool,
+    model_path: String,
+    components: Vec<InstalledComponent>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstalledComponent {
+    role: &'static str,
+    filename: &'static str,
+    path: String,
+    bytes_on_disk: u64,
 }
 
 fn installed_display_name(profile: &ProfileSpec, variant: &VariantSpec) -> String {
@@ -2543,6 +2569,24 @@ pub async fn sdcpp_installed(app: AppHandle) -> Result<Vec<InstalledModel>, Stri
                 .filter_map(|path| std::fs::metadata(path).ok())
                 .map(|metadata| metadata.len())
                 .sum();
+            let components = all_components(profile, variant)
+                .into_iter()
+                .filter_map(|component| {
+                    let path = component_path(&app, component).ok()?;
+                    let bytes_on_disk = std::fs::metadata(&path).ok()?.len();
+                    Some(InstalledComponent {
+                        role: component.role,
+                        filename: component.filename,
+                        path: path.to_string_lossy().to_string(),
+                        bytes_on_disk,
+                    })
+                })
+                .collect::<Vec<_>>();
+            let model_path = components
+                .iter()
+                .find(|component| component.role == "diffusion_model")
+                .map(|component| component.path.clone())
+                .unwrap_or_default();
             let model_name = format!("sdcpp:{}:{}", profile.id, variant.id);
             let row = conn
                 .query_row(
@@ -2587,10 +2631,125 @@ pub async fn sdcpp_installed(app: AppHandle) -> Result<Vec<InstalledModel>, Stri
                 supports_image_edit: profile.supports_image_edit,
                 recommended_for_scenes: profile.recommended_for_scenes,
                 requires_reference_image: profile.requires_reference_image,
+                model_path,
+                components,
             });
         }
     }
     Ok(installed)
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstalledLora {
+    filename: String,
+    path: String,
+    bytes_on_disk: u64,
+}
+
+fn collect_lora_files(root: &Path, directory: &Path, files: &mut Vec<InstalledLora>) {
+    let Ok(entries) = std::fs::read_dir(directory) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_lora_files(root, &path, files);
+            continue;
+        }
+        let supported = path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| {
+                matches!(
+                    extension.to_ascii_lowercase().as_str(),
+                    "safetensors" | "ckpt" | "pt"
+                )
+            });
+        if !supported {
+            continue;
+        }
+        let Ok(relative) = path.strip_prefix(root) else {
+            continue;
+        };
+        files.push(InstalledLora {
+            filename: path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or_default()
+                .to_string(),
+            path: relative.to_string_lossy().replace('\\', "/"),
+            bytes_on_disk: std::fs::metadata(&path)
+                .map(|metadata| metadata.len())
+                .unwrap_or(0),
+        });
+    }
+}
+
+#[tauri::command]
+pub async fn sdcpp_loras(app: AppHandle) -> Result<Vec<InstalledLora>, String> {
+    if cfg!(mobile) {
+        return Err("Local stable-diffusion.cpp image generation is desktop-only.".to_string());
+    }
+    let root = lora_root(&app)?;
+    std::fs::create_dir_all(&root)
+        .map_err(|error| format!("Failed to create the local LoRA library: {error}"))?;
+    let mut files = Vec::new();
+    collect_lora_files(&root, &root, &mut files);
+    files.sort_by(|left, right| {
+        left.filename
+            .to_lowercase()
+            .cmp(&right.filename.to_lowercase())
+    });
+    Ok(files)
+}
+
+#[tauri::command]
+pub async fn sdcpp_import_lora(
+    app: AppHandle,
+    source_path: String,
+) -> Result<InstalledLora, String> {
+    if cfg!(mobile) {
+        return Err("Local stable-diffusion.cpp image generation is desktop-only.".to_string());
+    }
+    let source = PathBuf::from(&source_path);
+    if !source.is_file() {
+        return Err(format!("LoRA file does not exist: {}", source.display()));
+    }
+    let extension = source
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if !matches!(extension.as_str(), "safetensors" | "ckpt" | "pt") {
+        return Err("Choose a .safetensors, .ckpt, or .pt LoRA file.".to_string());
+    }
+    let filename = source
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| "The selected LoRA has an invalid filename.".to_string())?;
+    let root = lora_root(&app)?;
+    std::fs::create_dir_all(&root)
+        .map_err(|error| format!("Failed to create the local LoRA library: {error}"))?;
+    let destination = root.join(filename);
+    if destination.exists() {
+        if source.canonicalize().ok() != destination.canonicalize().ok() {
+            return Err(format!(
+                "A LoRA named {filename} is already in the library. Remove or rename it before importing another file with the same name."
+            ));
+        }
+    } else {
+        std::fs::copy(&source, &destination)
+            .map_err(|error| format!("Failed to import {filename}: {error}"))?;
+    }
+    Ok(InstalledLora {
+        filename: filename.to_string(),
+        path: filename.to_string(),
+        bytes_on_disk: std::fs::metadata(&destination)
+            .map(|metadata| metadata.len())
+            .unwrap_or(0),
+    })
 }
 
 #[tauri::command]
@@ -2895,6 +3054,28 @@ fn installed_model_config(
     Ok(config)
 }
 
+fn installed_model_advanced_settings(
+    app: &AppHandle,
+    model_name: &str,
+) -> Result<crate::chat_manager::types::AdvancedModelSettings, String> {
+    use rusqlite::OptionalExtension;
+
+    let conn = crate::storage_manager::db::open_db(app)?;
+    let advanced = conn
+        .query_row(
+            "SELECT advanced_model_settings FROM models WHERE provider_id = ?1 AND name = ?2 LIMIT 1",
+            rusqlite::params![PROVIDER_ID, model_name],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .optional()
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
+        .flatten()
+        .ok_or_else(|| format!("Local image model is not installed: {}", model_name))?;
+
+    serde_json::from_str(&advanced)
+        .map_err(|e| format!("Local image model has invalid advanced settings: {}", e))
+}
+
 fn selected_component_path(
     app: &AppHandle,
     profile: &ProfileSpec,
@@ -3029,8 +3210,8 @@ async fn ensure_server(
         .arg("--listen-port")
         .arg(port.to_string())
         .arg("--diffusion-fa")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .kill_on_drop(true);
     if let Some(estimate) = &manual_estimate {
         let (backend_spec, params_backend_spec) = manual_backend_specs(estimate);
@@ -3060,6 +3241,12 @@ async fn ensure_server(
     let mut child = command
         .spawn()
         .map_err(|e| format!("Failed to start stable-diffusion.cpp: {}", e))?;
+    if let Some(stdout) = child.stdout.take() {
+        forward_lora_runtime_output(app.clone(), stdout);
+    }
+    if let Some(stderr) = child.stderr.take() {
+        forward_lora_runtime_output(app.clone(), stderr);
+    }
     let base_url = format!("http://127.0.0.1:{}", port);
     let client = reqwest::Client::new();
     let capabilities_url = format!("{}/sdcpp/v1/capabilities", base_url);
@@ -3120,6 +3307,7 @@ pub async fn generate(
         return Err("Local stable-diffusion.cpp image generation is desktop-only.".to_string());
     }
     let config = installed_model_config(app, &request.model)?;
+    let model_settings = installed_model_advanced_settings(app, &request.model)?;
     let (profile, variant) =
         find_profile_variant(&config.sdcpp_profile_id, &config.sdcpp_variant_id)?;
     let references = request.input_images.clone().unwrap_or_default();
@@ -3165,7 +3353,41 @@ pub async fn generate(
         .and_then(|settings| settings.sd_sampler.clone())
         .unwrap_or_else(|| "euler".to_string());
 
-    let loras = normalize_loras(app, request.loras.as_deref().unwrap_or_default())?;
+    let loras = merge_generation_loras(
+        model_settings.sd_base_loras.as_deref(),
+        request.loras.as_deref(),
+    );
+    let loras = normalize_loras(app, &loras)?;
+    let lora_summary = loras
+        .iter()
+        .map(|lora| {
+            format!(
+                "{}@{}{}",
+                lora.get("path").and_then(Value::as_str).unwrap_or("unknown"),
+                lora.get("multiplier").and_then(Value::as_f64).unwrap_or(1.0),
+                if lora
+                    .get("is_high_noise")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false)
+                {
+                    ":high-noise"
+                } else {
+                    ""
+                }
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    crate::utils::log_info(
+        app,
+        "sdcpp",
+        format!(
+            "Submitting generation: model={} prompt_chars={} loras=[{}]",
+            request.model,
+            request.prompt.chars().count(),
+            lora_summary
+        ),
+    );
     let base_url = ensure_server(app, &config, profile, variant).await?;
     let payload = build_generation_payload(SdGenerationPayload {
         prompt: &request.prompt,
@@ -3496,6 +3718,23 @@ fn normalize_loras(
         .collect()
 }
 
+fn merge_generation_loras(
+    base: Option<&[super::types::ImageLora]>,
+    request: Option<&[super::types::ImageLora]>,
+) -> Vec<super::types::ImageLora> {
+    let mut merged = base.unwrap_or_default().to_vec();
+    for lora in request.unwrap_or_default() {
+        if let Some(existing) = merged.iter_mut().find(|existing| {
+            existing.path == lora.path && existing.is_high_noise == lora.is_high_noise
+        }) {
+            *existing = lora.clone();
+        } else {
+            merged.push(lora.clone());
+        }
+    }
+    merged
+}
+
 fn component_path(app: &AppHandle, component: ComponentSpec) -> Result<PathBuf, String> {
     let basename = Path::new(component.filename)
         .file_name()
@@ -3776,9 +4015,10 @@ mod tests {
     use super::{
         build_generation_payload, compute_auto_fit_estimate, devices_for_policy,
         ensure_runtime_supports_profile, manual_backend_specs, max_vram_spec,
-        migrate_legacy_compute_policy, runtime_build_number, validate_compute_policy,
-        ComputePolicy, EstimateComponent, LegacyComputePolicy, RunnabilityDevice,
-        RunnabilityEstimate, RunnabilityPlacement, SdGenerationPayload, MIB, PROFILES,
+        merge_generation_loras, migrate_legacy_compute_policy, runtime_build_number,
+        validate_compute_policy, ComputePolicy, EstimateComponent, LegacyComputePolicy,
+        RunnabilityDevice, RunnabilityEstimate, RunnabilityPlacement, SdGenerationPayload, MIB,
+        PROFILES,
     };
     use std::collections::BTreeMap;
 
@@ -4096,5 +4336,41 @@ mod tests {
         assert!(ensure_runtime_supports_profile(profile, "master-720-2938272").is_err());
         assert!(ensure_runtime_supports_profile(profile, "master-721-8caa3f9").is_ok());
         assert!(ensure_runtime_supports_profile(profile, "master-778-c00a9e9").is_ok());
+    }
+
+    #[test]
+    fn request_loras_extend_and_override_model_level_loras() {
+        let base = vec![
+            super::super::types::ImageLora {
+                path: "style.safetensors".to_string(),
+                multiplier: 0.7,
+                is_high_noise: false,
+            },
+            super::super::types::ImageLora {
+                path: "detail.safetensors".to_string(),
+                multiplier: 0.5,
+                is_high_noise: false,
+            },
+        ];
+        let request = vec![
+            super::super::types::ImageLora {
+                path: "style.safetensors".to_string(),
+                multiplier: 1.1,
+                is_high_noise: false,
+            },
+            super::super::types::ImageLora {
+                path: "character.safetensors".to_string(),
+                multiplier: 0.8,
+                is_high_noise: false,
+            },
+        ];
+
+        let merged = merge_generation_loras(Some(&base), Some(&request));
+
+        assert_eq!(merged.len(), 3);
+        assert_eq!(merged[0].path, "style.safetensors");
+        assert_eq!(merged[0].multiplier, 1.1);
+        assert_eq!(merged[1].path, "detail.safetensors");
+        assert_eq!(merged[2].path, "character.safetensors");
     }
 }
