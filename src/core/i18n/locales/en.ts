@@ -6564,6 +6564,8 @@ export const enMessages = {
           "Install an engine build above before downloading models or checking hardware fit.",
         noRuntime: "Install a Stable Diffusion engine build before downloading this model.",
         engineRequired: "Install engine first",
+        engineUpdateRequired: "Requires engine build {{build}} or newer",
+        updateEngineFirst: "Update engine first",
         fitChecking: "Checking hardware fit...",
         fitFitsGpu: "Fits your GPU",
         fitPhased: "Fits your GPU, loaded in phases",
@@ -6601,6 +6603,9 @@ export const enMessages = {
         uninstallConfirmTitle: "Remove {{model}}?",
         uninstallConfirm:
           "This deletes the model weights from disk. Shared components used by other installed models are kept.",
+        familyModelCount: "{{count}} models",
+        familyModelCountOne: "1 model",
+        familyInstalledCount: "{{count}} installed",
       },
       entryCard: {
         manage: "Manage",

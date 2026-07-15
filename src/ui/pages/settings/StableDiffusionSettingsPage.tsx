@@ -53,6 +53,7 @@ type CatalogVariant = {
 type CatalogProfile = {
   id: string;
   displayName: string;
+  family: string;
   description: string;
   license: string;
   sourceUrl: string;
@@ -66,6 +67,7 @@ type CatalogProfile = {
   defaultHeight: number;
   defaultSteps: number;
   defaultCfg: number;
+  minimumRuntimeBuild: number | null;
   variants: CatalogVariant[];
 };
 
@@ -250,6 +252,19 @@ function formatBytes(bytes: number): string {
 
 function totalAssetBytes(asset: RuntimeAsset): number {
   return asset.bytes + asset.dependencies.reduce((total, item) => total + item.bytes, 0);
+}
+
+function runtimeBuildNumber(release: string): number | null {
+  const match = /^master-(\d+)-/.exec(release);
+  if (!match) return null;
+  const build = Number.parseInt(match[1], 10);
+  return Number.isFinite(build) ? build : null;
+}
+
+function runtimeSupportsProfile(profile: CatalogProfile, release: string): boolean {
+  if (profile.minimumRuntimeBuild === null) return true;
+  const build = runtimeBuildNumber(release);
+  return build !== null && build >= profile.minimumRuntimeBuild;
 }
 
 function usableGpuDevices(devices: GpuDevice[]): GpuDevice[] {
@@ -868,6 +883,7 @@ export function StableDiffusionSettingsPage() {
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
   const [installedModels, setInstalledModels] = useState<InstalledModel[]>([]);
   const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>({});
+  const [familyOverrides, setFamilyOverrides] = useState<Record<string, boolean>>({});
   const [installingModelKey, setInstallingModelKey] = useState<string | null>(null);
   const [uninstallingModelKey, setUninstallingModelKey] = useState<string | null>(null);
   const [runnability, setRunnability] = useState<Record<string, Runnability | "loading">>({});
@@ -919,6 +935,26 @@ export function StableDiffusionSettingsPage() {
     () => new Set(installedModels.map((model) => `${model.profileId}:${model.variantId}`)),
     [installedModels],
   );
+  const installedProfileIds = useMemo(
+    () => new Set(installedModels.map((model) => model.profileId)),
+    [installedModels],
+  );
+
+  const modelFamilies = useMemo(() => {
+    if (!catalog) return [];
+    const order: string[] = [];
+    const grouped = new Map<string, CatalogProfile[]>();
+    for (const profile of catalog.profiles) {
+      const existing = grouped.get(profile.family);
+      if (existing) {
+        existing.push(profile);
+      } else {
+        grouped.set(profile.family, [profile]);
+        order.push(profile.family);
+      }
+    }
+    return order.map((name) => ({ name, profiles: grouped.get(name) ?? [] }));
+  }, [catalog]);
 
   const loadInventory = useCallback(async () => {
     if (platform.type === "mobile") return;
@@ -1156,6 +1192,7 @@ export function StableDiffusionSettingsPage() {
       const checks = catalog.profiles.flatMap((profile) => {
         const variant = selectedVariant(profile, selectedVariants);
         if (!variant || installedModelKeys.has(`${profile.id}:${variant.id}`)) return [];
+        if (!runtimeSupportsProfile(profile, installedEnginePairing.release)) return [];
         return [checkRunnability(profile.id, variant.id, installedEnginePairing, revision)];
       });
       await Promise.all(checks);
@@ -1184,6 +1221,7 @@ export function StableDiffusionSettingsPage() {
       const variant = selectedVariant(profile, selectedVariants);
       if (!variant) continue;
       if (installedModelKeys.has(`${profile.id}:${variant.id}`)) continue;
+      if (!runtimeSupportsProfile(profile, installedEnginePairing.release)) continue;
       const key = `${profile.id}:${variant.id}@${installedEnginePairing.release}:${installedEnginePairing.asset}`;
       if (runnability[key] !== undefined) continue;
       void checkRunnability(profile.id, variant.id, installedEnginePairing);
@@ -1284,6 +1322,15 @@ export function StableDiffusionSettingsPage() {
       );
       return;
     }
+    if (!runtimeSupportsProfile(profile, runtimePairing.release)) {
+      toast.error(
+        t("imageGeneration.local.modelLibrary.installFailed"),
+        t("imageGeneration.local.modelLibrary.engineUpdateRequired", {
+          build: profile.minimumRuntimeBuild ?? "—",
+        }),
+      );
+      return;
+    }
     if (fitOffloadsToCpu(fit)) {
       const confirmed = await confirmBottomMenu({
         title: t("imageGeneration.local.modelLibrary.offloadConfirmTitle", {
@@ -1361,7 +1408,7 @@ export function StableDiffusionSettingsPage() {
 
   return (
     <main className="min-h-screen px-4 pb-24 pt-5">
-      <div className="mx-auto w-full max-w-4xl space-y-6">
+      <div className="mx-auto w-full max-w-6xl space-y-6">
         <header className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <h1 className="text-lg font-semibold text-fg">
@@ -1406,599 +1453,714 @@ export function StableDiffusionSettingsPage() {
           </div>
         ) : null}
 
-        {downloadQueue && visibleInstall ? (
-          <section aria-live="polite" className="space-y-3">
-            <h2 className="text-sm font-semibold text-fg">
-              {t("imageGeneration.local.engineManager.downloads")}
-            </h2>
-            <InlineDownloadCards filter={(item) => visibleInstallItemIds.has(item.id)} />
-          </section>
-        ) : null}
+        <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
+          <div className="space-y-6">
+            {downloadQueue && visibleInstall ? (
+              <section aria-live="polite" className="space-y-3">
+                <h2 className="text-sm font-semibold text-fg">
+                  {t("imageGeneration.local.engineManager.downloads")}
+                </h2>
+                <InlineDownloadCards filter={(item) => visibleInstallItemIds.has(item.id)} />
+              </section>
+            ) : null}
 
-        <section>
-          <h2 className="mb-3 text-sm font-semibold text-fg">
-            {t("imageGeneration.local.engineManager.installedTitle")}
-          </h2>
-          {inventoryLoading && !inventory ? (
-            <div
-              role="status"
-              aria-busy="true"
-              className="divide-y divide-fg/8 overflow-hidden rounded-lg border border-fg/10"
-            >
-              <span className="sr-only">{t("common.labels.loading")}</span>
-              {[0, 1].map((row) => (
-                <div
-                  key={row}
-                  className="flex items-center justify-between gap-4 bg-fg/[0.025] px-4 py-4"
-                >
-                  <div className="min-w-0 space-y-2">
-                    <Skeleton className="h-4 w-32" />
-                    <Skeleton className="h-3 w-52" />
-                  </div>
-                  <Skeleton className="h-8 w-28" />
-                </div>
-              ))}
-            </div>
-          ) : inventory && inventory.installed.length > 0 ? (
-            <div className="space-y-3">
-              <div className="divide-y divide-fg/8 overflow-hidden rounded-lg border border-fg/10">
-                {inventory.installed.map((runtime) => {
-                  const key = `${runtime.release}:${runtime.asset}`;
-                  const switching = switchingKey === key;
-                  const deleting = deletingKey === key;
-                  return (
-                    <div
-                      key={key}
-                      className="flex flex-wrap items-center justify-between gap-4 bg-fg/[0.025] px-4 py-4"
-                    >
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-mono text-sm font-semibold text-fg">
-                            {runtime.release}
-                          </span>
-                          {runtime.active ? (
-                            <span className="inline-flex items-center gap-1 text-xs font-medium text-success">
-                              <Check aria-hidden="true" className="h-3.5 w-3.5" />
-                              {t("imageGeneration.local.engineManager.active")}
-                            </span>
-                          ) : null}
-                        </div>
-                        <p className="mt-1 break-all text-xs text-fg/45">
-                          {runtime.backend.toUpperCase()} · {formatBytes(runtime.sizeBytes)} ·{" "}
-                          {runtime.asset}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {!runtime.active ? (
-                          <button
-                            type="button"
-                            onClick={() => void switchRuntime(runtime)}
-                            disabled={switching || deleting}
-                            className={cn(
-                              "inline-flex h-8 items-center gap-2 rounded-lg border border-fg/12 px-3 text-xs font-medium text-fg/70 transition-colors hover:bg-fg/5 disabled:opacity-50",
-                              focusRing,
-                            )}
-                          >
-                            {switching ? (
-                              <Loader2
-                                aria-hidden="true"
-                                className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none"
-                              />
-                            ) : null}
-                            {t("imageGeneration.local.engineManager.useVersion")}
-                          </button>
-                        ) : null}
-                        <button
-                          type="button"
-                          onClick={() => void deleteRuntime(runtime)}
-                          disabled={switching || deleting}
-                          aria-label={t("imageGeneration.local.engineManager.deleteVersion", {
-                            version: runtime.release,
-                          })}
-                          className={cn(
-                            "rounded-lg p-2 text-fg/42 transition-colors hover:bg-danger/8 hover:text-danger disabled:opacity-50",
-                            focusRing,
-                          )}
-                        >
-                          {deleting ? (
-                            <Loader2
-                              aria-hidden="true"
-                              className="h-4 w-4 animate-spin motion-reduce:animate-none"
-                            />
-                          ) : (
-                            <Trash2 aria-hidden="true" className="h-4 w-4" />
-                          )}
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              {installedEnginePairing ? (
-                <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-fg/10 bg-fg/[0.025] px-4 py-3.5">
-                  <div className="flex min-w-0 items-start gap-3">
-                    <Settings2 aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-fg/40" />
-                    <div className="min-w-0">
-                      <h3 className="text-sm font-medium text-fg/80">
-                        {t("imageGeneration.local.engineManager.computePolicyTitle")}
-                      </h3>
-                      {computePolicyLoading ? (
-                        <p className="mt-1 text-xs text-fg/35">
-                          {t("imageGeneration.local.engineManager.computePolicyLoading")}
-                        </p>
-                      ) : computePolicyError ? (
-                        <p className="mt-1 break-words text-xs text-danger/70">
-                          {computePolicyError}
-                        </p>
-                      ) : computePolicyInfo ? (
-                        <p className="mt-1 text-xs text-fg/45">
-                          {computePolicySummary}
-                          <span className="mx-1.5 text-fg/25">·</span>
-                          {computePolicyInfo.policy.splitMode === "row"
-                            ? t("imageGeneration.local.engineManager.splitRow")
-                            : t("imageGeneration.local.engineManager.splitLayer")}
-                          <span className="mx-1.5 text-fg/25">·</span>
-                          {computePolicyInfo.backend.toUpperCase()}
-                        </p>
-                      ) : null}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (computePolicyInfo) setComputePolicyOpen(true);
-                      else void loadComputePolicy(installedEnginePairing);
-                    }}
-                    disabled={computePolicyLoading}
-                    className={cn(
-                      "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-fg/12 px-3 text-xs font-medium text-fg/70 transition-colors hover:bg-fg/5 disabled:opacity-50",
-                      focusRing,
-                    )}
-                  >
-                    {computePolicyLoading ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />
-                    ) : null}
-                    {computePolicyError
-                      ? t("common.buttons.retry")
-                      : t("imageGeneration.local.engineManager.computePolicyConfigure")}
-                  </button>
-                </div>
-              ) : null}
-            </div>
-          ) : (
-            <div className="rounded-lg border border-fg/10 bg-fg/[0.025] px-4 py-5">
-              <div className="flex items-start gap-3">
-                <HardDrive aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0 text-fg/40" />
-                <div>
-                  <h3 className="text-sm font-semibold text-fg">
-                    {t("imageGeneration.local.engineManager.notInstalled")}
-                  </h3>
-                  <p className="mt-1 text-sm leading-6 text-fg/50">
-                    {t("imageGeneration.local.engineManager.notInstalledBody")}
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-        </section>
-
-        <section className="border-t border-fg/8 pt-5">
-          <h2 className="text-sm font-semibold text-fg">
-            {inventory?.installed.length
-              ? t("imageGeneration.local.engineManager.addVersion")
-              : t("imageGeneration.local.engineManager.installTitle")}
-          </h2>
-          {catalogError ? (
-            <div
-              aria-live="polite"
-              className="mt-3 rounded-lg border border-danger/25 bg-danger/5 px-4 py-3 text-sm text-danger/80"
-            >
-              <div className="font-medium">
-                {t("imageGeneration.local.engineManager.catalogFailed")}
-              </div>
-              <div className="mt-1 break-words text-xs">{catalogError}</div>
-            </div>
-          ) : catalogLoading ? (
-            <div
-              role="status"
-              aria-busy="true"
-              className="mt-3 overflow-hidden rounded-lg border border-fg/10 bg-fg/[0.02]"
-            >
-              <span className="sr-only">{t("imageGeneration.local.engineLoadingVariants")}</span>
-              <div className="grid items-end gap-3 px-4 py-4 md:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)_auto]">
-                <label className="block">
-                  <span className="mb-1.5 block text-xs font-medium text-fg/60">
-                    {t("imageGeneration.local.engineManager.version")}
-                  </span>
-                  <div className="flex h-10 w-full items-center rounded-lg border border-fg/12 bg-surface px-3 text-sm text-fg/35">
-                    {t("common.labels.loading")}
-                  </div>
-                </label>
-                <label className="block">
-                  <span className="mb-1.5 block text-xs font-medium text-fg/60">
-                    {t("imageGeneration.local.engineManager.variant")}
-                  </span>
-                  <div className="flex h-10 w-full items-center rounded-lg border border-fg/12 bg-surface px-3 text-sm text-fg/35">
-                    {t("common.labels.loading")}
-                  </div>
-                </label>
-                <Skeleton className="h-10 md:w-36" />
-              </div>
-              <div className="flex items-center gap-2.5 border-t border-fg/8 px-4 py-3">
-                <Skeleton className="h-4 w-4 shrink-0 rounded" />
-                <Skeleton className="h-3 w-full max-w-md" />
-              </div>
-            </div>
-          ) : catalog && !catalog.runtimeSupported ? (
-            <p className="mt-3 text-sm text-warning">
-              {catalog.unsupportedReason || t("imageGeneration.local.hub.unsupportedTitle")}
-            </p>
-          ) : release && asset && recommendedAsset ? (
-            <div className="mt-3 overflow-hidden rounded-lg border border-fg/10 bg-fg/[0.02]">
-              <div className="grid items-end gap-3 px-4 py-4 md:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)_auto]">
-                <label className="block">
-                  <span className="mb-1.5 block text-xs font-medium text-fg/60">
-                    {t("imageGeneration.local.engineManager.version")}
-                  </span>
-                  <select
-                    name="sdcpp-engine-version"
-                    autoComplete="off"
-                    value={release.tag}
-                    onChange={(event) => setSelectedRelease(event.target.value)}
-                    className={cn(
-                      "h-10 w-full rounded-lg border border-fg/12 bg-surface px-3 text-sm text-fg",
-                      focusRing,
-                    )}
-                  >
-                    {catalog?.runtimeReleases.map((candidate) => (
-                      <option key={candidate.tag} value={candidate.tag}>
-                        {candidate.tag}
-                        {candidate.prerelease ? " (pre-release)" : ""}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="block">
-                  <span className="mb-1.5 block text-xs font-medium text-fg/60">
-                    {t("imageGeneration.local.engineManager.variant")}
-                  </span>
-                  <select
-                    name="sdcpp-engine-variant"
-                    autoComplete="off"
-                    value={asset.name}
-                    onChange={(event) => setSelectedAsset(event.target.value)}
-                    className={cn(
-                      "h-10 w-full rounded-lg border border-fg/12 bg-surface px-3 text-sm text-fg",
-                      focusRing,
-                    )}
-                  >
-                    {release.assets.map((candidate) => (
-                      <option key={candidate.name} value={candidate.name}>
-                        {candidate.backend.toUpperCase()} ·{" "}
-                        {formatBytes(totalAssetBytes(candidate))}
-                        {candidate.name === recommendedAsset.name
-                          ? ` · ${t("imageGeneration.local.engineManager.recommended")}`
-                          : ""}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <button
-                  type="button"
-                  onClick={() => void install()}
-                  disabled={installing || hasActiveInstall || assetInstalled}
-                  className={cn(
-                    "inline-flex h-10 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold transition-[filter] md:min-w-36",
-                    assetInstalled
-                      ? "cursor-default border border-fg/12 bg-fg/5 text-fg/55"
-                      : "bg-accent text-bg hover:brightness-110 disabled:opacity-50",
-                    focusRing,
-                  )}
-                >
-                  {assetInstalled ? (
-                    <Check aria-hidden="true" className="h-4 w-4 text-success" />
-                  ) : installing || hasActiveInstall ? (
-                    <Loader2
-                      aria-hidden="true"
-                      className="h-4 w-4 animate-spin motion-reduce:animate-none"
-                    />
-                  ) : (
-                    <Download aria-hidden="true" className="h-4 w-4" />
-                  )}
-                  {assetInstalled
-                    ? t("imageGeneration.local.engineManager.alreadyInstalled")
-                    : t("imageGeneration.local.engineManager.install")}
-                </button>
-              </div>
-
-              <div className="flex flex-col gap-2 border-t border-fg/8 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex min-w-0 items-start gap-2.5">
-                  <Cpu aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-fg/40" />
-                  <p className="min-w-0 text-xs leading-5 text-fg/50">
-                    <span className="font-medium text-fg/75">{asset.backend.toUpperCase()}</span>
-                    <span className="mx-1.5 text-fg/25">·</span>
-                    {asset.name === recommendedAsset.name
-                      ? discreteGpu
-                        ? t("imageGeneration.local.engineManager.detectedGpu", {
-                            device: discreteGpu.description || discreteGpu.name,
-                          })
-                        : t("imageGeneration.local.engineManager.noDiscreteGpu")
-                      : t("imageGeneration.local.engineManager.manualVariant", {
-                          backend: recommendedAsset.backend.toUpperCase(),
-                        })}
-                  </p>
-                </div>
-                <div className="flex shrink-0 items-center gap-2 pl-6 text-xs text-fg/38 sm:pl-0">
-                  <span className="max-w-72 truncate" title={asset.name}>
-                    {asset.name}
-                  </span>
-                  <span aria-hidden="true">·</span>
-                  <span className="tabular-nums">{formatBytes(totalAssetBytes(asset))}</span>
-                </div>
-              </div>
-            </div>
-          ) : null}
-        </section>
-
-        <section className="border-t border-fg/8 pt-5">
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <h2 className="text-sm font-semibold text-fg">
-                {t("imageGeneration.local.modelLibrary.title")}
+            <section>
+              <h2 className="mb-3 text-sm font-semibold text-fg">
+                {t("imageGeneration.local.engineManager.installedTitle")}
               </h2>
-              <p className="mt-1 max-w-2xl text-sm leading-6 text-fg/50">
-                {t("imageGeneration.local.modelLibrary.description")}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => void refreshModelHardware()}
-              disabled={modelHardwareRefreshing || catalogLoading}
-              title={t("imageGeneration.local.modelLibrary.refreshHardwareDescription")}
-              className={cn(
-                "inline-flex h-8 shrink-0 items-center gap-2 rounded-lg border border-fg/12 px-3 text-xs font-medium text-fg/60 transition-colors hover:bg-fg/5 hover:text-fg/80 disabled:opacity-50",
-                focusRing,
-              )}
-            >
-              <RefreshCw
-                aria-hidden="true"
-                className={cn(
-                  "h-3.5 w-3.5",
-                  modelHardwareRefreshing && "animate-spin motion-reduce:animate-none",
-                )}
-              />
-              {modelHardwareRefreshing
-                ? t("imageGeneration.local.modelLibrary.refreshingHardware")
-                : t("imageGeneration.local.modelLibrary.refreshHardware")}
-            </button>
-          </div>
-
-          {downloadQueue && modelInstallItemIds.size > 0 ? (
-            <div className="mt-3">
-              <InlineDownloadCards filter={(item) => modelInstallItemIds.has(item.id)} />
-            </div>
-          ) : null}
-
-          {catalogError ? (
-            <div
-              aria-live="polite"
-              className="mt-3 rounded-lg border border-danger/25 bg-danger/5 px-4 py-3 text-sm text-danger/80"
-            >
-              <div className="font-medium">
-                {t("imageGeneration.local.engineManager.catalogFailed")}
-              </div>
-              <div className="mt-1 break-words text-xs">{catalogError}</div>
-            </div>
-          ) : catalogLoading ? (
-            <div role="status" aria-busy="true" className="mt-3 space-y-3">
-              <span className="sr-only">{t("common.labels.loading")}</span>
-              {[0, 1].map((row) => (
+              {inventoryLoading && !inventory ? (
                 <div
-                  key={row}
-                  className="flex items-center justify-between gap-4 rounded-lg border border-fg/10 bg-fg/[0.02] px-4 py-4"
+                  role="status"
+                  aria-busy="true"
+                  className="divide-y divide-fg/8 overflow-hidden rounded-lg border border-fg/10"
                 >
-                  <div className="min-w-0 space-y-2">
-                    <Skeleton className="h-4 w-40" />
-                    <Skeleton className="h-3 w-64" />
-                  </div>
-                  <Skeleton className="h-10 w-32" />
-                </div>
-              ))}
-            </div>
-          ) : catalog && !catalog.runtimeSupported ? (
-            <p className="mt-3 text-sm text-warning">
-              {catalog.unsupportedReason || t("imageGeneration.local.hub.unsupportedTitle")}
-            </p>
-          ) : catalog && catalog.profiles.length > 0 ? (
-            <div className="mt-3 space-y-3">
-              {!hasInstalledEngine ? (
-                <p className="text-xs leading-5 text-fg/45">
-                  {t("imageGeneration.local.modelLibrary.engineNeededForFit")}
-                </p>
-              ) : null}
-              {catalog.profiles.map((profile) => {
-                const variant = selectedVariant(profile, selectedVariants);
-                if (!variant) return null;
-                const key = `${profile.id}:${variant.id}`;
-                const installed = installedModelKeys.has(key);
-                const installing = installingModelKey === key || activeModelKeys.has(key);
-                const uninstalling = uninstallingModelKey === key;
-                const runKey = fitKey(profile.id, variant.id);
-                const fit = runKey ? runnability[runKey] : undefined;
-                const fitInfo = installed ? null : classifyFit(fit);
-                const resolvedFit = fit && fit !== "loading" ? fit : null;
-                const estimate = resolvedFit?.estimate ?? null;
-                return (
-                  <div
-                    key={profile.id}
-                    className="overflow-hidden rounded-lg border border-fg/10 bg-fg/[0.02]"
-                  >
-                    <div className="px-4 py-4">
-                      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-                        <h3 className="text-sm font-semibold text-fg">{profile.displayName}</h3>
-                        {fitInfo ? (
-                          <span
-                            title={fit && fit !== "loading" ? fit.reason : undefined}
-                            className={cn(
-                              "inline-flex items-center gap-1.5 text-xs font-medium",
-                              FIT_TEXT[fitInfo.tone],
-                            )}
-                          >
-                            <span
-                              aria-hidden="true"
-                              className={cn("h-1.5 w-1.5 rounded-full", FIT_DOT[fitInfo.tone])}
-                            />
-                            {t(
-                              `imageGeneration.local.modelLibrary.${fitInfo.key}` as TranslationKey,
-                            )}
-                          </span>
-                        ) : null}
+                  <span className="sr-only">{t("common.labels.loading")}</span>
+                  {[0, 1].map((row) => (
+                    <div
+                      key={row}
+                      className="flex items-center justify-between gap-4 bg-fg/[0.025] px-4 py-4"
+                    >
+                      <div className="min-w-0 space-y-2">
+                        <Skeleton className="h-4 w-32" />
+                        <Skeleton className="h-3 w-52" />
                       </div>
-                      <p className="mt-1 text-xs leading-5 text-fg/50">{profile.description}</p>
-                      {profile.requiresReferenceImage ? (
-                        <p className="mt-1 text-xs leading-5 text-fg/40">
-                          {t("imageGeneration.local.modelLibrary.needsReference")}
-                        </p>
-                      ) : null}
-                      <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end">
-                        <label className="block sm:flex-1">
-                          <span className="mb-1.5 block text-xs font-medium text-fg/60">
-                            {t("imageGeneration.local.modelLibrary.variant")}
-                          </span>
-                          <select
-                            name={`sdcpp-model-${profile.id}`}
-                            autoComplete="off"
-                            value={variant.id}
-                            onChange={(event) =>
-                              setSelectedVariants((current) => ({
-                                ...current,
-                                [profile.id]: event.target.value,
-                              }))
-                            }
-                            className={cn(
-                              "h-10 w-full rounded-lg border border-fg/12 bg-surface px-3 text-sm text-fg",
-                              focusRing,
-                            )}
-                          >
-                            {profile.variants.map((candidate) => (
-                              <option key={candidate.id} value={candidate.id}>
-                                {candidate.label} · {formatBytes(candidate.downloadBytes)}
-                                {installedModelKeys.has(`${profile.id}:${candidate.id}`)
-                                  ? ` · ${t("imageGeneration.local.modelLibrary.installedShort")}`
-                                  : ""}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <div className="flex items-center gap-2">
-                          {installed ? (
-                            <>
-                              <span className="inline-flex h-10 items-center gap-2 rounded-lg border border-fg/12 bg-fg/5 px-4 text-sm font-semibold text-fg/55">
-                                <Check aria-hidden="true" className="h-4 w-4 text-success" />
-                                {t("imageGeneration.local.modelLibrary.installedShort")}
+                      <Skeleton className="h-8 w-28" />
+                    </div>
+                  ))}
+                </div>
+              ) : inventory && inventory.installed.length > 0 ? (
+                <div className="space-y-3">
+                  <div className="divide-y divide-fg/8 overflow-hidden rounded-lg border border-fg/10">
+                    {inventory.installed.map((runtime) => {
+                      const key = `${runtime.release}:${runtime.asset}`;
+                      const switching = switchingKey === key;
+                      const deleting = deletingKey === key;
+                      return (
+                        <div
+                          key={key}
+                          className="flex flex-wrap items-center justify-between gap-4 bg-fg/[0.025] px-4 py-4"
+                        >
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-mono text-sm font-semibold text-fg">
+                                {runtime.release}
                               </span>
+                              {runtime.active ? (
+                                <span className="inline-flex items-center gap-1 text-xs font-medium text-success">
+                                  <Check aria-hidden="true" className="h-3.5 w-3.5" />
+                                  {t("imageGeneration.local.engineManager.active")}
+                                </span>
+                              ) : null}
+                            </div>
+                            <p className="mt-1 break-all text-xs text-fg/45">
+                              {runtime.backend.toUpperCase()} · {formatBytes(runtime.sizeBytes)} ·{" "}
+                              {runtime.asset}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {!runtime.active ? (
                               <button
                                 type="button"
-                                onClick={() => void uninstallModel(profile, variant)}
-                                disabled={uninstalling}
-                                aria-label={t("imageGeneration.local.modelLibrary.uninstallModel", {
-                                  model: profile.displayName,
-                                })}
+                                onClick={() => void switchRuntime(runtime)}
+                                disabled={switching || deleting}
                                 className={cn(
-                                  "rounded-lg p-2 text-fg/42 transition-colors hover:bg-danger/8 hover:text-danger disabled:opacity-50",
+                                  "inline-flex h-8 items-center gap-2 rounded-lg border border-fg/12 px-3 text-xs font-medium text-fg/70 transition-colors hover:bg-fg/5 disabled:opacity-50",
                                   focusRing,
                                 )}
                               >
-                                {uninstalling ? (
+                                {switching ? (
                                   <Loader2
                                     aria-hidden="true"
-                                    className="h-4 w-4 animate-spin motion-reduce:animate-none"
+                                    className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none"
                                   />
-                                ) : (
-                                  <Trash2 aria-hidden="true" className="h-4 w-4" />
-                                )}
+                                ) : null}
+                                {t("imageGeneration.local.engineManager.useVersion")}
                               </button>
-                            </>
-                          ) : (
+                            ) : null}
                             <button
                               type="button"
-                              onClick={() => void installModel(profile, variant, fit)}
-                              disabled={installing || !runtimePairing}
-                              title={
-                                runtimePairing
-                                  ? undefined
-                                  : t("imageGeneration.local.modelLibrary.noRuntime")
-                              }
+                              onClick={() => void deleteRuntime(runtime)}
+                              disabled={switching || deleting}
+                              aria-label={t("imageGeneration.local.engineManager.deleteVersion", {
+                                version: runtime.release,
+                              })}
                               className={cn(
-                                "inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-accent px-4 text-sm font-semibold text-bg transition-[filter] hover:brightness-110 disabled:opacity-50 sm:min-w-36",
+                                "rounded-lg p-2 text-fg/42 transition-colors hover:bg-danger/8 hover:text-danger disabled:opacity-50",
                                 focusRing,
                               )}
                             >
-                              {installing ? (
+                              {deleting ? (
                                 <Loader2
                                   aria-hidden="true"
                                   className="h-4 w-4 animate-spin motion-reduce:animate-none"
                                 />
                               ) : (
-                                <Download aria-hidden="true" className="h-4 w-4" />
+                                <Trash2 aria-hidden="true" className="h-4 w-4" />
                               )}
-                              {installing
-                                ? t("imageGeneration.local.modelLibrary.installing")
-                                : runtimePairing
-                                  ? t("imageGeneration.local.modelLibrary.download")
-                                  : t("imageGeneration.local.modelLibrary.engineRequired")}
                             </button>
-                          )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {installedEnginePairing ? (
+                    <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-fg/10 bg-fg/[0.025] px-4 py-3.5">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <Settings2
+                          aria-hidden="true"
+                          className="mt-0.5 h-4 w-4 shrink-0 text-fg/40"
+                        />
+                        <div className="min-w-0">
+                          <h3 className="text-sm font-medium text-fg/80">
+                            {t("imageGeneration.local.engineManager.computePolicyTitle")}
+                          </h3>
+                          {computePolicyLoading ? (
+                            <p className="mt-1 text-xs text-fg/35">
+                              {t("imageGeneration.local.engineManager.computePolicyLoading")}
+                            </p>
+                          ) : computePolicyError ? (
+                            <p className="mt-1 break-words text-xs text-danger/70">
+                              {computePolicyError}
+                            </p>
+                          ) : computePolicyInfo ? (
+                            <p className="mt-1 text-xs text-fg/45">
+                              {computePolicySummary}
+                              <span className="mx-1.5 text-fg/25">·</span>
+                              {computePolicyInfo.policy.splitMode === "row"
+                                ? t("imageGeneration.local.engineManager.splitRow")
+                                : t("imageGeneration.local.engineManager.splitLayer")}
+                              <span className="mx-1.5 text-fg/25">·</span>
+                              {computePolicyInfo.backend.toUpperCase()}
+                            </p>
+                          ) : null}
                         </div>
                       </div>
-                    </div>
-
-                    <div className="flex min-h-11 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-fg/8 px-4 py-2 text-xs text-fg/45">
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                        <span>{profile.license}</span>
-                        {profile.sourceUrl ? (
-                          <>
-                            <span aria-hidden="true">·</span>
-                            <button
-                              type="button"
-                              onClick={() => void openExternalUrl(profile.sourceUrl)}
-                              className={cn(
-                                "underline-offset-2 transition-colors hover:text-fg/70 hover:underline",
-                                focusRing,
-                              )}
-                            >
-                              {t("imageGeneration.local.modelLibrary.modelCard")}
-                            </button>
-                          </>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (computePolicyInfo) setComputePolicyOpen(true);
+                          else void loadComputePolicy(installedEnginePairing);
+                        }}
+                        disabled={computePolicyLoading}
+                        className={cn(
+                          "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-fg/12 px-3 text-xs font-medium text-fg/70 transition-colors hover:bg-fg/5 disabled:opacity-50",
+                          focusRing,
+                        )}
+                      >
+                        {computePolicyLoading ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />
                         ) : null}
+                        {computePolicyError
+                          ? t("common.buttons.retry")
+                          : t("imageGeneration.local.engineManager.computePolicyConfigure")}
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="rounded-lg border border-fg/10 bg-fg/[0.025] px-4 py-5">
+                  <div className="flex items-start gap-3">
+                    <HardDrive aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0 text-fg/40" />
+                    <div>
+                      <h3 className="text-sm font-semibold text-fg">
+                        {t("imageGeneration.local.engineManager.notInstalled")}
+                      </h3>
+                      <p className="mt-1 text-sm leading-6 text-fg/50">
+                        {t("imageGeneration.local.engineManager.notInstalledBody")}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </section>
+
+            <section className="border-t border-fg/8 pt-5">
+              <h2 className="text-sm font-semibold text-fg">
+                {inventory?.installed.length
+                  ? t("imageGeneration.local.engineManager.addVersion")
+                  : t("imageGeneration.local.engineManager.installTitle")}
+              </h2>
+              {catalogError ? (
+                <div
+                  aria-live="polite"
+                  className="mt-3 rounded-lg border border-danger/25 bg-danger/5 px-4 py-3 text-sm text-danger/80"
+                >
+                  <div className="font-medium">
+                    {t("imageGeneration.local.engineManager.catalogFailed")}
+                  </div>
+                  <div className="mt-1 break-words text-xs">{catalogError}</div>
+                </div>
+              ) : catalogLoading ? (
+                <div
+                  role="status"
+                  aria-busy="true"
+                  className="mt-3 overflow-hidden rounded-lg border border-fg/10 bg-fg/[0.02]"
+                >
+                  <span className="sr-only">
+                    {t("imageGeneration.local.engineLoadingVariants")}
+                  </span>
+                  <div className="grid items-end gap-3 px-4 py-4 md:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)_auto]">
+                    <label className="block">
+                      <span className="mb-1.5 block text-xs font-medium text-fg/60">
+                        {t("imageGeneration.local.engineManager.version")}
+                      </span>
+                      <div className="flex h-10 w-full items-center rounded-lg border border-fg/12 bg-surface px-3 text-sm text-fg/35">
+                        {t("common.labels.loading")}
                       </div>
-                      {estimate && resolvedFit ? (
+                    </label>
+                    <label className="block">
+                      <span className="mb-1.5 block text-xs font-medium text-fg/60">
+                        {t("imageGeneration.local.engineManager.variant")}
+                      </span>
+                      <div className="flex h-10 w-full items-center rounded-lg border border-fg/12 bg-surface px-3 text-sm text-fg/35">
+                        {t("common.labels.loading")}
+                      </div>
+                    </label>
+                    <Skeleton className="h-10 md:w-36" />
+                  </div>
+                  <div className="flex items-center gap-2.5 border-t border-fg/8 px-4 py-3">
+                    <Skeleton className="h-4 w-4 shrink-0 rounded" />
+                    <Skeleton className="h-3 w-full max-w-md" />
+                  </div>
+                </div>
+              ) : catalog && !catalog.runtimeSupported ? (
+                <p className="mt-3 text-sm text-warning">
+                  {catalog.unsupportedReason || t("imageGeneration.local.hub.unsupportedTitle")}
+                </p>
+              ) : release && asset && recommendedAsset ? (
+                <div className="mt-3 overflow-hidden rounded-lg border border-fg/10 bg-fg/[0.02]">
+                  <div className="grid items-end gap-3 px-4 py-4 md:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)_auto]">
+                    <label className="block">
+                      <span className="mb-1.5 block text-xs font-medium text-fg/60">
+                        {t("imageGeneration.local.engineManager.version")}
+                      </span>
+                      <select
+                        name="sdcpp-engine-version"
+                        autoComplete="off"
+                        value={release.tag}
+                        onChange={(event) => setSelectedRelease(event.target.value)}
+                        className={cn(
+                          "h-10 w-full rounded-lg border border-fg/12 bg-surface px-3 text-sm text-fg",
+                          focusRing,
+                        )}
+                      >
+                        {catalog?.runtimeReleases.map((candidate) => (
+                          <option key={candidate.tag} value={candidate.tag}>
+                            {candidate.tag}
+                            {candidate.prerelease ? " (pre-release)" : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="block">
+                      <span className="mb-1.5 block text-xs font-medium text-fg/60">
+                        {t("imageGeneration.local.engineManager.variant")}
+                      </span>
+                      <select
+                        name="sdcpp-engine-variant"
+                        autoComplete="off"
+                        value={asset.name}
+                        onChange={(event) => setSelectedAsset(event.target.value)}
+                        className={cn(
+                          "h-10 w-full rounded-lg border border-fg/12 bg-surface px-3 text-sm text-fg",
+                          focusRing,
+                        )}
+                      >
+                        {release.assets.map((candidate) => (
+                          <option key={candidate.name} value={candidate.name}>
+                            {candidate.backend.toUpperCase()} ·{" "}
+                            {formatBytes(totalAssetBytes(candidate))}
+                            {candidate.name === recommendedAsset.name
+                              ? ` · ${t("imageGeneration.local.engineManager.recommended")}`
+                              : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => void install()}
+                      disabled={installing || hasActiveInstall || assetInstalled}
+                      className={cn(
+                        "inline-flex h-10 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold transition-[filter] md:min-w-36",
+                        assetInstalled
+                          ? "cursor-default border border-fg/12 bg-fg/5 text-fg/55"
+                          : "bg-accent text-bg hover:brightness-110 disabled:opacity-50",
+                        focusRing,
+                      )}
+                    >
+                      {assetInstalled ? (
+                        <Check aria-hidden="true" className="h-4 w-4 text-success" />
+                      ) : installing || hasActiveInstall ? (
+                        <Loader2
+                          aria-hidden="true"
+                          className="h-4 w-4 animate-spin motion-reduce:animate-none"
+                        />
+                      ) : (
+                        <Download aria-hidden="true" className="h-4 w-4" />
+                      )}
+                      {assetInstalled
+                        ? t("imageGeneration.local.engineManager.alreadyInstalled")
+                        : t("imageGeneration.local.engineManager.install")}
+                    </button>
+                  </div>
+
+                  <div className="flex flex-col gap-2 border-t border-fg/8 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex min-w-0 items-start gap-2.5">
+                      <Cpu aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-fg/40" />
+                      <p className="min-w-0 text-xs leading-5 text-fg/50">
+                        <span className="font-medium text-fg/75">
+                          {asset.backend.toUpperCase()}
+                        </span>
+                        <span className="mx-1.5 text-fg/25">·</span>
+                        {asset.name === recommendedAsset.name
+                          ? discreteGpu
+                            ? t("imageGeneration.local.engineManager.detectedGpu", {
+                                device: discreteGpu.description || discreteGpu.name,
+                              })
+                            : t("imageGeneration.local.engineManager.noDiscreteGpu")
+                          : t("imageGeneration.local.engineManager.manualVariant", {
+                              backend: recommendedAsset.backend.toUpperCase(),
+                            })}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2 pl-6 text-xs text-fg/38 sm:pl-0">
+                      <span className="max-w-72 truncate" title={asset.name}>
+                        {asset.name}
+                      </span>
+                      <span aria-hidden="true">·</span>
+                      <span className="tabular-nums">{formatBytes(totalAssetBytes(asset))}</span>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </section>
+          </div>
+
+          <div className="space-y-6">
+            <section className="border-t border-fg/8 pt-5 lg:border-t-0 lg:pt-0">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <h2 className="text-sm font-semibold text-fg">
+                    {t("imageGeneration.local.modelLibrary.title")}
+                  </h2>
+                  <p className="mt-1 max-w-2xl text-sm leading-6 text-fg/50">
+                    {t("imageGeneration.local.modelLibrary.description")}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void refreshModelHardware()}
+                  disabled={modelHardwareRefreshing || catalogLoading}
+                  title={t("imageGeneration.local.modelLibrary.refreshHardwareDescription")}
+                  className={cn(
+                    "inline-flex h-8 shrink-0 items-center gap-2 rounded-lg border border-fg/12 px-3 text-xs font-medium text-fg/60 transition-colors hover:bg-fg/5 hover:text-fg/80 disabled:opacity-50",
+                    focusRing,
+                  )}
+                >
+                  <RefreshCw
+                    aria-hidden="true"
+                    className={cn(
+                      "h-3.5 w-3.5",
+                      modelHardwareRefreshing && "animate-spin motion-reduce:animate-none",
+                    )}
+                  />
+                  {modelHardwareRefreshing
+                    ? t("imageGeneration.local.modelLibrary.refreshingHardware")
+                    : t("imageGeneration.local.modelLibrary.refreshHardware")}
+                </button>
+              </div>
+
+              {downloadQueue && modelInstallItemIds.size > 0 ? (
+                <div className="mt-3">
+                  <InlineDownloadCards filter={(item) => modelInstallItemIds.has(item.id)} />
+                </div>
+              ) : null}
+
+              {catalogError ? (
+                <div
+                  aria-live="polite"
+                  className="mt-3 rounded-lg border border-danger/25 bg-danger/5 px-4 py-3 text-sm text-danger/80"
+                >
+                  <div className="font-medium">
+                    {t("imageGeneration.local.engineManager.catalogFailed")}
+                  </div>
+                  <div className="mt-1 break-words text-xs">{catalogError}</div>
+                </div>
+              ) : catalogLoading ? (
+                <div role="status" aria-busy="true" className="mt-3 space-y-3">
+                  <span className="sr-only">{t("common.labels.loading")}</span>
+                  {[0, 1].map((row) => (
+                    <div
+                      key={row}
+                      className="flex items-center justify-between gap-4 rounded-lg border border-fg/10 bg-fg/[0.02] px-4 py-4"
+                    >
+                      <div className="min-w-0 space-y-2">
+                        <Skeleton className="h-4 w-40" />
+                        <Skeleton className="h-3 w-64" />
+                      </div>
+                      <Skeleton className="h-10 w-32" />
+                    </div>
+                  ))}
+                </div>
+              ) : catalog && !catalog.runtimeSupported ? (
+                <p className="mt-3 text-sm text-warning">
+                  {catalog.unsupportedReason || t("imageGeneration.local.hub.unsupportedTitle")}
+                </p>
+              ) : catalog && catalog.profiles.length > 0 ? (
+                <div className="mt-3 space-y-3">
+                  {!hasInstalledEngine ? (
+                    <p className="text-xs leading-5 text-fg/45">
+                      {t("imageGeneration.local.modelLibrary.engineNeededForFit")}
+                    </p>
+                  ) : null}
+                  {modelFamilies.map((family, familyIndex) => {
+                    const installedCount = family.profiles.filter((profile) =>
+                      installedProfileIds.has(profile.id),
+                    ).length;
+                    const open =
+                      familyOverrides[family.name] ?? (familyIndex === 0 || installedCount > 0);
+                    return (
+                      <div
+                        key={family.name}
+                        className="overflow-hidden rounded-lg border border-fg/10 bg-fg/[0.02]"
+                      >
                         <button
                           type="button"
                           onClick={() =>
-                            setFitDetails({
-                              modelName: profile.displayName,
-                              variantName: variant.label,
-                              fit: resolvedFit,
-                            })
+                            setFamilyOverrides((current) => ({ ...current, [family.name]: !open }))
                           }
+                          aria-expanded={open}
                           className={cn(
-                            "inline-flex h-7 items-center gap-1.5 rounded-md px-2 font-medium text-fg/55 transition-colors hover:bg-fg/5 hover:text-fg/80",
+                            "flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-fg/[0.025]",
                             focusRing,
                           )}
                         >
-                          {t("imageGeneration.local.modelLibrary.more")}
-                          <ChevronRight aria-hidden="true" className="h-3.5 w-3.5" />
+                          <span className="flex min-w-0 items-center gap-2">
+                            <ChevronRight
+                              aria-hidden="true"
+                              className={cn(
+                                "h-4 w-4 shrink-0 text-fg/40 transition-transform",
+                                open && "rotate-90",
+                              )}
+                            />
+                            <span className="truncate text-sm font-semibold text-fg">
+                              {family.name}
+                            </span>
+                            <span className="shrink-0 text-xs text-fg/40">
+                              {family.profiles.length === 1
+                                ? t("imageGeneration.local.modelLibrary.familyModelCountOne")
+                                : t("imageGeneration.local.modelLibrary.familyModelCount", {
+                                    count: family.profiles.length,
+                                  })}
+                            </span>
+                          </span>
+                          {installedCount > 0 ? (
+                            <span className="shrink-0 text-xs font-medium text-success">
+                              {t("imageGeneration.local.modelLibrary.familyInstalledCount", {
+                                count: installedCount,
+                              })}
+                            </span>
+                          ) : null}
                         </button>
-                      ) : null}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ) : null}
-        </section>
+                        {open ? (
+                          <div className="divide-y divide-fg/8 border-t border-fg/8">
+                            {family.profiles.map((profile) => {
+                              const variant = selectedVariant(profile, selectedVariants);
+                              if (!variant) return null;
+                              const key = `${profile.id}:${variant.id}`;
+                              const installed = installedModelKeys.has(key);
+                              const installing =
+                                installingModelKey === key || activeModelKeys.has(key);
+                              const uninstalling = uninstallingModelKey === key;
+                              const runKey = fitKey(profile.id, variant.id);
+                              const fit = runKey ? runnability[runKey] : undefined;
+                              const requiresEngineUpdate = Boolean(
+                                runtimePairing &&
+                                !runtimeSupportsProfile(profile, runtimePairing.release),
+                              );
+                              const fitInfo = requiresEngineUpdate
+                                ? ({ tone: "warn", key: "engineUpdateRequired" } as const)
+                                : installed
+                                  ? null
+                                  : classifyFit(fit);
+                              const resolvedFit = fit && fit !== "loading" ? fit : null;
+                              const estimate = resolvedFit?.estimate ?? null;
+                              return (
+                                <div key={profile.id}>
+                                  <div className="px-4 py-4">
+                                    <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                                      <h3 className="text-sm font-semibold text-fg">
+                                        {profile.displayName}
+                                      </h3>
+                                      {fitInfo ? (
+                                        <span
+                                          title={fit && fit !== "loading" ? fit.reason : undefined}
+                                          className={cn(
+                                            "inline-flex items-center gap-1.5 text-xs font-medium",
+                                            FIT_TEXT[fitInfo.tone],
+                                          )}
+                                        >
+                                          <span
+                                            aria-hidden="true"
+                                            className={cn(
+                                              "h-1.5 w-1.5 rounded-full",
+                                              FIT_DOT[fitInfo.tone],
+                                            )}
+                                          />
+                                          {fitInfo.key === "engineUpdateRequired"
+                                            ? t(
+                                                "imageGeneration.local.modelLibrary.engineUpdateRequired",
+                                                {
+                                                  build: profile.minimumRuntimeBuild ?? "—",
+                                                },
+                                              )
+                                            : t(
+                                                `imageGeneration.local.modelLibrary.${fitInfo.key}` as TranslationKey,
+                                              )}
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                    <p className="mt-1 text-xs leading-5 text-fg/50">
+                                      {profile.description}
+                                    </p>
+                                    {profile.requiresReferenceImage ? (
+                                      <p className="mt-1 text-xs leading-5 text-fg/40">
+                                        {t("imageGeneration.local.modelLibrary.needsReference")}
+                                      </p>
+                                    ) : null}
+                                    <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end">
+                                      <label className="block sm:flex-1">
+                                        <span className="mb-1.5 block text-xs font-medium text-fg/60">
+                                          {t("imageGeneration.local.modelLibrary.variant")}
+                                        </span>
+                                        <select
+                                          name={`sdcpp-model-${profile.id}`}
+                                          autoComplete="off"
+                                          value={variant.id}
+                                          onChange={(event) =>
+                                            setSelectedVariants((current) => ({
+                                              ...current,
+                                              [profile.id]: event.target.value,
+                                            }))
+                                          }
+                                          className={cn(
+                                            "h-10 w-full rounded-lg border border-fg/12 bg-surface px-3 text-sm text-fg",
+                                            focusRing,
+                                          )}
+                                        >
+                                          {profile.variants.map((candidate) => (
+                                            <option key={candidate.id} value={candidate.id}>
+                                              {candidate.label} ·{" "}
+                                              {formatBytes(candidate.downloadBytes)}
+                                              {installedModelKeys.has(
+                                                `${profile.id}:${candidate.id}`,
+                                              )
+                                                ? ` · ${t("imageGeneration.local.modelLibrary.installedShort")}`
+                                                : ""}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </label>
+                                      <div className="flex items-center gap-2">
+                                        {installed ? (
+                                          <>
+                                            <span className="inline-flex h-10 items-center gap-2 rounded-lg border border-fg/12 bg-fg/5 px-4 text-sm font-semibold text-fg/55">
+                                              <Check
+                                                aria-hidden="true"
+                                                className="h-4 w-4 text-success"
+                                              />
+                                              {t(
+                                                "imageGeneration.local.modelLibrary.installedShort",
+                                              )}
+                                            </span>
+                                            <button
+                                              type="button"
+                                              onClick={() => void uninstallModel(profile, variant)}
+                                              disabled={uninstalling}
+                                              aria-label={t(
+                                                "imageGeneration.local.modelLibrary.uninstallModel",
+                                                {
+                                                  model: profile.displayName,
+                                                },
+                                              )}
+                                              className={cn(
+                                                "rounded-lg p-2 text-fg/42 transition-colors hover:bg-danger/8 hover:text-danger disabled:opacity-50",
+                                                focusRing,
+                                              )}
+                                            >
+                                              {uninstalling ? (
+                                                <Loader2
+                                                  aria-hidden="true"
+                                                  className="h-4 w-4 animate-spin motion-reduce:animate-none"
+                                                />
+                                              ) : (
+                                                <Trash2 aria-hidden="true" className="h-4 w-4" />
+                                              )}
+                                            </button>
+                                          </>
+                                        ) : (
+                                          <button
+                                            type="button"
+                                            onClick={() => void installModel(profile, variant, fit)}
+                                            disabled={
+                                              installing || !runtimePairing || requiresEngineUpdate
+                                            }
+                                            title={
+                                              !runtimePairing
+                                                ? t("imageGeneration.local.modelLibrary.noRuntime")
+                                                : requiresEngineUpdate
+                                                  ? t(
+                                                      "imageGeneration.local.modelLibrary.engineUpdateRequired",
+                                                      {
+                                                        build: profile.minimumRuntimeBuild ?? "—",
+                                                      },
+                                                    )
+                                                  : undefined
+                                            }
+                                            className={cn(
+                                              "inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-accent px-4 text-sm font-semibold text-bg transition-[filter] hover:brightness-110 disabled:opacity-50 sm:min-w-36",
+                                              focusRing,
+                                            )}
+                                          >
+                                            {installing ? (
+                                              <Loader2
+                                                aria-hidden="true"
+                                                className="h-4 w-4 animate-spin motion-reduce:animate-none"
+                                              />
+                                            ) : (
+                                              <Download aria-hidden="true" className="h-4 w-4" />
+                                            )}
+                                            {installing
+                                              ? t("imageGeneration.local.modelLibrary.installing")
+                                              : requiresEngineUpdate
+                                                ? t(
+                                                    "imageGeneration.local.modelLibrary.updateEngineFirst",
+                                                  )
+                                                : runtimePairing
+                                                  ? t("imageGeneration.local.modelLibrary.download")
+                                                  : t(
+                                                      "imageGeneration.local.modelLibrary.engineRequired",
+                                                    )}
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex min-h-11 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-fg/8 px-4 py-2 text-xs text-fg/45">
+                                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                      <span>{profile.license}</span>
+                                      {profile.sourceUrl ? (
+                                        <>
+                                          <span aria-hidden="true">·</span>
+                                          <button
+                                            type="button"
+                                            onClick={() => void openExternalUrl(profile.sourceUrl)}
+                                            className={cn(
+                                              "underline-offset-2 transition-colors hover:text-fg/70 hover:underline",
+                                              focusRing,
+                                            )}
+                                          >
+                                            {t("imageGeneration.local.modelLibrary.modelCard")}
+                                          </button>
+                                        </>
+                                      ) : null}
+                                    </div>
+                                    {estimate && resolvedFit ? (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setFitDetails({
+                                            modelName: profile.displayName,
+                                            variantName: variant.label,
+                                            fit: resolvedFit,
+                                          })
+                                        }
+                                        className={cn(
+                                          "inline-flex h-7 items-center gap-1.5 rounded-md px-2 font-medium text-fg/55 transition-colors hover:bg-fg/5 hover:text-fg/80",
+                                          focusRing,
+                                        )}
+                                      >
+                                        {t("imageGeneration.local.modelLibrary.more")}
+                                        <ChevronRight aria-hidden="true" className="h-3.5 w-3.5" />
+                                      </button>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </section>
+          </div>
+        </div>
       </div>
       <RunnabilityDetailsMenu selection={fitDetails} onClose={() => setFitDetails(null)} />
       <ComputePolicyMenu

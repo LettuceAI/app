@@ -48,6 +48,7 @@ struct VariantSpec {
 struct ProfileSpec {
     id: &'static str,
     display_name: &'static str,
+    family: &'static str,
     description: &'static str,
     license: &'static str,
     source_url: &'static str,
@@ -60,6 +61,7 @@ struct ProfileSpec {
     default_height: u32,
     default_steps: u16,
     default_cfg: f32,
+    minimum_runtime_build: Option<u32>,
     variants: &'static [VariantSpec],
     shared_components: &'static [ComponentSpec],
 }
@@ -163,7 +165,7 @@ const Z_BASE_VARIANTS: &[VariantSpec] = &[
     },
 ];
 
-const FLUX_SHARED: &[ComponentSpec] = &[
+const FLUX_4B_SHARED: &[ComponentSpec] = &[
     ComponentSpec {
         role: "text_encoder",
         repo: "unsloth/Qwen3-4B-GGUF",
@@ -181,7 +183,7 @@ const FLUX_SHARED: &[ComponentSpec] = &[
         sha256: "d64f3a68e1cc4f9f4e29b6e0da38a0204fe9a49f2d4053f0ec1fa1ca02f9c4b5",
     },
 ];
-const FLUX_VARIANTS: &[VariantSpec] = &[VariantSpec {
+const FLUX_4B_VARIANTS: &[VariantSpec] = &[VariantSpec {
     id: "q4-0",
     label: "Q4 0 (recommended)",
     description: "Fast four-step generation and multi-reference scene composition.",
@@ -196,6 +198,176 @@ const FLUX_VARIANTS: &[VariantSpec] = &[VariantSpec {
         sha256: "d1023499ef3f2f82ff7c50e6778495195c1b6cc34835741778868428111f9ff4",
     },
 }];
+
+const FLUX_9B_SHARED: &[ComponentSpec] = &[
+    ComponentSpec {
+        role: "text_encoder",
+        repo: "unsloth/Qwen3-8B-GGUF",
+        revision: "a6adef130ffb23ddaf1a62fec9dced968c9bc482",
+        filename: "Qwen3-8B-Q4_K_M.gguf",
+        bytes: 5_027_784_512,
+        sha256: "120307ba529eb2439d6c430d94104dabd578497bc7bfe7e322b5d9933b449bd4",
+    },
+    ComponentSpec {
+        role: "vae",
+        repo: "Comfy-Org/flux2-dev",
+        revision: "03d6521e6f6a47396b3f951cbea50f7e6c2f482e",
+        filename: "split_files/vae/flux2-vae.safetensors",
+        bytes: 336_213_556,
+        sha256: "d64f3a68e1cc4f9f4e29b6e0da38a0204fe9a49f2d4053f0ec1fa1ca02f9c4b5",
+    },
+];
+
+const FLUX_9B_VARIANTS: &[VariantSpec] = &[
+    VariantSpec {
+        id: "q4-0",
+        label: "Q4 0 (recommended)",
+        description: "Best default balance for the larger distilled model.",
+        recommended: true,
+        smaller: false,
+        diffusion: ComponentSpec {
+            role: "diffusion_model",
+            repo: "leejet/FLUX.2-klein-9B-GGUF",
+            revision: "cc588497a95ffc2937ebbd6b9b3916a11ada6e5b",
+            filename: "flux-2-klein-9b-Q4_0.gguf",
+            bytes: 5_616_208_032,
+            sha256: "a7e77afa96871d16679ff7b949bd25f20c8179f219c4b662cac91e81ed99b944",
+        },
+    },
+    VariantSpec {
+        id: "q8-0",
+        label: "Q8 0 (higher quality)",
+        description: "Higher precision with substantially greater memory and storage use.",
+        recommended: false,
+        smaller: false,
+        diffusion: ComponentSpec {
+            role: "diffusion_model",
+            repo: "leejet/FLUX.2-klein-9B-GGUF",
+            revision: "cc588497a95ffc2937ebbd6b9b3916a11ada6e5b",
+            filename: "flux-2-klein-9b-Q8_0.gguf",
+            bytes: 9_978_284_192,
+            sha256: "67ca777c7aa2d6a0d63d4a7564f823c63af88e9688643df727e1867789062982",
+        },
+    },
+];
+
+const FLUX_9B_BASE_VARIANTS: &[VariantSpec] = &[
+    VariantSpec {
+        id: "q4-0",
+        label: "Q4 0 (recommended)",
+        description: "Practical precision for the undistilled foundation model.",
+        recommended: true,
+        smaller: false,
+        diffusion: ComponentSpec {
+            role: "diffusion_model",
+            repo: "leejet/FLUX.2-klein-base-9B-GGUF",
+            revision: "4dde6cb0cffef6dc12adbd152d2b9ab6f01e6085",
+            filename: "flux-2-klein-base-9b-Q4_0.gguf",
+            bytes: 5_616_208_032,
+            sha256: "53aa0e4b079af15499243b12bf5505dca37cf08000cc84b2502e130a7e0a4807",
+        },
+    },
+    VariantSpec {
+        id: "q8-0",
+        label: "Q8 0 (higher quality)",
+        description: "Higher precision for training-oriented and maximum-control workflows.",
+        recommended: false,
+        smaller: false,
+        diffusion: ComponentSpec {
+            role: "diffusion_model",
+            repo: "leejet/FLUX.2-klein-base-9B-GGUF",
+            revision: "4dde6cb0cffef6dc12adbd152d2b9ab6f01e6085",
+            filename: "flux-2-klein-base-9b-Q8_0.gguf",
+            bytes: 9_978_284_192,
+            sha256: "f8df4fbcbbf2e38ced1f23b85c61da652d641191fa7944c3e42aa9ce1bfb3aa8",
+        },
+    },
+];
+
+const KREA_SHARED: &[ComponentSpec] = &[
+    ComponentSpec {
+        role: "text_encoder",
+        repo: "Qwen/Qwen3-VL-4B-Instruct-GGUF",
+        revision: "1cd86afb9a95c410a6038ab3b40d8b578c892266",
+        filename: "Qwen3VL-4B-Instruct-Q4_K_M.gguf",
+        bytes: 2_497_281_664,
+        sha256: "66358cb18bb6b3b1b6675aa412c7a88ef01d228f481184d13668e5201c730a0a",
+    },
+    ComponentSpec {
+        role: "vae",
+        repo: "Comfy-Org/Wan_2.1_ComfyUI_repackaged",
+        revision: "06e001fc51048fb03433a6fb25334de7836704a5",
+        filename: "split_files/vae/wan_2.1_vae.safetensors",
+        bytes: 253_815_318,
+        sha256: "2fc39d31359a4b0a64f55876d8ff7fa8d780956ae2cb13463b0223e15148976b",
+    },
+];
+
+const KREA_TURBO_VARIANTS: &[VariantSpec] = &[
+    VariantSpec {
+        id: "q3-k-s",
+        label: "Q3 K S (smaller)",
+        description: "Lower memory use with a larger quality tradeoff.",
+        recommended: false,
+        smaller: true,
+        diffusion: ComponentSpec {
+            role: "diffusion_model",
+            repo: "realrebelai/KREA-2_GGUFs",
+            revision: "8a853670b13d88443e5e1a2541a9719ea5bfb508",
+            filename: "TURBO/Krea-2-Turbo-Q3_K_S.gguf",
+            bytes: 5_514_578_016,
+            sha256: "550d6321da806a4478ff9dd4b4040d44f48de639cd20eb3bf29a9b54abccd036",
+        },
+    },
+    VariantSpec {
+        id: "q4-k-m",
+        label: "Q4 K M (recommended)",
+        description: "Best default balance for fast, polished eight-step generation.",
+        recommended: true,
+        smaller: false,
+        diffusion: ComponentSpec {
+            role: "diffusion_model",
+            repo: "realrebelai/KREA-2_GGUFs",
+            revision: "8a853670b13d88443e5e1a2541a9719ea5bfb508",
+            filename: "TURBO/Krea-2-Turbo-Q4_K_M.gguf",
+            bytes: 7_216_993_376,
+            sha256: "273a98be1afe317bc7228403b6434647eaf866cebe6aff1980c401b950473807",
+        },
+    },
+];
+
+const KREA_RAW_VARIANTS: &[VariantSpec] = &[
+    VariantSpec {
+        id: "q3-k-s",
+        label: "Q3 K S (smaller)",
+        description: "A compact option for experimentation and LoRA workflows.",
+        recommended: false,
+        smaller: true,
+        diffusion: ComponentSpec {
+            role: "diffusion_model",
+            repo: "realrebelai/KREA-2_GGUFs",
+            revision: "8a853670b13d88443e5e1a2541a9719ea5bfb508",
+            filename: "BASE/Krea-2-Base-Q3_K_S.gguf",
+            bytes: 2_988_511_232,
+            sha256: "7f5020f7845f0a320fc56246caf0af8e7878631a4a0a7d6ff1b593feb2b3c0ab",
+        },
+    },
+    VariantSpec {
+        id: "q4-k-m",
+        label: "Q4 K M (recommended)",
+        description: "Higher fidelity for fine-tuning, LoRA training, and research workflows.",
+        recommended: true,
+        smaller: false,
+        diffusion: ComponentSpec {
+            role: "diffusion_model",
+            repo: "realrebelai/KREA-2_GGUFs",
+            revision: "8a853670b13d88443e5e1a2541a9719ea5bfb508",
+            filename: "BASE/Krea-2-Base-Q4_K_M.gguf",
+            bytes: 7_259_460_832,
+            sha256: "f52b99ec56380db4ea05614a2299b9420e04b1214fcfb5151059cc569bdf5b9e",
+        },
+    },
+];
 
 const QWEN_SHARED: &[ComponentSpec] = &[
     ComponentSpec {
@@ -260,6 +432,7 @@ const PROFILES: &[ProfileSpec] = &[
     ProfileSpec {
         id: "z-image-turbo",
         display_name: "Z-Image Turbo",
+        family: "Z-Image",
         description: "Fast, high-quality text-to-image generation in about eight steps.",
         license: "Apache-2.0",
         source_url: "https://huggingface.co/Tongyi-MAI/Z-Image-Turbo",
@@ -272,12 +445,14 @@ const PROFILES: &[ProfileSpec] = &[
         default_height: 1024,
         default_steps: 8,
         default_cfg: 0.0,
+        minimum_runtime_build: None,
         variants: Z_TURBO_VARIANTS,
         shared_components: Z_SHARED,
     },
     ProfileSpec {
         id: "z-image",
         display_name: "Z-Image",
+        family: "Z-Image",
         description: "The full non-distilled model: slower, with stronger prompt following and negative prompts.",
         license: "Apache-2.0",
         source_url: "https://huggingface.co/Tongyi-MAI/Z-Image",
@@ -290,12 +465,14 @@ const PROFILES: &[ProfileSpec] = &[
         default_height: 1024,
         default_steps: 40,
         default_cfg: 4.0,
+        minimum_runtime_build: None,
         variants: Z_BASE_VARIANTS,
         shared_components: Z_SHARED,
     },
     ProfileSpec {
         id: "flux-2-klein-4b",
         display_name: "FLUX.2 Klein 4B",
+        family: "FLUX.2",
         description: "Fast generation and editing with multi-reference scene composition.",
         license: "Apache-2.0",
         source_url: "https://huggingface.co/black-forest-labs/FLUX.2-klein-4B",
@@ -308,12 +485,94 @@ const PROFILES: &[ProfileSpec] = &[
         default_height: 1024,
         default_steps: 4,
         default_cfg: 1.0,
-        variants: FLUX_VARIANTS,
-        shared_components: FLUX_SHARED,
+        minimum_runtime_build: None,
+        variants: FLUX_4B_VARIANTS,
+        shared_components: FLUX_4B_SHARED,
+    },
+    ProfileSpec {
+        id: "flux-2-klein-9b",
+        display_name: "FLUX.2 Klein 9B",
+        family: "FLUX.2",
+        description: "The larger four-step model for higher-quality generation and multi-reference editing.",
+        license: "FLUX Non-Commercial License",
+        source_url: "https://huggingface.co/black-forest-labs/FLUX.2-klein-9B",
+        supports_text_to_image: true,
+        supports_image_edit: true,
+        max_reference_images: None,
+        requires_reference_image: false,
+        recommended_for_scenes: true,
+        default_width: 1024,
+        default_height: 1024,
+        default_steps: 4,
+        default_cfg: 1.0,
+        minimum_runtime_build: None,
+        variants: FLUX_9B_VARIANTS,
+        shared_components: FLUX_9B_SHARED,
+    },
+    ProfileSpec {
+        id: "flux-2-klein-base-9b",
+        display_name: "FLUX.2 Klein 9B Base",
+        family: "FLUX.2",
+        description: "Undistilled foundation model with greater diversity and control for LoRA and research workflows.",
+        license: "FLUX Non-Commercial License",
+        source_url: "https://huggingface.co/black-forest-labs/FLUX.2-klein-base-9B",
+        supports_text_to_image: true,
+        supports_image_edit: true,
+        max_reference_images: None,
+        requires_reference_image: false,
+        recommended_for_scenes: true,
+        default_width: 1024,
+        default_height: 1024,
+        default_steps: 50,
+        default_cfg: 4.0,
+        minimum_runtime_build: None,
+        variants: FLUX_9B_BASE_VARIANTS,
+        shared_components: FLUX_9B_SHARED,
+    },
+    ProfileSpec {
+        id: "krea-2-turbo",
+        display_name: "Krea 2 Turbo",
+        family: "Krea 2",
+        description: "Aesthetic-first, polished text-to-image generation in eight steps.",
+        license: "Krea 2 Community License",
+        source_url: "https://huggingface.co/krea/Krea-2-Turbo",
+        supports_text_to_image: true,
+        supports_image_edit: false,
+        max_reference_images: Some(0),
+        requires_reference_image: false,
+        recommended_for_scenes: false,
+        default_width: 1024,
+        default_height: 1024,
+        default_steps: 8,
+        default_cfg: 0.0,
+        minimum_runtime_build: Some(721),
+        variants: KREA_TURBO_VARIANTS,
+        shared_components: KREA_SHARED,
+    },
+    ProfileSpec {
+        id: "krea-2-raw",
+        display_name: "Krea 2 RAW",
+        family: "Krea 2",
+        description: "Undistilled base checkpoint for LoRA training, fine-tuning, and maximum flexibility.",
+        license: "Krea 2 Community License",
+        source_url: "https://huggingface.co/krea/Krea-2-Raw",
+        supports_text_to_image: true,
+        supports_image_edit: false,
+        max_reference_images: Some(0),
+        requires_reference_image: false,
+        recommended_for_scenes: false,
+        default_width: 1024,
+        default_height: 1024,
+        default_steps: 52,
+        default_cfg: 3.5,
+        minimum_runtime_build: Some(721),
+        variants: KREA_RAW_VARIANTS,
+        shared_components: KREA_SHARED,
     },
     ProfileSpec {
         id: "qwen-image-edit-2511",
         display_name: "Qwen Image Edit 2511",
+        family: "Qwen",
         description: "Identity-preserving image editing and scene composition with multiple references.",
         license: "Apache-2.0",
         source_url: "https://huggingface.co/Qwen/Qwen-Image-Edit-2511",
@@ -326,6 +585,7 @@ const PROFILES: &[ProfileSpec] = &[
         default_height: 1024,
         default_steps: 40,
         default_cfg: 4.0,
+        minimum_runtime_build: None,
         variants: QWEN_VARIANTS,
         shared_components: QWEN_SHARED,
     },
@@ -720,6 +980,7 @@ pub async fn sdcpp_runtime_catalog() -> Result<RuntimeCatalog, String> {
 struct CatalogProfile {
     id: &'static str,
     display_name: &'static str,
+    family: &'static str,
     description: &'static str,
     license: &'static str,
     source_url: &'static str,
@@ -733,6 +994,7 @@ struct CatalogProfile {
     default_height: u32,
     default_steps: u16,
     default_cfg: f32,
+    minimum_runtime_build: Option<u32>,
     variants: Vec<CatalogVariant>,
 }
 
@@ -786,6 +1048,7 @@ pub async fn sdcpp_catalog(app: AppHandle) -> Result<Catalog, String> {
         profiles.push(CatalogProfile {
             id: profile.id,
             display_name: profile.display_name,
+            family: profile.family,
             description: profile.description,
             license: profile.license,
             source_url: profile.source_url,
@@ -799,6 +1062,7 @@ pub async fn sdcpp_catalog(app: AppHandle) -> Result<Catalog, String> {
             default_height: profile.default_height,
             default_steps: profile.default_steps,
             default_cfg: profile.default_cfg,
+            minimum_runtime_build: profile.minimum_runtime_build,
             variants,
         });
     }
@@ -923,6 +1187,7 @@ pub async fn sdcpp_install(app: AppHandle, request: InstallRequest) -> Result<Ve
         );
     }
     let (profile, variant) = find_profile_variant(&request.profile_id, &request.variant_id)?;
+    ensure_runtime_supports_profile(profile, &request.runtime_release)?;
     let install_id = format!(
         "sdcpp:{}:{}:{}:{}",
         profile.id, variant.id, request.runtime_release, request.runtime_asset
@@ -1596,6 +1861,18 @@ pub async fn sdcpp_runnability(
         return Err("Local stable-diffusion.cpp image generation is desktop-only.".to_string());
     }
     let (profile, variant) = find_profile_variant(&request.profile_id, &request.variant_id)?;
+    if let Err(reason) = ensure_runtime_supports_profile(profile, &request.runtime_release) {
+        return Ok(Runnability {
+            status: "incompatibleRuntime".to_string(),
+            method: "stableDiffusionCppRuntimeCompatibility",
+            exact: true,
+            scope: "engineUnavailable",
+            placement_policy: "notRun",
+            elapsed_ms: None,
+            reason,
+            estimate: None,
+        });
+    }
     if !runtime_is_installed(&app, &request.runtime_release, &request.runtime_asset) {
         return Ok(Runnability {
             status: "notInstalled".to_string(),
@@ -2652,6 +2929,7 @@ async fn ensure_server(
     profile: &ProfileSpec,
     variant: &VariantSpec,
 ) -> Result<String, String> {
+    ensure_runtime_supports_profile(profile, &config.sdcpp_runtime_release)?;
     let compute_policy = load_compute_policy(
         app,
         &config.sdcpp_runtime_release,
@@ -3127,6 +3405,31 @@ fn find_profile_variant(
     Ok((profile, variant))
 }
 
+fn runtime_build_number(release: &str) -> Option<u32> {
+    release
+        .strip_prefix("master-")?
+        .split('-')
+        .next()?
+        .parse()
+        .ok()
+}
+
+fn ensure_runtime_supports_profile(
+    profile: &ProfileSpec,
+    runtime_release: &str,
+) -> Result<(), String> {
+    let Some(minimum) = profile.minimum_runtime_build else {
+        return Ok(());
+    };
+    if runtime_build_number(runtime_release).is_some_and(|build| build >= minimum) {
+        return Ok(());
+    }
+    Err(format!(
+        "{} requires stable-diffusion.cpp engine build {} or newer. Install or switch to a compatible engine build first.",
+        profile.display_name, minimum
+    ))
+}
+
 fn all_components(profile: &ProfileSpec, variant: &VariantSpec) -> Vec<ComponentSpec> {
     let mut components = vec![variant.diffusion];
     components.extend_from_slice(profile.shared_components);
@@ -3472,9 +3775,10 @@ async fn extract_runtime(
 mod tests {
     use super::{
         build_generation_payload, compute_auto_fit_estimate, devices_for_policy,
-        manual_backend_specs, max_vram_spec, migrate_legacy_compute_policy,
-        validate_compute_policy, ComputePolicy, EstimateComponent, LegacyComputePolicy,
-        RunnabilityDevice, RunnabilityEstimate, RunnabilityPlacement, SdGenerationPayload, MIB,
+        ensure_runtime_supports_profile, manual_backend_specs, max_vram_spec,
+        migrate_legacy_compute_policy, runtime_build_number, validate_compute_policy,
+        ComputePolicy, EstimateComponent, LegacyComputePolicy, RunnabilityDevice,
+        RunnabilityEstimate, RunnabilityPlacement, SdGenerationPayload, MIB, PROFILES,
     };
     use std::collections::BTreeMap;
 
@@ -3773,5 +4077,24 @@ mod tests {
         assert_eq!(payload["lora"], serde_json::json!(loras));
         assert_eq!(payload["vae_tiling_params"]["enabled"], true);
         assert_eq!(payload["output_compression"], 100);
+    }
+
+    #[test]
+    fn runtime_build_parser_only_accepts_numbered_master_releases() {
+        assert_eq!(runtime_build_number("master-721-8caa3f9"), Some(721));
+        assert_eq!(runtime_build_number("master-c00a9e9"), None);
+        assert_eq!(runtime_build_number("v1.0.0"), None);
+    }
+
+    #[test]
+    fn krea_profiles_require_the_first_compatible_engine_build() {
+        let profile = PROFILES
+            .iter()
+            .find(|profile| profile.id == "krea-2-turbo")
+            .unwrap();
+
+        assert!(ensure_runtime_supports_profile(profile, "master-720-2938272").is_err());
+        assert!(ensure_runtime_supports_profile(profile, "master-721-8caa3f9").is_ok());
+        assert!(ensure_runtime_supports_profile(profile, "master-778-c00a9e9").is_ok());
     }
 }
