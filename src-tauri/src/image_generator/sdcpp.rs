@@ -39,6 +39,8 @@ struct VariantSpec {
     id: &'static str,
     label: &'static str,
     description: &'static str,
+    recommended: bool,
+    smaller: bool,
     diffusion: ComponentSpec,
 }
 
@@ -85,6 +87,8 @@ const Z_TURBO_VARIANTS: &[VariantSpec] = &[
         id: "q3-k",
         label: "Q3 K (smaller)",
         description: "Lower memory use with a modest quality tradeoff.",
+        recommended: false,
+        smaller: true,
         diffusion: ComponentSpec {
             role: "diffusion_model",
             repo: "leejet/Z-Image-Turbo-GGUF",
@@ -98,6 +102,8 @@ const Z_TURBO_VARIANTS: &[VariantSpec] = &[
         id: "q4-k",
         label: "Q4 K (recommended)",
         description: "Best default balance of image quality, speed, and memory.",
+        recommended: true,
+        smaller: false,
         diffusion: ComponentSpec {
             role: "diffusion_model",
             repo: "leejet/Z-Image-Turbo-GGUF",
@@ -114,6 +120,8 @@ const Z_BASE_VARIANTS: &[VariantSpec] = &[
         id: "q3-k-m",
         label: "Q3 K M (smaller)",
         description: "Reduced memory use for systems that cannot fit Q4 K M.",
+        recommended: false,
+        smaller: true,
         diffusion: ComponentSpec {
             role: "diffusion_model",
             repo: "unsloth/Z-Image-GGUF",
@@ -127,6 +135,8 @@ const Z_BASE_VARIANTS: &[VariantSpec] = &[
         id: "q4-0",
         label: "Q4 0",
         description: "A compact Q4 option with broad backend compatibility.",
+        recommended: false,
+        smaller: false,
         diffusion: ComponentSpec {
             role: "diffusion_model",
             repo: "unsloth/Z-Image-GGUF",
@@ -140,6 +150,8 @@ const Z_BASE_VARIANTS: &[VariantSpec] = &[
         id: "q4-k-m",
         label: "Q4 K M (recommended)",
         description: "Higher quality for the full, non-distilled Z-Image model.",
+        recommended: true,
+        smaller: false,
         diffusion: ComponentSpec {
             role: "diffusion_model",
             repo: "unsloth/Z-Image-GGUF",
@@ -173,6 +185,8 @@ const FLUX_VARIANTS: &[VariantSpec] = &[VariantSpec {
     id: "q4-0",
     label: "Q4 0 (recommended)",
     description: "Fast four-step generation and multi-reference scene composition.",
+    recommended: true,
+    smaller: false,
     diffusion: ComponentSpec {
         role: "diffusion_model",
         repo: "leejet/FLUX.2-klein-4B-GGUF",
@@ -214,6 +228,8 @@ const QWEN_VARIANTS: &[VariantSpec] = &[
         id: "q2-k",
         label: "Q2 K (smaller)",
         description: "The practical option for lower-memory systems.",
+        recommended: false,
+        smaller: true,
         diffusion: ComponentSpec {
             role: "diffusion_model",
             repo: "unsloth/Qwen-Image-Edit-2511-GGUF",
@@ -227,6 +243,8 @@ const QWEN_VARIANTS: &[VariantSpec] = &[
         id: "q3-k-m",
         label: "Q3 K M (recommended)",
         description: "Better edit fidelity when system memory allows it.",
+        recommended: true,
+        smaller: false,
         diffusion: ComponentSpec {
             role: "diffusion_model",
             repo: "unsloth/Qwen-Image-Edit-2511-GGUF",
@@ -572,6 +590,41 @@ pub struct Catalog {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct RuntimeCatalog {
+    runtime_supported: bool,
+    unsupported_reason: Option<String>,
+    runtime_releases: Vec<RuntimeRelease>,
+}
+
+#[tauri::command]
+pub async fn sdcpp_runtime_catalog() -> Result<RuntimeCatalog, String> {
+    if cfg!(mobile) {
+        return Err("Local stable-diffusion.cpp image generation is desktop-only.".to_string());
+    }
+    let runtime_releases = fetch_runtime_releases()
+        .await?
+        .into_iter()
+        .map(|(release, assets)| RuntimeRelease {
+            name: release.name.unwrap_or_else(|| release.tag_name.clone()),
+            tag: release.tag_name,
+            published_at: release.published_at,
+            prerelease: release.prerelease,
+            assets,
+        })
+        .collect::<Vec<_>>();
+    let runtime_supported = !runtime_releases.is_empty();
+    Ok(RuntimeCatalog {
+        runtime_supported,
+        unsupported_reason: (!runtime_supported).then(|| {
+            "No stable-diffusion.cpp release assets match this operating system and architecture."
+                .to_string()
+        }),
+        runtime_releases,
+    })
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct CatalogProfile {
     id: &'static str,
     display_name: &'static str,
@@ -599,6 +652,8 @@ struct CatalogVariant {
     description: &'static str,
     download_bytes: u64,
     installed: bool,
+    recommended: bool,
+    smaller: bool,
 }
 
 #[tauri::command]
@@ -632,6 +687,8 @@ pub async fn sdcpp_catalog(app: AppHandle) -> Result<Catalog, String> {
                     .map(|component| component.bytes)
                     .sum::<u64>(),
                 installed: is_variant_installed(&app, profile, variant, None, None),
+                recommended: variant.recommended,
+                smaller: variant.smaller,
             })
             .collect();
         profiles.push(CatalogProfile {
@@ -673,36 +730,37 @@ pub struct InstallRequest {
     runtime_asset: String,
 }
 
-#[tauri::command]
-pub async fn sdcpp_install(app: AppHandle, request: InstallRequest) -> Result<Vec<String>, String> {
-    if cfg!(mobile) {
-        return Err("Local stable-diffusion.cpp image generation is desktop-only.".to_string());
-    }
-    let runtime =
-        resolve_runtime_selection(&request.runtime_release, &request.runtime_asset).await?;
-    let (profile, variant) = find_profile_variant(&request.profile_id, &request.variant_id)?;
-    let install_id = format!(
-        "sdcpp:{}:{}:{}:{}",
-        profile.id, variant.id, runtime.release, runtime.asset_name
-    );
-    let image_root = image_root(&app)?;
-    let mut queue_ids = Vec::new();
-    write_runtime_manifest(&app, &runtime)?;
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeInstallRequest {
+    runtime_release: String,
+    runtime_asset: String,
+}
 
-    let runtime_archive = runtime_archive_path(&app, &runtime)?;
+async fn queue_runtime_install(
+    app: &AppHandle,
+    runtime: &SelectedRuntime,
+    install_id: &str,
+    display_name: &str,
+    install_kind: &str,
+) -> Result<Vec<String>, String> {
+    let image_root = image_root(app)?;
+    let mut queue_ids = Vec::new();
+    write_runtime_manifest(app, runtime)?;
+
+    let runtime_archive = runtime_archive_path(app, runtime)?;
     queue_ids.push(
         crate::hf_browser::hf_queue_download(
             app.clone(),
             GITHUB_REPOSITORY.to_string(),
             runtime.asset_name.clone(),
             Some(QueueDownloadMetadata {
-                install_id: Some(install_id.clone()),
-                display_name: Some(profile.display_name.to_string()),
+                install_id: Some(install_id.to_string()),
+                display_name: Some(display_name.to_string()),
                 download_role: Some("runtime".to_string()),
                 queue_kind: Some("sdcpp".to_string()),
                 asset_root: Some(image_root.to_string_lossy().to_string()),
-                install_kind: Some(profile.id.to_string()),
-                variant: Some(variant.id.to_string()),
+                install_kind: Some(install_kind.to_string()),
                 download_url: Some(runtime.download_url.clone()),
                 destination_path: Some(runtime_archive.to_string_lossy().to_string()),
                 expected_size: Some(runtime.bytes),
@@ -716,20 +774,19 @@ pub async fn sdcpp_install(app: AppHandle, request: InstallRequest) -> Result<Ve
     );
 
     for dependency in &runtime.dependencies {
-        let destination = runtime_dependency_archive_path(&app, &runtime, dependency)?;
+        let destination = runtime_dependency_archive_path(app, runtime, dependency)?;
         queue_ids.push(
             crate::hf_browser::hf_queue_download(
                 app.clone(),
                 GITHUB_REPOSITORY.to_string(),
                 dependency.name.clone(),
                 Some(QueueDownloadMetadata {
-                    install_id: Some(install_id.clone()),
-                    display_name: Some(profile.display_name.to_string()),
+                    install_id: Some(install_id.to_string()),
+                    display_name: Some(display_name.to_string()),
                     download_role: Some("runtime_dependency".to_string()),
                     queue_kind: Some("sdcpp".to_string()),
                     asset_root: Some(image_root.to_string_lossy().to_string()),
-                    install_kind: Some(profile.id.to_string()),
-                    variant: Some(variant.id.to_string()),
+                    install_kind: Some(install_kind.to_string()),
                     download_url: Some(dependency.download_url.clone()),
                     destination_path: Some(destination.to_string_lossy().to_string()),
                     expected_size: Some(dependency.bytes),
@@ -742,6 +799,51 @@ pub async fn sdcpp_install(app: AppHandle, request: InstallRequest) -> Result<Ve
             .await?,
         );
     }
+    Ok(queue_ids)
+}
+
+#[tauri::command]
+pub async fn sdcpp_runtime_install(
+    app: AppHandle,
+    request: RuntimeInstallRequest,
+) -> Result<Vec<String>, String> {
+    if cfg!(mobile) {
+        return Err("Local stable-diffusion.cpp image generation is desktop-only.".to_string());
+    }
+    let runtime =
+        resolve_runtime_selection(&request.runtime_release, &request.runtime_asset).await?;
+    if runtime_is_installed(&app, &runtime.release, &runtime.asset_name) {
+        return Err("This stable-diffusion.cpp engine build is already installed.".to_string());
+    }
+    let install_id = format!(
+        "sdcpp-runtime:{}:{}",
+        runtime.release, runtime.asset_name
+    );
+    let display_name = format!("stable-diffusion.cpp {}", runtime.release);
+    queue_runtime_install(&app, &runtime, &install_id, &display_name, "runtime").await
+}
+
+#[tauri::command]
+pub async fn sdcpp_install(app: AppHandle, request: InstallRequest) -> Result<Vec<String>, String> {
+    if cfg!(mobile) {
+        return Err("Local stable-diffusion.cpp image generation is desktop-only.".to_string());
+    }
+    let runtime =
+        resolve_runtime_selection(&request.runtime_release, &request.runtime_asset).await?;
+    let (profile, variant) = find_profile_variant(&request.profile_id, &request.variant_id)?;
+    let install_id = format!(
+        "sdcpp:{}:{}:{}:{}",
+        profile.id, variant.id, runtime.release, runtime.asset_name
+    );
+    let image_root = image_root(&app)?;
+    let mut queue_ids = queue_runtime_install(
+        &app,
+        &runtime,
+        &install_id,
+        profile.display_name,
+        profile.id,
+    )
+    .await?;
 
     for component in all_components(profile, variant) {
         let destination = component_path(&app, component)?;
@@ -915,6 +1017,546 @@ pub async fn sdcpp_runnability(
     })
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiskUsage {
+    components_bytes: u64,
+    runtimes_bytes: u64,
+    loras_bytes: u64,
+    total_bytes: u64,
+    has_engine: bool,
+    engine_release: Option<String>,
+    engine_backend: Option<String>,
+}
+
+fn directory_size(root: &Path) -> u64 {
+    walkdir::WalkDir::new(root)
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_type().is_file())
+        .filter_map(|entry| entry.metadata().ok())
+        .map(|metadata| metadata.len())
+        .sum()
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ActiveRuntime {
+    release: String,
+    asset: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstalledRuntime {
+    release: String,
+    asset: String,
+    backend: String,
+    size_bytes: u64,
+    active: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeInventory {
+    installed: Vec<InstalledRuntime>,
+    active: Option<ActiveRuntime>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeSelectionRequest {
+    runtime_release: String,
+    runtime_asset: String,
+}
+
+fn runtime_storage_root(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(crate::utils::lettuce_dir(app)?
+        .join("runtimes")
+        .join("stable-diffusion.cpp"))
+}
+
+fn active_runtime_path(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(runtime_storage_root(app)?.join(".active-runtime.json"))
+}
+
+fn installed_runtimes(app: &AppHandle) -> Result<Vec<InstalledRuntime>, String> {
+    let root = runtime_storage_root(app)?;
+    let mut installed = Vec::new();
+    let Ok(releases) = std::fs::read_dir(&root) else {
+        return Ok(installed);
+    };
+    for release_entry in releases.flatten() {
+        if !release_entry
+            .file_type()
+            .map(|kind| kind.is_dir())
+            .unwrap_or(false)
+        {
+            continue;
+        }
+        let release = release_entry.file_name().to_string_lossy().to_string();
+        let Ok(assets) = std::fs::read_dir(release_entry.path()) else {
+            continue;
+        };
+        for asset_entry in assets.flatten() {
+            let asset_path = asset_entry.path();
+            if !runtime_root_is_complete(&asset_path) {
+                continue;
+            }
+            let asset = asset_entry.file_name().to_string_lossy().to_string();
+            installed.push(InstalledRuntime {
+                release: release.clone(),
+                backend: runtime_backend_for_current_platform(&asset)
+                    .unwrap_or_else(|| "unknown".to_string()),
+                size_bytes: directory_size(&asset_path),
+                asset,
+                active: false,
+            });
+        }
+    }
+    installed.sort_by(|left, right| {
+        right
+            .release
+            .cmp(&left.release)
+            .then_with(|| left.backend.cmp(&right.backend))
+            .then_with(|| left.asset.cmp(&right.asset))
+    });
+    Ok(installed)
+}
+
+fn saved_active_runtime(app: &AppHandle) -> Option<ActiveRuntime> {
+    let path = active_runtime_path(app).ok()?;
+    let bytes = std::fs::read(path).ok()?;
+    let selected = serde_json::from_slice::<ActiveRuntime>(&bytes).ok()?;
+    runtime_is_installed(app, &selected.release, &selected.asset).then_some(selected)
+}
+
+fn effective_active_runtime(
+    app: &AppHandle,
+    installed: &[InstalledRuntime],
+) -> Option<ActiveRuntime> {
+    saved_active_runtime(app).or_else(|| {
+        installed.first().map(|runtime| ActiveRuntime {
+            release: runtime.release.clone(),
+            asset: runtime.asset.clone(),
+        })
+    })
+}
+
+fn save_active_runtime(app: &AppHandle, selected: &ActiveRuntime) -> Result<(), String> {
+    let path = active_runtime_path(app)?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create the engine runtime directory: {e}"))?;
+    }
+    let bytes = serde_json::to_vec_pretty(selected)
+        .map_err(|e| format!("Failed to serialize the active engine selection: {e}"))?;
+    std::fs::write(path, bytes)
+        .map_err(|e| format!("Failed to save the active engine selection: {e}"))
+}
+
+fn clear_active_runtime(app: &AppHandle) -> Result<(), String> {
+    let path = active_runtime_path(app)?;
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!("Failed to clear the active engine selection: {error}")),
+    }
+}
+
+async fn stop_managed_server() {
+    let mut managed = MANAGED_SERVER.lock().await;
+    if let Some(mut server) = managed.take() {
+        let _ = server.child.kill().await;
+        let _ = server.child.wait().await;
+    }
+}
+
+#[tauri::command]
+pub async fn sdcpp_runtime_inventory(app: AppHandle) -> Result<RuntimeInventory, String> {
+    if cfg!(mobile) {
+        return Err("Local stable-diffusion.cpp image generation is desktop-only.".to_string());
+    }
+    let mut installed = installed_runtimes(&app)?;
+    let saved_active = saved_active_runtime(&app);
+    let active = saved_active.clone().or_else(|| {
+        installed.first().map(|runtime| ActiveRuntime {
+            release: runtime.release.clone(),
+            asset: runtime.asset.clone(),
+        })
+    });
+    if saved_active.is_none() {
+        if let Some(selected) = &active {
+            save_active_runtime(&app, selected)?;
+        }
+    }
+    if let Some(selected) = &active {
+        for runtime in &mut installed {
+            runtime.active = runtime.release == selected.release && runtime.asset == selected.asset;
+        }
+    }
+    Ok(RuntimeInventory { installed, active })
+}
+
+#[tauri::command]
+pub async fn sdcpp_runtime_switch(
+    app: AppHandle,
+    request: RuntimeSelectionRequest,
+) -> Result<(), String> {
+    if !runtime_is_installed(&app, &request.runtime_release, &request.runtime_asset) {
+        return Err("The selected stable-diffusion.cpp engine build is not installed.".to_string());
+    }
+    let selected = ActiveRuntime {
+        release: request.runtime_release,
+        asset: request.runtime_asset,
+    };
+    save_active_runtime(&app, &selected)?;
+    stop_managed_server().await;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn sdcpp_runtime_delete(
+    app: AppHandle,
+    request: RuntimeSelectionRequest,
+) -> Result<(), String> {
+    if !runtime_is_installed(&app, &request.runtime_release, &request.runtime_asset) {
+        return Err("The selected stable-diffusion.cpp engine build is not installed.".to_string());
+    }
+    stop_managed_server().await;
+    let selected = ActiveRuntime {
+        release: request.runtime_release,
+        asset: request.runtime_asset,
+    };
+    let removed_active = effective_active_runtime(&app, &installed_runtimes(&app)?)
+        .is_some_and(|active| active.release == selected.release && active.asset == selected.asset);
+    let root = runtime_root(&app, &selected.release, &selected.asset)?;
+    std::fs::remove_dir_all(&root)
+        .map_err(|e| format!("Failed to delete the stable-diffusion.cpp engine build: {e}"))?;
+    if let Some(parent) = root.parent() {
+        let _ = std::fs::remove_dir(parent);
+    }
+    if removed_active {
+        let remaining = installed_runtimes(&app)?;
+        if let Some(next) = remaining.first() {
+            save_active_runtime(
+                &app,
+                &ActiveRuntime {
+                    release: next.release.clone(),
+                    asset: next.asset.clone(),
+                },
+            )?;
+        } else {
+            clear_active_runtime(&app)?;
+        }
+    }
+    Ok(())
+}
+
+fn detect_engine_build(app: &AppHandle) -> Option<(String, String)> {
+    let root = crate::utils::lettuce_dir(app)
+        .ok()?
+        .join("runtimes")
+        .join("stable-diffusion.cpp");
+    for release_entry in std::fs::read_dir(&root).ok()?.flatten() {
+        if !release_entry
+            .file_type()
+            .map(|kind| kind.is_dir())
+            .unwrap_or(false)
+        {
+            continue;
+        }
+        let Ok(assets) = std::fs::read_dir(release_entry.path()) else {
+            continue;
+        };
+        for asset_entry in assets.flatten() {
+            let asset_path = asset_entry.path();
+            if runtime_root_is_complete(&asset_path) {
+                return Some((
+                    release_entry.file_name().to_string_lossy().to_string(),
+                    asset_entry.file_name().to_string_lossy().to_string(),
+                ));
+            }
+        }
+    }
+    None
+}
+
+#[tauri::command]
+pub async fn sdcpp_disk_usage(app: AppHandle) -> Result<DiskUsage, String> {
+    if cfg!(mobile) {
+        return Err("Local stable-diffusion.cpp image generation is desktop-only.".to_string());
+    }
+    let components_root = image_root(&app)?.join("components");
+    let runtimes_root = crate::utils::lettuce_dir(&app)?
+        .join("runtimes")
+        .join("stable-diffusion.cpp");
+    let loras_root = lora_root(&app)?;
+    let components_bytes = directory_size(&components_root);
+    let runtimes_bytes = directory_size(&runtimes_root);
+    let loras_bytes = directory_size(&loras_root);
+    let engine = detect_engine_build(&app);
+    let (engine_release, engine_backend) = match &engine {
+        Some((release, asset)) => (
+            Some(release.clone()),
+            runtime_backend_for_current_platform(asset),
+        ),
+        None => (None, None),
+    };
+    Ok(DiskUsage {
+        components_bytes,
+        runtimes_bytes,
+        loras_bytes,
+        total_bytes: components_bytes + runtimes_bytes + loras_bytes,
+        has_engine: engine.is_some(),
+        engine_release,
+        engine_backend,
+    })
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstalledModel {
+    profile_id: &'static str,
+    variant_id: &'static str,
+    display_name: String,
+    runtime_release: Option<String>,
+    runtime_asset: Option<String>,
+    runtime_backend: Option<String>,
+    component_bytes_on_disk: u64,
+    model_id: Option<String>,
+    supports_text_to_image: bool,
+    supports_image_edit: bool,
+    recommended_for_scenes: bool,
+    requires_reference_image: bool,
+}
+
+fn installed_display_name(profile: &ProfileSpec, variant: &VariantSpec) -> String {
+    format!(
+        "{} ({})",
+        profile.display_name,
+        variant
+            .label
+            .replace(" (recommended)", "")
+            .replace(" (smaller)", "")
+    )
+}
+
+fn installed_model_id(app: &AppHandle, model_name: &str) -> Result<Option<String>, String> {
+    use rusqlite::OptionalExtension;
+    let conn = crate::storage_manager::db::open_db(app)?;
+    conn.query_row(
+        "SELECT id FROM models WHERE provider_id = ?1 AND name = ?2 LIMIT 1",
+        rusqlite::params![PROVIDER_ID, model_name],
+        |row| row.get::<_, String>(0),
+    )
+    .optional()
+    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
+}
+
+#[tauri::command]
+pub async fn sdcpp_installed(app: AppHandle) -> Result<Vec<InstalledModel>, String> {
+    if cfg!(mobile) {
+        return Err("Local stable-diffusion.cpp image generation is desktop-only.".to_string());
+    }
+    use rusqlite::OptionalExtension;
+    let conn = crate::storage_manager::db::open_db(&app)?;
+    let mut installed = Vec::new();
+    for profile in PROFILES {
+        for variant in profile.variants {
+            if !is_variant_installed(&app, profile, variant, None, None) {
+                continue;
+            }
+            let component_bytes_on_disk = all_components(profile, variant)
+                .iter()
+                .filter_map(|component| component_path(&app, *component).ok())
+                .filter_map(|path| std::fs::metadata(path).ok())
+                .map(|metadata| metadata.len())
+                .sum();
+            let model_name = format!("sdcpp:{}:{}", profile.id, variant.id);
+            let row = conn
+                .query_row(
+                    "SELECT id, advanced_model_settings FROM models WHERE provider_id = ?1 AND name = ?2 LIMIT 1",
+                    rusqlite::params![PROVIDER_ID, &model_name],
+                    |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
+                )
+                .optional()
+                .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+            let (model_id, runtime_release, runtime_asset) = match row {
+                Some((id, advanced)) => {
+                    let settings = advanced
+                        .as_deref()
+                        .and_then(|raw| serde_json::from_str::<Value>(raw).ok());
+                    let release = settings
+                        .as_ref()
+                        .and_then(|value| value.get("sdcppRuntimeRelease"))
+                        .and_then(Value::as_str)
+                        .map(str::to_string);
+                    let asset = settings
+                        .as_ref()
+                        .and_then(|value| value.get("sdcppRuntimeAsset"))
+                        .and_then(Value::as_str)
+                        .map(str::to_string);
+                    (Some(id), release, asset)
+                }
+                None => (None, None, None),
+            };
+            let runtime_backend = runtime_asset
+                .as_deref()
+                .and_then(runtime_backend_for_current_platform);
+            installed.push(InstalledModel {
+                profile_id: profile.id,
+                variant_id: variant.id,
+                display_name: installed_display_name(profile, variant),
+                runtime_release,
+                runtime_asset,
+                runtime_backend,
+                component_bytes_on_disk,
+                model_id,
+                supports_text_to_image: profile.supports_text_to_image,
+                supports_image_edit: profile.supports_image_edit,
+                recommended_for_scenes: profile.recommended_for_scenes,
+                requires_reference_image: profile.requires_reference_image,
+            });
+        }
+    }
+    Ok(installed)
+}
+
+#[tauri::command]
+pub async fn sdcpp_repair_registration(
+    app: AppHandle,
+    profile_id: String,
+    variant_id: String,
+) -> Result<String, String> {
+    if cfg!(mobile) {
+        return Err("Local stable-diffusion.cpp image generation is desktop-only.".to_string());
+    }
+    let (profile, variant) = find_profile_variant(&profile_id, &variant_id)?;
+    if !is_variant_installed(&app, profile, variant, None, None) {
+        return Err(
+            "The local image model is incomplete. Retry the installation first.".to_string(),
+        );
+    }
+    let (runtime_release, runtime_asset) = detect_engine_build(&app)
+        .ok_or_else(|| "No complete stable-diffusion.cpp engine build is installed.".to_string())?;
+    register_installed_model(&app, profile, variant, &runtime_release, &runtime_asset)?;
+    let model_name = format!("sdcpp:{}:{}", profile.id, variant.id);
+    installed_model_id(&app, &model_name)?
+        .ok_or_else(|| "The model was registered but could not be read back.".to_string())
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UninstallOptions {
+    #[serde(default)]
+    also_remove_engine_if_unused: Option<bool>,
+}
+
+#[tauri::command]
+pub async fn sdcpp_uninstall(
+    app: AppHandle,
+    profile_id: String,
+    variant_id: String,
+    options: Option<UninstallOptions>,
+) -> Result<(), String> {
+    if cfg!(mobile) {
+        return Err("Local stable-diffusion.cpp image generation is desktop-only.".to_string());
+    }
+    let (profile, variant) = find_profile_variant(&profile_id, &variant_id)?;
+    let options = options.unwrap_or_default();
+
+    let survivors: Vec<(&'static ProfileSpec, &'static VariantSpec)> = PROFILES
+        .iter()
+        .flat_map(|candidate| candidate.variants.iter().map(move |v| (candidate, v)))
+        .filter(|(candidate, v)| !(candidate.id == profile.id && v.id == variant.id))
+        .filter(|(candidate, v)| is_variant_installed(&app, candidate, v, None, None))
+        .collect();
+
+    let mut keep_shas: std::collections::HashSet<&'static str> = std::collections::HashSet::new();
+    for (candidate, v) in &survivors {
+        for component in all_components(candidate, v) {
+            keep_shas.insert(component.sha256);
+        }
+    }
+
+    for component in all_components(profile, variant) {
+        if keep_shas.contains(component.sha256) {
+            continue;
+        }
+        if let Ok(path) = component_path(&app, component) {
+            let _ = std::fs::remove_file(&path);
+            if let Some(parent) = path.parent() {
+                let _ = std::fs::remove_dir(parent);
+            }
+        }
+    }
+
+    let model_name = format!("sdcpp:{}:{}", profile.id, variant.id);
+    let row = {
+        use rusqlite::OptionalExtension;
+        let conn = crate::storage_manager::db::open_db(&app)?;
+        conn.query_row(
+            "SELECT id, advanced_model_settings FROM models WHERE provider_id = ?1 AND name = ?2 LIMIT 1",
+            rusqlite::params![PROVIDER_ID, &model_name],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
+        )
+        .optional()
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
+    };
+    let (model_id, target_release, target_asset) = match row {
+        Some((id, advanced)) => {
+            let settings = advanced
+                .as_deref()
+                .and_then(|raw| serde_json::from_str::<Value>(raw).ok());
+            let release = settings
+                .as_ref()
+                .and_then(|value| value.get("sdcppRuntimeRelease"))
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            let asset = settings
+                .as_ref()
+                .and_then(|value| value.get("sdcppRuntimeAsset"))
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            (Some(id), release, asset)
+        }
+        None => {
+            let engine = detect_engine_build(&app);
+            (
+                None,
+                engine.as_ref().map(|(release, _)| release.clone()),
+                engine.map(|(_, asset)| asset),
+            )
+        }
+    };
+
+    if let Some(id) = model_id {
+        crate::storage_manager::models::model_delete(app.clone(), id)?;
+    }
+
+    if options.also_remove_engine_if_unused == Some(true) {
+        if let (Some(release), Some(asset)) = (target_release.as_deref(), target_asset.as_deref()) {
+            let still_used = survivors.iter().any(|(candidate, v)| {
+                let name = format!("sdcpp:{}:{}", candidate.id, v.id);
+                installed_model_config(&app, &name)
+                    .map(|config| {
+                        config.sdcpp_runtime_release == release
+                            && config.sdcpp_runtime_asset == asset
+                    })
+                    .unwrap_or(false)
+            });
+            if !still_used {
+                if let Ok(root) = runtime_root(&app, release, asset) {
+                    let _ = std::fs::remove_dir_all(&root);
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 fn blank_reference_data_url(width: u32, height: u32) -> Result<String, String> {
     let image = image::DynamicImage::new_rgb8(width, height);
     let mut bytes = std::io::Cursor::new(Vec::new());
@@ -1006,8 +1648,13 @@ fn installed_model_config(
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
         .flatten()
         .ok_or_else(|| format!("Local image model is not installed: {}", model_name))?;
-    serde_json::from_str(&advanced)
-        .map_err(|e| format!("Local image model has invalid runtime settings: {}", e))
+    let mut config = serde_json::from_str::<InstalledModelConfig>(&advanced)
+        .map_err(|e| format!("Local image model has invalid runtime settings: {}", e))?;
+    if let Some(active) = effective_active_runtime(app, &installed_runtimes(app)?) {
+        config.sdcpp_runtime_release = active.release;
+        config.sdcpp_runtime_asset = active.asset;
+    }
+    Ok(config)
 }
 
 fn selected_component_path(
@@ -1464,7 +2111,11 @@ fn register_installed_model(
                 "sdcppRuntimeAsset": runtime_asset,
                 "sdcppRuntimeBackend": runtime_backend_for_current_platform(runtime_asset),
                 "sdcppMaxReferenceImages": profile.max_reference_images,
-                "sdcppSupportsLora": true
+                "sdcppSupportsLora": true,
+                "sdcppSupportsTextToImage": profile.supports_text_to_image,
+                "sdcppSupportsImageEdit": profile.supports_image_edit,
+                "sdcppRecommendedForScenes": profile.recommended_for_scenes,
+                "sdcppRequiresReferenceImage": profile.requires_reference_image
             }
         })
         .to_string(),

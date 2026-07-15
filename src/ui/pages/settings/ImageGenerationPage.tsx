@@ -1,15 +1,20 @@
 import { type ReactNode, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { invoke } from "@tauri-apps/api/core";
+import { Link, useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowRight,
   Check,
+  CheckCircle2,
   ChevronDown,
+  ChevronRight,
   HardDrive,
   Image,
+  Loader2,
   LucideIcon,
   PenLine,
   Sparkles,
+  TriangleAlert,
 } from "lucide-react";
 
 import { ModelSelectionBottomMenu } from "../../components/ModelSelectionBottomMenu";
@@ -28,7 +33,87 @@ import { getProviderIcon } from "../../../core/utils/providerIcons";
 import { cn, spacing, typography } from "../../design-tokens";
 import { Switch } from "../../components/Switch";
 import { getPlatform } from "../../../core/utils/platform";
-import { LocalImageModelsSection } from "./LocalImageModelsSection";
+import { Routes } from "../../navigation";
+import { useDownloadQueueOptional } from "../../../core/downloads/DownloadQueueContext";
+
+type RuntimeInventorySummary = {
+  installed: { release: string; backend: string; active: boolean }[];
+};
+
+function StableDiffusionEngineEntry() {
+  const { t } = useI18n();
+  const downloads = useDownloadQueueOptional();
+  const [activeBuild, setActiveBuild] = useState<string | null>(null);
+  const [installedCount, setInstalledCount] = useState<number | null>(null);
+  const [failed, setFailed] = useState(false);
+  const installing = (downloads?.queue ?? []).some(
+    (item) =>
+      item.queueKind === "sdcpp" &&
+      item.installKind === "runtime" &&
+      (item.status === "queued" || item.status === "downloading"),
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    invoke<RuntimeInventorySummary>("sdcpp_runtime_inventory")
+      .then((inventory) => {
+        if (cancelled) return;
+        const active = inventory.installed.find((runtime) => runtime.active);
+        setInstalledCount(inventory.installed.length);
+        setActiveBuild(active ? `${active.release} · ${active.backend.toUpperCase()}` : null);
+        setFailed(false);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [installing]);
+
+  return (
+    <Link
+      to={Routes.settingsImageGenerationLocal}
+      className={cn(
+        "flex w-full items-center justify-between gap-4 rounded-[10px] border border-fg/10 bg-fg/[0.035] px-4 py-4 text-left transition-colors hover:bg-fg/[0.06]",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/55 focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
+      )}
+    >
+      <div className="flex min-w-0 items-center gap-3">
+        {installing ? (
+          <Loader2
+            aria-hidden="true"
+            className="h-5 w-5 shrink-0 animate-spin text-accent motion-reduce:animate-none"
+          />
+        ) : failed ? (
+          <TriangleAlert aria-hidden="true" className="h-5 w-5 shrink-0 text-warning" />
+        ) : installedCount ? (
+          <CheckCircle2 aria-hidden="true" className="h-5 w-5 shrink-0 text-success" />
+        ) : (
+          <HardDrive aria-hidden="true" className="h-5 w-5 shrink-0 text-fg/40" />
+        )}
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-fg">
+            {t("imageGeneration.local.engineManager.title")}
+          </div>
+          <p className="mt-0.5 truncate text-xs text-fg/48">
+            {installing
+              ? t("imageGeneration.local.engineManager.installing")
+              : failed
+                ? t("imageGeneration.local.engineManager.inventoryFailed")
+                : activeBuild ?? t("imageGeneration.local.engineManager.notInstalledBody")}
+          </p>
+        </div>
+      </div>
+      <span className="flex shrink-0 items-center gap-2 text-xs font-medium text-fg/50">
+        {installedCount
+          ? t("imageGeneration.local.entryCard.manage")
+          : t("imageGeneration.local.engineManager.install")}
+        <ChevronRight aria-hidden="true" className="h-4 w-4" />
+      </span>
+    </Link>
+  );
+}
 
 interface ImageGenerationState {
   loading: boolean;
@@ -475,10 +560,10 @@ export function ImageGenerationPage() {
           <div className="space-y-7">
             {!isMobile ? (
               <SettingsSection
-                title={t("imageGeneration.local.sectionTitle")}
+                title={t("imageGeneration.local.engineManager.title")}
                 icon={<HardDrive size={12} />}
               >
-                <LocalImageModelsSection />
+                <StableDiffusionEngineEntry />
               </SettingsSection>
             ) : null}
             {hasGenerationModels ? (

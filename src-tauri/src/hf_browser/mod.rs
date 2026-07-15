@@ -2307,7 +2307,7 @@ pub async fn hf_queue_download(
             filename: filename.clone(),
             status: "queued".to_string(),
             downloaded: 0,
-            total: 0,
+            total: metadata.expected_size.unwrap_or(0),
             speed_bytes_per_sec: 0,
             error: None,
             result_path: None,
@@ -2566,15 +2566,16 @@ async fn do_queue_download(app: &AppHandle, item: &QueuedDownload) -> Result<Str
         ));
     }
 
-    let total_size = response.content_length().unwrap_or(0);
-    if let (Some(expected), true) = (item.expected_size, total_size > 0) {
-        if total_size != expected {
+    let reported_total_size = response.content_length();
+    if let (Some(expected), Some(reported)) = (item.expected_size, reported_total_size) {
+        if reported != expected {
             return Err(format!(
                 "Download size mismatch before transfer: expected {} bytes, server reported {} bytes",
-                expected, total_size
+                expected, reported
             ));
         }
     }
+    let total_size = reported_total_size.or(item.expected_size).unwrap_or(0);
 
     {
         let mut state = HF_DOWNLOAD_QUEUE.lock().await;

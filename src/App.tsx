@@ -22,6 +22,7 @@ import { InstalledModelsPage } from "./ui/pages/settings/InstalledModelsPage";
 import PerformancePage from "./ui/pages/settings/PerformancePage";
 import { LocalRuntimeDefaultsPage } from "./ui/pages/settings/LocalRuntimeDefaultsPage";
 import { ImageGenerationPage } from "./ui/pages/settings/ImageGenerationPage";
+import { StableDiffusionSettingsPage } from "./ui/pages/settings/StableDiffusionSettingsPage";
 import { SystemPromptsPage } from "./ui/pages/settings/SystemPromptsPage";
 import { EditPromptTemplate } from "./ui/pages/settings/EditPromptTemplate";
 import { SecurityPage } from "./ui/pages/settings/SecurityPage";
@@ -1035,6 +1036,8 @@ function AppContent() {
                   ? "Generate Lorebook"
                   : location.pathname === "/settings/models/installed"
                     ? t("installedModels.title")
+                    : location.pathname === "/settings/image-generation/local"
+                    ? t("imageGeneration.local.engineManager.title")
                     : /^\/settings\/voices\/kokoro\/[^/]+\/blend$/.test(location.pathname)
                       ? t("voices.extra.kokoro.newBlend")
                       : /^\/settings\/voices\/kokoro\/[^/]+\/blend\/.+$/.test(location.pathname)
@@ -1149,6 +1152,10 @@ function AppContent() {
                   element={<KokoroBlendEditorPage />}
                 />
                 <Route path="/settings/image-generation" element={<ImageGenerationPage />} />
+                <Route
+                  path="/settings/image-generation/local"
+                  element={<StableDiffusionSettingsPage />}
+                />
                 <Route path="/settings/prompts" element={<SystemPromptsPage />} />
                 <Route path="/settings/prompts/new" element={<EditPromptTemplate />} />
                 <Route path="/settings/prompts/:id" element={<EditPromptTemplate />} />

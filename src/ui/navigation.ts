@@ -107,6 +107,7 @@ export const Routes = {
   settingsModelsRuntimeDefaults: "/settings/models/runtime-defaults",
   settingsModel: (modelId: string) => `/settings/models/${modelId}`,
   settingsImageGeneration: "/settings/image-generation",
+  settingsImageGenerationLocal: "/settings/image-generation/local",
   createPersona: "/create/persona",
   personaEdit: (personaId: string) => `/personas/${personaId}/edit`,
   characterLorebook: (characterId: string) => `/settings/characters/${characterId}/lorebook`,
