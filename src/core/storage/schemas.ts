@@ -528,6 +528,7 @@ export const AdvancedModelSettingsSchema = z.object({
         path: z.string().trim().min(1),
         multiplier: z.number().min(0).max(2),
         isHighNoise: z.boolean().optional(),
+        keywords: z.array(z.string().trim().min(1)).optional(),
       }),
     )
     .nullable()

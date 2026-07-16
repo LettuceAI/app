@@ -1,9 +1,13 @@
 use base64::{engine::general_purpose::STANDARD, Engine as _};
+use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
+use std::collections::HashSet;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, UNIX_EPOCH};
 use tauri::AppHandle;
 use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
 use tokio::process::Child;
@@ -2666,12 +2670,658 @@ pub async fn sdcpp_installed(app: AppHandle) -> Result<Vec<InstalledModel>, Stri
     Ok(installed)
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InstalledLora {
     filename: String,
     path: String,
     bytes_on_disk: u64,
+    keywords: Vec<String>,
+    keyword_source: String,
+    architecture: Option<String>,
+    architecture_source: String,
+    compatibility: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoraKeywordDiscovery {
+    keywords: Vec<String>,
+    source: String,
+    sha256: Option<String>,
+    architecture: Option<String>,
+    architecture_source: String,
+    compatibility: String,
+}
+
+#[derive(Debug, Clone)]
+struct StoredLoraInfo {
+    bytes_on_disk: u64,
+    modified_at: u64,
+    sha256: Option<String>,
+    keywords: Vec<String>,
+    keyword_source: String,
+    architecture: Option<String>,
+    architecture_source: String,
+}
+
+#[derive(Debug, Default)]
+struct LocalLoraMetadata {
+    keywords: Vec<String>,
+    architecture: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CivitaiModelVersion {
+    #[serde(default, rename = "trainedWords")]
+    trained_words: Vec<String>,
+    #[serde(default, rename = "baseModel")]
+    base_model: Option<String>,
+}
+
+fn normalize_lora_keywords(values: impl IntoIterator<Item = String>) -> Vec<String> {
+    let mut seen = HashSet::new();
+    let mut keywords = Vec::new();
+    for value in values {
+        let value = value.trim();
+        if value.is_empty() || value.len() > 160 {
+            continue;
+        }
+        if seen.insert(value.to_lowercase()) {
+            keywords.push(value.to_string());
+        }
+        if keywords.len() == 32 {
+            break;
+        }
+    }
+    keywords
+}
+
+fn parse_keyword_metadata_value(value: &str) -> Vec<String> {
+    if let Ok(values) = serde_json::from_str::<Vec<String>>(value) {
+        return normalize_lora_keywords(values);
+    }
+    normalize_lora_keywords(
+        value
+            .split([',', '\n', ';'])
+            .map(str::trim)
+            .map(str::to_string),
+    )
+}
+
+fn keywords_from_safetensors_metadata(metadata: &serde_json::Map<String, Value>) -> Vec<String> {
+    const EXPLICIT_KEYS: [&str; 7] = [
+        "ss_activation_tags",
+        "modelspec.trigger_phrase",
+        "modelspec.trigger_phrases",
+        "trigger_words",
+        "trained_words",
+        "activation_tags",
+        "civitai.trainedWords",
+    ];
+    for key in EXPLICIT_KEYS {
+        if let Some(value) = metadata.get(key).and_then(Value::as_str) {
+            let keywords = parse_keyword_metadata_value(value);
+            if !keywords.is_empty() {
+                return keywords;
+            }
+        }
+    }
+
+    let Some(tag_frequency) = metadata
+        .get("ss_tag_frequency")
+        .and_then(Value::as_str)
+        .and_then(|value| serde_json::from_str::<Value>(value).ok())
+        .and_then(|value| value.as_object().cloned())
+    else {
+        return Vec::new();
+    };
+    let mut tags = HashSet::new();
+    for dataset in tag_frequency.values().filter_map(Value::as_object) {
+        for tag in dataset.keys() {
+            let tag = tag.trim();
+            if !tag.is_empty() {
+                tags.insert(tag.to_string());
+            }
+        }
+    }
+    if tags.len() == 1 {
+        normalize_lora_keywords(tags)
+    } else {
+        Vec::new()
+    }
+}
+
+fn normalize_lora_architecture(value: &str) -> Option<String> {
+    let value = value
+        .trim()
+        .to_ascii_lowercase()
+        .replace(['_', '-', '.', '/'], " ");
+    let compact = value.split_whitespace().collect::<String>();
+    let contains = |needle: &str| value.contains(needle) || compact.contains(needle);
+
+    if contains("flux2") {
+        if contains("klein4b") || (contains("klein") && contains("4b")) {
+            return Some("flux2-klein-4b".to_string());
+        }
+        if contains("klein9b") || (contains("klein") && contains("9b")) {
+            return Some("flux2-klein-9b".to_string());
+        }
+        return Some("flux2".to_string());
+    }
+    if contains("zimage") {
+        return Some("z-image".to_string());
+    }
+    if contains("krea2") {
+        return Some("krea-2".to_string());
+    }
+    if contains("qwenimageedit2511") {
+        return Some("qwen-image-edit-2511".to_string());
+    }
+    if contains("qwenimageedit") {
+        return Some("qwen-image-edit".to_string());
+    }
+    if contains("qwenimage") {
+        return Some("qwen-image".to_string());
+    }
+    if contains("flux1") || contains("flux dev") || contains("flux schnell") {
+        return Some("flux1".to_string());
+    }
+    if contains("lora flux") || contains("loraflux") {
+        return Some("flux".to_string());
+    }
+    if contains("illustrious") {
+        return Some("illustrious".to_string());
+    }
+    if contains("noobai") {
+        return Some("noobai".to_string());
+    }
+    if contains("pony") {
+        return Some("pony".to_string());
+    }
+    if contains("sdxl") || contains("stablediffusionxl") {
+        return Some("sdxl".to_string());
+    }
+    if contains("sd35") || contains("sd3") || contains("stablediffusion3") {
+        return Some("sd3".to_string());
+    }
+    if contains("sd21") || contains("sd2") || contains("stablediffusion2") {
+        return Some("sd2".to_string());
+    }
+    if contains("sd15") || contains("sd14") || contains("sd1") || contains("stablediffusionv1") {
+        return Some("sd1".to_string());
+    }
+    None
+}
+
+fn architecture_from_safetensors_metadata(
+    metadata: &serde_json::Map<String, Value>,
+) -> Option<String> {
+    const ARCHITECTURE_KEYS: [&str; 8] = [
+        "modelspec.architecture",
+        "modelspec.base_model",
+        "ss_base_model_version",
+        "ss_network_module",
+        "base_model",
+        "baseModel",
+        "architecture",
+        "model_type",
+    ];
+    ARCHITECTURE_KEYS.iter().find_map(|key| {
+        metadata
+            .get(*key)
+            .and_then(Value::as_str)
+            .and_then(normalize_lora_architecture)
+    })
+}
+
+fn read_local_lora_metadata(path: &Path) -> Result<LocalLoraMetadata, String> {
+    if !path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("safetensors"))
+    {
+        return Ok(LocalLoraMetadata::default());
+    }
+    let mut file = std::fs::File::open(path)
+        .map_err(|error| format!("Failed to read LoRA metadata: {error}"))?;
+    let mut length_bytes = [0u8; 8];
+    file.read_exact(&mut length_bytes)
+        .map_err(|error| format!("Failed to read the LoRA metadata header: {error}"))?;
+    let header_length = u64::from_le_bytes(length_bytes);
+    let file_length = file
+        .metadata()
+        .map_err(|error| format!("Failed to inspect the LoRA file: {error}"))?
+        .len();
+    if header_length == 0 || header_length > 64 * 1024 * 1024 || header_length + 8 > file_length {
+        return Err("The LoRA has an invalid safetensors metadata header.".to_string());
+    }
+    let mut header = vec![0u8; header_length as usize];
+    file.read_exact(&mut header)
+        .map_err(|error| format!("Failed to read the LoRA metadata: {error}"))?;
+    let header: Value = serde_json::from_slice(&header)
+        .map_err(|error| format!("Failed to parse the LoRA metadata: {error}"))?;
+    let metadata = header
+        .get("__metadata__")
+        .and_then(Value::as_object);
+    Ok(LocalLoraMetadata {
+        keywords: metadata
+            .map(keywords_from_safetensors_metadata)
+            .unwrap_or_default(),
+        architecture: metadata.and_then(architecture_from_safetensors_metadata),
+    })
+}
+
+fn parse_stored_lora_keywords(value: &str) -> Vec<String> {
+    serde_json::from_str::<Vec<String>>(value)
+        .map(normalize_lora_keywords)
+        .unwrap_or_default()
+}
+
+fn stored_lora_info(app: &AppHandle, path: &str) -> Result<Option<StoredLoraInfo>, String> {
+    let conn = crate::storage_manager::db::open_db(app)?;
+    conn.query_row(
+        "SELECT bytes_on_disk, modified_at, sha256, keywords, keyword_source, architecture, architecture_source
+         FROM image_loras WHERE path = ?1",
+        [path],
+        |row| {
+            let keywords: String = row.get(3)?;
+            Ok(StoredLoraInfo {
+                bytes_on_disk: row.get::<_, i64>(0)?.max(0) as u64,
+                modified_at: row.get::<_, i64>(1)?.max(0) as u64,
+                sha256: row.get(2)?,
+                keywords: parse_stored_lora_keywords(&keywords),
+                keyword_source: row.get(4)?,
+                architecture: row.get(5)?,
+                architecture_source: row.get(6)?,
+            })
+        },
+    )
+    .optional()
+    .map_err(|error| crate::utils::err_to_string(module_path!(), line!(), error))
+}
+
+fn upsert_lora_file_record(
+    app: &AppHandle,
+    path: &str,
+    filename: &str,
+    bytes_on_disk: u64,
+    modified_at: u64,
+) -> Result<StoredLoraInfo, String> {
+    let conn = crate::storage_manager::db::open_db(app)?;
+    let existing = stored_lora_info(app, path)?;
+    let changed = existing.as_ref().is_some_and(|entry| {
+        entry.bytes_on_disk != bytes_on_disk || entry.modified_at != modified_at
+    });
+    let now = crate::storage_manager::db::now_ms() as i64;
+    conn.execute(
+        "INSERT INTO image_loras (
+            path, filename, bytes_on_disk, modified_at, sha256, keywords, keyword_source,
+            architecture, architecture_source, created_at, updated_at
+         ) VALUES (?1, ?2, ?3, ?4, NULL, '[]', 'none', NULL, 'none', ?5, ?5)
+         ON CONFLICT(path) DO UPDATE SET
+            filename = excluded.filename,
+            bytes_on_disk = excluded.bytes_on_disk,
+            modified_at = excluded.modified_at,
+            sha256 = CASE WHEN ?6 THEN NULL ELSE image_loras.sha256 END,
+            keywords = CASE WHEN ?6 THEN '[]' ELSE image_loras.keywords END,
+            keyword_source = CASE WHEN ?6 THEN 'none' ELSE image_loras.keyword_source END,
+            architecture = CASE WHEN ?6 THEN NULL ELSE image_loras.architecture END,
+            architecture_source = CASE WHEN ?6 THEN 'none' ELSE image_loras.architecture_source END,
+            updated_at = ?5",
+        params![
+            path,
+            filename,
+            bytes_on_disk.min(i64::MAX as u64) as i64,
+            modified_at.min(i64::MAX as u64) as i64,
+            now,
+            changed,
+        ],
+    )
+    .map_err(|error| crate::utils::err_to_string(module_path!(), line!(), error))?;
+    stored_lora_info(app, path)?
+        .ok_or_else(|| "Failed to read the saved LoRA library record.".to_string())
+}
+
+fn save_lora_discovery(
+    app: &AppHandle,
+    path: &str,
+    filename: &str,
+    info: &StoredLoraInfo,
+) -> Result<(), String> {
+    let conn = crate::storage_manager::db::open_db(app)?;
+    let keywords = serde_json::to_string(&info.keywords)
+        .map_err(|error| format!("Failed to serialize LoRA keywords: {error}"))?;
+    let now = crate::storage_manager::db::now_ms() as i64;
+    conn.execute(
+        "INSERT INTO image_loras (
+            path, filename, bytes_on_disk, modified_at, sha256, keywords, keyword_source,
+            architecture, architecture_source, created_at, updated_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10)
+         ON CONFLICT(path) DO UPDATE SET
+            filename = excluded.filename,
+            bytes_on_disk = excluded.bytes_on_disk,
+            modified_at = excluded.modified_at,
+            sha256 = excluded.sha256,
+            keywords = excluded.keywords,
+            keyword_source = excluded.keyword_source,
+            architecture = excluded.architecture,
+            architecture_source = excluded.architecture_source,
+            updated_at = excluded.updated_at",
+        params![
+            path,
+            filename,
+            info.bytes_on_disk.min(i64::MAX as u64) as i64,
+            info.modified_at.min(i64::MAX as u64) as i64,
+            info.sha256,
+            keywords,
+            info.keyword_source,
+            info.architecture,
+            info.architecture_source,
+            now,
+        ],
+    )
+    .map_err(|error| crate::utils::err_to_string(module_path!(), line!(), error))?;
+    Ok(())
+}
+
+fn stored_lora_info_by_hash(
+    app: &AppHandle,
+    sha256: &str,
+) -> Result<Option<StoredLoraInfo>, String> {
+    let conn = crate::storage_manager::db::open_db(app)?;
+    conn.query_row(
+        "SELECT bytes_on_disk, modified_at, sha256, keywords, keyword_source, architecture, architecture_source
+         FROM image_loras
+         WHERE sha256 = ?1 AND (keywords != '[]' OR architecture IS NOT NULL)
+         ORDER BY updated_at DESC LIMIT 1",
+        [sha256],
+        |row| {
+            let keywords: String = row.get(3)?;
+            Ok(StoredLoraInfo {
+                bytes_on_disk: row.get::<_, i64>(0)?.max(0) as u64,
+                modified_at: row.get::<_, i64>(1)?.max(0) as u64,
+                sha256: row.get(2)?,
+                keywords: parse_stored_lora_keywords(&keywords),
+                keyword_source: row.get(4)?,
+                architecture: row.get(5)?,
+                architecture_source: row.get(6)?,
+            })
+        },
+    )
+    .optional()
+    .map_err(|error| crate::utils::err_to_string(module_path!(), line!(), error))
+}
+
+fn lora_file_fingerprint(path: &Path) -> Result<(u64, u64), String> {
+    let metadata = std::fs::metadata(path)
+        .map_err(|error| format!("Failed to inspect the LoRA file: {error}"))?;
+    let modified_at = metadata
+        .modified()
+        .ok()
+        .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
+        .map(|value| value.as_secs())
+        .unwrap_or(0);
+    Ok((metadata.len(), modified_at))
+}
+
+fn sha256_file(path: &Path) -> Result<String, String> {
+    let mut file = std::fs::File::open(path)
+        .map_err(|error| format!("Failed to open the LoRA for hashing: {error}"))?;
+    let mut hasher = Sha256::new();
+    let mut buffer = vec![0u8; 1024 * 1024];
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .map_err(|error| format!("Failed to hash the LoRA: {error}"))?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+fn resolve_library_lora_path(app: &AppHandle, requested: &str) -> Result<(PathBuf, PathBuf, String), String> {
+    let root = lora_root(app)?;
+    let root = root
+        .canonicalize()
+        .map_err(|error| format!("Failed to access the local LoRA library: {error}"))?;
+    let requested_path = PathBuf::from(requested);
+    let candidate = if requested_path.is_absolute() {
+        requested_path
+    } else {
+        root.join(requested_path)
+    };
+    let candidate = candidate
+        .canonicalize()
+        .map_err(|error| format!("LoRA file does not exist: {error}"))?;
+    if !candidate.starts_with(&root) || !candidate.is_file() {
+        return Err("The selected LoRA is outside the local LoRA library.".to_string());
+    }
+    let relative = candidate
+        .strip_prefix(&root)
+        .map_err(|_| "Failed to resolve the LoRA library path.".to_string())?
+        .to_string_lossy()
+        .replace('\\', "/");
+    Ok((root, candidate, relative))
+}
+
+#[tauri::command]
+pub async fn sdcpp_discover_lora_keywords(
+    app: AppHandle,
+    path: String,
+    profile_id: Option<String>,
+) -> Result<LoraKeywordDiscovery, String> {
+    if cfg!(mobile) {
+        return Err("Local stable-diffusion.cpp image generation is desktop-only.".to_string());
+    }
+    let (_root, file_path, relative_path) = resolve_library_lora_path(&app, &path)?;
+    let (bytes_on_disk, modified_at) = lora_file_fingerprint(&file_path)?;
+    let filename = file_path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or(&relative_path)
+        .to_string();
+    let stored = upsert_lora_file_record(
+        &app,
+        &relative_path,
+        &filename,
+        bytes_on_disk,
+        modified_at,
+    )?;
+    if stored.sha256.is_some() {
+        return Ok(lora_discovery_result(&stored, profile_id.as_deref()));
+    }
+
+    let local_path = file_path.clone();
+    let local = tokio::task::spawn_blocking(move || read_local_lora_metadata(&local_path))
+        .await
+        .map_err(|error| format!("LoRA metadata task failed: {error}"))??;
+
+    let hash_path = file_path.clone();
+    let sha256 = tokio::task::spawn_blocking(move || sha256_file(&hash_path))
+        .await
+        .map_err(|error| format!("LoRA hashing task failed: {error}"))??;
+    let mut info = StoredLoraInfo {
+        bytes_on_disk,
+        modified_at,
+        sha256: Some(sha256.clone()),
+        keyword_source: if !stored.keywords.is_empty() {
+            stored.keyword_source.clone()
+        } else if !local.keywords.is_empty() {
+            "metadata".to_string()
+        } else {
+            "none".to_string()
+        },
+        architecture_source: if stored.architecture.is_some() {
+            stored.architecture_source.clone()
+        } else if local.architecture.is_some() {
+            "metadata".to_string()
+        } else {
+            "none".to_string()
+        },
+        keywords: if stored.keywords.is_empty() {
+            local.keywords
+        } else {
+            stored.keywords
+        },
+        architecture: stored.architecture.or(local.architecture),
+    };
+    if let Some(cached) = stored_lora_info_by_hash(&app, &sha256)? {
+        if info.keywords.is_empty() && !cached.keywords.is_empty() {
+            info.keywords = cached.keywords;
+            info.keyword_source = cached.keyword_source;
+        }
+        if info.architecture.is_none() && cached.architecture.is_some() {
+            info.architecture = cached.architecture;
+            info.architecture_source = cached.architecture_source;
+        }
+    }
+
+    if info.keywords.is_empty() || info.architecture.is_none() {
+        match reqwest::Client::new()
+            .get(format!(
+                "https://civitai.com/api/v1/model-versions/by-hash/{sha256}"
+            ))
+            .header(reqwest::header::USER_AGENT, "LettuceAI LoRA metadata discovery")
+            .send()
+            .await
+        {
+            Ok(response) if response.status().is_success() => {
+                if let Ok(version) = response.json::<CivitaiModelVersion>().await {
+                    let remote_keywords = normalize_lora_keywords(version.trained_words);
+                    if info.keywords.is_empty() && !remote_keywords.is_empty() {
+                        info.keywords = remote_keywords;
+                        info.keyword_source = "civitai".to_string();
+                    }
+                    if info.architecture.is_none() {
+                        info.architecture = version
+                            .base_model
+                            .as_deref()
+                            .and_then(normalize_lora_architecture);
+                        if info.architecture.is_some() {
+                            info.architecture_source = "civitai".to_string();
+                        }
+                    }
+                }
+            }
+            Ok(response) if response.status() == reqwest::StatusCode::NOT_FOUND => {}
+            Ok(response) => crate::utils::log_warn(
+                &app,
+                "sdcpp",
+                format!("LoRA metadata lookup failed with status {}", response.status()),
+            ),
+            Err(error) => crate::utils::log_warn(
+                &app,
+                "sdcpp",
+                format!("LoRA metadata lookup failed: {error}"),
+            ),
+        }
+    }
+    save_lora_discovery(&app, &relative_path, &filename, &info)?;
+    Ok(lora_discovery_result(&info, profile_id.as_deref()))
+}
+
+fn profile_lora_architecture(profile_id: Option<&str>) -> Option<&'static str> {
+    match profile_id? {
+        "z-image-turbo" | "z-image" => Some("z-image"),
+        "flux-2-klein-4b" => Some("flux2-klein-4b"),
+        "flux-2-klein-9b" | "flux-2-klein-base-9b" => Some("flux2-klein-9b"),
+        "krea-2-turbo" | "krea-2-raw" => Some("krea-2"),
+        "qwen-image-edit-2511" => Some("qwen-image-edit-2511"),
+        _ => None,
+    }
+}
+
+fn lora_compatibility(architecture: Option<&str>, profile_id: Option<&str>) -> String {
+    let Some(target) = profile_lora_architecture(profile_id) else {
+        return "unknown".to_string();
+    };
+    let Some(architecture) = architecture else {
+        return "unknown".to_string();
+    };
+    if architecture == target {
+        return "compatible".to_string();
+    }
+    if matches!(architecture, "flux" | "flux2" | "qwen-image" | "qwen-image-edit")
+        && (target.starts_with("flux") || target.starts_with("qwen-image-edit"))
+    {
+        return "unknown".to_string();
+    }
+    "incompatible".to_string()
+}
+
+fn lora_discovery_result(
+    info: &StoredLoraInfo,
+    profile_id: Option<&str>,
+) -> LoraKeywordDiscovery {
+    LoraKeywordDiscovery {
+        keywords: info.keywords.clone(),
+        source: info.keyword_source.clone(),
+        sha256: info.sha256.clone(),
+        architecture: info.architecture.clone(),
+        architecture_source: info.architecture_source.clone(),
+        compatibility: lora_compatibility(info.architecture.as_deref(), profile_id),
+    }
+}
+
+#[tauri::command]
+pub fn sdcpp_update_lora_keywords(
+    app: AppHandle,
+    path: String,
+    keywords: Vec<String>,
+    profile_id: Option<String>,
+) -> Result<LoraKeywordDiscovery, String> {
+    let keywords = normalize_lora_keywords(keywords);
+    if keywords.is_empty() {
+        return Err("Add at least one trigger keyword.".to_string());
+    }
+    let (_root, file_path, relative_path) = resolve_library_lora_path(&app, &path)?;
+    let (bytes_on_disk, modified_at) = lora_file_fingerprint(&file_path)?;
+    let filename = file_path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or(&relative_path)
+        .to_string();
+    let mut info = upsert_lora_file_record(
+        &app,
+        &relative_path,
+        &filename,
+        bytes_on_disk,
+        modified_at,
+    )?;
+    info.keywords = keywords;
+    info.keyword_source = "manual".to_string();
+    save_lora_discovery(&app, &relative_path, &filename, &info)?;
+    Ok(lora_discovery_result(&info, profile_id.as_deref()))
+}
+
+pub fn hydrate_lora_keywords(
+    app: &AppHandle,
+    request: &mut super::types::ImageGenerationRequest,
+) -> Result<(), String> {
+    let hydrate = |loras: &mut [super::types::ImageLora]| -> Result<(), String> {
+        for lora in loras {
+            if let Some(info) = stored_lora_info(app, &lora.path)? {
+                if !info.keywords.is_empty() {
+                    lora.keywords = info.keywords;
+                }
+            }
+        }
+        Ok(())
+    };
+    if let Some(loras) = request
+        .advanced_model_settings
+        .as_mut()
+        .and_then(|settings| settings.sd_base_loras.as_mut())
+    {
+        hydrate(loras)?;
+    }
+    if let Some(loras) = request.loras.as_mut() {
+        hydrate(loras)?;
+    }
+    Ok(())
 }
 
 fn collect_lora_files(root: &Path, directory: &Path, files: &mut Vec<InstalledLora>) {
@@ -2709,12 +3359,20 @@ fn collect_lora_files(root: &Path, directory: &Path, files: &mut Vec<InstalledLo
             bytes_on_disk: std::fs::metadata(&path)
                 .map(|metadata| metadata.len())
                 .unwrap_or(0),
+            keywords: Vec::new(),
+            keyword_source: "none".to_string(),
+            architecture: None,
+            architecture_source: "none".to_string(),
+            compatibility: "unknown".to_string(),
         });
     }
 }
 
 #[tauri::command]
-pub async fn sdcpp_loras(app: AppHandle) -> Result<Vec<InstalledLora>, String> {
+pub async fn sdcpp_loras(
+    app: AppHandle,
+    profile_id: Option<String>,
+) -> Result<Vec<InstalledLora>, String> {
     if cfg!(mobile) {
         return Err("Local stable-diffusion.cpp image generation is desktop-only.".to_string());
     }
@@ -2723,6 +3381,43 @@ pub async fn sdcpp_loras(app: AppHandle) -> Result<Vec<InstalledLora>, String> {
         .map_err(|error| format!("Failed to create the local LoRA library: {error}"))?;
     let mut files = Vec::new();
     collect_lora_files(&root, &root, &mut files);
+    for file in &mut files {
+        let file_path = root.join(&file.path);
+        let Ok((bytes_on_disk, modified_at)) = lora_file_fingerprint(&file_path) else {
+            continue;
+        };
+        let mut info = upsert_lora_file_record(
+            &app,
+            &file.path,
+            &file.filename,
+            bytes_on_disk,
+            modified_at,
+        )?;
+        if info.sha256.is_none() && (info.keywords.is_empty() || info.architecture.is_none()) {
+            if let Ok(local) = read_local_lora_metadata(&file_path) {
+                if info.keywords.is_empty() && !local.keywords.is_empty() {
+                    info.keywords = local.keywords;
+                    info.keyword_source = "metadata".to_string();
+                }
+                if info.architecture.is_none() && local.architecture.is_some() {
+                    info.architecture = local.architecture;
+                    info.architecture_source = "metadata".to_string();
+                }
+                if !info.keywords.is_empty() || info.architecture.is_some() {
+                    save_lora_discovery(&app, &file.path, &file.filename, &info)?;
+                }
+            }
+        }
+        file.bytes_on_disk = bytes_on_disk;
+        file.keywords = info.keywords;
+        file.keyword_source = info.keyword_source;
+        file.architecture = info.architecture;
+        file.architecture_source = info.architecture_source;
+        file.compatibility = lora_compatibility(
+            file.architecture.as_deref(),
+            profile_id.as_deref(),
+        );
+    }
     files.sort_by(|left, right| {
         left.filename
             .to_lowercase()
@@ -2762,9 +3457,26 @@ pub async fn sdcpp_import_lora(
     let destination = root.join(filename);
     if destination.exists() {
         if source.canonicalize().ok() != destination.canonicalize().ok() {
-            return Err(format!(
-                "A LoRA named {filename} is already in the library. Remove or rename it before importing another file with the same name."
-            ));
+            let source_size = std::fs::metadata(&source).map(|value| value.len()).ok();
+            let destination_size = std::fs::metadata(&destination).map(|value| value.len()).ok();
+            let identical = if source_size.is_some() && source_size == destination_size {
+                let source_for_hash = source.clone();
+                let destination_for_hash = destination.clone();
+                tokio::task::spawn_blocking(move || {
+                    Ok::<_, String>(
+                        sha256_file(&source_for_hash)? == sha256_file(&destination_for_hash)?,
+                    )
+                })
+                .await
+                .map_err(|error| format!("LoRA comparison task failed: {error}"))??
+            } else {
+                false
+            };
+            if !identical {
+                return Err(format!(
+                    "A different LoRA named {filename} is already in the library. Remove or rename it before importing this file."
+                ));
+            }
         }
     } else {
         std::fs::copy(&source, &destination)
@@ -2776,6 +3488,11 @@ pub async fn sdcpp_import_lora(
         bytes_on_disk: std::fs::metadata(&destination)
             .map(|metadata| metadata.len())
             .unwrap_or(0),
+        keywords: Vec::new(),
+        keyword_source: "none".to_string(),
+        architecture: None,
+        architecture_source: "none".to_string(),
+        compatibility: "unknown".to_string(),
     })
 }
 
@@ -4139,8 +4856,10 @@ async fn extract_runtime(
 mod tests {
     use super::{
         build_generation_payload, compute_auto_fit_estimate, devices_for_policy,
+        architecture_from_safetensors_metadata,
         ensure_runtime_supports_profile, manual_backend_specs, max_vram_spec,
-        merge_generation_loras, migrate_legacy_compute_policy, runtime_build_number,
+        keywords_from_safetensors_metadata, lora_compatibility, merge_generation_loras,
+        migrate_legacy_compute_policy, runtime_build_number,
         validate_compute_policy, ComputePolicy, EstimateComponent, LegacyComputePolicy,
         RunnabilityDevice, RunnabilityEstimate, RunnabilityPlacement, SdGenerationPayload, MIB,
         PROFILES,
@@ -4554,11 +5273,13 @@ mod tests {
                 path: "style.safetensors".to_string(),
                 multiplier: 0.7,
                 is_high_noise: false,
+                keywords: Vec::new(),
             },
             super::super::types::ImageLora {
                 path: "detail.safetensors".to_string(),
                 multiplier: 0.5,
                 is_high_noise: false,
+                keywords: Vec::new(),
             },
         ];
         let request = vec![
@@ -4566,11 +5287,13 @@ mod tests {
                 path: "style.safetensors".to_string(),
                 multiplier: 1.1,
                 is_high_noise: false,
+                keywords: Vec::new(),
             },
             super::super::types::ImageLora {
                 path: "character.safetensors".to_string(),
                 multiplier: 0.8,
                 is_high_noise: false,
+                keywords: Vec::new(),
             },
         ];
 
@@ -4581,5 +5304,71 @@ mod tests {
         assert_eq!(merged[0].multiplier, 1.1);
         assert_eq!(merged[1].path, "detail.safetensors");
         assert_eq!(merged[2].path, "character.safetensors");
+    }
+
+    #[test]
+    fn explicit_safetensors_activation_tags_are_used_as_lora_keywords() {
+        let metadata = serde_json::json!({
+            "ss_activation_tags": "ArsMovieStill, cinematic still"
+        });
+        let keywords = keywords_from_safetensors_metadata(metadata.as_object().unwrap());
+
+        assert_eq!(keywords, vec!["ArsMovieStill", "cinematic still"]);
+    }
+
+    #[test]
+    fn unambiguous_single_training_tag_is_used_as_a_lora_keyword() {
+        let metadata = serde_json::json!({
+            "ss_tag_frequency": "{\"1_ArsMovieStill\":{\"ArsMovieStill\":12}}"
+        });
+        let keywords = keywords_from_safetensors_metadata(metadata.as_object().unwrap());
+
+        assert_eq!(keywords, vec!["ArsMovieStill"]);
+    }
+
+    #[test]
+    fn ambiguous_training_tags_are_not_guessed_as_lora_keywords() {
+        let metadata = serde_json::json!({
+            "ss_tag_frequency": "{\"dataset\":{\"portrait\":12,\"cinematic\":8}}"
+        });
+        let keywords = keywords_from_safetensors_metadata(metadata.as_object().unwrap());
+
+        assert!(keywords.is_empty());
+    }
+
+    #[test]
+    fn explicit_base_model_metadata_detects_lora_architecture() {
+        let metadata = serde_json::json!({
+            "ss_base_model_version": "flux2_klein_4b"
+        });
+
+        assert_eq!(
+            architecture_from_safetensors_metadata(metadata.as_object().unwrap()).as_deref(),
+            Some("flux2-klein-4b")
+        );
+    }
+
+    #[test]
+    fn exact_lora_architecture_is_compatible_with_the_selected_profile() {
+        assert_eq!(
+            lora_compatibility(Some("flux2-klein-4b"), Some("flux-2-klein-4b")),
+            "compatible"
+        );
+        assert_eq!(
+            lora_compatibility(Some("flux1"), Some("flux-2-klein-4b")),
+            "incompatible"
+        );
+    }
+
+    #[test]
+    fn incomplete_family_metadata_does_not_claim_compatibility() {
+        assert_eq!(
+            lora_compatibility(Some("flux2"), Some("flux-2-klein-9b")),
+            "unknown"
+        );
+        assert_eq!(
+            lora_compatibility(Some("qwen-image"), Some("qwen-image-edit-2511")),
+            "unknown"
+        );
     }
 }

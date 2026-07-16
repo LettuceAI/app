@@ -295,6 +295,8 @@ macro_rules! invoke_handler {
             crate::image_generator::sdcpp::sdcpp_installed,
             crate::image_generator::sdcpp::sdcpp_loras,
             crate::image_generator::sdcpp::sdcpp_import_lora,
+            crate::image_generator::sdcpp::sdcpp_discover_lora_keywords,
+            crate::image_generator::sdcpp::sdcpp_update_lora_keywords,
             crate::image_generator::sdcpp::sdcpp_uninstall,
             crate::image_generator::sdcpp::sdcpp_repair_registration,
             crate::logger::log_to_file,

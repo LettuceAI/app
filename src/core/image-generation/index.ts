@@ -26,7 +26,7 @@ export interface ImageGenerationRequest {
   credentialId: string;
   advancedModelSettings?: AdvancedModelSettings | null;
   inputImages?: string[];
-  loras?: { path: string; multiplier: number; isHighNoise?: boolean }[];
+  loras?: { path: string; multiplier: number; isHighNoise?: boolean; keywords?: string[] }[];
   outputModalities?: string[];
   size?: string;
   quality?: string;

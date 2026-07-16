@@ -9,6 +9,8 @@ pub struct ImageLora {
     pub multiplier: f64,
     #[serde(default)]
     pub is_high_noise: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub keywords: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -209,15 +209,34 @@ export function sanitizeAdvancedModelSettings(input: AdvancedModelSettings): Adv
 
   const normalizeBaseLoras = (
     value: unknown,
-  ): Array<{ path: string; multiplier: number; isHighNoise?: boolean }> | null => {
+  ): Array<{
+    path: string;
+    multiplier: number;
+    isHighNoise?: boolean;
+    keywords?: string[];
+  }> | null => {
     if (!Array.isArray(value)) return null;
     const seen = new Set<string>();
-    const cleaned: Array<{ path: string; multiplier: number; isHighNoise?: boolean }> = [];
+    const cleaned: Array<{
+      path: string;
+      multiplier: number;
+      isHighNoise?: boolean;
+      keywords?: string[];
+    }> = [];
     for (const entry of value) {
       if (!entry || typeof entry !== "object") continue;
       const path = String((entry as { path?: unknown }).path ?? "").trim();
       const multiplier = Number((entry as { multiplier?: unknown }).multiplier);
       const isHighNoise = (entry as { isHighNoise?: unknown }).isHighNoise === true;
+      const keywords = Array.isArray((entry as { keywords?: unknown }).keywords)
+        ? Array.from(
+          new Set(
+            (entry as { keywords: unknown[] }).keywords
+              .map((keyword) => (typeof keyword === "string" ? keyword.trim() : ""))
+              .filter((keyword) => keyword.length > 0),
+          ),
+        ).slice(0, 32)
+        : [];
       const key = `${path}\u0000${isHighNoise}`;
       if (!path || !Number.isFinite(multiplier) || seen.has(key)) continue;
       seen.add(key);
@@ -225,6 +244,7 @@ export function sanitizeAdvancedModelSettings(input: AdvancedModelSettings): Adv
         path,
         multiplier: Number(clampValue(multiplier, 0, 2).toFixed(3)),
         ...(isHighNoise ? { isHighNoise: true } : {}),
+        ...(keywords.length > 0 ? { keywords } : {}),
       });
     }
     return cleaned.length > 0 ? cleaned : null;

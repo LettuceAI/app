@@ -154,7 +154,35 @@ type SdcppLoraFile = {
   filename: string;
   path: string;
   bytesOnDisk: number;
+  keywords: string[];
+  keywordSource: "metadata" | "civitai" | "manual" | "none";
+  architecture: string | null;
+  architectureSource: "metadata" | "civitai" | "none";
+  compatibility: "compatible" | "incompatible" | "unknown";
 };
+
+type SdcppLoraKeywordDiscovery = {
+  keywords: string[];
+  source: "metadata" | "civitai" | "manual" | "none";
+  sha256: string | null;
+  architecture: string | null;
+  architectureSource: "metadata" | "civitai" | "none";
+  compatibility: "compatible" | "incompatible" | "unknown";
+};
+
+function parseLoraKeywordDraft(value: string): string[] {
+  const seen = new Set<string>();
+  const keywords: string[] = [];
+  for (const part of value.split(/[\n,;]+/)) {
+    const keyword = part.trim();
+    const key = keyword.toLowerCase();
+    if (!keyword || seen.has(key)) continue;
+    seen.add(key);
+    keywords.push(keyword);
+    if (keywords.length === 32) break;
+  }
+  return keywords;
+}
 
 const SDCPP_SAMPLERS = [
   "euler",
@@ -610,6 +638,10 @@ export function EditModelPage() {
   } | null>(null);
   const [showSdcppModelPicker, setShowSdcppModelPicker] = useState(false);
   const [showSdcppLoraPicker, setShowSdcppLoraPicker] = useState(false);
+  const [discoveringSdcppLoraPath, setDiscoveringSdcppLoraPath] = useState<string | null>(null);
+  const [editingSdcppLoraKeywords, setEditingSdcppLoraKeywords] = useState<number | null>(null);
+  const [sdcppLoraKeywordDraft, setSdcppLoraKeywordDraft] = useState("");
+  const [savingSdcppLoraKeywords, setSavingSdcppLoraKeywords] = useState(false);
   const [showSdcppSamplerMenu, setShowSdcppSamplerMenu] = useState(false);
   const [showSdcppSchedulerMenu, setShowSdcppSchedulerMenu] = useState(false);
   const [showSdcppAdvancedGeneration, setShowSdcppAdvancedGeneration] = useState(false);
@@ -1309,6 +1341,23 @@ export function EditModelPage() {
 
   // Intercept save for llamacpp models to check if move prompt is needed
   const handleSaveWithMoveCheck = async (options?: { navigateAfterSave?: boolean }) => {
+    if (hasIncompatibleSdcppLora) {
+      setActivePanel("configuration");
+      toast.error(
+        t("editModel.sdcpp.loraIncompatible"),
+        t("editModel.sdcpp.removeIncompatibleLora"),
+      );
+      return;
+    }
+    if (hasMissingSdcppLoraKeywords) {
+      setActivePanel("configuration");
+      openSdcppLoraKeywordEditor(firstMissingSdcppLoraKeywordIndex);
+      toast.warning(
+        t("editModel.sdcpp.keywordsRequired"),
+        t("editModel.sdcpp.keywordsRequiredDescription"),
+      );
+      return;
+    }
     const shouldNavigateAfterSave = options?.navigateAfterSave && !!returnTo;
     if (!isLocalModel || !editorModel?.name?.trim()) {
       const success = await saveModel();
@@ -1673,6 +1722,12 @@ export function EditModelPage() {
   const isSdcppModel = editorModel?.providerId === "sdcpp";
   const isLocalDiffusionModel = false;
   const isFixedImageProvider = isAutomatic1111Provider || isLocalDiffusionModel || isSdcppModel;
+  const selectedSdcppProfileId = modelAdvancedDraft.sdcppProfileId
+    ?? (editorModel?.name?.startsWith("sdcpp:") ? editorModel.name.split(":")[1] : null);
+  const referencedSdcppLoraPaths = (modelAdvancedDraft.sdBaseLoras ?? [])
+    .map((lora) => lora.path)
+    .sort()
+    .join("\u0000");
 
   useEffect(() => {
     if (!isSdcppModel) return;
@@ -1691,9 +1746,33 @@ export function EditModelPage() {
       .catch(() => {
         if (!cancelled) setSdcppActiveRuntime(null);
       });
-    invoke<SdcppLoraFile[]>("sdcpp_loras")
-      .then((files) => {
-        if (!cancelled) setSdcppLoras(files);
+    invoke<SdcppLoraFile[]>("sdcpp_loras", { profileId: selectedSdcppProfileId })
+      .then(async (files) => {
+        if (cancelled) return;
+        setSdcppLoras(files);
+        const referenced = new Set(referencedSdcppLoraPaths.split("\u0000").filter(Boolean));
+        const analyzed = [...files];
+        for (let index = 0; index < analyzed.length; index++) {
+          const file = analyzed[index];
+          if (!referenced.has(file.path) || file.compatibility !== "unknown") continue;
+          try {
+            const discovery = await invoke<SdcppLoraKeywordDiscovery>(
+              "sdcpp_discover_lora_keywords",
+              { path: file.path, profileId: selectedSdcppProfileId },
+            );
+            analyzed[index] = {
+              ...file,
+              keywords: discovery.keywords,
+              keywordSource: discovery.source,
+              architecture: discovery.architecture,
+              architectureSource: discovery.architectureSource,
+              compatibility: discovery.compatibility,
+            };
+            if (!cancelled) setSdcppLoras([...analyzed]);
+          } catch (error) {
+            console.warn("Failed to analyze referenced LoRA metadata", error);
+          }
+        }
       })
       .catch(() => {
         if (!cancelled) setSdcppLoras([]);
@@ -1701,7 +1780,7 @@ export function EditModelPage() {
     return () => {
       cancelled = true;
     };
-  }, [isSdcppModel]);
+  }, [isSdcppModel, referencedSdcppLoraPaths, selectedSdcppProfileId]);
 
   const selectedSdcppEntry =
     sdcppInstalled.find(
@@ -1714,6 +1793,45 @@ export function EditModelPage() {
     : "1024x1024";
   const sdcppSupportsImageEdit =
     selectedSdcppEntry?.supportsImageEdit ?? modelAdvancedDraft.sdcppSupportsImageEdit === true;
+  const sdcppLoraInfoByPath = new Map(sdcppLoras.map((lora) => [lora.path, lora]));
+  const loraArchitectureLabel = (architecture: string | null | undefined) => {
+    switch (architecture) {
+      case "z-image": return "Z-Image";
+      case "flux2-klein-4b": return "FLUX.2 Klein 4B";
+      case "flux2-klein-9b": return "FLUX.2 Klein 9B";
+      case "flux2": return "FLUX.2";
+      case "flux1": return "FLUX.1";
+      case "flux": return "FLUX";
+      case "krea-2": return "Krea 2";
+      case "qwen-image-edit-2511": return "Qwen Image Edit 2511";
+      case "qwen-image-edit": return "Qwen Image Edit";
+      case "qwen-image": return "Qwen Image";
+      case "sdxl": return "Stable Diffusion XL";
+      case "sd3": return "Stable Diffusion 3";
+      case "sd2": return "Stable Diffusion 2";
+      case "sd1": return "Stable Diffusion 1.x";
+      case "pony": return "Pony";
+      case "illustrious": return "Illustrious";
+      case "noobai": return "NoobAI";
+      default: return t("editModel.sdcpp.architectureUnknown");
+    }
+  };
+  const loraCompatibilityLabel = (compatibility: SdcppLoraFile["compatibility"]) => {
+    if (compatibility === "compatible") return t("editModel.sdcpp.loraCompatible");
+    if (compatibility === "incompatible") return t("editModel.sdcpp.loraIncompatible");
+    return t("editModel.sdcpp.loraCompatibilityUnknown");
+  };
+  const firstMissingSdcppLoraKeywordIndex = isSdcppModel
+    ? (modelAdvancedDraft.sdBaseLoras ?? []).findIndex(
+      (lora) => (sdcppLoraInfoByPath.get(lora.path)?.keywords ?? lora.keywords ?? []).length === 0,
+    )
+    : -1;
+  const hasMissingSdcppLoraKeywords = firstMissingSdcppLoraKeywordIndex >= 0;
+  const hasIncompatibleSdcppLora = isSdcppModel
+    && (modelAdvancedDraft.sdBaseLoras ?? []).some(
+      (lora) => sdcppLoraInfoByPath.get(lora.path)?.compatibility === "incompatible",
+    );
+  const canSaveModel = canSave && !hasMissingSdcppLoraKeywords && !hasIncompatibleSdcppLora;
 
   const updateBaseLoras = (
     next: NonNullable<typeof modelAdvancedDraft.sdBaseLoras> | null,
@@ -1724,12 +1842,118 @@ export function EditModelPage() {
     });
   };
 
-  const addBaseLora = (file: SdcppLoraFile) => {
-    const current = modelAdvancedDraft.sdBaseLoras ?? [];
-    if (!current.some((lora) => lora.path === file.path && !lora.isHighNoise)) {
-      updateBaseLoras([...current, { path: file.path, multiplier: 0.8 }]);
+  const openSdcppLoraKeywordEditor = (index: number, keywords?: string[]) => {
+    const lora = modelAdvancedDraft.sdBaseLoras?.[index];
+    const sharedKeywords = lora ? sdcppLoraInfoByPath.get(lora.path)?.keywords : undefined;
+    setSdcppLoraKeywordDraft((keywords ?? sharedKeywords ?? lora?.keywords ?? []).join("\n"));
+    setEditingSdcppLoraKeywords(index);
+  };
+
+  const saveSdcppLoraKeywords = async () => {
+    if (editingSdcppLoraKeywords === null) return;
+    const keywords = parseLoraKeywordDraft(sdcppLoraKeywordDraft);
+    if (keywords.length === 0) {
+      toast.warning(
+        t("editModel.sdcpp.keywordsRequired"),
+        t("editModel.sdcpp.keywordsRequiredDescription"),
+      );
+      return;
     }
+    const next = [...(modelAdvancedDraft.sdBaseLoras ?? [])];
+    const lora = next[editingSdcppLoraKeywords];
+    if (!lora) return;
+    setSavingSdcppLoraKeywords(true);
+    try {
+      const saved = await invoke<SdcppLoraKeywordDiscovery>("sdcpp_update_lora_keywords", {
+        path: lora.path,
+        keywords,
+        profileId: selectedSdcppProfileId,
+      });
+      next[editingSdcppLoraKeywords] = { ...lora, keywords: saved.keywords };
+      updateBaseLoras(next);
+      setSdcppLoras((current) => current.map((file) => file.path === lora.path
+        ? {
+          ...file,
+          keywords: saved.keywords,
+          keywordSource: saved.source,
+          architecture: saved.architecture,
+          architectureSource: saved.architectureSource,
+          compatibility: saved.compatibility,
+        }
+        : file));
+      setEditingSdcppLoraKeywords(null);
+      setSdcppLoraKeywordDraft("");
+    } catch (error: any) {
+      toast.error(
+        t("editModel.sdcpp.keywordSaveFailed"),
+        typeof error === "string" ? error : error?.message || String(error),
+      );
+    } finally {
+      setSavingSdcppLoraKeywords(false);
+    }
+  };
+
+  const addBaseLora = async (file: SdcppLoraFile) => {
+    const current = modelAdvancedDraft.sdBaseLoras ?? [];
+    if (current.some((lora) => lora.path === file.path && !lora.isHighNoise)) {
+      setShowSdcppLoraPicker(false);
+      return;
+    }
+    setDiscoveringSdcppLoraPath(file.path);
+    let keywords = file.keywords;
+    let compatibility = file.compatibility;
+    try {
+      const discovery = await invoke<SdcppLoraKeywordDiscovery>(
+        "sdcpp_discover_lora_keywords",
+        { path: file.path, profileId: selectedSdcppProfileId },
+      );
+      keywords = discovery.keywords;
+      compatibility = discovery.compatibility;
+      setSdcppLoras((current) => current.map((candidate) => candidate.path === file.path
+        ? {
+          ...candidate,
+          keywords: discovery.keywords,
+          keywordSource: discovery.source,
+          architecture: discovery.architecture,
+          architectureSource: discovery.architectureSource,
+          compatibility: discovery.compatibility,
+        }
+        : candidate));
+    } catch (error) {
+      console.warn("Failed to discover LoRA metadata", error);
+    }
+    if (compatibility === "incompatible") {
+      setDiscoveringSdcppLoraPath(null);
+      toast.error(
+        t("editModel.sdcpp.loraIncompatible"),
+        t("editModel.sdcpp.loraIncompatibleDescription"),
+      );
+      return;
+    }
+    if (compatibility === "unknown") {
+      toast.warning(
+        t("editModel.sdcpp.loraCompatibilityUnknown"),
+        t("editModel.sdcpp.loraCompatibilityUnknownDescription"),
+      );
+    }
+    const index = current.length;
+    updateBaseLoras([
+      ...current,
+      {
+        path: file.path,
+        multiplier: 0.8,
+        ...(keywords.length > 0 ? { keywords } : {}),
+      },
+    ]);
+    setDiscoveringSdcppLoraPath(null);
     setShowSdcppLoraPicker(false);
+    if (keywords.length === 0) {
+      openSdcppLoraKeywordEditor(index, []);
+      toast.warning(
+        t("editModel.sdcpp.keywordsRequired"),
+        t("editModel.sdcpp.keywordsRequiredDescription"),
+      );
+    }
   };
 
   const importBaseLora = async () => {
@@ -1748,9 +1972,11 @@ export function EditModelPage() {
       const imported = await invoke<SdcppLoraFile>("sdcpp_import_lora", {
         sourcePath: selection,
       });
-      const files = await invoke<SdcppLoraFile[]>("sdcpp_loras");
+      const files = await invoke<SdcppLoraFile[]>("sdcpp_loras", {
+        profileId: selectedSdcppProfileId,
+      });
       setSdcppLoras(files);
-      addBaseLora(imported);
+      await addBaseLora(files.find((file) => file.path === imported.path) ?? imported);
     } catch (error: any) {
       toast.error(
         t("editModel.sdcpp.importFailed"),
@@ -4837,49 +5063,109 @@ export function EditModelPage() {
                                 </button>
                               ) : (
                                 <div className="divide-y divide-fg/8 rounded-lg border border-fg/10">
-                                  {(modelAdvancedDraft.sdBaseLoras ?? []).map((lora, index) => (
-                                    <div
-                                      key={`${lora.path}:${lora.isHighNoise === true}`}
-                                      className="grid gap-4 px-4 py-4 md:grid-cols-[minmax(0,1fr)_9rem_auto] md:items-end"
-                                    >
-                                      <FieldBlock label={t("editModel.sdcpp.loraPath")}>
-                                        <input
-                                          type="text"
-                                          readOnly
-                                          value={lora.path}
-                                          title={lora.path}
-                                          className="w-full rounded-lg border border-fg/10 bg-surface-el/15 px-3 py-2.5 font-mono text-[12px] text-fg/72 focus:outline-none"
-                                        />
-                                      </FieldBlock>
-                                      <FieldBlock label={t("editModel.sdcpp.strength")}>
-                                        <NumberInput
-                                          min={0}
-                                          max={2}
-                                          step={0.05}
-                                          value={lora.multiplier}
-                                          onChange={(value) => {
-                                            const next = [...(modelAdvancedDraft.sdBaseLoras ?? [])];
-                                            next[index] = { ...next[index], multiplier: value ?? 0.8 };
-                                            updateBaseLoras(next);
-                                          }}
-                                          className={numberInputClassName}
-                                        />
-                                      </FieldBlock>
-                                      <button
-                                        type="button"
-                                        onClick={() => updateBaseLoras(
-                                          (modelAdvancedDraft.sdBaseLoras ?? []).filter(
-                                            (_, itemIndex) => itemIndex !== index,
-                                          ),
-                                        )}
-                                        aria-label={t("editModel.sdcpp.removeLora")}
-                                        title={t("editModel.sdcpp.removeLora")}
-                                        className="mb-0.5 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-fg/10 text-fg/38 transition hover:border-danger/30 hover:bg-danger/8 hover:text-danger"
+                                  {(modelAdvancedDraft.sdBaseLoras ?? []).map((lora, index) => {
+                                    const info = sdcppLoraInfoByPath.get(lora.path);
+                                    const compatibility = info?.compatibility ?? "unknown";
+                                    const keywords = info?.keywords ?? lora.keywords ?? [];
+                                    const fileName = lora.path.split(/[\\/]/).pop() || lora.path;
+                                    return (
+                                      <div
+                                        key={`${lora.path}:${lora.isHighNoise === true}`}
+                                        className="px-4 py-3"
                                       >
-                                        <X className="h-4 w-4" />
-                                      </button>
-                                    </div>
-                                  ))}
+                                        <div className="flex items-center gap-3">
+                                          <div className="min-w-0 flex-1">
+                                            <div
+                                              className="truncate font-mono text-[13px] text-fg/85"
+                                              title={lora.path}
+                                            >
+                                              {fileName}
+                                            </div>
+                                            <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[11px] text-fg/40">
+                                              <span>{loraArchitectureLabel(info?.architecture)}</span>
+                                              <span aria-hidden="true">·</span>
+                                              <span className={cn(
+                                                "font-medium",
+                                                compatibility === "compatible"
+                                                  ? "text-success/80"
+                                                  : compatibility === "incompatible"
+                                                    ? "text-danger/85"
+                                                    : "text-warning/80",
+                                              )}>
+                                                {loraCompatibilityLabel(compatibility)}
+                                              </span>
+                                            </div>
+                                          </div>
+                                          <label className="flex shrink-0 items-center gap-2">
+                                            <span className="text-[11px] text-fg/40">
+                                              {t("editModel.sdcpp.strength")}
+                                            </span>
+                                            <NumberInput
+                                              min={0}
+                                              max={2}
+                                              step={0.05}
+                                              value={lora.multiplier}
+                                              onChange={(value) => {
+                                                const next = [...(modelAdvancedDraft.sdBaseLoras ?? [])];
+                                                next[index] = { ...next[index], multiplier: value ?? 0.8 };
+                                                updateBaseLoras(next);
+                                              }}
+                                              className="h-9 w-20 rounded-lg border border-fg/10 bg-surface-el/20 px-2.5 text-center text-[13px] text-fg transition focus:border-fg/30 focus:outline-none"
+                                            />
+                                          </label>
+                                          <button
+                                            type="button"
+                                            onClick={() => updateBaseLoras(
+                                              (modelAdvancedDraft.sdBaseLoras ?? []).filter(
+                                                (_, itemIndex) => itemIndex !== index,
+                                              ),
+                                            )}
+                                            aria-label={t("editModel.sdcpp.removeLora")}
+                                            title={t("editModel.sdcpp.removeLora")}
+                                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-fg/38 transition hover:bg-danger/8 hover:text-danger"
+                                          >
+                                            <X className="h-4 w-4" />
+                                          </button>
+                                        </div>
+                                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                                          {keywords.length > 0 ? (
+                                            <>
+                                              <span
+                                                className="text-[11px] text-fg/38"
+                                                title={t("editModel.sdcpp.loraKeywordsDescription")}
+                                              >
+                                                {t("editModel.sdcpp.loraKeywords")}
+                                              </span>
+                                              {keywords.map((keyword) => (
+                                                <span
+                                                  key={keyword}
+                                                  className="rounded-md border border-accent/15 bg-accent/[0.07] px-2 py-0.5 font-mono text-[11px] text-accent/80"
+                                                >
+                                                  {keyword}
+                                                </span>
+                                              ))}
+                                              <button
+                                                type="button"
+                                                onClick={() => openSdcppLoraKeywordEditor(index)}
+                                                className="rounded-md border border-fg/12 bg-fg/5 px-2.5 py-0.5 text-[11px] font-medium text-fg/65 transition hover:border-fg/22 hover:bg-fg/8 hover:text-fg"
+                                              >
+                                                {t("editModel.sdcpp.editKeywords")}
+                                              </button>
+                                            </>
+                                          ) : (
+                                            <button
+                                              type="button"
+                                              onClick={() => openSdcppLoraKeywordEditor(index)}
+                                              className="inline-flex items-center gap-1.5 text-[12px] font-medium text-warning/85 transition hover:text-warning"
+                                            >
+                                              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                                              <span>{t("editModel.sdcpp.keywordsRequiredDescription")}</span>
+                                            </button>
+                                          )}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
                                 </div>
                               )}
                             </section>
@@ -4963,16 +5249,79 @@ export function EditModelPage() {
                                       key={file.path}
                                       icon={<Layers className="h-5 w-5 text-accent/60" />}
                                       title={file.filename}
-                                      description={`${file.path} · ${formatBytes(file.bytesOnDisk)}`}
+                                      description={`${formatBytes(file.bytesOnDisk)} · ${loraArchitectureLabel(file.architecture)} · ${loraCompatibilityLabel(file.compatibility)}`}
                                       color="from-accent/15 to-accent/5"
                                       rightElement={selected
                                         ? <Check className="h-4 w-4 text-accent" />
-                                        : <ArrowRight className="h-4 w-4 text-fg/25" />}
-                                      onClick={() => addBaseLora(file)}
+                                        : file.compatibility === "compatible"
+                                          ? <Check className="h-4 w-4 text-success" />
+                                          : file.compatibility === "incompatible"
+                                            ? <AlertTriangle className="h-4 w-4 text-danger" />
+                                            : <HelpCircle className="h-4 w-4 text-warning" />}
+                                      onClick={() => void addBaseLora(file)}
+                                      loading={discoveringSdcppLoraPath === file.path}
+                                      disabled={discoveringSdcppLoraPath !== null}
                                     />
                                   );
                                 })}
                               </MenuSection>
+                            </BottomMenu>
+
+                            <BottomMenu
+                              isOpen={editingSdcppLoraKeywords !== null}
+                              onClose={() => {
+                                setEditingSdcppLoraKeywords(null);
+                                setSdcppLoraKeywordDraft("");
+                              }}
+                              title={t("editModel.sdcpp.keywordEditorTitle")}
+                            >
+                              <div className="space-y-5 pb-4">
+                                <div className="space-y-1">
+                                  <p className="text-[13px] leading-relaxed text-fg/55">
+                                    {t("editModel.sdcpp.keywordEditorDescription")}
+                                  </p>
+                                  {editingSdcppLoraKeywords !== null ? (
+                                    <p className="truncate font-mono text-[11px] text-fg/35">
+                                      {modelAdvancedDraft.sdBaseLoras?.[editingSdcppLoraKeywords]?.path}
+                                    </p>
+                                  ) : null}
+                                </div>
+                                <textarea
+                                  autoFocus
+                                  value={sdcppLoraKeywordDraft}
+                                  onChange={(event) => setSdcppLoraKeywordDraft(event.target.value)}
+                                  placeholder={t("editModel.sdcpp.keywordPlaceholder")}
+                                  rows={5}
+                                  className={textAreaInputClassName}
+                                />
+                                {parseLoraKeywordDraft(sdcppLoraKeywordDraft).length > 0 ? (
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {parseLoraKeywordDraft(sdcppLoraKeywordDraft).map((keyword) => (
+                                      <span
+                                        key={keyword}
+                                        className="rounded-md border border-accent/15 bg-accent/[0.07] px-2 py-1 font-mono text-[11px] text-accent/80"
+                                      >
+                                        {keyword}
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <div className="flex items-start gap-2 rounded-lg border border-warning/25 bg-warning/[0.06] px-3 py-2.5 text-[12px] leading-relaxed text-warning/85">
+                                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                                    <span>{t("editModel.sdcpp.keywordsRequiredDescription")}</span>
+                                  </div>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => void saveSdcppLoraKeywords()}
+                                  disabled={savingSdcppLoraKeywords}
+                                  className="inline-flex h-10 w-full items-center justify-center rounded-lg bg-accent px-4 text-sm font-semibold text-bg transition-[filter] hover:brightness-110 disabled:cursor-wait disabled:opacity-50"
+                                >
+                                  {savingSdcppLoraKeywords
+                                    ? t("common.buttons.saving")
+                                    : t("common.buttons.save")}
+                                </button>
+                              </div>
                             </BottomMenu>
                           </div>
                         )}
@@ -8015,14 +8364,18 @@ export function EditModelPage() {
 
       {/* Continue Setup button when coming from onboarding */}
       {returnTo && (() => {
-        const canContinueWithCurrentModel = !isNew && !hasUnsavedChanges;
+        const canContinueWithCurrentModel =
+          !isNew
+          && !hasUnsavedChanges
+          && !hasMissingSdcppLoraKeywords
+          && !hasIncompatibleSdcppLora;
         const canContinueSetup =
-          !(saving || verifying) && (canSave || canContinueWithCurrentModel);
+          !(saving || verifying) && (canSaveModel || canContinueWithCurrentModel);
         return (
           <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
             <button
               onClick={() => {
-                if (canSave) {
+                if (canSaveModel) {
                   void handleSaveWithMoveCheck({ navigateAfterSave: true });
                   return;
                 }
