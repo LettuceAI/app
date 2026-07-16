@@ -253,61 +253,6 @@ type OpenRouterEndpoint = {
 
 type ProviderSortMode = "price" | "uptime" | "caching" | "alphabetical";
 
-type SdModelRole =
-  | "checkpoint"
-  | "diffusionModel"
-  | "clipL"
-  | "clipG"
-  | "t5xxl"
-  | "llm"
-  | "llmVision"
-  | "vae";
-
-type SdLocalFile = {
-  filename: string;
-  path: string;
-  size: number;
-};
-
-type SdModelEntry = {
-  id: string;
-  name: string;
-  family: string;
-  files: Partial<Record<SdModelRole, string | null>>;
-  complete: boolean;
-  totalBytes: number;
-};
-
-async function sdListModels(): Promise<SdModelEntry[]> {
-  return [];
-}
-
-async function sdListLocalFiles(): Promise<SdLocalFile[]> {
-  return [];
-}
-
-async function sdImportModel(
-  name: string,
-  files: Partial<Record<SdModelRole, string | null>>,
-): Promise<SdModelEntry> {
-  return { id: name, name, family: "unsupported", files, complete: false, totalBytes: 0 };
-}
-
-async function sdSetModelFile(
-  modelId: string,
-  role: SdModelRole,
-  path: string | null,
-): Promise<SdModelEntry> {
-  return {
-    id: modelId,
-    name: modelId,
-    family: "unsupported",
-    files: { [role]: path },
-    complete: false,
-    totalBytes: 0,
-  };
-}
-
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";
   const units = ["B", "KB", "MB", "GB", "TB"];
@@ -652,12 +597,6 @@ export function EditModelPage() {
   const [providerEndpointsLoading, setProviderEndpointsLoading] = useState(false);
   const [providerEndpointsError, setProviderEndpointsError] = useState<string | null>(null);
   const [providerSortMode, setProviderSortMode] = useState<ProviderSortMode>("price");
-  const [sdEntries, setSdEntries] = useState<SdModelEntry[] | null>(null);
-  const [showSdModelPicker, setShowSdModelPicker] = useState(false);
-  const [sdFilesDraft, setSdFilesDraft] = useState<Record<string, string>>({});
-  const [sdMainPathDraft, setSdMainPathDraft] = useState("");
-  const [sdLibraryFiles, setSdLibraryFiles] = useState<SdLocalFile[] | null>(null);
-  const [sdLibraryRole, setSdLibraryRole] = useState<SdModelRole | null>(null);
   const [llamaContextInfo, setLlamaContextInfo] = useState<LlamaCppContextInfo | null>(null);
   const [llamaContextError, setLlamaContextError] = useState<string | null>(null);
   const [llamaContextLoading, setLlamaContextLoading] = useState(false);
@@ -1720,10 +1659,14 @@ export function EditModelPage() {
         : t("hfBrowser.libraryEmptyHint");
   const isAutomatic1111Provider = editorModel?.providerId === "automatic1111";
   const isSdcppModel = editorModel?.providerId === "sdcpp";
-  const isLocalDiffusionModel = false;
-  const isFixedImageProvider = isAutomatic1111Provider || isLocalDiffusionModel || isSdcppModel;
-  const selectedSdcppProfileId = modelAdvancedDraft.sdcppProfileId
-    ?? (editorModel?.name?.startsWith("sdcpp:") ? editorModel.name.split(":")[1] : null);
+  const isFixedImageProvider = isAutomatic1111Provider || isSdcppModel;
+  const selectedSdcppEntry = isSdcppModel
+    ? (sdcppInstalled.find((entry) => entry.modelPath === editorModel?.name) ?? null)
+    : null;
+  const isCustomSdcppModel = isSdcppModel && !selectedSdcppEntry;
+  const scopesLocked = isFixedImageProvider && !isCustomSdcppModel;
+  const selectedSdcppProfileId =
+    modelAdvancedDraft.sdcppProfileId ?? selectedSdcppEntry?.profileId ?? null;
   const referencedSdcppLoraPaths = (modelAdvancedDraft.sdBaseLoras ?? [])
     .map((lora) => lora.path)
     .sort()
@@ -1782,10 +1725,6 @@ export function EditModelPage() {
     };
   }, [isSdcppModel, referencedSdcppLoraPaths, selectedSdcppProfileId]);
 
-  const selectedSdcppEntry =
-    sdcppInstalled.find(
-      (entry) => `sdcpp:${entry.profileId}:${entry.variantId}` === editorModel?.name,
-    ) ?? null;
   const sdcppDefaultSteps = selectedSdcppEntry?.defaultSteps ?? 20;
   const sdcppDefaultCfg = selectedSdcppEntry?.defaultCfg ?? 7;
   const sdcppDefaultSize = selectedSdcppEntry
@@ -1988,8 +1927,10 @@ export function EditModelPage() {
   };
 
   const selectSdcppModel = (entry: SdcppInstalledModel) => {
+    const componentPathByRole = (role: string) =>
+      entry.components.find((component) => component.role === role)?.path ?? null;
     updateEditorModel({
-      name: `sdcpp:${entry.profileId}:${entry.variantId}`,
+      name: entry.modelPath,
       inputScopes: entry.supportsImageEdit ? ["text", "image"] : ["text"],
       outputScopes: ["image"],
       ...(editorModel?.displayName?.trim() ? {} : { displayName: entry.displayName }),
@@ -1998,6 +1939,9 @@ export function EditModelPage() {
       ...modelAdvancedDraft,
       sdcppProfileId: entry.profileId,
       sdcppVariantId: entry.variantId,
+      sdcppTextEncoderPath: componentPathByRole("text_encoder"),
+      sdcppVaePath: componentPathByRole("vae"),
+      sdcppVisionEncoderPath: componentPathByRole("vision_encoder"),
       sdcppRuntimeRelease: sdcppActiveRuntime?.release ?? entry.runtimeRelease ?? null,
       sdcppRuntimeAsset: sdcppActiveRuntime?.asset ?? entry.runtimeAsset ?? null,
       sdcppRuntimeBackend: entry.runtimeBackend,
@@ -2010,127 +1954,53 @@ export function EditModelPage() {
     setShowSdcppModelPicker(false);
   };
 
-  useEffect(() => {
-    if (!isLocalDiffusionModel || sdEntries !== null) return;
-    sdListModels()
-      .then(setSdEntries)
-      .catch(() => setSdEntries([]));
-  }, [isLocalDiffusionModel, sdEntries]);
-
-  const selectedSdEntry = sdEntries?.find((entry) => entry.id === editorModel?.name) ?? null;
-
-  useEffect(() => {
-    const files = selectedSdEntry?.files ?? {};
-    setSdFilesDraft({
-      checkpoint: files.checkpoint ?? "",
-      diffusionModel: files.diffusionModel ?? "",
-      clipL: files.clipL ?? "",
-      clipG: files.clipG ?? "",
-      t5xxl: files.t5xxl ?? "",
-      llm: files.llm ?? "",
-      llmVision: files.llmVision ?? "",
-      vae: files.vae ?? "",
-    });
-    setSdMainPathDraft(files.checkpoint ?? files.diffusionModel ?? "");
-  }, [selectedSdEntry]);
-
-  useEffect(() => {
-    if (sdLibraryRole === null || sdLibraryFiles !== null) return;
-    sdListLocalFiles()
-      .then(setSdLibraryFiles)
-      .catch(() => setSdLibraryFiles([]));
-  }, [sdLibraryRole, sdLibraryFiles]);
-
-  const commitSdFile = async (role: SdModelRole, rawPath: string) => {
-    const path = rawPath.trim() || null;
-    try {
-      if (selectedSdEntry) {
-        const current = (selectedSdEntry.files as Record<string, string | null | undefined>)[role] ?? "";
-        if ((path ?? "") === current) return;
-        await sdSetModelFile(selectedSdEntry.id, role, path);
-        setSdEntries(null);
-      } else if (path) {
-        const fallbackName =
-          editorModel?.displayName?.trim() ||
-          path.split(/[\\/]/).pop()?.replace(/\.(safetensors|gguf|ckpt|sft)$/i, "") ||
-          "Local model";
-        const entry = await sdImportModel(fallbackName, { [role]: path });
-        handleModelNameChange(entry.id);
-        if (!editorModel?.displayName?.trim()) {
-          handleDisplayNameChange(entry.name);
-        }
-        setSdEntries(null);
-      }
-    } catch (err: any) {
-      toast.error(
-        t("imageGeneration.local.updateFailed"),
-        typeof err === "string" ? err : err?.message || String(err),
-      );
+  const handleSdcppModelPathChange = (path: string) => {
+    const match = sdcppInstalled.find((entry) => entry.modelPath === path);
+    if (match) {
+      selectSdcppModel(match);
+      return;
+    }
+    updateEditorModel({ name: path });
+    if (modelAdvancedDraft.sdcppProfileId || modelAdvancedDraft.sdcppVariantId) {
+      setModelAdvancedDraft({
+        ...modelAdvancedDraft,
+        sdcppProfileId: null,
+        sdcppVariantId: null,
+      });
     }
   };
 
-  const browseSdFile = async (role: SdModelRole) => {
-    const selection = await open({
-      multiple: false,
-      filters: [
-        { name: t("editModel.localDiffusion.modelFilesFilter"), extensions: ["safetensors", "gguf", "ckpt", "sft"] },
-      ],
-    });
-    if (typeof selection !== "string") return;
-    setSdFilesDraft((draft) => ({ ...draft, [role]: selection }));
-    await commitSdFile(role, selection);
-  };
-
-  const commitSdMainModel = async (rawPath: string) => {
-    const path = rawPath.trim();
-    if (!path) return;
-    const role: SdModelRole = path.toLowerCase().endsWith(".gguf")
-      ? "diffusionModel"
-      : "checkpoint";
-    const sibling: SdModelRole = role === "checkpoint" ? "diffusionModel" : "checkpoint";
+  const browseSdcppModelFile = async () => {
     try {
-      if (selectedSdEntry) {
-        const currentMain =
-          selectedSdEntry.files.checkpoint ?? selectedSdEntry.files.diffusionModel ?? "";
-        if (path === currentMain) return;
-        await sdSetModelFile(selectedSdEntry.id, role, path);
-        const siblingValue = (selectedSdEntry.files as Record<string, string | null | undefined>)[
-          sibling
-        ];
-        if (siblingValue) {
-          await sdSetModelFile(selectedSdEntry.id, sibling, null);
-        }
-        setSdEntries(null);
-        return;
-      }
-      const fallbackName =
-        editorModel?.displayName?.trim() ||
-        path.split(/[\\/]/).pop()?.replace(/\.(safetensors|gguf|ckpt|sft)$/i, "") ||
-        "Local model";
-      const entry = await sdImportModel(fallbackName, { [role]: path });
-      handleModelNameChange(entry.id);
+      const selected = await open({
+        multiple: false,
+        filters: [{ name: "GGUF Model", extensions: ["gguf"] }],
+      });
+      if (!selected || typeof selected !== "string") return;
+      handleSdcppModelPathChange(selected);
       if (!editorModel?.displayName?.trim()) {
-        handleDisplayNameChange(entry.name);
+        handleDisplayNameChange(deriveDisplayNameFromPath(selected));
       }
-      setSdEntries(null);
-    } catch (err: any) {
-      toast.error(
-        t("imageGeneration.local.updateFailed"),
-        typeof err === "string" ? err : err?.message || String(err),
-      );
+    } catch (error) {
+      console.error("Failed to browse for local image model", error);
     }
   };
 
-  const browseSdMainModel = async () => {
-    const selection = await open({
-      multiple: false,
-      filters: [
-        { name: t("editModel.localDiffusion.modelFilesFilter"), extensions: ["safetensors", "gguf", "ckpt", "sft"] },
-      ],
-    });
-    if (typeof selection !== "string") return;
-    setSdMainPathDraft(selection);
-    await commitSdMainModel(selection);
+  const browseSdcppComponentFile = async (
+    key: "sdcppTextEncoderPath" | "sdcppVaePath" | "sdcppVisionEncoderPath",
+  ) => {
+    try {
+      const selected = await open({
+        multiple: false,
+        filters: [
+          { name: t("editModel.sdcpp.componentFilesFilter"), extensions: ["gguf", "safetensors", "sft"] },
+        ],
+      });
+      if (!selected || typeof selected !== "string") return;
+      setModelAdvancedDraft({ ...modelAdvancedDraft, [key]: selected });
+    } catch (error) {
+      console.error("Failed to browse for local image component", error);
+    }
   };
 
   // Get reasoning support for the current provider
@@ -2239,7 +2109,7 @@ export function EditModelPage() {
   const activeDetailPanel = activePanel;
   const editorPanels: { key: EditorSectionKey; label: string }[] = [
     { key: "generation", label: t("editModel.sections.generation") },
-    ...(isLocalDiffusionModel || isSdcppModel
+    ...(isSdcppModel
       ? [{ key: "configuration" as const, label: t("editModel.sections.configuration") }]
       : []),
     ...(hasRuntimePanel
@@ -2547,7 +2417,7 @@ export function EditModelPage() {
   useEffect(() => {
     if (activePanel === "runtime" && !hasRuntimePanel) {
       setActivePanel(showReasoningSection ? "reasoning" : "generation");
-    } else if (activePanel === "configuration" && !isLocalDiffusionModel && !isSdcppModel) {
+    } else if (activePanel === "configuration" && !isSdcppModel) {
       setActivePanel("generation");
     } else if (activePanel === "reasoning" && !showReasoningSection) {
       setActivePanel(hasRuntimePanel ? "runtime" : "generation");
@@ -2557,7 +2427,6 @@ export function EditModelPage() {
   }, [
     activePanel,
     hasRuntimePanel,
-    isLocalDiffusionModel,
     isSdcppModel,
     showReasoningSection,
     showCachingSection,
@@ -2743,13 +2612,16 @@ export function EditModelPage() {
     enabled: boolean,
   ) => {
     if (!editorModel) return;
-    if (isFixedImageProvider) return;
+    if (scopesLocked) return;
     const current = new Set((editorModel as any)[key] ?? ["text"]);
     if (enabled) current.add(scope);
     else current.delete(scope);
     let next = scopeOrder.filter((s) => current.has(s));
     if (next.length === 0) next = ["text"];
     updateEditorModel({ [key]: next } as any);
+    if (isCustomSdcppModel && key === "inputScopes" && scope === "image") {
+      setModelAdvancedDraft({ ...modelAdvancedDraft, sdcppSupportsImageEdit: enabled });
+    }
   };
 
   const inferScopesFromFetchedModel = (model: (typeof fetchedModels)[number]) => {
@@ -3068,99 +2940,6 @@ export function EditModelPage() {
                         </div>
                       </FieldBlock>
                     </div>
-                  ) : isLocalDiffusionModel ? (
-                    <div className="grid items-start grid-cols-1 gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-                      <FieldBlock label={t("editModel.fields.displayName")}>
-                        <input
-                          type="text"
-                          value={editorModel.displayName}
-                          onChange={(e) => handleDisplayNameChange(e.target.value)}
-                          placeholder={t("editModel.placeholders.displayName")}
-                          className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-4 py-3 text-fg placeholder-fg/40 transition focus:border-fg/30 focus:outline-none"
-                        />
-                      </FieldBlock>
-
-                      <FieldBlock
-                        label={t("editModel.fields.localDiffusionModel")}
-                        action={
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => setShowSdModelPicker(true)}
-                              className="inline-flex items-center gap-1.5 rounded-md border border-fg/10 bg-fg/5 px-2.5 py-1.5 text-[12px] font-medium text-fg/68 transition hover:border-fg/20 hover:bg-fg/10 hover:text-fg"
-                            >
-                              <FolderOpen className="h-3.5 w-3.5 text-accent/70" />
-                              {t("hfBrowser.selectFromLibrary")}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => void browseSdMainModel()}
-                              className="rounded-md border border-fg/10 px-2.5 py-1.5 text-[12px] font-medium text-fg/65 transition hover:border-fg/20 hover:bg-fg/5 hover:text-fg/90"
-                            >
-                              {t("common.buttons.browseFiles")}
-                            </button>
-                          </div>
-                        }
-                      >
-                        <div className="space-y-3">
-                          <input
-                            type="text"
-                            value={sdMainPathDraft}
-                            onChange={(e) => setSdMainPathDraft(e.target.value)}
-                            onBlur={(e) => void commitSdMainModel(e.target.value)}
-                            placeholder={t("editModel.localDiffusion.pathPlaceholder")}
-                            className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-4 py-3 font-mono text-[13px] text-fg placeholder-fg/40 transition focus:border-fg/30 focus:outline-none"
-                          />
-                          <p className="text-[13px] leading-relaxed text-fg/45">
-                            {selectedSdEntry
-                              ? `${selectedSdEntry.name} · ${selectedSdEntry.family.toUpperCase()}${selectedSdEntry.totalBytes > 0 ? ` · ${formatBytes(selectedSdEntry.totalBytes)}` : ""}`
-                              : t("editModel.localDiffusion.idHelp")}
-                          </p>
-                          <BottomMenu
-                            isOpen={showSdModelPicker}
-                            onClose={() => setShowSdModelPicker(false)}
-                            title={t("editModel.localDiffusion.selectModel")}
-                          >
-                            <MenuSection>
-                              {!sdEntries || sdEntries.length === 0 ? (
-                                <div className="flex flex-col items-center gap-2 py-16 text-center">
-                                  <HardDrive size={32} className="text-fg/20" />
-                                  <p className="px-6 text-[13px] text-fg/40">
-                                    {t("imageGeneration.local.noModels")}
-                                  </p>
-                                </div>
-                              ) : (
-                                sdEntries
-                                  .filter((entry) => entry.complete)
-                                  .map((entry) => (
-                                    <MenuButton
-                                      key={entry.id}
-                                      icon={<HardDrive className="h-5 w-5 text-accent/60" />}
-                                      title={entry.name}
-                                      description={`${entry.family.toUpperCase()} · ${formatBytes(entry.totalBytes)}`}
-                                      color="from-accent/20 to-accent/10"
-                                      rightElement={
-                                        editorModel.name === entry.id ? (
-                                          <Check className="h-4 w-4 text-accent" />
-                                        ) : (
-                                          <ArrowRight className="h-4 w-4 text-fg/20" />
-                                        )
-                                      }
-                                      onClick={() => {
-                                        handleModelNameChange(entry.id);
-                                        if (!editorModel.displayName?.trim()) {
-                                          handleDisplayNameChange(entry.name);
-                                        }
-                                        setShowSdModelPicker(false);
-                                      }}
-                                    />
-                                  ))
-                              )}
-                            </MenuSection>
-                          </BottomMenu>
-                        </div>
-                      </FieldBlock>
-                    </div>
                   ) : isSdcppModel ? (
                     <div className="grid items-start grid-cols-1 gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
                       <FieldBlock label={t("editModel.fields.displayName")}>
@@ -3173,25 +2952,40 @@ export function EditModelPage() {
                         />
                       </FieldBlock>
 
-                      <FieldBlock label={modelIdLabel}>
-                        <div className="space-y-3">
-                          <button
-                            type="button"
-                            onClick={() => setShowSdcppModelPicker(true)}
-                            className="flex w-full items-center justify-between rounded-lg border border-fg/10 bg-surface-el/20 px-4 py-3 text-left transition hover:bg-surface-el/30"
-                          >
-                            <span
-                              className={cn(
-                                "truncate font-mono text-[13px]",
-                                editorModel.name ? "text-fg/85" : "text-fg/40",
-                              )}
+                      <FieldBlock
+                        label={t("editModel.fields.modelPath")}
+                        action={
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setShowSdcppModelPicker(true)}
+                              className="inline-flex items-center gap-1.5 rounded-md border border-fg/10 bg-fg/5 px-2.5 py-1.5 text-[12px] font-medium text-fg/68 transition hover:border-fg/20 hover:bg-fg/10 hover:text-fg"
                             >
-                              {editorModel.name || t("editModel.setup.sdcppSelectModel")}
-                            </span>
-                            <ChevronDown className="h-4 w-4 shrink-0 text-fg/40" />
-                          </button>
+                              <FolderOpen className="h-3.5 w-3.5 text-accent/70" />
+                              {t("editModel.setup.sdcppSelectModel")}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void browseSdcppModelFile()}
+                              className="rounded-md border border-fg/10 px-2.5 py-1.5 text-[12px] font-medium text-fg/65 transition hover:border-fg/20 hover:bg-fg/5 hover:text-fg/90"
+                            >
+                              {t("common.buttons.browseFiles")}
+                            </button>
+                          </div>
+                        }
+                      >
+                        <div className="space-y-3">
+                          <input
+                            type="text"
+                            value={editorModel.name}
+                            onChange={(e) => handleSdcppModelPathChange(e.target.value)}
+                            placeholder={t("editModel.placeholders.modelPath")}
+                            className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-4 py-3 font-mono text-[13px] text-fg placeholder-fg/40 transition focus:border-fg/30 focus:outline-none"
+                          />
                           <p className="text-[13px] leading-relaxed text-fg/45">
-                            {t("editModel.setup.sdcppManaged")}
+                            {selectedSdcppEntry
+                              ? t("editModel.setup.sdcppManaged")
+                              : t("editModel.setup.sdcppCustomHelp")}
                           </p>
 
                           <BottomMenu
@@ -3208,30 +3002,27 @@ export function EditModelPage() {
                                   </p>
                                 </div>
                               ) : (
-                                sdcppInstalled.map((entry) => {
-                                  const entryName = `sdcpp:${entry.profileId}:${entry.variantId}`;
-                                  return (
-                                    <MenuButton
-                                      key={entryName}
-                                      icon={<HardDrive className="h-5 w-5 text-accent/60" />}
-                                      title={entry.displayName}
-                                      description={`${
-                                        entry.runtimeBackend
-                                          ? `${entry.runtimeBackend.toUpperCase()} · `
-                                          : ""
-                                      }${formatBytes(entry.componentBytesOnDisk)}`}
-                                      color="from-accent/20 to-accent/10"
-                                      rightElement={
-                                        editorModel.name === entryName ? (
-                                          <Check className="h-4 w-4 text-accent" />
-                                        ) : (
-                                          <ArrowRight className="h-4 w-4 text-fg/20" />
-                                        )
-                                      }
-                                      onClick={() => selectSdcppModel(entry)}
-                                    />
-                                  );
-                                })
+                                sdcppInstalled.map((entry) => (
+                                  <MenuButton
+                                    key={entry.modelPath}
+                                    icon={<HardDrive className="h-5 w-5 text-accent/60" />}
+                                    title={entry.displayName}
+                                    description={`${
+                                      entry.runtimeBackend
+                                        ? `${entry.runtimeBackend.toUpperCase()} · `
+                                        : ""
+                                    }${formatBytes(entry.componentBytesOnDisk)}`}
+                                    color="from-accent/20 to-accent/10"
+                                    rightElement={
+                                      editorModel.name === entry.modelPath ? (
+                                        <Check className="h-4 w-4 text-accent" />
+                                      ) : (
+                                        <ArrowRight className="h-4 w-4 text-fg/20" />
+                                      )
+                                    }
+                                    onClick={() => selectSdcppModel(entry)}
+                                  />
+                                ))
                               )}
                             </MenuSection>
                           </BottomMenu>
@@ -3781,7 +3572,7 @@ export function EditModelPage() {
                             {isFixedImageProvider ? (
                               <div className="space-y-5">
                                 <div className="text-[13px] leading-relaxed text-fg/55">
-                                  {isSdcppModel || isLocalDiffusionModel
+                                  {isSdcppModel
                                     ? t("editModel.generation.localDiffusionHelp")
                                     : t("editModel.generation.automatic1111Help")}
                                 </div>
@@ -4159,60 +3950,6 @@ export function EditModelPage() {
                                     </div>
                                 ) : null}
 
-                                {isLocalDiffusionModel ? (
-                                  <div className="space-y-4">
-                                    <div className="space-y-0.5">
-                                      <span className="block text-[13px] font-medium text-fg/70">
-                                        {t("editModel.generationDescriptions.sdOffloadTitle")}
-                                      </span>
-                                      <span className="block text-[13px] text-fg/40">
-                                        {t("editModel.generationDescriptions.sdOffloadMode")}
-                                      </span>
-                                    </div>
-                                    <div className="grid grid-cols-3 gap-2">
-                                      {(
-                                        [
-                                          ["auto", t("editModel.sdOffload.auto"), t("editModel.sdOffload.autoHint")],
-                                          ["gpu", t("editModel.sdOffload.gpu"), t("editModel.sdOffload.gpuHint")],
-                                          ["mixed", t("editModel.sdOffload.mixed"), t("editModel.sdOffload.mixedHint")],
-                                        ] as const
-                                      ).map(([value, label, hint]) => {
-                                        const active =
-                                          (modelAdvancedDraft.sdOffloadMode ?? "auto") === value;
-                                        return (
-                                          <button
-                                            key={value}
-                                            type="button"
-                                            onClick={() =>
-                                              updateSdSetting(
-                                                "sdOffloadMode",
-                                                value === "auto" ? null : value,
-                                              )
-                                            }
-                                            className={cn(
-                                              "rounded-lg border px-3 py-2.5 text-left transition",
-                                              active
-                                                ? "border-accent/30 bg-accent/10"
-                                                : "border-fg/10 bg-fg/5 hover:border-fg/20 hover:bg-fg/8",
-                                            )}
-                                          >
-                                            <span
-                                              className={cn(
-                                                "block text-[13px] font-medium",
-                                                active ? "text-accent" : "text-fg/70",
-                                              )}
-                                            >
-                                              {label}
-                                            </span>
-                                            <span className="mt-0.5 block text-[12px] leading-snug text-fg/40">
-                                              {hint}
-                                            </span>
-                                          </button>
-                                        );
-                                      })}
-                                    </div>
-                                  </div>
-                                ) : null}
                               </div>
                             ) : (
                               <div className="grid grid-cols-1 gap-x-6 gap-y-8 md:grid-cols-2 xl:grid-cols-3 xl:gap-x-8">
@@ -5030,6 +4767,69 @@ export function EditModelPage() {
                         {activeDetailPanel === "configuration" && isSdcppModel && (
                           <div className="space-y-10">
                             <section className="space-y-4">
+                              <div className="space-y-1">
+                                <h3 className="text-[13px] font-semibold text-fg/82">
+                                  {t("editModel.sdcpp.modelFiles")}
+                                </h3>
+                                <p className="max-w-2xl text-[13px] leading-relaxed text-fg/45">
+                                  {t("editModel.sdcpp.modelFilesDescription")}
+                                </p>
+                              </div>
+                              <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                                {(
+                                  [
+                                    ["sdcppTextEncoderPath", t("editModel.sdcpp.textEncoder"), true],
+                                    ["sdcppVaePath", t("editModel.sdcpp.vae"), true],
+                                    ["sdcppVisionEncoderPath", t("editModel.sdcpp.visionEncoder"), false],
+                                  ] as Array<
+                                    [
+                                      "sdcppTextEncoderPath" | "sdcppVaePath" | "sdcppVisionEncoderPath",
+                                      string,
+                                      boolean,
+                                    ]
+                                  >
+                                ).map(([key, label, required]) => (
+                                  <FieldBlock
+                                    key={key}
+                                    label={
+                                      required
+                                        ? label
+                                        : `${label} (${t("editModel.sdcpp.optionalFile")})`
+                                    }
+                                    action={
+                                      <button
+                                        type="button"
+                                        onClick={() => void browseSdcppComponentFile(key)}
+                                        className="rounded-md border border-fg/10 px-2.5 py-1.5 text-[12px] font-medium text-fg/65 transition hover:border-fg/20 hover:bg-fg/5 hover:text-fg/90"
+                                      >
+                                        {t("common.buttons.browseFiles")}
+                                      </button>
+                                    }
+                                  >
+                                    <input
+                                      type="text"
+                                      value={modelAdvancedDraft[key] ?? ""}
+                                      onChange={(e) =>
+                                        setModelAdvancedDraft({
+                                          ...modelAdvancedDraft,
+                                          [key]: e.target.value || null,
+                                        })
+                                      }
+                                      placeholder={t("editModel.placeholders.modelPath")}
+                                      className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-4 py-3 font-mono text-[13px] text-fg placeholder-fg/40 transition focus:border-fg/30 focus:outline-none"
+                                    />
+                                  </FieldBlock>
+                                ))}
+                              </div>
+                              {!modelAdvancedDraft.sdcppTextEncoderPath?.trim() ||
+                              !modelAdvancedDraft.sdcppVaePath?.trim() ? (
+                                <p className="text-[12px] leading-relaxed text-warning/80">
+                                  {t("editModel.sdcpp.modelFilesIncomplete")}
+                                </p>
+                              ) : null}
+                            </section>
+
+                            <section className="space-y-4">
                               <div className="flex items-start justify-between gap-4">
                                 <div className="space-y-1">
                                   <h3 className="text-[13px] font-semibold text-fg/82">
@@ -5322,122 +5122,6 @@ export function EditModelPage() {
                                     : t("common.buttons.save")}
                                 </button>
                               </div>
-                            </BottomMenu>
-                          </div>
-                        )}
-
-                        {/* Local llama.cpp Settings */}
-                        {activeDetailPanel === "configuration" && isLocalDiffusionModel && (
-                          <div className="space-y-6">
-                            <p className="text-[13px] leading-relaxed text-fg/55">
-                              {t("editModel.localDiffusion.configurationHelp")}
-                            </p>
-                            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-                              {(
-                                [
-                                  ["checkpoint", t("imageGeneration.local.roles.checkpoint")],
-                                  ["diffusionModel", t("imageGeneration.local.roles.diffusionModel")],
-                                  ["clipL", t("imageGeneration.local.roles.clipL")],
-                                  ["clipG", t("imageGeneration.local.roles.clipG")],
-                                  ["t5xxl", t("imageGeneration.local.roles.t5xxl")],
-                                  ["llm", t("imageGeneration.local.roles.llm")],
-                                  ["llmVision", t("imageGeneration.local.roles.llmVision")],
-                                  ["vae", t("imageGeneration.local.roles.vae")],
-                                ] as Array<[SdModelRole, string]>
-                              ).map(([role, label]) => (
-                                <FieldBlock
-                                  key={role}
-                                  label={label}
-                                  action={
-                                    <div className="flex items-center gap-2">
-                                      <button
-                                        type="button"
-                                        onClick={() => setSdLibraryRole(role)}
-                                        className="inline-flex items-center gap-1.5 rounded-md border border-fg/10 bg-fg/5 px-2.5 py-1.5 text-[12px] font-medium text-fg/68 transition hover:border-fg/20 hover:bg-fg/10 hover:text-fg"
-                                      >
-                                        <FolderOpen className="h-3.5 w-3.5 text-accent/70" />
-                                        {t("hfBrowser.selectFromLibrary")}
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => void browseSdFile(role)}
-                                        className="rounded-md border border-fg/10 px-2.5 py-1.5 text-[12px] font-medium text-fg/65 transition hover:border-fg/20 hover:bg-fg/5 hover:text-fg/90"
-                                      >
-                                        {t("common.buttons.browseFiles")}
-                                      </button>
-                                    </div>
-                                  }
-                                >
-                                  <input
-                                    type="text"
-                                    value={sdFilesDraft[role] ?? ""}
-                                    onChange={(e) =>
-                                      setSdFilesDraft((draft) => ({
-                                        ...draft,
-                                        [role]: e.target.value,
-                                      }))
-                                    }
-                                    onBlur={(e) => void commitSdFile(role, e.target.value)}
-                                    placeholder={t("editModel.localDiffusion.pathPlaceholder")}
-                                    className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-4 py-3 font-mono text-[13px] text-fg placeholder-fg/40 transition focus:border-fg/30 focus:outline-none"
-                                  />
-                                </FieldBlock>
-                              ))}
-                            </div>
-                            {selectedSdEntry && !selectedSdEntry.complete ? (
-                              <p className="text-[12px] leading-relaxed text-warning/80">
-                                {t("imageGeneration.local.missingFiles")}
-                              </p>
-                            ) : null}
-
-                            <BottomMenu
-                              isOpen={sdLibraryRole !== null}
-                              onClose={() => setSdLibraryRole(null)}
-                              title={t("hfBrowser.selectFromLibrary")}
-                            >
-                              <MenuSection>
-                                {!sdLibraryFiles ? (
-                                  <div className="flex items-center justify-center gap-2 py-12 text-fg/50">
-                                    <Loader size={18} className="animate-spin" />
-                                    <span className="text-[13px]">{t("hfBrowser.searching")}</span>
-                                  </div>
-                                ) : sdLibraryFiles.length === 0 ? (
-                                  <div className="flex flex-col items-center gap-2 py-16 text-center">
-                                    <HardDrive size={32} className="text-fg/20" />
-                                    <p className="text-[13px] font-medium text-fg/60">
-                                      {t("hfBrowser.libraryEmpty")}
-                                    </p>
-                                  </div>
-                                ) : (
-                                  sdLibraryFiles.map((file) => (
-                                    <MenuButton
-                                      key={file.path}
-                                      icon={<HardDrive className="h-5 w-5 text-accent/60" />}
-                                      title={file.filename}
-                                      description={formatBytes(file.size)}
-                                      color="from-accent/20 to-accent/10"
-                                      rightElement={
-                                        sdLibraryRole !== null &&
-                                        sdFilesDraft[sdLibraryRole] === file.path ? (
-                                          <Check className="h-4 w-4 text-accent" />
-                                        ) : (
-                                          <ArrowRight className="h-4 w-4 text-fg/20" />
-                                        )
-                                      }
-                                      onClick={() => {
-                                        const role = sdLibraryRole;
-                                        setSdLibraryRole(null);
-                                        if (!role) return;
-                                        setSdFilesDraft((draft) => ({
-                                          ...draft,
-                                          [role]: file.path,
-                                        }));
-                                        void commitSdFile(role, file.path);
-                                      }}
-                                    />
-                                  ))
-                                )}
-                              </MenuSection>
                             </BottomMenu>
                           </div>
                         )}
@@ -7674,7 +7358,7 @@ export function EditModelPage() {
                                   <button
                                     key={scope}
                                     type="button"
-                                    disabled={isFixedImageProvider}
+                                    disabled={scopesLocked}
                                     onClick={() =>
                                       toggleScope(
                                         "inputScopes",
@@ -7684,7 +7368,7 @@ export function EditModelPage() {
                                     }
                                     className={cn(
                                       "flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-[13px] transition",
-                                      isFixedImageProvider && "cursor-not-allowed opacity-60",
+                                      scopesLocked && "cursor-not-allowed opacity-60",
                                       editorModel.inputScopes?.includes(scope as any)
                                         ? "border-accent/25 bg-accent/10 text-accent"
                                         : "border-fg/10 bg-fg/5 text-fg/55 hover:border-fg/20 hover:bg-fg/8 hover:text-fg/85",
@@ -7706,7 +7390,7 @@ export function EditModelPage() {
                                   <button
                                     key={scope}
                                     type="button"
-                                    disabled={isFixedImageProvider}
+                                    disabled={scopesLocked}
                                     onClick={() =>
                                       toggleScope(
                                         "outputScopes",
@@ -7716,7 +7400,7 @@ export function EditModelPage() {
                                     }
                                     className={cn(
                                       "flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-[13px] transition",
-                                      isFixedImageProvider && "cursor-not-allowed opacity-60",
+                                      scopesLocked && "cursor-not-allowed opacity-60",
                                       editorModel.outputScopes?.includes(scope as any)
                                         ? "border-accent/25 bg-accent/10 text-accent"
                                         : "border-fg/10 bg-fg/5 text-fg/55 hover:border-fg/20 hover:bg-fg/8 hover:text-fg/85",
@@ -7730,9 +7414,9 @@ export function EditModelPage() {
                                 ))}
                               </div>
                             </div>
-                            {isFixedImageProvider && (
+                            {scopesLocked && (
                               <p className="text-[12px] leading-relaxed text-fg/45">
-                                {isSdcppModel || isLocalDiffusionModel
+                                {isSdcppModel
                                   ? t("editModel.capabilities.localDiffusionFixed")
                                   : t("editModel.capabilities.automatic1111Fixed")}
                               </p>

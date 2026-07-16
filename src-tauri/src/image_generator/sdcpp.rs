@@ -1397,6 +1397,40 @@ fn estimate_components(profile: &ProfileSpec, variant: &VariantSpec) -> Vec<Esti
     ]
 }
 
+fn estimate_components_from_paths(
+    diffusion: &Path,
+    text_encoder: Option<&Path>,
+    vae: Option<&Path>,
+    vision_encoder: Option<&Path>,
+) -> Vec<EstimateComponent> {
+    let file_bytes = |path: Option<&Path>| {
+        path.and_then(|path| std::fs::metadata(path).ok())
+            .map(|metadata| metadata.len())
+            .unwrap_or(0)
+    };
+    let conditioner_bytes = file_bytes(text_encoder).saturating_add(file_bytes(vision_encoder));
+    vec![
+        EstimateComponent {
+            name: "DiT",
+            params_bytes: file_bytes(Some(diffusion)),
+            compute_reserve_bytes: SDCPP_AUTO_FIT_DIT_RESERVE_BYTES,
+            splittable: true,
+        },
+        EstimateComponent {
+            name: "VAE",
+            params_bytes: file_bytes(vae),
+            compute_reserve_bytes: SDCPP_AUTO_FIT_VAE_RESERVE_BYTES,
+            splittable: false,
+        },
+        EstimateComponent {
+            name: "Conditioner",
+            params_bytes: conditioner_bytes,
+            compute_reserve_bytes: SDCPP_AUTO_FIT_CONDITIONER_RESERVE_BYTES,
+            splittable: true,
+        },
+    ]
+}
+
 fn compute_auto_fit_estimate(
     components: &[EstimateComponent],
     devices: Vec<RunnabilityDevice>,
@@ -2015,11 +2049,19 @@ pub async fn sdcpp_runnability(
         );
     }
 
+    let (diffusion, text_encoder, vae, vision_encoder) =
+        catalog_component_paths(&app, profile, variant)?;
     let config = InstalledModelConfig {
-        sdcpp_profile_id: profile.id.to_string(),
-        sdcpp_variant_id: variant.id.to_string(),
+        diffusion_model_path: diffusion,
+        text_encoder_path: text_encoder,
+        vae_path: vae,
+        vision_encoder_path: vision_encoder,
+        profile_id: Some(profile.id.to_string()),
         sdcpp_runtime_release: request.runtime_release,
         sdcpp_runtime_asset: request.runtime_asset,
+        max_reference_images: profile.max_reference_images,
+        requires_reference_image: profile.requires_reference_image,
+        display_name: installed_display_name(profile, variant),
     };
     let automatic_placement =
         !compute_policy.multi_gpu_enabled && compute_policy.single_gpu_device_id.is_none();
@@ -2029,7 +2071,7 @@ pub async fn sdcpp_runnability(
         "sdCppConfiguredPolicy"
     };
     let started = Instant::now();
-    let base_url = match ensure_server(&app, &config, profile, variant).await {
+    let base_url = match ensure_server(&app, &config).await {
         Ok(base_url) => base_url,
         Err(error) => {
             return Ok(Runnability {
@@ -2583,6 +2625,38 @@ pub async fn sdcpp_installed(app: AppHandle) -> Result<Vec<InstalledModel>, Stri
         return Err("Local stable-diffusion.cpp image generation is desktop-only.".to_string());
     }
     use rusqlite::OptionalExtension;
+    if let Some((release, asset)) = detect_engine_build(&app) {
+        let missing: Vec<(&'static ProfileSpec, &'static VariantSpec)> = {
+            let conn = crate::storage_manager::db::open_db(&app)?;
+            let mut missing = Vec::new();
+            for profile in PROFILES {
+                for variant in profile.variants {
+                    if !is_variant_installed(&app, profile, variant, None, None) {
+                        continue;
+                    }
+                    let Ok(path) = selected_component_path(&app, profile, variant, "diffusion_model") else {
+                        continue;
+                    };
+                    let registered = conn
+                        .query_row(
+                            "SELECT id FROM models WHERE provider_id = ?1 AND name = ?2 LIMIT 1",
+                            rusqlite::params![PROVIDER_ID, path.to_string_lossy().to_string()],
+                            |row| row.get::<_, String>(0),
+                        )
+                        .optional()
+                        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+                    if registered.is_none() {
+                        missing.push((profile, variant));
+                    }
+                }
+            }
+            missing
+        };
+        for (profile, variant) in missing {
+            register_installed_model(&app, profile, variant, &release, &asset)?;
+        }
+    }
+    purge_legacy_model_rows(&app)?;
     let conn = crate::storage_manager::db::open_db(&app)?;
     let mut installed = Vec::new();
     for profile in PROFILES {
@@ -2614,11 +2688,10 @@ pub async fn sdcpp_installed(app: AppHandle) -> Result<Vec<InstalledModel>, Stri
                 .find(|component| component.role == "diffusion_model")
                 .map(|component| component.path.clone())
                 .unwrap_or_default();
-            let model_name = format!("sdcpp:{}:{}", profile.id, variant.id);
             let row = conn
                 .query_row(
                     "SELECT id, advanced_model_settings FROM models WHERE provider_id = ?1 AND name = ?2 LIMIT 1",
-                    rusqlite::params![PROVIDER_ID, &model_name],
+                    rusqlite::params![PROVIDER_ID, &model_path],
                     |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
                 )
                 .optional()
@@ -3514,7 +3587,9 @@ pub async fn sdcpp_repair_registration(
     let (runtime_release, runtime_asset) = detect_engine_build(&app)
         .ok_or_else(|| "No complete stable-diffusion.cpp engine build is installed.".to_string())?;
     register_installed_model(&app, profile, variant, &runtime_release, &runtime_asset)?;
-    let model_name = format!("sdcpp:{}:{}", profile.id, variant.id);
+    let model_name = selected_component_path(&app, profile, variant, "diffusion_model")?
+        .to_string_lossy()
+        .to_string();
     installed_model_id(&app, &model_name)?
         .ok_or_else(|| "The model was registered but could not be read back.".to_string())
 }
@@ -3565,17 +3640,32 @@ pub async fn sdcpp_uninstall(
         }
     }
 
-    let model_name = format!("sdcpp:{}:{}", profile.id, variant.id);
+    let model_name = selected_component_path(&app, profile, variant, "diffusion_model")?
+        .to_string_lossy()
+        .to_string();
+    let legacy_name = format!("sdcpp:{}:{}", profile.id, variant.id);
     let row = {
         use rusqlite::OptionalExtension;
         let conn = crate::storage_manager::db::open_db(&app)?;
-        conn.query_row(
-            "SELECT id, advanced_model_settings FROM models WHERE provider_id = ?1 AND name = ?2 LIMIT 1",
-            rusqlite::params![PROVIDER_ID, &model_name],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
-        )
-        .optional()
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
+        let mut row = conn
+            .query_row(
+                "SELECT id, advanced_model_settings FROM models WHERE provider_id = ?1 AND name = ?2 LIMIT 1",
+                rusqlite::params![PROVIDER_ID, &model_name],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
+            )
+            .optional()
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        if row.is_none() {
+            row = conn
+                .query_row(
+                    "SELECT id, advanced_model_settings FROM models WHERE provider_id = ?1 AND name = ?2 LIMIT 1",
+                    rusqlite::params![PROVIDER_ID, &legacy_name],
+                    |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
+                )
+                .optional()
+                .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        }
+        row
     };
     let (model_id, target_release, target_asset) = match row {
         Some((id, advanced)) => {
@@ -3611,8 +3701,9 @@ pub async fn sdcpp_uninstall(
     if options.also_remove_engine_if_unused == Some(true) {
         if let (Some(release), Some(asset)) = (target_release.as_deref(), target_asset.as_deref()) {
             let still_used = survivors.iter().any(|(candidate, v)| {
-                let name = format!("sdcpp:{}:{}", candidate.id, v.id);
-                installed_model_config(&app, &name)
+                selected_component_path(&app, candidate, v, "diffusion_model")
+                    .map(|path| path.to_string_lossy().to_string())
+                    .and_then(|name| installed_model_config(&app, &name))
                     .map(|config| {
                         config.sdcpp_runtime_release == release
                             && config.sdcpp_runtime_asset == asset
@@ -3835,13 +3926,31 @@ async fn run_probe_job(base_url: &str, payload: Value) -> Result<(), ProbeJobErr
     ))
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+struct StoredModelConfig {
+    sdcpp_profile_id: Option<String>,
+    sdcpp_runtime_release: Option<String>,
+    sdcpp_runtime_asset: Option<String>,
+    sdcpp_text_encoder_path: Option<String>,
+    sdcpp_vae_path: Option<String>,
+    sdcpp_vision_encoder_path: Option<String>,
+    sdcpp_max_reference_images: Option<u8>,
+    sdcpp_requires_reference_image: Option<bool>,
+}
+
+#[derive(Debug)]
 struct InstalledModelConfig {
-    sdcpp_profile_id: String,
-    sdcpp_variant_id: String,
+    diffusion_model_path: String,
+    text_encoder_path: Option<String>,
+    vae_path: Option<String>,
+    vision_encoder_path: Option<String>,
+    profile_id: Option<String>,
     sdcpp_runtime_release: String,
     sdcpp_runtime_asset: String,
+    max_reference_images: Option<u8>,
+    requires_reference_image: bool,
+    display_name: String,
 }
 
 fn installed_model_config(
@@ -3850,24 +3959,55 @@ fn installed_model_config(
 ) -> Result<InstalledModelConfig, String> {
     use rusqlite::OptionalExtension;
 
+    if model_name.starts_with("sdcpp:") {
+        return Err(format!(
+            "This local image model uses an outdated registration. Open the Local Image Generation settings page to refresh it: {}",
+            model_name
+        ));
+    }
     let conn = crate::storage_manager::db::open_db(app)?;
-    let advanced = conn
+    let (display_name, advanced) = conn
         .query_row(
-            "SELECT advanced_model_settings FROM models WHERE provider_id = ?1 AND name = ?2 LIMIT 1",
+            "SELECT display_name, advanced_model_settings FROM models WHERE provider_id = ?1 AND name = ?2 LIMIT 1",
             rusqlite::params![PROVIDER_ID, model_name],
-            |row| row.get::<_, Option<String>>(0),
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
         )
         .optional()
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
-        .flatten()
         .ok_or_else(|| format!("Local image model is not installed: {}", model_name))?;
-    let mut config = serde_json::from_str::<InstalledModelConfig>(&advanced)
-        .map_err(|e| format!("Local image model has invalid runtime settings: {}", e))?;
-    if let Some(active) = effective_active_runtime(app, &installed_runtimes(app)?) {
-        config.sdcpp_runtime_release = active.release;
-        config.sdcpp_runtime_asset = active.asset;
-    }
-    Ok(config)
+    let stored = advanced
+        .as_deref()
+        .map(|raw| {
+            serde_json::from_str::<StoredModelConfig>(raw)
+                .map_err(|e| format!("Local image model has invalid runtime settings: {}", e))
+        })
+        .transpose()?
+        .unwrap_or_default();
+    let (runtime_release, runtime_asset) =
+        match effective_active_runtime(app, &installed_runtimes(app)?) {
+            Some(active) => (active.release, active.asset),
+            None => match (stored.sdcpp_runtime_release, stored.sdcpp_runtime_asset) {
+                (Some(release), Some(asset)) => (release, asset),
+                _ => {
+                    return Err(
+                        "No stable-diffusion.cpp engine build is installed. Install an engine in the Local Image Generation settings first."
+                            .to_string(),
+                    )
+                }
+            },
+        };
+    Ok(InstalledModelConfig {
+        diffusion_model_path: model_name.trim().to_string(),
+        text_encoder_path: stored.sdcpp_text_encoder_path,
+        vae_path: stored.sdcpp_vae_path,
+        vision_encoder_path: stored.sdcpp_vision_encoder_path,
+        profile_id: stored.sdcpp_profile_id,
+        sdcpp_runtime_release: runtime_release,
+        sdcpp_runtime_asset: runtime_asset,
+        max_reference_images: stored.sdcpp_max_reference_images,
+        requires_reference_image: stored.sdcpp_requires_reference_image.unwrap_or(false),
+        display_name,
+    })
 }
 
 fn installed_model_advanced_settings(
@@ -3920,13 +4060,14 @@ async fn find_available_port() -> Result<u16, String> {
         .map_err(|e| format!("Failed to read the local image server port: {}", e))
 }
 
-async fn ensure_server(
-    app: &AppHandle,
-    config: &InstalledModelConfig,
-    profile: &ProfileSpec,
-    variant: &VariantSpec,
-) -> Result<String, String> {
-    ensure_runtime_supports_profile(profile, &config.sdcpp_runtime_release)?;
+async fn ensure_server(app: &AppHandle, config: &InstalledModelConfig) -> Result<String, String> {
+    if let Some(profile) = config
+        .profile_id
+        .as_deref()
+        .and_then(|id| PROFILES.iter().find(|profile| profile.id == id))
+    {
+        ensure_runtime_supports_profile(profile, &config.sdcpp_runtime_release)?;
+    }
     let compute_policy = load_compute_policy(
         app,
         &config.sdcpp_runtime_release,
@@ -3934,14 +4075,16 @@ async fn ensure_server(
     );
     let policy_key = serde_json::to_string(&compute_policy)
         .map_err(|error| format!("Failed to fingerprint the compute policy: {error}"))?;
-    let key = format!(
-        "{}:{}:{}:{}:{}",
-        profile.id,
-        variant.id,
-        config.sdcpp_runtime_release,
-        config.sdcpp_runtime_asset,
-        policy_key
-    );
+    let key = [
+        config.diffusion_model_path.as_str(),
+        config.text_encoder_path.as_deref().unwrap_or(""),
+        config.vae_path.as_deref().unwrap_or(""),
+        config.vision_encoder_path.as_deref().unwrap_or(""),
+        config.sdcpp_runtime_release.as_str(),
+        config.sdcpp_runtime_asset.as_str(),
+        policy_key.as_str(),
+    ]
+    .join("|");
     let mut managed = MANAGED_SERVER.lock().await;
     if let Some(server) = managed.as_mut() {
         if server.key == key && server.child.try_wait().ok().flatten().is_none() {
@@ -3976,23 +4119,47 @@ async fn ensure_server(
         &compute_policy,
     )
     .await?;
-    let manual_estimate = (!resolved_policy.automatic).then(|| {
-        compute_auto_fit_estimate(
-            &estimate_components(profile, variant),
-            resolved_policy.effective_devices.clone(),
-            crate::llama_cpp::available_memory_bytes(),
-            "configuredEnginePolicy",
-        )
-    });
-    let diffusion = selected_component_path(app, profile, variant, "diffusion_model")?;
-    let text_encoder = selected_component_path(app, profile, variant, "text_encoder")?;
-    let vae = selected_component_path(app, profile, variant, "vae")?;
-    let vision_encoder = all_components(profile, variant)
+    let diffusion = PathBuf::from(config.diffusion_model_path.trim());
+    let text_encoder = config
+        .text_encoder_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
+        .ok_or_else(|| {
+            format!(
+                "{} is not fully configured: set the text encoder file in the model editor first.",
+                config.display_name
+            )
+        })?;
+    let vae = config
+        .vae_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
+        .ok_or_else(|| {
+            format!(
+                "{} is not fully configured: set the VAE file in the model editor first.",
+                config.display_name
+            )
+        })?;
+    let vision_encoder = config
+        .vision_encoder_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from);
+    if !diffusion.is_file() {
+        return Err(format!(
+            "Local image model file not found: {}",
+            diffusion.display()
+        ));
+    }
+    for path in [Some(&text_encoder), Some(&vae), vision_encoder.as_ref()]
         .into_iter()
-        .find(|component| component.role == "vision_encoder")
-        .map(|component| component_path(app, component))
-        .transpose()?;
-    for path in [&diffusion, &text_encoder, &vae] {
+        .flatten()
+    {
         if !path.is_file() {
             return Err(format!(
                 "Local image component is missing: {}",
@@ -4000,6 +4167,19 @@ async fn ensure_server(
             ));
         }
     }
+    let manual_estimate = (!resolved_policy.automatic).then(|| {
+        compute_auto_fit_estimate(
+            &estimate_components_from_paths(
+                &diffusion,
+                Some(&text_encoder),
+                Some(&vae),
+                vision_encoder.as_deref(),
+            ),
+            resolved_policy.effective_devices.clone(),
+            crate::llama_cpp::available_memory_bytes(),
+            "configuredEnginePolicy",
+        )
+    });
 
     let port = find_available_port().await?;
     let runtime_dir = runtime_root(
@@ -4015,10 +4195,6 @@ async fn ensure_server(
         .current_dir(&runtime_dir)
         .arg("--diffusion-model")
         .arg(&diffusion)
-        .arg("--llm")
-        .arg(&text_encoder)
-        .arg("--vae")
-        .arg(&vae)
         .arg("--lora-model-dir")
         .arg(&lora_dir)
         .arg("--listen-ip")
@@ -4029,6 +4205,8 @@ async fn ensure_server(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
+    command.arg("--llm").arg(&text_encoder);
+    command.arg("--vae").arg(&vae);
     if let Some(estimate) = &manual_estimate {
         let (backend_spec, params_backend_spec) = manual_backend_specs(estimate);
         command.arg("--backend").arg(backend_spec);
@@ -4124,21 +4302,23 @@ pub async fn generate(
     }
     let config = installed_model_config(app, &request.model)?;
     let model_settings = installed_model_advanced_settings(app, &request.model)?;
-    let (profile, variant) =
-        find_profile_variant(&config.sdcpp_profile_id, &config.sdcpp_variant_id)?;
+    let profile = config
+        .profile_id
+        .as_deref()
+        .and_then(|id| PROFILES.iter().find(|profile| profile.id == id));
     let references = request.input_images.clone().unwrap_or_default();
-    if let Some(maximum) = profile.max_reference_images {
+    if let Some(maximum) = config.max_reference_images {
         if references.len() > maximum as usize {
             return Err(format!(
                 "{} accepts at most {} reference images.",
-                profile.display_name, maximum
+                config.display_name, maximum
             ));
         }
     }
-    if profile.requires_reference_image && references.is_empty() {
+    if config.requires_reference_image && references.is_empty() {
         return Err(format!(
             "{} requires at least one reference image.",
-            profile.display_name
+            config.display_name
         ));
     }
     let (width, height) = super::provider_adapter::parse_size_dimensions(
@@ -4148,16 +4328,16 @@ pub async fn generate(
                 .as_ref()
                 .and_then(|settings| settings.sd_size.as_deref())
         }),
-        profile.default_width,
-        profile.default_height,
+        profile.map(|profile| profile.default_width).unwrap_or(1024),
+        profile.map(|profile| profile.default_height).unwrap_or(1024),
     );
     let settings = request.advanced_model_settings.as_ref();
     let steps = settings
         .and_then(|settings| settings.sd_steps)
-        .unwrap_or(profile.default_steps as u32);
+        .unwrap_or(profile.map(|profile| profile.default_steps as u32).unwrap_or(20));
     let cfg = settings
         .and_then(|settings| settings.sd_cfg_scale)
-        .unwrap_or(profile.default_cfg as f64);
+        .unwrap_or(profile.map(|profile| profile.default_cfg as f64).unwrap_or(7.0));
     let negative_prompt = settings
         .and_then(|settings| settings.sd_negative_prompt.clone())
         .unwrap_or_default();
@@ -4202,7 +4382,7 @@ pub async fn generate(
             lora_summary
         ),
     );
-    let base_url = ensure_server(app, &config, profile, variant).await?;
+    let base_url = ensure_server(app, &config).await?;
     let payload = build_generation_payload(SdGenerationPayload {
         prompt: &request.prompt,
         negative_prompt: &negative_prompt,
@@ -4381,6 +4561,46 @@ pub async fn handle_download_completed(
     Ok(())
 }
 
+fn catalog_component_paths(
+    app: &AppHandle,
+    profile: &ProfileSpec,
+    variant: &VariantSpec,
+) -> Result<(String, Option<String>, Option<String>, Option<String>), String> {
+    let mut diffusion = None;
+    let mut text_encoder = None;
+    let mut vae = None;
+    let mut vision_encoder = None;
+    for component in all_components(profile, variant) {
+        let path = component_path(app, component)?
+            .to_string_lossy()
+            .to_string();
+        match component.role {
+            "diffusion_model" => diffusion = Some(path),
+            "text_encoder" => text_encoder = Some(path),
+            "vae" => vae = Some(path),
+            "vision_encoder" => vision_encoder = Some(path),
+            _ => {}
+        }
+    }
+    let diffusion = diffusion.ok_or_else(|| {
+        format!(
+            "{} does not define a diffusion_model component",
+            profile.display_name
+        )
+    })?;
+    Ok((diffusion, text_encoder, vae, vision_encoder))
+}
+
+fn purge_legacy_model_rows(app: &AppHandle) -> Result<(), String> {
+    let conn = crate::storage_manager::db::open_db(app)?;
+    conn.execute(
+        "DELETE FROM models WHERE provider_id = ?1 AND name LIKE 'sdcpp:%'",
+        rusqlite::params![PROVIDER_ID],
+    )
+    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    Ok(())
+}
+
 fn register_installed_model(
     app: &AppHandle,
     profile: &ProfileSpec,
@@ -4390,8 +4610,10 @@ fn register_installed_model(
 ) -> Result<(), String> {
     use rusqlite::OptionalExtension;
 
-    let model_name = format!("sdcpp:{}:{}", profile.id, variant.id);
-    let (credential_id, model_id) = {
+    let (diffusion, text_encoder, vae, vision_encoder) =
+        catalog_component_paths(app, profile, variant)?;
+    let legacy_name = format!("sdcpp:{}:{}", profile.id, variant.id);
+    let (credential_id, model_id, existing_advanced) = {
         let conn = crate::storage_manager::db::open_db(app)?;
         let credential_id = conn
             .query_row(
@@ -4402,16 +4624,29 @@ fn register_installed_model(
             .optional()
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-        let model_id = conn
+        let mut row = conn
             .query_row(
-                "SELECT id FROM models WHERE provider_id = ?1 AND name = ?2 LIMIT 1",
-                rusqlite::params![PROVIDER_ID, &model_name],
-                |row| row.get::<_, String>(0),
+                "SELECT id, advanced_model_settings FROM models WHERE provider_id = ?1 AND name = ?2 LIMIT 1",
+                rusqlite::params![PROVIDER_ID, &diffusion],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
             )
             .optional()
-            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
-            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-        (credential_id, model_id)
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        if row.is_none() {
+            row = conn
+                .query_row(
+                    "SELECT id, advanced_model_settings FROM models WHERE provider_id = ?1 AND name = ?2 LIMIT 1",
+                    rusqlite::params![PROVIDER_ID, &legacy_name],
+                    |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
+                )
+                .optional()
+                .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        }
+        let (model_id, existing_advanced) = match row {
+            Some((id, advanced)) => (id, advanced),
+            None => (uuid::Uuid::new_v4().to_string(), None),
+        };
+        (credential_id, model_id, existing_advanced)
     };
     crate::storage_manager::providers::provider_upsert(
         app.clone(),
@@ -4423,30 +4658,44 @@ fn register_installed_model(
         })
         .to_string(),
     )?;
+    let mut advanced = existing_advanced
+        .as_deref()
+        .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
+        .and_then(|value| value.as_object().cloned())
+        .unwrap_or_default();
+    let overrides = serde_json::json!({
+        "sdcppProfileId": profile.id,
+        "sdcppVariantId": variant.id,
+        "sdcppTextEncoderPath": text_encoder,
+        "sdcppVaePath": vae,
+        "sdcppVisionEncoderPath": vision_encoder,
+        "sdcppRuntimeRelease": runtime_release,
+        "sdcppRuntimeAsset": runtime_asset,
+        "sdcppRuntimeBackend": runtime_backend_for_current_platform(runtime_asset),
+        "sdcppMaxReferenceImages": profile.max_reference_images,
+        "sdcppSupportsLora": true,
+        "sdcppSupportsTextToImage": profile.supports_text_to_image,
+        "sdcppSupportsImageEdit": profile.supports_image_edit,
+        "sdcppRecommendedForScenes": profile.recommended_for_scenes,
+        "sdcppRequiresReferenceImage": profile.requires_reference_image
+    });
+    if let Some(map) = overrides.as_object() {
+        for (key, value) in map {
+            advanced.insert(key.clone(), value.clone());
+        }
+    }
     crate::storage_manager::models::model_upsert(
         app.clone(),
         serde_json::json!({
             "id": model_id,
-            "name": model_name,
+            "name": diffusion,
             "providerId": PROVIDER_ID,
             "providerCredentialId": &credential_id,
             "providerLabel": PROVIDER_LABEL,
-            "displayName": format!("{} ({})", profile.display_name, variant.label.replace(" (recommended)", "").replace(" (smaller)", "")),
+            "displayName": installed_display_name(profile, variant),
             "inputScopes": if profile.supports_image_edit { serde_json::json!(["text", "image"]) } else { serde_json::json!(["text"]) },
             "outputScopes": ["image"],
-            "advancedModelSettings": {
-                "sdcppProfileId": profile.id,
-                "sdcppVariantId": variant.id,
-                "sdcppRuntimeRelease": runtime_release,
-                "sdcppRuntimeAsset": runtime_asset,
-                "sdcppRuntimeBackend": runtime_backend_for_current_platform(runtime_asset),
-                "sdcppMaxReferenceImages": profile.max_reference_images,
-                "sdcppSupportsLora": true,
-                "sdcppSupportsTextToImage": profile.supports_text_to_image,
-                "sdcppSupportsImageEdit": profile.supports_image_edit,
-                "sdcppRecommendedForScenes": profile.recommended_for_scenes,
-                "sdcppRequiresReferenceImage": profile.requires_reference_image
-            }
+            "advancedModelSettings": Value::Object(advanced)
         })
         .to_string(),
     )?;

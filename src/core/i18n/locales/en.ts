@@ -4182,6 +4182,8 @@ export const enMessages = {
       sdcppManaged:
         "Choose from the models installed on this device. The entry and its files are managed automatically.",
       sdcppSelectModel: "Select installed model",
+      sdcppCustomHelp:
+        "Point to a main model GGUF file on disk, then set its text encoder and VAE files in the Configuration tab.",
     },
     errors: {
       loadFailed: "Failed to load model settings",
@@ -4397,6 +4399,16 @@ export const enMessages = {
         "Files this model passes to the engine. A checkpoint or diffusion model is required; encoders and VAE depend on the architecture. Changes apply immediately.",
     },
     sdcpp: {
+      modelFiles: "Model files",
+      modelFilesDescription:
+        "Files this model passes to stable-diffusion.cpp. The main model path above is the diffusion GGUF; text encoder and VAE are required to run, the vision encoder only applies to image editing models.",
+      textEncoder: "Text encoder",
+      vae: "VAE",
+      visionEncoder: "Vision encoder",
+      optionalFile: "optional",
+      modelFilesIncomplete:
+        "Set the text encoder and VAE files. Generation will not start until this model is fully configured.",
+      componentFilesFilter: "Model component files",
       baseLoras: "Base LoRAs",
       baseLorasDescription:
         "These LoRAs are loaded for every generation made with this model. Character and style LoRAs are added on top.",
