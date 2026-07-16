@@ -2070,9 +2070,28 @@ pub async fn sdcpp_runnability(
         seed: request.seed.unwrap_or(-1),
         batch_count,
         references: &references,
-        sample_method: request.sample_method.as_deref().unwrap_or("euler"),
+        sample_method: request.sample_method.as_deref(),
+        scheduler: None,
         sample_steps,
         cfg: request.cfg_scale.unwrap_or(profile.default_cfg as f64),
+        image_cfg: None,
+        distilled_guidance: None,
+        eta: None,
+        flow_shift: None,
+        strength: None,
+        auto_resize_ref_images: true,
+        increase_ref_index: false,
+        vae_tiling_enabled: true,
+        vae_tile_size_x: None,
+        vae_tile_size_y: None,
+        vae_tile_overlap: None,
+        hires_enabled: false,
+        hires_upscaler: None,
+        hires_scale: None,
+        hires_width: None,
+        hires_height: None,
+        hires_steps: None,
+        hires_denoising_strength: None,
         loras: &loras,
     });
     let result = run_probe_job(&base_url, payload).await;
@@ -2514,6 +2533,10 @@ pub struct InstalledModel {
     supports_image_edit: bool,
     recommended_for_scenes: bool,
     requires_reference_image: bool,
+    default_width: u32,
+    default_height: u32,
+    default_steps: u16,
+    default_cfg: f32,
     model_path: String,
     components: Vec<InstalledComponent>,
 }
@@ -2631,6 +2654,10 @@ pub async fn sdcpp_installed(app: AppHandle) -> Result<Vec<InstalledModel>, Stri
                 supports_image_edit: profile.supports_image_edit,
                 recommended_for_scenes: profile.recommended_for_scenes,
                 requires_reference_image: profile.requires_reference_image,
+                default_width: profile.default_width,
+                default_height: profile.default_height,
+                default_steps: profile.default_steps,
+                default_cfg: profile.default_cfg,
                 model_path,
                 components,
             });
@@ -2906,37 +2933,109 @@ struct SdGenerationPayload<'a> {
     seed: i64,
     batch_count: u32,
     references: &'a [String],
-    sample_method: &'a str,
+    sample_method: Option<&'a str>,
+    scheduler: Option<&'a str>,
     sample_steps: u32,
     cfg: f64,
+    image_cfg: Option<f64>,
+    distilled_guidance: Option<f64>,
+    eta: Option<f64>,
+    flow_shift: Option<f64>,
+    strength: Option<f64>,
+    auto_resize_ref_images: bool,
+    increase_ref_index: bool,
+    vae_tiling_enabled: bool,
+    vae_tile_size_x: Option<u32>,
+    vae_tile_size_y: Option<u32>,
+    vae_tile_overlap: Option<f64>,
+    hires_enabled: bool,
+    hires_upscaler: Option<&'a str>,
+    hires_scale: Option<f64>,
+    hires_width: Option<u32>,
+    hires_height: Option<u32>,
+    hires_steps: Option<u32>,
+    hires_denoising_strength: Option<f64>,
     loras: &'a [Value],
 }
 
 fn build_generation_payload(params: SdGenerationPayload<'_>) -> Value {
-    serde_json::json!({
+    let mut guidance = serde_json::json!({ "txt_cfg": params.cfg });
+    if let Some(value) = params.image_cfg {
+        guidance["img_cfg"] = serde_json::json!(value);
+    }
+    if let Some(value) = params.distilled_guidance {
+        guidance["distilled_guidance"] = serde_json::json!(value);
+    }
+
+    let mut sample_params = serde_json::json!({
+        "sample_steps": params.sample_steps,
+        "guidance": guidance,
+    });
+    if let Some(value) = params.sample_method {
+        sample_params["sample_method"] = serde_json::json!(value);
+    }
+    if let Some(value) = params.scheduler {
+        sample_params["scheduler"] = serde_json::json!(value);
+    }
+    if let Some(value) = params.eta {
+        sample_params["eta"] = serde_json::json!(value);
+    }
+    if let Some(value) = params.flow_shift {
+        sample_params["flow_shift"] = serde_json::json!(value);
+    }
+
+    let mut vae_tiling = serde_json::json!({ "enabled": params.vae_tiling_enabled });
+    if let Some(value) = params.vae_tile_size_x {
+        vae_tiling["tile_size_x"] = serde_json::json!(value);
+    }
+    if let Some(value) = params.vae_tile_size_y {
+        vae_tiling["tile_size_y"] = serde_json::json!(value);
+    }
+    if let Some(value) = params.vae_tile_overlap {
+        vae_tiling["target_overlap"] = serde_json::json!(value);
+    }
+
+    let mut hires = serde_json::json!({ "enabled": params.hires_enabled });
+    if let Some(value) = params.hires_upscaler {
+        hires["upscaler"] = serde_json::json!(value);
+    }
+    if let Some(value) = params.hires_scale {
+        hires["scale"] = serde_json::json!(value);
+    }
+    if let Some(value) = params.hires_width {
+        hires["target_width"] = serde_json::json!(value);
+    }
+    if let Some(value) = params.hires_height {
+        hires["target_height"] = serde_json::json!(value);
+    }
+    if let Some(value) = params.hires_steps {
+        hires["steps"] = serde_json::json!(value);
+    }
+    if let Some(value) = params.hires_denoising_strength {
+        hires["denoising_strength"] = serde_json::json!(value);
+    }
+
+    let mut payload = serde_json::json!({
         "prompt": params.prompt,
         "negative_prompt": params.negative_prompt,
         "width": params.width,
         "height": params.height,
         "seed": params.seed,
         "batch_count": params.batch_count,
-        "auto_resize_ref_image": true,
+        "auto_resize_ref_image": params.auto_resize_ref_images,
+        "increase_ref_index": params.increase_ref_index,
         "ref_images": params.references,
-        "sample_params": {
-            "scheduler": "discrete",
-            "sample_method": params.sample_method,
-            "sample_steps": params.sample_steps,
-            "guidance": {
-                "txt_cfg": params.cfg,
-                "img_cfg": params.cfg,
-                "distilled_guidance": 0.0
-            }
-        },
+        "sample_params": sample_params,
         "lora": params.loras,
-        "vae_tiling_params": { "enabled": true },
+        "vae_tiling_params": vae_tiling,
+        "hires": hires,
         "output_format": "png",
         "output_compression": 100
-    })
+    });
+    if let Some(value) = params.strength {
+        payload["strength"] = serde_json::json!(value);
+    }
+    payload
 }
 
 enum ProbeJobError {
@@ -3349,9 +3448,7 @@ pub async fn generate(
         .and_then(|settings| settings.sd_seed)
         .map(i64::from)
         .unwrap_or(-1);
-    let sample_method = settings
-        .and_then(|settings| settings.sd_sampler.clone())
-        .unwrap_or_else(|| "euler".to_string());
+    let sample_method = settings.and_then(|settings| settings.sd_sampler.as_deref());
 
     let loras = merge_generation_loras(
         model_settings.sd_base_loras.as_deref(),
@@ -3397,9 +3494,37 @@ pub async fn generate(
         seed,
         batch_count: request.n.unwrap_or(1),
         references: &references,
-        sample_method: &sample_method,
+        sample_method,
+        scheduler: settings.and_then(|settings| settings.sd_scheduler.as_deref()),
         sample_steps: steps,
         cfg,
+        image_cfg: settings.and_then(|settings| settings.sd_image_cfg_scale),
+        distilled_guidance: settings.and_then(|settings| settings.sd_distilled_guidance),
+        eta: settings.and_then(|settings| settings.sd_eta),
+        flow_shift: settings.and_then(|settings| settings.sd_flow_shift),
+        strength: settings.and_then(|settings| settings.sd_denoising_strength),
+        auto_resize_ref_images: settings
+            .and_then(|settings| settings.sd_auto_resize_ref_images)
+            .unwrap_or(true),
+        increase_ref_index: settings
+            .and_then(|settings| settings.sd_increase_ref_index)
+            .unwrap_or(false),
+        vae_tiling_enabled: settings
+            .and_then(|settings| settings.sd_vae_tiling_enabled)
+            .unwrap_or(true),
+        vae_tile_size_x: settings.and_then(|settings| settings.sd_vae_tile_size_x),
+        vae_tile_size_y: settings.and_then(|settings| settings.sd_vae_tile_size_y),
+        vae_tile_overlap: settings.and_then(|settings| settings.sd_vae_tile_overlap),
+        hires_enabled: settings
+            .and_then(|settings| settings.sd_hires_enabled)
+            .unwrap_or(false),
+        hires_upscaler: settings.and_then(|settings| settings.sd_hires_upscaler.as_deref()),
+        hires_scale: settings.and_then(|settings| settings.sd_hires_scale),
+        hires_width: settings.and_then(|settings| settings.sd_hires_width),
+        hires_height: settings.and_then(|settings| settings.sd_hires_height),
+        hires_steps: settings.and_then(|settings| settings.sd_hires_steps),
+        hires_denoising_strength: settings
+            .and_then(|settings| settings.sd_hires_denoising_strength),
         loras: &loras,
     });
     let client = reqwest::Client::new();
@@ -4298,9 +4423,28 @@ mod tests {
             seed: 42,
             batch_count: 2,
             references: &references,
-            sample_method: "dpm++2m",
+            sample_method: Some("dpm++2m"),
+            scheduler: Some("karras"),
             sample_steps: 24,
             cfg: 3.5,
+            image_cfg: Some(1.75),
+            distilled_guidance: Some(2.5),
+            eta: Some(0.35),
+            flow_shift: Some(3.0),
+            strength: Some(0.72),
+            auto_resize_ref_images: false,
+            increase_ref_index: true,
+            vae_tiling_enabled: true,
+            vae_tile_size_x: Some(768),
+            vae_tile_size_y: Some(512),
+            vae_tile_overlap: Some(0.25),
+            hires_enabled: true,
+            hires_upscaler: Some("Lanczos"),
+            hires_scale: Some(1.5),
+            hires_width: Some(1920),
+            hires_height: Some(1080),
+            hires_steps: Some(12),
+            hires_denoising_strength: Some(0.45),
             loras: &loras,
         });
 
@@ -4312,11 +4456,76 @@ mod tests {
         assert_eq!(payload["batch_count"], 2);
         assert_eq!(payload["ref_images"], serde_json::json!(references));
         assert_eq!(payload["sample_params"]["sample_method"], "dpm++2m");
+        assert_eq!(payload["sample_params"]["scheduler"], "karras");
         assert_eq!(payload["sample_params"]["sample_steps"], 24);
         assert_eq!(payload["sample_params"]["guidance"]["txt_cfg"], 3.5);
+        assert_eq!(payload["sample_params"]["guidance"]["img_cfg"], 1.75);
+        assert_eq!(payload["sample_params"]["guidance"]["distilled_guidance"], 2.5);
+        assert_eq!(payload["sample_params"]["eta"], 0.35);
+        assert_eq!(payload["sample_params"]["flow_shift"], 3.0);
+        assert_eq!(payload["strength"], 0.72);
+        assert_eq!(payload["auto_resize_ref_image"], false);
+        assert_eq!(payload["increase_ref_index"], true);
         assert_eq!(payload["lora"], serde_json::json!(loras));
         assert_eq!(payload["vae_tiling_params"]["enabled"], true);
+        assert_eq!(payload["vae_tiling_params"]["tile_size_x"], 768);
+        assert_eq!(payload["vae_tiling_params"]["tile_size_y"], 512);
+        assert_eq!(payload["vae_tiling_params"]["target_overlap"], 0.25);
+        assert_eq!(payload["hires"]["enabled"], true);
+        assert_eq!(payload["hires"]["upscaler"], "Lanczos");
+        assert_eq!(payload["hires"]["scale"], 1.5);
+        assert_eq!(payload["hires"]["target_width"], 1920);
+        assert_eq!(payload["hires"]["target_height"], 1080);
+        assert_eq!(payload["hires"]["steps"], 12);
+        assert_eq!(payload["hires"]["denoising_strength"], 0.45);
         assert_eq!(payload["output_compression"], 100);
+    }
+
+    #[test]
+    fn generation_payload_leaves_optional_engine_defaults_unset() {
+        let payload = build_generation_payload(SdGenerationPayload {
+            prompt: "prompt",
+            negative_prompt: "",
+            width: 1024,
+            height: 1024,
+            seed: -1,
+            batch_count: 1,
+            references: &[],
+            sample_method: None,
+            scheduler: None,
+            sample_steps: 8,
+            cfg: 1.0,
+            image_cfg: None,
+            distilled_guidance: None,
+            eta: None,
+            flow_shift: None,
+            strength: None,
+            auto_resize_ref_images: true,
+            increase_ref_index: false,
+            vae_tiling_enabled: true,
+            vae_tile_size_x: None,
+            vae_tile_size_y: None,
+            vae_tile_overlap: None,
+            hires_enabled: false,
+            hires_upscaler: None,
+            hires_scale: None,
+            hires_width: None,
+            hires_height: None,
+            hires_steps: None,
+            hires_denoising_strength: None,
+            loras: &[],
+        });
+
+        assert!(payload["sample_params"].get("sample_method").is_none());
+        assert!(payload["sample_params"].get("scheduler").is_none());
+        assert!(payload["sample_params"].get("eta").is_none());
+        assert!(payload["sample_params"].get("flow_shift").is_none());
+        assert!(payload["sample_params"]["guidance"].get("img_cfg").is_none());
+        assert!(payload["sample_params"]["guidance"]
+            .get("distilled_guidance")
+            .is_none());
+        assert!(payload.get("strength").is_none());
+        assert_eq!(payload["hires"], serde_json::json!({ "enabled": false }));
     }
 
     #[test]

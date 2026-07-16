@@ -13,8 +13,16 @@ import {
   ADVANCED_TOP_K_RANGE,
   ADVANCED_SD_CFG_SCALE_RANGE,
   ADVANCED_SD_DENOISING_STRENGTH_RANGE,
+  ADVANCED_SD_ETA_RANGE,
+  ADVANCED_SD_FLOW_SHIFT_RANGE,
+  ADVANCED_SD_HIRES_DENOISING_RANGE,
+  ADVANCED_SD_HIRES_DIMENSION_RANGE,
+  ADVANCED_SD_HIRES_SCALE_RANGE,
+  ADVANCED_SD_HIRES_STEPS_RANGE,
   ADVANCED_SD_SEED_RANGE,
   ADVANCED_SD_STEPS_RANGE,
+  ADVANCED_SD_VAE_TILE_OVERLAP_RANGE,
+  ADVANCED_SD_VAE_TILE_SIZE_RANGE,
   ADVANCED_REASONING_BUDGET_RANGE,
   ADVANCED_LLAMA_GPU_LAYERS_RANGE,
   ADVANCED_LLAMA_THREADS_RANGE,
@@ -127,6 +135,10 @@ type SdcppInstalledModel = {
   supportsImageEdit: boolean;
   recommendedForScenes: boolean;
   requiresReferenceImage: boolean;
+  defaultWidth: number;
+  defaultHeight: number;
+  defaultSteps: number;
+  defaultCfg: number;
   modelPath: string;
   components: SdcppInstalledComponent[];
 };
@@ -143,6 +155,58 @@ type SdcppLoraFile = {
   path: string;
   bytesOnDisk: number;
 };
+
+const SDCPP_SAMPLERS = [
+  "euler",
+  "euler_a",
+  "heun",
+  "dpm2",
+  "dpm++2s_a",
+  "dpm++2m",
+  "dpm++2mv2",
+  "dpm++2m_sde",
+  "dpm++2m_sde_bt",
+  "ipndm",
+  "ipndm_v",
+  "lcm",
+  "ddim_trailing",
+  "tcd",
+  "res_multistep",
+  "res_2s",
+  "er_sde",
+  "euler_cfg_pp",
+  "euler_a_cfg_pp",
+] as const;
+
+const SDCPP_SCHEDULERS = [
+  "discrete",
+  "karras",
+  "exponential",
+  "ays",
+  "gits",
+  "smoothstep",
+  "sgm_uniform",
+  "simple",
+  "kl_optimal",
+  "lcm",
+  "bong_tangent",
+  "ltx2",
+  "logit_normal",
+  "flux2",
+  "flux",
+  "beta",
+] as const;
+
+const SDCPP_HIRES_UPSCALERS = [
+  "Lanczos",
+  "Nearest",
+  "Latent",
+  "Latent (nearest)",
+  "Latent (nearest-exact)",
+  "Latent (antialiased)",
+  "Latent (bicubic)",
+  "Latent (bicubic antialiased)",
+] as const;
 
 type LocalLibraryPickerMode = "model" | "mmproj" | "mtp";
 
@@ -546,6 +610,9 @@ export function EditModelPage() {
   } | null>(null);
   const [showSdcppModelPicker, setShowSdcppModelPicker] = useState(false);
   const [showSdcppLoraPicker, setShowSdcppLoraPicker] = useState(false);
+  const [showSdcppSamplerMenu, setShowSdcppSamplerMenu] = useState(false);
+  const [showSdcppSchedulerMenu, setShowSdcppSchedulerMenu] = useState(false);
+  const [showSdcppAdvancedGeneration, setShowSdcppAdvancedGeneration] = useState(false);
   const [sdcppLoras, setSdcppLoras] = useState<SdcppLoraFile[]>([]);
   const [importingSdcppLora, setImportingSdcppLora] = useState(false);
   const [showProviderPicker, setShowProviderPicker] = useState(false);
@@ -1640,6 +1707,13 @@ export function EditModelPage() {
     sdcppInstalled.find(
       (entry) => `sdcpp:${entry.profileId}:${entry.variantId}` === editorModel?.name,
     ) ?? null;
+  const sdcppDefaultSteps = selectedSdcppEntry?.defaultSteps ?? 20;
+  const sdcppDefaultCfg = selectedSdcppEntry?.defaultCfg ?? 7;
+  const sdcppDefaultSize = selectedSdcppEntry
+    ? `${selectedSdcppEntry.defaultWidth}x${selectedSdcppEntry.defaultHeight}`
+    : "1024x1024";
+  const sdcppSupportsImageEdit =
+    selectedSdcppEntry?.supportsImageEdit ?? modelAdvancedDraft.sdcppSupportsImageEdit === true;
 
   const updateBaseLoras = (
     next: NonNullable<typeof modelAdvancedDraft.sdBaseLoras> | null,
@@ -3498,7 +3572,7 @@ export function EditModelPage() {
                                         </span>
                                       </div>
                                       <span className="font-mono text-[13px] text-fg/55">
-                                        {modelAdvancedDraft.sdSteps ?? "28"}
+                                        {modelAdvancedDraft.sdSteps ?? (isSdcppModel ? sdcppDefaultSteps : 28)}
                                       </span>
                                     </div>
                                     <NumberInput
@@ -3532,7 +3606,8 @@ export function EditModelPage() {
                                         </span>
                                       </div>
                                       <span className="font-mono text-[13px] text-fg/55">
-                                        {modelAdvancedDraft.sdCfgScale?.toFixed(1) ?? "6.5"}
+                                        {modelAdvancedDraft.sdCfgScale?.toFixed(1) ??
+                                          (isSdcppModel ? sdcppDefaultCfg : 6.5).toFixed(1)}
                                       </span>
                                     </div>
                                     <NumberInput
@@ -3562,7 +3637,8 @@ export function EditModelPage() {
                                         </span>
                                       </div>
                                       <span className="font-mono text-[13px] text-fg/55">
-                                        {modelAdvancedDraft.sdSize ?? "1024x1024"}
+                                        {modelAdvancedDraft.sdSize ??
+                                          (isSdcppModel ? sdcppDefaultSize : "1024x1024")}
                                       </span>
                                     </div>
                                     <input
@@ -3586,14 +3662,58 @@ export function EditModelPage() {
                                         {t("editModel.generationDescriptions.sdSampler")}
                                       </span>
                                     </div>
-                                    <input
-                                      type="text"
-                                      value={modelAdvancedDraft.sdSampler ?? ""}
-                                      onChange={(e) => updateSdSetting("sdSampler", e.target.value)}
-                                      placeholder={t("editModel.placeholders.sdSampler")}
-                                      className={selectInputClassName}
-                                    />
+                                    {isSdcppModel ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => setShowSdcppSamplerMenu(true)}
+                                        className={cn(
+                                          selectInputClassName,
+                                          "flex items-center justify-between text-left",
+                                        )}
+                                      >
+                                        <span>
+                                          {modelAdvancedDraft.sdSampler ??
+                                            t("editModel.generationAdvanced.modelDefault")}
+                                        </span>
+                                        <ChevronDown className="h-4 w-4 text-fg/35" />
+                                      </button>
+                                    ) : (
+                                      <input
+                                        type="text"
+                                        value={modelAdvancedDraft.sdSampler ?? ""}
+                                        onChange={(e) => updateSdSetting("sdSampler", e.target.value)}
+                                        placeholder={t("editModel.placeholders.sdSampler")}
+                                        className={selectInputClassName}
+                                      />
+                                    )}
                                   </div>
+
+                                  {isSdcppModel ? (
+                                    <div className="space-y-4">
+                                      <div className="space-y-0.5">
+                                        <span className="block text-[13px] font-medium text-fg/70">
+                                          {t("editModel.generationAdvanced.scheduler")}
+                                        </span>
+                                        <span className="block text-[13px] text-fg/40">
+                                          {t("editModel.generationAdvanced.schedulerDescription")}
+                                        </span>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => setShowSdcppSchedulerMenu(true)}
+                                        className={cn(
+                                          selectInputClassName,
+                                          "flex items-center justify-between text-left",
+                                        )}
+                                      >
+                                        <span>
+                                          {modelAdvancedDraft.sdScheduler ??
+                                            t("editModel.generationAdvanced.modelDefault")}
+                                        </span>
+                                        <ChevronDown className="h-4 w-4 text-fg/35" />
+                                      </button>
+                                    </div>
+                                  ) : null}
 
                                   <div className="space-y-4">
                                     <div className="flex items-center justify-between">
@@ -3629,7 +3749,7 @@ export function EditModelPage() {
                                     </div>
                                   </div>
 
-                                  {!isSdcppModel ? (
+                                  {!isSdcppModel || sdcppSupportsImageEdit ? (
                                     <div className="space-y-4">
                                       <div className="flex items-center justify-between">
                                         <div className="space-y-0.5">
@@ -3663,6 +3783,66 @@ export function EditModelPage() {
                                       </div>
                                     </div>
                                   ) : null}
+
+                                  {isSdcppModel && sdcppSupportsImageEdit ? (
+                                    <div className="space-y-4">
+                                      <div className="flex items-center justify-between">
+                                        <div className="space-y-0.5">
+                                          <span className="block text-[13px] font-medium text-fg/70">
+                                            {t("editModel.generationAdvanced.imageGuidance")}
+                                          </span>
+                                          <span className="block text-[13px] text-fg/40">
+                                            {t("editModel.generationAdvanced.imageGuidanceDescription")}
+                                          </span>
+                                        </div>
+                                        <span className="font-mono text-[13px] text-fg/55">
+                                          {modelAdvancedDraft.sdImageCfgScale?.toFixed(2) ??
+                                            t("editModel.generationAdvanced.modelDefault")}
+                                        </span>
+                                      </div>
+                                      <NumberInput
+                                        min={ADVANCED_SD_CFG_SCALE_RANGE.min}
+                                        max={ADVANCED_SD_CFG_SCALE_RANGE.max}
+                                        step={0.1}
+                                        decimals={2}
+                                        value={modelAdvancedDraft.sdImageCfgScale ?? null}
+                                        onChange={(next) => updateSdSetting("sdImageCfgScale", next)}
+                                        placeholder={t("editModel.generationAdvanced.modelDefault")}
+                                        className={numberInputClassName}
+                                      />
+                                    </div>
+                                  ) : null}
+
+                                  {isSdcppModel ? (
+                                    <div className="space-y-4">
+                                      <div className="flex items-center justify-between">
+                                        <div className="space-y-0.5">
+                                          <span className="block text-[13px] font-medium text-fg/70">
+                                            {t("editModel.generationAdvanced.distilledGuidance")}
+                                          </span>
+                                          <span className="block text-[13px] text-fg/40">
+                                            {t("editModel.generationAdvanced.distilledGuidanceDescription")}
+                                          </span>
+                                        </div>
+                                        <span className="font-mono text-[13px] text-fg/55">
+                                          {modelAdvancedDraft.sdDistilledGuidance?.toFixed(2) ??
+                                            t("editModel.generationAdvanced.modelDefault")}
+                                        </span>
+                                      </div>
+                                      <NumberInput
+                                        min={ADVANCED_SD_CFG_SCALE_RANGE.min}
+                                        max={ADVANCED_SD_CFG_SCALE_RANGE.max}
+                                        step={0.1}
+                                        decimals={2}
+                                        value={modelAdvancedDraft.sdDistilledGuidance ?? null}
+                                        onChange={(next) =>
+                                          updateSdSetting("sdDistilledGuidance", next)
+                                        }
+                                        placeholder={t("editModel.generationAdvanced.modelDefault")}
+                                        className={numberInputClassName}
+                                      />
+                                    </div>
+                                  ) : null}
                                 </div>
 
                                 <div className="space-y-4">
@@ -3685,28 +3865,48 @@ export function EditModelPage() {
                                   />
                                 </div>
 
-                                {!isSdcppModel ? (
-                                  <>
-                                    <div className="space-y-4">
-                                      <div className="space-y-0.5">
-                                        <span className="block text-[13px] font-medium text-fg/70">
-                                          {t("editModel.generationDescriptions.sdExtraPromptTitle")}
+                                {isSdcppModel ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowSdcppAdvancedGeneration(true)}
+                                    className="flex w-full items-center justify-between rounded-xl border border-fg/10 bg-fg/[0.035] px-4 py-3.5 text-left transition hover:border-fg/20 hover:bg-fg/[0.06]"
+                                  >
+                                    <span className="flex min-w-0 items-center gap-3">
+                                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-accent/20 bg-accent/10 text-accent">
+                                        <SlidersHorizontal className="h-4 w-4" />
+                                      </span>
+                                      <span className="min-w-0">
+                                        <span className="block text-[13px] font-medium text-fg/80">
+                                          {t("editModel.generationAdvanced.title")}
                                         </span>
-                                        <span className="block text-[13px] text-fg/40">
-                                          {t("editModel.generationDescriptions.sdExtraPrompt")}
+                                        <span className="mt-0.5 block text-[12px] text-fg/45">
+                                          {t("editModel.generationAdvanced.description")}
                                         </span>
-                                      </div>
-                                      <textarea
-                                        value={modelAdvancedDraft.sdExtraPrompt ?? ""}
-                                        onChange={(e) =>
-                                          updateSdSetting("sdExtraPrompt", e.target.value)
-                                        }
-                                        placeholder={t("editModel.placeholders.sdExtraPrompt")}
-                                        rows={4}
-                                        className={textAreaInputClassName}
-                                      />
-                                    </div>
+                                      </span>
+                                    </span>
+                                    <ChevronRight className="h-4 w-4 shrink-0 text-fg/35" />
+                                  </button>
+                                ) : null}
 
+                                <div className="space-y-4">
+                                  <div className="space-y-0.5">
+                                    <span className="block text-[13px] font-medium text-fg/70">
+                                      {t("editModel.generationDescriptions.sdExtraPromptTitle")}
+                                    </span>
+                                    <span className="block text-[13px] text-fg/40">
+                                      {t("editModel.generationDescriptions.sdExtraPrompt")}
+                                    </span>
+                                  </div>
+                                  <textarea
+                                    value={modelAdvancedDraft.sdExtraPrompt ?? ""}
+                                    onChange={(e) => updateSdSetting("sdExtraPrompt", e.target.value)}
+                                    placeholder={t("editModel.placeholders.sdExtraPrompt")}
+                                    rows={4}
+                                    className={textAreaInputClassName}
+                                  />
+                                </div>
+
+                                {!isSdcppModel ? (
                                     <div className="space-y-4">
                                       <div className="space-y-0.5">
                                         <span className="block text-[13px] font-medium text-fg/70">
@@ -3731,7 +3931,6 @@ export function EditModelPage() {
                                         className={textAreaInputClassName}
                                       />
                                     </div>
-                                  </>
                                 ) : null}
 
                                 {isLocalDiffusionModel ? (
@@ -7348,6 +7547,338 @@ export function EditModelPage() {
           </>
         )}
       </AnimatePresence>
+
+      <BottomMenu
+        isOpen={showSdcppSamplerMenu}
+        onClose={() => setShowSdcppSamplerMenu(false)}
+        title={t("editModel.generationAdvanced.sampler")}
+      >
+        <MenuSection>
+          <MenuButton
+            icon={Sparkles}
+            title={t("editModel.generationAdvanced.modelDefault")}
+            color="from-accent to-accent/80"
+            rightElement={!modelAdvancedDraft.sdSampler ? <Check className="h-4 w-4 text-accent" /> : null}
+            onClick={() => {
+              updateSdSetting("sdSampler", null);
+              setShowSdcppSamplerMenu(false);
+            }}
+          />
+          {SDCPP_SAMPLERS.map((sampler) => (
+            <MenuButton
+              key={sampler}
+              icon={SlidersHorizontal}
+              title={sampler}
+              color="from-white/10 to-white/5"
+              rightElement={
+                modelAdvancedDraft.sdSampler === sampler ? (
+                  <Check className="h-4 w-4 text-accent" />
+                ) : null
+              }
+              onClick={() => {
+                updateSdSetting("sdSampler", sampler);
+                setShowSdcppSamplerMenu(false);
+              }}
+            />
+          ))}
+        </MenuSection>
+      </BottomMenu>
+
+      <BottomMenu
+        isOpen={showSdcppSchedulerMenu}
+        onClose={() => setShowSdcppSchedulerMenu(false)}
+        title={t("editModel.generationAdvanced.scheduler")}
+      >
+        <MenuSection>
+          <MenuButton
+            icon={Sparkles}
+            title={t("editModel.generationAdvanced.modelDefault")}
+            color="from-accent to-accent/80"
+            rightElement={!modelAdvancedDraft.sdScheduler ? <Check className="h-4 w-4 text-accent" /> : null}
+            onClick={() => {
+              updateSdSetting("sdScheduler", null);
+              setShowSdcppSchedulerMenu(false);
+            }}
+          />
+          {SDCPP_SCHEDULERS.map((scheduler) => (
+            <MenuButton
+              key={scheduler}
+              icon={Gauge}
+              title={scheduler}
+              color="from-white/10 to-white/5"
+              rightElement={
+                modelAdvancedDraft.sdScheduler === scheduler ? (
+                  <Check className="h-4 w-4 text-accent" />
+                ) : null
+              }
+              onClick={() => {
+                updateSdSetting("sdScheduler", scheduler);
+                setShowSdcppSchedulerMenu(false);
+              }}
+            />
+          ))}
+        </MenuSection>
+      </BottomMenu>
+
+      <BottomMenu
+        isOpen={showSdcppAdvancedGeneration}
+        onClose={() => setShowSdcppAdvancedGeneration(false)}
+        title={t("editModel.generationAdvanced.title")}
+        includeExitIcon
+      >
+        <div className="space-y-8 pb-4">
+          <section className="space-y-4">
+            <div className="space-y-1">
+              <h4 className="text-[13px] font-semibold text-fg/85">
+                {t("editModel.generationAdvanced.samplingSection")}
+              </h4>
+              <p className="text-[12px] leading-relaxed text-fg/45">
+                {t("editModel.generationAdvanced.description")}
+              </p>
+            </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <div>
+                  <div className="text-[13px] font-medium text-fg/70">
+                    {t("editModel.generationAdvanced.eta")}
+                  </div>
+                  <div className="text-[12px] text-fg/40">
+                    {t("editModel.generationAdvanced.etaDescription")}
+                  </div>
+                </div>
+                <NumberInput
+                  min={ADVANCED_SD_ETA_RANGE.min}
+                  max={ADVANCED_SD_ETA_RANGE.max}
+                  step={0.01}
+                  decimals={3}
+                  value={modelAdvancedDraft.sdEta ?? null}
+                  onChange={(next) => updateSdSetting("sdEta", next)}
+                  placeholder={t("editModel.generationAdvanced.modelDefault")}
+                  className={numberInputClassName}
+                />
+              </div>
+              <div className="space-y-2">
+                <div>
+                  <div className="text-[13px] font-medium text-fg/70">
+                    {t("editModel.generationAdvanced.flowShift")}
+                  </div>
+                  <div className="text-[12px] text-fg/40">
+                    {t("editModel.generationAdvanced.flowShiftDescription")}
+                  </div>
+                </div>
+                <NumberInput
+                  min={ADVANCED_SD_FLOW_SHIFT_RANGE.min}
+                  max={ADVANCED_SD_FLOW_SHIFT_RANGE.max}
+                  step={0.1}
+                  decimals={3}
+                  value={modelAdvancedDraft.sdFlowShift ?? null}
+                  onChange={(next) => updateSdSetting("sdFlowShift", next)}
+                  placeholder={t("editModel.generationAdvanced.modelDefault")}
+                  className={numberInputClassName}
+                />
+              </div>
+            </div>
+          </section>
+
+          <section className="space-y-4 border-t border-fg/10 pt-6">
+            <div className="flex items-center justify-between gap-4">
+              <div className="space-y-1">
+                <h4 className="text-[13px] font-semibold text-fg/85">
+                  {t("editModel.generationAdvanced.vaeTiling")}
+                </h4>
+                <p className="text-[12px] leading-relaxed text-fg/45">
+                  {t("editModel.generationAdvanced.vaeTilingDescription")}
+                </p>
+              </div>
+              <Switch
+                checked={modelAdvancedDraft.sdVaeTilingEnabled ?? true}
+                onChange={(checked) => updateSdSetting("sdVaeTilingEnabled", checked)}
+                aria-label={t("editModel.generationAdvanced.vaeTiling")}
+              />
+            </div>
+            {(modelAdvancedDraft.sdVaeTilingEnabled ?? true) ? (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                {([
+                  ["sdVaeTileSizeX", "tileWidth"],
+                  ["sdVaeTileSizeY", "tileHeight"],
+                ] as const).map(([key, label]) => (
+                  <div key={key} className="space-y-2">
+                    <div className="text-[12px] font-medium text-fg/55">
+                      {t(`editModel.generationAdvanced.${label}`)}
+                    </div>
+                    <NumberInput
+                      min={ADVANCED_SD_VAE_TILE_SIZE_RANGE.min}
+                      max={ADVANCED_SD_VAE_TILE_SIZE_RANGE.max}
+                      step={8}
+                      value={modelAdvancedDraft[key] ?? null}
+                      onChange={(next) =>
+                        updateSdSetting(key, next === null ? null : Math.trunc(next))
+                      }
+                      placeholder={t("editModel.generationAdvanced.modelDefault")}
+                      className={numberInputClassName}
+                    />
+                  </div>
+                ))}
+                <div className="space-y-2">
+                  <div className="text-[12px] font-medium text-fg/55">
+                    {t("editModel.generationAdvanced.tileOverlap")}
+                  </div>
+                  <NumberInput
+                    min={ADVANCED_SD_VAE_TILE_OVERLAP_RANGE.min}
+                    max={ADVANCED_SD_VAE_TILE_OVERLAP_RANGE.max}
+                    step={0.05}
+                    decimals={2}
+                    value={modelAdvancedDraft.sdVaeTileOverlap ?? null}
+                    onChange={(next) => updateSdSetting("sdVaeTileOverlap", next)}
+                    placeholder={t("editModel.generationAdvanced.modelDefault")}
+                    className={numberInputClassName}
+                  />
+                </div>
+              </div>
+            ) : null}
+          </section>
+
+          {sdcppSupportsImageEdit ? (
+            <section className="space-y-4 border-t border-fg/10 pt-6">
+              <h4 className="text-[13px] font-semibold text-fg/85">
+                {t("editModel.generationAdvanced.referencesSection")}
+              </h4>
+              <div className="divide-y divide-fg/10 rounded-xl border border-fg/10 bg-fg/[0.025] px-4">
+                <div className="flex items-center justify-between gap-4 py-4">
+                  <div>
+                    <div className="text-[13px] font-medium text-fg/70">
+                      {t("editModel.generationAdvanced.autoResizeReferences")}
+                    </div>
+                    <div className="mt-0.5 text-[12px] text-fg/40">
+                      {t("editModel.generationAdvanced.autoResizeReferencesDescription")}
+                    </div>
+                  </div>
+                  <Switch
+                    checked={modelAdvancedDraft.sdAutoResizeRefImages ?? true}
+                    onChange={(checked) => updateSdSetting("sdAutoResizeRefImages", checked)}
+                    aria-label={t("editModel.generationAdvanced.autoResizeReferences")}
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-4 py-4">
+                  <div>
+                    <div className="text-[13px] font-medium text-fg/70">
+                      {t("editModel.generationAdvanced.increaseReferenceIndex")}
+                    </div>
+                    <div className="mt-0.5 text-[12px] text-fg/40">
+                      {t("editModel.generationAdvanced.increaseReferenceIndexDescription")}
+                    </div>
+                  </div>
+                  <Switch
+                    checked={modelAdvancedDraft.sdIncreaseRefIndex ?? false}
+                    onChange={(checked) => updateSdSetting("sdIncreaseRefIndex", checked)}
+                    aria-label={t("editModel.generationAdvanced.increaseReferenceIndex")}
+                  />
+                </div>
+              </div>
+            </section>
+          ) : null}
+
+          <section className="space-y-4 border-t border-fg/10 pt-6">
+            <div className="flex items-center justify-between gap-4">
+              <div className="space-y-1">
+                <h4 className="text-[13px] font-semibold text-fg/85">
+                  {t("editModel.generationAdvanced.hiresFix")}
+                </h4>
+                <p className="text-[12px] leading-relaxed text-fg/45">
+                  {t("editModel.generationAdvanced.hiresFixDescription")}
+                </p>
+              </div>
+              <Switch
+                checked={modelAdvancedDraft.sdHiresEnabled ?? false}
+                onChange={(checked) => updateSdSetting("sdHiresEnabled", checked)}
+                aria-label={t("editModel.generationAdvanced.hiresFix")}
+              />
+            </div>
+            {modelAdvancedDraft.sdHiresEnabled ? (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <div className="text-[12px] font-medium text-fg/55">
+                    {t("editModel.generationAdvanced.upscaler")}
+                  </div>
+                  <select
+                    value={modelAdvancedDraft.sdHiresUpscaler ?? "Latent"}
+                    onChange={(event) => updateSdSetting("sdHiresUpscaler", event.target.value)}
+                    className={selectInputClassName}
+                  >
+                    {SDCPP_HIRES_UPSCALERS.map((upscaler) => (
+                      <option key={upscaler} value={upscaler}>
+                        {upscaler}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <div className="text-[12px] font-medium text-fg/55">
+                      {t("editModel.generationAdvanced.scale")}
+                    </div>
+                    <NumberInput
+                      min={ADVANCED_SD_HIRES_SCALE_RANGE.min}
+                      max={ADVANCED_SD_HIRES_SCALE_RANGE.max}
+                      step={0.1}
+                      decimals={2}
+                      value={modelAdvancedDraft.sdHiresScale ?? null}
+                      onChange={(next) => updateSdSetting("sdHiresScale", next)}
+                      placeholder={t("editModel.generationAdvanced.modelDefault")}
+                      className={numberInputClassName}
+                    />
+                  </div>
+                  {([
+                    ["sdHiresWidth", "targetWidth"],
+                    ["sdHiresHeight", "targetHeight"],
+                    ["sdHiresSteps", "secondPassSteps"],
+                  ] as const).map(([key, label]) => (
+                    <div key={key} className="space-y-2">
+                      <div className="text-[12px] font-medium text-fg/55">
+                        {t(`editModel.generationAdvanced.${label}`)}
+                      </div>
+                      <NumberInput
+                        min={
+                          key === "sdHiresSteps"
+                            ? ADVANCED_SD_HIRES_STEPS_RANGE.min
+                            : ADVANCED_SD_HIRES_DIMENSION_RANGE.min
+                        }
+                        max={
+                          key === "sdHiresSteps"
+                            ? ADVANCED_SD_HIRES_STEPS_RANGE.max
+                            : ADVANCED_SD_HIRES_DIMENSION_RANGE.max
+                        }
+                        step={1}
+                        value={modelAdvancedDraft[key] ?? null}
+                        onChange={(next) =>
+                          updateSdSetting(key, next === null ? null : Math.trunc(next))
+                        }
+                        placeholder={t("editModel.generationAdvanced.modelDefault")}
+                        className={numberInputClassName}
+                      />
+                    </div>
+                  ))}
+                  <div className="space-y-2">
+                    <div className="text-[12px] font-medium text-fg/55">
+                      {t("editModel.generationAdvanced.denoisingStrength")}
+                    </div>
+                    <NumberInput
+                      min={ADVANCED_SD_HIRES_DENOISING_RANGE.min}
+                      max={ADVANCED_SD_HIRES_DENOISING_RANGE.max}
+                      step={0.01}
+                      decimals={2}
+                      value={modelAdvancedDraft.sdHiresDenoisingStrength ?? null}
+                      onChange={(next) => updateSdSetting("sdHiresDenoisingStrength", next)}
+                      placeholder={t("editModel.generationAdvanced.modelDefault")}
+                      className={numberInputClassName}
+                    />
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </section>
+        </div>
+      </BottomMenu>
 
       {/* PARAMETER SUPPORT MODAL */}
       <BottomMenu

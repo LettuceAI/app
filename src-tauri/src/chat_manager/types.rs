@@ -706,13 +706,49 @@ pub struct AdvancedModelSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sd_sampler: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sd_scheduler: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sd_seed: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sd_negative_prompt: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sd_denoising_strength: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sd_image_cfg_scale: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sd_distilled_guidance: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sd_eta: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sd_flow_shift: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sd_size: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sd_vae_tiling_enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sd_vae_tile_size_x: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sd_vae_tile_size_y: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sd_vae_tile_overlap: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sd_auto_resize_ref_images: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sd_increase_ref_index: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sd_hires_enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sd_hires_upscaler: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sd_hires_scale: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sd_hires_width: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sd_hires_height: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sd_hires_steps: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sd_hires_denoising_strength: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sd_offload_mode: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -872,10 +908,28 @@ impl Default for AdvancedModelSettings {
             sd_base_loras: None,
             sd_cfg_scale: None,
             sd_sampler: None,
+            sd_scheduler: None,
             sd_seed: None,
             sd_negative_prompt: None,
             sd_denoising_strength: None,
+            sd_image_cfg_scale: None,
+            sd_distilled_guidance: None,
+            sd_eta: None,
+            sd_flow_shift: None,
             sd_size: None,
+            sd_vae_tiling_enabled: None,
+            sd_vae_tile_size_x: None,
+            sd_vae_tile_size_y: None,
+            sd_vae_tile_overlap: None,
+            sd_auto_resize_ref_images: None,
+            sd_increase_ref_index: None,
+            sd_hires_enabled: None,
+            sd_hires_upscaler: None,
+            sd_hires_scale: None,
+            sd_hires_width: None,
+            sd_hires_height: None,
+            sd_hires_steps: None,
+            sd_hires_denoising_strength: None,
             llama_gpu_layers: None,
             llama_multi_gpu_enabled: None,
             llama_gpu_device_ids: None,

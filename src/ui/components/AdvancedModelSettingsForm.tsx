@@ -24,6 +24,14 @@ export const ADVANCED_SD_STEPS_RANGE = { min: 1, max: 150 };
 export const ADVANCED_SD_CFG_SCALE_RANGE = { min: 0, max: 30 };
 export const ADVANCED_SD_SEED_RANGE = { min: 0, max: 2_147_483_647 };
 export const ADVANCED_SD_DENOISING_STRENGTH_RANGE = { min: 0, max: 1 };
+export const ADVANCED_SD_ETA_RANGE = { min: 0, max: 10 };
+export const ADVANCED_SD_FLOW_SHIFT_RANGE = { min: -100, max: 100 };
+export const ADVANCED_SD_VAE_TILE_SIZE_RANGE = { min: 1, max: 8192 };
+export const ADVANCED_SD_VAE_TILE_OVERLAP_RANGE = { min: 0, max: 1 };
+export const ADVANCED_SD_HIRES_SCALE_RANGE = { min: 1, max: 8 };
+export const ADVANCED_SD_HIRES_DIMENSION_RANGE = { min: 0, max: 16384 };
+export const ADVANCED_SD_HIRES_STEPS_RANGE = { min: 0, max: 150 };
+export const ADVANCED_SD_HIRES_DENOISING_RANGE = { min: 0.01, max: 1 };
 export const ADVANCED_REASONING_BUDGET_RANGE = { min: 1024, max: 32768 };
 export const ADVANCED_LLAMA_GPU_LAYERS_RANGE = { min: 0, max: 512 };
 export const ADVANCED_LLAMA_MAIN_GPU_RANGE = { min: 0, max: 64 };
@@ -233,6 +241,15 @@ export function sanitizeAdvancedModelSettings(input: AdvancedModelSettings): Adv
     sdSteps: sanitize(input.sdSteps, ADVANCED_SD_STEPS_RANGE, true),
     sdCfgScale: sanitize(input.sdCfgScale, ADVANCED_SD_CFG_SCALE_RANGE, false),
     sdSampler: input.sdSampler?.trim() || null,
+    sdScheduler: input.sdScheduler?.trim() || null,
+    sdImageCfgScale: sanitize(input.sdImageCfgScale, ADVANCED_SD_CFG_SCALE_RANGE, false),
+    sdDistilledGuidance: sanitize(
+      input.sdDistilledGuidance,
+      ADVANCED_SD_CFG_SCALE_RANGE,
+      false,
+    ),
+    sdEta: sanitize(input.sdEta, ADVANCED_SD_ETA_RANGE, false),
+    sdFlowShift: sanitize(input.sdFlowShift, ADVANCED_SD_FLOW_SHIFT_RANGE, false),
     sdSeed: sanitize(input.sdSeed, ADVANCED_SD_SEED_RANGE, true),
     sdNegativePrompt: input.sdNegativePrompt?.trim() || null,
     sdDenoisingStrength: sanitize(
@@ -241,6 +258,28 @@ export function sanitizeAdvancedModelSettings(input: AdvancedModelSettings): Adv
       false,
     ),
     sdSize: normalizeSdSize(input.sdSize),
+    sdVaeTilingEnabled: input.sdVaeTilingEnabled ?? null,
+    sdVaeTileSizeX: sanitize(input.sdVaeTileSizeX, ADVANCED_SD_VAE_TILE_SIZE_RANGE, true),
+    sdVaeTileSizeY: sanitize(input.sdVaeTileSizeY, ADVANCED_SD_VAE_TILE_SIZE_RANGE, true),
+    sdVaeTileOverlap: sanitize(
+      input.sdVaeTileOverlap,
+      ADVANCED_SD_VAE_TILE_OVERLAP_RANGE,
+      false,
+    ),
+    sdAutoResizeRefImages: input.sdAutoResizeRefImages ?? null,
+    sdIncreaseRefIndex: input.sdIncreaseRefIndex ?? null,
+    sdHiresEnabled: input.sdHiresEnabled ?? null,
+    sdHiresUpscaler: input.sdHiresUpscaler?.trim() || null,
+    sdHiresScale: sanitize(input.sdHiresScale, ADVANCED_SD_HIRES_SCALE_RANGE, false),
+    sdHiresWidth: sanitize(input.sdHiresWidth, ADVANCED_SD_HIRES_DIMENSION_RANGE, true),
+    sdHiresHeight: sanitize(input.sdHiresHeight, ADVANCED_SD_HIRES_DIMENSION_RANGE, true),
+    sdHiresSteps: sanitize(input.sdHiresSteps, ADVANCED_SD_HIRES_STEPS_RANGE, true),
+    sdHiresDenoisingStrength: sanitize(
+      input.sdHiresDenoisingStrength,
+      ADVANCED_SD_HIRES_DENOISING_RANGE,
+      false,
+    ),
+    sdExtraPrompt: input.sdExtraPrompt?.trim() || null,
     sdBaseLoras: normalizeBaseLoras(input.sdBaseLoras),
     sdcppProfileId: input.sdcppProfileId ?? null,
     sdcppVariantId: input.sdcppVariantId ?? null,

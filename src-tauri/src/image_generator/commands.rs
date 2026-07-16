@@ -16,6 +16,16 @@ use super::provider_adapter::{get_adapter, ImageRequestPayload, ImageResponseDat
 use super::storage::save_image;
 use super::types::{GeneratedImage, ImageGenerationRequest, ImageGenerationResponse};
 
+fn apply_pre_prompt(prompt: &str, pre_prompt: Option<&str>) -> String {
+    let prompt = prompt.trim();
+    let pre_prompt = pre_prompt.map(str::trim).filter(|value| !value.is_empty());
+    match (pre_prompt, prompt.is_empty()) {
+        (Some(prefix), true) => prefix.to_string(),
+        (Some(prefix), false) => format!("{}, {}", prefix, prompt),
+        (None, _) => prompt.to_string(),
+    }
+}
+
 fn gemini_image_endpoint(base_url: &str, model: &str, api_key: &str) -> String {
     let base = base_url.trim_end_matches('/');
     let base = base
@@ -114,19 +124,12 @@ pub async fn generate_image(
     app: AppHandle,
     mut request: ImageGenerationRequest,
 ) -> Result<ImageGenerationResponse, String> {
-    let extra_prompt = request
+    let pre_prompt = request
         .advanced_model_settings
         .as_ref()
         .and_then(|settings| settings.sd_extra_prompt.as_ref())
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty());
-    if let Some(extra) = extra_prompt {
-        request.prompt = if request.prompt.trim().is_empty() {
-            extra
-        } else {
-            format!("{}, {}", extra, request.prompt)
-        };
-    }
+        .map(String::as_str);
+    request.prompt = apply_pre_prompt(&request.prompt, pre_prompt);
 
     let mut provider_label = request.provider_id.clone();
 
@@ -352,4 +355,19 @@ pub async fn generate_image(
     }
 
     result.map(|(response, _)| response)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::apply_pre_prompt;
+
+    #[test]
+    fn pre_prompt_is_applied_once_before_the_user_prompt() {
+        assert_eq!(
+            apply_pre_prompt("a portrait", Some("cinematic lighting")),
+            "cinematic lighting, a portrait"
+        );
+        assert_eq!(apply_pre_prompt("a portrait", Some("  ")), "a portrait");
+        assert_eq!(apply_pre_prompt("  ", Some("cinematic lighting")), "cinematic lighting");
+    }
 }
