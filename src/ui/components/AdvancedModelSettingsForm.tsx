@@ -26,6 +26,17 @@ export const ADVANCED_SD_SEED_RANGE = { min: 0, max: 2_147_483_647 };
 export const ADVANCED_SD_DENOISING_STRENGTH_RANGE = { min: 0, max: 1 };
 export const ADVANCED_SD_ETA_RANGE = { min: 0, max: 10 };
 export const ADVANCED_SD_FLOW_SHIFT_RANGE = { min: -100, max: 100 };
+export const ADVANCED_SD_SLG_SCALE_RANGE = { min: 0, max: 30 };
+export const ADVANCED_SD_SLG_FRACTION_RANGE = { min: 0, max: 1 };
+export const SD_CACHE_MODES = [
+  "disabled",
+  "easycache",
+  "ucache",
+  "dbcache",
+  "taylorseer",
+  "cache-dit",
+  "spectrum",
+] as const;
 export const ADVANCED_SD_VAE_TILE_SIZE_RANGE = { min: 1, max: 8192 };
 export const ADVANCED_SD_VAE_TILE_OVERLAP_RANGE = { min: 0, max: 1 };
 export const ADVANCED_SD_HIRES_SCALE_RANGE = { min: 1, max: 8 };
@@ -67,6 +78,15 @@ export const ADVANCED_OLLAMA_SEED_RANGE = { min: 0, max: 2_147_483_647 };
 
 function clampValue(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
+}
+
+function normalizeSlgLayers(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const layers = value
+    .split(",")
+    .map((part) => Number.parseInt(part.trim(), 10))
+    .filter((layer) => Number.isInteger(layer) && layer >= 0);
+  return layers.length > 0 ? layers.join(",") : null;
 }
 
 const FEATURE_GENERATION_NUMBER_RANGES = {
@@ -270,6 +290,16 @@ export function sanitizeAdvancedModelSettings(input: AdvancedModelSettings): Adv
     ),
     sdEta: sanitize(input.sdEta, ADVANCED_SD_ETA_RANGE, false),
     sdFlowShift: sanitize(input.sdFlowShift, ADVANCED_SD_FLOW_SHIFT_RANGE, false),
+    sdSlgScale: sanitize(input.sdSlgScale, ADVANCED_SD_SLG_SCALE_RANGE, false),
+    sdSlgLayers: normalizeSlgLayers(input.sdSlgLayers),
+    sdSlgLayerStart: sanitize(input.sdSlgLayerStart, ADVANCED_SD_SLG_FRACTION_RANGE, false),
+    sdSlgLayerEnd: sanitize(input.sdSlgLayerEnd, ADVANCED_SD_SLG_FRACTION_RANGE, false),
+    sdCacheMode: SD_CACHE_MODES.includes(
+      (input.sdCacheMode ?? "") as (typeof SD_CACHE_MODES)[number],
+    )
+      ? input.sdCacheMode
+      : null,
+    sdCacheOption: input.sdCacheOption?.trim() || null,
     sdSeed: sanitize(input.sdSeed, ADVANCED_SD_SEED_RANGE, true),
     sdNegativePrompt: input.sdNegativePrompt?.trim() || null,
     sdDenoisingStrength: sanitize(

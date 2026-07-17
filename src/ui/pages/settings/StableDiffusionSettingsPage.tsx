@@ -223,6 +223,14 @@ type RuntimeInventory = {
   active: { release: string; asset: string } | null;
 };
 
+type UpscalerInventory = {
+  models: string[];
+  hiresUpscalerNames: string[];
+  recommendedFilename: string;
+  recommendedBytes: number;
+  recommendedInstalled: boolean;
+};
+
 type GpuDevice = {
   index: number;
   name: string;
@@ -870,6 +878,9 @@ export function StableDiffusionSettingsPage() {
   const platform = useMemo(() => getPlatform(), []);
   const downloadQueue = useDownloadQueueOptional();
   const [inventory, setInventory] = useState<RuntimeInventory | null>(null);
+  const [upscalerInventory, setUpscalerInventory] = useState<UpscalerInventory | null>(null);
+  const [upscalerBusy, setUpscalerBusy] = useState(false);
+  const [upscalerError, setUpscalerError] = useState<string | null>(null);
   const [catalog, setCatalog] = useState<RuntimeCatalog | null>(null);
   const [gpuDevices, setGpuDevices] = useState<GpuDevice[]>([]);
   const [inventoryLoading, setInventoryLoading] = useState(platform.type === "desktop");
@@ -975,6 +986,41 @@ export function StableDiffusionSettingsPage() {
     if (result) setInstalledModels(result);
   }, [platform.type]);
 
+  const loadUpscalerInventory = useCallback(async () => {
+    if (platform.type === "mobile") return;
+    const result = await invoke<UpscalerInventory>("sdcpp_upscaler_inventory").catch(() => null);
+    setUpscalerInventory(result);
+  }, [platform.type]);
+
+  const handleInstallUpscaler = useCallback(async () => {
+    setUpscalerBusy(true);
+    setUpscalerError(null);
+    try {
+      setUpscalerInventory(await invoke<UpscalerInventory>("sdcpp_install_upscaler"));
+    } catch (error) {
+      setUpscalerError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setUpscalerBusy(false);
+    }
+  }, []);
+
+  const handleRemoveUpscaler = useCallback(async () => {
+    if (!upscalerInventory?.recommendedInstalled) return;
+    setUpscalerBusy(true);
+    setUpscalerError(null);
+    try {
+      setUpscalerInventory(
+        await invoke<UpscalerInventory>("sdcpp_remove_upscaler", {
+          filename: upscalerInventory.recommendedFilename,
+        }),
+      );
+    } catch (error) {
+      setUpscalerError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setUpscalerBusy(false);
+    }
+  }, [upscalerInventory]);
+
   const loadCatalog = useCallback(async () => {
     if (platform.type === "mobile") return;
     setCatalogLoading(true);
@@ -1005,7 +1051,8 @@ export function StableDiffusionSettingsPage() {
     void loadInventory();
     void loadCatalog();
     void loadInstalledModels();
-  }, [loadCatalog, loadInventory, loadInstalledModels]);
+    void loadUpscalerInventory();
+  }, [loadCatalog, loadInventory, loadInstalledModels, loadUpscalerInventory]);
 
   useEffect(() => {
     if (!hasActiveInstall) void loadInventory();
@@ -1632,6 +1679,68 @@ export function StableDiffusionSettingsPage() {
                   </div>
                 </div>
               )}
+            </section>
+
+            <section className="border-t border-fg/8 pt-5">
+              <h2 className="mb-3 text-sm font-semibold text-fg">
+                {t("imageGeneration.local.upscaler.title")}
+              </h2>
+              <div className="rounded-lg border border-fg/10 bg-fg/[0.025] px-4 py-4">
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-sm font-semibold text-fg">
+                        {upscalerInventory?.recommendedFilename ?? "RealESRGAN_x4plus_anime_6B"}
+                      </span>
+                      {upscalerInventory?.recommendedInstalled ? (
+                        <span className="inline-flex items-center gap-1 text-xs font-medium text-success">
+                          <Check aria-hidden="true" className="h-3.5 w-3.5" />
+                          {t("imageGeneration.local.upscaler.installed")}
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="mt-1 text-xs leading-5 text-fg/45">
+                      {t("imageGeneration.local.upscaler.description", {
+                        size: formatBytes(upscalerInventory?.recommendedBytes ?? 17938799),
+                      })}
+                    </p>
+                  </div>
+                  {upscalerInventory?.recommendedInstalled ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleRemoveUpscaler()}
+                      disabled={upscalerBusy}
+                      className={cn(
+                        "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-fg/12 px-3 text-xs font-medium text-fg/70 transition-colors hover:bg-fg/5 disabled:opacity-50",
+                        focusRing,
+                      )}
+                    >
+                      {upscalerBusy ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />
+                      ) : null}
+                      {t("common.buttons.remove")}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => void handleInstallUpscaler()}
+                      disabled={upscalerBusy}
+                      className={cn(
+                        "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-fg/12 px-3 text-xs font-medium text-fg/70 transition-colors hover:bg-fg/5 disabled:opacity-50",
+                        focusRing,
+                      )}
+                    >
+                      {upscalerBusy ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />
+                      ) : null}
+                      {t("imageGeneration.local.upscaler.install")}
+                    </button>
+                  )}
+                </div>
+                {upscalerError ? (
+                  <p className="mt-2 break-words text-xs text-danger/70">{upscalerError}</p>
+                ) : null}
+              </div>
             </section>
 
             <section className="border-t border-fg/8 pt-5">

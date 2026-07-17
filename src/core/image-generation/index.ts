@@ -26,6 +26,7 @@ export interface ImageGenerationRequest {
   credentialId: string;
   advancedModelSettings?: AdvancedModelSettings | null;
   inputImages?: string[];
+  maskImage?: string | null;
   loras?: { path: string; multiplier: number; isHighNoise?: boolean; keywords?: string[] }[];
   outputModalities?: string[];
   size?: string;
@@ -82,6 +83,7 @@ export async function generateImage(
       credentialId: request.credentialId,
       advancedModelSettings: request.advancedModelSettings ?? null,
       inputImages: request.inputImages ?? null,
+      maskImage: request.maskImage ?? null,
       loras: request.loras ?? null,
       outputModalities: request.outputModalities ?? null,
       size: request.size ?? null,
@@ -94,6 +96,56 @@ export async function generateImage(
       usageSource: request.usageSource ?? null,
     },
   });
+}
+
+export const SDCPP_GENERATION_PROGRESS_EVENT = "sdcpp-generation-progress";
+export const SDCPP_GENERATION_CANCELLED_MESSAGE = "Local image generation was cancelled.";
+
+export interface SdcppGenerationProgress {
+  phase: "starting" | "loading" | "queued" | "generating" | "sampling" | "retrying" | "cancelled";
+  step?: number;
+  steps?: number;
+  queuePosition?: number | null;
+}
+
+export function isGenerationCancelledError(error: unknown): boolean {
+  const message =
+    typeof error === "string"
+      ? error
+      : error instanceof Error
+        ? error.message
+        : typeof (error as { message?: unknown })?.message === "string"
+          ? ((error as { message: string }).message)
+          : "";
+  return message.includes(SDCPP_GENERATION_CANCELLED_MESSAGE);
+}
+
+export async function cancelLocalImageGeneration(): Promise<boolean> {
+  return invoke<boolean>("sdcpp_cancel_generation");
+}
+
+export interface SdcppUpscalerInventory {
+  models: string[];
+  hiresUpscalerNames: string[];
+  recommendedFilename: string;
+  recommendedBytes: number;
+  recommendedInstalled: boolean;
+}
+
+export async function getSdcppUpscalerInventory(): Promise<SdcppUpscalerInventory> {
+  return invoke<SdcppUpscalerInventory>("sdcpp_upscaler_inventory");
+}
+
+export async function installSdcppUpscaler(): Promise<SdcppUpscalerInventory> {
+  return invoke<SdcppUpscalerInventory>("sdcpp_install_upscaler");
+}
+
+export async function removeSdcppUpscaler(filename: string): Promise<SdcppUpscalerInventory> {
+  return invoke<SdcppUpscalerInventory>("sdcpp_remove_upscaler", { filename });
+}
+
+export async function upscaleLocalImage(imageDataUrl: string): Promise<GeneratedImage> {
+  return invoke<GeneratedImage>("sdcpp_upscale_image", { image: imageDataUrl });
 }
 
 type PromptTemplateLike = {

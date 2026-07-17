@@ -3,13 +3,15 @@ use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant, UNIX_EPOCH};
-use tauri::AppHandle;
-use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
+use tauri::{AppHandle, Emitter};
+use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::Child;
 use tokio::sync::Mutex;
 
@@ -18,27 +20,112 @@ use crate::hf_browser::QueueDownloadMetadata;
 const PROVIDER_ID: &str = "sdcpp";
 const PROVIDER_LABEL: &str = "Local Image Generation";
 const GITHUB_REPOSITORY: &str = "leejet/stable-diffusion.cpp";
+const GENERATION_PROGRESS_EVENT: &str = "sdcpp-generation-progress";
+const GENERATION_CANCELLED_MESSAGE: &str = "Local image generation was cancelled.";
+const RUNTIME_LOG_TAIL_LINES: usize = 240;
+
+type LogTail = Arc<std::sync::Mutex<VecDeque<String>>>;
 
 struct ManagedServer {
     key: String,
     base_url: String,
     child: Child,
+    log_tail: LogTail,
+}
+
+#[derive(Clone)]
+struct ActiveGeneration {
+    base_url: String,
+    job_id: Option<String>,
+    cancel: Arc<AtomicBool>,
 }
 
 lazy_static::lazy_static! {
     static ref MANAGED_SERVER: Mutex<Option<ManagedServer>> = Mutex::new(None);
+    static ref ACTIVE_GENERATION: std::sync::Mutex<Option<ActiveGeneration>> = std::sync::Mutex::new(None);
+    static ref RUNTIME_PROGRESS_LINE: regex::Regex =
+        regex::Regex::new(r"\|\s*(\d+)/(\d+)\s*-\s*(\S+)").expect("valid sdcpp progress pattern");
 }
 
-fn forward_lora_runtime_output<R>(app: AppHandle, stream: R)
+fn emit_generation_progress(app: &AppHandle, payload: Value) {
+    let _ = app.emit(GENERATION_PROGRESS_EVENT, payload);
+}
+
+fn record_log_tail(log_tail: &LogTail, line: &str) {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return;
+    }
+    if let Ok(mut tail) = log_tail.lock() {
+        if tail.len() >= RUNTIME_LOG_TAIL_LINES {
+            tail.pop_front();
+        }
+        tail.push_back(trimmed.to_string());
+    }
+}
+
+fn log_tail_snapshot(log_tail: &LogTail) -> Vec<String> {
+    log_tail
+        .lock()
+        .map(|tail| tail.iter().cloned().collect())
+        .unwrap_or_default()
+}
+
+fn handle_runtime_output_segment(
+    app: &AppHandle,
+    segment: &str,
+    log_tail: &LogTail,
+    last_emit: &mut Instant,
+) {
+    let segment = segment.replace("\u{1b}[K", "");
+    record_log_tail(log_tail, &segment);
+    if segment.to_ascii_lowercase().contains("lora") {
+        crate::utils::log_info(app, "sdcpp_runtime", segment.clone());
+    }
+    let Some(captures) = RUNTIME_PROGRESS_LINE.captures(&segment) else {
+        return;
+    };
+    let (Some(step), Some(steps)) = (
+        captures[1].parse::<u32>().ok(),
+        captures[2].parse::<u32>().ok(),
+    ) else {
+        return;
+    };
+    let phase = if captures[3].contains("B/s") { "loading" } else { "sampling" };
+    let now = Instant::now();
+    if step < steps && now.duration_since(*last_emit) < Duration::from_millis(100) {
+        return;
+    }
+    *last_emit = now;
+    emit_generation_progress(
+        app,
+        serde_json::json!({ "phase": phase, "step": step, "steps": steps }),
+    );
+}
+
+fn forward_runtime_output<R>(app: AppHandle, stream: R, log_tail: LogTail)
 where
     R: AsyncRead + Unpin + Send + 'static,
 {
     tokio::spawn(async move {
-        let mut lines = BufReader::new(stream).lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            if line.to_ascii_lowercase().contains("lora") {
-                crate::utils::log_info(&app, "sdcpp_runtime", line);
+        let mut stream = stream;
+        let mut buffer = [0u8; 4096];
+        let mut pending = String::new();
+        let mut last_emit = Instant::now() - Duration::from_secs(1);
+        loop {
+            let read = match stream.read(&mut buffer).await {
+                Ok(0) | Err(_) => break,
+                Ok(read) => read,
+            };
+            pending.push_str(&String::from_utf8_lossy(&buffer[..read]));
+            while let Some(boundary) = pending.find(['\r', '\n']) {
+                let segment = pending[..boundary].to_string();
+                pending.drain(..=boundary);
+                handle_runtime_output_segment(&app, &segment, &log_tail, &mut last_emit);
             }
+        }
+        if !pending.is_empty() {
+            handle_runtime_output_segment(&app, &pending.clone(), &log_tail, &mut last_emit);
         }
     });
 }
@@ -2061,6 +2148,7 @@ pub async fn sdcpp_runnability(
         sdcpp_runtime_asset: request.runtime_asset,
         max_reference_images: profile.max_reference_images,
         requires_reference_image: profile.requires_reference_image,
+        supports_image_edit: profile.supports_image_edit,
         display_name: installed_display_name(profile, variant),
     };
     let automatic_placement =
@@ -2071,7 +2159,7 @@ pub async fn sdcpp_runnability(
         "sdCppConfiguredPolicy"
     };
     let started = Instant::now();
-    let base_url = match ensure_server(&app, &config).await {
+    let base_url = match ensure_server(&app, &config, false).await {
         Ok(base_url) => base_url,
         Err(error) => {
             return Ok(Runnability {
@@ -2116,12 +2204,20 @@ pub async fn sdcpp_runnability(
         seed: request.seed.unwrap_or(-1),
         batch_count,
         references: &references,
+        init_image: None,
+        mask_image: None,
         sample_method: request.sample_method.as_deref(),
         scheduler: None,
         sample_steps,
         cfg: request.cfg_scale.unwrap_or(profile.default_cfg as f64),
         image_cfg: None,
         distilled_guidance: None,
+        slg_scale: None,
+        slg_layers: None,
+        slg_layer_start: None,
+        slg_layer_end: None,
+        cache_mode: None,
+        cache_option: None,
         eta: None,
         flow_shift: None,
         strength: None,
@@ -3741,12 +3837,20 @@ struct SdGenerationPayload<'a> {
     seed: i64,
     batch_count: u32,
     references: &'a [String],
+    init_image: Option<&'a str>,
+    mask_image: Option<&'a str>,
     sample_method: Option<&'a str>,
     scheduler: Option<&'a str>,
     sample_steps: u32,
     cfg: f64,
     image_cfg: Option<f64>,
     distilled_guidance: Option<f64>,
+    slg_scale: Option<f64>,
+    slg_layers: Option<&'a str>,
+    slg_layer_start: Option<f64>,
+    slg_layer_end: Option<f64>,
+    cache_mode: Option<&'a str>,
+    cache_option: Option<&'a str>,
     eta: Option<f64>,
     flow_shift: Option<f64>,
     strength: Option<f64>,
@@ -3766,6 +3870,12 @@ struct SdGenerationPayload<'a> {
     loras: &'a [Value],
 }
 
+fn parse_slg_layers(raw: &str) -> Vec<i64> {
+    raw.split(',')
+        .filter_map(|part| part.trim().parse::<i64>().ok())
+        .collect()
+}
+
 fn build_generation_payload(params: SdGenerationPayload<'_>) -> Value {
     let mut guidance = serde_json::json!({ "txt_cfg": params.cfg });
     if let Some(value) = params.image_cfg {
@@ -3773,6 +3883,19 @@ fn build_generation_payload(params: SdGenerationPayload<'_>) -> Value {
     }
     if let Some(value) = params.distilled_guidance {
         guidance["distilled_guidance"] = serde_json::json!(value);
+    }
+    if let Some(scale) = params.slg_scale.filter(|scale| *scale > 0.0) {
+        let mut slg = serde_json::json!({ "scale": scale });
+        if let Some(layers) = params.slg_layers.map(parse_slg_layers).filter(|layers| !layers.is_empty()) {
+            slg["layers"] = serde_json::json!(layers);
+        }
+        if let Some(value) = params.slg_layer_start {
+            slg["layer_start"] = serde_json::json!(value);
+        }
+        if let Some(value) = params.slg_layer_end {
+            slg["layer_end"] = serde_json::json!(value);
+        }
+        guidance["slg"] = slg;
     }
 
     let mut sample_params = serde_json::json!({
@@ -3842,6 +3965,26 @@ fn build_generation_payload(params: SdGenerationPayload<'_>) -> Value {
     });
     if let Some(value) = params.strength {
         payload["strength"] = serde_json::json!(value);
+    }
+    if let Some(value) = params.init_image {
+        payload["init_image"] = serde_json::json!(value);
+    }
+    if let Some(value) = params.mask_image {
+        payload["mask_image"] = serde_json::json!(value);
+    }
+    if let Some(mode) = params
+        .cache_mode
+        .map(str::trim)
+        .filter(|mode| !mode.is_empty() && *mode != "disabled")
+    {
+        payload["cache_mode"] = serde_json::json!(mode);
+        if let Some(option) = params
+            .cache_option
+            .map(str::trim)
+            .filter(|option| !option.is_empty())
+        {
+            payload["cache_option"] = serde_json::json!(option);
+        }
     }
     payload
 }
@@ -3937,6 +4080,7 @@ struct StoredModelConfig {
     sdcpp_vision_encoder_path: Option<String>,
     sdcpp_max_reference_images: Option<u8>,
     sdcpp_requires_reference_image: Option<bool>,
+    sdcpp_supports_image_edit: Option<bool>,
 }
 
 #[derive(Debug)]
@@ -3950,6 +4094,7 @@ struct InstalledModelConfig {
     sdcpp_runtime_asset: String,
     max_reference_images: Option<u8>,
     requires_reference_image: bool,
+    supports_image_edit: bool,
     display_name: String,
 }
 
@@ -4006,6 +4151,7 @@ fn installed_model_config(
         sdcpp_runtime_asset: runtime_asset,
         max_reference_images: stored.sdcpp_max_reference_images,
         requires_reference_image: stored.sdcpp_requires_reference_image.unwrap_or(false),
+        supports_image_edit: stored.sdcpp_supports_image_edit.unwrap_or(false),
         display_name,
     })
 }
@@ -4060,7 +4206,11 @@ async fn find_available_port() -> Result<u16, String> {
         .map_err(|e| format!("Failed to read the local image server port: {}", e))
 }
 
-async fn ensure_server(app: &AppHandle, config: &InstalledModelConfig) -> Result<String, String> {
+async fn ensure_server(
+    app: &AppHandle,
+    config: &InstalledModelConfig,
+    conservative: bool,
+) -> Result<String, String> {
     if let Some(profile) = config
         .profile_id
         .as_deref()
@@ -4083,6 +4233,7 @@ async fn ensure_server(app: &AppHandle, config: &InstalledModelConfig) -> Result
         config.sdcpp_runtime_release.as_str(),
         config.sdcpp_runtime_asset.as_str(),
         policy_key.as_str(),
+        if conservative { "conservative" } else { "" },
     ]
     .join("|");
     let mut managed = MANAGED_SERVER.lock().await;
@@ -4167,7 +4318,7 @@ async fn ensure_server(app: &AppHandle, config: &InstalledModelConfig) -> Result
             ));
         }
     }
-    let manual_estimate = (!resolved_policy.automatic).then(|| {
+    let manual_estimate = (!resolved_policy.automatic && !conservative).then(|| {
         compute_auto_fit_estimate(
             &estimate_components_from_paths(
                 &diffusion,
@@ -4190,6 +4341,9 @@ async fn ensure_server(app: &AppHandle, config: &InstalledModelConfig) -> Result
     let lora_dir = lora_root(app)?;
     std::fs::create_dir_all(&lora_dir)
         .map_err(|e| format!("Failed to create the local LoRA library: {}", e))?;
+    let upscaler_dir = upscaler_root(app)?;
+    std::fs::create_dir_all(&upscaler_dir)
+        .map_err(|e| format!("Failed to create the local upscaler library: {}", e))?;
     let mut command = tokio::process::Command::new(&executable);
     command
         .current_dir(&runtime_dir)
@@ -4197,6 +4351,8 @@ async fn ensure_server(app: &AppHandle, config: &InstalledModelConfig) -> Result
         .arg(&diffusion)
         .arg("--lora-model-dir")
         .arg(&lora_dir)
+        .arg("--hires-upscalers-dir")
+        .arg(&upscaler_dir)
         .arg("--listen-ip")
         .arg("127.0.0.1")
         .arg("--listen-port")
@@ -4207,7 +4363,9 @@ async fn ensure_server(app: &AppHandle, config: &InstalledModelConfig) -> Result
         .kill_on_drop(true);
     command.arg("--llm").arg(&text_encoder);
     command.arg("--vae").arg(&vae);
-    if let Some(estimate) = &manual_estimate {
+    if conservative {
+        command.arg("--offload-to-cpu");
+    } else if let Some(estimate) = &manual_estimate {
         let (backend_spec, params_backend_spec) = manual_backend_specs(estimate);
         command.arg("--backend").arg(backend_spec);
         if let Some(params_backend_spec) = params_backend_spec {
@@ -4235,11 +4393,12 @@ async fn ensure_server(app: &AppHandle, config: &InstalledModelConfig) -> Result
     let mut child = command
         .spawn()
         .map_err(|e| format!("Failed to start stable-diffusion.cpp: {}", e))?;
+    let log_tail: LogTail = Arc::new(std::sync::Mutex::new(VecDeque::new()));
     if let Some(stdout) = child.stdout.take() {
-        forward_lora_runtime_output(app.clone(), stdout);
+        forward_runtime_output(app.clone(), stdout, log_tail.clone());
     }
     if let Some(stderr) = child.stderr.take() {
-        forward_lora_runtime_output(app.clone(), stderr);
+        forward_runtime_output(app.clone(), stderr, log_tail.clone());
     }
     let base_url = format!("http://127.0.0.1:{}", port);
     let client = reqwest::Client::new();
@@ -4275,6 +4434,7 @@ async fn ensure_server(app: &AppHandle, config: &InstalledModelConfig) -> Result
         key,
         base_url: base_url.clone(),
         child,
+        log_tail,
     });
     Ok(base_url)
 }
@@ -4321,6 +4481,21 @@ pub async fn generate(
             config.display_name
         ));
     }
+    let mask_image = request
+        .mask_image
+        .as_deref()
+        .map(str::trim)
+        .filter(|mask| !mask.is_empty());
+    if mask_image.is_some() && references.is_empty() {
+        return Err("Inpainting requires a source image alongside the mask.".to_string());
+    }
+    let use_init_image =
+        mask_image.is_some() || (!config.supports_image_edit && references.len() == 1);
+    let (init_image, payload_references) = if use_init_image {
+        (Some(references[0].as_str()), Vec::new())
+    } else {
+        (None, references.clone())
+    };
     let (width, height) = super::provider_adapter::parse_size_dimensions(
         request.size.as_deref().or_else(|| {
             request
@@ -4382,7 +4557,6 @@ pub async fn generate(
             lora_summary
         ),
     );
-    let base_url = ensure_server(app, &config).await?;
     let payload = build_generation_payload(SdGenerationPayload {
         prompt: &request.prompt,
         negative_prompt: &negative_prompt,
@@ -4390,13 +4564,21 @@ pub async fn generate(
         height,
         seed,
         batch_count: request.n.unwrap_or(1),
-        references: &references,
+        references: &payload_references,
+        init_image,
+        mask_image,
         sample_method,
         scheduler: settings.and_then(|settings| settings.sd_scheduler.as_deref()),
         sample_steps: steps,
         cfg,
         image_cfg: settings.and_then(|settings| settings.sd_image_cfg_scale),
         distilled_guidance: settings.and_then(|settings| settings.sd_distilled_guidance),
+        slg_scale: settings.and_then(|settings| settings.sd_slg_scale),
+        slg_layers: settings.and_then(|settings| settings.sd_slg_layers.as_deref()),
+        slg_layer_start: settings.and_then(|settings| settings.sd_slg_layer_start),
+        slg_layer_end: settings.and_then(|settings| settings.sd_slg_layer_end),
+        cache_mode: settings.and_then(|settings| settings.sd_cache_mode.as_deref()),
+        cache_option: settings.and_then(|settings| settings.sd_cache_option.as_deref()),
         eta: settings.and_then(|settings| settings.sd_eta),
         flow_shift: settings.and_then(|settings| settings.sd_flow_shift),
         strength: settings.and_then(|settings| settings.sd_denoising_strength),
@@ -4424,99 +4606,317 @@ pub async fn generate(
             .and_then(|settings| settings.sd_hires_denoising_strength),
         loras: &loras,
     });
+
+    let policy = load_compute_policy(
+        app,
+        &config.sdcpp_runtime_release,
+        &config.sdcpp_runtime_asset,
+    );
+    let automatic_policy = !policy.multi_gpu_enabled && policy.single_gpu_device_id.is_none();
     let client = reqwest::Client::new();
+    let cancel = Arc::new(AtomicBool::new(false));
+    set_active_generation(Some(ActiveGeneration {
+        base_url: String::new(),
+        job_id: None,
+        cancel: cancel.clone(),
+    }));
+    emit_generation_progress(app, serde_json::json!({ "phase": "starting" }));
+    let mut conservative = false;
+    let outcome = loop {
+        let base_url = match ensure_server(app, &config, conservative).await {
+            Ok(base_url) => base_url,
+            Err(error) => {
+                break Err(if cancel.load(Ordering::SeqCst) {
+                    GENERATION_CANCELLED_MESSAGE.to_string()
+                } else {
+                    error
+                });
+            }
+        };
+        if let Ok(mut active) = ACTIVE_GENERATION.lock() {
+            if let Some(active) = active.as_mut() {
+                active.base_url = base_url.clone();
+                active.job_id = None;
+            }
+        }
+        match run_generation_job(app, &client, &base_url, &payload, &cancel).await {
+            Ok(images) => break Ok(images),
+            Err(GenerationJobError::Cancelled) => {
+                break Err(GENERATION_CANCELLED_MESSAGE.to_string())
+            }
+            Err(GenerationJobError::Rejected(message))
+            | Err(GenerationJobError::Infrastructure(message)) => break Err(message),
+            Err(GenerationJobError::Failed(message)) => {
+                if cancel.load(Ordering::SeqCst) {
+                    break Err(GENERATION_CANCELLED_MESSAGE.to_string());
+                }
+                let tail = {
+                    let managed = MANAGED_SERVER.lock().await;
+                    managed
+                        .as_ref()
+                        .map(|server| log_tail_snapshot(&server.log_tail))
+                        .unwrap_or_default()
+                };
+                let oom_detected =
+                    oom_signature_present(&tail) || oom_signature_present(&[message.clone()]);
+                if !conservative && automatic_policy && oom_detected {
+                    crate::utils::log_info(
+                        app,
+                        "sdcpp",
+                        format!(
+                            "Generation ran out of memory; retrying once with CPU-offloaded weights: {}",
+                            message
+                        ),
+                    );
+                    emit_generation_progress(app, serde_json::json!({ "phase": "retrying" }));
+                    stop_managed_server().await;
+                    conservative = true;
+                    continue;
+                }
+                break Err(message);
+            }
+        }
+    };
+    set_active_generation(None);
+    let images = outcome?;
+
+    let mut generated = Vec::with_capacity(images.len());
+    for image in &images {
+        let encoded = image
+            .get("b64_json")
+            .and_then(Value::as_str)
+            .ok_or_else(|| "Local image result is missing image data".to_string())?;
+        let source = format!("data:image/png;base64,{}", encoded);
+        let saved = super::storage::save_image(app, &source).await?;
+        generated.push(super::types::GeneratedImage {
+            asset_id: saved.asset_id,
+            file_path: saved.file_path,
+            mime_type: saved.mime_type,
+            url: None,
+            width: saved.width,
+            height: saved.height,
+            text: None,
+        });
+    }
+    Ok(super::types::ImageGenerationResponse {
+        images: generated,
+        model: request.model.clone(),
+        provider_id: PROVIDER_ID.to_string(),
+    })
+}
+
+enum GenerationJobError {
+    Cancelled,
+    Rejected(String),
+    Failed(String),
+    Infrastructure(String),
+}
+
+fn set_active_generation(entry: Option<ActiveGeneration>) {
+    if let Ok(mut active) = ACTIVE_GENERATION.lock() {
+        *active = entry;
+    }
+}
+
+fn oom_signature_present(lines: &[String]) -> bool {
+    const SIGNATURES: [&str; 8] = [
+        "out of memory",
+        "outofdevicememory",
+        "outofhostmemory",
+        "out of device memory",
+        "not enough memory",
+        "failed to allocate",
+        "memory allocation",
+        "cuda error",
+    ];
+    lines.iter().any(|line| {
+        let line = line.to_ascii_lowercase();
+        SIGNATURES.iter().any(|signature| line.contains(signature))
+    })
+}
+
+async fn run_generation_job(
+    app: &AppHandle,
+    client: &reqwest::Client,
+    base_url: &str,
+    payload: &Value,
+    cancel: &Arc<AtomicBool>,
+) -> Result<Vec<Value>, GenerationJobError> {
+    if cancel.load(Ordering::SeqCst) {
+        return Err(GenerationJobError::Cancelled);
+    }
     let response = client
         .post(format!("{}/sdcpp/v1/img_gen", base_url))
-        .json(&payload)
+        .json(payload)
         .send()
         .await
-        .map_err(|e| format!("Failed to submit local image generation: {}", e))?;
+        .map_err(|e| {
+            GenerationJobError::Infrastructure(format!(
+                "Failed to submit local image generation: {}",
+                e
+            ))
+        })?;
     if !response.status().is_success() {
         let status = response.status();
         let detail = response.text().await.unwrap_or_default();
-        return Err(format!(
+        return Err(GenerationJobError::Rejected(format!(
             "stable-diffusion.cpp rejected image generation ({}): {}",
             status, detail
-        ));
+        )));
     }
-    let accepted = response
-        .json::<Value>()
-        .await
-        .map_err(|e| format!("Failed to parse stable-diffusion.cpp job response: {}", e))?;
+    let accepted = response.json::<Value>().await.map_err(|e| {
+        GenerationJobError::Infrastructure(format!(
+            "Failed to parse stable-diffusion.cpp job response: {}",
+            e
+        ))
+    })?;
+    let job_id = accepted
+        .get("id")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    if let Ok(mut active) = ACTIVE_GENERATION.lock() {
+        if let Some(active) = active.as_mut() {
+            active.job_id = job_id.clone();
+        }
+    }
     let poll_url = accepted
         .get("poll_url")
         .and_then(Value::as_str)
-        .ok_or_else(|| "stable-diffusion.cpp response did not include a poll URL".to_string())?;
+        .ok_or_else(|| {
+            GenerationJobError::Infrastructure(
+                "stable-diffusion.cpp response did not include a poll URL".to_string(),
+            )
+        })?;
     let poll_url = if poll_url.starts_with("http://") || poll_url.starts_with("https://") {
         poll_url.to_string()
     } else {
         format!("{}{}", base_url, poll_url)
     };
 
+    let mut announced_generating = false;
     for _ in 0..1_200 {
         tokio::time::sleep(Duration::from_millis(500)).await;
-        let response = client
-            .get(&poll_url)
-            .send()
-            .await
-            .map_err(|e| format!("Failed to poll local image generation: {}", e))?;
+        let response = match client.get(&poll_url).send().await {
+            Ok(response) => response,
+            Err(error) => {
+                if cancel.load(Ordering::SeqCst) {
+                    return Err(GenerationJobError::Cancelled);
+                }
+                return Err(GenerationJobError::Failed(format!(
+                    "Failed to poll local image generation: {}",
+                    error
+                )));
+            }
+        };
         if !response.status().is_success() {
-            return Err(format!(
+            return Err(GenerationJobError::Failed(format!(
                 "stable-diffusion.cpp job polling failed with status {}",
                 response.status()
-            ));
+            )));
         }
-        let job = response
-            .json::<Value>()
-            .await
-            .map_err(|e| format!("Failed to parse local image job: {}", e))?;
+        let job = response.json::<Value>().await.map_err(|e| {
+            GenerationJobError::Infrastructure(format!("Failed to parse local image job: {}", e))
+        })?;
         match job.get("status").and_then(Value::as_str) {
-            Some("queued") | Some("generating") | Some("running") => continue,
+            Some("queued") => {
+                let position = job.get("queue_position").and_then(Value::as_u64);
+                emit_generation_progress(
+                    app,
+                    serde_json::json!({ "phase": "queued", "queuePosition": position }),
+                );
+                continue;
+            }
+            Some("generating") | Some("running") => {
+                if !announced_generating {
+                    announced_generating = true;
+                    emit_generation_progress(app, serde_json::json!({ "phase": "generating" }));
+                }
+                continue;
+            }
             Some("completed") => {
                 let images = job
                     .pointer("/result/images")
                     .and_then(Value::as_array)
-                    .ok_or_else(|| "Local image job completed without images".to_string())?;
-                let mut generated = Vec::with_capacity(images.len());
-                for image in images {
-                    let encoded = image
-                        .get("b64_json")
-                        .and_then(Value::as_str)
-                        .ok_or_else(|| "Local image result is missing image data".to_string())?;
-                    let source = format!("data:image/png;base64,{}", encoded);
-                    let saved = super::storage::save_image(app, &source).await?;
-                    generated.push(super::types::GeneratedImage {
-                        asset_id: saved.asset_id,
-                        file_path: saved.file_path,
-                        mime_type: saved.mime_type,
-                        url: None,
-                        width: saved.width,
-                        height: saved.height,
-                        text: None,
-                    });
-                }
-                return Ok(super::types::ImageGenerationResponse {
-                    images: generated,
-                    model: request.model.clone(),
-                    provider_id: PROVIDER_ID.to_string(),
-                });
+                    .cloned()
+                    .ok_or_else(|| {
+                        GenerationJobError::Failed(
+                            "Local image job completed without images".to_string(),
+                        )
+                    })?;
+                return Ok(images);
             }
-            Some("failed") | Some("cancelled") => {
+            Some("cancelled") => {
+                if cancel.load(Ordering::SeqCst) {
+                    return Err(GenerationJobError::Cancelled);
+                }
+                let message = job
+                    .pointer("/error/message")
+                    .and_then(Value::as_str)
+                    .unwrap_or("Local image generation was cancelled by the engine");
+                return Err(GenerationJobError::Failed(message.to_string()));
+            }
+            Some("failed") => {
                 let message = job
                     .pointer("/error/message")
                     .and_then(Value::as_str)
                     .unwrap_or("Local image generation failed");
-                return Err(message.to_string());
+                return Err(GenerationJobError::Failed(message.to_string()));
             }
             other => {
-                return Err(format!(
+                return Err(GenerationJobError::Infrastructure(format!(
                     "Unknown stable-diffusion.cpp job status: {:?}",
                     other
-                ))
+                )))
             }
         }
     }
-    Err("Local image generation timed out after ten minutes".to_string())
+    Err(GenerationJobError::Infrastructure(
+        "Local image generation timed out after ten minutes".to_string(),
+    ))
+}
+
+#[tauri::command]
+pub async fn sdcpp_cancel_generation(app: AppHandle) -> Result<bool, String> {
+    if cfg!(mobile) {
+        return Err("Local stable-diffusion.cpp image generation is desktop-only.".to_string());
+    }
+    let active = {
+        let guard = ACTIVE_GENERATION
+            .lock()
+            .map_err(|_| "Failed to inspect the active generation.".to_string())?;
+        guard.clone()
+    };
+    let Some(active) = active else {
+        return Ok(false);
+    };
+    active.cancel.store(true, Ordering::SeqCst);
+    if let Some(job_id) = active.job_id.as_deref().filter(|_| !active.base_url.is_empty()) {
+        let client = reqwest::Client::new();
+        let response = client
+            .post(format!(
+                "{}/sdcpp/v1/jobs/{}/cancel",
+                active.base_url, job_id
+            ))
+            .send()
+            .await;
+        if response.is_ok_and(|response| response.status().is_success()) {
+            crate::utils::log_info(
+                &app,
+                "sdcpp",
+                format!("Cancelled queued local image job {}", job_id),
+            );
+            emit_generation_progress(&app, serde_json::json!({ "phase": "cancelled" }));
+            return Ok(true);
+        }
+    }
+    crate::utils::log_info(
+        &app,
+        "sdcpp",
+        "Stopping stable-diffusion.cpp to abort the running generation".to_string(),
+    );
+    stop_managed_server().await;
+    emit_generation_progress(&app, serde_json::json!({ "phase": "cancelled" }));
+    Ok(true)
 }
 
 pub async fn handle_download_completed(
@@ -4755,6 +5155,282 @@ fn image_root(app: &AppHandle) -> Result<PathBuf, String> {
 
 fn lora_root(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(crate::utils::lettuce_dir(app)?.join("models").join("loras"))
+}
+
+fn upscaler_root(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(crate::utils::lettuce_dir(app)?
+        .join("models")
+        .join("upscalers"))
+}
+
+const UPSCALER_MODEL_FILENAME: &str = "RealESRGAN_x4plus_anime_6B.pth";
+const UPSCALER_MODEL_URL: &str =
+    "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.2.4/RealESRGAN_x4plus_anime_6B.pth";
+const UPSCALER_MODEL_BYTES: u64 = 17_938_799;
+const UPSCALER_MODEL_SHA256: &str =
+    "f872d837d3c90ed2e05227bed711af5671a6fd1c9f7d7e91c911a61f155e99da";
+const UPSCALER_EXTENSIONS: [&str; 4] = ["pth", "pt", "safetensors", "gguf"];
+
+fn runtime_cli_executable(app: &AppHandle, release: &str, asset: &str) -> Result<PathBuf, String> {
+    #[cfg(target_os = "windows")]
+    let filename = "sd-cli.exe";
+    #[cfg(not(target_os = "windows"))]
+    let filename = "sd-cli";
+    Ok(runtime_root(app, release, asset)?.join(filename))
+}
+
+fn installed_upscaler_files(app: &AppHandle) -> Result<Vec<String>, String> {
+    let root = upscaler_root(app)?;
+    let Ok(entries) = std::fs::read_dir(&root) else {
+        return Ok(Vec::new());
+    };
+    let mut files = entries
+        .flatten()
+        .filter(|entry| entry.path().is_file())
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .filter(|name| {
+            Path::new(name)
+                .extension()
+                .and_then(|extension| extension.to_str())
+                .is_some_and(|extension| {
+                    UPSCALER_EXTENSIONS
+                        .iter()
+                        .any(|allowed| extension.eq_ignore_ascii_case(allowed))
+                })
+        })
+        .collect::<Vec<_>>();
+    files.sort();
+    Ok(files)
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpscalerInventory {
+    pub models: Vec<String>,
+    pub hires_upscaler_names: Vec<String>,
+    pub recommended_filename: String,
+    pub recommended_bytes: u64,
+    pub recommended_installed: bool,
+}
+
+fn upscaler_inventory(app: &AppHandle) -> Result<UpscalerInventory, String> {
+    let models = installed_upscaler_files(app)?;
+    let hires_upscaler_names = models
+        .iter()
+        .filter_map(|name| {
+            Path::new(name)
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .map(str::to_string)
+        })
+        .collect();
+    let recommended_installed = models
+        .iter()
+        .any(|name| name == UPSCALER_MODEL_FILENAME);
+    Ok(UpscalerInventory {
+        models,
+        hires_upscaler_names,
+        recommended_filename: UPSCALER_MODEL_FILENAME.to_string(),
+        recommended_bytes: UPSCALER_MODEL_BYTES,
+        recommended_installed,
+    })
+}
+
+#[tauri::command]
+pub async fn sdcpp_upscaler_inventory(app: AppHandle) -> Result<UpscalerInventory, String> {
+    if cfg!(mobile) {
+        return Err("Local stable-diffusion.cpp image generation is desktop-only.".to_string());
+    }
+    upscaler_inventory(&app)
+}
+
+#[tauri::command]
+pub async fn sdcpp_install_upscaler(app: AppHandle) -> Result<UpscalerInventory, String> {
+    if cfg!(mobile) {
+        return Err("Local stable-diffusion.cpp image generation is desktop-only.".to_string());
+    }
+    let root = upscaler_root(&app)?;
+    std::fs::create_dir_all(&root)
+        .map_err(|e| format!("Failed to create the local upscaler library: {}", e))?;
+    let target = root.join(UPSCALER_MODEL_FILENAME);
+    if !target.is_file() || std::fs::metadata(&target).map(|meta| meta.len()).ok() != Some(UPSCALER_MODEL_BYTES) {
+        let response = reqwest::get(UPSCALER_MODEL_URL)
+            .await
+            .map_err(|e| format!("Failed to download the upscaler model: {}", e))?;
+        if !response.status().is_success() {
+            return Err(format!(
+                "Upscaler model download failed with status {}",
+                response.status()
+            ));
+        }
+        let bytes = response
+            .bytes()
+            .await
+            .map_err(|e| format!("Failed to download the upscaler model: {}", e))?;
+        if bytes.len() as u64 != UPSCALER_MODEL_BYTES {
+            return Err(format!(
+                "Upscaler model download was incomplete ({} of {} bytes).",
+                bytes.len(),
+                UPSCALER_MODEL_BYTES
+            ));
+        }
+        let digest = {
+            let mut hasher = Sha256::new();
+            hasher.update(&bytes);
+            format!("{:x}", hasher.finalize())
+        };
+        if digest != UPSCALER_MODEL_SHA256 {
+            return Err("Upscaler model download failed its integrity check.".to_string());
+        }
+        let temporary = target.with_extension("pth.tmp");
+        std::fs::write(&temporary, &bytes)
+            .map_err(|e| format!("Failed to store the upscaler model: {}", e))?;
+        std::fs::rename(&temporary, &target)
+            .map_err(|e| format!("Failed to finalize the upscaler model: {}", e))?;
+    }
+    upscaler_inventory(&app)
+}
+
+#[tauri::command]
+pub async fn sdcpp_remove_upscaler(
+    app: AppHandle,
+    filename: String,
+) -> Result<UpscalerInventory, String> {
+    if cfg!(mobile) {
+        return Err("Local stable-diffusion.cpp image generation is desktop-only.".to_string());
+    }
+    let name = Path::new(&filename)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| "Invalid upscaler file name.".to_string())?;
+    if name != filename {
+        return Err("Invalid upscaler file name.".to_string());
+    }
+    let target = upscaler_root(&app)?.join(name);
+    match std::fs::remove_file(&target) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(format!("Failed to remove the upscaler model: {}", error)),
+    }
+    upscaler_inventory(&app)
+}
+
+fn decode_image_input(image: &str) -> Result<Vec<u8>, String> {
+    let encoded = image
+        .split_once(";base64,")
+        .map(|(_, encoded)| encoded)
+        .unwrap_or(image);
+    STANDARD
+        .decode(encoded.trim())
+        .map_err(|e| format!("Failed to decode the image to upscale: {}", e))
+}
+
+#[tauri::command]
+pub async fn sdcpp_upscale_image(
+    app: AppHandle,
+    image: String,
+) -> Result<super::types::GeneratedImage, String> {
+    if cfg!(mobile) {
+        return Err("Local stable-diffusion.cpp image generation is desktop-only.".to_string());
+    }
+    let inventory = upscaler_inventory(&app)?;
+    let model = if inventory.recommended_installed {
+        UPSCALER_MODEL_FILENAME.to_string()
+    } else {
+        inventory.models.first().cloned().ok_or_else(|| {
+            "No upscaler model is installed. Install one in the Local Image Generation settings first."
+                .to_string()
+        })?
+    };
+    let model_path = upscaler_root(&app)?.join(&model);
+    let active = effective_active_runtime(&app, &installed_runtimes(&app)?).ok_or_else(|| {
+        "No stable-diffusion.cpp engine build is installed. Install an engine in the Local Image Generation settings first."
+            .to_string()
+    })?;
+    let executable = runtime_cli_executable(&app, &active.release, &active.asset)?;
+    if !executable.is_file() {
+        return Err(format!(
+            "The stable-diffusion.cpp command-line tool is missing: {}",
+            executable.display()
+        ));
+    }
+    let runtime_dir = runtime_root(&app, &active.release, &active.asset)?;
+    let bytes = decode_image_input(&image)?;
+    let work_dir = crate::utils::lettuce_dir(&app)?.join("cache").join("upscale");
+    std::fs::create_dir_all(&work_dir)
+        .map_err(|e| format!("Failed to prepare the upscale work directory: {}", e))?;
+    let job_id = uuid::Uuid::new_v4().to_string();
+    let input_path = work_dir.join(format!("{}-in.png", job_id));
+    let output_path = work_dir.join(format!("{}-out.png", job_id));
+    std::fs::write(&input_path, &bytes)
+        .map_err(|e| format!("Failed to stage the image to upscale: {}", e))?;
+    let mut command = tokio::process::Command::new(&executable);
+    command
+        .current_dir(&runtime_dir)
+        .arg("-M")
+        .arg("upscale")
+        .arg("--upscale-model")
+        .arg(&model_path)
+        .arg("-i")
+        .arg(&input_path)
+        .arg("-o")
+        .arg(&output_path)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    #[cfg(target_os = "linux")]
+    {
+        let existing = std::env::var_os("LD_LIBRARY_PATH").unwrap_or_default();
+        let mut paths = vec![runtime_dir.clone()];
+        paths.extend(std::env::split_paths(&existing));
+        let joined = std::env::join_paths(paths)
+            .map_err(|e| format!("Failed to configure stable-diffusion.cpp libraries: {}", e))?;
+        command.env("LD_LIBRARY_PATH", joined);
+    }
+    let cleanup = |input: &Path, output: &Path| {
+        let _ = std::fs::remove_file(input);
+        let _ = std::fs::remove_file(output);
+    };
+    let child = command
+        .spawn()
+        .map_err(|e| format!("Failed to start the upscaler: {}", e))?;
+    let output = match tokio::time::timeout(Duration::from_secs(600), child.wait_with_output()).await
+    {
+        Ok(Ok(output)) => output,
+        Ok(Err(error)) => {
+            cleanup(&input_path, &output_path);
+            return Err(format!("The upscaler failed to run: {}", error));
+        }
+        Err(_) => {
+            cleanup(&input_path, &output_path);
+            return Err("Upscaling timed out after ten minutes.".to_string());
+        }
+    };
+    if !output.status.success() || !output_path.is_file() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let detail = stderr
+            .lines()
+            .rev()
+            .find(|line| !line.trim().is_empty())
+            .unwrap_or("no error output")
+            .to_string();
+        cleanup(&input_path, &output_path);
+        return Err(format!("Upscaling failed: {}", detail));
+    }
+    let upscaled = std::fs::read(&output_path)
+        .map_err(|e| format!("Failed to read the upscaled image: {}", e));
+    cleanup(&input_path, &output_path);
+    let source = format!("data:image/png;base64,{}", STANDARD.encode(upscaled?));
+    let saved = super::storage::save_image(&app, &source).await?;
+    Ok(super::types::GeneratedImage {
+        asset_id: saved.asset_id,
+        file_path: saved.file_path,
+        mime_type: saved.mime_type,
+        url: None,
+        width: saved.width,
+        height: saved.height,
+        text: None,
+    })
 }
 
 fn normalize_loras(
@@ -5108,7 +5784,7 @@ mod tests {
         architecture_from_safetensors_metadata,
         ensure_runtime_supports_profile, manual_backend_specs, max_vram_spec,
         keywords_from_safetensors_metadata, lora_compatibility, merge_generation_loras,
-        migrate_legacy_compute_policy, runtime_build_number,
+        migrate_legacy_compute_policy, oom_signature_present, runtime_build_number,
         validate_compute_policy, ComputePolicy, EstimateComponent, LegacyComputePolicy,
         RunnabilityDevice, RunnabilityEstimate, RunnabilityPlacement, SdGenerationPayload, MIB,
         PROFILES,
@@ -5391,12 +6067,20 @@ mod tests {
             seed: 42,
             batch_count: 2,
             references: &references,
+            init_image: None,
+            mask_image: None,
             sample_method: Some("dpm++2m"),
             scheduler: Some("karras"),
             sample_steps: 24,
             cfg: 3.5,
             image_cfg: Some(1.75),
             distilled_guidance: Some(2.5),
+            slg_scale: None,
+            slg_layers: None,
+            slg_layer_start: None,
+            slg_layer_end: None,
+            cache_mode: None,
+            cache_option: None,
             eta: Some(0.35),
             flow_shift: Some(3.0),
             strength: Some(0.72),
@@ -5459,12 +6143,20 @@ mod tests {
             seed: -1,
             batch_count: 1,
             references: &[],
+            init_image: None,
+            mask_image: None,
             sample_method: None,
             scheduler: None,
             sample_steps: 8,
             cfg: 1.0,
             image_cfg: None,
             distilled_guidance: None,
+            slg_scale: None,
+            slg_layers: None,
+            slg_layer_start: None,
+            slg_layer_end: None,
+            cache_mode: None,
+            cache_option: None,
             eta: None,
             flow_shift: None,
             strength: None,
@@ -5492,8 +6184,129 @@ mod tests {
         assert!(payload["sample_params"]["guidance"]
             .get("distilled_guidance")
             .is_none());
+        assert!(payload["sample_params"]["guidance"].get("slg").is_none());
         assert!(payload.get("strength").is_none());
+        assert!(payload.get("init_image").is_none());
+        assert!(payload.get("mask_image").is_none());
+        assert!(payload.get("cache_mode").is_none());
+        assert!(payload.get("cache_option").is_none());
         assert_eq!(payload["hires"], serde_json::json!({ "enabled": false }));
+    }
+
+    #[test]
+    fn generation_payload_wires_inpainting_caching_and_slg() {
+        let payload = build_generation_payload(SdGenerationPayload {
+            prompt: "prompt",
+            negative_prompt: "",
+            width: 1024,
+            height: 1024,
+            seed: -1,
+            batch_count: 1,
+            references: &[],
+            init_image: Some("data:image/png;base64,source"),
+            mask_image: Some("data:image/png;base64,mask"),
+            sample_method: None,
+            scheduler: None,
+            sample_steps: 8,
+            cfg: 1.0,
+            image_cfg: None,
+            distilled_guidance: None,
+            slg_scale: Some(2.5),
+            slg_layers: Some("7, 8,9,junk"),
+            slg_layer_start: Some(0.01),
+            slg_layer_end: Some(0.2),
+            cache_mode: Some("easycache"),
+            cache_option: Some("threshold=0.2"),
+            eta: None,
+            flow_shift: None,
+            strength: Some(0.6),
+            auto_resize_ref_images: true,
+            increase_ref_index: false,
+            vae_tiling_enabled: true,
+            vae_tile_size_x: None,
+            vae_tile_size_y: None,
+            vae_tile_overlap: None,
+            hires_enabled: false,
+            hires_upscaler: None,
+            hires_scale: None,
+            hires_width: None,
+            hires_height: None,
+            hires_steps: None,
+            hires_denoising_strength: None,
+            loras: &[],
+        });
+
+        assert_eq!(payload["init_image"], "data:image/png;base64,source");
+        assert_eq!(payload["mask_image"], "data:image/png;base64,mask");
+        assert_eq!(payload["strength"], 0.6);
+        assert_eq!(payload["cache_mode"], "easycache");
+        assert_eq!(payload["cache_option"], "threshold=0.2");
+        let slg = &payload["sample_params"]["guidance"]["slg"];
+        assert_eq!(slg["scale"], 2.5);
+        assert_eq!(slg["layers"], serde_json::json!([7, 8, 9]));
+        assert_eq!(slg["layer_start"], 0.01);
+        assert_eq!(slg["layer_end"], 0.2);
+    }
+
+    #[test]
+    fn disabled_cache_mode_is_not_sent_to_the_engine() {
+        let payload = build_generation_payload(SdGenerationPayload {
+            prompt: "prompt",
+            negative_prompt: "",
+            width: 1024,
+            height: 1024,
+            seed: -1,
+            batch_count: 1,
+            references: &[],
+            init_image: None,
+            mask_image: None,
+            sample_method: None,
+            scheduler: None,
+            sample_steps: 8,
+            cfg: 1.0,
+            image_cfg: None,
+            distilled_guidance: None,
+            slg_scale: None,
+            slg_layers: None,
+            slg_layer_start: None,
+            slg_layer_end: None,
+            cache_mode: Some("disabled"),
+            cache_option: Some("threshold=0.2"),
+            eta: None,
+            flow_shift: None,
+            strength: None,
+            auto_resize_ref_images: true,
+            increase_ref_index: false,
+            vae_tiling_enabled: true,
+            vae_tile_size_x: None,
+            vae_tile_size_y: None,
+            vae_tile_overlap: None,
+            hires_enabled: false,
+            hires_upscaler: None,
+            hires_scale: None,
+            hires_width: None,
+            hires_height: None,
+            hires_steps: None,
+            hires_denoising_strength: None,
+            loras: &[],
+        });
+
+        assert!(payload.get("cache_mode").is_none());
+        assert!(payload.get("cache_option").is_none());
+    }
+
+    #[test]
+    fn oom_signatures_match_engine_failure_output() {
+        assert!(oom_signature_present(&[
+            "ggml_vulkan: Device memory allocation of size 1073741824 failed.".to_string()
+        ]));
+        assert!(oom_signature_present(&[
+            "vk::Device::allocateMemory: ErrorOutOfDeviceMemory".to_string()
+        ]));
+        assert!(oom_signature_present(&["CUDA error: out of memory".to_string()]));
+        assert!(!oom_signature_present(&[
+            "sampling completed in 12.5s".to_string()
+        ]));
     }
 
     #[test]

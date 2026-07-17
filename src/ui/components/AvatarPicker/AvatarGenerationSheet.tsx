@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Sparkles,
@@ -11,7 +11,12 @@ import {
   ChevronRight,
   Wand2,
   ArrowLeft,
+  Brush,
+  Eraser,
+  ArrowUpRight,
+  Square,
 } from "lucide-react";
+import { listen } from "@tauri-apps/api/event";
 
 import { BottomMenu } from "../BottomMenu";
 import { cn, typography, radius, interactive, animations } from "../../design-tokens";
@@ -22,6 +27,12 @@ import {
   generateImage,
   type ImageGenerationRequest,
   type GeneratedImage,
+  type SdcppGenerationProgress,
+  SDCPP_GENERATION_PROGRESS_EVENT,
+  cancelLocalImageGeneration,
+  getSdcppUpscalerInventory,
+  upscaleLocalImage,
+  isGenerationCancelledError,
   resolveGeneratedImageUrl,
   resolveAvatarGenerationOptions,
 } from "../../../core/image-generation";
@@ -68,6 +79,160 @@ function getErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
+interface MaskPaintCanvasProps {
+  imageUrl: string;
+  onMaskChange: (maskDataUrl: string | null) => void;
+}
+
+function MaskPaintCanvas({ imageUrl, onMaskChange }: MaskPaintCanvasProps) {
+  const { t } = useI18n();
+  const overlayRef = useRef<HTMLCanvasElement>(null);
+  const maskRef = useRef<HTMLCanvasElement | null>(null);
+  const drawingRef = useRef(false);
+  const [brushSize, setBrushSize] = useState(48);
+  const [hasStrokes, setHasStrokes] = useState(false);
+
+  useEffect(() => {
+    const image = new Image();
+    image.onload = () => {
+      const mask = document.createElement("canvas");
+      mask.width = image.naturalWidth;
+      mask.height = image.naturalHeight;
+      const context = mask.getContext("2d");
+      if (context) {
+        context.fillStyle = "#000000";
+        context.fillRect(0, 0, mask.width, mask.height);
+      }
+      maskRef.current = mask;
+      const overlay = overlayRef.current;
+      if (overlay) {
+        overlay.width = image.naturalWidth;
+        overlay.height = image.naturalHeight;
+        overlay.getContext("2d")?.clearRect(0, 0, overlay.width, overlay.height);
+      }
+      setHasStrokes(false);
+      onMaskChange(null);
+    };
+    image.src = imageUrl;
+  }, [imageUrl, onMaskChange]);
+
+  const paintAt = useCallback(
+    (clientX: number, clientY: number) => {
+      const overlay = overlayRef.current;
+      const mask = maskRef.current;
+      if (!overlay || !mask) return;
+      const rect = overlay.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+      const x = ((clientX - rect.left) / rect.width) * overlay.width;
+      const y = ((clientY - rect.top) / rect.height) * overlay.height;
+      const radiusPx = (brushSize / 2) * (overlay.width / rect.width);
+      const overlayContext = overlay.getContext("2d");
+      if (overlayContext) {
+        overlayContext.fillStyle = "rgba(16, 185, 129, 0.45)";
+        overlayContext.beginPath();
+        overlayContext.arc(x, y, radiusPx, 0, Math.PI * 2);
+        overlayContext.fill();
+      }
+      const maskContext = mask.getContext("2d");
+      if (maskContext) {
+        maskContext.fillStyle = "#ffffff";
+        maskContext.beginPath();
+        maskContext.arc(x, y, radiusPx, 0, Math.PI * 2);
+        maskContext.fill();
+      }
+      setHasStrokes(true);
+    },
+    [brushSize],
+  );
+
+  const commitMask = useCallback(() => {
+    const mask = maskRef.current;
+    if (!mask) return;
+    onMaskChange(hasStrokes ? mask.toDataURL("image/png") : null);
+  }, [hasStrokes, onMaskChange]);
+
+  const handleClear = useCallback(() => {
+    const overlay = overlayRef.current;
+    const mask = maskRef.current;
+    overlay?.getContext("2d")?.clearRect(0, 0, overlay.width, overlay.height);
+    if (mask) {
+      const context = mask.getContext("2d");
+      if (context) {
+        context.fillStyle = "#000000";
+        context.fillRect(0, 0, mask.width, mask.height);
+      }
+    }
+    setHasStrokes(false);
+    onMaskChange(null);
+  }, [onMaskChange]);
+
+  return (
+    <div className="space-y-3">
+      <div className={cn("relative w-full overflow-hidden border border-white/10", radius.lg)}>
+        <img
+          src={imageUrl}
+          alt={t("components.avatarGeneration.alt")}
+          className="pointer-events-none w-full select-none"
+          draggable={false}
+        />
+        <canvas
+          ref={overlayRef}
+          className="absolute inset-0 h-full w-full cursor-crosshair touch-none"
+          onPointerDown={(event) => {
+            event.currentTarget.setPointerCapture(event.pointerId);
+            drawingRef.current = true;
+            paintAt(event.clientX, event.clientY);
+          }}
+          onPointerMove={(event) => {
+            if (drawingRef.current) {
+              paintAt(event.clientX, event.clientY);
+            }
+          }}
+          onPointerUp={(event) => {
+            event.currentTarget.releasePointerCapture(event.pointerId);
+            drawingRef.current = false;
+            commitMask();
+          }}
+          onPointerCancel={() => {
+            drawingRef.current = false;
+            commitMask();
+          }}
+        />
+      </div>
+      <div className="flex items-center gap-3">
+        <Brush size={14} className="shrink-0 text-white/40" />
+        <input
+          type="range"
+          min={12}
+          max={120}
+          step={4}
+          value={brushSize}
+          onChange={(event) => setBrushSize(Number(event.target.value))}
+          className="w-full accent-emerald-400"
+          aria-label={t("components.avatarGeneration.brushSize")}
+        />
+        <button
+          type="button"
+          onClick={handleClear}
+          disabled={!hasStrokes}
+          className={cn(
+            "flex shrink-0 items-center gap-1.5 px-3 py-1.5 text-xs font-medium",
+            radius.md,
+            "border border-white/10 bg-white/5 text-white/60",
+            "hover:bg-white/10 disabled:opacity-40",
+          )}
+        >
+          <Eraser size={12} />
+          {t("components.avatarGeneration.clearMask")}
+        </button>
+      </div>
+      <p className={cn(typography.bodySmall.size, "text-white/40")}>
+        {t("components.avatarGeneration.paintMaskHint")}
+      </p>
+    </div>
+  );
+}
+
 export function AvatarGenerationSheet({
   isOpen,
   onClose,
@@ -93,8 +258,45 @@ export function AvatarGenerationSheet({
   const [loading, setLoading] = useState(true);
   const [isRefining, setIsRefining] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("initial");
+  const [progress, setProgress] = useState<SdcppGenerationProgress | null>(null);
+  const [cancelRequested, setCancelRequested] = useState(false);
+  const [maskEnabled, setMaskEnabled] = useState(false);
+  const [maskDataUrl, setMaskDataUrl] = useState<string | null>(null);
+  const [upscalerAvailable, setUpscalerAvailable] = useState(false);
 
   const currentVariant = variants[currentVariantIndex] ?? null;
+  const isSdcppModel = selectedModel?.providerId === "sdcpp";
+  const canInpaint =
+    isSdcppModel && selectedModel?.advancedModelSettings?.sdcppRequiresReferenceImage !== true;
+
+  useEffect(() => {
+    if (!isOpen || !isSdcppModel) return;
+
+    let unlisten: (() => void) | null = null;
+    let disposed = false;
+    void listen<SdcppGenerationProgress>(SDCPP_GENERATION_PROGRESS_EVENT, (event) => {
+      setProgress(event.payload);
+    }).then((stop) => {
+      if (disposed) {
+        stop();
+      } else {
+        unlisten = stop;
+      }
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [isOpen, isSdcppModel]);
+
+  useEffect(() => {
+    if (!isOpen || !isSdcppModel) return;
+
+    getSdcppUpscalerInventory()
+      .then((inventory) => setUpscalerAvailable(inventory.models.length > 0))
+      .catch(() => setUpscalerAvailable(false));
+  }, [isOpen, isSdcppModel]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -141,6 +343,10 @@ export function AvatarGenerationSheet({
       setSelectedProvider(null);
       setViewMode("initial");
       setIsRefining(false);
+      setProgress(null);
+      setCancelRequested(false);
+      setMaskEnabled(false);
+      setMaskDataUrl(null);
     }
   }, [isOpen]);
 
@@ -227,6 +433,8 @@ export function AvatarGenerationSheet({
 
     setGenerating(true);
     setError(null);
+    setProgress(null);
+    setCancelRequested(false);
     setOperationLabel(t("components.avatarGeneration.inProgress"));
 
     try {
@@ -255,11 +463,15 @@ export function AvatarGenerationSheet({
         appendVariant(response.images[0], renderedPrompt);
       }
     } catch (err) {
-      console.error("Image generation failed:", err);
-      setError(getErrorMessage(err, "Failed to generate image"));
+      if (!isGenerationCancelledError(err)) {
+        console.error("Image generation failed:", err);
+        setError(getErrorMessage(err, "Failed to generate image"));
+      }
     } finally {
       setGenerating(false);
       setOperationLabel(null);
+      setProgress(null);
+      setCancelRequested(false);
     }
   }, [appendVariant, selectedModel, selectedProvider, prompt, subjectDescription, subjectName, t]);
 
@@ -298,6 +510,8 @@ export function AvatarGenerationSheet({
 
     setGenerating(true);
     setError(null);
+    setProgress(null);
+    setCancelRequested(false);
     setOperationLabel(t("components.avatarGeneration.editingInProgress"));
 
     try {
@@ -318,6 +532,7 @@ export function AvatarGenerationSheet({
         credentialId: selectedProvider.id,
         advancedModelSettings: selectedModel.advancedModelSettings ?? null,
         inputImages: [sourceImageDataUrl],
+        maskImage: canInpaint && maskEnabled ? maskDataUrl : null,
         outputModalities: selectedModel.outputScopes,
         size: selectedModel.advancedModelSettings?.sdSize ?? "1024x1024",
         n: 1,
@@ -327,18 +542,27 @@ export function AvatarGenerationSheet({
       if (response.images.length > 0) {
         appendVariant(response.images[0], renderedPrompt);
         setEditRequest("");
+        setMaskEnabled(false);
+        setMaskDataUrl(null);
       }
     } catch (err) {
-      console.error("Avatar edit generation failed:", err);
-      setError(getErrorMessage(err, "Failed to edit avatar"));
+      if (!isGenerationCancelledError(err)) {
+        console.error("Avatar edit generation failed:", err);
+        setError(getErrorMessage(err, "Failed to edit avatar"));
+      }
     } finally {
       setGenerating(false);
       setOperationLabel(null);
+      setProgress(null);
+      setCancelRequested(false);
     }
   }, [
     appendVariant,
+    canInpaint,
     currentVariant,
     editRequest,
+    maskDataUrl,
+    maskEnabled,
     resolveCurrentImageAsDataUrl,
     selectedModel,
     selectedProvider,
@@ -346,6 +570,74 @@ export function AvatarGenerationSheet({
     subjectName,
     t,
   ]);
+
+  const handleCancelGeneration = useCallback(() => {
+    setCancelRequested(true);
+    void cancelLocalImageGeneration().catch((err) => {
+      console.error("Failed to cancel local image generation:", err);
+    });
+  }, []);
+
+  const handleUpscale = useCallback(async () => {
+    if (!currentVariant) return;
+
+    const sourceImageDataUrl = await resolveCurrentImageAsDataUrl();
+    if (!sourceImageDataUrl) {
+      setError(t("components.avatarGeneration.editImageLoadError"));
+      return;
+    }
+
+    setGenerating(true);
+    setError(null);
+    setProgress(null);
+    setOperationLabel(t("components.avatarGeneration.upscaling"));
+
+    try {
+      const image = await upscaleLocalImage(sourceImageDataUrl);
+      appendVariant(image, currentVariant.renderedPrompt);
+    } catch (err) {
+      console.error("Upscaling failed:", err);
+      setError(getErrorMessage(err, t("components.avatarGeneration.upscaleFailed")));
+    } finally {
+      setGenerating(false);
+      setOperationLabel(null);
+      setProgress(null);
+    }
+  }, [appendVariant, currentVariant, resolveCurrentImageAsDataUrl, t]);
+
+  const progressLabel = (() => {
+    if (!progress) return null;
+    switch (progress.phase) {
+      case "starting":
+        return t("components.avatarGeneration.preparing");
+      case "loading":
+        return t("components.avatarGeneration.loadingModel");
+      case "queued":
+        return progress.queuePosition
+          ? t("components.avatarGeneration.queuedWithPosition", {
+              position: progress.queuePosition,
+            })
+          : t("components.avatarGeneration.preparing");
+      case "generating":
+        return t("components.avatarGeneration.preparing");
+      case "sampling":
+        return progress.step !== undefined && progress.steps !== undefined
+          ? t("components.avatarGeneration.samplingProgress", {
+              step: progress.step,
+              steps: progress.steps,
+            })
+          : null;
+      case "retrying":
+        return t("components.avatarGeneration.retryingWithOffload");
+      default:
+        return null;
+    }
+  })();
+
+  const samplingPercent =
+    progress?.phase === "sampling" && progress.step !== undefined && progress.steps
+      ? Math.min(100, Math.round((progress.step / progress.steps) * 100))
+      : null;
 
   const handleUseImage = useCallback(async () => {
     if (!currentVariant) return;
@@ -494,9 +786,40 @@ export function AvatarGenerationSheet({
                   {operationLabel || t("components.avatarGeneration.inProgress")}
                 </p>
                 <p className={cn(typography.bodySmall.size, "text-white/40")}>
-                  {t("components.avatarGeneration.magicInTheWorks")}
+                  {progressLabel ?? t("components.avatarGeneration.magicInTheWorks")}
                 </p>
               </div>
+
+              {samplingPercent !== null && (
+                <div className="w-full max-w-xs">
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                    <div
+                      className="h-full rounded-full bg-emerald-400/80 transition-[width] duration-300"
+                      style={{ width: `${samplingPercent}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {isSdcppModel && (
+                <button
+                  type="button"
+                  onClick={handleCancelGeneration}
+                  disabled={cancelRequested}
+                  className={cn(
+                    "flex items-center gap-2 px-5 py-2",
+                    radius.lg,
+                    "border border-white/10 bg-white/5 text-sm font-medium text-white/60",
+                    "hover:bg-white/10 hover:text-white/80 disabled:opacity-50",
+                    interactive.transition.fast,
+                  )}
+                >
+                  <Square size={13} />
+                  {cancelRequested
+                    ? t("components.avatarGeneration.cancelling")
+                    : t("components.avatarGeneration.cancelGeneration")}
+                </button>
+              )}
             </motion.div>
           ) : currentVariant ? (
             <motion.div key="result-view" {...animations.fadeInFast} className="space-y-6">
@@ -591,6 +914,23 @@ export function AvatarGenerationSheet({
                           {t("components.avatarGeneration.refine")}
                         </span>
                       </button>
+                      {isSdcppModel && upscalerAvailable && (
+                        <button
+                          onClick={handleUpscale}
+                          title={t("components.avatarGeneration.upscale")}
+                          className={cn(
+                            "flex items-center justify-center gap-2 px-4 py-3 border border-white/10 bg-white/5",
+                            radius.lg,
+                            interactive.transition.default,
+                            "hover:bg-white/8 active:scale-[0.98]",
+                          )}
+                        >
+                          <ArrowUpRight size={16} className="text-white/40" />
+                          <span className={cn(typography.body.size, "font-medium text-white/70")}>
+                            {t("components.avatarGeneration.upscale")}
+                          </span>
+                        </button>
+                      )}
                       <button
                         onClick={handleGenerate}
                         className={cn(
@@ -611,6 +951,12 @@ export function AvatarGenerationSheet({
                       exit={{ opacity: 0, scale: 0.95 }}
                       className="space-y-3"
                     >
+                      {canInpaint && maskEnabled && currentVariant.imageUrl && (
+                        <MaskPaintCanvas
+                          imageUrl={currentVariant.imageUrl}
+                          onMaskChange={setMaskDataUrl}
+                        />
+                      )}
                       <div
                         className={cn(
                           "relative rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3",
@@ -628,9 +974,34 @@ export function AvatarGenerationSheet({
                           )}
                           autoFocus
                         />
-                        <div className="mt-2 flex justify-end gap-2">
+                        <div className="mt-2 flex items-center gap-2">
+                          {canInpaint && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setMaskEnabled((enabled) => !enabled);
+                                setMaskDataUrl(null);
+                              }}
+                              className={cn(
+                                "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium",
+                                radius.md,
+                                interactive.transition.fast,
+                                maskEnabled
+                                  ? "border border-emerald-500/30 bg-emerald-500/20 text-emerald-100"
+                                  : "border border-white/10 bg-white/5 text-white/50 hover:bg-white/10",
+                              )}
+                            >
+                              <Brush size={12} />
+                              {t("components.avatarGeneration.paintMask")}
+                            </button>
+                          )}
+                          <div className="ml-auto flex gap-2">
                           <button
-                            onClick={() => setIsRefining(false)}
+                            onClick={() => {
+                              setIsRefining(false);
+                              setMaskEnabled(false);
+                              setMaskDataUrl(null);
+                            }}
                             className="px-3 py-1.5 text-white/40 hover:text-white transition-colors text-xs font-medium"
                           >
                             {t("common.buttons.cancel")}
@@ -648,6 +1019,7 @@ export function AvatarGenerationSheet({
                             <Sparkles size={14} />
                             <span>{t("components.avatarGeneration.apply")}</span>
                           </button>
+                          </div>
                         </div>
                       </div>
                     </motion.div>

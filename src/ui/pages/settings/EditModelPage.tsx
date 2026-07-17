@@ -16,6 +16,9 @@ import {
   ADVANCED_SD_ETA_RANGE,
   ADVANCED_SD_FLOW_SHIFT_RANGE,
   ADVANCED_SD_HIRES_DENOISING_RANGE,
+  ADVANCED_SD_SLG_SCALE_RANGE,
+  ADVANCED_SD_SLG_FRACTION_RANGE,
+  SD_CACHE_MODES,
   ADVANCED_SD_HIRES_DIMENSION_RANGE,
   ADVANCED_SD_HIRES_SCALE_RANGE,
   ADVANCED_SD_HIRES_STEPS_RANGE,
@@ -577,6 +580,7 @@ export function EditModelPage() {
   >(null);
   const [showPlatformSelector, setShowPlatformSelector] = useState(false);
   const [sdcppInstalled, setSdcppInstalled] = useState<SdcppInstalledModel[]>([]);
+  const [sdcppHiresUpscalerNames, setSdcppHiresUpscalerNames] = useState<string[]>([]);
   const [sdcppActiveRuntime, setSdcppActiveRuntime] = useState<{
     release: string;
     asset: string;
@@ -1681,6 +1685,13 @@ export function EditModelPage() {
       })
       .catch(() => {
         if (!cancelled) setSdcppInstalled([]);
+      });
+    invoke<{ hiresUpscalerNames: string[] }>("sdcpp_upscaler_inventory")
+      .then((inventory) => {
+        if (!cancelled) setSdcppHiresUpscalerNames(inventory.hiresUpscalerNames);
+      })
+      .catch(() => {
+        if (!cancelled) setSdcppHiresUpscalerNames([]);
       });
     invoke<{ active: { release: string; asset: string } | null }>("sdcpp_runtime_inventory")
       .then((inventory) => {
@@ -7714,6 +7725,132 @@ export function EditModelPage() {
           </section>
 
           <section className="space-y-4 border-t border-fg/10 pt-6">
+            <div className="space-y-1">
+              <h4 className="text-[13px] font-semibold text-fg/85">
+                {t("editModel.generationAdvanced.stepCaching")}
+              </h4>
+              <p className="text-[12px] leading-relaxed text-fg/45">
+                {t("editModel.generationAdvanced.stepCachingDescription")}
+              </p>
+            </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <div className="text-[12px] font-medium text-fg/55">
+                  {t("editModel.generationAdvanced.cacheMode")}
+                </div>
+                <select
+                  value={modelAdvancedDraft.sdCacheMode ?? "disabled"}
+                  onChange={(event) =>
+                    updateSdSetting(
+                      "sdCacheMode",
+                      event.target.value === "disabled"
+                        ? null
+                        : (event.target.value as (typeof SD_CACHE_MODES)[number]),
+                    )
+                  }
+                  className={selectInputClassName}
+                >
+                  {SD_CACHE_MODES.map((mode) => (
+                    <option key={mode} value={mode}>
+                      {mode === "disabled"
+                        ? t("editModel.generationAdvanced.cacheModeDisabled")
+                        : mode}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <div className="text-[12px] font-medium text-fg/55">
+                  {t("editModel.generationAdvanced.cacheOption")}
+                </div>
+                <input
+                  type="text"
+                  value={modelAdvancedDraft.sdCacheOption ?? ""}
+                  onChange={(event) =>
+                    updateSdSetting("sdCacheOption", event.target.value.trim() || null)
+                  }
+                  placeholder={t("editModel.generationAdvanced.cacheOptionPlaceholder")}
+                  disabled={!modelAdvancedDraft.sdCacheMode}
+                  className={cn(numberInputClassName, "disabled:opacity-40")}
+                />
+              </div>
+            </div>
+          </section>
+
+          <section className="space-y-4 border-t border-fg/10 pt-6">
+            <div className="space-y-1">
+              <h4 className="text-[13px] font-semibold text-fg/85">
+                {t("editModel.generationAdvanced.slgSection")}
+              </h4>
+              <p className="text-[12px] leading-relaxed text-fg/45">
+                {t("editModel.generationAdvanced.slgSectionDescription")}
+              </p>
+            </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <div className="text-[12px] font-medium text-fg/55">
+                  {t("editModel.generationAdvanced.slgScale")}
+                </div>
+                <NumberInput
+                  min={ADVANCED_SD_SLG_SCALE_RANGE.min}
+                  max={ADVANCED_SD_SLG_SCALE_RANGE.max}
+                  step={0.1}
+                  decimals={2}
+                  value={modelAdvancedDraft.sdSlgScale ?? null}
+                  onChange={(next) => updateSdSetting("sdSlgScale", next)}
+                  placeholder={t("editModel.generationAdvanced.slgDisabled")}
+                  className={numberInputClassName}
+                />
+              </div>
+              <div className="space-y-2">
+                <div className="text-[12px] font-medium text-fg/55">
+                  {t("editModel.generationAdvanced.slgLayers")}
+                </div>
+                <input
+                  type="text"
+                  value={modelAdvancedDraft.sdSlgLayers ?? ""}
+                  onChange={(event) =>
+                    updateSdSetting("sdSlgLayers", event.target.value.trim() || null)
+                  }
+                  placeholder="7,8,9"
+                  disabled={!modelAdvancedDraft.sdSlgScale}
+                  className={cn(numberInputClassName, "disabled:opacity-40")}
+                />
+              </div>
+              <div className="space-y-2">
+                <div className="text-[12px] font-medium text-fg/55">
+                  {t("editModel.generationAdvanced.slgLayerStart")}
+                </div>
+                <NumberInput
+                  min={ADVANCED_SD_SLG_FRACTION_RANGE.min}
+                  max={ADVANCED_SD_SLG_FRACTION_RANGE.max}
+                  step={0.01}
+                  decimals={2}
+                  value={modelAdvancedDraft.sdSlgLayerStart ?? null}
+                  onChange={(next) => updateSdSetting("sdSlgLayerStart", next)}
+                  placeholder={t("editModel.generationAdvanced.modelDefault")}
+                  className={numberInputClassName}
+                />
+              </div>
+              <div className="space-y-2">
+                <div className="text-[12px] font-medium text-fg/55">
+                  {t("editModel.generationAdvanced.slgLayerEnd")}
+                </div>
+                <NumberInput
+                  min={ADVANCED_SD_SLG_FRACTION_RANGE.min}
+                  max={ADVANCED_SD_SLG_FRACTION_RANGE.max}
+                  step={0.01}
+                  decimals={2}
+                  value={modelAdvancedDraft.sdSlgLayerEnd ?? null}
+                  onChange={(next) => updateSdSetting("sdSlgLayerEnd", next)}
+                  placeholder={t("editModel.generationAdvanced.modelDefault")}
+                  className={numberInputClassName}
+                />
+              </div>
+            </div>
+          </section>
+
+          <section className="space-y-4 border-t border-fg/10 pt-6">
             <div className="flex items-center justify-between gap-4">
               <div className="space-y-1">
                 <h4 className="text-[13px] font-semibold text-fg/85">
@@ -7838,7 +7975,12 @@ export function EditModelPage() {
                     onChange={(event) => updateSdSetting("sdHiresUpscaler", event.target.value)}
                     className={selectInputClassName}
                   >
-                    {SDCPP_HIRES_UPSCALERS.map((upscaler) => (
+                    {[
+                      ...SDCPP_HIRES_UPSCALERS,
+                      ...sdcppHiresUpscalerNames.filter(
+                        (name) => !SDCPP_HIRES_UPSCALERS.includes(name as never),
+                      ),
+                    ].map((upscaler) => (
                       <option key={upscaler} value={upscaler}>
                         {upscaler}
                       </option>

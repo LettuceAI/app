@@ -750,6 +750,18 @@ pub struct AdvancedModelSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sd_hires_denoising_strength: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sd_slg_scale: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sd_slg_layers: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sd_slg_layer_start: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sd_slg_layer_end: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sd_cache_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sd_cache_option: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sd_offload_mode: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sd_extra_prompt: Option<String>,
@@ -914,6 +926,12 @@ impl Default for AdvancedModelSettings {
             sd_denoising_strength: None,
             sd_image_cfg_scale: None,
             sd_distilled_guidance: None,
+            sd_slg_scale: None,
+            sd_slg_layers: None,
+            sd_slg_layer_start: None,
+            sd_slg_layer_end: None,
+            sd_cache_mode: None,
+            sd_cache_option: None,
             sd_eta: None,
             sd_flow_shift: None,
             sd_size: None,

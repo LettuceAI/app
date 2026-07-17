@@ -656,6 +656,7 @@ fn build_scene_generation_request(
         } else {
             Some(input_images)
         },
+        mask_image: None,
         loras: None,
         output_modalities: Some(model.output_scopes.clone()),
         size: model
