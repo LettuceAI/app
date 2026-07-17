@@ -3466,29 +3466,33 @@ pub fn sdcpp_update_lora_keywords(
     Ok(lora_discovery_result(&info, profile_id.as_deref()))
 }
 
+pub fn hydrate_lora_list_keywords(
+    app: &AppHandle,
+    loras: &mut [super::types::ImageLora],
+) -> Result<(), String> {
+    for lora in loras {
+        if let Some(info) = stored_lora_info(app, &lora.path)? {
+            if !info.keywords.is_empty() {
+                lora.keywords = info.keywords;
+            }
+        }
+    }
+    Ok(())
+}
+
 pub fn hydrate_lora_keywords(
     app: &AppHandle,
     request: &mut super::types::ImageGenerationRequest,
 ) -> Result<(), String> {
-    let hydrate = |loras: &mut [super::types::ImageLora]| -> Result<(), String> {
-        for lora in loras {
-            if let Some(info) = stored_lora_info(app, &lora.path)? {
-                if !info.keywords.is_empty() {
-                    lora.keywords = info.keywords;
-                }
-            }
-        }
-        Ok(())
-    };
     if let Some(loras) = request
         .advanced_model_settings
         .as_mut()
         .and_then(|settings| settings.sd_base_loras.as_mut())
     {
-        hydrate(loras)?;
+        hydrate_lora_list_keywords(app, loras)?;
     }
     if let Some(loras) = request.loras.as_mut() {
-        hydrate(loras)?;
+        hydrate_lora_list_keywords(app, loras)?;
     }
     Ok(())
 }

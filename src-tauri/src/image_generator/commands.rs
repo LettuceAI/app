@@ -57,6 +57,8 @@ fn compose_image_prompt(
     lora_keywords: &[String],
 ) -> String {
     let mut parts = Vec::new();
+    let existing_prompt_text = format!("{}\n{}", pre_prompt.unwrap_or_default(), prompt);
+    let existing_prompt_text = existing_prompt_text.to_lowercase();
     if let Some(pre_prompt) = pre_prompt.map(str::trim).filter(|value| !value.is_empty()) {
         parts.push(pre_prompt.to_string());
     }
@@ -65,6 +67,7 @@ fn compose_image_prompt(
             .iter()
             .map(|keyword| keyword.trim())
             .filter(|keyword| !keyword.is_empty())
+            .filter(|keyword| !existing_prompt_text.contains(&keyword.to_lowercase()))
             .map(str::to_string),
     );
     let prompt = prompt.trim();
@@ -432,6 +435,19 @@ mod tests {
         assert_eq!(
             compose_image_prompt("a portrait", Some("high detail"), &keywords),
             "high detail, ArsMovieStill, cinematic still, a portrait"
+        );
+    }
+
+    #[test]
+    fn lora_keywords_already_written_by_the_scene_writer_are_not_duplicated() {
+        let keywords = vec!["ArsSamuel".to_string(), "MayaTrigger".to_string()];
+        assert_eq!(
+            compose_image_prompt(
+                "ArsSamuel offers a mug to MayaTrigger",
+                None,
+                &keywords
+            ),
+            "ArsSamuel offers a mug to MayaTrigger"
         );
     }
 

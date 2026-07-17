@@ -1924,7 +1924,7 @@ pub fn default_scene_generation_entries() -> Vec<SystemPromptEntry> {
 }
 
 pub fn default_scene_prompt_writer_entries() -> Vec<SystemPromptEntry> {
-    vec![
+    let mut entries = vec![
         SystemPromptEntry {
             id: "scene_prompt_writer_task".to_string(),
             name: "Task".to_string(),
@@ -2085,7 +2085,97 @@ pub fn default_scene_prompt_writer_entries() -> Vec<SystemPromptEntry> {
             conditions: None,
             prompt_entry_payload: None,
         },
-    ]
+    ];
+
+    for entry in &mut entries {
+        let local_gate = PromptEntryCondition::IsLocalImageGenerationModel { value: false };
+        entry.conditions = Some(match entry.conditions.take() {
+            Some(existing) => PromptEntryCondition::All {
+                conditions: vec![local_gate, existing],
+            },
+            None => local_gate,
+        });
+    }
+
+    entries.extend([
+        SystemPromptEntry {
+            id: "scene_prompt_writer_local_task".to_string(),
+            name: "Local Image Task".to_string(),
+            role: PromptEntryRole::System,
+            content: "Write one concise prompt for a local image model. Identify each subject only with the supplied LoRA trigger keywords. Describe what the subjects are doing in the image, not what they look like.".to_string(),
+            enabled: true,
+            injection_position: PromptEntryPosition::Relative,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: true,
+            conditions: Some(PromptEntryCondition::IsLocalImageGenerationModel { value: true }),
+            prompt_entry_payload: None,
+        },
+        SystemPromptEntry {
+            id: "scene_prompt_writer_local_context".to_string(),
+            name: "Local Scene Context".to_string(),
+            role: PromptEntryRole::User,
+            content: "Primary subject (Assistant) trigger keywords: {{lora_keywords[character]}}\n\nRecent Messages:\n{{recent_messages}}".to_string(),
+            enabled: true,
+            injection_position: PromptEntryPosition::InChat,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: false,
+            conditions: Some(PromptEntryCondition::IsLocalImageGenerationModel { value: true }),
+            prompt_entry_payload: None,
+        },
+        SystemPromptEntry {
+            id: "scene_prompt_writer_local_persona".to_string(),
+            name: "Local Persona Binding".to_string(),
+            role: PromptEntryRole::User,
+            content: "Secondary subject (User) trigger keywords: {{lora_keywords[persona]}}".to_string(),
+            enabled: true,
+            injection_position: PromptEntryPosition::InChat,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: false,
+            conditions: Some(PromptEntryCondition::All {
+                conditions: vec![
+                    PromptEntryCondition::IsLocalImageGenerationModel { value: true },
+                    PromptEntryCondition::HasPersona { value: true },
+                ],
+            }),
+            prompt_entry_payload: None,
+        },
+        SystemPromptEntry {
+            id: "scene_prompt_writer_local_rules".to_string(),
+            name: "Local Prompt Rules".to_string(),
+            role: PromptEntryRole::System,
+            content: "Use the trigger keywords exactly as provided whenever that subject appears. Never use character or persona names. Never describe identity, age, body, face, hair, skin, default clothing, or other appearance traits. Describe only visible action, pose, expression, interaction, subject placement, props, environment, camera composition, lighting, and mood. Keep each trigger adjacent to its subject's action so multiple subjects remain distinct. Output one compact image prompt without reasoning, labels, markdown, or negative-prompt boilerplate.".to_string(),
+            enabled: true,
+            injection_position: PromptEntryPosition::Relative,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: false,
+            conditions: Some(PromptEntryCondition::IsLocalImageGenerationModel { value: true }),
+            prompt_entry_payload: None,
+        },
+        SystemPromptEntry {
+            id: "scene_prompt_writer_local_output".to_string(),
+            name: "Local Output".to_string(),
+            role: PromptEntryRole::System,
+            content: "Output only the final image prompt text.".to_string(),
+            enabled: true,
+            injection_position: PromptEntryPosition::Relative,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: false,
+            conditions: Some(PromptEntryCondition::IsLocalImageGenerationModel { value: true }),
+            prompt_entry_payload: None,
+        },
+    ]);
+
+    entries
 }
 
 pub fn default_design_reference_entries() -> Vec<SystemPromptEntry> {
@@ -3396,6 +3486,7 @@ pub fn build_system_prompt_entries(
         info_source: PromptEntryInfoSource::Messages,
         scene_generation_enabled,
         avatar_generation_enabled,
+        is_local_image_generation_model: false,
         has_scene: has_scene || has_scene_message,
         has_scene_direction,
         has_persona: persona.is_some(),
@@ -4290,9 +4381,25 @@ mod prompt_cache_tests {
         condense_entries_into_single_system_message, condensed_system_entry,
         default_companion_entries, default_group_chat_entries,
         default_group_chat_roleplay_entries, default_local_roleplay_entries,
-        default_modular_prompt_entries, entry_contains_volatile_turn_context,
+        default_modular_prompt_entries, default_scene_prompt_writer_entries,
+        entry_contains_volatile_turn_context,
     };
-    use crate::chat_manager::types::PromptEntryPosition;
+    use crate::chat_manager::types::{PromptEntryCondition, PromptEntryPosition};
+
+    fn has_local_image_model_gate(condition: &PromptEntryCondition, expected: bool) -> bool {
+        match condition {
+            PromptEntryCondition::IsLocalImageGenerationModel { value } => *value == expected,
+            PromptEntryCondition::All { conditions } | PromptEntryCondition::Any { conditions } => {
+                conditions
+                    .iter()
+                    .any(|condition| has_local_image_model_gate(condition, expected))
+            }
+            PromptEntryCondition::Not { condition } => {
+                has_local_image_model_gate(condition, expected)
+            }
+            _ => false,
+        }
+    }
 
     #[test]
     fn volatile_prompt_entries_are_detected_before_rendering() {
@@ -4362,5 +4469,40 @@ mod prompt_cache_tests {
             PromptEntryPosition::InChat
         ));
         assert_eq!(condensed[1].injection_depth, 0);
+    }
+
+    #[test]
+    fn scene_writer_defaults_split_remote_and_local_formats() {
+        let entries = default_scene_prompt_writer_entries();
+        let local_entries = entries
+            .iter()
+            .filter(|entry| entry.id.starts_with("scene_prompt_writer_local_"))
+            .collect::<Vec<_>>();
+        let remote_entries = entries
+            .iter()
+            .filter(|entry| !entry.id.starts_with("scene_prompt_writer_local_"))
+            .collect::<Vec<_>>();
+
+        assert!(!local_entries.is_empty());
+        assert!(!remote_entries.is_empty());
+        assert!(local_entries.iter().all(|entry| entry
+            .conditions
+            .as_ref()
+            .is_some_and(|condition| has_local_image_model_gate(condition, true))));
+        assert!(remote_entries.iter().all(|entry| entry
+            .conditions
+            .as_ref()
+            .is_some_and(|condition| has_local_image_model_gate(condition, false))));
+
+        let local_content = local_entries
+            .iter()
+            .map(|entry| entry.content.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(local_content.contains("{{lora_keywords[character]}}"));
+        assert!(local_content.contains("{{lora_keywords[persona]}}"));
+        assert!(!local_content.contains("{{char.desc}}"));
+        assert!(!local_content.contains("{{persona.desc}}"));
+        assert!(!local_content.contains("{{image["));
     }
 }

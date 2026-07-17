@@ -98,6 +98,9 @@ pub enum PromptEntryCondition {
     AvatarGenerationEnabled {
         value: bool,
     },
+    IsLocalImageGenerationModel {
+        value: bool,
+    },
     HasScene {
         value: bool,
     },

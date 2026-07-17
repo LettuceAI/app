@@ -27,7 +27,7 @@ use crate::chat_manager::types::{
     PromptEntryImageSlot, PromptEntryInfoSource, PromptEntryPayload, PromptEntryPosition,
     ProviderCredential, Session, Settings, StoredMessage, SystemPromptEntry,
 };
-use crate::image_generator::types::ImageGenerationRequest;
+use crate::image_generator::types::{ImageGenerationRequest, ImageLora};
 use crate::storage_manager::media::{storage_load_avatar, storage_read_image_data};
 use crate::storage_manager::sessions::{messages_upsert_batch_typed, session_upsert_meta_typed};
 use crate::usage::tracking::UsageOperationType;
@@ -80,15 +80,16 @@ fn resolve_image_generation_target<'a>(
         .ok_or_else(|| "No image generation model is configured".to_string())
 }
 
-fn supports_scene_writer_model(model: &Model) -> bool {
+fn supports_scene_writer_model(model: &Model, requires_vision: bool) -> bool {
     model
         .input_scopes
         .iter()
         .any(|scope| scope.eq_ignore_ascii_case("text"))
-        && model
-            .input_scopes
-            .iter()
-            .any(|scope| scope.eq_ignore_ascii_case("image"))
+        && (!requires_vision
+            || model
+                .input_scopes
+                .iter()
+                .any(|scope| scope.eq_ignore_ascii_case("image")))
         && model
             .output_scopes
             .iter()
@@ -98,15 +99,18 @@ fn supports_scene_writer_model(model: &Model) -> bool {
 fn resolve_scene_writer_target<'a>(
     settings: &'a Settings,
     preferred_model_id: Option<&str>,
+    requires_vision: bool,
 ) -> Result<(&'a Model, &'a ProviderCredential), String> {
     if let Some(model_id) = preferred_model_id.filter(|id| !id.trim().is_empty()) {
         let (model, credential) = find_model_with_credential(settings, model_id)
             .ok_or_else(|| "Configured scene writer model could not be resolved".to_string())?;
-        if !supports_scene_writer_model(model) {
-            return Err(
+        if !supports_scene_writer_model(model, requires_vision) {
+            return Err(if requires_vision {
                 "Configured scene writer model must support text and image input with text output"
-                    .to_string(),
-            );
+                    .to_string()
+            } else {
+                "Configured scene writer model must support text input with text output".to_string()
+            });
         }
         return Ok((model, credential));
     }
@@ -115,15 +119,20 @@ fn resolve_scene_writer_target<'a>(
         .models
         .iter()
         .find_map(|model| {
-            if !supports_scene_writer_model(model) {
+            if !supports_scene_writer_model(model, requires_vision) {
                 return None;
             }
             let credential = resolve_credential_for_model(settings, model)?;
             Some((model, credential))
         })
         .ok_or_else(|| {
-            "No compatible scene writer model is configured. Add an image-text-to-text model in Settings > Image Generation."
-                .to_string()
+            if requires_vision {
+                "No compatible scene writer model is configured. Add an image-text-to-text model in Settings > Image Generation."
+                    .to_string()
+            } else {
+                "No compatible scene writer model is configured. Add a text model in Settings > Image Generation."
+                    .to_string()
+            }
         })
 }
 
@@ -190,6 +199,20 @@ struct SceneReferenceImages {
     persona_images: Vec<String>,
     persona_reference_count: usize,
     persona_reference_source: SceneReferenceSource,
+}
+
+impl SceneReferenceImages {
+    fn empty() -> Self {
+        Self {
+            character_images: Vec::new(),
+            character_reference_count: 0,
+            character_reference_source: SceneReferenceSource::None,
+            chat_background_images: Vec::new(),
+            persona_images: Vec::new(),
+            persona_reference_count: 0,
+            persona_reference_source: SceneReferenceSource::None,
+        }
+    }
 }
 
 fn resolve_design_reference_images(app: &AppHandle, image_ids: &[String]) -> Vec<String> {
@@ -321,6 +344,77 @@ fn persona_scene_name(persona: Option<&Persona>) -> String {
         .or_else(|| persona.map(|value| value.title.as_str()))
         .unwrap_or("the persona")
         .to_string()
+}
+
+fn entity_scene_lora(name: Option<&str>, strength: Option<f64>) -> Option<ImageLora> {
+    name.map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|path| ImageLora {
+            path: path.to_string(),
+            multiplier: strength.unwrap_or(0.8),
+            is_high_noise: false,
+            keywords: Vec::new(),
+        })
+}
+
+fn build_scene_loras(character: &Character, persona: Option<&Persona>) -> Vec<ImageLora> {
+    let mut loras = Vec::new();
+    if let Some(lora) = entity_scene_lora(character.lora_name.as_deref(), character.lora_strength) {
+        loras.push(lora);
+    }
+    if let Some(lora) = persona.and_then(|persona| {
+        entity_scene_lora(persona.lora_name.as_deref(), persona.lora_strength)
+    }) {
+        loras.push(lora);
+    }
+    loras
+}
+
+fn local_scene_subject_binding(
+    lora: Option<&ImageLora>,
+    fallback: &str,
+    subject_label: &str,
+) -> Result<String, String> {
+    let Some(lora) = lora else {
+        return Ok(fallback.to_string());
+    };
+    if lora.keywords.is_empty() {
+        return Err(format!(
+            "The {} LoRA '{}' has no trigger keywords. Add at least one keyword in the local LoRA library before generating a scene.",
+            subject_label, lora.path
+        ));
+    }
+    Ok(lora.keywords.join(", "))
+}
+
+fn local_scene_lora_bindings(
+    app: &AppHandle,
+    character: &Character,
+    persona: Option<&Persona>,
+) -> Result<(String, String), String> {
+    let mut character_lora =
+        entity_scene_lora(character.lora_name.as_deref(), character.lora_strength);
+    if let Some(lora) = character_lora.as_mut() {
+        crate::image_generator::sdcpp::hydrate_lora_list_keywords(
+            app,
+            std::slice::from_mut(lora),
+        )?;
+    }
+
+    let mut persona_lora = persona.and_then(|persona| {
+        entity_scene_lora(persona.lora_name.as_deref(), persona.lora_strength)
+    });
+    if let Some(lora) = persona_lora.as_mut() {
+        crate::image_generator::sdcpp::hydrate_lora_list_keywords(
+            app,
+            std::slice::from_mut(lora),
+        )?;
+    }
+
+    Ok((
+        local_scene_subject_binding(character_lora.as_ref(), "primary subject", "character")?,
+        local_scene_subject_binding(persona_lora.as_ref(), "secondary subject", "persona")?,
+    ))
 }
 
 fn build_scene_prompt_reference_hint(
@@ -522,6 +616,34 @@ fn build_scene_generation_request(
     reference_images: SceneReferenceImages,
     default_size: Option<String>,
 ) -> ImageGenerationRequest {
+    if model.provider_id == "sdcpp" {
+        let loras = build_scene_loras(character, persona);
+        return ImageGenerationRequest {
+            prompt: scene_prompt.trim().to_string(),
+            model: model.name.clone(),
+            provider_id: model.provider_id.clone(),
+            credential_id: credential.id.clone(),
+            advanced_model_settings: model.advanced_model_settings.clone(),
+            input_images: None,
+            mask_image: None,
+            loras: if loras.is_empty() { None } else { Some(loras) },
+            output_modalities: Some(model.output_scopes.clone()),
+            size: model
+                .advanced_model_settings
+                .as_ref()
+                .and_then(|settings| settings.sd_size.clone())
+                .or(default_size)
+                .or_else(|| Some("1024x1024".to_string())),
+            quality: None,
+            style: None,
+            n: Some(1),
+            session_id: None,
+            character_id: None,
+            character_name: None,
+            usage_source: Some("scene".to_string()),
+        };
+    }
+
     let SceneReferenceImages {
         character_images,
         character_reference_count,
@@ -760,6 +882,8 @@ fn render_scene_generation_prompt_content(
     recent_messages_text: &str,
     has_chat_background: bool,
     image_model_instructions: &str,
+    character_lora_keywords: &str,
+    persona_lora_keywords: &str,
 ) -> String {
     let mut prompt = template_content.to_string();
     let char_name = character.name.as_str();
@@ -841,6 +965,11 @@ fn render_scene_generation_prompt_content(
     prompt = prompt.replace("{{persona.desc}}", &persona_desc);
     prompt = prompt.replace("{{recent_messages}}", recent_messages_text);
     prompt = prompt.replace("{{image_model_instructions}}", image_model_instructions);
+    prompt = prompt.replace(
+        "{{lora_keywords[character]}}",
+        character_lora_keywords,
+    );
+    prompt = prompt.replace("{{lora_keywords[persona]}}", persona_lora_keywords);
     let scene_request = if let Some(persona) = persona {
         format!(
             "Create one polished scene image prompt for the visual moment described by the recent messages. Focus on the currently active beat involving {} and {}. Keep {} and {} visually distinct, and make the result immediately usable for image generation.",
@@ -1022,6 +1151,7 @@ fn render_design_reference_prompt_entries(
         info_source: PromptEntryInfoSource::Messages,
         scene_generation_enabled: scene_generation_enabled(settings),
         avatar_generation_enabled: avatar_generation_enabled(settings),
+        is_local_image_generation_model: false,
         has_scene: false,
         has_scene_direction: false,
         has_persona: false,
@@ -1204,6 +1334,9 @@ fn render_scene_generation_prompt_entries(
     persona: Option<&Persona>,
     recent_messages_text: &str,
     reference_images: &SceneReferenceImages,
+    is_local_image_generation_model: bool,
+    character_lora_keywords: &str,
+    persona_lora_keywords: &str,
 ) -> Vec<SystemPromptEntry> {
     let (template_entries, condense_prompt_entries) = load_scene_prompt_writer_entries(app);
     let image_model_instructions = resolve_image_generation_target(
@@ -1264,6 +1397,7 @@ fn render_scene_generation_prompt_entries(
         info_source: PromptEntryInfoSource::Messages,
         scene_generation_enabled: scene_generation_enabled(settings),
         avatar_generation_enabled: avatar_generation_enabled(settings),
+        is_local_image_generation_model,
         has_scene,
         has_scene_direction,
         has_persona: persona.is_some(),
@@ -1311,6 +1445,8 @@ fn render_scene_generation_prompt_entries(
             recent_messages_text,
             !reference_images.chat_background_images.is_empty(),
             &image_model_instructions,
+            character_lora_keywords,
+            persona_lora_keywords,
         );
         if rendered.trim().is_empty() && entry.prompt_entry_payload.is_none() {
             continue;
@@ -1535,7 +1671,11 @@ pub async fn chat_generate_scene_image(
             .and_then(|persona_id| personas.iter().find(|value| value.id == persona_id))
     };
 
-    let reference_images = build_scene_reference_images(&app, &session, character, persona);
+    let reference_images = if model.provider_id == "sdcpp" {
+        SceneReferenceImages::empty()
+    } else {
+        build_scene_reference_images(&app, &session, character, persona)
+    };
     let default_size = settings
         .advanced_settings
         .as_ref()
@@ -1643,17 +1783,36 @@ pub async fn chat_generate_scene_prompt(
         .ok_or_else(|| "Session not found".to_string())?;
     let character = context.find_character(&session.character_id)?;
     let persona = context.choose_persona(resolve_persona_id(&session, None));
+    let (image_model, _) = resolve_image_generation_target(
+        settings,
+        settings
+            .advanced_settings
+            .as_ref()
+            .and_then(|advanced| advanced.scene_generation_model_id.as_deref()),
+    )?;
+    let is_local_image_generation_model = image_model.provider_id == "sdcpp";
     let (model, credential) = resolve_scene_writer_target(
         settings,
         settings
             .advanced_settings
             .as_ref()
             .and_then(|advanced| advanced.scene_writer_model_id.as_deref()),
+        !is_local_image_generation_model,
     )?;
     let api_key = require_api_key(&app, credential, "scene_prompt")?;
 
     let recent_messages_text = build_scene_prompt_context_messages(&session, &message_id)?;
-    let reference_images = build_scene_reference_images(&app, &session, &character, persona);
+    let reference_images = if is_local_image_generation_model {
+        SceneReferenceImages::empty()
+    } else {
+        build_scene_reference_images(&app, &session, &character, persona)
+    };
+    let (character_lora_keywords, persona_lora_keywords) =
+        if is_local_image_generation_model {
+            local_scene_lora_bindings(&app, &character, persona)?
+        } else {
+            (String::new(), String::new())
+        };
     let prompt_entries = render_scene_generation_prompt_entries(
         &app,
         settings,
@@ -1663,6 +1822,9 @@ pub async fn chat_generate_scene_prompt(
         persona,
         &recent_messages_text,
         &reference_images,
+        is_local_image_generation_model,
+        &character_lora_keywords,
+        &persona_lora_keywords,
     );
     if prompt_entries.is_empty() {
         return Err("Scene generation prompt template rendered no usable entries".to_string());
@@ -1802,6 +1964,7 @@ pub async fn chat_generate_design_reference_description(
             .advanced_settings
             .as_ref()
             .and_then(|advanced| advanced.scene_writer_model_id.as_deref()),
+        true,
     )?;
     let api_key = require_api_key(&app, credential, "design_reference_writer")?;
 
@@ -1950,4 +2113,38 @@ pub async fn chat_generate_design_reference_description(
     }
 
     Ok(cleaned)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{entity_scene_lora, local_scene_subject_binding};
+
+    #[test]
+    fn scene_lora_uses_the_saved_strength_and_default() {
+        let explicit = entity_scene_lora(Some("character.safetensors"), Some(1.1)).unwrap();
+        let defaulted = entity_scene_lora(Some("persona.safetensors"), None).unwrap();
+
+        assert_eq!(explicit.path, "character.safetensors");
+        assert_eq!(explicit.multiplier, 1.1);
+        assert_eq!(defaulted.multiplier, 0.8);
+    }
+
+    #[test]
+    fn local_subject_binding_uses_keywords_and_rejects_unconfigured_triggers() {
+        let mut lora = entity_scene_lora(Some("character.safetensors"), None).unwrap();
+        lora.keywords = vec!["ArsSamuel".to_string(), "SamuelStyle".to_string()];
+        assert_eq!(
+            local_scene_subject_binding(Some(&lora), "primary subject", "character").unwrap(),
+            "ArsSamuel, SamuelStyle"
+        );
+
+        lora.keywords.clear();
+        assert!(local_scene_subject_binding(Some(&lora), "primary subject", "character")
+            .unwrap_err()
+            .contains("has no trigger keywords"));
+        assert_eq!(
+            local_scene_subject_binding(None, "primary subject", "character").unwrap(),
+            "primary subject"
+        );
+    }
 }

@@ -200,6 +200,7 @@ fn render_entries(
         info_source: PromptEntryInfoSource::Messages,
         scene_generation_enabled: false,
         avatar_generation_enabled: false,
+        is_local_image_generation_model: false,
         has_scene: false,
         has_scene_direction: false,
         has_persona: false,
