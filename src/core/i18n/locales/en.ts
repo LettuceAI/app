@@ -4424,6 +4424,13 @@ export const enMessages = {
       modelFilesIncomplete:
         "Set the text encoder and VAE files. Generation will not start until this model is fully configured.",
       componentFilesFilter: "Model component files",
+      chooseFromLibrary: "Choose from Library",
+      componentPickerTitle: "Select Component File",
+      componentLibraryEmpty: "No matching files in your library",
+      componentLibraryEmptyHint:
+        "Install a local image model or download encoder files with the model browser first.",
+      sourceImageComponents: "Image components",
+      sourceLlmLibrary: "LLM library",
       baseLoras: "Base LoRAs",
       baseLorasDescription:
         "These LoRAs are loaded for every generation made with this model. Character and style LoRAs are added on top.",

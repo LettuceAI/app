@@ -5502,6 +5502,97 @@ fn merge_generation_loras(
     merged
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SdcppComponentLibraryEntry {
+    pub path: String,
+    pub filename: String,
+    pub bytes: u64,
+    pub role: Option<String>,
+    pub source: String,
+}
+
+fn component_role_by_sha(sha: &str) -> Option<&'static str> {
+    PROFILES.iter().find_map(|profile| {
+        profile
+            .variants
+            .iter()
+            .map(|variant| variant.diffusion)
+            .chain(profile.shared_components.iter().copied())
+            .find(|component| component.sha256 == sha)
+            .map(|component| component.role)
+    })
+}
+
+#[tauri::command]
+pub async fn sdcpp_component_library(
+    app: AppHandle,
+) -> Result<Vec<SdcppComponentLibraryEntry>, String> {
+    if cfg!(mobile) {
+        return Err("Local stable-diffusion.cpp image generation is desktop-only.".to_string());
+    }
+    let mut entries = Vec::new();
+    let components_root = image_root(&app)?.join("components");
+    if let Ok(directories) = std::fs::read_dir(&components_root) {
+        for directory in directories.flatten() {
+            let directory_path = directory.path();
+            if !directory_path.is_dir() {
+                continue;
+            }
+            let sha = directory.file_name().to_string_lossy().to_string();
+            let role = component_role_by_sha(&sha);
+            if role == Some("diffusion_model") {
+                continue;
+            }
+            let Ok(files) = std::fs::read_dir(&directory_path) else {
+                continue;
+            };
+            for file in files.flatten() {
+                let path = file.path();
+                if !path.is_file() {
+                    continue;
+                }
+                let Some(filename) = path.file_name().and_then(|name| name.to_str()) else {
+                    continue;
+                };
+                if filename.starts_with('.') || filename.ends_with(".tmp") {
+                    continue;
+                }
+                entries.push(SdcppComponentLibraryEntry {
+                    path: path.to_string_lossy().to_string(),
+                    filename: filename.to_string(),
+                    bytes: file.metadata().map(|meta| meta.len()).unwrap_or(0),
+                    role: role.map(str::to_string),
+                    source: "imageComponents".to_string(),
+                });
+            }
+        }
+    }
+    if let Ok(models) = crate::hf_browser::hf_list_downloaded_models(app.clone()).await {
+        for model in models {
+            if model.is_mtp {
+                continue;
+            }
+            entries.push(SdcppComponentLibraryEntry {
+                path: model.path,
+                filename: model.filename,
+                bytes: model.size,
+                role: Some(
+                    if model.is_mmproj {
+                        "vision_encoder"
+                    } else {
+                        "text_encoder"
+                    }
+                    .to_string(),
+                ),
+                source: "llmLibrary".to_string(),
+            });
+        }
+    }
+    entries.sort_by(|a, b| a.filename.to_lowercase().cmp(&b.filename.to_lowercase()));
+    Ok(entries)
+}
+
 fn component_path(app: &AppHandle, component: ComponentSpec) -> Result<PathBuf, String> {
     let basename = Path::new(component.filename)
         .file_name()

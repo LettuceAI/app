@@ -125,6 +125,14 @@ type DownloadedGgufModel = {
   isMtp?: boolean;
 };
 
+type SdcppComponentLibraryEntry = {
+  path: string;
+  filename: string;
+  bytes: number;
+  role: string | null;
+  source: string;
+};
+
 type SdcppInstalledModel = {
   profileId: string;
   variantId: string;
@@ -586,6 +594,12 @@ export function EditModelPage() {
     asset: string;
   } | null>(null);
   const [showSdcppModelPicker, setShowSdcppModelPicker] = useState(false);
+  const [sdcppComponentPickerKey, setSdcppComponentPickerKey] = useState<
+    "sdcppTextEncoderPath" | "sdcppVaePath" | "sdcppVisionEncoderPath" | null
+  >(null);
+  const [sdcppComponentLibrary, setSdcppComponentLibrary] = useState<SdcppComponentLibraryEntry[]>(
+    [],
+  );
   const [showSdcppLoraPicker, setShowSdcppLoraPicker] = useState(false);
   const [discoveringSdcppLoraPath, setDiscoveringSdcppLoraPath] = useState<string | null>(null);
   const [editingSdcppLoraKeywords, setEditingSdcppLoraKeywords] = useState<number | null>(null);
@@ -2013,6 +2027,36 @@ export function EditModelPage() {
       console.error("Failed to browse for local image component", error);
     }
   };
+
+  const openSdcppComponentPicker = async (
+    key: "sdcppTextEncoderPath" | "sdcppVaePath" | "sdcppVisionEncoderPath",
+  ) => {
+    try {
+      setSdcppComponentLibrary(
+        await invoke<SdcppComponentLibraryEntry[]>("sdcpp_component_library"),
+      );
+    } catch (error) {
+      console.error("Failed to load the local component library", error);
+      setSdcppComponentLibrary([]);
+    }
+    setSdcppComponentPickerKey(key);
+  };
+
+  const sdcppComponentPickerEntries = (() => {
+    if (!sdcppComponentPickerKey) return [];
+    const role = {
+      sdcppTextEncoderPath: "text_encoder",
+      sdcppVaePath: "vae",
+      sdcppVisionEncoderPath: "vision_encoder",
+    }[sdcppComponentPickerKey];
+    return sdcppComponentLibrary.filter((entry) => {
+      if (entry.role) return entry.role === role;
+      const filename = entry.filename.toLowerCase();
+      if (role === "vae") return filename.endsWith(".safetensors") || filename.endsWith(".sft");
+      if (role === "vision_encoder") return filename.includes("mmproj");
+      return filename.endsWith(".gguf");
+    });
+  })();
 
   // Get reasoning support for the current provider
   const reasoningSupport: ReasoningSupport = editorModel?.providerId
@@ -4808,13 +4852,22 @@ export function EditModelPage() {
                                         : `${label} (${t("editModel.sdcpp.optionalFile")})`
                                     }
                                     action={
-                                      <button
-                                        type="button"
-                                        onClick={() => void browseSdcppComponentFile(key)}
-                                        className="rounded-md border border-fg/10 px-2.5 py-1.5 text-[12px] font-medium text-fg/65 transition hover:border-fg/20 hover:bg-fg/5 hover:text-fg/90"
-                                      >
-                                        {t("common.buttons.browseFiles")}
-                                      </button>
+                                      <div className="flex items-center gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={() => void openSdcppComponentPicker(key)}
+                                          className="rounded-md border border-fg/10 px-2.5 py-1.5 text-[12px] font-medium text-fg/65 transition hover:border-fg/20 hover:bg-fg/5 hover:text-fg/90"
+                                        >
+                                          {t("editModel.sdcpp.chooseFromLibrary")}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => void browseSdcppComponentFile(key)}
+                                          className="rounded-md border border-fg/10 px-2.5 py-1.5 text-[12px] font-medium text-fg/65 transition hover:border-fg/20 hover:bg-fg/5 hover:text-fg/90"
+                                        >
+                                          {t("common.buttons.browseFiles")}
+                                        </button>
+                                      </div>
                                     }
                                   >
                                     <input
@@ -4838,6 +4891,57 @@ export function EditModelPage() {
                                   {t("editModel.sdcpp.modelFilesIncomplete")}
                                 </p>
                               ) : null}
+                              <BottomMenu
+                                isOpen={sdcppComponentPickerKey !== null}
+                                onClose={() => setSdcppComponentPickerKey(null)}
+                                title={t("editModel.sdcpp.componentPickerTitle")}
+                              >
+                                <MenuSection>
+                                  {sdcppComponentPickerEntries.length === 0 ? (
+                                    <div className="flex flex-col items-center gap-2 py-16 text-center">
+                                      <HardDrive size={32} className="text-fg/20" />
+                                      <p className="px-6 text-[13px] text-fg/40">
+                                        {t("editModel.sdcpp.componentLibraryEmpty")}
+                                      </p>
+                                      <p className="px-6 text-[12px] text-fg/30">
+                                        {t("editModel.sdcpp.componentLibraryEmptyHint")}
+                                      </p>
+                                    </div>
+                                  ) : (
+                                    sdcppComponentPickerEntries.map((entry) => (
+                                      <MenuButton
+                                        key={entry.path}
+                                        icon={<HardDrive className="h-5 w-5 text-accent/60" />}
+                                        title={entry.filename}
+                                        description={`${
+                                          entry.source === "llmLibrary"
+                                            ? t("editModel.sdcpp.sourceLlmLibrary")
+                                            : t("editModel.sdcpp.sourceImageComponents")
+                                        } · ${formatBytes(entry.bytes)}`}
+                                        color="from-accent/20 to-accent/10"
+                                        rightElement={
+                                          sdcppComponentPickerKey &&
+                                          modelAdvancedDraft[sdcppComponentPickerKey] ===
+                                            entry.path ? (
+                                            <Check className="h-4 w-4 text-accent" />
+                                          ) : (
+                                            <ArrowRight className="h-4 w-4 text-fg/20" />
+                                          )
+                                        }
+                                        onClick={() => {
+                                          if (sdcppComponentPickerKey) {
+                                            setModelAdvancedDraft({
+                                              ...modelAdvancedDraft,
+                                              [sdcppComponentPickerKey]: entry.path,
+                                            });
+                                          }
+                                          setSdcppComponentPickerKey(null);
+                                        }}
+                                      />
+                                    ))
+                                  )}
+                                </MenuSection>
+                              </BottomMenu>
                             </section>
 
                             <section className="space-y-4">
