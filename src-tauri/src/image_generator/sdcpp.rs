@@ -795,6 +795,22 @@ pub(crate) fn hf_bundle_profiles() -> Vec<HfBundleProfile> {
         .collect()
 }
 
+pub(crate) fn catalog_component_role(sha256: &str) -> Option<&'static str> {
+    for profile in PROFILES {
+        for variant in profile.variants {
+            if variant.diffusion.sha256 == sha256 {
+                return Some(variant.diffusion.role);
+            }
+        }
+        for component in profile.shared_components {
+            if component.sha256 == sha256 {
+                return Some(component.role);
+            }
+        }
+    }
+    None
+}
+
 pub(crate) fn hf_bundle_profile(profile_id: &str) -> Result<HfBundleProfile, String> {
     hf_bundle_profiles()
         .into_iter()

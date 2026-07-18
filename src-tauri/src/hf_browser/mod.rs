@@ -181,6 +181,8 @@ pub struct DownloadedGgufModel {
     pub is_mtp: bool,
     pub architecture: Option<String>,
     pub context_length: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_role: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -2960,12 +2962,159 @@ pub async fn hf_list_downloaded_models(app: AppHandle) -> Result<Vec<DownloadedG
                         is_mtp,
                         architecture: meta.as_ref().and_then(|value| value.architecture.clone()),
                         context_length: meta.as_ref().and_then(|value| value.context_length),
+                        image_role: None,
                     });
                 }
             }
         }
     }
 
+    Ok(results)
+}
+
+fn frontend_image_role(role: &str) -> &'static str {
+    match role {
+        "text_encoder" => "llm",
+        "vision_encoder" => "llmVision",
+        "vae" => "vae",
+        _ => "diffusionModel",
+    }
+}
+
+fn infer_image_role(filename: &str) -> &'static str {
+    if filename.contains("vae") || filename.starts_with("ae.") {
+        "vae"
+    } else if filename.contains("mmproj") || filename.contains("vision") {
+        "llmVision"
+    } else if ["qwen3", "qwen2.5", "qwen2_5", "t5", "umt5", "clip"]
+        .iter()
+        .any(|marker| filename.contains(marker))
+    {
+        "llm"
+    } else {
+        "diffusionModel"
+    }
+}
+
+#[tauri::command]
+pub async fn hf_list_downloaded_image_models(
+    app: AppHandle,
+) -> Result<Vec<DownloadedGgufModel>, String> {
+    let image_root = crate::utils::lettuce_dir(&app)?.join("models").join("image");
+    let mut results = Vec::new();
+    if !image_root.exists() {
+        return Ok(results);
+    }
+    let mut role_by_path: HashMap<String, String> = HashMap::new();
+    if let Ok(entries) = std::fs::read_dir(image_root.join("huggingface").join("bundles")) {
+        for entry in entries.flatten() {
+            let Ok(bytes) = std::fs::read(entry.path()) else { continue };
+            let Ok(manifest) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+                continue;
+            };
+            for asset in manifest
+                .get("assets")
+                .and_then(|assets| assets.as_array())
+                .into_iter()
+                .flatten()
+            {
+                if let (Some(local_path), Some(role)) = (
+                    asset.get("localPath").and_then(|value| value.as_str()),
+                    asset.get("role").and_then(|value| value.as_str()),
+                ) {
+                    role_by_path
+                        .insert(local_path.to_string(), frontend_image_role(role).to_string());
+                }
+            }
+        }
+    }
+    let mut stack = vec![image_root.clone()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            let fname = path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
+            let lower = fname.to_lowercase();
+            if !(lower.ends_with(".gguf")
+                || lower.ends_with(".safetensors")
+                || lower.ends_with(".sft"))
+            {
+                continue;
+            }
+            let segments = path
+                .strip_prefix(&image_root)
+                .unwrap_or(&path)
+                .components()
+                .filter_map(|component| match component {
+                    std::path::Component::Normal(part) => {
+                        Some(part.to_string_lossy().to_string())
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            let model_id = if segments.first().map(String::as_str) == Some("huggingface") {
+                if segments.get(1).map(String::as_str) == Some("manual") {
+                    segments
+                        .get(2)
+                        .map(|part| part.replace("--", "/"))
+                        .unwrap_or_else(|| "huggingface".to_string())
+                } else if segments.len() >= 3 {
+                    format!("{}/{}", segments[1], segments[2])
+                } else {
+                    "huggingface".to_string()
+                }
+            } else {
+                segments.first().cloned().unwrap_or_default()
+            };
+            let meta = if lower.ends_with(".gguf") {
+                read_local_gguf_meta(&path)
+            } else {
+                None
+            };
+            let path_string = path.to_string_lossy().to_string();
+            let image_role = role_by_path
+                .get(&path_string)
+                .cloned()
+                .or_else(|| {
+                    if segments.first().map(String::as_str) == Some("components") {
+                        segments
+                            .get(1)
+                            .and_then(|sha| {
+                                crate::image_generator::sdcpp::catalog_component_role(sha)
+                            })
+                            .map(|role| frontend_image_role(role).to_string())
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_else(|| infer_image_role(&lower).to_string());
+            results.push(DownloadedGgufModel {
+                model_id,
+                filename: fname,
+                size: entry.metadata().map(|metadata| metadata.len()).unwrap_or(0),
+                quantization: extract_quantization(&path_string),
+                is_mmproj: lower.contains("mmproj"),
+                is_mtp: false,
+                architecture: meta.as_ref().and_then(|value| value.architecture.clone()),
+                context_length: None,
+                image_role: Some(image_role),
+                path: path_string,
+            });
+        }
+    }
+    results.sort_by(|left, right| {
+        left.model_id
+            .cmp(&right.model_id)
+            .then(left.filename.cmp(&right.filename))
+    });
     Ok(results)
 }
 
@@ -2978,7 +3127,8 @@ pub async fn hf_delete_downloaded_model(app: AppHandle, file_path: String) -> Re
     }
 
     let models_dir = hf_models_dir(&app)?;
-    if !path.starts_with(&models_dir) {
+    let image_root = crate::utils::lettuce_dir(&app)?.join("models").join("image");
+    if !path.starts_with(&models_dir) && !path.starts_with(&image_root) {
         return Err("Cannot delete files outside the models directory".to_string());
     }
 
@@ -2991,7 +3141,7 @@ pub async fn hf_delete_downloaded_model(app: AppHandle, file_path: String) -> Re
     })?;
 
     if let Some(parent) = path.parent() {
-        if parent != models_dir {
+        if parent != models_dir && parent != image_root {
             let _ = tokio::fs::remove_dir(parent).await;
         }
     }

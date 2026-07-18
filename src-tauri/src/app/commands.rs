@@ -397,6 +397,7 @@ macro_rules! invoke_handler {
             crate::hf_browser::hf_get_llm_models_dir,
             crate::hf_browser::hf_set_llm_models_dir,
             crate::hf_browser::hf_move_model_to_gguf_dir,
+            crate::hf_browser::hf_list_downloaded_image_models,
             crate::hf_browser::hf_compute_runability,
             crate::hf_browser::hf_compute_local_runability,
             crate::hf_browser::hf_get_recommendation_data,
