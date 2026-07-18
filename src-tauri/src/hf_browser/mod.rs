@@ -2668,7 +2668,12 @@ async fn do_queue_download(app: &AppHandle, item: &QueuedDownload) -> Result<Str
         format!("starting verified download: {}/{}", model_id, filename),
     );
 
-    let client = build_client()?;
+    let client = reqwest::Client::builder()
+        .user_agent("LettuceAI/1.0")
+        .redirect(reqwest::redirect::Policy::limited(10))
+        .connect_timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|error| format!("Failed to build download client: {error}"))?;
     let mut request = client.get(&download_url);
     let is_hugging_face_download = reqwest::Url::parse(&download_url)
         .ok()
@@ -2743,7 +2748,16 @@ async fn do_queue_download(app: &AppHandle, item: &QueuedDownload) -> Result<Str
     let mut stream = response.bytes_stream();
     let mut last_emit = std::time::Instant::now();
 
-    while let Some(chunk_result) = stream.next().await {
+    while let Some(chunk_result) =
+        match tokio::time::timeout(std::time::Duration::from_secs(120), stream.next()).await {
+            Ok(next) => next,
+            Err(_) => {
+                drop(file);
+                let _ = tokio::fs::remove_file(&temp_path).await;
+                return Err("The download stalled and timed out.".to_string());
+            }
+        }
+    {
         {
             let state = HF_DOWNLOAD_QUEUE.lock().await;
             if state.cancel_ids.contains(queue_id) {
