@@ -5099,7 +5099,9 @@ export function EditModelPage() {
                                         description={`${
                                           entry.source === "llmLibrary"
                                             ? t("editModel.sdcpp.sourceLlmLibrary")
-                                            : t("editModel.sdcpp.sourceImageComponents")
+                                            : entry.source === "imageDownloads"
+                                              ? t("editModel.sdcpp.sourceImageDownloads")
+                                              : t("editModel.sdcpp.sourceImageComponents")
                                         } · ${formatBytes(entry.bytes)}`}
                                         color="from-accent/20 to-accent/10"
                                         rightElement={

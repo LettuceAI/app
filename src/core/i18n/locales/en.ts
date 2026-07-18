@@ -4436,6 +4436,7 @@ export const enMessages = {
         "Install a local image model or download encoder files with the model browser first.",
       sourceImageComponents: "Image components",
       sourceLlmLibrary: "LLM library",
+      sourceImageDownloads: "Downloaded files",
       baseLoras: "Base LoRAs",
       baseLorasDescription:
         "These LoRAs are loaded for every generation made with this model. Character and style LoRAs are added on top.",

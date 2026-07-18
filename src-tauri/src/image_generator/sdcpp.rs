@@ -79,10 +79,11 @@ fn handle_runtime_output_segment(
 ) {
     let segment = segment.replace("\u{1b}[K", "");
     record_log_tail(log_tail, &segment);
-    if segment.to_ascii_lowercase().contains("lora") {
-        crate::utils::log_info(app, "sdcpp_runtime", segment.clone());
-    }
     let Some(captures) = RUNTIME_PROGRESS_LINE.captures(&segment) else {
+        let trimmed = segment.trim();
+        if !trimmed.is_empty() {
+            crate::utils::log_info(app, "sdcpp_runtime", trimmed.to_string());
+        }
         return;
     };
     let (Some(step), Some(steps)) = (
@@ -91,6 +92,9 @@ fn handle_runtime_output_segment(
     ) else {
         return;
     };
+    if step == steps {
+        crate::utils::log_info(app, "sdcpp_runtime", segment.trim().to_string());
+    }
     let phase = if captures[3].contains("B/s") { "loading" } else { "sampling" };
     let now = Instant::now();
     if step < steps && now.duration_since(*last_emit) < Duration::from_millis(100) {
@@ -6025,6 +6029,30 @@ pub async fn sdcpp_component_library(
                     .to_string(),
                 ),
                 source: "llmLibrary".to_string(),
+            });
+        }
+    }
+    if let Ok(files) = crate::hf_browser::hf_list_downloaded_image_models(app.clone()).await {
+        let known = entries
+            .iter()
+            .map(|entry| entry.path.clone())
+            .collect::<std::collections::HashSet<_>>();
+        for file in files {
+            let role = match file.image_role.as_deref() {
+                Some("vae") => "vae",
+                Some("llm") => "text_encoder",
+                Some("llmVision") => "vision_encoder",
+                _ => continue,
+            };
+            if known.contains(&file.path) {
+                continue;
+            }
+            entries.push(SdcppComponentLibraryEntry {
+                path: file.path,
+                filename: file.filename,
+                bytes: file.size,
+                role: Some(role.to_string()),
+                source: "imageDownloads".to_string(),
             });
         }
     }

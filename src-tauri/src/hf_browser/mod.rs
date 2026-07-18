@@ -2021,6 +2021,19 @@ pub async fn hf_search_models(
                 merged.entry(result.model_id.clone()).or_insert(result);
             }
         }
+        if !query.trim().is_empty() {
+            let mut url = format!(
+                "https://huggingface.co/api/models?limit={}&sort={}&direction=-1&offset={}",
+                limit, sort_field, offset
+            );
+            if let Some(author) = author.as_deref().map(str::trim).filter(|author| !author.is_empty()) {
+                url.push_str(&format!("&author={}", urlencoding::encode(author)));
+            }
+            url.push_str(&format!("&search={}", urlencoding::encode(query.trim())));
+            for result in fetch_models_list(&app, &url).await? {
+                merged.entry(result.model_id.clone()).or_insert(result);
+            }
+        }
         let mut results = merged.into_values().collect::<Vec<_>>();
         match sort_field.as_str() {
             "likes" => results.sort_by_key(|result| std::cmp::Reverse(result.likes)),
@@ -2048,7 +2061,22 @@ pub async fn hf_search_models(
     }
 
     log_info(&app, "hf_browser", format!("searching: {}", url));
-    let results = fetch_models_list(&app, &url).await?;
+    let mut results = fetch_models_list(&app, &url).await?;
+    if !unfiltered && trimmed.contains('/') && !trimmed.contains(char::is_whitespace) {
+        let mut generic_url = format!(
+            "https://huggingface.co/api/models?limit={}&sort={}&offset={}",
+            limit, sort_field, offset
+        );
+        if let Some(author) = author.as_deref().map(str::trim).filter(|a| !a.is_empty()) {
+            generic_url.push_str(&format!("&author={}", urlencoding::encode(author)));
+        }
+        generic_url.push_str(&format!("&search={}", urlencoding::encode(trimmed)));
+        for result in fetch_models_list(&app, &generic_url).await? {
+            if !results.iter().any(|existing| existing.model_id == result.model_id) {
+                results.push(result);
+            }
+        }
+    }
     log_info(
         &app,
         "hf_browser",
