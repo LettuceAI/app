@@ -13,6 +13,7 @@ use tokio::sync::Mutex as TokioMutex;
 use crate::utils::{log_info, log_info_global, log_warn_global};
 
 mod sprout;
+pub(crate) mod image_bundle;
 
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
@@ -351,8 +352,8 @@ async fn fetch_avatar_url(client: &reqwest::Client, author: &str) -> String {
 }
 
 #[tauri::command]
-pub async fn hf_get_avatars(authors: Vec<String>) -> Result<HashMap<String, String>, String> {
-    let client = build_client()?;
+pub async fn hf_get_avatars(app: AppHandle, authors: Vec<String>) -> Result<HashMap<String, String>, String> {
+    let client = build_hf_client(&app)?;
     let cache = HF_AVATAR_CACHE.lock().await;
     let mut result: HashMap<String, String> = HashMap::new();
 
@@ -1959,7 +1960,11 @@ fn build_client() -> Result<reqwest::Client, String> {
         .user_agent("LettuceAI/1.0")
         .timeout(std::time::Duration::from_secs(30))
         .build()
-        .map_err(|e| format!("Failed to build HTTP client: {}", e))
+        .map_err(|error| format!("Failed to build HTTP client: {error}"))
+}
+
+fn build_hf_client(app: &AppHandle) -> Result<reqwest::Client, String> {
+    image_bundle::authenticated_client(app)
 }
 
 #[tauri::command]
@@ -1970,10 +1975,58 @@ pub async fn hf_search_models(
     sort: Option<String>,
     offset: Option<u32>,
     author: Option<String>,
+    mode: Option<String>,
+    profile_id: Option<String>,
+    bundle_role: Option<String>,
 ) -> Result<Vec<HfSearchResult>, String> {
     let limit = limit.unwrap_or(20).min(100);
     let sort_field = sort.unwrap_or_else(|| "trendingScore".to_string());
     let offset = offset.unwrap_or(0);
+
+    let mode = mode.as_deref().unwrap_or("llm");
+    if mode == "imageBundle" {
+        if let (Some(profile_id), Some(role)) = (profile_id.as_deref(), bundle_role.as_deref()) {
+            if offset > 0 {
+                return Ok(Vec::new());
+            }
+            return image_bundle::bundle_role_search(
+                &app,
+                profile_id,
+                role,
+                query.trim(),
+                &sort_field,
+                author.as_deref(),
+            )
+            .await;
+        }
+    }
+    if matches!(mode, "image" | "imageBundle") {
+        let mut merged = HashMap::<String, HfSearchResult>::new();
+        for task in ["text-to-image", "image-to-image"] {
+            let mut url = format!(
+                "https://huggingface.co/api/models?pipeline_tag={task}&limit={}&sort={}&direction=-1&offset={}",
+                limit, sort_field, offset
+            );
+            if let Some(author) = author.as_deref().map(str::trim).filter(|author| !author.is_empty()) {
+                url.push_str(&format!("&author={}", urlencoding::encode(author)));
+            }
+            if !query.trim().is_empty() {
+                url.push_str(&format!("&search={}", urlencoding::encode(query.trim())));
+            }
+            for result in fetch_models_list(&app, &url).await? {
+                merged.entry(result.model_id.clone()).or_insert(result);
+            }
+        }
+        let mut results = merged.into_values().collect::<Vec<_>>();
+        match sort_field.as_str() {
+            "likes" => results.sort_by_key(|result| std::cmp::Reverse(result.likes)),
+            "lastModified" => results.sort_by(|a, b| b.last_modified.cmp(&a.last_modified)),
+            "trendingScore" => results.sort_by(|a, b| b.trending_score.partial_cmp(&a.trending_score).unwrap_or(std::cmp::Ordering::Equal)),
+            _ => results.sort_by_key(|result| std::cmp::Reverse(result.downloads)),
+        }
+        results.truncate(limit as usize);
+        return Ok(results);
+    }
 
     let mut url = format!(
         "https://huggingface.co/api/models?filter=gguf&limit={}&sort={}&offset={}",
@@ -1988,7 +2041,7 @@ pub async fn hf_search_models(
     }
 
     log_info(&app, "hf_browser", format!("searching: {}", url));
-    let results = fetch_models_list(&url).await?;
+    let results = fetch_models_list(&app, &url).await?;
     log_info(
         &app,
         "hf_browser",
@@ -1998,8 +2051,8 @@ pub async fn hf_search_models(
     Ok(results)
 }
 
-async fn fetch_models_list(url: &str) -> Result<Vec<HfSearchResult>, String> {
-    let client = build_client()?;
+pub(crate) async fn fetch_models_list(app: &AppHandle, url: &str) -> Result<Vec<HfSearchResult>, String> {
+    let client = build_hf_client(app)?;
     let response = client.get(url).send().await.map_err(|e| {
         crate::utils::err_msg(
             module_path!(),
@@ -2008,6 +2061,16 @@ async fn fetch_models_list(url: &str) -> Result<Vec<HfSearchResult>, String> {
         )
     })?;
 
+    if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+        return Err(if image_bundle::hf_token(app).is_some() {
+            "The saved Hugging Face token is invalid or expired.".to_string()
+        } else {
+            "This Hugging Face file requires an access token.".to_string()
+        });
+    }
+    if response.status() == reqwest::StatusCode::FORBIDDEN {
+        return Err("Accept the gated model license on Hugging Face, then retry.".to_string());
+    }
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
@@ -2084,7 +2147,7 @@ pub async fn hf_get_author_models(
     }
 
     log_info(&app, "hf_browser", format!("author models: {}", url));
-    let results = fetch_models_list(&url).await?;
+    let results = fetch_models_list(&app, &url).await?;
     log_info(
         &app,
         "hf_browser",
@@ -2109,7 +2172,7 @@ pub async fn hf_get_author_overview(
     }
     log_info(&app, "hf_browser", format!("author overview: {}", author));
     let encoded = urlencoding::encode(&author);
-    let client = build_client()?;
+    let client = build_hf_client(&app)?;
     // An author may be a user or an org; try user overview first, then org.
     let urls = [
         format!("https://huggingface.co/api/users/{}/overview", encoded),
@@ -2170,6 +2233,7 @@ pub async fn hf_get_author_overview(
 pub async fn hf_get_model_files(
     app: AppHandle,
     model_id: String,
+    mode: Option<String>,
 ) -> Result<HfModelInfo, String> {
     log_info(
         &app,
@@ -2177,7 +2241,7 @@ pub async fn hf_get_model_files(
         format!("fetching model info: {}", model_id),
     );
 
-    let client = build_client()?;
+    let client = build_hf_client(&app)?;
 
     let detail_url = format!("https://huggingface.co/api/models/{}", model_id);
     let detail_resp = client.get(&detail_url).send().await.map_err(|e| {
@@ -2188,6 +2252,16 @@ pub async fn hf_get_model_files(
         )
     })?;
 
+    if detail_resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+        return Err(if image_bundle::hf_token(&app).is_some() {
+            "The saved Hugging Face token is invalid or expired.".to_string()
+        } else {
+            "This Hugging Face model requires an access token.".to_string()
+        });
+    }
+    if detail_resp.status() == reqwest::StatusCode::FORBIDDEN {
+        return Err(format!("Accept access to {model_id} on Hugging Face, then retry."));
+    }
     if !detail_resp.status().is_success() {
         let status = detail_resp.status();
         return Err(crate::utils::err_msg(
@@ -2205,9 +2279,11 @@ pub async fn hf_get_model_files(
         )
     })?;
 
+    let is_image = matches!(mode.as_deref(), Some("image") | Some("imageBundle"));
     let tree_url = format!(
-        "https://huggingface.co/api/models/{}/tree/main?recursive=false",
-        model_id
+        "https://huggingface.co/api/models/{}/tree/main?recursive={}",
+        model_id,
+        if is_image { "true" } else { "false" }
     );
     let tree_resp = client.get(&tree_url).send().await.map_err(|e| {
         crate::utils::err_msg(
@@ -2217,6 +2293,16 @@ pub async fn hf_get_model_files(
         )
     })?;
 
+    if tree_resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+        return Err(if image_bundle::hf_token(&app).is_some() {
+            "The saved Hugging Face token is invalid or expired.".to_string()
+        } else {
+            "This Hugging Face repository requires an access token.".to_string()
+        });
+    }
+    if tree_resp.status() == reqwest::StatusCode::FORBIDDEN {
+        return Err(format!("Accept access to {model_id} on Hugging Face, then retry."));
+    }
     let tree_entries: Vec<HfTreeEntry> = if tree_resp.status().is_success() {
         tree_resp.json().await.unwrap_or_default()
     } else {
@@ -2241,6 +2327,7 @@ pub async fn hf_get_model_files(
                 return false;
             }
             lower.ends_with(".gguf")
+                || (is_image && (lower.ends_with(".safetensors") || lower.ends_with(".sft")))
         })
         .map(|s| {
             let lower = s.rfilename.to_lowercase();
@@ -2426,9 +2513,13 @@ async fn process_download_queue(app: &AppHandle) {
         }
 
         let result = match do_queue_download(app, &item).await {
-            Ok(path) => crate::image_generator::sdcpp::handle_download_completed(app, &item, &path)
-                .await
-                .map(|_| path),
+            Ok(path) => match crate::image_generator::sdcpp::handle_download_completed(app, &item, &path).await {
+                Ok(()) => {
+                    image_bundle::handle_download_completed(app, &item, &path).await;
+                    Ok(path)
+                }
+                Err(error) => Err(error),
+            },
             Err(error) => Err(error),
         };
 
@@ -2468,6 +2559,22 @@ async fn do_queue_download(app: &AppHandle, item: &QueuedDownload) -> Result<Str
     let filename = item.filename.as_str();
     let dest_path = if let Some(destination_path) = item.destination_path.as_deref() {
         PathBuf::from(destination_path)
+    } else if item.queue_kind.as_deref() == Some("hf_image_manual") {
+        let relative = Path::new(filename);
+        if relative.is_absolute()
+            || !relative
+                .components()
+                .all(|component| matches!(component, std::path::Component::Normal(_)))
+        {
+            return Err("The selected image component has an unsafe repository path.".to_string());
+        }
+        crate::utils::lettuce_dir(app)?
+            .join("models")
+            .join("image")
+            .join("huggingface")
+            .join("manual")
+            .join(model_id.replace('/', "--"))
+            .join(relative)
     } else {
         let models_dir = hf_models_dir(app)?;
         let safe_model_name = model_id.replace('/', "--");
@@ -2558,20 +2665,21 @@ async fn do_queue_download(app: &AppHandle, item: &QueuedDownload) -> Result<Str
     log_info(
         app,
         "hf_browser",
-        format!(
-            "starting download: {} → {}",
-            download_url,
-            dest_path.display()
-        ),
+        format!("starting verified download: {}/{}", model_id, filename),
     );
 
-    let client = reqwest::Client::builder()
-        .user_agent("LettuceAI/1.0")
-        .redirect(reqwest::redirect::Policy::limited(10))
-        .build()
-        .map_err(|e| format!("Failed to build client: {}", e))?;
-
-    let response = client.get(&download_url).send().await.map_err(|e| {
+    let client = build_client()?;
+    let mut request = client.get(&download_url);
+    let is_hugging_face_download = reqwest::Url::parse(&download_url)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_string))
+        .is_some_and(|host| host == "huggingface.co" || host.ends_with(".huggingface.co"));
+    if is_hugging_face_download {
+        if let Some(token) = image_bundle::hf_token(app) {
+            request = request.bearer_auth(token);
+        }
+    }
+    let response = request.send().await.map_err(|e| {
         crate::utils::err_msg(
             module_path!(),
             line!(),
@@ -2579,6 +2687,18 @@ async fn do_queue_download(app: &AppHandle, item: &QueuedDownload) -> Result<Str
         )
     })?;
 
+    if is_hugging_face_download && response.status() == reqwest::StatusCode::UNAUTHORIZED {
+        return Err(if image_bundle::hf_token(app).is_some() {
+            "The saved Hugging Face token is invalid or expired.".to_string()
+        } else {
+            "This Hugging Face file requires an access token.".to_string()
+        });
+    }
+    if is_hugging_face_download && response.status() == reqwest::StatusCode::FORBIDDEN {
+        return Err(format!(
+            "Accept access to {model_id} on its Hugging Face model card, then retry."
+        ));
+    }
     if !response.status().is_success() {
         return Err(crate::utils::err_msg(
             module_path!(),
@@ -3148,7 +3268,7 @@ pub async fn hf_fetch_readme(app: AppHandle, model_id: String) -> Result<String,
         format!("fetching README for: {}", model_id),
     );
 
-    let client = build_client()?;
+    let client = build_hf_client(&app)?;
 
     let url = format!("https://huggingface.co/{}/raw/main/README.md", model_id);
 
@@ -3158,6 +3278,16 @@ pub async fn hf_fetch_readme(app: AppHandle, model_id: String) -> Result<String,
         .await
         .map_err(|e| format!("Failed to fetch README: {}", e))?;
 
+    if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+        return Err(if image_bundle::hf_token(&app).is_some() {
+            "The saved Hugging Face token is invalid or expired.".to_string()
+        } else {
+            "This Hugging Face model requires an access token.".to_string()
+        });
+    }
+    if resp.status() == reqwest::StatusCode::FORBIDDEN {
+        return Err(format!("Accept access to {model_id} on Hugging Face, then retry."));
+    }
     if !resp.status().is_success() {
         return Err(format!(
             "README not found (HTTP {})",
@@ -3199,12 +3329,7 @@ async fn fetch_gguf_meta(
         model_id, representative.filename
     );
 
-    let client = reqwest::Client::builder()
-        .user_agent("LettuceAI/1.0")
-        .redirect(reqwest::redirect::Policy::limited(10))
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-        .ok()?;
+    let client = build_hf_client(app).ok()?;
 
     // First attempt: 512KB
     let meta = fetch_gguf_range(&client, &url, 524_287).await;

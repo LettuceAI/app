@@ -182,9 +182,9 @@ const Z_ENCODER: ComponentSpec = ComponentSpec {
 };
 const Z_VAE: ComponentSpec = ComponentSpec {
     role: "vae",
-    repo: "black-forest-labs/FLUX.1-schnell",
-    revision: "741f7c3ce8b383c54771c7003378a50191e9efe9",
-    filename: "ae.safetensors",
+    repo: "Comfy-Org/z_image_turbo",
+    revision: "d24c4cf2a0cd98a42f23467e27e3d76ee9438b8e",
+    filename: "split_files/vae/ae.safetensors",
     bytes: 335_304_388,
     sha256: "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38",
 };
@@ -696,6 +696,111 @@ const PROFILES: &[ProfileSpec] = &[
         shared_components: QWEN_SHARED,
     },
 ];
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct HfBundleProfile {
+    pub id: &'static str,
+    pub display_name: &'static str,
+    pub family: &'static str,
+    pub description: &'static str,
+    pub minimum_runtime_build: Option<u32>,
+    pub required_roles: Vec<&'static str>,
+    pub diffusion_markers: Vec<&'static str>,
+    pub encoder_markers: Vec<&'static str>,
+    pub encoder_parameter_billions: f32,
+    pub recommended_repositories: std::collections::BTreeMap<&'static str, &'static str>,
+    pub supports_text_to_image: bool,
+    pub supports_image_edit: bool,
+    pub max_reference_images: Option<u8>,
+    pub requires_reference_image: bool,
+    pub recommended_for_scenes: bool,
+    pub default_width: u32,
+    pub default_height: u32,
+    pub default_steps: u16,
+    pub default_cfg: f32,
+}
+
+fn hf_profile_rules(profile: &ProfileSpec) -> (Vec<&'static str>, Vec<&'static str>, f32) {
+    match profile.id {
+        "z-image-turbo" => (vec!["z-image-turbo", "z_image_turbo"], vec!["qwen3-4b"], 4.0),
+        "z-image" => (vec!["z-image", "z_image"], vec!["qwen3-4b"], 4.0),
+        "flux-2-klein-4b" => (
+            vec!["flux.2-klein-4b", "flux-2-klein-4b", "flux2-klein-4b"],
+            vec!["qwen3-4b"],
+            4.0,
+        ),
+        "flux-2-klein-9b" => (
+            vec!["flux.2-klein-9b", "flux-2-klein-9b", "flux2-klein-9b"],
+            vec!["qwen3-8b"],
+            8.0,
+        ),
+        "flux-2-klein-base-9b" => (
+            vec!["flux.2-klein-base-9b", "flux-2-klein-base-9b", "klein-base-9b"],
+            vec!["qwen3-8b"],
+            8.0,
+        ),
+        "krea-2-turbo" => (vec!["krea-2-turbo", "krea_2_turbo"], vec!["qwen3-vl-4b", "qwen3vl-4b"], 4.0),
+        "krea-2-raw" => (vec!["krea-2-raw", "krea-2-base", "krea_2_raw"], vec!["qwen3-vl-4b", "qwen3vl-4b"], 4.0),
+        "qwen-image-edit-2511" => (
+            vec!["qwen-image-edit-2511", "qwen_image_edit_2511"],
+            vec!["qwen2.5-vl-7b", "qwen2.5vl-7b"],
+            7.0,
+        ),
+        _ => (Vec::new(), Vec::new(), 0.0),
+    }
+}
+
+pub(crate) fn hf_bundle_profiles() -> Vec<HfBundleProfile> {
+    PROFILES
+        .iter()
+        .map(|profile| {
+            let (diffusion_markers, encoder_markers, encoder_parameter_billions) =
+                hf_profile_rules(profile);
+            let mut required_roles = vec!["diffusion_model"];
+            let mut recommended_repositories = std::collections::BTreeMap::new();
+            if let Some(variant) = profile.variants.first() {
+                recommended_repositories.insert("diffusion_model", variant.diffusion.repo);
+            }
+            for component in profile.shared_components {
+                if !required_roles.contains(&component.role) {
+                    required_roles.push(component.role);
+                }
+                recommended_repositories
+                    .entry(component.role)
+                    .or_insert(component.repo);
+            }
+            HfBundleProfile {
+                id: profile.id,
+                display_name: profile.display_name,
+                family: profile.family,
+                description: profile.description,
+                minimum_runtime_build: profile.minimum_runtime_build,
+                required_roles,
+                diffusion_markers,
+                encoder_markers,
+                encoder_parameter_billions,
+                recommended_repositories,
+                supports_text_to_image: profile.supports_text_to_image,
+                supports_image_edit: profile.supports_image_edit,
+                max_reference_images: profile.max_reference_images,
+                requires_reference_image: profile.requires_reference_image,
+                recommended_for_scenes: profile.recommended_for_scenes,
+                default_width: profile.default_width,
+                default_height: profile.default_height,
+                default_steps: profile.default_steps,
+                default_cfg: profile.default_cfg,
+            }
+        })
+        .collect()
+}
+
+pub(crate) fn hf_bundle_profile(profile_id: &str) -> Result<HfBundleProfile, String> {
+    hf_bundle_profiles()
+        .into_iter()
+        .find(|profile| profile.id == profile_id)
+        .ok_or_else(|| format!("Unknown local image architecture: {profile_id}"))
+}
 
 #[derive(Debug, Deserialize)]
 struct GithubRelease {
@@ -1370,10 +1475,23 @@ pub struct RunnabilityRequest {
     full_execution: bool,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteBundleRunnabilityRequest {
+    pub(crate) profile_id: String,
+    pub(crate) runtime_release: String,
+    pub(crate) runtime_asset: String,
+    pub(crate) diffusion_bytes: u64,
+    pub(crate) text_encoder_bytes: u64,
+    pub(crate) vae_bytes: u64,
+    #[serde(default)]
+    pub(crate) vision_encoder_bytes: u64,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Runnability {
-    status: String,
+    pub(crate) status: String,
     method: &'static str,
     exact: bool,
     scope: &'static str,
@@ -1382,6 +1500,117 @@ pub struct Runnability {
     reason: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     estimate: Option<RunnabilityEstimate>,
+}
+
+#[tauri::command]
+pub async fn sdcpp_estimate_remote_bundle(
+    app: AppHandle,
+    request: RemoteBundleRunnabilityRequest,
+) -> Result<Runnability, String> {
+    if cfg!(mobile) {
+        return Err("Local stable-diffusion.cpp image generation is desktop-only.".to_string());
+    }
+    let profile = PROFILES
+        .iter()
+        .find(|profile| profile.id == request.profile_id)
+        .ok_or_else(|| format!("Unknown local image architecture: {}", request.profile_id))?;
+    if let Err(reason) = ensure_runtime_supports_profile(profile, &request.runtime_release) {
+        return Ok(Runnability {
+            status: "incompatibleRuntime".to_string(),
+            method: "stableDiffusionCppRuntimeCompatibility",
+            exact: true,
+            scope: "engineUnavailable",
+            placement_policy: "notRun",
+            elapsed_ms: None,
+            reason,
+            estimate: None,
+        });
+    }
+    if !runtime_is_installed(&app, &request.runtime_release, &request.runtime_asset) {
+        return Ok(Runnability {
+            status: "notInstalled".to_string(),
+            method: "stableDiffusionCppAutoFitEstimate",
+            exact: false,
+            scope: "engineUnavailable",
+            placement_policy: "notRun",
+            elapsed_ms: None,
+            reason: "Install a compatible stable-diffusion.cpp engine before downloading this image bundle."
+                .to_string(),
+            estimate: None,
+        });
+    }
+    let started = Instant::now();
+    let policy = load_compute_policy(&app, &request.runtime_release, &request.runtime_asset);
+    let components = vec![
+        EstimateComponent {
+            name: "DiT",
+            params_bytes: request.diffusion_bytes,
+            compute_reserve_bytes: SDCPP_AUTO_FIT_DIT_RESERVE_BYTES,
+            splittable: true,
+        },
+        EstimateComponent {
+            name: "VAE",
+            params_bytes: request.vae_bytes,
+            compute_reserve_bytes: SDCPP_AUTO_FIT_VAE_RESERVE_BYTES,
+            splittable: false,
+        },
+        EstimateComponent {
+            name: "Conditioner",
+            params_bytes: request
+                .text_encoder_bytes
+                .saturating_add(request.vision_encoder_bytes),
+            compute_reserve_bytes: SDCPP_AUTO_FIT_CONDITIONER_RESERVE_BYTES,
+            splittable: true,
+        },
+    ];
+    let estimate = match resolve_compute_policy(
+        &app,
+        &request.runtime_release,
+        &request.runtime_asset,
+        &policy,
+    )
+    .await
+    {
+        Ok(resolved) => compute_auto_fit_estimate(
+            &components,
+            resolved.effective_devices,
+            crate::llama_cpp::available_memory_bytes(),
+            "configuredEnginePolicy",
+        ),
+        Err(error) => {
+            return Ok(Runnability {
+                status: "inconclusive".to_string(),
+                method: "stableDiffusionCppConfiguredPlacementEstimate",
+                exact: false,
+                scope: "preInstallEstimate",
+                placement_policy: "sdCppConfiguredPolicyEstimate",
+                elapsed_ms: Some(started.elapsed().as_millis() as u64),
+                reason: format!("The pre-download estimate could not be completed: {error}"),
+                estimate: None,
+            })
+        }
+    };
+    let uses_cpu = estimate.placements.iter().any(|placement| placement.cpu);
+    let uses_split = estimate.placements.iter().any(|placement| placement.split);
+    let reason = if uses_cpu {
+        "Pre-download estimate: one or more components will use CPU fallback. A smaller quantization is recommended."
+    } else if uses_split {
+        "Pre-download estimate: the selected bundle fits by splitting components across configured GPUs."
+    } else if estimate.plan_mode == "timeShare" {
+        "Pre-download estimate: the selected bundle fits with phased GPU placement."
+    } else {
+        "Pre-download estimate: the selected bundle fits concurrently on the configured GPU devices."
+    };
+    Ok(Runnability {
+        status: if uses_cpu { "cpuFallback" } else { "estimatedRunnable" }.to_string(),
+        method: "stableDiffusionCppConfiguredPlacementEstimate",
+        exact: false,
+        scope: "preInstallEstimate",
+        placement_policy: "sdCppConfiguredPolicyEstimate",
+        elapsed_ms: Some(started.elapsed().as_millis() as u64),
+        reason: reason.to_string(),
+        estimate: Some(estimate),
+    })
 }
 
 const MIB: u64 = 1024 * 1024;
@@ -5104,6 +5333,150 @@ fn register_installed_model(
         .to_string(),
     )?;
     Ok(())
+}
+
+pub(crate) struct HfBundleRegistration<'a> {
+    pub profile_id: &'a str,
+    pub display_name: &'a str,
+    pub diffusion_path: &'a str,
+    pub text_encoder_path: &'a str,
+    pub vae_path: &'a str,
+    pub vision_encoder_path: Option<&'a str>,
+    pub runtime_release: &'a str,
+    pub runtime_asset: &'a str,
+}
+
+pub(crate) fn register_hf_bundle_model(
+    app: &AppHandle,
+    registration: HfBundleRegistration<'_>,
+) -> Result<String, String> {
+    use rusqlite::OptionalExtension;
+
+    let profile = PROFILES
+        .iter()
+        .find(|profile| profile.id == registration.profile_id)
+        .ok_or_else(|| format!("Unknown local image architecture: {}", registration.profile_id))?;
+    ensure_runtime_supports_profile(profile, registration.runtime_release)?;
+    if !runtime_is_installed(app, registration.runtime_release, registration.runtime_asset) {
+        return Err("The selected stable-diffusion.cpp engine is no longer installed.".to_string());
+    }
+
+    let mut conn = crate::storage_manager::db::open_db(app)?;
+    let transaction = conn
+        .transaction()
+        .map_err(|error| crate::utils::err_to_string(module_path!(), line!(), error))?;
+    let credential_id = transaction
+        .query_row(
+            "SELECT id FROM provider_credentials WHERE provider_id = ?1 AND label = ?2 LIMIT 1",
+            rusqlite::params![PROVIDER_ID, PROVIDER_LABEL],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|error| crate::utils::err_to_string(module_path!(), line!(), error))?
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    transaction
+        .execute(
+            "INSERT OR IGNORE INTO provider_credentials (id, provider_id, label, config) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![&credential_id, PROVIDER_ID, PROVIDER_LABEL, "{\"managed\":true}"],
+        )
+        .map_err(|error| crate::utils::err_to_string(module_path!(), line!(), error))?;
+
+    let existing = transaction
+        .query_row(
+            "SELECT id, display_name, created_at, input_scopes, output_scopes, advanced_model_settings FROM models WHERE provider_id = ?1 AND name = ?2 LIMIT 1",
+            rusqlite::params![PROVIDER_ID, registration.diffusion_path],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, Option<String>>(5)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(|error| crate::utils::err_to_string(module_path!(), line!(), error))?;
+    let (model_id, display_name, created_at, input_scopes, output_scopes, existing_advanced) =
+        match existing {
+            Some((id, name, created, input, output, advanced)) => {
+                (id, name, created, input, output, advanced)
+            }
+            None => (
+                uuid::Uuid::new_v4().to_string(),
+                registration.display_name.trim().to_string(),
+                crate::storage_manager::db::now_ms() as i64,
+                None,
+                None,
+                None,
+            ),
+        };
+    if display_name.is_empty() {
+        return Err("The model display name cannot be empty.".to_string());
+    }
+    let mut advanced = existing_advanced
+        .as_deref()
+        .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
+        .and_then(|value| value.as_object().cloned())
+        .unwrap_or_default();
+    let managed = serde_json::json!({
+        "sdcppProfileId": profile.id,
+        "sdcppTextEncoderPath": registration.text_encoder_path,
+        "sdcppVaePath": registration.vae_path,
+        "sdcppVisionEncoderPath": registration.vision_encoder_path,
+        "sdcppRuntimeRelease": registration.runtime_release,
+        "sdcppRuntimeAsset": registration.runtime_asset,
+        "sdcppRuntimeBackend": runtime_backend_for_current_platform(registration.runtime_asset),
+        "sdcppMaxReferenceImages": profile.max_reference_images,
+        "sdcppSupportsLora": true,
+        "sdcppSupportsTextToImage": profile.supports_text_to_image,
+        "sdcppSupportsImageEdit": profile.supports_image_edit,
+        "sdcppRecommendedForScenes": profile.recommended_for_scenes,
+        "sdcppRequiresReferenceImage": profile.requires_reference_image,
+        "sdSize": format!("{}x{}", profile.default_width, profile.default_height),
+        "sdSteps": profile.default_steps,
+        "sdCfgScale": profile.default_cfg
+    });
+    if let Some(values) = managed.as_object() {
+        for (key, value) in values {
+            advanced.entry(key.clone()).or_insert_with(|| value.clone());
+        }
+    }
+    advanced.remove("sdcppVariantId");
+    let advanced_json = serde_json::to_string(&Value::Object(advanced))
+        .map_err(|error| crate::utils::err_to_string(module_path!(), line!(), error))?;
+    let default_input = if profile.supports_image_edit {
+        "[\"text\",\"image\"]"
+    } else {
+        "[\"text\"]"
+    };
+    transaction
+        .execute(
+            r#"INSERT INTO models (id, name, provider_id, provider_credential_id, provider_label, display_name, created_at, model_type, input_scopes, output_scopes, advanced_model_settings)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'chat', ?8, ?9, ?10)
+               ON CONFLICT(id) DO UPDATE SET
+                 provider_credential_id=excluded.provider_credential_id,
+                 advanced_model_settings=excluded.advanced_model_settings"#,
+            rusqlite::params![
+                &model_id,
+                registration.diffusion_path,
+                PROVIDER_ID,
+                &credential_id,
+                PROVIDER_LABEL,
+                display_name,
+                created_at,
+                input_scopes.as_deref().unwrap_or(default_input),
+                output_scopes.as_deref().unwrap_or("[\"image\"]"),
+                advanced_json,
+            ],
+        )
+        .map_err(|error| crate::utils::err_to_string(module_path!(), line!(), error))?;
+    transaction
+        .commit()
+        .map_err(|error| crate::utils::err_to_string(module_path!(), line!(), error))?;
+    let _ = app.emit("lettuceai:settings-updated", serde_json::json!({ "modelId": model_id }));
+    Ok(model_id)
 }
 
 fn find_profile_variant(

@@ -197,6 +197,16 @@ export function DownloadQueueProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    void listen(SETTINGS_UPDATED_EVENT, () => {
+      window.dispatchEvent(new CustomEvent(SETTINGS_UPDATED_EVENT));
+    }).then((dispose) => {
+      unlisten = dispose;
+    });
+    return () => unlisten?.();
+  }, []);
+
   // Detect state transitions and fire toasts when not on HF browser page
   useEffect(() => {
     const prev = prevQueueRef.current;

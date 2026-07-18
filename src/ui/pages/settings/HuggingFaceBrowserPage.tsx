@@ -23,6 +23,7 @@ import {
   Server,
   Check,
   HardDrive,
+  KeyRound,
   ChevronDown,
   SlidersHorizontal,
   ChevronLeft,
@@ -36,6 +37,12 @@ import { useI18n, type TranslationKey, type TranslateParams } from "../../../cor
 type TFn = (key: TranslationKey, params?: TranslateParams) => string;
 import { Switch } from "../../components/Switch";
 import { HfReadmeRenderer } from "./components/HfReadmeRenderer";
+import { useImageBundle } from "./components/imageBundle/useImageBundle";
+import { BundleArchitecturePicker } from "./components/imageBundle/BundleArchitecturePicker";
+import { BundleReview } from "./components/imageBundle/BundleReview";
+import { BundleFilePicker } from "./components/imageBundle/BundleFilePicker";
+import { BundleAuthPanel } from "./components/imageBundle/BundleAuthPanel";
+import { formatBundleBytes, type BundleRole, type ValidatedAsset } from "./components/imageBundle/types";
 import { InlineDownloadCards } from "./components/DownloadQueueBar";
 import {
   useDownloadQueue,
@@ -1277,6 +1284,10 @@ function DetailReportContent({
 export function HuggingFaceBrowserPage() {
   const { t } = useI18n();
   const hfNavigate = useNavigate();
+  const openInstalledImageModel = useCallback(
+    (modelId: string) => hfNavigate(`/settings/models/${modelId}`),
+    [hfNavigate],
+  );
   const [searchParams, setSearchParams] = useSearchParams();
   const returnTo = searchParams.get("returnTo");
   const { queue, dismissItem, hasItems: hasDownloads } = useDownloadQueue();
@@ -1357,6 +1368,13 @@ export function HuggingFaceBrowserPage() {
   const isMobilePlatform = useMemo(() => getPlatform().type === "mobile", []);
 
   const HF_DESTINATION_STORAGE_KEY = "hfBrowser:destinationProviderId";
+  type HfBrowserMode = "llm" | "image" | "imageBundle";
+  const HF_MODE_STORAGE_KEY = "hfBrowser:mode";
+  const [browserMode, setBrowserMode] = useState<HfBrowserMode>(() => {
+    if (typeof window === "undefined") return "llm";
+    const saved = window.sessionStorage.getItem(HF_MODE_STORAGE_KEY);
+    return saved === "image" || saved === "imageBundle" ? saved : "llm";
+  });
   const [providersLoaded, setProvidersLoaded] = useState(() => readSettingsCached() != null);
   const [ollamaProviders, setOllamaProviders] = useState<ProviderCredential[]>(() => {
     const cached = readSettingsCached();
@@ -1376,6 +1394,11 @@ export function HuggingFaceBrowserPage() {
       window.sessionStorage.removeItem(HF_DESTINATION_STORAGE_KEY);
     }
   }, [selectedOllamaProviderId]);
+
+  useEffect(() => {
+    window.sessionStorage.setItem(HF_MODE_STORAGE_KEY, browserMode);
+    if (browserMode !== "llm") setSelectedOllamaProviderId(null);
+  }, [browserMode]);
 
   // Filter state
   const [showFilterMenu, setShowFilterMenu] = useState(false);
@@ -1428,7 +1451,32 @@ export function HuggingFaceBrowserPage() {
     () => ollamaProviders.find((p) => p.id === selectedOllamaProviderId) ?? null,
     [ollamaProviders, selectedOllamaProviderId],
   );
-  const isOllamaMode = !!selectedOllamaProvider;
+  const isOllamaMode = browserMode === "llm" && !!selectedOllamaProvider;
+  const isImageMode = browserMode === "image";
+  const isBundleMode = browserMode === "imageBundle";
+  const goToModelsPage = useCallback(() => hfNavigate("/settings/models"), [hfNavigate]);
+  const bundle = useImageBundle({
+    enabled: isBundleMode,
+    onOpenModel: openInstalledImageModel,
+    onDownloadStarted: goToModelsPage,
+  });
+
+  const handleRailRole = useCallback(
+    (role: BundleRole) => {
+      if (bundle.draft.bundleId) return;
+      bundle.clearRole(role);
+      setView({ kind: "search" });
+    },
+    [bundle.draft.bundleId, bundle.clearRole, setView],
+  );
+
+  const handleBundleSelect = useCallback(
+    (asset: ValidatedAsset) => {
+      bundle.selectAsset(asset);
+      setView({ kind: "search" });
+    },
+    [bundle.selectAsset, setView],
+  );
 
   useEffect(() => {
     if (!isMobilePlatform || !providersLoaded || ollamaProviders.length === 0) return;
@@ -1468,6 +1516,7 @@ export function HuggingFaceBrowserPage() {
   const [hasMore, setHasMore] = useState(true);
 
   const displayedResults = useMemo(() => {
+    if (isBundleMode) return results;
     if (filterPipelineTags.size === 0 && filterParamMinNum == null && filterParamMaxNum == null) {
       return results;
     }
@@ -1488,7 +1537,7 @@ export function HuggingFaceBrowserPage() {
       }
       return true;
     });
-  }, [results, filterPipelineTags, filterParamMinNum, filterParamMaxNum]);
+  }, [results, filterPipelineTags, filterParamMinNum, filterParamMaxNum, isBundleMode]);
 
   // Pipeline tags present in current results (to surface relevant options)
   const availablePipelineTags = useMemo(() => {
@@ -1619,6 +1668,13 @@ export function HuggingFaceBrowserPage() {
   const isDirectLookup = parseHfUrl(query) !== null;
 
   const doSearch = useCallback(async () => {
+    if (isBundleMode && (!bundle.profile || !bundle.currentRole)) {
+      setResults([]);
+      setSearching(false);
+      setHasSearched(false);
+      setHasMore(false);
+      return;
+    }
     setSearching(true);
     setSearchError(null);
     setHasMore(true);
@@ -1629,14 +1685,17 @@ export function HuggingFaceBrowserPage() {
         sort: sortField(sortMode),
         offset: 0,
         author: debouncedFilterAuthor || null,
+        mode: browserMode,
+        profileId: isBundleMode ? bundle.profile?.id : null,
+        bundleRole: isBundleMode ? bundle.currentRole : null,
       });
-      if (isDirectLookup) {
+      if (isDirectLookup && !isBundleMode) {
         const exact = data.filter((d) => d.modelId.toLowerCase() === debouncedQuery.toLowerCase());
         setResults(exact.length > 0 ? exact : data.slice(0, 1));
         setHasMore(false);
       } else {
         setResults(data);
-        if (data.length < PAGE_SIZE) setHasMore(false);
+        if (isBundleMode || data.length < PAGE_SIZE) setHasMore(false);
       }
     } catch (err: any) {
       setSearchError(err?.message || String(err));
@@ -1646,10 +1705,20 @@ export function HuggingFaceBrowserPage() {
       setSearching(false);
       setHasSearched(true);
     }
-  }, [debouncedQuery, sortMode, sortField, isDirectLookup, debouncedFilterAuthor]);
+  }, [
+    debouncedQuery,
+    sortMode,
+    sortField,
+    isDirectLookup,
+    debouncedFilterAuthor,
+    browserMode,
+    isBundleMode,
+    bundle.profile,
+    bundle.currentRole,
+  ]);
 
   const loadMore = useCallback(async () => {
-    if (loadingMore || !hasMore) return;
+    if (loadingMore || !hasMore || isBundleMode) return;
     setLoadingMore(true);
     try {
       const data = await invoke<HfSearchResult[]>("hf_search_models", {
@@ -1658,10 +1727,15 @@ export function HuggingFaceBrowserPage() {
         sort: sortField(sortMode),
         offset: results.length,
         author: debouncedFilterAuthor || null,
+        mode: browserMode,
       });
       if (data.length < PAGE_SIZE) setHasMore(false);
       if (data.length > 0) {
-        setResults((prev) => [...prev, ...data]);
+        setResults((prev) => {
+          const seen = new Set(prev.map((p) => p.modelId));
+          const fresh = data.filter((d) => !seen.has(d.modelId));
+          return fresh.length > 0 ? [...prev, ...fresh] : prev;
+        });
       }
     } catch {
     } finally {
@@ -1670,11 +1744,13 @@ export function HuggingFaceBrowserPage() {
   }, [
     loadingMore,
     hasMore,
+    isBundleMode,
     debouncedQuery,
     sortMode,
     sortField,
     results.length,
     debouncedFilterAuthor,
+    browserMode,
   ]);
 
   useEffect(() => {
@@ -1682,6 +1758,17 @@ export function HuggingFaceBrowserPage() {
       doSearch();
     }
   }, [debouncedQuery, sortMode, view.kind, doSearch]);
+
+  useEffect(() => {
+    if (!isBundleMode || !bundle.profile || !bundle.currentRole) return;
+    const remembered = bundle.draft.repositories[bundle.currentRole];
+    const recommended = bundle.profile.recommendedRepositories[bundle.currentRole];
+    setQuery(
+      bundle.currentRole === "diffusion_model"
+        ? (remembered ?? "")
+        : (remembered ?? recommended ?? ""),
+    );
+  }, [isBundleMode, bundle.profile, bundle.currentRole]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (results.length === 0) return;
@@ -1712,8 +1799,11 @@ export function HuggingFaceBrowserPage() {
       setReadmeLoading(true);
       setRunabilityScores({});
       setRecData(null);
-      setRecLoading(!isOllamaMode || sproutActive);
-      setFilesPanelTab(isOllamaMode && !sproutActive ? "files" : "recommended");
+      setRecLoading(isImageMode || isBundleMode ? false : !isOllamaMode || sproutActive);
+      setFilesPanelTab(
+        isImageMode || isBundleMode || (isOllamaMode && !sproutActive) ? "files" : "recommended",
+      );
+      if (isBundleMode) void bundle.loadRoleFiles(modelId);
       setCompareOpen(false);
       setCompareSelections([]);
       setRecImageSupport(false);
@@ -1721,11 +1811,12 @@ export function HuggingFaceBrowserPage() {
 
       const filesPromise = invoke<HfModelInfo>("hf_get_model_files", {
         modelId,
+        mode: browserMode,
       })
         .then((info) => {
           setModelInfo(info);
           const runnableFiles = info.files.filter((f) => f.size > 0 && !f.isMmproj && !f.isMtp);
-          if (runnableFiles.length > 0 && (!isOllamaMode || sproutActive)) {
+          if (!isImageMode && !isBundleMode && runnableFiles.length > 0 && (!isOllamaMode || sproutActive)) {
             invoke<RunabilityScore[]>("hf_compute_runability", {
               modelId: info.modelId,
               files: runnableFiles.map((f) => ({
@@ -1764,11 +1855,16 @@ export function HuggingFaceBrowserPage() {
 
       await Promise.allSettled([filesPromise, readmePromise]);
     },
-    [setView, isOllamaMode, sproutActive, sproutConfig],
+    [setView, isOllamaMode, isImageMode, isBundleMode, bundle.loadRoleFiles, sproutActive, sproutConfig, browserMode],
   );
 
   useEffect(() => {
     if (view.kind !== "model" || !modelInfo) return;
+    if (isImageMode || isBundleMode) {
+      setRecLoading(false);
+      setRecData(null);
+      return;
+    }
     if (isOllamaMode && !sproutActive) {
       setRecLoading(false);
       setRecData(null);
@@ -1815,7 +1911,7 @@ export function HuggingFaceBrowserPage() {
     return () => {
       cancelled = true;
     };
-  }, [view.kind, modelInfo, isOllamaMode, sproutActive, sproutConfig]);
+  }, [view.kind, modelInfo, isOllamaMode, isImageMode, isBundleMode, sproutActive, sproutConfig]);
 
   const filesWithSize = modelInfo?.files.filter((f) => f.size > 0) ?? [];
   const runnableFilesWithSize = useMemo(
@@ -2307,7 +2403,9 @@ export function HuggingFaceBrowserPage() {
         : null;
 
       const shouldCreateModel = Boolean(returnTo) && !file.isMmproj && !file.isMtp;
-      const metadata = shouldCreateModel
+      const metadata: QueueDownloadMetadata | null = isImageMode
+        ? { queueKind: "hf_image_manual" }
+        : shouldCreateModel
         ? {
             createModelWhenFinished: true,
             installId: crypto.randomUUID(),
@@ -2330,6 +2428,7 @@ export function HuggingFaceBrowserPage() {
     },
     [
       gpuOptionsEnabled,
+      isImageMode,
       isOllamaMode,
       modelInfo,
       queueTrackedDownload,
@@ -2459,6 +2558,56 @@ export function HuggingFaceBrowserPage() {
   return (
     <div className="flex h-full flex-col text-fg">
       <div className="flex-1">
+        {!isMobilePlatform && (
+          <div className="sticky top-0 z-20 flex gap-1 border-b border-fg/7 bg-surface/95 px-4 py-2 backdrop-blur">
+            <button
+              onClick={() => {
+                setBrowserMode("llm");
+                setSelectedOllamaProviderId(null);
+                setView({ kind: "search" });
+              }}
+              className={cn("flex items-center gap-1.5 rounded-lg px-3 py-2 text-[11.5px] font-medium transition", browserMode === "llm" && !isOllamaMode ? "bg-accent/12 text-accent" : "text-fg/45 hover:bg-fg/5 hover:text-fg")}
+            >
+              <Cpu size={13} /> {t("hfBrowser.destinationLlamaCpp")}
+            </button>
+            <button
+              onClick={() => {
+                setBrowserMode("llm");
+                setShowOllamaProviderMenu(true);
+              }}
+              className={cn("flex items-center gap-1.5 rounded-lg px-3 py-2 text-[11.5px] font-medium transition", isOllamaMode ? "bg-emerald-400/10 text-emerald-300" : "text-fg/45 hover:bg-fg/5 hover:text-fg")}
+            >
+              <img src={OllamaIcon} alt="Ollama" className="h-3.5 w-3.5" /> {t("hfBrowser.destinationOllama")}
+            </button>
+            <button
+              onClick={() => {
+                setBrowserMode("image");
+                setView({ kind: "search" });
+              }}
+              className={cn("flex items-center gap-1.5 rounded-lg px-3 py-2 text-[11.5px] font-medium transition", browserMode === "image" ? "bg-accent/12 text-accent" : "text-fg/45 hover:bg-fg/5 hover:text-fg")}
+            >
+              <Layers size={13} /> {t("hfBrowser.destinationLocalImage")}
+            </button>
+            <button
+              onClick={() => {
+                setBrowserMode("imageBundle");
+                setView({ kind: "search" });
+              }}
+              className={cn("flex items-center gap-1.5 rounded-lg px-3 py-2 text-[11.5px] font-medium transition", browserMode === "imageBundle" ? "bg-accent/12 text-accent" : "text-fg/45 hover:bg-fg/5 hover:text-fg")}
+            >
+              <Download size={13} /> {t("hfBrowser.destinationSelectDownload")}
+            </button>
+          </div>
+        )}
+        {isBundleMode && !bundle.profile ? (
+          <BundleArchitecturePicker bundle={bundle} />
+        ) : isBundleMode && bundle.ready && view.kind === "search" ? (
+          <BundleReview
+            bundle={bundle}
+            onOpenModel={openInstalledImageModel}
+            onRedoRole={handleRailRole}
+          />
+        ) : (
         <AnimatePresence mode="wait">
           {view.kind === "search" && (
             <motion.div
@@ -2471,6 +2620,85 @@ export function HuggingFaceBrowserPage() {
             >
               {/* Search + filters */}
               <div className="sticky top-0 z-10 border-b border-fg/5 bg-surface/95 backdrop-blur px-4 py-3 space-y-3">
+                {isBundleMode && bundle.profile && bundle.currentRole && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="truncate text-[10px] font-semibold uppercase tracking-[0.16em] text-accent">
+                          {t("hfBrowser.bundle.componentStep", {
+                            current: bundle.requiredRoles.indexOf(bundle.currentRole) + 1,
+                            total: bundle.requiredRoles.length,
+                          })}
+                          <span className="text-fg/35"> · {bundle.profile.displayName}</span>
+                        </div>
+                        <h2 className="mt-0.5 truncate text-[15px] font-semibold text-fg">
+                          {t("hfBrowser.bundle.selectRole", {
+                            role: bundle.roleLabel(bundle.currentRole),
+                          })}
+                        </h2>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <button
+                          onClick={() => bundle.setAuthPanelOpen(!bundle.authPanelOpen)}
+                          aria-label={t("hfBrowser.bundle.hfAccess")}
+                          title={
+                            bundle.auth?.valid
+                              ? (bundle.auth.username ?? t("hfBrowser.bundle.hfAccess"))
+                              : t("hfBrowser.bundle.hfAccess")
+                          }
+                          className={cn(
+                            "flex h-7 w-7 items-center justify-center rounded-lg border transition",
+                            bundle.auth?.valid
+                              ? "border-emerald-400/25 bg-emerald-400/8 text-emerald-300"
+                              : "border-fg/10 bg-fg/4 text-fg/55 hover:text-fg",
+                          )}
+                        >
+                          <KeyRound size={12} />
+                        </button>
+                        <button
+                          onClick={bundle.resetProfile}
+                          className="text-[11px] text-fg/45 transition hover:text-fg"
+                        >
+                          {t("hfBrowser.bundle.changeArchitecture")}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {bundle.requiredRoles.map((role) => {
+                        const asset = bundle.draft.selections[role];
+                        const isCurrent = role === bundle.currentRole;
+                        return (
+                          <button
+                            key={role}
+                            disabled={!asset || !!bundle.draft.bundleId}
+                            onClick={() => handleRailRole(role)}
+                            title={
+                              asset
+                                ? `${asset.relativePath} (${formatBundleBytes(asset.size)})`
+                                : undefined
+                            }
+                            className={cn(
+                              "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10.5px] font-medium transition disabled:cursor-default",
+                              asset
+                                ? "border-emerald-400/25 bg-emerald-400/8 text-emerald-300 hover:border-emerald-400/45"
+                                : isCurrent
+                                  ? "border-accent/35 bg-accent/10 text-accent"
+                                  : "border-fg/10 text-fg/35",
+                            )}
+                          >
+                            {asset ? (
+                              <Check size={10} />
+                            ) : (
+                              <span className="h-1 w-1 rounded-full bg-current" />
+                            )}
+                            {bundle.roleLabel(role)}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {bundle.authPanelOpen && <BundleAuthPanel bundle={bundle} />}
+                  </div>
+                )}
                 {/* Search bar with inline destination */}
                 <div className="flex items-stretch gap-2">
                   <div className="relative flex-1">
@@ -2486,7 +2714,13 @@ export function HuggingFaceBrowserPage() {
                       onChange={(e) => setQuery(e.target.value)}
                       onFocus={() => setSearchFocused(true)}
                       onBlur={() => setSearchFocused(false)}
-                      placeholder={t("hfBrowser.searchPlaceholder")}
+                      placeholder={
+                        isBundleMode
+                          ? t("hfBrowser.bundle.searchPlaceholder")
+                          : isImageMode
+                            ? t("hfBrowser.bundle.repositoryPlaceholder")
+                            : t("hfBrowser.searchPlaceholder")
+                      }
                       className={cn(
                         "h-10 w-full rounded-xl border border-fg/10 bg-fg/4 pl-10 pr-9 text-[13px] text-fg placeholder-fg/35",
                         "transition focus:border-accent/40 focus:bg-fg/6 focus:outline-none focus:ring-1 focus:ring-accent/20",
@@ -2503,6 +2737,7 @@ export function HuggingFaceBrowserPage() {
                     )}
                   </div>
 
+                  {!isBundleMode && (
                   <motion.div
                     className="flex shrink-0 items-stretch gap-2 overflow-hidden"
                     animate={{
@@ -2564,7 +2799,19 @@ export function HuggingFaceBrowserPage() {
                       />
                     </button>
                   </motion.div>
+                  )}
                 </div>
+
+                {isBundleMode &&
+                  bundle.currentRole &&
+                  bundle.currentRole !== "diffusion_model" &&
+                  query.trim().length > 0 &&
+                  query.trim() ===
+                    (bundle.profile?.recommendedRepositories[bundle.currentRole] ?? "") && (
+                    <p className="text-[10.5px] text-fg/40">
+                      {t("hfBrowser.bundle.recommendedPrefilled")}
+                    </p>
+                  )}
 
                 {/* Sort segmented bar with sliding indicator */}
                 <div className="flex gap-1 rounded-xl border border-fg/8 bg-fg/3 p-1">
@@ -2662,7 +2909,11 @@ export function HuggingFaceBrowserPage() {
                   <div className="flex flex-col items-center gap-2 py-16 text-center">
                     <Search size={32} className="text-fg/20" />
                     <p className="text-sm font-medium text-fg/60">{t("hfBrowser.noResults")}</p>
-                    <p className="text-xs text-fg/40">{t("hfBrowser.noResultsHint")}</p>
+                    <p className="text-xs text-fg/40">
+                      {isBundleMode
+                        ? t("hfBrowser.bundle.noCompatibleRepositories")
+                        : t("hfBrowser.noResultsHint")}
+                    </p>
                   </div>
                 )}
 
@@ -3013,8 +3264,9 @@ export function HuggingFaceBrowserPage() {
                       </div>
                       <button
                         type="button"
+                        disabled={isBundleMode}
                         onClick={() => setView({ kind: "author", author: modelInfo.author })}
-                        className="mt-0.5 block text-left text-xs text-fg/45 transition hover:text-accent"
+                        className="mt-0.5 block text-left text-xs text-fg/45 transition enabled:hover:text-accent"
                       >
                         {modelInfo.author}
                       </button>
@@ -3080,7 +3332,7 @@ export function HuggingFaceBrowserPage() {
                     </div>
                   </div>
 
-                  {filesWithSize.length > 0 && (
+                  {(isBundleMode || filesWithSize.length > 0) && (
                     <>
                       {isMobilePlatform && (
                         <>
@@ -3133,6 +3385,14 @@ export function HuggingFaceBrowserPage() {
                             isMobilePlatform && "min-h-0 flex-1",
                           )}
                         >
+                          {isBundleMode ? (
+                            <BundleFilePicker
+                              bundle={bundle}
+                              modelId={modelInfo.modelId}
+                              onSelect={handleBundleSelect}
+                            />
+                          ) : (
+                            <>
                           <div className="border-b border-fg/10 px-3 py-2 space-y-2">
                             {isOllamaMode && !sproutActive ? (
                               <>
@@ -4011,6 +4271,8 @@ export function HuggingFaceBrowserPage() {
                               })}
                             </div>
                           )}
+                            </>
+                          )}
                         </div>
                       </div>
                     </>
@@ -4020,6 +4282,7 @@ export function HuggingFaceBrowserPage() {
             </motion.div>
           )}
         </AnimatePresence>
+        )}
       </div>
 
       {compareOpen && recData && (
