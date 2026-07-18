@@ -16,17 +16,7 @@ import type {
   ValidatedAsset,
 } from "./types";
 
-const DRAFT_KEY = "hfBrowser:imageBundleDraft:v2";
-
 function initialDraft(): BundleDraft {
-  if (typeof window !== "undefined") {
-    try {
-      const saved = window.sessionStorage.getItem(DRAFT_KEY);
-      if (saved) return JSON.parse(saved) as BundleDraft;
-    } catch {
-      window.sessionStorage.removeItem(DRAFT_KEY);
-    }
-  }
   return { profileId: "", selections: {}, repositories: {}, displayName: "" };
 }
 
@@ -57,10 +47,6 @@ export function useImageBundle({
   const [busy, setBusy] = useState(false);
   const loadedRef = useRef(false);
   const notifiedBundleRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    window.sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
-  }, [draft]);
 
   useEffect(() => {
     if (!enabled || loadedRef.current) return;
