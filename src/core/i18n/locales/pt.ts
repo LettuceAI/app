@@ -3951,6 +3951,17 @@ export const ptMessages: DeepPartialMessageTree<LocaleMessages> = {
       completed: "{{size}} baixados",
     },
   },
+  hfAuth: {
+    gatedBody: "Este modelo tem acesso restrito no Hugging Face. Abra a página do modelo, faça login e aceite a licença ou preencha o formulário de solicitação de acesso. Depois adicione um token de acesso da sua conta e tente baixar novamente.",
+    gatedApprovalNote: "Alguns modelos exigem aprovação manual. Se sua solicitação estiver pendente, aguarde a aprovação antes de tentar novamente.",
+    manageBody: "Adicione um token de acesso do Hugging Face para baixar modelos restritos.",
+    statusConnected: "Conectado como {{username}}",
+    statusInvalid: "O token salvo é inválido ou expirou.",
+    statusMissing: "Nenhum token salvo.",
+    add: "Adicionar token",
+    replace: "Substituir token",
+    remove: "Remover token",
+  },
   hfBrowser: {
     title: "Explorador de Modelos",
     searchPlaceholder: "Pesquisar modelos GGUF no HuggingFace...",

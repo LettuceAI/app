@@ -4695,6 +4695,17 @@ export const deMessages: DeepPartialMessageTree<LocaleMessages> = {
       toggle: "llama.cpp-Streaming umschalten",
     },
   },
+  hfAuth: {
+    gatedBody: "Dieses Modell ist auf Hugging Face zugriffsbeschränkt. Öffne die Modellseite, melde dich an und akzeptiere die Lizenz oder fülle das Zugriffsformular aus. Füge danach ein Zugriffstoken aus deinem Konto hinzu und starte den Download erneut.",
+    gatedApprovalNote: "Manche Modelle erfordern eine manuelle Freigabe. Wenn deine Anfrage aussteht, warte auf die Freigabe, bevor du es erneut versuchst.",
+    manageBody: "Füge ein Hugging-Face-Zugriffstoken hinzu, um zugriffsbeschränkte Modelle herunterzuladen.",
+    statusConnected: "Verbunden als {{username}}",
+    statusInvalid: "Das gespeicherte Token ist ungültig oder abgelaufen.",
+    statusMissing: "Kein Token gespeichert.",
+    add: "Token hinzufügen",
+    replace: "Token ersetzen",
+    remove: "Token entfernen",
+  },
   hfBrowser: {
     title: "Modell-Browser",
     searchPlaceholder: "GGUF-Modelle auf HuggingFace suchen...",

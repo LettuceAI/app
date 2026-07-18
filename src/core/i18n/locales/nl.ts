@@ -4040,6 +4040,17 @@ export const nlMessages: DeepPartialMessageTree<LocaleMessages> = {
       viewInBrowser: "Bekijken in browser",
     },
   },
+  hfAuth: {
+    gatedBody: "Dit model is afgeschermd op Hugging Face. Open de modelpagina, log in en accepteer de licentie of vul het toegangsformulier in. Voeg daarna een toegangstoken uit je account toe en probeer de download opnieuw.",
+    gatedApprovalNote: "Sommige modellen vereisen handmatige goedkeuring. Als je aanvraag in behandeling is, wacht dan op goedkeuring voordat je het opnieuw probeert.",
+    manageBody: "Voeg een Hugging Face-toegangstoken toe om afgeschermde modellen te downloaden.",
+    statusConnected: "Verbonden als {{username}}",
+    statusInvalid: "Het opgeslagen token is ongeldig of verlopen.",
+    statusMissing: "Geen token opgeslagen.",
+    add: "Token toevoegen",
+    replace: "Token vervangen",
+    remove: "Token verwijderen",
+  },
   hfBrowser: {
     title: "Modelbrowser",
     searchPlaceholder: "Zoek GGUF-modellen op HuggingFace...",

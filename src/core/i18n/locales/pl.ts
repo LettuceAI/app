@@ -4040,6 +4040,17 @@ export const plMessages: DeepPartialMessageTree<LocaleMessages> = {
       viewInBrowser: "Zobacz w przeglądarce",
     },
   },
+  hfAuth: {
+    gatedBody: "Ten model ma ograniczony dostęp na Hugging Face. Otwórz stronę modelu, zaloguj się i zaakceptuj licencję lub wypełnij formularz dostępu. Następnie dodaj token dostępu ze swojego konta i ponów pobieranie.",
+    gatedApprovalNote: "Niektóre modele wymagają ręcznego zatwierdzenia. Jeśli twoja prośba oczekuje, poczekaj na zatwierdzenie przed ponowną próbą.",
+    manageBody: "Dodaj token dostępu Hugging Face, aby pobierać modele z ograniczonym dostępem.",
+    statusConnected: "Połączono jako {{username}}",
+    statusInvalid: "Zapisany token jest nieprawidłowy lub wygasł.",
+    statusMissing: "Brak zapisanego tokenu.",
+    add: "Dodaj token",
+    replace: "Zastąp token",
+    remove: "Usuń token",
+  },
   hfBrowser: {
     title: "Przeglądarka Modeli",
     searchPlaceholder: "Szukaj modeli GGUF na HuggingFace...",

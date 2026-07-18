@@ -4695,6 +4695,17 @@ export const zhHantMessages: DeepPartialMessageTree<LocaleMessages> = {
       toggle: "切換 llama.cpp 串流",
     },
   },
+  hfAuth: {
+    gatedBody: "此模型在 Hugging Face 上受存取限制。請開啟模型頁面並登入，接受授權或填寫存取申請表。然後新增你帳戶的存取權杖並重試下載。",
+    gatedApprovalNote: "部分模型需要人工審核。如果你的申請仍在等待，請待核准後再重試。",
+    manageBody: "新增 Hugging Face 存取權杖以下載受限模型。",
+    statusConnected: "已以 {{username}} 連線",
+    statusInvalid: "已儲存的權杖無效或已過期。",
+    statusMissing: "尚未儲存權杖。",
+    add: "新增權杖",
+    replace: "更換權杖",
+    remove: "移除權杖",
+  },
   hfBrowser: {
     title: "模型瀏覽器",
     searchPlaceholder: "在 HuggingFace 搜尋 GGUF 模型...",

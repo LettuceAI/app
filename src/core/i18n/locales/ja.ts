@@ -3951,6 +3951,17 @@ export const jaMessages: DeepPartialMessageTree<LocaleMessages> = {
       completed: "{{size}} ダウンロード済み",
     },
   },
+  hfAuth: {
+    gatedBody: "このモデルはHugging Faceでアクセス制限されています。モデルページを開いてサインインし、ライセンスに同意するかアクセス申請フォームに記入してください。その後、アカウントのアクセストークンを追加してダウンロードを再試行してください。",
+    gatedApprovalNote: "一部のモデルは手動承認が必要です。申請が保留中の場合は、承認されてから再試行してください。",
+    manageBody: "制限付きモデルをダウンロードするにはHugging Faceのアクセストークンを追加してください。",
+    statusConnected: "{{username}}として接続中",
+    statusInvalid: "保存されたトークンは無効か期限切れです。",
+    statusMissing: "トークンは保存されていません。",
+    add: "トークンを追加",
+    replace: "トークンを変更",
+    remove: "トークンを削除",
+  },
   hfBrowser: {
     title: "モデルブラウザ",
     searchPlaceholder: "HuggingFaceでGGUFモデルを検索...",

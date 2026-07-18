@@ -23,7 +23,6 @@ import {
   Server,
   Check,
   HardDrive,
-  KeyRound,
   ChevronDown,
   SlidersHorizontal,
   ChevronLeft,
@@ -41,7 +40,7 @@ import { useImageBundle } from "./components/imageBundle/useImageBundle";
 import { BundleArchitecturePicker } from "./components/imageBundle/BundleArchitecturePicker";
 import { BundleReview } from "./components/imageBundle/BundleReview";
 import { BundleFilePicker } from "./components/imageBundle/BundleFilePicker";
-import { BundleAuthPanel } from "./components/imageBundle/BundleAuthPanel";
+import { HfTokenMenu, isHfGatedError } from "./components/HfTokenMenu";
 import { formatBundleBytes, type BundleRole, type ValidatedAsset } from "./components/imageBundle/types";
 import { InlineDownloadCards } from "./components/DownloadQueueBar";
 import {
@@ -1553,6 +1552,7 @@ export function HuggingFaceBrowserPage() {
   const [modelInfo, setModelInfo] = useState<HfModelInfo | null>(null);
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [filesError, setFilesError] = useState<string | null>(null);
+  const [gatedMenuOpen, setGatedMenuOpen] = useState(false);
 
   const [readme, setReadme] = useState<string | null>(null);
   const [readmeLoading, setReadmeLoading] = useState(false);
@@ -1836,7 +1836,9 @@ export function HuggingFaceBrowserPage() {
           }
         })
         .catch((err: any) => {
-          setFilesError(err?.message || String(err));
+          const message = err?.message || String(err);
+          setFilesError(message);
+          if (!isOllamaMode && isHfGatedError(message)) setGatedMenuOpen(true);
         })
         .finally(() => {
           setLoadingFiles(false);
@@ -1857,6 +1859,10 @@ export function HuggingFaceBrowserPage() {
     },
     [setView, isOllamaMode, isImageMode, isBundleMode, bundle.loadRoleFiles, sproutActive, sproutConfig, browserMode],
   );
+
+  useEffect(() => {
+    if (bundle.roleFilesError && isHfGatedError(bundle.roleFilesError)) setGatedMenuOpen(true);
+  }, [bundle.roleFilesError]);
 
   useEffect(() => {
     if (view.kind !== "model" || !modelInfo) return;
@@ -2149,9 +2155,14 @@ export function HuggingFaceBrowserPage() {
           metadata,
         });
       } catch (err: any) {
+        const message = typeof err === "string" ? err : err?.message || "";
+        if (!ollamaContext && isHfGatedError(message)) {
+          setGatedMenuOpen(true);
+          return null;
+        }
         toast.error(
           t("hfBrowser.downloadFailedToast"),
-          typeof err === "string" ? err : err?.message || t("hfBrowser.downloadFailedUnknown"),
+          message || t("hfBrowser.downloadFailedUnknown"),
         );
         return null;
       }
@@ -2525,6 +2536,7 @@ export function HuggingFaceBrowserPage() {
             error: item.error || t("hfBrowser.downloadFailedUnknown"),
           }),
         );
+        if (!isOllamaMode && isHfGatedError(item.error || "")) setGatedMenuOpen(true);
       }
 
       if (becameCancelled && item.installId) {
@@ -2533,7 +2545,7 @@ export function HuggingFaceBrowserPage() {
     }
 
     prevQueueRef.current = queue;
-  }, [queue, dismissItem, t]);
+  }, [queue, dismissItem, t, isOllamaMode]);
 
   if (isMobilePlatform && providersLoaded && ollamaProviders.length === 0) {
     return (
@@ -2639,23 +2651,6 @@ export function HuggingFaceBrowserPage() {
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
                         <button
-                          onClick={() => bundle.setAuthPanelOpen(!bundle.authPanelOpen)}
-                          aria-label={t("hfBrowser.bundle.hfAccess")}
-                          title={
-                            bundle.auth?.valid
-                              ? (bundle.auth.username ?? t("hfBrowser.bundle.hfAccess"))
-                              : t("hfBrowser.bundle.hfAccess")
-                          }
-                          className={cn(
-                            "flex h-7 w-7 items-center justify-center rounded-lg border transition",
-                            bundle.auth?.valid
-                              ? "border-emerald-400/25 bg-emerald-400/8 text-emerald-300"
-                              : "border-fg/10 bg-fg/4 text-fg/55 hover:text-fg",
-                          )}
-                        >
-                          <KeyRound size={12} />
-                        </button>
-                        <button
                           onClick={bundle.resetProfile}
                           className="text-[11px] text-fg/45 transition hover:text-fg"
                         >
@@ -2696,7 +2691,6 @@ export function HuggingFaceBrowserPage() {
                         );
                       })}
                     </div>
-                    {bundle.authPanelOpen && <BundleAuthPanel bundle={bundle} />}
                   </div>
                 )}
                 {/* Search bar with inline destination */}
@@ -3390,6 +3384,7 @@ export function HuggingFaceBrowserPage() {
                               bundle={bundle}
                               modelId={modelInfo.modelId}
                               onSelect={handleBundleSelect}
+                              onAddToken={() => setGatedMenuOpen(true)}
                             />
                           ) : (
                             <>
@@ -4788,6 +4783,16 @@ export function HuggingFaceBrowserPage() {
           </button>
         </div>
       )}
+
+      <HfTokenMenu
+        isOpen={gatedMenuOpen}
+        onClose={() => setGatedMenuOpen(false)}
+        gated
+        modelId={view.kind === "model" ? view.modelId : null}
+        onSaved={() => {
+          if (view.kind === "model") void openModel(view.modelId);
+        }}
+      />
 
       {showHfTour && recData != null && !recLoading && (
         <GuidedTour tour="hfBrowser" onDismiss={dismissHfTour} />

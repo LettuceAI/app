@@ -4695,6 +4695,17 @@ export const esMessages: DeepPartialMessageTree<LocaleMessages> = {
       toggle: "Alternar transmisión de llama.cpp",
     },
   },
+  hfAuth: {
+    gatedBody: "Este modelo está restringido en Hugging Face. Abre la página del modelo, inicia sesión y acepta la licencia o completa el formulario de solicitud de acceso. Después añade un token de acceso de tu cuenta y reintenta la descarga.",
+    gatedApprovalNote: "Algunos modelos requieren aprobación manual. Si tu solicitud está pendiente, espera a que se conceda el acceso antes de reintentar.",
+    manageBody: "Añade un token de acceso de Hugging Face para descargar modelos restringidos.",
+    statusConnected: "Conectado como {{username}}",
+    statusInvalid: "El token guardado no es válido o ha caducado.",
+    statusMissing: "No hay ningún token guardado.",
+    add: "Añadir token",
+    replace: "Reemplazar token",
+    remove: "Eliminar token",
+  },
   hfBrowser: {
     title: "Explorador de Modelos",
     searchPlaceholder: "Buscar modelos GGUF en HuggingFace...",

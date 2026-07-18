@@ -4695,6 +4695,17 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
       toggle: "llama.cpp 스트리밍 전환",
     },
   },
+  hfAuth: {
+    gatedBody: "이 모델은 Hugging Face에서 접근이 제한되어 있습니다. 모델 페이지를 열고 로그인한 뒤 라이선스에 동의하거나 접근 요청 양식을 작성하세요. 그런 다음 계정의 액세스 토큰을 추가하고 다운로드를 다시 시도하세요.",
+    gatedApprovalNote: "일부 모델은 수동 승인이 필요합니다. 요청이 대기 중이라면 승인된 후 다시 시도하세요.",
+    manageBody: "제한된 모델을 다운로드하려면 Hugging Face 액세스 토큰을 추가하세요.",
+    statusConnected: "{{username}}(으)로 연결됨",
+    statusInvalid: "저장된 토큰이 유효하지 않거나 만료되었습니다.",
+    statusMissing: "저장된 토큰이 없습니다.",
+    add: "토큰 추가",
+    replace: "토큰 교체",
+    remove: "토큰 제거",
+  },
   hfBrowser: {
     title: "모델 브라우저",
     searchPlaceholder: "HuggingFace에서 GGUF 모델 검색...",

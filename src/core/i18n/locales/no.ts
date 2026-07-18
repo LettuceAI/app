@@ -4695,6 +4695,17 @@ export const noMessages: DeepPartialMessageTree<LocaleMessages> = {
       toggle: "Veksle llama.cpp-strømming",
     },
   },
+  hfAuth: {
+    gatedBody: "Denne modellen er tilgangsbegrenset på Hugging Face. Åpne modellsiden, logg inn og godta lisensen eller fyll ut skjemaet for tilgangsforespørsel. Legg deretter til et tilgangstoken fra kontoen din og prøv nedlastingen på nytt.",
+    gatedApprovalNote: "Noen modeller krever manuell godkjenning. Hvis forespørselen din venter, vent på godkjenning før du prøver igjen.",
+    manageBody: "Legg til et Hugging Face-tilgangstoken for å laste ned begrensede modeller.",
+    statusConnected: "Tilkoblet som {{username}}",
+    statusInvalid: "Det lagrede tokenet er ugyldig eller utløpt.",
+    statusMissing: "Ingen token lagret.",
+    add: "Legg til token",
+    replace: "Erstatt token",
+    remove: "Fjern token",
+  },
   hfBrowser: {
     title: "Modellutforsker",
     searchPlaceholder: "Søk etter GGUF-modeller på HuggingFace...",

@@ -4916,6 +4916,19 @@ export const enMessages = {
       toggle: "Toggle llama.cpp streaming",
     },
   },
+  hfAuth: {
+    gatedBody:
+      "This model is gated on Hugging Face. Open the model page, sign in, and accept the license or fill out the access request form. Then add an access token from your account and retry the download.",
+    gatedApprovalNote:
+      "Some models need manual approval. If your request is pending, wait for approval before retrying.",
+    manageBody: "Add a Hugging Face access token to download gated models.",
+    statusConnected: "Connected as {{username}}",
+    statusInvalid: "The saved token is invalid or expired.",
+    statusMissing: "No token saved.",
+    add: "Add token",
+    replace: "Replace token",
+    remove: "Remove token",
+  },
   hfBrowser: {
     title: "Model Browser",
     searchPlaceholder: "Search GGUF models on HuggingFace...",

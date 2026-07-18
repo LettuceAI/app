@@ -4695,6 +4695,17 @@ export const zhHansMessages: DeepPartialMessageTree<LocaleMessages> = {
       toggle: "切换 llama.cpp 流式传输",
     },
   },
+  hfAuth: {
+    gatedBody: "此模型在 Hugging Face 上受访问限制。请打开模型页面并登录，接受许可或填写访问申请表。然后添加你账户的访问令牌并重试下载。",
+    gatedApprovalNote: "部分模型需要人工审批。如果你的申请仍在等待，请在获批后再重试。",
+    manageBody: "添加 Hugging Face 访问令牌以下载受限模型。",
+    statusConnected: "已连接为 {{username}}",
+    statusInvalid: "已保存的令牌无效或已过期。",
+    statusMissing: "未保存令牌。",
+    add: "添加令牌",
+    replace: "更换令牌",
+    remove: "移除令牌",
+  },
   hfBrowser: {
     title: "模型浏览器",
     searchPlaceholder: "在 HuggingFace 搜索 GGUF 模型...",

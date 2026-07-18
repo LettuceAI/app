@@ -4695,6 +4695,17 @@ export const filMessages: DeepPartialMessageTree<LocaleMessages> = {
       toggle: "I-toggle ang llama.cpp streaming",
     },
   },
+  hfAuth: {
+    gatedBody: "Naka-gate ang modelong ito sa Hugging Face. Buksan ang page ng modelo, mag-sign in, at tanggapin ang lisensya o punan ang access request form. Pagkatapos, magdagdag ng access token mula sa iyong account at subukang i-download ulit.",
+    gatedApprovalNote: "May mga modelong nangangailangan ng manu-manong pag-apruba. Kung nakabinbin ang iyong request, hintayin muna ang pag-apruba bago subukan ulit.",
+    manageBody: "Magdagdag ng Hugging Face access token para ma-download ang mga naka-gate na modelo.",
+    statusConnected: "Nakakonekta bilang {{username}}",
+    statusInvalid: "Ang naka-save na token ay hindi wasto o paso na.",
+    statusMissing: "Walang naka-save na token.",
+    add: "Magdagdag ng token",
+    replace: "Palitan ang token",
+    remove: "Alisin ang token",
+  },
   hfBrowser: {
     title: "Browser ng Modelo",
     searchPlaceholder: "Maghanap ng mga GGUF na modelo sa HuggingFace...",

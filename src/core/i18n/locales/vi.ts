@@ -3951,6 +3951,17 @@ export const viMessages: DeepPartialMessageTree<LocaleMessages> = {
       completed: "Đã tải {{size}}",
     },
   },
+  hfAuth: {
+    gatedBody: "Mô hình này bị giới hạn truy cập trên Hugging Face. Mở trang mô hình, đăng nhập và chấp nhận giấy phép hoặc điền vào biểu mẫu yêu cầu truy cập. Sau đó thêm token truy cập từ tài khoản của bạn và thử tải lại.",
+    gatedApprovalNote: "Một số mô hình cần được phê duyệt thủ công. Nếu yêu cầu của bạn đang chờ, hãy đợi được phê duyệt trước khi thử lại.",
+    manageBody: "Thêm token truy cập Hugging Face để tải các mô hình bị giới hạn.",
+    statusConnected: "Đã kết nối với tên {{username}}",
+    statusInvalid: "Token đã lưu không hợp lệ hoặc đã hết hạn.",
+    statusMissing: "Chưa lưu token nào.",
+    add: "Thêm token",
+    replace: "Thay token",
+    remove: "Xóa token",
+  },
   hfBrowser: {
     title: "Trình duyệt Mô hình",
     searchPlaceholder: "Tìm kiếm mô hình GGUF trên HuggingFace...",

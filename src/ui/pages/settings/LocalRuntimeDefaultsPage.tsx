@@ -8,6 +8,7 @@ import {
   FolderOpen,
   Gauge,
   HardDrive,
+  KeyRound,
   Layers,
   ListOrdered,
   Loader2,
@@ -24,7 +25,9 @@ import { invoke } from "@tauri-apps/api/core";
 
 import { BottomMenu, MenuButton, MenuButtonGroup, MenuDivider } from "../../components/BottomMenu";
 import { GuidedTour, useGuidedTour } from "../../components/GuidedTour";
+import { HfTokenMenu } from "./components/HfTokenMenu";
 import { Switch } from "../../components/Switch";
+import type { AuthStatus } from "./components/imageBundle/types";
 
 import {
   addOrUpdateModel,
@@ -157,6 +160,8 @@ export function LocalRuntimeDefaultsPage() {
   const [reconfigureKind, setReconfigureKind] = useState<"multi" | "single" | null>(null);
   const [reconfigureCount, setReconfigureCount] = useState(0);
   const [reconfiguring, setReconfiguring] = useState(false);
+  const [hfAuth, setHfAuth] = useState<AuthStatus | null>(null);
+  const [hfMenuOpen, setHfMenuOpen] = useState(false);
   const { shouldShow: showTour, dismiss: dismissTour } = useGuidedTour("runtimeDefaults");
 
   const refreshModelsDir = useCallback(async () => {
@@ -253,7 +258,22 @@ export function LocalRuntimeDefaultsPage() {
     invoke<LlamaGpuDevice[]>("llamacpp_backend_devices")
       .then(setGpuDevices)
       .catch(() => setGpuDevices([]));
+    invoke<AuthStatus>("hf_auth_status")
+      .then(setHfAuth)
+      .catch(() => {});
   }, [refreshModelsDir]);
+
+  const removeHfToken = useCallback(async () => {
+    try {
+      await invoke("hf_auth_clear");
+      setHfAuth({ saved: false, valid: false, username: null, errorKind: "missingToken" });
+    } catch (err) {
+      toast.error(
+        t("runtimeDefaults.saveFailed"),
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  }, [t]);
 
   const persistDefaults = useCallback(
     async (next: RuntimeDefaults) => {
@@ -494,6 +514,47 @@ export function LocalRuntimeDefaultsPage() {
             <div className="space-y-3">
               {renderFolderRow("llm", modelsDir, t("runtimeDefaults.modelsFolderTitle"))}
             </div>
+          </div>
+
+          <div className="space-y-4">
+            <SectionHeading label={t("hfBrowser.bundle.hfAccess")} />
+            <p className="px-1 text-xs text-fg/50">{t("hfAuth.manageBody")}</p>
+
+            <SettingRow
+              icon={<KeyRound className="h-4 w-4 text-info/80" />}
+              iconClassName="border-info/30 bg-info/10"
+              title={t("hfBrowser.bundle.tokenPlaceholder")}
+              description={
+                hfAuth === null
+                  ? "…"
+                  : hfAuth.valid && hfAuth.username
+                    ? t("hfAuth.statusConnected", { username: hfAuth.username })
+                    : hfAuth.saved
+                      ? t("hfAuth.statusInvalid")
+                      : t("hfAuth.statusMissing")
+              }
+            >
+              <div className="flex shrink-0 items-center gap-1.5">
+                {hfAuth?.saved && (
+                  <button
+                    type="button"
+                    onClick={() => void removeHfToken()}
+                    title={t("hfAuth.remove")}
+                    className="rounded-lg p-2 text-fg/40 transition-colors hover:bg-fg/10 hover:text-fg/70"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setHfMenuOpen(true)}
+                  className="inline-flex items-center gap-2 rounded-xl border border-fg/10 bg-surface-el/20 px-3 py-2 text-sm font-medium text-fg/85 transition hover:bg-surface-el/30"
+                >
+                  <KeyRound className="h-4 w-4 text-fg/45" />
+                  {hfAuth?.saved ? t("hfAuth.replace") : t("hfAuth.add")}
+                </button>
+              </div>
+            </SettingRow>
           </div>
 
           <div className="space-y-4" data-tour-id="runtime-defaults-llama">
@@ -1002,6 +1063,12 @@ export function LocalRuntimeDefaultsPage() {
           </button>
         </div>
       </BottomMenu>
+
+      <HfTokenMenu
+        isOpen={hfMenuOpen}
+        onClose={() => setHfMenuOpen(false)}
+        onSaved={setHfAuth}
+      />
 
       {showTour && <GuidedTour tour="runtimeDefaults" onDismiss={dismissTour} />}
     </div>

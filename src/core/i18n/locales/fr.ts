@@ -4695,6 +4695,17 @@ export const frMessages: DeepPartialMessageTree<LocaleMessages> = {
       toggle: "Basculer le streaming llama.cpp",
     },
   },
+  hfAuth: {
+    gatedBody: "Ce modèle est à accès restreint sur Hugging Face. Ouvrez la page du modèle, connectez-vous et acceptez la licence ou remplissez le formulaire de demande d'accès. Ajoutez ensuite un jeton d'accès depuis votre compte et relancez le téléchargement.",
+    gatedApprovalNote: "Certains modèles nécessitent une approbation manuelle. Si votre demande est en attente, attendez l'approbation avant de réessayer.",
+    manageBody: "Ajoutez un jeton d'accès Hugging Face pour télécharger les modèles à accès restreint.",
+    statusConnected: "Connecté en tant que {{username}}",
+    statusInvalid: "Le jeton enregistré est invalide ou expiré.",
+    statusMissing: "Aucun jeton enregistré.",
+    add: "Ajouter un jeton",
+    replace: "Remplacer le jeton",
+    remove: "Supprimer le jeton",
+  },
   hfBrowser: {
     title: "Explorateur de Modèles",
     searchPlaceholder: "Rechercher des modèles GGUF sur HuggingFace...",

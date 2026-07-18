@@ -3951,6 +3951,17 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
       completed: "{{size}} डाउनलोड किया गया",
     },
   },
+  hfAuth: {
+    gatedBody: "यह मॉडल Hugging Face पर प्रतिबंधित है। मॉडल पेज खोलें, साइन इन करें और लाइसेंस स्वीकार करें या एक्सेस अनुरोध फ़ॉर्म भरें। फिर अपने खाते से एक एक्सेस टोकन जोड़ें और डाउनलोड फिर से आज़माएँ।",
+    gatedApprovalNote: "कुछ मॉडलों को मैन्युअल स्वीकृति चाहिए। यदि आपका अनुरोध लंबित है, तो पुनः प्रयास से पहले स्वीकृति की प्रतीक्षा करें।",
+    manageBody: "प्रतिबंधित मॉडल डाउनलोड करने के लिए Hugging Face एक्सेस टोकन जोड़ें।",
+    statusConnected: "{{username}} के रूप में जुड़े हैं",
+    statusInvalid: "सहेजा गया टोकन अमान्य है या समाप्त हो गया है।",
+    statusMissing: "कोई टोकन सहेजा नहीं गया।",
+    add: "टोकन जोड़ें",
+    replace: "टोकन बदलें",
+    remove: "टोकन हटाएँ",
+  },
   hfBrowser: {
     title: "मॉडल ब्राउज़र",
     searchPlaceholder: "HuggingFace पर GGUF मॉडल खोजें...",

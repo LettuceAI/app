@@ -3951,6 +3951,17 @@ export const idMessages: DeepPartialMessageTree<LocaleMessages> = {
       completed: "{{size}} terunduh",
     },
   },
+  hfAuth: {
+    gatedBody: "Model ini dibatasi aksesnya di Hugging Face. Buka halaman model, masuk, lalu setujui lisensi atau isi formulir permintaan akses. Setelah itu tambahkan token akses dari akun Anda dan coba unduh lagi.",
+    gatedApprovalNote: "Beberapa model memerlukan persetujuan manual. Jika permintaan Anda masih menunggu, tunggu hingga disetujui sebelum mencoba lagi.",
+    manageBody: "Tambahkan token akses Hugging Face untuk mengunduh model terbatas.",
+    statusConnected: "Terhubung sebagai {{username}}",
+    statusInvalid: "Token tersimpan tidak valid atau kedaluwarsa.",
+    statusMissing: "Tidak ada token tersimpan.",
+    add: "Tambah token",
+    replace: "Ganti token",
+    remove: "Hapus token",
+  },
   hfBrowser: {
     title: "Penjelajah Model",
     searchPlaceholder: "Cari model GGUF di HuggingFace...",

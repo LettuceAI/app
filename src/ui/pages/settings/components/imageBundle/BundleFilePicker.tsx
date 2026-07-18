@@ -3,17 +3,18 @@ import { AlertTriangle, ExternalLink, HardDrive, KeyRound, Loader, Search } from
 import { useI18n } from "../../../../../core/i18n/context";
 import { openExternalUrl } from "../../../../../core/utils/openExternal";
 import { formatBundleBytes, type ValidatedAsset } from "./types";
-import { BundleAuthPanel } from "./BundleAuthPanel";
 import type { ImageBundleController } from "./useImageBundle";
 
 export function BundleFilePicker({
   bundle,
   modelId,
   onSelect,
+  onAddToken,
 }: {
   bundle: ImageBundleController;
   modelId: string;
   onSelect: (asset: ValidatedAsset) => void;
+  onAddToken: () => void;
 }) {
   const { t } = useI18n();
   const role = bundle.currentRole;
@@ -63,7 +64,7 @@ export function BundleFilePicker({
             <div className="mt-3 flex flex-wrap gap-2">
               {authShaped && (
                 <button
-                  onClick={() => bundle.setAuthPanelOpen(!bundle.authPanelOpen)}
+                  onClick={onAddToken}
                   className="flex items-center gap-1.5 rounded-lg border border-amber-400/25 px-3 py-1.5 text-[11px] font-semibold text-amber-200"
                 >
                   <KeyRound size={11} />
@@ -78,11 +79,6 @@ export function BundleFilePicker({
                 {t("hfBrowser.browseOnHuggingFace")}
               </button>
             </div>
-            {authShaped && bundle.authPanelOpen && (
-              <div className="mt-3">
-                <BundleAuthPanel bundle={bundle} />
-              </div>
-            )}
           </div>
         )}
 

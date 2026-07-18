@@ -5,7 +5,6 @@ import { useDownloadQueue } from "../../../../../core/downloads/DownloadQueueCon
 import { useI18n } from "../../../../../core/i18n/context";
 import { toast } from "../../../../components/toast";
 import type {
-  AuthStatus,
   BundleDraft,
   BundleRecipe,
   BundleRole,
@@ -34,10 +33,6 @@ export function useImageBundle({
   const [draft, setDraft] = useState<BundleDraft>(initialDraft);
   const [profiles, setProfiles] = useState<BundleRecipe[]>([]);
   const [runtime, setRuntime] = useState<RuntimeInventory["active"]>(null);
-  const [auth, setAuth] = useState<AuthStatus | null>(null);
-  const [token, setToken] = useState("");
-  const [authPanelOpen, setAuthPanelOpen] = useState(false);
-  const [authBusy, setAuthBusy] = useState(false);
   const [roleFiles, setRoleFiles] = useState<ValidatedAsset[]>([]);
   const [roleFilesLoading, setRoleFilesLoading] = useState(false);
   const [roleFilesError, setRoleFilesError] = useState<string | null>(null);
@@ -54,11 +49,9 @@ export function useImageBundle({
     void Promise.all([
       invoke<BundleRecipe[]>("hf_image_bundle_profiles"),
       invoke<RuntimeInventory>("sdcpp_runtime_inventory"),
-      invoke<AuthStatus>("hf_auth_status"),
-    ]).then(([recipes, inventory, status]) => {
+    ]).then(([recipes, inventory]) => {
       setProfiles(recipes);
       setRuntime(inventory.active);
-      setAuth(status);
     });
   }, [enabled]);
 
@@ -251,25 +244,6 @@ export function useImageBundle({
     [profile, currentRole],
   );
 
-  const saveToken = useCallback(async () => {
-    setAuthBusy(true);
-    try {
-      const status = await invoke<AuthStatus>("hf_auth_save", { token });
-      setAuth(status);
-      setToken("");
-      setAuthPanelOpen(false);
-    } catch (error) {
-      toast.error(t("hfBrowser.bundle.authInvalid"), String(error));
-    } finally {
-      setAuthBusy(false);
-    }
-  }, [token, t]);
-
-  const clearToken = useCallback(async () => {
-    await invoke("hf_auth_clear");
-    setAuth({ saved: false, valid: false, username: null, errorKind: "missingToken" });
-  }, []);
-
   const queueBundle = useCallback(
     async (selectionIds: string[]) => {
       if (!profile || !runtime) throw new Error("missing runtime");
@@ -388,7 +362,6 @@ export function useImageBundle({
     profiles,
     profile,
     runtime,
-    auth,
     requiredRoles,
     currentRole,
     ready,
@@ -403,11 +376,6 @@ export function useImageBundle({
     downloadFailed,
     downloadsInterrupted,
     busy,
-    token,
-    setToken,
-    authBusy,
-    authPanelOpen,
-    setAuthPanelOpen,
     roleLabel,
     chooseProfile,
     resetProfile,
@@ -415,8 +383,6 @@ export function useImageBundle({
     selectAsset,
     setDisplayName,
     loadRoleFiles,
-    saveToken,
-    clearToken,
     startDownload,
     retryRegistration,
     retryDownloads,

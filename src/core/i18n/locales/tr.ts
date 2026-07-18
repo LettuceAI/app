@@ -4695,6 +4695,17 @@ export const trMessages: DeepPartialMessageTree<LocaleMessages> = {
       toggle: "llama.cpp akışını aç/kapat",
     },
   },
+  hfAuth: {
+    gatedBody: "Bu model Hugging Face üzerinde erişim kısıtlamalı. Model sayfasını açın, oturum açın ve lisansı kabul edin veya erişim başvuru formunu doldurun. Ardından hesabınızdan bir erişim belirteci ekleyin ve indirmeyi yeniden deneyin.",
+    gatedApprovalNote: "Bazı modeller manuel onay gerektirir. Başvurunuz beklemedeyse, yeniden denemeden önce onayın verilmesini bekleyin.",
+    manageBody: "Kısıtlı modelleri indirmek için bir Hugging Face erişim belirteci ekleyin.",
+    statusConnected: "{{username}} olarak bağlanıldı",
+    statusInvalid: "Kayıtlı belirteç geçersiz veya süresi dolmuş.",
+    statusMissing: "Kayıtlı belirteç yok.",
+    add: "Belirteç ekle",
+    replace: "Belirteci değiştir",
+    remove: "Belirteci kaldır",
+  },
   hfBrowser: {
     title: "Model Tarayıcı",
     searchPlaceholder: "HuggingFace'te GGUF modelleri ara...",
