@@ -3963,6 +3963,8 @@ export const viMessages: DeepPartialMessageTree<LocaleMessages> = {
     remove: "Xóa token",
   },
   hfBrowser: {
+    filterUnfiltered: "Kết quả không lọc",
+    filterUnfilteredHint: "Tìm kiếm mọi kho lưu trữ mà không có bộ lọc định dạng hay danh mục. Hữu ích cho các tệp thành phần như VAE và bộ mã hóa văn bản không được gắn thẻ.",
     title: "Trình duyệt Mô hình",
     searchPlaceholder: "Tìm kiếm mô hình GGUF trên HuggingFace...",
     searching: "Đang tìm kiếm...",

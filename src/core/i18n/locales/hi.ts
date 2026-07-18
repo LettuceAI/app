@@ -3963,6 +3963,8 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
     remove: "टोकन हटाएँ",
   },
   hfBrowser: {
+    filterUnfiltered: "बिना फ़िल्टर परिणाम",
+    filterUnfilteredHint: "बिना फ़ॉर्मैट या श्रेणी फ़िल्टर के सभी रिपॉज़िटरी खोजें। VAE और टेक्स्ट एन्कोडर जैसी बिना टैग वाली कंपोनेंट फ़ाइलों के लिए उपयोगी।",
     title: "मॉडल ब्राउज़र",
     searchPlaceholder: "HuggingFace पर GGUF मॉडल खोजें...",
     searching: "खोज रहा है...",

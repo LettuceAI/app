@@ -302,6 +302,7 @@ macro_rules! invoke_handler {
             crate::image_generator::sdcpp::sdcpp_repair_registration,
             crate::image_generator::sdcpp::sdcpp_cancel_generation,
             crate::image_generator::sdcpp::sdcpp_component_library,
+            crate::image_generator::sdcpp::sdcpp_detect_model_file,
             crate::image_generator::sdcpp::sdcpp_upscaler_inventory,
             crate::image_generator::sdcpp::sdcpp_install_upscaler,
             crate::image_generator::sdcpp::sdcpp_remove_upscaler,

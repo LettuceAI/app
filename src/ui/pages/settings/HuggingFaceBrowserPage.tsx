@@ -1406,6 +1406,7 @@ export function HuggingFaceBrowserPage() {
   const [filterParamMax, setFilterParamMax] = useState<string>("");
   const [filterAuthor, setFilterAuthor] = useState<string>("");
   const [debouncedFilterAuthor, setDebouncedFilterAuthor] = useState<string>("");
+  const [unfilteredSearch, setUnfilteredSearch] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedFilterAuthor(filterAuthor.trim()), 350);
@@ -1418,7 +1419,8 @@ export function HuggingFaceBrowserPage() {
     filterPipelineTags.size +
     (filterParamMinNum != null && !isNaN(filterParamMinNum) ? 1 : 0) +
     (filterParamMaxNum != null && !isNaN(filterParamMaxNum) ? 1 : 0) +
-    (filterAuthor.trim() ? 1 : 0);
+    (filterAuthor.trim() ? 1 : 0) +
+    (unfilteredSearch ? 1 : 0);
 
   type HfBrowserViewMode = "list" | "grid" | "gallery";
   const HF_VIEW_STORAGE_KEY = "hfBrowser:viewMode";
@@ -1453,6 +1455,7 @@ export function HuggingFaceBrowserPage() {
   const isOllamaMode = browserMode === "llm" && !!selectedOllamaProvider;
   const isImageMode = browserMode === "image";
   const isBundleMode = browserMode === "imageBundle";
+  const unfilteredActive = unfilteredSearch && !isOllamaMode && !isBundleMode;
   const goToModelsPage = useCallback(() => hfNavigate("/settings/models"), [hfNavigate]);
   const bundle = useImageBundle({
     enabled: isBundleMode,
@@ -1688,6 +1691,7 @@ export function HuggingFaceBrowserPage() {
         mode: browserMode,
         profileId: isBundleMode ? bundle.profile?.id : null,
         bundleRole: isBundleMode ? bundle.currentRole : null,
+        unfiltered: unfilteredActive,
       });
       if (isDirectLookup && !isBundleMode) {
         const exact = data.filter((d) => d.modelId.toLowerCase() === debouncedQuery.toLowerCase());
@@ -1715,6 +1719,7 @@ export function HuggingFaceBrowserPage() {
     isBundleMode,
     bundle.profile,
     bundle.currentRole,
+    unfilteredActive,
   ]);
 
   const loadMore = useCallback(async () => {
@@ -1728,6 +1733,7 @@ export function HuggingFaceBrowserPage() {
         offset: results.length,
         author: debouncedFilterAuthor || null,
         mode: browserMode,
+        unfiltered: unfilteredActive,
       });
       if (data.length < PAGE_SIZE) setHasMore(false);
       if (data.length > 0) {
@@ -1751,6 +1757,7 @@ export function HuggingFaceBrowserPage() {
     results.length,
     debouncedFilterAuthor,
     browserMode,
+    unfilteredActive,
   ]);
 
   useEffect(() => {
@@ -4487,6 +4494,25 @@ export function HuggingFaceBrowserPage() {
           <p className="mb-4 text-[12.5px] leading-relaxed text-fg/55">
             {t("hfBrowser.filterSubtitle")}
           </p>
+
+          {!isBundleMode && !isOllamaMode && (
+            <>
+              <div className="mb-2 flex items-center gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-fg/40">
+                  {t("hfBrowser.filterUnfiltered")}
+                </span>
+                <div className="h-px flex-1 bg-fg/8" />
+                <Switch
+                  checked={unfilteredSearch}
+                  onChange={setUnfilteredSearch}
+                  aria-label={t("hfBrowser.filterUnfiltered")}
+                />
+              </div>
+              <p className="mb-5 text-[11px] leading-relaxed text-fg/45">
+                {t("hfBrowser.filterUnfilteredHint")}
+              </p>
+            </>
+          )}
 
           {/* Author */}
           <div className="mb-2 flex items-center gap-2">

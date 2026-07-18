@@ -4707,6 +4707,8 @@ export const zhHansMessages: DeepPartialMessageTree<LocaleMessages> = {
     remove: "移除令牌",
   },
   hfBrowser: {
+    filterUnfiltered: "无过滤结果",
+    filterUnfilteredHint: "不使用格式或类别过滤器搜索所有仓库。适用于未打标签的组件文件，如 VAE 和文本编码器。",
     title: "模型浏览器",
     searchPlaceholder: "在 HuggingFace 搜索 GGUF 模型...",
     searching: "搜索中...",

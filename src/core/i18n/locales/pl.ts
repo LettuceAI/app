@@ -4052,6 +4052,8 @@ export const plMessages: DeepPartialMessageTree<LocaleMessages> = {
     remove: "Usuń token",
   },
   hfBrowser: {
+    filterUnfiltered: "Wyniki bez filtrów",
+    filterUnfilteredHint: "Przeszukuj wszystkie repozytoria bez filtrów formatu i kategorii. Przydatne dla plików komponentów, takich jak VAE i enkodery tekstu bez tagów.",
     title: "Przeglądarka Modeli",
     searchPlaceholder: "Szukaj modeli GGUF na HuggingFace...",
     searching: "Wyszukiwanie...",

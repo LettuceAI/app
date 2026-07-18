@@ -740,8 +740,16 @@ fn hf_profile_rules(profile: &ProfileSpec) -> (Vec<&'static str>, Vec<&'static s
             vec!["qwen3-8b"],
             8.0,
         ),
-        "krea-2-turbo" => (vec!["krea-2-turbo", "krea_2_turbo"], vec!["qwen3-vl-4b", "qwen3vl-4b"], 4.0),
-        "krea-2-raw" => (vec!["krea-2-raw", "krea-2-base", "krea_2_raw"], vec!["qwen3-vl-4b", "qwen3vl-4b"], 4.0),
+        "krea-2-turbo" => (
+            vec!["krea-2-turbo", "krea_2_turbo", "krea2-turbo", "krea2_turbo"],
+            vec!["qwen3-vl-4b", "qwen3vl-4b"],
+            4.0,
+        ),
+        "krea-2-raw" => (
+            vec!["krea-2-raw", "krea-2-base", "krea_2_raw", "krea2-raw", "krea2_raw"],
+            vec!["qwen3-vl-4b", "qwen3vl-4b"],
+            4.0,
+        ),
         "qwen-image-edit-2511" => (
             vec!["qwen-image-edit-2511", "qwen_image_edit_2511"],
             vec!["qwen2.5-vl-7b", "qwen2.5vl-7b"],
@@ -816,6 +824,44 @@ pub(crate) fn hf_bundle_profile(profile_id: &str) -> Result<HfBundleProfile, Str
         .into_iter()
         .find(|profile| profile.id == profile_id)
         .ok_or_else(|| format!("Unknown local image architecture: {profile_id}"))
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DetectedModelFile {
+    pub exists: bool,
+    pub profile: Option<HfBundleProfile>,
+}
+
+#[tauri::command]
+pub fn sdcpp_detect_model_file(path: String) -> DetectedModelFile {
+    let path = std::path::PathBuf::from(path.trim());
+    let exists = path.is_file();
+    let evidence = path
+        .iter()
+        .rev()
+        .take(2)
+        .map(|component| component.to_string_lossy().to_ascii_lowercase())
+        .collect::<Vec<_>>()
+        .join(" ");
+    let mut best: Option<(usize, HfBundleProfile)> = None;
+    for profile in hf_bundle_profiles() {
+        let longest = profile
+            .diffusion_markers
+            .iter()
+            .filter(|marker| evidence.contains(*marker))
+            .map(|marker| marker.len())
+            .max();
+        if let Some(len) = longest {
+            if best.as_ref().is_none_or(|(current, _)| len > *current) {
+                best = Some((len, profile));
+            }
+        }
+    }
+    DetectedModelFile {
+        exists,
+        profile: best.map(|(_, profile)| profile),
+    }
 }
 
 #[derive(Debug, Deserialize)]

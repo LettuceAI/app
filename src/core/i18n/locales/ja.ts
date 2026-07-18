@@ -3963,6 +3963,8 @@ export const jaMessages: DeepPartialMessageTree<LocaleMessages> = {
     remove: "トークンを削除",
   },
   hfBrowser: {
+    filterUnfiltered: "フィルターなしの結果",
+    filterUnfilteredHint: "形式やカテゴリのフィルターなしで全リポジトリを検索します。タグのないVAEやテキストエンコーダーなどのコンポーネントファイルに便利です。",
     title: "モデルブラウザ",
     searchPlaceholder: "HuggingFaceでGGUFモデルを検索...",
     searching: "検索中...",

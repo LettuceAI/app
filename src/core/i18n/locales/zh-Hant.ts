@@ -4707,6 +4707,8 @@ export const zhHantMessages: DeepPartialMessageTree<LocaleMessages> = {
     remove: "移除權杖",
   },
   hfBrowser: {
+    filterUnfiltered: "無過濾結果",
+    filterUnfilteredHint: "不使用格式或類別過濾器搜尋所有儲存庫。適用於未加標籤的元件檔案，如 VAE 和文字編碼器。",
     title: "模型瀏覽器",
     searchPlaceholder: "在 HuggingFace 搜尋 GGUF 模型...",
     searching: "搜尋中...",

@@ -4707,6 +4707,8 @@ export const trMessages: DeepPartialMessageTree<LocaleMessages> = {
     remove: "Belirteci kaldır",
   },
   hfBrowser: {
+    filterUnfiltered: "Filtresiz sonuçlar",
+    filterUnfilteredHint: "Biçim veya kategori filtresi olmadan tüm depolarda arayın. VAE ve metin kodlayıcı gibi etiketsiz bileşen dosyaları için kullanışlıdır.",
     title: "Model Tarayıcı",
     searchPlaceholder: "HuggingFace'te GGUF modelleri ara...",
     searching: "Aranıyor...",

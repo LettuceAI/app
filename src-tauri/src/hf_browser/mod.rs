@@ -1980,10 +1980,12 @@ pub async fn hf_search_models(
     mode: Option<String>,
     profile_id: Option<String>,
     bundle_role: Option<String>,
+    unfiltered: Option<bool>,
 ) -> Result<Vec<HfSearchResult>, String> {
     let limit = limit.unwrap_or(20).min(100);
     let sort_field = sort.unwrap_or_else(|| "trendingScore".to_string());
     let offset = offset.unwrap_or(0);
+    let unfiltered = unfiltered.unwrap_or(false);
 
     let mode = mode.as_deref().unwrap_or("llm");
     if mode == "imageBundle" {
@@ -2002,7 +2004,7 @@ pub async fn hf_search_models(
             .await;
         }
     }
-    if matches!(mode, "image" | "imageBundle") {
+    if !unfiltered && matches!(mode, "image" | "imageBundle") {
         let mut merged = HashMap::<String, HfSearchResult>::new();
         for task in ["text-to-image", "image-to-image"] {
             let mut url = format!(
@@ -2031,8 +2033,11 @@ pub async fn hf_search_models(
     }
 
     let mut url = format!(
-        "https://huggingface.co/api/models?filter=gguf&limit={}&sort={}&offset={}",
-        limit, sort_field, offset
+        "https://huggingface.co/api/models?{}limit={}&sort={}&offset={}",
+        if unfiltered { "" } else { "filter=gguf&" },
+        limit,
+        sort_field,
+        offset
     );
     if let Some(author) = author.as_deref().map(str::trim).filter(|a| !a.is_empty()) {
         url.push_str(&format!("&author={}", urlencoding::encode(author)));

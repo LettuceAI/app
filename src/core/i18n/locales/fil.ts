@@ -4707,6 +4707,8 @@ export const filMessages: DeepPartialMessageTree<LocaleMessages> = {
     remove: "Alisin ang token",
   },
   hfBrowser: {
+    filterUnfiltered: "Mga resultang walang filter",
+    filterUnfilteredHint: "Maghanap sa lahat ng repository nang walang filter sa format o kategorya. Kapaki-pakinabang para sa mga component file tulad ng VAE at text encoder na walang tag.",
     title: "Browser ng Modelo",
     searchPlaceholder: "Maghanap ng mga GGUF na modelo sa HuggingFace...",
     searching: "Naghahanap...",

@@ -4052,6 +4052,8 @@ export const nlMessages: DeepPartialMessageTree<LocaleMessages> = {
     remove: "Token verwijderen",
   },
   hfBrowser: {
+    filterUnfiltered: "Ongefilterde resultaten",
+    filterUnfilteredHint: "Doorzoek alle repositories zonder formaat- of categoriefilters. Handig voor componentbestanden zoals VAE's en tekstencoders zonder tags.",
     title: "Modelbrowser",
     searchPlaceholder: "Zoek GGUF-modellen op HuggingFace...",
     searching: "Zoeken...",

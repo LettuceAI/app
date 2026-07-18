@@ -4707,6 +4707,8 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
     remove: "토큰 제거",
   },
   hfBrowser: {
+    filterUnfiltered: "필터 없는 결과",
+    filterUnfilteredHint: "형식이나 카테고리 필터 없이 모든 리포지토리를 검색합니다. 태그가 없는 VAE나 텍스트 인코더 같은 구성 요소 파일에 유용합니다.",
     title: "모델 브라우저",
     searchPlaceholder: "HuggingFace에서 GGUF 모델 검색...",
     searching: "검색 중...",

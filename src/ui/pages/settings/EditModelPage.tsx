@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { useState, useEffect, useMemo, type ReactNode } from "react";
+import { useState, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 
@@ -58,6 +58,7 @@ import {
 } from "../../components/AdvancedModelSettingsForm";
 import { FeatureGenerationSettingsEditor } from "../../components/FeatureGenerationSettings";
 import { BottomMenu, MenuButton, MenuSection } from "../../components/BottomMenu";
+import type { BundleRecipe } from "./components/imageBundle/types";
 import { GuidedTour, useGuidedTour } from "../../components/GuidedTour";
 import { ModelSelectionBottomMenu } from "../../components/ModelSelectionBottomMenu";
 import { NumberInput } from "../../components/NumberInput";
@@ -159,6 +160,15 @@ type SdcppInstalledComponent = {
   filename: string;
   path: string;
   bytesOnDisk: number;
+};
+
+type SdcppDownloadedFile = {
+  modelId: string;
+  filename: string;
+  size: number;
+  quantization: string | null;
+  imageRole: string | null;
+  path: string;
 };
 
 type SdcppLoraFile = {
@@ -594,6 +604,15 @@ export function EditModelPage() {
     asset: string;
   } | null>(null);
   const [showSdcppModelPicker, setShowSdcppModelPicker] = useState(false);
+  const [sdcppDownloadedFiles, setSdcppDownloadedFiles] = useState<SdcppDownloadedFile[]>([]);
+  const [sdcppProfiles, setSdcppProfiles] = useState<BundleRecipe[]>([]);
+  const [sdcppDetection, setSdcppDetection] = useState<{
+    path: string;
+    exists: boolean;
+    profile: BundleRecipe | null;
+  } | null>(null);
+  const sdcppDetectTimerRef = useRef<number | null>(null);
+  const sdcppDetectRequestRef = useRef<string | null>(null);
   const [sdcppComponentPickerKey, setSdcppComponentPickerKey] = useState<
     "sdcppTextEncoderPath" | "sdcppVaePath" | "sdcppVisionEncoderPath" | null
   >(null);
@@ -1298,6 +1317,14 @@ export function EditModelPage() {
 
   // Intercept save for llamacpp models to check if move prompt is needed
   const handleSaveWithMoveCheck = async (options?: { navigateAfterSave?: boolean }) => {
+    if (hasMissingSdcppComponents) {
+      setActivePanel("configuration");
+      toast.error(
+        t("editModel.sdcpp.componentsRequiredTitle"),
+        t("editModel.sdcpp.componentsRequiredBody"),
+      );
+      return;
+    }
     if (hasIncompatibleSdcppLora) {
       setActivePanel("configuration");
       toast.error(
@@ -1685,6 +1712,31 @@ export function EditModelPage() {
   const scopesLocked = isFixedImageProvider && !isCustomSdcppModel;
   const selectedSdcppProfileId =
     modelAdvancedDraft.sdcppProfileId ?? selectedSdcppEntry?.profileId ?? null;
+  const selectedSdcppProfile =
+    sdcppProfiles.find((profile) => profile.id === selectedSdcppProfileId) ?? null;
+  const sdcppDownloadedDiffusionFiles = (() => {
+    if (!isSdcppModel) return [];
+    const registered = new Set(sdcppInstalled.map((entry) => entry.modelPath));
+    return sdcppDownloadedFiles.filter(
+      (file) => file.imageRole === "diffusionModel" && !registered.has(file.path),
+    );
+  })();
+  const sdcppRequiredComponentKeys = ((): Array<
+    "sdcppTextEncoderPath" | "sdcppVaePath" | "sdcppVisionEncoderPath"
+  > => {
+    if (!isSdcppModel) return [];
+    const roles: string[] = selectedSdcppProfile?.requiredRoles ?? ["text_encoder", "vae"];
+    const keys: Array<"sdcppTextEncoderPath" | "sdcppVaePath" | "sdcppVisionEncoderPath"> = [];
+    if (roles.includes("text_encoder")) keys.push("sdcppTextEncoderPath");
+    if (roles.includes("vae")) keys.push("sdcppVaePath");
+    if (roles.includes("vision_encoder")) keys.push("sdcppVisionEncoderPath");
+    return keys;
+  })();
+  const missingSdcppComponentKeys = sdcppRequiredComponentKeys.filter(
+    (key) => !(modelAdvancedDraft[key] ?? "").trim(),
+  );
+  const hasMissingSdcppComponents =
+    missingSdcppComponentKeys.length > 0 && !!editorModel?.name?.trim();
   const referencedSdcppLoraPaths = (modelAdvancedDraft.sdBaseLoras ?? [])
     .map((lora) => lora.path)
     .sort()
@@ -1713,6 +1765,20 @@ export function EditModelPage() {
       })
       .catch(() => {
         if (!cancelled) setSdcppActiveRuntime(null);
+      });
+    invoke<BundleRecipe[]>("hf_image_bundle_profiles")
+      .then((profiles) => {
+        if (!cancelled) setSdcppProfiles(profiles);
+      })
+      .catch(() => {
+        if (!cancelled) setSdcppProfiles([]);
+      });
+    invoke<SdcppDownloadedFile[]>("hf_list_downloaded_image_models")
+      .then((files) => {
+        if (!cancelled) setSdcppDownloadedFiles(files);
+      })
+      .catch(() => {
+        if (!cancelled) setSdcppDownloadedFiles([]);
       });
     invoke<SdcppLoraFile[]>("sdcpp_loras", { profileId: selectedSdcppProfileId })
       .then(async (files) => {
@@ -1795,7 +1861,11 @@ export function EditModelPage() {
     && (modelAdvancedDraft.sdBaseLoras ?? []).some(
       (lora) => sdcppLoraInfoByPath.get(lora.path)?.compatibility === "incompatible",
     );
-  const canSaveModel = canSave && !hasMissingSdcppLoraKeywords && !hasIncompatibleSdcppLora;
+  const canSaveModel =
+    canSave &&
+    !hasMissingSdcppLoraKeywords &&
+    !hasIncompatibleSdcppLora &&
+    !hasMissingSdcppComponents;
 
   const updateBaseLoras = (
     next: NonNullable<typeof modelAdvancedDraft.sdBaseLoras> | null,
@@ -1979,9 +2049,66 @@ export function EditModelPage() {
     setShowSdcppModelPicker(false);
   };
 
+  const applySdcppDetection = (path: string, detection: {
+    exists: boolean;
+    profile: BundleRecipe | null;
+  }) => {
+    if (sdcppDetectRequestRef.current !== path) return;
+    setSdcppDetection({ path, exists: detection.exists, profile: detection.profile });
+    const profile = detection.profile;
+    const draft = profile
+      ? {
+          ...modelAdvancedDraft,
+          sdcppProfileId: profile.id,
+          sdcppVariantId: null,
+          sdcppRuntimeRelease: sdcppActiveRuntime?.release ?? null,
+          sdcppRuntimeAsset: sdcppActiveRuntime?.asset ?? null,
+          sdcppSupportsLora: true,
+          sdcppSupportsTextToImage: profile.supportsTextToImage,
+          sdcppSupportsImageEdit: profile.supportsImageEdit,
+          sdcppRecommendedForScenes: profile.recommendedForScenes,
+          sdcppRequiresReferenceImage: profile.requiresReferenceImage,
+        }
+      : modelAdvancedDraft;
+    if (profile) {
+      updateEditorModel({
+        inputScopes: profile.supportsImageEdit ? ["text", "image"] : ["text"],
+        outputScopes: ["image"],
+      });
+      setModelAdvancedDraft(draft);
+    }
+    const requiredRoles: string[] = profile?.requiredRoles ?? ["text_encoder", "vae"];
+    const stillMissing = (
+      [
+        ["text_encoder", "sdcppTextEncoderPath"],
+        ["vae", "sdcppVaePath"],
+        ["vision_encoder", "sdcppVisionEncoderPath"],
+      ] as const
+    ).some(([role, key]) => requiredRoles.includes(role) && !(draft[key] ?? "").trim());
+    if (stillMissing && detection.exists) setActivePanel("configuration");
+  };
+
+  const scheduleSdcppDetection = (path: string) => {
+    if (sdcppDetectTimerRef.current != null) window.clearTimeout(sdcppDetectTimerRef.current);
+    setSdcppDetection(null);
+    const trimmed = path.trim();
+    sdcppDetectRequestRef.current = trimmed || null;
+    if (!trimmed) return;
+    sdcppDetectTimerRef.current = window.setTimeout(() => {
+      void invoke<{ exists: boolean; profile: BundleRecipe | null }>("sdcpp_detect_model_file", {
+        path: trimmed,
+      })
+        .then((detection) => applySdcppDetection(trimmed, detection))
+        .catch(() => {});
+    }, 500);
+  };
+
   const handleSdcppModelPathChange = (path: string) => {
     const match = sdcppInstalled.find((entry) => entry.modelPath === path);
     if (match) {
+      if (sdcppDetectTimerRef.current != null) window.clearTimeout(sdcppDetectTimerRef.current);
+      sdcppDetectRequestRef.current = null;
+      setSdcppDetection(null);
       selectSdcppModel(match);
       return;
     }
@@ -1993,6 +2120,7 @@ export function EditModelPage() {
         sdcppVariantId: null,
       });
     }
+    scheduleSdcppDetection(path);
   };
 
   const browseSdcppModelFile = async () => {
@@ -2454,14 +2582,14 @@ export function EditModelPage() {
   useEffect(() => {
     const globalWindow = window as any;
     globalWindow.__saveModel = () => void handleSaveWithMoveCheck();
-    globalWindow.__saveModelCanSave = canSave;
+    globalWindow.__saveModelCanSave = canSave && !hasMissingSdcppComponents;
     globalWindow.__saveModelSaving = saving || verifying;
     return () => {
       delete globalWindow.__saveModel;
       delete globalWindow.__saveModelCanSave;
       delete globalWindow.__saveModelSaving;
     };
-  }, [handleSaveWithMoveCheck, canSave, saving, verifying]);
+  }, [handleSaveWithMoveCheck, canSave, saving, verifying, hasMissingSdcppComponents]);
 
   useEffect(() => {
     const handleDiscard = () => resetToInitial();
@@ -3013,7 +3141,14 @@ export function EditModelPage() {
                           <div className="flex items-center gap-2">
                             <button
                               type="button"
-                              onClick={() => setShowSdcppModelPicker(true)}
+                              onClick={() => {
+                                setShowSdcppModelPicker(true);
+                                void invoke<SdcppDownloadedFile[]>(
+                                  "hf_list_downloaded_image_models",
+                                )
+                                  .then(setSdcppDownloadedFiles)
+                                  .catch(() => {});
+                              }}
                               className="inline-flex items-center gap-1.5 rounded-md border border-fg/10 bg-fg/5 px-2.5 py-1.5 text-[12px] font-medium text-fg/68 transition hover:border-fg/20 hover:bg-fg/10 hover:text-fg"
                             >
                               <FolderOpen className="h-3.5 w-3.5 text-accent/70" />
@@ -3042,6 +3177,20 @@ export function EditModelPage() {
                               ? t("editModel.setup.sdcppManaged")
                               : t("editModel.setup.sdcppCustomHelp")}
                           </p>
+                          {!selectedSdcppEntry &&
+                            sdcppDetection &&
+                            sdcppDetection.path === editorModel.name.trim() &&
+                            (sdcppDetection.profile ? (
+                              <p className="text-[12px] leading-relaxed text-accent/90">
+                                {t("editModel.sdcpp.detectedArchitecture", {
+                                  name: sdcppDetection.profile.displayName,
+                                })}
+                              </p>
+                            ) : sdcppDetection.exists ? (
+                              <p className="text-[12px] leading-relaxed text-warning/80">
+                                {t("editModel.sdcpp.detectFailed")}
+                              </p>
+                            ) : null)}
 
                           <BottomMenu
                             isOpen={showSdcppModelPicker}
@@ -3049,7 +3198,8 @@ export function EditModelPage() {
                             title={t("editModel.setup.sdcppSelectModel")}
                           >
                             <MenuSection>
-                              {sdcppInstalled.length === 0 ? (
+                              {sdcppInstalled.length === 0 &&
+                              sdcppDownloadedDiffusionFiles.length === 0 ? (
                                 <div className="flex flex-col items-center gap-2 py-16 text-center">
                                   <HardDrive size={32} className="text-fg/20" />
                                   <p className="px-6 text-[13px] text-fg/40">
@@ -3057,27 +3207,53 @@ export function EditModelPage() {
                                   </p>
                                 </div>
                               ) : (
-                                sdcppInstalled.map((entry) => (
-                                  <MenuButton
-                                    key={entry.modelPath}
-                                    icon={<HardDrive className="h-5 w-5 text-accent/60" />}
-                                    title={entry.displayName}
-                                    description={`${
-                                      entry.runtimeBackend
-                                        ? `${entry.runtimeBackend.toUpperCase()} · `
-                                        : ""
-                                    }${formatBytes(entry.componentBytesOnDisk)}`}
-                                    color="from-accent/20 to-accent/10"
-                                    rightElement={
-                                      editorModel.name === entry.modelPath ? (
-                                        <Check className="h-4 w-4 text-accent" />
-                                      ) : (
-                                        <ArrowRight className="h-4 w-4 text-fg/20" />
-                                      )
-                                    }
-                                    onClick={() => selectSdcppModel(entry)}
-                                  />
-                                ))
+                                <>
+                                  {sdcppInstalled.map((entry) => (
+                                    <MenuButton
+                                      key={entry.modelPath}
+                                      icon={<HardDrive className="h-5 w-5 text-accent/60" />}
+                                      title={entry.displayName}
+                                      description={`${
+                                        entry.runtimeBackend
+                                          ? `${entry.runtimeBackend.toUpperCase()} · `
+                                          : ""
+                                      }${formatBytes(entry.componentBytesOnDisk)}`}
+                                      color="from-accent/20 to-accent/10"
+                                      rightElement={
+                                        editorModel.name === entry.modelPath ? (
+                                          <Check className="h-4 w-4 text-accent" />
+                                        ) : (
+                                          <ArrowRight className="h-4 w-4 text-fg/20" />
+                                        )
+                                      }
+                                      onClick={() => selectSdcppModel(entry)}
+                                    />
+                                  ))}
+                                  {sdcppDownloadedDiffusionFiles.map((file) => (
+                                    <MenuButton
+                                      key={file.path}
+                                      icon={<HardDrive className="h-5 w-5 text-fg/45" />}
+                                      title={file.filename}
+                                      description={`${file.modelId} · ${formatBytes(file.size)}`}
+                                      rightElement={
+                                        editorModel.name === file.path ? (
+                                          <Check className="h-4 w-4 text-accent" />
+                                        ) : (
+                                          <ArrowRight className="h-4 w-4 text-fg/20" />
+                                        )
+                                      }
+                                      onClick={() => {
+                                        setShowSdcppModelPicker(false);
+                                        handleSdcppModelPathChange(file.path);
+                                        if (!editorModel?.displayName?.trim()) {
+                                          handleDisplayNameChange(
+                                            deriveDisplayNameFromPath(file.path),
+                                          );
+                                        }
+                                      }}
+                                    />
+                                  ))}
+                                </>
                               )}
                             </MenuSection>
                           </BottomMenu>
@@ -4829,68 +5005,75 @@ export function EditModelPage() {
                                 <p className="max-w-2xl text-[13px] leading-relaxed text-fg/45">
                                   {t("editModel.sdcpp.modelFilesDescription")}
                                 </p>
+                                {missingSdcppComponentKeys.length > 0 && (
+                                  <p className="text-[12px] leading-relaxed text-warning/80">
+                                    {t("editModel.sdcpp.modelFilesIncomplete")}
+                                  </p>
+                                )}
                               </div>
                               <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
                                 {(
                                   [
-                                    ["sdcppTextEncoderPath", t("editModel.sdcpp.textEncoder"), true],
-                                    ["sdcppVaePath", t("editModel.sdcpp.vae"), true],
-                                    ["sdcppVisionEncoderPath", t("editModel.sdcpp.visionEncoder"), false],
+                                    ["sdcppTextEncoderPath", t("editModel.sdcpp.textEncoder")],
+                                    ["sdcppVaePath", t("editModel.sdcpp.vae")],
+                                    ["sdcppVisionEncoderPath", t("editModel.sdcpp.visionEncoder")],
                                   ] as Array<
                                     [
                                       "sdcppTextEncoderPath" | "sdcppVaePath" | "sdcppVisionEncoderPath",
                                       string,
-                                      boolean,
                                     ]
                                   >
-                                ).map(([key, label, required]) => (
-                                  <FieldBlock
-                                    key={key}
-                                    label={
-                                      required
-                                        ? label
-                                        : `${label} (${t("editModel.sdcpp.optionalFile")})`
-                                    }
-                                    action={
-                                      <div className="flex items-center gap-2">
-                                        <button
-                                          type="button"
-                                          onClick={() => void openSdcppComponentPicker(key)}
-                                          className="rounded-md border border-fg/10 px-2.5 py-1.5 text-[12px] font-medium text-fg/65 transition hover:border-fg/20 hover:bg-fg/5 hover:text-fg/90"
-                                        >
-                                          {t("editModel.sdcpp.chooseFromLibrary")}
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => void browseSdcppComponentFile(key)}
-                                          className="rounded-md border border-fg/10 px-2.5 py-1.5 text-[12px] font-medium text-fg/65 transition hover:border-fg/20 hover:bg-fg/5 hover:text-fg/90"
-                                        >
-                                          {t("common.buttons.browseFiles")}
-                                        </button>
-                                      </div>
-                                    }
-                                  >
-                                    <input
-                                      type="text"
-                                      value={modelAdvancedDraft[key] ?? ""}
-                                      onChange={(e) =>
-                                        setModelAdvancedDraft({
-                                          ...modelAdvancedDraft,
-                                          [key]: e.target.value || null,
-                                        })
+                                ).map(([key, label]) => {
+                                  const required = sdcppRequiredComponentKeys.includes(key);
+                                  const missing = missingSdcppComponentKeys.includes(key);
+                                  return (
+                                    <FieldBlock
+                                      key={key}
+                                      label={
+                                        required
+                                          ? label
+                                          : `${label} (${t("editModel.sdcpp.optionalFile")})`
                                       }
-                                      placeholder={t("editModel.placeholders.modelPath")}
-                                      className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-4 py-3 font-mono text-[13px] text-fg placeholder-fg/40 transition focus:border-fg/30 focus:outline-none"
-                                    />
-                                  </FieldBlock>
-                                ))}
+                                      action={
+                                        <div className="flex items-center gap-2">
+                                          <button
+                                            type="button"
+                                            onClick={() => void openSdcppComponentPicker(key)}
+                                            className="rounded-md border border-fg/10 px-2.5 py-1.5 text-[12px] font-medium text-fg/65 transition hover:border-fg/20 hover:bg-fg/5 hover:text-fg/90"
+                                          >
+                                            {t("editModel.sdcpp.chooseFromLibrary")}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => void browseSdcppComponentFile(key)}
+                                            className="rounded-md border border-fg/10 px-2.5 py-1.5 text-[12px] font-medium text-fg/65 transition hover:border-fg/20 hover:bg-fg/5 hover:text-fg/90"
+                                          >
+                                            {t("common.buttons.browseFiles")}
+                                          </button>
+                                        </div>
+                                      }
+                                    >
+                                      <input
+                                        type="text"
+                                        value={modelAdvancedDraft[key] ?? ""}
+                                        onChange={(e) =>
+                                          setModelAdvancedDraft({
+                                            ...modelAdvancedDraft,
+                                            [key]: e.target.value || null,
+                                          })
+                                        }
+                                        placeholder={t("editModel.placeholders.modelPath")}
+                                        className={cn(
+                                          "w-full rounded-lg border bg-surface-el/20 px-4 py-3 font-mono text-[13px] text-fg placeholder-fg/40 transition focus:outline-none",
+                                          missing
+                                            ? "border-warning/60 focus:border-warning/80"
+                                            : "border-fg/10 focus:border-fg/30",
+                                        )}
+                                      />
+                                    </FieldBlock>
+                                  );
+                                })}
                               </div>
-                              {!modelAdvancedDraft.sdcppTextEncoderPath?.trim() ||
-                              !modelAdvancedDraft.sdcppVaePath?.trim() ? (
-                                <p className="text-[12px] leading-relaxed text-warning/80">
-                                  {t("editModel.sdcpp.modelFilesIncomplete")}
-                                </p>
-                              ) : null}
                               <BottomMenu
                                 isOpen={sdcppComponentPickerKey !== null}
                                 onClose={() => setSdcppComponentPickerKey(null)}
@@ -8298,7 +8481,8 @@ export function EditModelPage() {
           !isNew
           && !hasUnsavedChanges
           && !hasMissingSdcppLoraKeywords
-          && !hasIncompatibleSdcppLora;
+          && !hasIncompatibleSdcppLora
+          && !hasMissingSdcppComponents;
         const canContinueSetup =
           !(saving || verifying) && (canSaveModel || canContinueWithCurrentModel);
         return (

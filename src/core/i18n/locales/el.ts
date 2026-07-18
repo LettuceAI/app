@@ -4707,6 +4707,8 @@ export const elMessages: DeepPartialMessageTree<LocaleMessages> = {
     remove: "Αφαίρεση διακριτικού",
   },
   hfBrowser: {
+    filterUnfiltered: "Αποτελέσματα χωρίς φίλτρα",
+    filterUnfilteredHint: "Αναζητήστε σε όλα τα αποθετήρια χωρίς φίλτρα μορφής ή κατηγορίας. Χρήσιμο για αρχεία στοιχείων όπως VAE και κωδικοποιητές κειμένου χωρίς ετικέτες.",
     title: "Περιηγητής Μοντέλων",
     searchPlaceholder: "Αναζήτηση μοντέλων GGUF στο HuggingFace...",
     searching: "Αναζήτηση...",

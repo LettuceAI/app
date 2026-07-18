@@ -4707,6 +4707,8 @@ export const frMessages: DeepPartialMessageTree<LocaleMessages> = {
     remove: "Supprimer le jeton",
   },
   hfBrowser: {
+    filterUnfiltered: "Résultats non filtrés",
+    filterUnfilteredHint: "Recherchez tous les dépôts sans filtre de format ou de catégorie. Utile pour les fichiers de composants comme les VAE et les encodeurs de texte non tagués.",
     title: "Explorateur de Modèles",
     searchPlaceholder: "Rechercher des modèles GGUF sur HuggingFace...",
     searching: "Recherche en cours...",

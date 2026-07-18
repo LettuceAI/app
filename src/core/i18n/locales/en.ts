@@ -4423,6 +4423,11 @@ export const enMessages = {
       optionalFile: "optional",
       modelFilesIncomplete:
         "Set the text encoder and VAE files. Generation will not start until this model is fully configured.",
+      detectedArchitecture: "Detected architecture: {{name}}",
+      detectFailed:
+        "Could not detect this file's architecture. Set the component files manually.",
+      componentsRequiredTitle: "Model files missing",
+      componentsRequiredBody: "Fill in the highlighted component files before saving.",
       componentFilesFilter: "Model component files",
       chooseFromLibrary: "Choose from Library",
       componentPickerTitle: "Select Component File",
@@ -5194,6 +5199,9 @@ export const enMessages = {
     compareAdd: "+ Add Comparison",
     filterTitle: "Filter results",
     filterSubtitle: "Refine the result list. Filters apply to the loaded results below.",
+    filterUnfiltered: "Unfiltered results",
+    filterUnfilteredHint:
+      "Search every repository without format or category filters. Useful for component files like VAEs and text encoders that are not tagged.",
     filterPipeline: "Pipeline",
     filterClear: "Clear",
     filterParamSize: "Parameter size (B)",

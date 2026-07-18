@@ -4707,6 +4707,8 @@ export const noMessages: DeepPartialMessageTree<LocaleMessages> = {
     remove: "Fjern token",
   },
   hfBrowser: {
+    filterUnfiltered: "Ufiltrerte resultater",
+    filterUnfilteredHint: "Søk i alle repositorier uten format- eller kategorifiltre. Nyttig for komponentfiler som VAE-er og tekstenkodere uten tagger.",
     title: "Modellutforsker",
     searchPlaceholder: "Søk etter GGUF-modeller på HuggingFace...",
     searching: "Søker...",

@@ -3963,6 +3963,8 @@ export const itMessages: DeepPartialMessageTree<LocaleMessages> = {
     remove: "Rimuovi token",
   },
   hfBrowser: {
+    filterUnfiltered: "Risultati non filtrati",
+    filterUnfilteredHint: "Cerca in tutti i repository senza filtri di formato o categoria. Utile per file di componenti come VAE ed encoder di testo senza tag.",
     title: "Browser Modelli",
     searchPlaceholder: "Cerca modelli GGUF su HuggingFace...",
     searching: "Ricerca in corso...",

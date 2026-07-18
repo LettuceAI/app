@@ -4707,6 +4707,8 @@ export const ruMessages: DeepPartialMessageTree<LocaleMessages> = {
     remove: "Удалить токен",
   },
   hfBrowser: {
+    filterUnfiltered: "Результаты без фильтров",
+    filterUnfilteredHint: "Ищите по всем репозиториям без фильтров формата и категории. Полезно для файлов компонентов, таких как VAE и текстовые энкодеры без тегов.",
     title: "Браузер моделей",
     searchPlaceholder: "Поиск моделей GGUF на HuggingFace...",
     searching: "Поиск...",
