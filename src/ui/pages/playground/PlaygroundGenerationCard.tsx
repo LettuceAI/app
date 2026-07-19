@@ -7,6 +7,7 @@ import {
   Clock,
   Dices,
   ImageOff,
+  ImageUp,
   Trash2,
   X,
 } from "lucide-react";
@@ -97,6 +98,7 @@ function LightboxImage({ image }: { image: PlaygroundGenerationImage }) {
 
 export type PlaygroundCardActions = {
   onDelete: (entry: PlaygroundGenerationEntry, deleteImages: boolean) => void;
+  onSendToImg2img?: (image: PlaygroundGenerationImage) => void;
   disabled: boolean;
 };
 
@@ -189,15 +191,28 @@ export function PlaygroundGenerationCard({
           <Clock size={10} />
           {timestamp}
         </span>
-        <button
-          type="button"
-          onClick={() => setDeleteMenuOpen(true)}
-          disabled={actions.disabled}
-          title={t("playground.feed.delete")}
-          className="ml-auto rounded-md p-1.5 text-fg/35 transition hover:bg-fg/8 hover:text-danger disabled:opacity-40"
-        >
-          <Trash2 size={13} />
-        </button>
+        <span className="ml-auto flex items-center gap-0.5">
+          {actions.onSendToImg2img && entry.status === "complete" && entry.images[0] && (
+            <button
+              type="button"
+              onClick={() => actions.onSendToImg2img?.(entry.images[0])}
+              disabled={actions.disabled}
+              title={t("playground.feed.sendToImg2img")}
+              className="rounded-md p-1.5 text-fg/35 transition hover:bg-fg/8 hover:text-fg/80 disabled:opacity-40"
+            >
+              <ImageUp size={13} />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setDeleteMenuOpen(true)}
+            disabled={actions.disabled}
+            title={t("playground.feed.delete")}
+            className="rounded-md p-1.5 text-fg/35 transition hover:bg-fg/8 hover:text-danger disabled:opacity-40"
+          >
+            <Trash2 size={13} />
+          </button>
+        </span>
       </div>
 
       <BottomMenu

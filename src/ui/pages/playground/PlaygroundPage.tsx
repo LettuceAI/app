@@ -4,8 +4,11 @@ import { ArrowLeft, SlidersHorizontal, TerminalSquare } from "lucide-react";
 import { BottomMenu } from "../../components/BottomMenu";
 import { useI18n } from "../../../core/i18n/context";
 import { Routes, useNavigationManager } from "../../navigation";
+import { convertFilePathToDataUrl } from "../../../core/storage/images";
+import { toast } from "../../components/toast";
+import type { PlaygroundGenerationImage } from "../../../core/image-generation/playground";
 import { PlaygroundFeed } from "./PlaygroundFeed";
-import { PlaygroundPromptPane } from "./PlaygroundPromptPane";
+import { PlaygroundPromptPane, type PlaygroundInitImage } from "./PlaygroundPromptPane";
 import { PlaygroundSettingsPane } from "./PlaygroundSettingsPane";
 import { usePlaygroundGeneration } from "./usePlaygroundGeneration";
 import { usePlaygroundSettings } from "./usePlaygroundSettings";
@@ -19,13 +22,31 @@ export function PlaygroundPage() {
   const generation = usePlaygroundGeneration();
   const [prompt, setPrompt] = useState("");
   const [negativePrompt, setNegativePrompt] = useState("");
+  const [initImage, setInitImage] = useState<PlaygroundInitImage | null>(null);
   const [promptSheetOpen, setPromptSheetOpen] = useState(false);
   const [settingsSheetOpen, setSettingsSheetOpen] = useState(false);
 
   const showNegativePrompt = NEGATIVE_PROMPT_PROVIDERS.has(
     settings.selectedModel?.providerId ?? "",
   );
+  const showInitImage =
+    NEGATIVE_PROMPT_PROVIDERS.has(settings.selectedModel?.providerId ?? "") ||
+    settings.selectedModel?.inputScopes?.includes("image") === true;
   const canGenerate = prompt.trim().length > 0 && settings.selectedModel !== null;
+
+  const sendToImg2img = async (image: PlaygroundGenerationImage) => {
+    const dataUrl = await convertFilePathToDataUrl(image.filePath);
+    if (!dataUrl) {
+      toast.error(t("playground.prompt.initImageFailed"));
+      return;
+    }
+    setInitImage({
+      dataUrl,
+      assetId: image.assetId || null,
+      denoisingStrength: initImage?.denoisingStrength ?? 0.6,
+    });
+    toast.success(t("playground.prompt.initImageSet"));
+  };
 
   const handleGenerate = () => {
     const base = settings.buildRequestBase();
@@ -38,7 +59,13 @@ export function PlaygroundPage() {
       prompt: prompt.trim(),
       negativePrompt: showNegativePrompt ? negativePrompt.trim() || null : null,
       loras: settings.isLocal ? (settings.draft.loras ?? []) : [],
-      initImage: null,
+      initImage: showInitImage && initImage
+        ? {
+          dataUrl: initImage.dataUrl,
+          assetId: initImage.assetId,
+          denoisingStrength: initImage.denoisingStrength,
+        }
+        : null,
     });
   };
 
@@ -49,6 +76,9 @@ export function PlaygroundPage() {
       negativePrompt={negativePrompt}
       onNegativePromptChange={setNegativePrompt}
       showNegativePrompt={showNegativePrompt}
+      showInitImage={showInitImage}
+      initImage={initImage}
+      onInitImageChange={setInitImage}
       canGenerate={canGenerate}
       generating={generation.generating}
       onGenerate={handleGenerate}
@@ -95,7 +125,10 @@ export function PlaygroundPage() {
           {promptPane}
         </aside>
         <section className="flex min-w-0 flex-1 flex-col">
-          <PlaygroundFeed generation={generation} />
+          <PlaygroundFeed
+            generation={generation}
+            onSendToImg2img={showInitImage ? (image) => void sendToImg2img(image) : undefined}
+          />
         </section>
         <aside className="hidden w-[340px] shrink-0 flex-col border-l border-fg/8 lg:flex">
           {settingsPane}

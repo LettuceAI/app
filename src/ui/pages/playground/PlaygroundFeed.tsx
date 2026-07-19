@@ -34,8 +34,10 @@ function progressLabelKey(progress: SdcppGenerationProgress | null): Translation
 
 export function PlaygroundFeed({
   generation,
+  onSendToImg2img,
 }: {
   generation: PlaygroundGenerationController;
+  onSendToImg2img?: (image: PlaygroundGenerationEntry["images"][number]) => void;
 }) {
   const { t } = useI18n();
   const [entries, setEntries] = useState<PlaygroundGenerationEntry[]>([]);
@@ -162,7 +164,11 @@ export function PlaygroundFeed({
           <PlaygroundGenerationCard
             key={entry.id}
             entry={entry}
-            actions={{ onDelete: (item, deleteImages) => void handleDelete(item, deleteImages), disabled: generation.generating }}
+            actions={{
+              onDelete: (item, deleteImages) => void handleDelete(item, deleteImages),
+              onSendToImg2img,
+              disabled: generation.generating,
+            }}
           />
         ))}
         {active && (
