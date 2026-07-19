@@ -4929,6 +4929,16 @@ export const enMessages = {
       toggle: "Toggle llama.cpp streaming",
     },
   },
+  playground: {
+    title: "Playground",
+    back: "Back",
+    open: "Open Playground",
+    openDescription: "Generate images freely with prompts, model settings, and LoRAs.",
+    promptTab: "Prompt",
+    settingsTab: "Settings",
+    emptyFeed: "No generations yet",
+    emptyFeedHint: "Write a prompt and hit Generate.",
+  },
   loraLibrary: {
     title: "LoRA Library",
     subtitle: "Manage local LoRAs and download new ones from CivitAI.",

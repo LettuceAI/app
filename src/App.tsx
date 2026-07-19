@@ -85,6 +85,7 @@ import { CreatePersonaPage, EditPersonaPage } from "./ui/pages/personas";
 import ChatTemplateListPage from "./ui/pages/characters/ChatTemplateListPage";
 import ChatTemplateEditorPage from "./ui/pages/characters/ChatTemplateEditorPage";
 import { SearchPage } from "./ui/pages/search";
+import { PlaygroundPage } from "./ui/pages/playground/PlaygroundPage";
 import { LibraryPage } from "./ui/pages/library/LibraryPage";
 import { AvatarLibraryPickerPage } from "./ui/pages/library/ImageLibraryPage";
 import { StandaloneLorebookEditor } from "./ui/pages/library/StandaloneLorebookEditor";
@@ -797,6 +798,7 @@ function AppContent() {
   const isChatDetailRoute =
     location.pathname.startsWith("/chat/") || isGroupChatDetailRoute || isEngineChatRoute;
   const isSearchRoute = location.pathname === "/search";
+  const isPlaygroundRoute = location.pathname === "/playground";
   const isAvatarLibraryPickerRoute = location.pathname === "/library/images/pick";
   const isOnboardingRoute = useMemo(
     () =>
@@ -869,6 +871,7 @@ function AppContent() {
     !isChatDetailRoute &&
     !isCreateRoute &&
     !isSearchRoute &&
+    !isPlaygroundRoute &&
     !isLorebookEditorRoute;
   const showBottomNav =
     !isSettingRoute &&
@@ -877,6 +880,7 @@ function AppContent() {
     !isCreateRoute &&
     !isPersonaEditRoute &&
     !isSearchRoute &&
+    !isPlaygroundRoute &&
     !isAvatarLibraryPickerRoute &&
     !isLorebookEditorRoute &&
     !isLorebookGeneratorRoute &&
@@ -1006,7 +1010,7 @@ function AppContent() {
       <WindowResizeHandles />
       <div
         className={`relative z-10 mx-auto flex w-full ${
-          isChatDetailRoute
+          isChatDetailRoute || isPlaygroundRoute
             ? "max-w-full h-[calc(100dvh-var(--titlebar-h,0px))]"
             : isSettingRoute
               ? "max-w-md min-h-[calc(100dvh-var(--titlebar-h,0px))] lg:max-w-none lg:h-[calc(100dvh-var(--titlebar-h,0px))] lg:min-h-0"
@@ -1063,7 +1067,9 @@ function AppContent() {
                     ? "overflow-hidden px-0 pt-0 pb-0"
                     : isSearchRoute
                       ? "overflow-hidden px-0 pt-0 pb-0"
-                      : isLogsRoute
+                      : isPlaygroundRoute
+                        ? "overflow-hidden px-0 pt-0 pb-0"
+                        : isLogsRoute
                         ? "overflow-hidden px-0 pt-0 pb-0"
                         : isLorebookEditorRoute
                           ? "overflow-hidden px-0 pt-0 pb-0"
@@ -1114,6 +1120,7 @@ function AppContent() {
               <Route path="/discover/search" element={<DiscoverySearchPage />} />
               <Route path="/discover/browse" element={<DiscoveryBrowsePage />} />
               <Route path="/discover/card/:path" element={<DiscoveryCardDetailPage />} />
+              <Route path="/playground" element={<PlaygroundPage />} />
               <Route path="/library" element={<LibraryPage />} />
               <Route path="/library/images/pick" element={<AvatarLibraryPickerPage />} />
               <Route

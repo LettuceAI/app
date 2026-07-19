@@ -10,6 +10,7 @@ import {
   ChevronRight,
   HardDrive,
   Image,
+  ImagePlus,
   Loader2,
   LucideIcon,
   PenLine,
@@ -547,6 +548,25 @@ export function ImageGenerationPage() {
     <div className="flex min-h-screen flex-col">
       <main className="flex-1 px-4 pb-24 pt-5">
         <div className={cn("mx-auto w-full max-w-5xl space-y-7", spacing.section)}>
+          <button
+            type="button"
+            onClick={() => navigate(Routes.playground)}
+            className={cn(
+              "flex w-full items-center justify-between gap-4 rounded-[10px] border border-fg/10 bg-fg/[0.035] px-4 py-4 text-left transition-colors hover:bg-fg/[0.06]",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/55 focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
+            )}
+          >
+            <div className="flex min-w-0 items-center gap-3">
+              <ImagePlus aria-hidden="true" className="h-5 w-5 shrink-0 text-accent/80" />
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-fg">{t("playground.open")}</div>
+                <p className="mt-0.5 truncate text-xs text-fg/48">
+                  {t("playground.openDescription")}
+                </p>
+              </div>
+            </div>
+            <ChevronRight aria-hidden="true" className="h-4 w-4 shrink-0 text-fg/50" />
+          </button>
           {state.error && (
             <motion.div
               initial={{ opacity: 0, y: -6 }}
