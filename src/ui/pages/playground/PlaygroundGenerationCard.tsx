@@ -5,16 +5,19 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  Copy,
   Dices,
   ImageOff,
   ImageUp,
   Maximize2,
+  RefreshCw,
   Trash2,
   X,
 } from "lucide-react";
 
 import { cn } from "../../design-tokens";
 import { BottomMenu } from "../../components/BottomMenu";
+import { toast } from "../../components/toast";
 import { useI18n } from "../../../core/i18n/context";
 import { resolveGeneratedImageUrl } from "../../../core/image-generation";
 import type {
@@ -101,6 +104,8 @@ export type PlaygroundCardActions = {
   onDelete: (entry: PlaygroundGenerationEntry, deleteImages: boolean) => void;
   onSendToImg2img?: (image: PlaygroundGenerationImage) => void;
   onUpscale?: (entry: PlaygroundGenerationEntry, image: PlaygroundGenerationImage) => void;
+  onReuseSeed?: (entry: PlaygroundGenerationEntry) => void;
+  onRegenerate?: (entry: PlaygroundGenerationEntry) => void;
   disabled: boolean;
 };
 
@@ -194,6 +199,40 @@ export function PlaygroundGenerationCard({
           {timestamp}
         </span>
         <span className="ml-auto flex items-center gap-0.5">
+          <button
+            type="button"
+            onClick={() => {
+              void navigator.clipboard.writeText(entry.prompt).then(() => {
+                toast.success(t("playground.feed.promptCopied"));
+              });
+            }}
+            title={t("playground.feed.copyPrompt")}
+            className="rounded-md p-1.5 text-fg/35 transition hover:bg-fg/8 hover:text-fg/80"
+          >
+            <Copy size={13} />
+          </button>
+          {actions.onReuseSeed && entry.seed != null && (
+            <button
+              type="button"
+              onClick={() => actions.onReuseSeed?.(entry)}
+              disabled={actions.disabled}
+              title={t("playground.feed.reuseSeed")}
+              className="rounded-md p-1.5 text-fg/35 transition hover:bg-fg/8 hover:text-fg/80 disabled:opacity-40"
+            >
+              <Dices size={13} />
+            </button>
+          )}
+          {actions.onRegenerate && entry.status !== "pending" && (
+            <button
+              type="button"
+              onClick={() => actions.onRegenerate?.(entry)}
+              disabled={actions.disabled}
+              title={t("playground.feed.regenerate")}
+              className="rounded-md p-1.5 text-fg/35 transition hover:bg-fg/8 hover:text-fg/80 disabled:opacity-40"
+            >
+              <RefreshCw size={13} />
+            </button>
+          )}
           {actions.onUpscale && entry.status === "complete" && entry.images[0] && (
             <button
               type="button"

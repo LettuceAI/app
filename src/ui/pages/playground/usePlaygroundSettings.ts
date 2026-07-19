@@ -28,6 +28,7 @@ export type PlaygroundRequestBase = {
 export type PlaygroundSettingsController = {
   loading: boolean;
   models: Model[];
+  providers: ProviderCredential[];
   selectedModel: Model | null;
   selectedCredential: ProviderCredential | null;
   isLocal: boolean;
@@ -170,6 +171,7 @@ export function usePlaygroundSettings(): PlaygroundSettingsController {
   return {
     loading,
     models,
+    providers,
     selectedModel,
     selectedCredential,
     isLocal,

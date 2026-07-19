@@ -6,7 +6,11 @@ import { useI18n } from "../../../core/i18n/context";
 import { Routes, useNavigationManager } from "../../navigation";
 import { convertFilePathToDataUrl } from "../../../core/storage/images";
 import { toast } from "../../components/toast";
-import { getSdcppUpscalerInventory, upscaleLocalImage } from "../../../core/image-generation";
+import {
+  getSdcppUpscalerInventory,
+  resolveProviderCredential,
+  upscaleLocalImage,
+} from "../../../core/image-generation";
 import { getPlatform } from "../../../core/utils/platform";
 import {
   savePlaygroundHistoryEntry,
@@ -98,6 +102,50 @@ export function PlaygroundPage() {
     } finally {
       setUpscaling(false);
     }
+  };
+
+  const reuseSeed = (entry: PlaygroundGenerationEntry) => {
+    if (entry.seed == null) return;
+    settings.updateDraft({ seed: entry.seed });
+    toast.success(t("playground.feed.seedReused", { seed: entry.seed }));
+  };
+
+  const regenerateEntry = (entry: PlaygroundGenerationEntry) => {
+    if (generation.generating) return;
+    const model = settings.models.find((candidate) => candidate.id === entry.modelId);
+    if (!model) {
+      toast.error(t("playground.feed.modelMissing"));
+      return;
+    }
+    const credential = resolveProviderCredential(
+      settings.providers,
+      model.providerId,
+      model.providerLabel,
+    );
+    if (!credential) {
+      toast.error(t("playground.feed.modelMissing"));
+      return;
+    }
+    const advanced = { ...(entry.params.advancedModelSettings ?? {}) };
+    delete advanced.sdSeed;
+    void generation.generate({
+      base: {
+        model: model.name,
+        providerId: model.providerId,
+        credentialId: credential.id,
+        advancedModelSettings: advanced,
+        size: entry.params.size ?? undefined,
+        n: entry.params.n ?? undefined,
+        quality: entry.params.quality ?? undefined,
+        style: entry.params.style ?? undefined,
+      },
+      modelDbId: model.id,
+      modelDisplayName: model.displayName || model.name,
+      prompt: entry.prompt,
+      negativePrompt: entry.negativePrompt,
+      loras: entry.params.loras ?? [],
+      initImage: null,
+    });
   };
 
   const sendToImg2img = async (image: PlaygroundGenerationImage) => {
@@ -199,6 +247,8 @@ export function PlaygroundPage() {
                 ? (entry, image) => void upscaleImage(entry, image)
                 : undefined
             }
+            onReuseSeed={reuseSeed}
+            onRegenerate={regenerateEntry}
             busy={upscaling}
           />
         </section>

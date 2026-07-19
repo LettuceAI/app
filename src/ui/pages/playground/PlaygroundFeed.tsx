@@ -36,6 +36,8 @@ export function PlaygroundFeed({
   generation,
   onSendToImg2img,
   onUpscale,
+  onReuseSeed,
+  onRegenerate,
   busy = false,
 }: {
   generation: PlaygroundGenerationController;
@@ -44,6 +46,8 @@ export function PlaygroundFeed({
     entry: PlaygroundGenerationEntry,
     image: PlaygroundGenerationEntry["images"][number],
   ) => void;
+  onReuseSeed?: (entry: PlaygroundGenerationEntry) => void;
+  onRegenerate?: (entry: PlaygroundGenerationEntry) => void;
   busy?: boolean;
 }) {
   const { t } = useI18n();
@@ -175,6 +179,8 @@ export function PlaygroundFeed({
               onDelete: (item, deleteImages) => void handleDelete(item, deleteImages),
               onSendToImg2img,
               onUpscale,
+              onReuseSeed,
+              onRegenerate,
               disabled: generation.generating || busy,
             }}
           />
