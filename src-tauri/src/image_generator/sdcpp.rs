@@ -3256,7 +3256,7 @@ fn keywords_from_safetensors_metadata(metadata: &serde_json::Map<String, Value>)
     }
 }
 
-fn normalize_lora_architecture(value: &str) -> Option<String> {
+pub(crate) fn normalize_lora_architecture(value: &str) -> Option<String> {
     let value = value
         .trim()
         .to_ascii_lowercase()
@@ -3285,7 +3285,7 @@ fn normalize_lora_architecture(value: &str) -> Option<String> {
     if contains("qwenimageedit") {
         return Some("qwen-image-edit".to_string());
     }
-    if contains("qwenimage") {
+    if contains("qwenimage") || compact == "qwen" {
         return Some("qwen-image".to_string());
     }
     if contains("flux1") || contains("flux dev") || contains("flux schnell") {
@@ -3962,6 +3962,40 @@ pub async fn sdcpp_import_lora(
         architecture_source: "none".to_string(),
         compatibility: "unknown".to_string(),
     })
+}
+
+#[tauri::command]
+pub fn sdcpp_delete_lora(app: AppHandle, path: String) -> Result<(), String> {
+    if cfg!(mobile) {
+        return Err("Local stable-diffusion.cpp image generation is desktop-only.".to_string());
+    }
+    let (_root, file_path, relative_path) = resolve_library_lora_path(&app, &path)?;
+    let conn = crate::storage_manager::db::open_db(&app)?;
+    let escaped = relative_path
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_");
+    let pattern = format!("%\"{escaped}\"%");
+    let references: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM models WHERE provider_id = ?1 AND advanced_model_settings LIKE ?2 ESCAPE '\\'",
+            params![PROVIDER_ID, pattern],
+            |row| row.get(0),
+        )
+        .map_err(|error| crate::utils::err_to_string(module_path!(), line!(), error))?;
+    if references > 0 {
+        return Err(format!(
+            "This LoRA is used by {references} local image model configuration(s). Remove it from those models first."
+        ));
+    }
+    std::fs::remove_file(&file_path)
+        .map_err(|error| format!("Failed to delete the LoRA file: {error}"))?;
+    conn.execute(
+        "DELETE FROM image_loras WHERE path = ?1",
+        params![relative_path],
+    )
+    .map_err(|error| crate::utils::err_to_string(module_path!(), line!(), error))?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -5260,6 +5294,47 @@ pub async fn handle_download_completed(
     Ok(())
 }
 
+pub fn handle_lora_download_completed(
+    app: &AppHandle,
+    item: &crate::hf_browser::QueuedDownload,
+    path: &str,
+) -> Result<(), String> {
+    if item.queue_kind.as_deref() != Some("civitai_lora") {
+        return Ok(());
+    }
+    let file_path = PathBuf::from(path);
+    let (bytes_on_disk, modified_at) = lora_file_fingerprint(&file_path)?;
+    let filename = file_path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "The downloaded LoRA has an invalid filename.".to_string())?
+        .to_string();
+    let keywords = normalize_lora_keywords(item.lora_keywords.clone().unwrap_or_default());
+    let architecture = item
+        .lora_base_model
+        .as_deref()
+        .and_then(normalize_lora_architecture);
+    let info = StoredLoraInfo {
+        bytes_on_disk,
+        modified_at,
+        sha256: item.sha256.as_deref().map(str::to_lowercase),
+        keyword_source: if keywords.is_empty() {
+            "none".to_string()
+        } else {
+            "civitai".to_string()
+        },
+        architecture_source: if architecture.is_some() {
+            "civitai".to_string()
+        } else {
+            "none".to_string()
+        },
+        keywords,
+        architecture,
+    };
+    save_lora_discovery(app, &filename, &filename, &info)
+}
+
 fn catalog_component_paths(
     app: &AppHandle,
     profile: &ProfileSpec,
@@ -5596,7 +5671,7 @@ fn image_root(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(crate::utils::lettuce_dir(app)?.join("models").join("image"))
 }
 
-fn lora_root(app: &AppHandle) -> Result<PathBuf, String> {
+pub(crate) fn lora_root(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(crate::utils::lettuce_dir(app)?.join("models").join("loras"))
 }
 

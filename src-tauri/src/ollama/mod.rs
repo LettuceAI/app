@@ -874,6 +874,8 @@ pub async fn ollama_pull_model(
         runtime_release: metadata.runtime_release.clone(),
         runtime_asset: metadata.runtime_asset.clone(),
         force_redownload: metadata.force_redownload,
+        lora_keywords: metadata.lora_keywords.clone(),
+        lora_base_model: metadata.lora_base_model.clone(),
     };
 
     crate::hf_browser::enqueue_external_item(&app, item).await;

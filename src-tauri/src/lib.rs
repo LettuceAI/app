@@ -11,6 +11,7 @@ mod app;
 mod asr_manager;
 pub mod chat_appearance;
 pub mod chat_manager;
+mod civitai;
 pub mod content_filter;
 mod conversation_manager;
 pub mod creation_helper;

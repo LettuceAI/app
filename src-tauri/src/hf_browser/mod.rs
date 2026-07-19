@@ -236,6 +236,8 @@ pub struct QueuedDownload {
     pub runtime_release: Option<String>,
     pub runtime_asset: Option<String>,
     pub force_redownload: bool,
+    pub lora_keywords: Option<Vec<String>>,
+    pub lora_base_model: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -302,6 +304,10 @@ pub struct QueueDownloadMetadata {
     pub runtime_asset: Option<String>,
     #[serde(default)]
     pub force_redownload: bool,
+    #[serde(default)]
+    pub lora_keywords: Option<Vec<String>>,
+    #[serde(default)]
+    pub lora_base_model: Option<String>,
 }
 
 struct DownloadQueueState {
@@ -2461,6 +2467,8 @@ pub async fn hf_queue_download(
             runtime_release: metadata.runtime_release,
             runtime_asset: metadata.runtime_asset,
             force_redownload: metadata.force_redownload,
+            lora_keywords: metadata.lora_keywords,
+            lora_base_model: metadata.lora_base_model,
         });
         emit_queue(&app, &state.queue);
     }
@@ -2551,7 +2559,10 @@ async fn process_download_queue(app: &AppHandle) {
             Ok(path) => match crate::image_generator::sdcpp::handle_download_completed(app, &item, &path).await {
                 Ok(()) => {
                     image_bundle::handle_download_completed(app, &item, &path).await;
-                    Ok(path)
+                    match crate::image_generator::sdcpp::handle_lora_download_completed(app, &item, &path) {
+                        Ok(()) => Ok(path),
+                        Err(error) => Err(error),
+                    }
                 }
                 Err(error) => Err(error),
             },
@@ -2714,8 +2725,17 @@ async fn do_queue_download(app: &AppHandle, item: &QueuedDownload) -> Result<Str
         .ok()
         .and_then(|url| url.host_str().map(str::to_string))
         .is_some_and(|host| host == "huggingface.co" || host.ends_with(".huggingface.co"));
+    let is_civitai_download = reqwest::Url::parse(&download_url)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_string))
+        .is_some_and(|host| host == "civitai.com" || host.ends_with(".civitai.com"));
     if is_hugging_face_download {
         if let Some(token) = image_bundle::hf_token(app) {
+            request = request.bearer_auth(token);
+        }
+    }
+    if is_civitai_download {
+        if let Some(token) = crate::civitai::civitai_token(app) {
             request = request.bearer_auth(token);
         }
     }
@@ -2738,6 +2758,18 @@ async fn do_queue_download(app: &AppHandle, item: &QueuedDownload) -> Result<Str
         return Err(format!(
             "Accept access to {model_id} on its Hugging Face model card, then retry."
         ));
+    }
+    if is_civitai_download && response.status() == reqwest::StatusCode::UNAUTHORIZED {
+        return Err(if crate::civitai::civitai_token(app).is_some() {
+            "The saved CivitAI token is invalid or expired.".to_string()
+        } else {
+            "This CivitAI file requires an API token. Add one in Runtime Defaults.".to_string()
+        });
+    }
+    if is_civitai_download && response.status() == reqwest::StatusCode::FORBIDDEN {
+        return Err(
+            "This CivitAI file is restricted or in early access for your account.".to_string(),
+        );
     }
     if !response.status().is_success() {
         return Err(crate::utils::err_msg(

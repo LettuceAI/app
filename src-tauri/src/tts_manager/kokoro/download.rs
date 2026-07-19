@@ -253,6 +253,8 @@ async fn queue_download_plan(
             runtime_release: None,
             runtime_asset: None,
             force_redownload: true,
+            lora_keywords: None,
+            lora_base_model: None,
         };
 
         let queue_id = crate::hf_browser::hf_queue_download(
