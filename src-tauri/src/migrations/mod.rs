@@ -7,7 +7,7 @@ use crate::storage_manager::settings::{read_settings_typed, write_settings_typed
 use crate::utils::log_info;
 
 /// Current migration version
-pub const CURRENT_MIGRATION_VERSION: u32 = 82;
+pub const CURRENT_MIGRATION_VERSION: u32 = 83;
 
 pub fn run_migrations(app: &AppHandle) -> Result<(), String> {
     log_info(app, "migrations", "Starting migration check");
@@ -857,6 +857,16 @@ pub fn run_migrations(app: &AppHandle) -> Result<(), String> {
         );
         migrate_v81_to_v82(app)?;
         version = 82;
+    }
+
+    if version < 83 {
+        log_info(
+            app,
+            "migrations",
+            "Running migration v82 -> v83: Add playground generation history",
+        );
+        migrate_v82_to_v83(app)?;
+        version = 83;
     }
 
     // Update the stored version
@@ -4180,6 +4190,32 @@ fn migrate_v79_to_v80(app: &AppHandle) -> Result<(), String> {
         CREATE INDEX IF NOT EXISTS idx_image_loras_sha256
           ON image_loras(sha256)
           WHERE sha256 IS NOT NULL;
+        "#,
+    )
+    .map_err(|error| crate::utils::err_to_string(module_path!(), line!(), error))?;
+    Ok(())
+}
+
+fn migrate_v82_to_v83(app: &AppHandle) -> Result<(), String> {
+    let conn = crate::storage_manager::db::open_db(app)?;
+    conn.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS playground_generations (
+          id TEXT PRIMARY KEY,
+          created_at INTEGER NOT NULL,
+          provider_id TEXT NOT NULL,
+          model_id TEXT NOT NULL,
+          model_name TEXT NOT NULL DEFAULT '',
+          prompt TEXT NOT NULL,
+          negative_prompt TEXT,
+          seed INTEGER,
+          params_json TEXT NOT NULL DEFAULT '{}',
+          status TEXT NOT NULL DEFAULT 'pending',
+          error TEXT,
+          images_json TEXT NOT NULL DEFAULT '[]'
+        );
+        CREATE INDEX IF NOT EXISTS idx_playground_generations_created_at
+          ON playground_generations(created_at);
         "#,
     )
     .map_err(|error| crate::utils::err_to_string(module_path!(), line!(), error))?;

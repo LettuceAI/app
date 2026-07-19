@@ -349,6 +349,24 @@ pub fn init_db(_app: &tauri::AppHandle, conn: &Connection) -> Result<(), String>
           ON image_loras(sha256)
           WHERE sha256 IS NOT NULL;
 
+        CREATE TABLE IF NOT EXISTS playground_generations (
+          id TEXT PRIMARY KEY,
+          created_at INTEGER NOT NULL,
+          provider_id TEXT NOT NULL,
+          model_id TEXT NOT NULL,
+          model_name TEXT NOT NULL DEFAULT '',
+          prompt TEXT NOT NULL,
+          negative_prompt TEXT,
+          seed INTEGER,
+          params_json TEXT NOT NULL DEFAULT '{}',
+          status TEXT NOT NULL DEFAULT 'pending',
+          error TEXT,
+          images_json TEXT NOT NULL DEFAULT '[]'
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_playground_generations_created_at
+          ON playground_generations(created_at);
+
         CREATE TABLE IF NOT EXISTS llm_generation_metrics (
           id TEXT PRIMARY KEY,
           created_at INTEGER NOT NULL,
