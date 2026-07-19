@@ -3016,37 +3016,6 @@ pub async fn sdcpp_installed(app: AppHandle) -> Result<Vec<InstalledModel>, Stri
         return Err("Local stable-diffusion.cpp image generation is desktop-only.".to_string());
     }
     use rusqlite::OptionalExtension;
-    if let Some((release, asset)) = detect_engine_build(&app) {
-        let missing: Vec<(&'static ProfileSpec, &'static VariantSpec)> = {
-            let conn = crate::storage_manager::db::open_db(&app)?;
-            let mut missing = Vec::new();
-            for profile in PROFILES {
-                for variant in profile.variants {
-                    if !is_variant_installed(&app, profile, variant, None, None) {
-                        continue;
-                    }
-                    let Ok(path) = selected_component_path(&app, profile, variant, "diffusion_model") else {
-                        continue;
-                    };
-                    let registered = conn
-                        .query_row(
-                            "SELECT id FROM models WHERE provider_id = ?1 AND name = ?2 LIMIT 1",
-                            rusqlite::params![PROVIDER_ID, path.to_string_lossy().to_string()],
-                            |row| row.get::<_, String>(0),
-                        )
-                        .optional()
-                        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-                    if registered.is_none() {
-                        missing.push((profile, variant));
-                    }
-                }
-            }
-            missing
-        };
-        for (profile, variant) in missing {
-            register_installed_model(&app, profile, variant, &release, &asset)?;
-        }
-    }
     purge_legacy_model_rows(&app)?;
     let conn = crate::storage_manager::db::open_db(&app)?;
     let mut installed = Vec::new();
