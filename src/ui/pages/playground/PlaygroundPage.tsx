@@ -5,10 +5,13 @@ import { cn } from "../../design-tokens";
 import { BottomMenu } from "../../components/BottomMenu";
 import { useI18n } from "../../../core/i18n/context";
 import { Routes, useNavigationManager } from "../../navigation";
+import { PlaygroundSettingsPane } from "./PlaygroundSettingsPane";
+import { usePlaygroundSettings } from "./usePlaygroundSettings";
 
 export function PlaygroundPage() {
   const { t } = useI18n();
   const { backOrReplace } = useNavigationManager();
+  const settings = usePlaygroundSettings();
   const [promptSheetOpen, setPromptSheetOpen] = useState(false);
   const [settingsSheetOpen, setSettingsSheetOpen] = useState(false);
 
@@ -20,13 +23,7 @@ export function PlaygroundPage() {
     </div>
   );
 
-  const settingsPane = (
-    <div className="flex h-full flex-col gap-3 p-4">
-      <p className="text-[11px] font-medium uppercase tracking-wide text-fg/40">
-        {t("playground.settingsTab")}
-      </p>
-    </div>
-  );
+  const settingsPane = <PlaygroundSettingsPane controller={settings} />;
 
   return (
     <div className="flex h-full flex-col bg-bg">
