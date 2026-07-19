@@ -57,6 +57,12 @@ import {
   sanitizeFeatureGenerationSettings,
 } from "../../components/AdvancedModelSettingsForm";
 import { FeatureGenerationSettingsEditor } from "../../components/FeatureGenerationSettings";
+import {
+  loraArchitectureLabel as sharedLoraArchitectureLabel,
+  parseLoraKeywordDraft,
+  type SdcppLoraFile,
+  type SdcppLoraKeywordDiscovery,
+} from "../../../core/image-generation/loras";
 import { BottomMenu, MenuButton, MenuSection } from "../../components/BottomMenu";
 import type { BundleRecipe } from "./components/imageBundle/types";
 import { GuidedTour, useGuidedTour } from "../../components/GuidedTour";
@@ -96,8 +102,8 @@ import { ProviderParameterSupportInfo } from "../../components/ProviderParameter
 import { LlamaSamplerOrderEditor } from "../../components/LlamaSamplerOrderEditor";
 import { toast } from "../../components/toast";
 import { useModelEditorController } from "./hooks/useModelEditorController";
-import { useNavigationManager } from "../../navigation";
-import { useSearchParams, useNavigate } from "react-router-dom";
+import { useNavigationManager, Routes } from "../../navigation";
+import { useSearchParams, useNavigate, useLocation } from "react-router-dom";
 import { addOrUpdateModel, readSettings, readSettingsCached } from "../../../core/storage/repo";
 import type {
   FeatureGenerationKey,
@@ -171,39 +177,6 @@ type SdcppDownloadedFile = {
   path: string;
 };
 
-type SdcppLoraFile = {
-  filename: string;
-  path: string;
-  bytesOnDisk: number;
-  keywords: string[];
-  keywordSource: "metadata" | "civitai" | "manual" | "none";
-  architecture: string | null;
-  architectureSource: "metadata" | "civitai" | "none";
-  compatibility: "compatible" | "incompatible" | "unknown";
-};
-
-type SdcppLoraKeywordDiscovery = {
-  keywords: string[];
-  source: "metadata" | "civitai" | "manual" | "none";
-  sha256: string | null;
-  architecture: string | null;
-  architectureSource: "metadata" | "civitai" | "none";
-  compatibility: "compatible" | "incompatible" | "unknown";
-};
-
-function parseLoraKeywordDraft(value: string): string[] {
-  const seen = new Set<string>();
-  const keywords: string[] = [];
-  for (const part of value.split(/[\n,;]+/)) {
-    const keyword = part.trim();
-    const key = keyword.toLowerCase();
-    if (!keyword || seen.has(key)) continue;
-    seen.add(key);
-    keywords.push(keyword);
-    if (keywords.length === 32) break;
-  }
-  return keywords;
-}
 
 const SDCPP_SAMPLERS = [
   "euler",
@@ -790,6 +763,7 @@ export function EditModelPage() {
   } = useModelEditorController();
   useNavigationManager();
   const editNavigate = useNavigate();
+  const editLocation = useLocation();
   const [editSearchParams] = useSearchParams();
   const returnTo = editSearchParams.get("returnTo");
   const isOnboardingReturnFlow = !!returnTo?.startsWith("/onboarding");
@@ -1824,37 +1798,19 @@ export function EditModelPage() {
   const sdcppSupportsImageEdit =
     selectedSdcppEntry?.supportsImageEdit ?? modelAdvancedDraft.sdcppSupportsImageEdit === true;
   const sdcppLoraInfoByPath = new Map(sdcppLoras.map((lora) => [lora.path, lora]));
-  const loraArchitectureLabel = (architecture: string | null | undefined) => {
-    switch (architecture) {
-      case "z-image": return "Z-Image";
-      case "flux2-klein-4b": return "FLUX.2 Klein 4B";
-      case "flux2-klein-9b": return "FLUX.2 Klein 9B";
-      case "flux2": return "FLUX.2";
-      case "flux1": return "FLUX.1";
-      case "flux": return "FLUX";
-      case "krea-2": return "Krea 2";
-      case "qwen-image-edit-2511": return "Qwen Image Edit 2511";
-      case "qwen-image-edit": return "Qwen Image Edit";
-      case "qwen-image": return "Qwen Image";
-      case "sdxl": return "Stable Diffusion XL";
-      case "sd3": return "Stable Diffusion 3";
-      case "sd2": return "Stable Diffusion 2";
-      case "sd1": return "Stable Diffusion 1.x";
-      case "pony": return "Pony";
-      case "illustrious": return "Illustrious";
-      case "noobai": return "NoobAI";
-      default: return t("editModel.sdcpp.architectureUnknown");
-    }
-  };
+  const loraArchitectureLabel = (architecture: string | null | undefined) =>
+    sharedLoraArchitectureLabel(architecture, t("editModel.sdcpp.architectureUnknown"));
   const loraCompatibilityLabel = (compatibility: SdcppLoraFile["compatibility"]) => {
     if (compatibility === "compatible") return t("editModel.sdcpp.loraCompatible");
     if (compatibility === "incompatible") return t("editModel.sdcpp.loraIncompatible");
     return t("editModel.sdcpp.loraCompatibilityUnknown");
   };
   const firstMissingSdcppLoraKeywordIndex = isSdcppModel
-    ? (modelAdvancedDraft.sdBaseLoras ?? []).findIndex(
-      (lora) => (sdcppLoraInfoByPath.get(lora.path)?.keywords ?? lora.keywords ?? []).length === 0,
-    )
+    ? (modelAdvancedDraft.sdBaseLoras ?? []).findIndex((lora) => {
+      const info = sdcppLoraInfoByPath.get(lora.path);
+      const keywords = info?.keywords ?? lora.keywords ?? [];
+      return keywords.length === 0 && (info?.keywordSource ?? "none") === "none";
+    })
     : -1;
   const hasMissingSdcppLoraKeywords = firstMissingSdcppLoraKeywordIndex >= 0;
   const hasIncompatibleSdcppLora = isSdcppModel
@@ -1883,10 +1839,10 @@ export function EditModelPage() {
     setEditingSdcppLoraKeywords(index);
   };
 
-  const saveSdcppLoraKeywords = async () => {
+  const saveSdcppLoraKeywords = async (alwaysActive = false) => {
     if (editingSdcppLoraKeywords === null) return;
-    const keywords = parseLoraKeywordDraft(sdcppLoraKeywordDraft);
-    if (keywords.length === 0) {
+    const keywords = alwaysActive ? [] : parseLoraKeywordDraft(sdcppLoraKeywordDraft);
+    if (!alwaysActive && keywords.length === 0) {
       toast.warning(
         t("editModel.sdcpp.keywordsRequired"),
         t("editModel.sdcpp.keywordsRequiredDescription"),
@@ -1935,6 +1891,7 @@ export function EditModelPage() {
     }
     setDiscoveringSdcppLoraPath(file.path);
     let keywords = file.keywords;
+    let keywordSource = file.keywordSource;
     let compatibility = file.compatibility;
     try {
       const discovery = await invoke<SdcppLoraKeywordDiscovery>(
@@ -1942,6 +1899,7 @@ export function EditModelPage() {
         { path: file.path, profileId: selectedSdcppProfileId },
       );
       keywords = discovery.keywords;
+      keywordSource = discovery.source;
       compatibility = discovery.compatibility;
       setSdcppLoras((current) => current.map((candidate) => candidate.path === file.path
         ? {
@@ -1981,7 +1939,7 @@ export function EditModelPage() {
     ]);
     setDiscoveringSdcppLoraPath(null);
     setShowSdcppLoraPicker(false);
-    if (keywords.length === 0) {
+    if (keywords.length === 0 && keywordSource === "none") {
       openSdcppLoraKeywordEditor(index, []);
       toast.warning(
         t("editModel.sdcpp.keywordsRequired"),
@@ -5252,6 +5210,19 @@ export function EditModelPage() {
                                                 {t("editModel.sdcpp.editKeywords")}
                                               </button>
                                             </>
+                                          ) : (info?.keywordSource ?? "none") !== "none" ? (
+                                            <>
+                                              <span className="text-[11px] text-fg/38">
+                                                {t("editModel.sdcpp.loraAlwaysActive")}
+                                              </span>
+                                              <button
+                                                type="button"
+                                                onClick={() => openSdcppLoraKeywordEditor(index)}
+                                                className="rounded-md border border-fg/12 bg-fg/5 px-2.5 py-0.5 text-[11px] font-medium text-fg/65 transition hover:border-fg/22 hover:bg-fg/8 hover:text-fg"
+                                              >
+                                                {t("editModel.sdcpp.editKeywords")}
+                                              </button>
+                                            </>
                                           ) : (
                                             <button
                                               type="button"
@@ -5340,6 +5311,17 @@ export function EditModelPage() {
                                   loading={importingSdcppLora}
                                   disabled={importingSdcppLora}
                                 />
+                                <MenuButton
+                                  icon={<Layers className="h-5 w-5 text-accent/70" />}
+                                  title={t("loraLibrary.openLibrary")}
+                                  description={t("loraLibrary.openLibraryDescription")}
+                                  color="from-accent/20 to-accent/10"
+                                  onClick={() =>
+                                    editNavigate(
+                                      `${Routes.settingsModelsLoras}?returnTo=${encodeURIComponent(editLocation.pathname)}`,
+                                    )
+                                  }
+                                />
                                 {sdcppLoras.map((file) => {
                                   const selected = (modelAdvancedDraft.sdBaseLoras ?? []).some(
                                     (lora) => lora.path === file.path && !lora.isHighNoise,
@@ -5420,6 +5402,14 @@ export function EditModelPage() {
                                   {savingSdcppLoraKeywords
                                     ? t("common.buttons.saving")
                                     : t("common.buttons.save")}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void saveSdcppLoraKeywords(true)}
+                                  disabled={savingSdcppLoraKeywords}
+                                  className="inline-flex h-10 w-full items-center justify-center rounded-lg border border-fg/12 bg-fg/5 px-4 text-[13px] font-medium text-fg/72 transition hover:border-fg/22 hover:bg-fg/8 hover:text-fg disabled:cursor-wait disabled:opacity-50"
+                                >
+                                  {t("editModel.sdcpp.markLoraAlwaysActive")}
                                 </button>
                               </div>
                             </BottomMenu>

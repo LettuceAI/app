@@ -104,6 +104,7 @@ export const Routes = {
   settingsModelsNew: "/settings/models/new",
   settingsModelsBrowse: "/settings/models/browse",
   settingsModelsInstalled: "/settings/models/installed",
+  settingsModelsLoras: "/settings/models/loras",
   settingsModelsRuntimeDefaults: "/settings/models/runtime-defaults",
   settingsModel: (modelId: string) => `/settings/models/${modelId}`,
   settingsImageGeneration: "/settings/image-generation",
@@ -177,6 +178,10 @@ export const BACK_MAPPINGS: BackMapping[] = [
   {
     match: (p) => p.startsWith("/settings/models/installed"),
     target: Routes.settingsModelsBrowse,
+  },
+  {
+    match: (p) => p.startsWith("/settings/models/loras") && p.includes("model="),
+    target: Routes.settingsModelsLoras,
   },
   { match: (p) => p.startsWith("/settings/models/"), target: Routes.settingsModels },
   { match: (p) => p.startsWith("/settings/image-generation"), target: Routes.settings },

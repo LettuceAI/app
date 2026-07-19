@@ -19,6 +19,7 @@ import { ModelsPage } from "./ui/pages/settings/ModelsPage";
 import { EditModelPage } from "./ui/pages/settings/EditModelPage";
 import { HuggingFaceBrowserPage } from "./ui/pages/settings/HuggingFaceBrowserPage";
 import { InstalledModelsPage } from "./ui/pages/settings/InstalledModelsPage";
+import { LoraLibraryPage } from "./ui/pages/settings/LoraLibraryPage";
 import PerformancePage from "./ui/pages/settings/PerformancePage";
 import { LocalRuntimeDefaultsPage } from "./ui/pages/settings/LocalRuntimeDefaultsPage";
 import { ImageGenerationPage } from "./ui/pages/settings/ImageGenerationPage";
@@ -1136,6 +1137,7 @@ function AppContent() {
                 <Route path="/settings/models/new" element={<EditModelPage />} />
                 <Route path="/settings/models/browse" element={<HuggingFaceBrowserPage />} />
                 <Route path="/settings/models/installed" element={<InstalledModelsPage />} />
+                <Route path="/settings/models/loras" element={<LoraLibraryPage />} />
                 <Route
                   path="/settings/models/runtime-defaults"
                   element={<LocalRuntimeDefaultsPage />}
