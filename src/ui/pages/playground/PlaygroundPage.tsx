@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ArrowLeft, SlidersHorizontal, TerminalSquare } from "lucide-react";
 
 import { BottomMenu } from "../../components/BottomMenu";
@@ -6,7 +6,13 @@ import { useI18n } from "../../../core/i18n/context";
 import { Routes, useNavigationManager } from "../../navigation";
 import { convertFilePathToDataUrl } from "../../../core/storage/images";
 import { toast } from "../../components/toast";
-import type { PlaygroundGenerationImage } from "../../../core/image-generation/playground";
+import { getSdcppUpscalerInventory, upscaleLocalImage } from "../../../core/image-generation";
+import { getPlatform } from "../../../core/utils/platform";
+import {
+  savePlaygroundHistoryEntry,
+  type PlaygroundGenerationEntry,
+  type PlaygroundGenerationImage,
+} from "../../../core/image-generation/playground";
 import { PlaygroundFeed } from "./PlaygroundFeed";
 import { PlaygroundPromptPane, type PlaygroundInitImage } from "./PlaygroundPromptPane";
 import { PlaygroundSettingsPane } from "./PlaygroundSettingsPane";
@@ -33,6 +39,66 @@ export function PlaygroundPage() {
     NEGATIVE_PROMPT_PROVIDERS.has(settings.selectedModel?.providerId ?? "") ||
     settings.selectedModel?.inputScopes?.includes("image") === true;
   const canGenerate = prompt.trim().length > 0 && settings.selectedModel !== null;
+
+  const [upscalerReady, setUpscalerReady] = useState(false);
+  const [upscaling, setUpscaling] = useState(false);
+
+  useEffect(() => {
+    if (getPlatform().type === "mobile") return;
+    let cancelled = false;
+    getSdcppUpscalerInventory()
+      .then((inventory) => {
+        if (!cancelled) setUpscalerReady(inventory.models.length > 0);
+      })
+      .catch(() => {
+        if (!cancelled) setUpscalerReady(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const upscaleImage = async (entry: PlaygroundGenerationEntry, image: PlaygroundGenerationImage) => {
+    if (upscaling || generation.generating) return;
+    setUpscaling(true);
+    try {
+      const dataUrl = await convertFilePathToDataUrl(image.filePath);
+      if (!dataUrl) throw new Error(t("playground.prompt.initImageFailed"));
+      const result = await upscaleLocalImage(dataUrl);
+      const upscaledEntry: PlaygroundGenerationEntry = {
+        id: crypto.randomUUID(),
+        createdAt: Date.now(),
+        providerId: "sdcpp",
+        modelId: entry.modelId,
+        modelName: entry.modelName,
+        prompt: entry.prompt,
+        negativePrompt: entry.negativePrompt,
+        seed: entry.seed,
+        params: { upscaleOf: entry.id },
+        status: "complete",
+        error: null,
+        images: [
+          {
+            assetId: result.assetId,
+            filePath: result.filePath,
+            mimeType: result.mimeType,
+            url: result.url ?? null,
+            width: result.width ?? null,
+            height: result.height ?? null,
+          },
+        ],
+      };
+      await savePlaygroundHistoryEntry(upscaledEntry);
+      generation.pushEntry(upscaledEntry);
+    } catch (error) {
+      toast.error(
+        t("playground.feed.upscaleFailed"),
+        error instanceof Error ? error.message : String(error),
+      );
+    } finally {
+      setUpscaling(false);
+    }
+  };
 
   const sendToImg2img = async (image: PlaygroundGenerationImage) => {
     const dataUrl = await convertFilePathToDataUrl(image.filePath);
@@ -128,6 +194,12 @@ export function PlaygroundPage() {
           <PlaygroundFeed
             generation={generation}
             onSendToImg2img={showInitImage ? (image) => void sendToImg2img(image) : undefined}
+            onUpscale={
+              upscalerReady
+                ? (entry, image) => void upscaleImage(entry, image)
+                : undefined
+            }
+            busy={upscaling}
           />
         </section>
         <aside className="hidden w-[340px] shrink-0 flex-col border-l border-fg/8 lg:flex">

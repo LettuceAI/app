@@ -34,6 +34,7 @@ export type PlaygroundGenerationController = {
   generate: (input: PlaygroundGenerationInput) => Promise<void>;
   cancel: () => Promise<void>;
   onEntryFinalized: (handler: (entry: PlaygroundGenerationEntry) => void) => void;
+  pushEntry: (entry: PlaygroundGenerationEntry) => void;
 };
 
 export function usePlaygroundGeneration(): PlaygroundGenerationController {
@@ -175,5 +176,9 @@ export function usePlaygroundGeneration(): PlaygroundGenerationController {
     }
   }, []);
 
-  return { generating, progress, activeEntry, generate, cancel, onEntryFinalized };
+  const pushEntry = useCallback((entry: PlaygroundGenerationEntry) => {
+    finalizedHandlerRef.current?.(entry);
+  }, []);
+
+  return { generating, progress, activeEntry, generate, cancel, onEntryFinalized, pushEntry };
 }

@@ -1,17 +1,21 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Check, ChevronDown, Dices } from "lucide-react";
 
 import { cn } from "../../design-tokens";
 import { BottomMenu } from "../../components/BottomMenu";
 import { ModelSelectionBottomMenu } from "../../components/ModelSelectionBottomMenu";
 import { NumberInput } from "../../components/NumberInput";
+import { Switch } from "../../components/Switch";
 import {
   ADVANCED_SD_CFG_SCALE_RANGE,
+  ADVANCED_SD_HIRES_DENOISING_RANGE,
+  ADVANCED_SD_HIRES_SCALE_RANGE,
+  ADVANCED_SD_HIRES_STEPS_RANGE,
   ADVANCED_SD_SEED_RANGE,
   ADVANCED_SD_STEPS_RANGE,
 } from "../../components/AdvancedModelSettingsForm";
 import { useI18n } from "../../../core/i18n/context";
-import { getModelSizes } from "../../../core/image-generation";
+import { getModelSizes, getSdcppUpscalerInventory } from "../../../core/image-generation";
 import { SDCPP_SAMPLERS, SDCPP_SCHEDULERS } from "../../../core/image-generation/sdcpp-options";
 import { getProviderIcon } from "../../../core/utils/providerIcons";
 import { randomPlaygroundSeed } from "../../../core/image-generation/playground";
@@ -82,6 +86,23 @@ export function PlaygroundSettingsPane({
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [samplerMenuOpen, setSamplerMenuOpen] = useState(false);
   const [schedulerMenuOpen, setSchedulerMenuOpen] = useState(false);
+  const [hiresUpscalers, setHiresUpscalers] = useState<string[]>([]);
+  const [hiresMenuOpen, setHiresMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (!isLocal) return;
+    let cancelled = false;
+    getSdcppUpscalerInventory()
+      .then((inventory) => {
+        if (!cancelled) setHiresUpscalers(inventory.hiresUpscalerNames);
+      })
+      .catch(() => {
+        if (!cancelled) setHiresUpscalers([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isLocal]);
 
   const presetSizes = selectedModel
     ? getModelSizes(selectedModel.providerId, selectedModel.name)
@@ -217,6 +238,70 @@ export function PlaygroundSettingsPane({
             </>
           )}
 
+          {isLocal && (
+            <div className="space-y-3 rounded-xl border border-fg/8 bg-fg/[0.02] p-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[12px] font-medium text-fg/70">
+                  {t("playground.settings.hires")}
+                </span>
+                <Switch
+                  checked={draft.hiresEnabled ?? false}
+                  onChange={(checked) => updateDraft({ hiresEnabled: checked })}
+                />
+              </div>
+              {draft.hiresEnabled && (
+                <>
+                  <FieldRow label={t("playground.settings.hiresUpscaler")}>
+                    <button
+                      type="button"
+                      onClick={() => setHiresMenuOpen(true)}
+                      disabled={hiresUpscalers.length === 0}
+                      className="flex h-8 max-w-[160px] items-center gap-1.5 rounded-lg border border-fg/10 bg-surface px-2.5 font-mono text-[11.5px] text-fg/75 transition hover:border-fg/20 disabled:opacity-50"
+                    >
+                      <span className="truncate">
+                        {draft.hiresUpscaler ||
+                          (hiresUpscalers.length === 0
+                            ? t("playground.settings.hiresNone")
+                            : t("playground.settings.defaultOption"))}
+                      </span>
+                      <ChevronDown size={12} className="shrink-0 text-fg/40" />
+                    </button>
+                  </FieldRow>
+                  <FieldRow label={t("playground.settings.hiresScale")}>
+                    <NumberInput
+                      min={ADVANCED_SD_HIRES_SCALE_RANGE.min}
+                      max={ADVANCED_SD_HIRES_SCALE_RANGE.max}
+                      step={0.25}
+                      value={draft.hiresScale ?? null}
+                      onChange={(value) => updateDraft({ hiresScale: value })}
+                      className={NUMBER_INPUT_CLASS}
+                    />
+                  </FieldRow>
+                  <FieldRow label={t("playground.settings.hiresSteps")}>
+                    <NumberInput
+                      min={ADVANCED_SD_HIRES_STEPS_RANGE.min}
+                      max={ADVANCED_SD_HIRES_STEPS_RANGE.max}
+                      step={1}
+                      value={draft.hiresSteps ?? null}
+                      onChange={(value) => updateDraft({ hiresSteps: value })}
+                      className={NUMBER_INPUT_CLASS}
+                    />
+                  </FieldRow>
+                  <FieldRow label={t("playground.settings.hiresDenoising")}>
+                    <NumberInput
+                      min={ADVANCED_SD_HIRES_DENOISING_RANGE.min}
+                      max={ADVANCED_SD_HIRES_DENOISING_RANGE.max}
+                      step={0.05}
+                      value={draft.hiresDenoisingStrength ?? null}
+                      onChange={(value) => updateDraft({ hiresDenoisingStrength: value })}
+                      className={NUMBER_INPUT_CLASS}
+                    />
+                  </FieldRow>
+                </>
+              )}
+            </div>
+          )}
+
           {isLocal && <PlaygroundLoraSection controller={controller} />}
 
           <FieldRow label={t("playground.settings.batch")}>
@@ -296,6 +381,14 @@ export function PlaygroundSettingsPane({
         options={SDCPP_SAMPLERS}
         selected={draft.sampler ?? null}
         onSelect={(sampler) => updateDraft({ sampler })}
+      />
+      <OptionPickerMenu
+        isOpen={hiresMenuOpen}
+        onClose={() => setHiresMenuOpen(false)}
+        title={t("playground.settings.hiresUpscaler")}
+        options={hiresUpscalers}
+        selected={draft.hiresUpscaler ?? null}
+        onSelect={(hiresUpscaler) => updateDraft({ hiresUpscaler })}
       />
       <OptionPickerMenu
         isOpen={schedulerMenuOpen}
