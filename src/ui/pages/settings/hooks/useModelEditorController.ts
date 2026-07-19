@@ -519,9 +519,19 @@ export function useModelEditorController(): ControllerReturn {
 
   const setModelAdvancedDraft = useCallback(
     (settings: AdvancedModelSettings) => {
+      const sanitized = sanitizeAdvancedModelSettings(settings);
+      const rawSize = settings.sdSize;
+      const normalizedRawSize =
+        typeof rawSize === "string" ? rawSize.trim().toLowerCase().replace(/\s+/g, "") : "";
+      const draft =
+        typeof rawSize === "string" &&
+        normalizedRawSize.length > 0 &&
+        !/^\d+x\d+$/.test(normalizedRawSize)
+          ? { ...sanitized, sdSize: rawSize }
+          : sanitized;
       dispatch({
         type: "set_model_advanced_draft",
-        payload: sanitizeAdvancedModelSettings(settings),
+        payload: draft,
       });
     },
     [dispatch],
