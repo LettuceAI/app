@@ -178,46 +178,7 @@ type SdcppDownloadedFile = {
 };
 
 
-const SDCPP_SAMPLERS = [
-  "euler",
-  "euler_a",
-  "heun",
-  "dpm2",
-  "dpm++2s_a",
-  "dpm++2m",
-  "dpm++2mv2",
-  "dpm++2m_sde",
-  "dpm++2m_sde_bt",
-  "ipndm",
-  "ipndm_v",
-  "lcm",
-  "ddim_trailing",
-  "tcd",
-  "res_multistep",
-  "res_2s",
-  "er_sde",
-  "euler_cfg_pp",
-  "euler_a_cfg_pp",
-] as const;
-
-const SDCPP_SCHEDULERS = [
-  "discrete",
-  "karras",
-  "exponential",
-  "ays",
-  "gits",
-  "smoothstep",
-  "sgm_uniform",
-  "simple",
-  "kl_optimal",
-  "lcm",
-  "bong_tangent",
-  "ltx2",
-  "logit_normal",
-  "flux2",
-  "flux",
-  "beta",
-] as const;
+import { SDCPP_SAMPLERS, SDCPP_SCHEDULERS } from "../../../core/image-generation/sdcpp-options";
 
 const SDCPP_HIRES_UPSCALERS = [
   "Lanczos",
