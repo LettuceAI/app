@@ -2102,7 +2102,7 @@ pub fn default_scene_prompt_writer_entries() -> Vec<SystemPromptEntry> {
             id: "scene_prompt_writer_local_task".to_string(),
             name: "Local Image Task".to_string(),
             role: PromptEntryRole::System,
-            content: "Write one concise prompt for a local image model. Identify each subject only with the supplied LoRA trigger keywords. Describe what the subjects are doing in the image, not what they look like.".to_string(),
+            content: "Write one concise prompt for a local image model. Identify each subject with its supplied LoRA trigger keywords when present. A blank binding means that LoRA is always active and needs no trigger text. Describe what the subjects are doing in the image, not what they look like.".to_string(),
             enabled: true,
             injection_position: PromptEntryPosition::Relative,
             injection_depth: 0,
@@ -2149,7 +2149,7 @@ pub fn default_scene_prompt_writer_entries() -> Vec<SystemPromptEntry> {
             id: "scene_prompt_writer_local_rules".to_string(),
             name: "Local Prompt Rules".to_string(),
             role: PromptEntryRole::System,
-            content: "Use the trigger keywords exactly as provided whenever that subject appears. Never use character or persona names. Never describe identity, age, body, face, hair, skin, default clothing, or other appearance traits. Describe only visible action, pose, expression, interaction, subject placement, props, environment, camera composition, lighting, and mood. Keep each trigger adjacent to its subject's action so multiple subjects remain distinct. Output one compact image prompt without reasoning, labels, markdown, or negative-prompt boilerplate.".to_string(),
+            content: "Use non-empty trigger keywords exactly as provided whenever that subject appears. If a subject's binding is blank, do not invent or add a trigger for it; its LoRA is already active. Never use character or persona names. Never describe identity, age, body, face, hair, skin, default clothing, or other appearance traits. Describe only visible action, pose, expression, interaction, subject placement, props, environment, camera composition, lighting, and mood. Keep each non-empty trigger adjacent to its subject's action so multiple subjects remain distinct. Output one compact image prompt without reasoning, labels, markdown, or negative-prompt boilerplate.".to_string(),
             enabled: true,
             injection_position: PromptEntryPosition::Relative,
             injection_depth: 0,
@@ -3072,8 +3072,36 @@ pub fn default_modular_prompt_entries() -> Vec<SystemPromptEntry> {
             conditional_min_messages: None,
             interval_turns: None,
             system_prompt: false,
-        conditions: None,
+        conditions: Some(PromptEntryCondition::All {
+            conditions: vec![
+                PromptEntryCondition::ChatMode {
+                    value: PromptEntryChatMode::Direct,
+                },
+                PromptEntryCondition::IsSceneGenerationLocalImageModel { value: false },
+            ],
+        }),
         prompt_entry_payload: None,
+        },
+        SystemPromptEntry {
+            id: "entry_scene_image_protocol_local".to_string(),
+            name: "Scene Image Protocol (Local Model)".to_string(),
+            role: PromptEntryRole::System,
+            content: "# Scene Image Generation (Local Model)\nIf a scene image would meaningfully add value, append exactly one image instruction after your fully completed response, at the very end:\n<img>compact scene prompt here</img>\n\nLoRA subject bindings:\n- Assistant character: {{lora_keywords[character]}}\n- User persona: {{lora_keywords[persona]}}\n\nInside <img>...</img>, identify every depicted subject using its non-empty LoRA trigger keywords exactly as provided above. A blank binding means that LoRA is always active; do not invent or add a trigger for it. Keep each non-empty trigger adjacent to that subject's action so multiple subjects remain distinct. Never use character or persona names. Do not reconstruct identity, age, body, face, hair, skin, default clothing, or other appearance details supplied by the LoRAs.\n\nDescribe only concrete visual direction: action, pose, expression, interaction, subject placement, props, environment, camera angle and framing, lighting, palette, atmosphere, and mood. Keep it concise and composition-first. Do not write story prose, abstract interpretation, reference-image instructions, reasoning, labels, negative-prompt boilerplate, or quality-keyword spam.\n\nPlace nothing after </img>. Do not explain the tag, mention the image-generation process in-character, or wrap the instruction in a code fence.".to_string(),
+            enabled: true,
+            injection_position: PromptEntryPosition::Relative,
+            injection_depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: false,
+            conditions: Some(PromptEntryCondition::All {
+                conditions: vec![
+                    PromptEntryCondition::ChatMode {
+                        value: PromptEntryChatMode::Direct,
+                    },
+                    PromptEntryCondition::IsSceneGenerationLocalImageModel { value: true },
+                ],
+            }),
+            prompt_entry_payload: None,
         },
         SystemPromptEntry {
             id: "entry_instructions".to_string(),
@@ -3311,6 +3339,18 @@ fn render_author_note_text(
 }
 
 /// character template > model template > app default template (from database)
+pub(crate) fn scene_generation_uses_local_image_model(settings: &Settings) -> bool {
+    let preferred_model_id = settings
+        .advanced_settings
+        .as_ref()
+        .and_then(|advanced| advanced.scene_generation_model_id.as_deref())
+        .filter(|id| !id.trim().is_empty());
+
+    crate::chat_manager::scene::resolve_image_generation_target(settings, preferred_model_id)
+        .map(|(model, _)| model.provider_id == "sdcpp")
+        .unwrap_or(false)
+}
+
 pub fn build_system_prompt_entries(
     app: &AppHandle,
     character: &Character,
@@ -3481,12 +3521,21 @@ pub fn build_system_prompt_entries(
         .as_ref()
         .and_then(|advanced| advanced.avatar_generation_enabled)
         .unwrap_or(true);
+    let is_scene_generation_local_image_model =
+        scene_generation_uses_local_image_model(settings);
+    let (character_lora_keywords, persona_lora_keywords) =
+        if is_scene_generation_local_image_model {
+            crate::chat_manager::scene::local_scene_lora_bindings(app, character, persona)
+        } else {
+            (String::new(), String::new())
+        };
     let condition_context = PromptEntryConditionContext {
         chat_mode: PromptEntryChatMode::Direct,
         info_source: PromptEntryInfoSource::Messages,
         scene_generation_enabled,
         avatar_generation_enabled,
         is_local_image_generation_model: false,
+        is_scene_generation_local_image_model,
         has_scene: has_scene || has_scene_message,
         has_scene_direction,
         has_persona: persona.is_some(),
@@ -3536,7 +3585,12 @@ pub fn build_system_prompt_entries(
             session,
             settings,
             scheduled_notes_text.as_deref(),
-        );
+        )
+        .replace(
+            "{{lora_keywords[character]}}",
+            &character_lora_keywords,
+        )
+        .replace("{{lora_keywords[persona]}}", &persona_lora_keywords);
         if rendered.trim().is_empty() {
             continue;
         }
@@ -4399,6 +4453,69 @@ mod prompt_cache_tests {
             }
             _ => false,
         }
+    }
+
+    fn has_scene_local_image_model_gate(
+        condition: &PromptEntryCondition,
+        expected: bool,
+    ) -> bool {
+        match condition {
+            PromptEntryCondition::IsSceneGenerationLocalImageModel { value } => {
+                *value == expected
+            }
+            PromptEntryCondition::All { conditions } | PromptEntryCondition::Any { conditions } => {
+                conditions
+                    .iter()
+                    .any(|condition| has_scene_local_image_model_gate(condition, expected))
+            }
+            PromptEntryCondition::Not { condition } => {
+                has_scene_local_image_model_gate(condition, expected)
+            }
+            _ => false,
+        }
+    }
+
+    fn has_direct_chat_gate(condition: &PromptEntryCondition) -> bool {
+        match condition {
+            PromptEntryCondition::ChatMode { value } => {
+                matches!(value, crate::chat_manager::types::PromptEntryChatMode::Direct)
+            }
+            PromptEntryCondition::All { conditions } | PromptEntryCondition::Any { conditions } => {
+                conditions.iter().any(has_direct_chat_gate)
+            }
+            PromptEntryCondition::Not { condition } => has_direct_chat_gate(condition),
+            _ => false,
+        }
+    }
+
+    #[test]
+    fn app_default_scene_protocol_exposes_lora_keywords_only_for_local_scene_models() {
+        let entries = default_modular_prompt_entries();
+        let remote = entries
+            .iter()
+            .find(|entry| entry.id == "entry_scene_image_protocol")
+            .expect("remote scene image protocol should exist");
+        let local = entries
+            .iter()
+            .find(|entry| entry.id == "entry_scene_image_protocol_local")
+            .expect("local scene image protocol should exist");
+
+        assert!(has_scene_local_image_model_gate(
+            remote.conditions.as_ref().expect("remote gate should exist"),
+            false,
+        ));
+        assert!(has_direct_chat_gate(
+            remote.conditions.as_ref().expect("remote gate should exist")
+        ));
+        assert!(has_direct_chat_gate(
+            local.conditions.as_ref().expect("local gate should exist")
+        ));
+        assert!(has_scene_local_image_model_gate(
+            local.conditions.as_ref().expect("local gate should exist"),
+            true,
+        ));
+        assert!(local.content.contains("{{lora_keywords[character]}}"));
+        assert!(local.content.contains("{{lora_keywords[persona]}}"));
     }
 
     #[test]

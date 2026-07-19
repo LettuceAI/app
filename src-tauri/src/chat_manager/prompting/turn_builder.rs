@@ -36,11 +36,18 @@ pub fn append_image_directive_instructions(
     if !scene_generation_enabled {
         return system_prompt_entries
             .into_iter()
-            .filter(|entry| entry.id != "entry_scene_image_protocol")
+            .filter(|entry| !is_scene_image_protocol_entry(entry))
             .collect();
     }
 
     system_prompt_entries
+}
+
+fn is_scene_image_protocol_entry(entry: &SystemPromptEntry) -> bool {
+    matches!(
+        entry.id.as_str(),
+        "entry_scene_image_protocol" | "entry_scene_image_protocol_local"
+    )
 }
 
 pub fn partition_prompt_entries(
@@ -227,7 +234,9 @@ pub fn swapped_prompt_entities(
 
 #[cfg(test)]
 mod tests {
-    use super::{assemble_prompt_messages, insert_in_chat_prompt_entries};
+    use super::{
+        assemble_prompt_messages, insert_in_chat_prompt_entries, is_scene_image_protocol_entry,
+    };
     use crate::chat_manager::entries::{in_chat_system_entry, relative_system_entry};
     use crate::chat_manager::types::{PromptEntryPosition, PromptEntryRole, SystemPromptEntry};
     use serde_json::json;
@@ -247,6 +256,20 @@ mod tests {
             conditions: None,
             prompt_entry_payload: None,
         }
+    }
+
+    #[test]
+    fn both_scene_image_protocol_variants_are_recognized() {
+        let mut entry = relative_system_entry(
+            "entry_scene_image_protocol",
+            "Scene Image Protocol",
+            "remote",
+        );
+        assert!(is_scene_image_protocol_entry(&entry));
+        entry.id = "entry_scene_image_protocol_local".to_string();
+        assert!(is_scene_image_protocol_entry(&entry));
+        entry.id = "entry_instructions".to_string();
+        assert!(!is_scene_image_protocol_entry(&entry));
     }
 
     #[test]

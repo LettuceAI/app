@@ -44,7 +44,7 @@ fn resolve_persona_id<'a>(session: &'a Session, explicit: Option<&'a str>) -> Op
     }
 }
 
-fn resolve_image_generation_target<'a>(
+pub(crate) fn resolve_image_generation_target<'a>(
     settings: &'a Settings,
     preferred_model_id: Option<&str>,
 ) -> Result<(&'a Model, &'a ProviderCredential), String> {
@@ -373,48 +373,85 @@ fn build_scene_loras(character: &Character, persona: Option<&Persona>) -> Vec<Im
 fn local_scene_subject_binding(
     lora: Option<&ImageLora>,
     fallback: &str,
-    subject_label: &str,
-) -> Result<String, String> {
+) -> String {
     let Some(lora) = lora else {
-        return Ok(fallback.to_string());
+        return fallback.to_string();
     };
     if lora.keywords.is_empty() {
-        return Err(format!(
-            "The {} LoRA '{}' has no trigger keywords. Add at least one keyword in the local LoRA library before generating a scene.",
-            subject_label, lora.path
-        ));
+        return String::new();
     }
-    Ok(lora.keywords.join(", "))
+    lora.keywords.join(", ")
 }
 
-fn local_scene_lora_bindings(
+pub(crate) fn local_scene_lora_bindings(
     app: &AppHandle,
     character: &Character,
     persona: Option<&Persona>,
-) -> Result<(String, String), String> {
+) -> (String, String) {
     let mut character_lora =
         entity_scene_lora(character.lora_name.as_deref(), character.lora_strength);
     if let Some(lora) = character_lora.as_mut() {
-        crate::image_generator::sdcpp::hydrate_lora_list_keywords(
+        if let Err(error) = crate::image_generator::sdcpp::hydrate_lora_list_keywords(
             app,
             std::slice::from_mut(lora),
-        )?;
+        ) {
+            crate::utils::log_warn(
+                app,
+                "scene",
+                format!("Failed to hydrate character LoRA keywords: {}", error),
+            );
+        }
     }
 
     let mut persona_lora = persona.and_then(|persona| {
         entity_scene_lora(persona.lora_name.as_deref(), persona.lora_strength)
     });
     if let Some(lora) = persona_lora.as_mut() {
-        crate::image_generator::sdcpp::hydrate_lora_list_keywords(
+        if let Err(error) = crate::image_generator::sdcpp::hydrate_lora_list_keywords(
             app,
             std::slice::from_mut(lora),
-        )?;
+        ) {
+            crate::utils::log_warn(
+                app,
+                "scene",
+                format!("Failed to hydrate persona LoRA keywords: {}", error),
+            );
+        }
     }
 
-    Ok((
-        local_scene_subject_binding(character_lora.as_ref(), "primary subject", "character")?,
-        local_scene_subject_binding(persona_lora.as_ref(), "secondary subject", "persona")?,
-    ))
+    let persona_binding = if persona.is_some() {
+        local_scene_subject_binding(persona_lora.as_ref(), "secondary subject")
+    } else {
+        String::new()
+    };
+
+    (
+        local_scene_subject_binding(character_lora.as_ref(), "primary subject"),
+        persona_binding,
+    )
+}
+
+fn build_local_scene_loras_for_prompt(
+    app: &AppHandle,
+    scene_prompt: &str,
+    character: &Character,
+    persona: Option<&Persona>,
+) -> Result<Vec<ImageLora>, String> {
+    let mut loras = build_scene_loras(character, persona);
+    crate::image_generator::sdcpp::hydrate_lora_list_keywords(app, &mut loras)?;
+    loras.retain(|lora| lora_applies_to_scene_prompt(lora, scene_prompt));
+    Ok(loras)
+}
+
+fn lora_applies_to_scene_prompt(lora: &ImageLora, scene_prompt: &str) -> bool {
+    let normalized_prompt = scene_prompt.to_lowercase();
+    lora.keywords.is_empty()
+        || lora
+            .keywords
+            .iter()
+            .map(|keyword| keyword.trim())
+            .filter(|keyword| !keyword.is_empty())
+            .any(|keyword| normalized_prompt.contains(&keyword.to_lowercase()))
 }
 
 fn build_scene_prompt_reference_hint(
@@ -615,9 +652,9 @@ fn build_scene_generation_request(
     persona: Option<&Persona>,
     reference_images: SceneReferenceImages,
     default_size: Option<String>,
+    local_loras: Vec<ImageLora>,
 ) -> ImageGenerationRequest {
     if model.provider_id == "sdcpp" {
-        let loras = build_scene_loras(character, persona);
         return ImageGenerationRequest {
             prompt: scene_prompt.trim().to_string(),
             model: model.name.clone(),
@@ -626,7 +663,11 @@ fn build_scene_generation_request(
             advanced_model_settings: model.advanced_model_settings.clone(),
             input_images: None,
             mask_image: None,
-            loras: if loras.is_empty() { None } else { Some(loras) },
+            loras: if local_loras.is_empty() {
+                None
+            } else {
+                Some(local_loras)
+            },
             output_modalities: Some(model.output_scopes.clone()),
             size: model
                 .advanced_model_settings
@@ -1152,6 +1193,7 @@ fn render_design_reference_prompt_entries(
         scene_generation_enabled: scene_generation_enabled(settings),
         avatar_generation_enabled: avatar_generation_enabled(settings),
         is_local_image_generation_model: false,
+        is_scene_generation_local_image_model: false,
         has_scene: false,
         has_scene_direction: false,
         has_persona: false,
@@ -1398,6 +1440,7 @@ fn render_scene_generation_prompt_entries(
         scene_generation_enabled: scene_generation_enabled(settings),
         avatar_generation_enabled: avatar_generation_enabled(settings),
         is_local_image_generation_model,
+        is_scene_generation_local_image_model: is_local_image_generation_model,
         has_scene,
         has_scene_direction,
         has_persona: persona.is_some(),
@@ -1680,6 +1723,11 @@ pub async fn chat_generate_scene_image(
         .advanced_settings
         .as_ref()
         .and_then(|advanced| advanced.sd_default_size.clone());
+    let local_loras = if model.provider_id == "sdcpp" {
+        build_local_scene_loras_for_prompt(&app, &scene_prompt, character, persona)?
+    } else {
+        Vec::new()
+    };
     let mut request = build_scene_generation_request(
         &scene_prompt,
         model,
@@ -1688,6 +1736,7 @@ pub async fn chat_generate_scene_image(
         persona,
         reference_images,
         default_size,
+        local_loras,
     );
     request.session_id = Some(session.id.clone());
     request.character_id = Some(character.id.clone());
@@ -1807,12 +1856,11 @@ pub async fn chat_generate_scene_prompt(
     } else {
         build_scene_reference_images(&app, &session, &character, persona)
     };
-    let (character_lora_keywords, persona_lora_keywords) =
-        if is_local_image_generation_model {
-            local_scene_lora_bindings(&app, &character, persona)?
-        } else {
-            (String::new(), String::new())
-        };
+    let (character_lora_keywords, persona_lora_keywords) = if is_local_image_generation_model {
+        local_scene_lora_bindings(&app, &character, persona)
+    } else {
+        (String::new(), String::new())
+    };
     let prompt_entries = render_scene_generation_prompt_entries(
         &app,
         settings,
@@ -2117,7 +2165,7 @@ pub async fn chat_generate_design_reference_description(
 
 #[cfg(test)]
 mod tests {
-    use super::{entity_scene_lora, local_scene_subject_binding};
+    use super::{entity_scene_lora, local_scene_subject_binding, lora_applies_to_scene_prompt};
 
     #[test]
     fn scene_lora_uses_the_saved_strength_and_default() {
@@ -2130,21 +2178,39 @@ mod tests {
     }
 
     #[test]
-    fn local_subject_binding_uses_keywords_and_rejects_unconfigured_triggers() {
+    fn local_subject_binding_uses_keywords_and_omits_always_active_triggers() {
         let mut lora = entity_scene_lora(Some("character.safetensors"), None).unwrap();
         lora.keywords = vec!["ArsSamuel".to_string(), "SamuelStyle".to_string()];
         assert_eq!(
-            local_scene_subject_binding(Some(&lora), "primary subject", "character").unwrap(),
+            local_scene_subject_binding(Some(&lora), "primary subject"),
             "ArsSamuel, SamuelStyle"
         );
 
         lora.keywords.clear();
-        assert!(local_scene_subject_binding(Some(&lora), "primary subject", "character")
-            .unwrap_err()
-            .contains("has no trigger keywords"));
+        assert_eq!(local_scene_subject_binding(Some(&lora), "primary subject"), "");
         assert_eq!(
-            local_scene_subject_binding(None, "primary subject", "character").unwrap(),
+            local_scene_subject_binding(None, "primary subject"),
             "primary subject"
         );
+    }
+
+    #[test]
+    fn local_scene_loras_are_limited_to_depicted_subjects() {
+        let mut keyworded = entity_scene_lora(Some("persona.safetensors"), None).unwrap();
+        keyworded.keywords = vec!["PersonaTrigger".to_string()];
+        assert!(lora_applies_to_scene_prompt(
+            &keyworded,
+            "PersonaTrigger sitting beside a window"
+        ));
+        assert!(!lora_applies_to_scene_prompt(
+            &keyworded,
+            "primary subject sitting alone beside a window"
+        ));
+
+        keyworded.keywords.clear();
+        assert!(lora_applies_to_scene_prompt(
+            &keyworded,
+            "primary subject sitting alone beside a window"
+        ));
     }
 }

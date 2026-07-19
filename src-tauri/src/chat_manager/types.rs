@@ -101,6 +101,9 @@ pub enum PromptEntryCondition {
     IsLocalImageGenerationModel {
         value: bool,
     },
+    IsSceneGenerationLocalImageModel {
+        value: bool,
+    },
     HasScene {
         value: bool,
     },

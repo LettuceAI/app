@@ -226,6 +226,7 @@ fn dynamic_memory_prompt_condition_context<'a>(
         scene_generation_enabled: false,
         avatar_generation_enabled: false,
         is_local_image_generation_model: false,
+        is_scene_generation_local_image_model: false,
         has_scene: session.selected_scene_id.is_some(),
         has_scene_direction: false,
         has_persona: false,

@@ -130,6 +130,7 @@ export type PromptEntryCondition =
   | { type: "sceneGenerationEnabled"; value: boolean }
   | { type: "avatarGenerationEnabled"; value: boolean }
   | { type: "isLocalImageGenerationModel"; value: boolean }
+  | { type: "isSceneGenerationLocalImageModel"; value: boolean }
   | { type: "hasScene"; value: boolean }
   | { type: "hasSceneDirection"; value: boolean }
   | { type: "hasPersona"; value: boolean }
@@ -169,6 +170,7 @@ export const PromptEntryConditionSchema: z.ZodType<PromptEntryCondition> = z.laz
     z.object({ type: z.literal("sceneGenerationEnabled"), value: z.boolean() }),
     z.object({ type: z.literal("avatarGenerationEnabled"), value: z.boolean() }),
     z.object({ type: z.literal("isLocalImageGenerationModel"), value: z.boolean() }),
+    z.object({ type: z.literal("isSceneGenerationLocalImageModel"), value: z.boolean() }),
     z.object({ type: z.literal("hasScene"), value: z.boolean() }),
     z.object({ type: z.literal("hasSceneDirection"), value: z.boolean() }),
     z.object({ type: z.literal("hasPersona"), value: z.boolean() }),

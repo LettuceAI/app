@@ -280,6 +280,11 @@ const SIMPLE_CONDITION_OPTIONS: Array<{
     labelKey: "editPrompt.conditions.isLocalImageGenerationModel",
     kind: "boolean",
   },
+  {
+    value: "isSceneGenerationLocalImageModel",
+    labelKey: "editPrompt.conditions.isSceneGenerationLocalImageModel",
+    kind: "boolean",
+  },
   { value: "hasScene", labelKey: "editPrompt.conditions.hasScene", kind: "boolean" },
   {
     value: "hasSceneDirection",
@@ -610,6 +615,12 @@ function describeSimpleCondition(t: Translate, condition: SimplePromptEntryCondi
           ? "editPrompt.describe.localImageGenerationModel"
           : "editPrompt.describe.remoteImageGenerationModel",
       );
+    case "isSceneGenerationLocalImageModel":
+      return t(
+        condition.value
+          ? "editPrompt.describe.sceneGenerationLocalImageModel"
+          : "editPrompt.describe.sceneGenerationRemoteImageModel",
+      );
     case "hasScene":
       return t(condition.value ? "editPrompt.describe.sceneExists" : "editPrompt.describe.sceneMissing");
     case "hasSceneDirection":
@@ -867,6 +878,7 @@ function getScalarConditionBucket(
     case "sceneGenerationEnabled":
     case "avatarGenerationEnabled":
     case "isLocalImageGenerationModel":
+    case "isSceneGenerationLocalImageModel":
     case "hasScene":
     case "hasSceneDirection":
     case "hasPersona":

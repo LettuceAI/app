@@ -10,6 +10,7 @@ pub struct PromptEntryConditionContext<'a> {
     pub scene_generation_enabled: bool,
     pub avatar_generation_enabled: bool,
     pub is_local_image_generation_model: bool,
+    pub is_scene_generation_local_image_model: bool,
     pub has_scene: bool,
     pub has_scene_direction: bool,
     pub has_persona: bool,
@@ -68,6 +69,9 @@ pub fn matches_condition(
         }
         PromptEntryCondition::IsLocalImageGenerationModel { value } => {
             context.is_local_image_generation_model == *value
+        }
+        PromptEntryCondition::IsSceneGenerationLocalImageModel { value } => {
+            context.is_scene_generation_local_image_model == *value
         }
         PromptEntryCondition::HasScene { value } => context.has_scene == *value,
         PromptEntryCondition::HasSceneDirection { value } => context.has_scene_direction == *value,

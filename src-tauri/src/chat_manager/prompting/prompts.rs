@@ -1174,6 +1174,16 @@ pub fn ensure_app_default_template(app: &AppHandle) -> Result<String, String> {
         let _ = append_missing_entry(
             app,
             APP_DEFAULT_TEMPLATE_ID,
+            "entry_scene_image_protocol_local",
+            defaults
+                .iter()
+                .cloned()
+                .find(|entry| entry.id == "entry_scene_image_protocol_local")
+                .expect("local scene image protocol entry should exist"),
+        );
+        let _ = append_missing_entry(
+            app,
+            APP_DEFAULT_TEMPLATE_ID,
             "entry_scene_image_protocol",
             defaults
                 .into_iter()
