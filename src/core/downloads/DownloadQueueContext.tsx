@@ -114,6 +114,7 @@ export function isCreateableModelDownload(item: QueuedDownload): boolean {
     item.queueKind !== "whisper" &&
     item.queueKind !== "sd" &&
     item.queueKind !== "sdcpp" &&
+    item.queueKind !== "civitai_lora" &&
     !isSidecarDownload(item)
   );
 }
@@ -211,6 +212,7 @@ export function DownloadQueueProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const prev = prevQueueRef.current;
     const isOnHfPage = locationRef.current.startsWith(Routes.settingsModelsBrowse);
+    const isOnLoraPage = locationRef.current.startsWith(Routes.settingsModelsLoras);
 
     for (const item of queue) {
       const prevItem = prev.find((p) => p.id === item.id);
@@ -219,9 +221,15 @@ export function DownloadQueueProvider({ children }: { children: ReactNode }) {
       // Download just completed
       if (prevItem.status !== "complete" && item.status === "complete") {
         void registerCompletedSdDownload(item);
-        if (!isOnHfPage && item.queueKind !== "sd" && item.queueKind !== "sdcpp") {
+        const suppressLoraToast = item.queueKind === "civitai_lora" && isOnLoraPage;
+        if (
+          !isOnHfPage &&
+          !suppressLoraToast &&
+          item.queueKind !== "sd" &&
+          item.queueKind !== "sdcpp"
+        ) {
           const displayName =
-            item.queueKind === "kokoro"
+            item.queueKind === "kokoro" || item.queueKind === "civitai_lora"
               ? item.displayName || item.filename
               : extractShortName(item.modelId).replace(/-GGUF$/i, "");
           toast.success("Download complete", `${displayName} — ${item.filename}`, {
