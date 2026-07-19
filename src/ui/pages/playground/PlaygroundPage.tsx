@@ -1,26 +1,58 @@
 import { useState } from "react";
-import { ArrowLeft, ImagePlus, SlidersHorizontal, TerminalSquare } from "lucide-react";
+import { ArrowLeft, SlidersHorizontal, TerminalSquare } from "lucide-react";
 
-import { cn } from "../../design-tokens";
 import { BottomMenu } from "../../components/BottomMenu";
 import { useI18n } from "../../../core/i18n/context";
 import { Routes, useNavigationManager } from "../../navigation";
+import { PlaygroundFeed } from "./PlaygroundFeed";
+import { PlaygroundPromptPane } from "./PlaygroundPromptPane";
 import { PlaygroundSettingsPane } from "./PlaygroundSettingsPane";
+import { usePlaygroundGeneration } from "./usePlaygroundGeneration";
 import { usePlaygroundSettings } from "./usePlaygroundSettings";
+
+const NEGATIVE_PROMPT_PROVIDERS = new Set(["sdcpp", "comfyui", "automatic1111", "diffusers"]);
 
 export function PlaygroundPage() {
   const { t } = useI18n();
   const { backOrReplace } = useNavigationManager();
   const settings = usePlaygroundSettings();
+  const generation = usePlaygroundGeneration();
+  const [prompt, setPrompt] = useState("");
+  const [negativePrompt, setNegativePrompt] = useState("");
   const [promptSheetOpen, setPromptSheetOpen] = useState(false);
   const [settingsSheetOpen, setSettingsSheetOpen] = useState(false);
 
+  const showNegativePrompt = NEGATIVE_PROMPT_PROVIDERS.has(
+    settings.selectedModel?.providerId ?? "",
+  );
+  const canGenerate = prompt.trim().length > 0 && settings.selectedModel !== null;
+
+  const handleGenerate = () => {
+    const base = settings.buildRequestBase();
+    if (!base || !settings.selectedModel || generation.generating) return;
+    setPromptSheetOpen(false);
+    void generation.generate({
+      base,
+      modelDbId: settings.selectedModel.id,
+      modelDisplayName: settings.selectedModel.displayName || settings.selectedModel.name,
+      prompt: prompt.trim(),
+      negativePrompt: showNegativePrompt ? negativePrompt.trim() || null : null,
+      loras: settings.isLocal ? (settings.draft.loras ?? []) : [],
+      initImage: null,
+    });
+  };
+
   const promptPane = (
-    <div className="flex h-full flex-col gap-3 p-4">
-      <p className="text-[11px] font-medium uppercase tracking-wide text-fg/40">
-        {t("playground.promptTab")}
-      </p>
-    </div>
+    <PlaygroundPromptPane
+      prompt={prompt}
+      onPromptChange={setPrompt}
+      negativePrompt={negativePrompt}
+      onNegativePromptChange={setNegativePrompt}
+      showNegativePrompt={showNegativePrompt}
+      canGenerate={canGenerate}
+      generating={generation.generating}
+      onGenerate={handleGenerate}
+    />
   );
 
   const settingsPane = <PlaygroundSettingsPane controller={settings} />;
@@ -62,12 +94,8 @@ export function PlaygroundPage() {
         <aside className="hidden w-[300px] shrink-0 flex-col border-r border-fg/8 lg:flex">
           {promptPane}
         </aside>
-        <section className={cn("flex min-w-0 flex-1 flex-col")}>
-          <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center">
-            <ImagePlus size={22} className="text-fg/20" />
-            <p className="text-[13px] font-medium text-fg/60">{t("playground.emptyFeed")}</p>
-            <p className="text-[12px] text-fg/40">{t("playground.emptyFeedHint")}</p>
-          </div>
+        <section className="flex min-w-0 flex-1 flex-col">
+          <PlaygroundFeed generation={generation} />
         </section>
         <aside className="hidden w-[340px] shrink-0 flex-col border-l border-fg/8 lg:flex">
           {settingsPane}
@@ -79,14 +107,14 @@ export function PlaygroundPage() {
         onClose={() => setPromptSheetOpen(false)}
         title={t("playground.promptTab")}
       >
-        {promptPane}
+        <div className="max-h-[70vh]">{promptPane}</div>
       </BottomMenu>
       <BottomMenu
         isOpen={settingsSheetOpen}
         onClose={() => setSettingsSheetOpen(false)}
         title={t("playground.settingsTab")}
       >
-        {settingsPane}
+        <div className="max-h-[70vh]">{settingsPane}</div>
       </BottomMenu>
     </div>
   );
