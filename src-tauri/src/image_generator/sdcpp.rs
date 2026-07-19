@@ -3707,9 +3707,6 @@ pub fn sdcpp_update_lora_keywords(
     profile_id: Option<String>,
 ) -> Result<LoraKeywordDiscovery, String> {
     let keywords = normalize_lora_keywords(keywords);
-    if keywords.is_empty() {
-        return Err("Add at least one trigger keyword.".to_string());
-    }
     let (_root, file_path, relative_path) = resolve_library_lora_path(&app, &path)?;
     let (bytes_on_disk, modified_at) = lora_file_fingerprint(&file_path)?;
     let filename = file_path
