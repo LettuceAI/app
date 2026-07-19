@@ -495,6 +495,8 @@ export const esMessages: DeepPartialMessageTree<LocaleMessages> = {
       editRequestPlaceholder: "Oscurece el cabello, añade gafas, mantén el rostro igual...",
       applyEdit: "Aplicar Editar",
       editImageLoadError: "No se pudo preparar el avatar generado para editarlo",
+      localEditingUnavailable:
+        "La edición de avatares no está disponible con modelos locales de generación de imágenes.",
       aiAssistant: "Asistente de IA",
       backToResults: "Volver al mensaje",
       magicInTheWorks: "Magia en proceso...",

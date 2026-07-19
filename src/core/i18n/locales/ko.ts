@@ -495,6 +495,8 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
       editRequestPlaceholder: "머리를 더 어둡게 하고, 안경을 쓰고, 얼굴은 그대로 유지하세요...",
       applyEdit: "적용 편집",
       editImageLoadError: "편집을 위해 생성된 아바타를 준비하지 못했습니다.",
+      localEditingUnavailable:
+        "로컬 이미지 생성 모델에서는 아바타 편집을 사용할 수 없습니다.",
       aiAssistant: "AI 어시스턴트",
       backToResults: "프롬프트로 돌아가기",
       magicInTheWorks: "마법 작업 중...",

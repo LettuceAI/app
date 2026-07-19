@@ -495,6 +495,7 @@ export const zhHantMessages: DeepPartialMessageTree<LocaleMessages> = {
       editRequestPlaceholder: "把頭髮變黑，戴上眼鏡，保持臉型不變…",
       applyEdit: "應用程式編輯",
       editImageLoadError: "無法準備生成的頭像進行編輯",
+      localEditingUnavailable: "本機圖片生成模型不支援頭像編輯。",
       aiAssistant: "人工智慧助手",
       backToResults: "回傳提示",
       magicInTheWorks: "作品中的魔法...",

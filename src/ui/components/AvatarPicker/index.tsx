@@ -69,6 +69,7 @@ export function AvatarPicker({
   const [localAvatarPreviewPath, setLocalAvatarPreviewPath] = useState<string | null>(null);
   const [localAvatarRoundPreviewPath, setLocalAvatarRoundPreviewPath] = useState<string | null>(null);
   const [hasImageGenModels, setHasImageGenModels] = useState(false);
+  const [avatarEditEnabled, setAvatarEditEnabled] = useState(false);
   const [generationMode, setGenerationMode] = useState<"create" | "edit-current">("create");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -90,8 +91,12 @@ export function AvatarPicker({
         const settings = await readSettings();
         const options = resolveAvatarGenerationOptions(settings);
         setHasImageGenModels(options.enabled && options.models.length > 0);
+        setAvatarEditEnabled(
+          Boolean(options.defaultModel && options.defaultModel.providerId !== "sdcpp"),
+        );
       } catch {
         setHasImageGenModels(false);
+        setAvatarEditEnabled(false);
       }
     };
 
@@ -235,10 +240,10 @@ export function AvatarPicker({
   }, [currentAvatarPath, normalizeModalImageSrc, summarizeSrc]);
 
   const handleEditCurrentWithAI = useCallback(() => {
-    if (!currentAvatarPath) return;
+    if (!currentAvatarPath || !avatarEditEnabled) return;
     setGenerationMode("edit-current");
     setShowGenerationSheet(true);
-  }, [currentAvatarPath]);
+  }, [avatarEditEnabled, currentAvatarPath]);
 
   const handlePositionConfirm = useCallback(
     ({
@@ -496,6 +501,7 @@ export function AvatarPicker({
         onReposition={handleRepositionCurrent}
         onEditWithAI={handleEditCurrentWithAI}
         hasImageGenerationModels={hasImageGenModels}
+        showEditWithAI={avatarEditEnabled}
       />
 
       <AvatarGenerationSheet

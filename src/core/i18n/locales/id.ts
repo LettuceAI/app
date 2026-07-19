@@ -495,6 +495,8 @@ export const idMessages: DeepPartialMessageTree<LocaleMessages> = {
       editRequestPlaceholder: "Membuat rambut lebih gelap, menambahkan kacamata, menjaga wajah tetap sama...",
       applyEdit: "Terapkan Sunting",
       editImageLoadError: "Gagal menyiapkan avatar yang dihasilkan untuk diedit",
+      localEditingUnavailable:
+        "Pengeditan avatar tidak tersedia dengan model pembuatan gambar lokal.",
       aiAssistant: "Asisten AI",
       backToResults: "Kembali ke perintah",
       magicInTheWorks: "Keajaiban sedang bekerja...",

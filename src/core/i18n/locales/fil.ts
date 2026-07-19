@@ -498,6 +498,8 @@ export const filMessages: DeepPartialMessageTree<LocaleMessages> = {
       editRequestPlaceholder: "Gawing mas maitim ang buhok, magdagdag ng salamin, panatilihing pareho ang mukha...",
       applyEdit: "I-apply ang Edit",
       editImageLoadError: "Hindi naihanda ang ginawang avatar para sa pag-edit",
+      localEditingUnavailable:
+        "Hindi available ang pag-edit ng avatar sa mga lokal na modelong bumubuo ng larawan.",
       aiAssistant: "AI Assistant",
       backToResults: "Bumalik sa prompt",
       magicInTheWorks: "Gumagana ang mahika...",

@@ -495,6 +495,8 @@ export const plMessages: DeepPartialMessageTree<LocaleMessages> = {
       editRequestPlaceholder: "Przyciemnij włosy, dodaj okulary, zachowaj twarz taką samą...",
       applyEdit: "Zastosuj Edytuj",
       editImageLoadError: "Nie udało się przygotować wygenerowanego awatara do edycji",
+      localEditingUnavailable:
+        "Edycja awatara nie jest dostępna w przypadku lokalnych modeli generowania obrazów.",
       aiAssistant: "Asystent AI",
       backToResults: "Powrót do monitu",
       magicInTheWorks: "Magia w działaniu...",

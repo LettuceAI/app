@@ -495,6 +495,8 @@ export const itMessages: DeepPartialMessageTree<LocaleMessages> = {
       editRequestPlaceholder: "Rendi i capelli più scuri, aggiungi gli occhiali, mantieni il viso uguale...",
       applyEdit: "Applica modifica",
       editImageLoadError: "Impossibile preparare l'avatar generato per la modifica",
+      localEditingUnavailable:
+        "La modifica dell'avatar non è disponibile con i modelli locali di generazione immagini.",
       aiAssistant: "Assistente AI",
       backToResults: "Torna al prompt",
       magicInTheWorks: "Magia in atto...",

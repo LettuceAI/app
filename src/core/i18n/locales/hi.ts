@@ -495,6 +495,8 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
       editRequestPlaceholder: "बाल काले करो, चश्मा लगाओ, चेहरा वैसा ही रखो...",
       applyEdit: "संपादन लागू करें",
       editImageLoadError: "संपादन के लिए जनरेट किया गया अवतार तैयार करने में विफल",
+      localEditingUnavailable:
+        "स्थानीय इमेज जनरेशन मॉडल के साथ अवतार संपादन उपलब्ध नहीं है।",
       aiAssistant: "एआई सहायक",
       backToResults: "प्रॉम्प्ट पर वापस जाएँ",
       magicInTheWorks: "कार्यों में जादू...",

@@ -495,6 +495,8 @@ export const jaMessages: DeepPartialMessageTree<LocaleMessages> = {
       editRequestPlaceholder: "髪を暗くして、メガネをかけて、顔はそのままに…。",
       applyEdit: "編集を適用",
       editImageLoadError: "生成されたアバターを編集用に準備できませんでした",
+      localEditingUnavailable:
+        "ローカル画像生成モデルではアバター編集を利用できません。",
       aiAssistant: "AIアシスタント",
       backToResults: "プロンプトに戻る",
       magicInTheWorks: "魔法が進行中...",

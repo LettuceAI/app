@@ -495,6 +495,8 @@ export const noMessages: DeepPartialMessageTree<LocaleMessages> = {
       editRequestPlaceholder: "Gjør håret mørkere, legg til briller, hold ansiktet det samme...",
       applyEdit: "Bruk Rediger",
       editImageLoadError: "Kunne ikke klargjøre den genererte avataren for redigering",
+      localEditingUnavailable:
+        "Avatarredigering er ikke tilgjengelig med lokale bildegenereringsmodeller.",
       aiAssistant: "AI-assistent",
       backToResults: "Tilbake til ledeteksten",
       magicInTheWorks: "Magi på gang...",

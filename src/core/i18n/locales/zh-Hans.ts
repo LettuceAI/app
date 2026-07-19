@@ -495,6 +495,7 @@ export const zhHansMessages: DeepPartialMessageTree<LocaleMessages> = {
       editRequestPlaceholder: "把头发变黑，戴上眼镜，保持脸型不变…",
       applyEdit: "应用编辑",
       editImageLoadError: "无法准备生成的头像进行编辑",
+      localEditingUnavailable: "本地图像生成模型不支持头像编辑。",
       aiAssistant: "AI 助手",
       backToResults: "返回提示",
       magicInTheWorks: "魔法制作中...",

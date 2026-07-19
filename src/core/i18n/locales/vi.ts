@@ -495,6 +495,8 @@ export const viMessages: DeepPartialMessageTree<LocaleMessages> = {
       editRequestPlaceholder: "Làm tóc đen hơn, đeo kính, giữ nguyên khuôn mặt...",
       applyEdit: "Áp dụng Chỉnh sửa",
       editImageLoadError: "Không thể chuẩn bị hình đại diện đã tạo để chỉnh sửa",
+      localEditingUnavailable:
+        "Không thể chỉnh sửa ảnh đại diện bằng các mô hình tạo ảnh cục bộ.",
       aiAssistant: "Trợ lý AI",
       backToResults: "Quay lại lời nhắc",
       magicInTheWorks: "Phép thuật trong tác phẩm...",

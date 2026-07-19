@@ -495,6 +495,8 @@ export const ptMessages: DeepPartialMessageTree<LocaleMessages> = {
       editRequestPlaceholder: "Escurecer o cabelo, colocar óculos, manter o rosto igual...",
       applyEdit: "Aplicar Editar",
       editImageLoadError: "Falha ao preparar o avatar gerado para edição",
+      localEditingUnavailable:
+        "A edição de avatar não está disponível com modelos locais de geração de imagens.",
       aiAssistant: "Assistente de IA",
       backToResults: "Voltar ao prompt",
       magicInTheWorks: "Magia em ação...",

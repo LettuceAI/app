@@ -498,6 +498,8 @@ export const trMessages: DeepPartialMessageTree<LocaleMessages> = {
       editRequestPlaceholder: "Saçını koyulaştır, gözlük ekle, yüzü aynı tut...",
       applyEdit: "Düzenlemeyi uygula",
       editImageLoadError: "Oluşturulan avatar düzenleme için hazırlanamadı",
+      localEditingUnavailable:
+        "Yerel görüntü oluşturma modellerinde avatar düzenleme kullanılamaz.",
       aiAssistant: "Yapay zeka asistanı",
       backToResults: "Mesaja dön",
       magicInTheWorks: "Sihir hazırlanıyor...",

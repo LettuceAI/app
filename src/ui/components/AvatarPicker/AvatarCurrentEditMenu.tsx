@@ -9,6 +9,7 @@ interface AvatarCurrentEditMenuProps {
   onReposition: () => void;
   onEditWithAI: () => void;
   hasImageGenerationModels: boolean;
+  showEditWithAI: boolean;
 }
 
 export function AvatarCurrentEditMenu({
@@ -17,6 +18,7 @@ export function AvatarCurrentEditMenu({
   onReposition,
   onEditWithAI,
   hasImageGenerationModels,
+  showEditWithAI,
 }: AvatarCurrentEditMenuProps) {
   const { t } = useI18n();
 
@@ -37,23 +39,30 @@ export function AvatarCurrentEditMenu({
             onClose();
           }}
         />
-        <MenuButton
-          icon={Sparkles}
-          title={t("components.avatarCurrentEdit.editWithAI")}
-          description={
-            hasImageGenerationModels
-              ? t("components.avatarCurrentEdit.editWithAIDesc")
-              : t("components.avatarCurrentEdit.noImageModels")
-          }
-          color="from-emerald-500 to-emerald-600"
-          onClick={() => {
-            if (!hasImageGenerationModels) return;
-            onEditWithAI();
-            onClose();
-          }}
-          disabled={!hasImageGenerationModels}
-        />
+        {showEditWithAI && (
+          <MenuButton
+            icon={Sparkles}
+            title={t("components.avatarCurrentEdit.editWithAI")}
+            description={
+              hasImageGenerationModels
+                ? t("components.avatarCurrentEdit.editWithAIDesc")
+                : t("components.avatarCurrentEdit.noImageModels")
+            }
+            color="from-emerald-500 to-emerald-600"
+            onClick={() => {
+              if (!hasImageGenerationModels) return;
+              onEditWithAI();
+              onClose();
+            }}
+            disabled={!hasImageGenerationModels}
+          />
+        )}
       </MenuButtonGroup>
+      {!showEditWithAI && hasImageGenerationModels && (
+        <p className="px-1 pt-3 text-center text-xs text-white/40">
+          {t("components.avatarGeneration.localEditingUnavailable")}
+        </p>
+      )}
     </BottomMenu>
   );
 }

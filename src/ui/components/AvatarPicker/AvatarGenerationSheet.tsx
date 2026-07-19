@@ -291,6 +291,14 @@ export function AvatarGenerationSheet({
   }, [isOpen, isSdcppModel]);
 
   useEffect(() => {
+    if (!isSdcppModel || !isRefining) return;
+    setIsRefining(false);
+    setEditRequest("");
+    setMaskEnabled(false);
+    setMaskDataUrl(null);
+  }, [isRefining, isSdcppModel]);
+
+  useEffect(() => {
     if (!isOpen || !isSdcppModel) return;
 
     getSdcppUpscalerInventory()
@@ -500,7 +508,14 @@ export function AvatarGenerationSheet({
   }, [currentVariant]);
 
   const handleApplyEdit = useCallback(async () => {
-    if (!selectedModel || !selectedProvider || !editRequest.trim() || !currentVariant) return;
+    if (
+      !selectedModel ||
+      selectedModel.providerId === "sdcpp" ||
+      !selectedProvider ||
+      !editRequest.trim() ||
+      !currentVariant
+    )
+      return;
 
     const sourceImageDataUrl = await resolveCurrentImageAsDataUrl();
     if (!sourceImageDataUrl) {
@@ -900,20 +915,22 @@ export function AvatarGenerationSheet({
                       exit={{ opacity: 0, y: -10 }}
                       className="flex gap-3"
                     >
-                      <button
-                        onClick={() => setIsRefining(true)}
-                        className={cn(
-                          "flex-1 flex items-center justify-center gap-2 py-3 border border-white/10 bg-white/5",
-                          radius.lg,
-                          interactive.transition.default,
-                          "hover:bg-white/8 active:scale-[0.98]",
-                        )}
-                      >
-                        <Wand2 size={16} className="text-emerald-400" />
-                        <span className={cn(typography.body.size, "font-medium text-white")}>
-                          {t("components.avatarGeneration.refine")}
-                        </span>
-                      </button>
+                      {!isSdcppModel && (
+                        <button
+                          onClick={() => setIsRefining(true)}
+                          className={cn(
+                            "flex-1 flex items-center justify-center gap-2 py-3 border border-white/10 bg-white/5",
+                            radius.lg,
+                            interactive.transition.default,
+                            "hover:bg-white/8 active:scale-[0.98]",
+                          )}
+                        >
+                          <Wand2 size={16} className="text-emerald-400" />
+                          <span className={cn(typography.body.size, "font-medium text-white")}>
+                            {t("components.avatarGeneration.refine")}
+                          </span>
+                        </button>
+                      )}
                       {isSdcppModel && upscalerAvailable && (
                         <button
                           onClick={handleUpscale}
@@ -1025,6 +1042,11 @@ export function AvatarGenerationSheet({
                     </motion.div>
                   )}
                 </AnimatePresence>
+                {isSdcppModel && !isRefining && (
+                  <p className={cn(typography.bodySmall.size, "text-center text-white/40")}>
+                    {t("components.avatarGeneration.localEditingUnavailable")}
+                  </p>
+                )}
               </div>
             </motion.div>
           ) : null}

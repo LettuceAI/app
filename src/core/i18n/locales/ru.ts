@@ -498,6 +498,8 @@ export const ruMessages: DeepPartialMessageTree<LocaleMessages> = {
       editRequestPlaceholder: "Сделайте волосы темнее, добавьте очки, оставьте лицо таким же...",
       applyEdit: "Применить Редактировать",
       editImageLoadError: "Не удалось подготовить сгенерированный аватар для редактирования.",
+      localEditingUnavailable:
+        "Редактирование аватара недоступно при использовании локальных моделей генерации изображений.",
       aiAssistant: "ИИ-помощник",
       backToResults: "Вернуться к подсказке",
       magicInTheWorks: "Магия в действии...",

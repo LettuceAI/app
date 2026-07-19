@@ -495,6 +495,8 @@ export const elMessages: DeepPartialMessageTree<LocaleMessages> = {
       editRequestPlaceholder: "Κάντε τα μαλλιά πιο σκούρα, προσθέστε γυαλιά, διατηρήστε το πρόσωπο ίδιο...",
       applyEdit: "Εφαρμογή Επεξεργασίας",
       editImageLoadError: "Αποτυχία προετοιμασίας του avatar που δημιουργήθηκε για επεξεργασία",
+      localEditingUnavailable:
+        "Η επεξεργασία avatar δεν είναι διαθέσιμη με τοπικά μοντέλα δημιουργίας εικόνων.",
       aiAssistant: "Βοηθός AI",
       backToResults: "Επιστροφή στην προτροπή",
       magicInTheWorks: "Η μαγεία στα σκαριά...",

@@ -495,6 +495,8 @@ export const enMessages = {
       editRequestPlaceholder: "Make the hair darker, add glasses, keep the face the same...",
       applyEdit: "Apply Edit",
       editImageLoadError: "Failed to prepare the generated avatar for editing",
+      localEditingUnavailable:
+        "Avatar editing is unavailable with local image generation models.",
       aiAssistant: "AI Assistant",
       backToResults: "Back to prompt",
       magicInTheWorks: "Magic in the works...",

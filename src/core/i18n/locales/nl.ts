@@ -495,6 +495,8 @@ export const nlMessages: DeepPartialMessageTree<LocaleMessages> = {
       editRequestPlaceholder: "Maak het haar donkerder, voeg een bril toe, houd het gezicht hetzelfde...",
       applyEdit: "Toepassen Bewerken",
       editImageLoadError: "Kan de gegenereerde avatar niet voorbereiden voor bewerking",
+      localEditingUnavailable:
+        "Avatarbewerking is niet beschikbaar met lokale modellen voor afbeeldingsgeneratie.",
       aiAssistant: "AI-assistent",
       backToResults: "Terug naar prompt",
       magicInTheWorks: "Magie in de maak...",
