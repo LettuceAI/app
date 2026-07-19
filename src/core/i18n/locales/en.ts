@@ -4957,6 +4957,14 @@ export const enMessages = {
       style: "Style",
       defaultOption: "default",
     },
+    loras: {
+      title: "LoRAs",
+      add: "Add",
+      empty: "No LoRAs applied.",
+      pickerTitle: "Add a LoRA",
+      none: "No LoRAs in your library yet. Open the LoRA Library to download some.",
+      openLibrary: "Open LoRA Library",
+    },
     prompt: {
       label: "Prompt",
       placeholder: "Describe the image you want to generate...",

@@ -15,6 +15,7 @@ import { getModelSizes } from "../../../core/image-generation";
 import { SDCPP_SAMPLERS, SDCPP_SCHEDULERS } from "../../../core/image-generation/sdcpp-options";
 import { getProviderIcon } from "../../../core/utils/providerIcons";
 import { randomPlaygroundSeed } from "../../../core/image-generation/playground";
+import { PlaygroundLoraSection } from "./PlaygroundLoraSection";
 import type { PlaygroundSettingsController } from "./usePlaygroundSettings";
 
 function FieldRow({ label, children }: { label: string; children: ReactNode }) {
@@ -215,6 +216,8 @@ export function PlaygroundSettingsPane({
               </FieldRow>
             </>
           )}
+
+          {isLocal && <PlaygroundLoraSection controller={controller} />}
 
           <FieldRow label={t("playground.settings.batch")}>
             <NumberInput
