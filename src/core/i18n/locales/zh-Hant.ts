@@ -4234,6 +4234,8 @@ export const zhHantMessages: DeepPartialMessageTree<LocaleMessages> = {
       keywordSaveFailed: "無法儲存 LoRA 關鍵字",
       loraArchitecture: "架構",
       architectureUnknown: "未知架構",
+      unsupportedArchitectureTitle: "此架構不受官方支援",
+      unsupportedArchitectureDescription: "此模型不屬於官方支援的架構（Qwen Image Edit；Z Image 和 Z Image Turbo；Krea 2 Raw 和 Krea 2 Turbo；Flux.2 Klein 4B、9B 和 9B Base）。可能會遇到問題或無法執行。",
       loraCompatible: "相容",
       loraIncompatible: "不相容的 LoRA",
       loraIncompatibleDescription: "此 LoRA 適用於其他模型架構，因此未加入。",

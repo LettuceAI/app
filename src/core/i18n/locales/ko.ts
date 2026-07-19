@@ -4235,6 +4235,8 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
       keywordSaveFailed: "LoRA 키워드를 저장하지 못했습니다",
       loraArchitecture: "아키텍처",
       architectureUnknown: "알 수 없는 아키텍처",
+      unsupportedArchitectureTitle: "공식적으로 지원되지 않는 아키텍처",
+      unsupportedArchitectureDescription: "이 모델은 공식 지원 아키텍처(Qwen Image Edit, Z Image 및 Z Image Turbo, Krea 2 Raw 및 Krea 2 Turbo, Flux.2 Klein 4B/9B/9B Base)에 포함되지 않습니다. 문제가 발생하거나 작동하지 않을 수 있습니다.",
       loraCompatible: "호환됨",
       loraIncompatible: "호환되지 않는 LoRA",
       loraIncompatibleDescription: "이 LoRA는 다른 모델 아키텍처용이므로 추가되지 않았습니다.",

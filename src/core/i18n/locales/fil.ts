@@ -4291,6 +4291,8 @@ export const filMessages: DeepPartialMessageTree<LocaleMessages> = {
       keywordSaveFailed: "Hindi ma-save ang mga keyword ng LoRA",
       loraArchitecture: "Arkitektura",
       architectureUnknown: "Hindi kilalang arkitektura",
+      unsupportedArchitectureTitle: "Hindi opisyal na suportado ang arkitektura",
+      unsupportedArchitectureDescription: "Ang modelong ito ay wala sa mga opisyal na suportadong arkitektura (Qwen Image Edit; Z Image at Z Image Turbo; Krea 2 Raw at Krea 2 Turbo; Flux.2 Klein 4B, 9B, at 9B Base). Maaaring magkaroon ito ng problema o hindi gumana.",
       loraCompatible: "Compatible",
       loraIncompatible: "Hindi compatible na LoRA",
       loraIncompatibleDescription: "Para sa ibang arkitektura ng modelo ang LoRA na ito kaya hindi ito idinagdag.",

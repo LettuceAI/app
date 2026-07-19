@@ -4670,6 +4670,8 @@ export const nlMessages: DeepPartialMessageTree<LocaleMessages> = {
       keywordSaveFailed: "LoRA-trefwoorden konden niet worden opgeslagen",
       loraArchitecture: "Architectuur",
       architectureUnknown: "Onbekende architectuur",
+      unsupportedArchitectureTitle: "Architectuur niet officieel ondersteund",
+      unsupportedArchitectureDescription: "Dit model valt buiten de officieel ondersteunde architecturen (Qwen Image Edit; Z Image en Z Image Turbo; Krea 2 Raw en Krea 2 Turbo; Flux.2 Klein 4B, 9B en 9B Base). Het kan problemen geven of helemaal niet werken.",
       loraCompatible: "Compatibel",
       loraIncompatible: "Incompatibele LoRA",
       loraIncompatibleDescription: "Deze LoRA is voor een andere modelarchitectuur en is niet toegevoegd.",

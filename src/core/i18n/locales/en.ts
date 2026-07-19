@@ -4428,6 +4428,9 @@ export const enMessages = {
       detectedArchitecture: "Detected architecture: {{name}}",
       detectFailed:
         "Could not detect this file's architecture. Set the component files manually.",
+      unsupportedArchitectureTitle: "Architecture not officially supported",
+      unsupportedArchitectureDescription:
+        "This model is outside the officially supported architectures (Qwen Image Edit; Z Image and Z Image Turbo; Krea 2 Raw and Krea 2 Turbo; Flux.2 Klein 4B, 9B, and 9B Base). It may experience problems or fail to run.",
       componentsRequiredTitle: "Model files missing",
       componentsRequiredBody: "Fill in the highlighted component files before saving.",
       componentFilesFilter: "Model component files",

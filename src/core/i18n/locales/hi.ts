@@ -9254,6 +9254,8 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
       keywordSaveFailed: "LoRA कीवर्ड सहेजे नहीं जा सके",
       loraArchitecture: "आर्किटेक्चर",
       architectureUnknown: "अज्ञात आर्किटेक्चर",
+      unsupportedArchitectureTitle: "आर्किटेक्चर आधिकारिक रूप से समर्थित नहीं है",
+      unsupportedArchitectureDescription: "यह मॉडल आधिकारिक रूप से समर्थित आर्किटेक्चर (Qwen Image Edit; Z Image और Z Image Turbo; Krea 2 Raw और Krea 2 Turbo; Flux.2 Klein 4B, 9B और 9B Base) में शामिल नहीं है। इसमें समस्याएँ आ सकती हैं या यह काम नहीं कर सकता।",
       loraCompatible: "संगत",
       loraIncompatible: "असंगत LoRA",
       loraIncompatibleDescription: "यह LoRA किसी अन्य मॉडल आर्किटेक्चर के लिए है, इसलिए इसे जोड़ा नहीं गया।",

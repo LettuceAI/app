@@ -8016,6 +8016,8 @@ export const viMessages: DeepPartialMessageTree<LocaleMessages> = {
       keywordSaveFailed: "Không thể lưu từ khóa LoRA",
       loraArchitecture: "Kiến trúc",
       architectureUnknown: "Kiến trúc không xác định",
+      unsupportedArchitectureTitle: "Kiến trúc không được hỗ trợ chính thức",
+      unsupportedArchitectureDescription: "Mô hình này nằm ngoài các kiến trúc được hỗ trợ chính thức (Qwen Image Edit; Z Image và Z Image Turbo; Krea 2 Raw và Krea 2 Turbo; Flux.2 Klein 4B, 9B và 9B Base). Mô hình có thể gặp lỗi hoặc không chạy được.",
       loraCompatible: "Tương thích",
       loraIncompatible: "LoRA không tương thích",
       loraIncompatibleDescription: "LoRA này dành cho một kiến trúc mô hình khác nên không được thêm.",

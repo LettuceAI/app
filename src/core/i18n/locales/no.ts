@@ -4235,6 +4235,8 @@ export const noMessages: DeepPartialMessageTree<LocaleMessages> = {
       keywordSaveFailed: "Kunne ikke lagre LoRA-nøkkelord",
       loraArchitecture: "Arkitektur",
       architectureUnknown: "Ukjent arkitektur",
+      unsupportedArchitectureTitle: "Arkitekturen støttes ikke offisielt",
+      unsupportedArchitectureDescription: "Denne modellen er utenfor de offisielt støttede arkitekturene (Qwen Image Edit; Z Image og Z Image Turbo; Krea 2 Raw og Krea 2 Turbo; Flux.2 Klein 4B, 9B og 9B Base). Den kan få problemer eller ikke fungere.",
       loraCompatible: "Kompatibel",
       loraIncompatible: "Inkompatibel LoRA",
       loraIncompatibleDescription: "Denne LoRA-en er laget for en annen modellarkitektur og ble ikke lagt til.",

@@ -3145,9 +3145,15 @@ export function EditModelPage() {
                                 })}
                               </p>
                             ) : sdcppDetection.exists ? (
-                              <p className="text-[12px] leading-relaxed text-warning/80">
-                                {t("editModel.sdcpp.detectFailed")}
-                              </p>
+                              <div
+                                role="alert"
+                                className="space-y-1 rounded-lg border border-warning/20 bg-warning/5 px-3 py-2 text-[12px] leading-relaxed text-warning/85"
+                              >
+                                <p className="font-medium">
+                                  {t("editModel.sdcpp.unsupportedArchitectureTitle")}
+                                </p>
+                                <p>{t("editModel.sdcpp.unsupportedArchitectureDescription")}</p>
+                              </div>
                             ) : null)}
 
                           <BottomMenu

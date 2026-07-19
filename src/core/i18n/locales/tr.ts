@@ -4235,6 +4235,9 @@ export const trMessages: DeepPartialMessageTree<LocaleMessages> = {
       keywordSaveFailed: "LoRA anahtar sözcükleri kaydedilemedi",
       loraArchitecture: "Mimari",
       architectureUnknown: "Bilinmeyen mimari",
+      unsupportedArchitectureTitle: "Mimari resmi olarak desteklenmiyor",
+      unsupportedArchitectureDescription:
+        "Bu model resmi olarak desteklenen mimarilerin (Qwen Image Edit; Z Image ve Z Image Turbo; Krea 2 Raw ve Krea 2 Turbo; Flux.2 Klein 4B, 9B ve 9B Base) dışında. Sorun yaşayabilir veya hiç çalışmayabilir.",
       loraCompatible: "Uyumlu",
       loraIncompatible: "Uyumsuz LoRA",
       loraIncompatibleDescription: "Bu LoRA farklı bir model mimarisini hedefliyor ve eklenmedi.",

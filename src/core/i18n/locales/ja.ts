@@ -9254,6 +9254,8 @@ export const jaMessages: DeepPartialMessageTree<LocaleMessages> = {
       keywordSaveFailed: "LoRAキーワードを保存できませんでした",
       loraArchitecture: "アーキテクチャ",
       architectureUnknown: "不明なアーキテクチャ",
+      unsupportedArchitectureTitle: "このアーキテクチャは公式にはサポートされていません",
+      unsupportedArchitectureDescription: "このモデルは公式サポート対象のアーキテクチャ（Qwen Image Edit、Z Image / Z Image Turbo、Krea 2 Raw / Krea 2 Turbo、Flux.2 Klein 4B / 9B / 9B Base）以外です。問題が発生したり、動作しない場合があります。",
       loraCompatible: "互換性あり",
       loraIncompatible: "互換性のないLoRA",
       loraIncompatibleDescription: "このLoRAは別のモデルアーキテクチャ向けのため、追加されませんでした。",

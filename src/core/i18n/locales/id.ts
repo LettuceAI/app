@@ -9254,6 +9254,8 @@ export const idMessages: DeepPartialMessageTree<LocaleMessages> = {
       keywordSaveFailed: "Kata kunci LoRA tidak dapat disimpan",
       loraArchitecture: "Arsitektur",
       architectureUnknown: "Arsitektur tidak diketahui",
+      unsupportedArchitectureTitle: "Arsitektur tidak didukung secara resmi",
+      unsupportedArchitectureDescription: "Model ini berada di luar arsitektur yang didukung secara resmi (Qwen Image Edit; Z Image dan Z Image Turbo; Krea 2 Raw dan Krea 2 Turbo; Flux.2 Klein 4B, 9B, dan 9B Base). Model mungkin bermasalah atau tidak dapat berjalan.",
       loraCompatible: "Kompatibel",
       loraIncompatible: "LoRA tidak kompatibel",
       loraIncompatibleDescription: "LoRA ini ditujukan untuk arsitektur model lain dan tidak ditambahkan.",

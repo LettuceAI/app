@@ -9253,6 +9253,8 @@ export const itMessages: DeepPartialMessageTree<LocaleMessages> = {
       keywordSaveFailed: "Impossibile salvare le parole chiave LoRA",
       loraArchitecture: "Architettura",
       architectureUnknown: "Architettura sconosciuta",
+      unsupportedArchitectureTitle: "Architettura non supportata ufficialmente",
+      unsupportedArchitectureDescription: "Questo modello non rientra nelle architetture ufficialmente supportate (Qwen Image Edit; Z Image e Z Image Turbo; Krea 2 Raw e Krea 2 Turbo; Flux.2 Klein 4B, 9B e 9B Base). Potrebbe avere problemi o non funzionare.",
       loraCompatible: "Compatibile",
       loraIncompatible: "LoRA incompatibile",
       loraIncompatibleDescription: "Questo LoRA è destinato a un’altra architettura di modello e non è stato aggiunto.",

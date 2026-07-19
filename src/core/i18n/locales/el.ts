@@ -4291,6 +4291,8 @@ export const elMessages: DeepPartialMessageTree<LocaleMessages> = {
       keywordSaveFailed: "Δεν ήταν δυνατή η αποθήκευση των λέξεων-κλειδιών LoRA",
       loraArchitecture: "Αρχιτεκτονική",
       architectureUnknown: "Άγνωστη αρχιτεκτονική",
+      unsupportedArchitectureTitle: "Η αρχιτεκτονική δεν υποστηρίζεται επίσημα",
+      unsupportedArchitectureDescription: "Αυτό το μοντέλο δεν ανήκει στις επίσημα υποστηριζόμενες αρχιτεκτονικές (Qwen Image Edit, Z Image, Krea 2 και Flux.2 Klein). Ενδέχεται να παρουσιάσει προβλήματα ή να μην λειτουργήσει.",
       loraCompatible: "Συμβατό",
       loraIncompatible: "Μη συμβατό LoRA",
       loraIncompatibleDescription: "Αυτό το LoRA προορίζεται για διαφορετική αρχιτεκτονική μοντέλου και δεν προστέθηκε.",
