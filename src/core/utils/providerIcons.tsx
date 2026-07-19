@@ -8,7 +8,6 @@ import {
   Settings,
   Sparkles,
   Volume2,
-  Wand2,
   Wrench,
 } from "lucide-react";
 
@@ -34,6 +33,7 @@ import LlamaCppIcon from "../../assets/llama-cpp.svg";
 import IntenserpIcon from "../../assets/intenserp.png";
 import GroqIcon from "../../assets/groq.svg";
 import PollinationsIcon from "../../assets/pollinations.svg";
+import StableDiffusionCppIcon from "../../assets/stable-diffusion-cpp.png";
 
 const ICON_MAP: Record<string, ReactElement> = {
   openai: <img src={OpenAIIcon} alt="OpenAI" className="h-6 w-6" />,
@@ -63,7 +63,7 @@ const ICON_MAP: Record<string, ReactElement> = {
   llamacpp: <img src={LlamaCppIcon} alt="llama.cpp" className="h-6 w-6 object-contain" />,
   "lettuce-host": <EthernetPort className="h-6 w-6 text-emerald-300" />,
   automatic1111: <Cpu className="h-6 w-6 text-orange-400" />,
-  sdcpp: <Wand2 className="h-6 w-6 text-indigo-400" />,
+  sdcpp: <img src={StableDiffusionCppIcon} alt="stable-diffusion.cpp" className="h-6 w-6 rounded object-contain" />,
   localdiffusion: <ImageIcon className="h-6 w-6 text-emerald-300" />,
   stability: <Sparkles className="h-6 w-6 text-sky-400" />,
   "lettuce-engine": <Leaf className="h-6 w-6 text-emerald-400" />,

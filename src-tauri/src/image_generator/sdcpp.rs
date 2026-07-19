@@ -18,7 +18,7 @@ use tokio::sync::Mutex;
 use crate::hf_browser::QueueDownloadMetadata;
 
 const PROVIDER_ID: &str = "sdcpp";
-const PROVIDER_LABEL: &str = "Local Image Generation";
+const PROVIDER_LABEL: &str = "stable-diffusion.cpp";
 const GITHUB_REPOSITORY: &str = "leejet/stable-diffusion.cpp";
 const GENERATION_PROGRESS_EVENT: &str = "sdcpp-generation-progress";
 const GENERATION_CANCELLED_MESSAGE: &str = "Local image generation was cancelled.";

@@ -7,7 +7,7 @@ use crate::storage_manager::settings::{read_settings_typed, write_settings_typed
 use crate::utils::log_info;
 
 /// Current migration version
-pub const CURRENT_MIGRATION_VERSION: u32 = 81;
+pub const CURRENT_MIGRATION_VERSION: u32 = 82;
 
 pub fn run_migrations(app: &AppHandle) -> Result<(), String> {
     log_info(app, "migrations", "Starting migration check");
@@ -847,6 +847,16 @@ pub fn run_migrations(app: &AppHandle) -> Result<(), String> {
         );
         migrate_v80_to_v81(app)?;
         version = 81;
+    }
+
+    if version < 82 {
+        log_info(
+            app,
+            "migrations",
+            "Running migration v81 -> v82: Rename stable-diffusion.cpp provider",
+        );
+        migrate_v81_to_v82(app)?;
+        version = 82;
     }
 
     // Update the stored version
@@ -4179,6 +4189,16 @@ fn migrate_v79_to_v80(app: &AppHandle) -> Result<(), String> {
 fn migrate_v80_to_v81(app: &AppHandle) -> Result<(), String> {
     let conn = crate::storage_manager::db::open_db(app)?;
     migrate_image_lora_metadata_columns(&conn)
+}
+
+fn migrate_v81_to_v82(app: &AppHandle) -> Result<(), String> {
+    let conn = crate::storage_manager::db::open_db(app)?;
+    conn.execute(
+        "UPDATE provider_credentials SET label = ?1 WHERE provider_id = ?2 AND label = ?3",
+        rusqlite::params!["stable-diffusion.cpp", "sdcpp", "Local Image Generation"],
+    )
+    .map_err(|error| crate::utils::err_to_string(module_path!(), line!(), error))?;
+    Ok(())
 }
 
 fn migrate_image_lora_metadata_columns(conn: &rusqlite::Connection) -> Result<(), String> {

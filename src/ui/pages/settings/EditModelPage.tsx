@@ -2922,11 +2922,10 @@ export function EditModelPage() {
                       <>
                         <button
                           type="button"
-                          onClick={isSdcppModel ? undefined : () => setShowPlatformSelector(true)}
-                          disabled={isSdcppModel}
+                          onClick={() => setShowPlatformSelector(true)}
                           className={cn(
                             "flex w-full items-center justify-between rounded-lg border border-fg/10 bg-surface-el/20 px-4 py-3 text-fg transition",
-                            isSdcppModel ? "cursor-default" : "hover:bg-surface-el/30",
+                            "hover:bg-surface-el/30",
                           )}
                         >
                           <div className="flex min-w-0 items-center gap-3">
@@ -2937,7 +2936,7 @@ export function EditModelPage() {
                               {selectedProviderLabel}
                             </span>
                           </div>
-                          {!isSdcppModel ? <ChevronDown className="h-4 w-4 text-fg/40" /> : null}
+                          <ChevronDown className="h-4 w-4 text-fg/40" />
                         </button>
 
                         <BottomMenu
