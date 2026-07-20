@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle,
@@ -52,11 +52,38 @@ function useResolvedImageUrl(image: PlaygroundGenerationImage): string | null {
 function CardImage({
   image,
   onClick,
+  overlay,
 }: {
   image: PlaygroundGenerationImage;
   onClick: () => void;
+  overlay?: React.ReactNode;
 }) {
   const url = useResolvedImageUrl(image);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [naturalRatio, setNaturalRatio] = useState<number | null>(null);
+  const [box, setBox] = useState<{ width: number; height: number } | null>(null);
+  const metadataRatio =
+    image.width && image.height && image.width > 0 && image.height > 0
+      ? image.width / image.height
+      : null;
+  const ratio = metadataRatio ?? naturalRatio ?? 1;
+
+  useEffect(() => {
+    const element = containerRef.current;
+    if (!element) return;
+    const compute = () => {
+      const containerWidth = element.clientWidth;
+      const containerHeight = element.clientHeight;
+      if (!containerWidth || !containerHeight) return;
+      const height = Math.min(containerHeight, containerWidth / ratio);
+      setBox({ width: height * ratio, height });
+    };
+    compute();
+    const observer = new ResizeObserver(compute);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [ratio, url]);
+
   if (!url) {
     return (
       <div className="absolute inset-0 flex items-center justify-center">
@@ -67,19 +94,33 @@ function CardImage({
     );
   }
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="group absolute inset-0 flex cursor-zoom-in items-center justify-center"
-    >
-      <img
-        src={url}
-        alt=""
-        loading="lazy"
-        decoding="async"
-        className="max-h-full max-w-full rounded-xl border border-fg/8 object-contain shadow-[0_20px_60px_rgba(0,0,0,0.35)] transition group-hover:brightness-105"
-      />
-    </button>
+    <div ref={containerRef} className="absolute inset-0 flex items-center justify-center">
+      {box && (
+        <div style={{ width: box.width, height: box.height }} className="relative">
+          <button
+            type="button"
+            onClick={onClick}
+            className="group absolute inset-0 cursor-zoom-in"
+          >
+            <img
+              src={url}
+              alt=""
+              loading="lazy"
+              decoding="async"
+              onLoad={(event) => {
+                if (metadataRatio) return;
+                const target = event.currentTarget;
+                if (target.naturalWidth > 0 && target.naturalHeight > 0) {
+                  setNaturalRatio(target.naturalWidth / target.naturalHeight);
+                }
+              }}
+              className="h-full w-full rounded-xl border border-fg/8 object-cover shadow-[0_20px_60px_rgba(0,0,0,0.35)] transition group-hover:brightness-105"
+            />
+          </button>
+          {overlay && <div className="absolute bottom-2 right-2 z-10">{overlay}</div>}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -163,36 +204,41 @@ export function PlaygroundGenerationCard({
             {entry.images.map((image, index) => (
               <div
                 key={image.assetId || image.filePath || index}
-                className="group/cell relative min-h-0 min-w-0"
+                className="relative min-h-0 min-w-0"
               >
-                <CardImage image={image} onClick={() => setLightboxIndex(index)} />
-                {entry.status === "complete" &&
-                  (actions.onSendToImg2img || actions.onUpscale) && (
-                    <div className="absolute bottom-2 right-2 z-10 flex items-center gap-1 rounded-lg bg-black/60 p-1 opacity-0 backdrop-blur-md transition-opacity group-hover/cell:opacity-100">
-                      {actions.onUpscale && (
-                        <button
-                          type="button"
-                          onClick={() => actions.onUpscale?.(entry, image)}
-                          disabled={actions.disabled}
-                          title={t("playground.feed.upscale")}
-                          className="rounded-md p-1.5 text-white/75 transition hover:bg-white/15 hover:text-white disabled:opacity-40"
-                        >
-                          <Maximize2 size={13} />
-                        </button>
-                      )}
-                      {actions.onSendToImg2img && (
-                        <button
-                          type="button"
-                          onClick={() => actions.onSendToImg2img?.(image)}
-                          disabled={actions.disabled}
-                          title={t("playground.feed.sendToImg2img")}
-                          className="rounded-md p-1.5 text-white/75 transition hover:bg-white/15 hover:text-white disabled:opacity-40"
-                        >
-                          <ImageUp size={13} />
-                        </button>
-                      )}
-                    </div>
-                  )}
+                <CardImage
+                  image={image}
+                  onClick={() => setLightboxIndex(index)}
+                  overlay={
+                    entry.status === "complete" &&
+                    (actions.onSendToImg2img || actions.onUpscale) ? (
+                      <div className="flex items-center gap-1 rounded-lg bg-black/60 p-1 backdrop-blur-md">
+                        {actions.onUpscale && (
+                          <button
+                            type="button"
+                            onClick={() => actions.onUpscale?.(entry, image)}
+                            disabled={actions.disabled}
+                            title={t("playground.feed.upscale")}
+                            className="rounded-md p-1.5 text-white/75 transition hover:bg-white/15 hover:text-white disabled:opacity-40"
+                          >
+                            <Maximize2 size={13} />
+                          </button>
+                        )}
+                        {actions.onSendToImg2img && (
+                          <button
+                            type="button"
+                            onClick={() => actions.onSendToImg2img?.(image)}
+                            disabled={actions.disabled}
+                            title={t("playground.feed.sendToImg2img")}
+                            className="rounded-md p-1.5 text-white/75 transition hover:bg-white/15 hover:text-white disabled:opacity-40"
+                          >
+                            <ImageUp size={13} />
+                          </button>
+                        )}
+                      </div>
+                    ) : undefined
+                  }
+                />
               </div>
             ))}
           </div>
