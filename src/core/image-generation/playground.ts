@@ -15,6 +15,7 @@ export type PlaygroundGenerationImage = {
 export type PlaygroundLoraSelection = {
   path: string;
   multiplier: number;
+  isHighNoise?: boolean;
   keywords?: string[];
 };
 

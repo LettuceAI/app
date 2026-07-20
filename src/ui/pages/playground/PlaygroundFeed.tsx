@@ -92,9 +92,15 @@ export function PlaygroundFeed({
     });
   }, [generation]);
 
+  const initializedRef = useRef(false);
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [entries.length, generation.activeEntry?.id]);
+    if (loading) return;
+    bottomRef.current?.scrollIntoView({
+      behavior: initializedRef.current ? "smooth" : "auto",
+      block: "end",
+    });
+    initializedRef.current = true;
+  }, [loading, entries.length, generation.activeEntry?.id]);
 
   const loadOlder = useCallback(async () => {
     if (loadingOlder || entries.length === 0) return;
@@ -161,78 +167,81 @@ export function PlaygroundFeed({
   }
 
   return (
-    <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-3.5 px-4 py-5">
-        {hasOlder && (
-          <button
-            type="button"
-            onClick={() => void loadOlder()}
-            disabled={loadingOlder}
-            className="mx-auto flex items-center gap-2 rounded-xl border border-fg/10 bg-fg/4 px-3.5 py-2 text-[12px] font-medium text-fg/60 transition hover:border-fg/20 hover:text-fg disabled:opacity-50"
-          >
-            {loadingOlder && <Loader size={12} className="animate-spin" />}
-            {t("playground.feed.loadOlder")}
-          </button>
-        )}
+    <div className="relative min-h-0 flex-1">
+      {hasOlder && (
+        <button
+          type="button"
+          onClick={() => void loadOlder()}
+          disabled={loadingOlder}
+          className="absolute left-1/2 top-3 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full border border-fg/10 bg-surface/90 px-3.5 py-1.5 text-[11.5px] font-medium text-fg/60 backdrop-blur-md transition-all hover:border-fg/20 hover:text-fg disabled:opacity-50"
+        >
+          {loadingOlder && <Loader size={11} className="animate-spin" />}
+          {t("playground.feed.loadOlder")}
+        </button>
+      )}
+      <div ref={scrollRef} className="h-full snap-y snap-mandatory overflow-y-auto">
         {entries.map((entry) => (
           <motion.div
             key={entry.id}
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.25, ease: "easeOut" }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.3, ease: "easeOut" }}
+            className="h-full w-full snap-start snap-always"
           >
-          <PlaygroundGenerationCard
-            entry={entry}
-            actions={{
-              onDelete: (item, deleteImages) => void handleDelete(item, deleteImages),
-              onSendToImg2img,
-              onUpscale,
-              onReuseSeed,
-              onRegenerate,
-              disabled: generation.generating || busy,
-            }}
-          />
+            <PlaygroundGenerationCard
+              entry={entry}
+              actions={{
+                onDelete: (item, deleteImages) => void handleDelete(item, deleteImages),
+                onSendToImg2img,
+                onUpscale,
+                onReuseSeed,
+                onRegenerate,
+                disabled: generation.generating || busy,
+              }}
+            />
           </motion.div>
         ))}
         {active && (
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.25, ease: "easeOut" }}
-            className="rounded-2xl border border-accent/20 bg-accent/[0.05] p-3.5"
-          >
-            <div className="flex items-center gap-3">
-              <Loader size={14} className="shrink-0 animate-spin text-accent/70" />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-[12.5px] font-medium text-fg/80">{active.prompt}</p>
-                <p className="mt-0.5 text-[11px] text-fg/45">
-                  {t(progressLabelKey(progress))}
-                  {progress?.phase === "queued" && progress.queuePosition != null
-                    ? ` (${progress.queuePosition})`
-                    : ""}
-                  {progress?.phase === "sampling" && progress.step != null && progress.steps
-                    ? ` ${progress.step}/${progress.steps}`
-                    : ""}
-                </p>
+          <div className="flex h-full w-full snap-start snap-always items-center justify-center px-6">
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.25, ease: "easeOut" }}
+              className="w-full max-w-md rounded-2xl border border-accent/20 bg-accent/[0.05] p-4"
+            >
+              <div className="flex items-center gap-3">
+                <Loader size={15} className="shrink-0 animate-spin text-accent/70" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[12.5px] font-medium text-fg/80">{active.prompt}</p>
+                  <p className="mt-0.5 text-[11px] text-fg/45">
+                    {t(progressLabelKey(progress))}
+                    {progress?.phase === "queued" && progress.queuePosition != null
+                      ? ` (${progress.queuePosition})`
+                      : ""}
+                    {progress?.phase === "sampling" && progress.step != null && progress.steps
+                      ? ` ${progress.step}/${progress.steps}`
+                      : ""}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void generation.cancel()}
+                  title={t("playground.feed.cancel")}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-fg/10 bg-fg/4 text-fg/50 transition-all hover:border-danger/40 hover:text-danger active:scale-95"
+                >
+                  <Square size={12} />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => void generation.cancel()}
-                title={t("playground.feed.cancel")}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-fg/10 bg-fg/4 text-fg/50 transition hover:border-danger/40 hover:text-danger"
-              >
-                <Square size={12} />
-              </button>
-            </div>
-            {samplingPercent != null && (
-              <div className="mt-2.5 h-1 overflow-hidden rounded-full bg-fg/8">
-                <div
-                  className={cn("h-full rounded-full bg-accent/70 transition-[width]")}
-                  style={{ width: `${samplingPercent}%` }}
-                />
-              </div>
-            )}
-          </motion.div>
+              {samplingPercent != null && (
+                <div className="mt-3 h-1 overflow-hidden rounded-full bg-fg/8">
+                  <div
+                    className={cn("h-full rounded-full bg-accent/70 transition-[width]")}
+                    style={{ width: `${samplingPercent}%` }}
+                  />
+                </div>
+              )}
+            </motion.div>
+          </div>
         )}
         <div ref={bottomRef} />
       </div>

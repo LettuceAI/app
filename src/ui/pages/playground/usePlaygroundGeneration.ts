@@ -23,7 +23,7 @@ export type PlaygroundGenerationInput = {
   modelDisplayName: string;
   prompt: string;
   negativePrompt: string | null;
-  loras: { path: string; multiplier: number; keywords?: string[] }[];
+  loras: { path: string; multiplier: number; isHighNoise?: boolean; keywords?: string[] }[];
   initImage?: { dataUrl: string; assetId: string | null; denoisingStrength: number | null } | null;
 };
 

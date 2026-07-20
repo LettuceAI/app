@@ -58,25 +58,23 @@ function CardImage({
   const url = useResolvedImageUrl(image);
   if (!url) {
     return (
-      <div className="flex aspect-square w-full items-center justify-center rounded-lg border border-fg/8 bg-fg/4 text-fg/20">
+      <div className="flex h-40 w-40 items-center justify-center rounded-xl border border-fg/8 bg-fg/4 text-fg/20">
         <ImageOff size={18} />
       </div>
     );
   }
   return (
-    <button type="button" onClick={onClick} className="group block w-full cursor-zoom-in">
+    <button
+      type="button"
+      onClick={onClick}
+      className="group flex min-h-0 min-w-0 flex-1 cursor-zoom-in items-center justify-center"
+    >
       <img
         src={url}
         alt=""
         loading="lazy"
         decoding="async"
-        className="w-full rounded-xl border border-fg/8 object-cover transition group-hover:brightness-105"
-        style={{
-          aspectRatio:
-            image.width && image.height && image.width > 0 && image.height > 0
-              ? `${image.width} / ${image.height}`
-              : undefined,
-        }}
+        className="max-h-full max-w-full rounded-xl border border-fg/8 object-contain shadow-[0_20px_60px_rgba(0,0,0,0.35)] transition group-hover:brightness-105"
       />
     </button>
   );
@@ -145,31 +143,51 @@ export function PlaygroundGenerationCard({
   });
 
   return (
-    <div className="rounded-2xl border border-fg/10 bg-fg/4 p-3.5">
-      {entry.images.length > 0 && (
+    <div className="flex h-full min-h-0 w-full flex-col items-center gap-3 px-4 pb-4 pt-3 sm:px-8">
+      <div className="flex min-h-0 w-full flex-1 items-center justify-center">
+        {entry.images.length > 1 ? (
+          <div
+            className={cn(
+              "grid h-full w-full auto-rows-fr gap-3",
+              entry.images.length === 2 ? "grid-cols-2" : "grid-cols-2 sm:grid-cols-3",
+            )}
+          >
+            {entry.images.map((image, index) => (
+              <div
+                key={image.assetId || image.filePath || index}
+                className="flex min-h-0 items-center justify-center"
+              >
+                <CardImage image={image} onClick={() => setLightboxIndex(index)} />
+              </div>
+            ))}
+          </div>
+        ) : entry.images.length === 1 ? (
+          <CardImage image={entry.images[0]} onClick={() => setLightboxIndex(0)} />
+        ) : (
+          <div
+            className={cn(
+              "flex max-w-md items-start gap-2 rounded-xl border px-4 py-3 text-[12.5px] leading-relaxed",
+              failed
+                ? "border-danger/20 bg-danger/5 text-danger/85"
+                : "border-fg/10 bg-fg/4 text-fg/55",
+            )}
+          >
+            <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+            <span>
+              {failed
+                ? entry.error || t("playground.feed.failed")
+                : cancelled
+                  ? t("playground.feed.cancelled")
+                  : t("playground.feed.interrupted")}
+            </span>
+          </div>
+        )}
+      </div>
+      <div className="w-full max-w-2xl shrink-0 rounded-2xl border border-fg/10 bg-fg/4 px-3.5 py-3">
+      {(failed || cancelled || interrupted) && entry.images.length > 0 && (
         <div
           className={cn(
-            "mb-3 grid gap-2",
-            entry.images.length === 1
-              ? "mx-auto w-full max-w-[520px] grid-cols-1"
-              : entry.images.length === 2
-                ? "grid-cols-2"
-                : "grid-cols-2 sm:grid-cols-3",
-          )}
-        >
-          {entry.images.map((image, index) => (
-            <CardImage
-              key={image.assetId || image.filePath || index}
-              image={image}
-              onClick={() => setLightboxIndex(index)}
-            />
-          ))}
-        </div>
-      )}
-      {(failed || cancelled || interrupted) && (
-        <div
-          className={cn(
-            "mb-3 flex items-start gap-2 rounded-lg border px-3 py-2.5 text-[12px] leading-relaxed",
+            "mb-2 flex items-start gap-2 rounded-lg border px-3 py-2 text-[12px] leading-relaxed",
             failed
               ? "border-danger/20 bg-danger/5 text-danger/85"
               : "border-fg/10 bg-fg/4 text-fg/55",
@@ -185,8 +203,8 @@ export function PlaygroundGenerationCard({
           </span>
         </div>
       )}
-      <p className="text-[12.5px] leading-relaxed text-fg/75 line-clamp-3">{entry.prompt}</p>
-      <div className="mt-2.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[10.5px] text-fg/45">
+      <p className="text-[12.5px] leading-relaxed text-fg/75 line-clamp-2">{entry.prompt}</p>
+      <div className="mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[10.5px] text-fg/45">
         <span className="max-w-[220px] truncate rounded-md bg-fg/6 px-1.5 py-0.5">
           {entry.modelName}
         </span>
@@ -267,6 +285,7 @@ export function PlaygroundGenerationCard({
             <Trash2 size={13} />
           </button>
         </span>
+      </div>
       </div>
 
       <BottomMenu

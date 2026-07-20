@@ -40,6 +40,12 @@ export type PlaygroundSettingsController = {
 
 function draftFromModel(model: Model): PlaygroundModelDraft {
   const advanced = model.advancedModelSettings ?? {};
+  const baseLoras = (advanced.sdBaseLoras ?? []).map((lora) => ({
+    path: lora.path,
+    multiplier: lora.multiplier,
+    isHighNoise: lora.isHighNoise ?? undefined,
+    keywords: lora.keywords ?? undefined,
+  }));
   return {
     size: advanced.sdSize ?? null,
     steps: advanced.sdSteps ?? null,
@@ -53,7 +59,7 @@ function draftFromModel(model: Model): PlaygroundModelDraft {
     hiresScale: advanced.sdHiresScale ?? null,
     hiresSteps: advanced.sdHiresSteps ?? null,
     hiresDenoisingStrength: advanced.sdHiresDenoisingStrength ?? null,
-    loras: [],
+    loras: baseLoras,
   };
 }
 
@@ -104,7 +110,15 @@ export function usePlaygroundSettings(): PlaygroundSettingsController {
     }
     const base = draftFromModel(selectedModel);
     const stored = loadPlaygroundDraft(selectedModel.id);
-    setDraft(stored ? { ...base, ...stored } : base);
+    if (!stored) {
+      setDraft(base);
+      return;
+    }
+    const merged = { ...base, ...stored };
+    if (!stored.loras || stored.loras.length === 0) {
+      merged.loras = base.loras;
+    }
+    setDraft(merged);
   }, [selectedModel?.id]);
 
   const selectModel = useCallback((modelId: string) => {
@@ -143,6 +157,7 @@ export function usePlaygroundSettings(): PlaygroundSettingsController {
     const advanced: AdvancedModelSettings = {
       ...(selectedModel.advancedModelSettings ?? {}),
     };
+    advanced.sdBaseLoras = null;
     if (draft.size?.trim()) advanced.sdSize = draft.size.trim();
     if (draft.steps != null) advanced.sdSteps = draft.steps;
     if (draft.cfgScale != null) advanced.sdCfgScale = draft.cfgScale;
