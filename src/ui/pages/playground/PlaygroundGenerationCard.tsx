@@ -58,8 +58,10 @@ function CardImage({
   const url = useResolvedImageUrl(image);
   if (!url) {
     return (
-      <div className="flex h-40 w-40 items-center justify-center rounded-xl border border-fg/8 bg-fg/4 text-fg/20">
-        <ImageOff size={18} />
+      <div className="absolute inset-0 flex items-center justify-center">
+        <div className="flex h-40 w-40 items-center justify-center rounded-xl border border-fg/8 bg-fg/4 text-fg/20">
+          <ImageOff size={18} />
+        </div>
       </div>
     );
   }
@@ -67,7 +69,7 @@ function CardImage({
     <button
       type="button"
       onClick={onClick}
-      className="group flex min-h-0 min-w-0 flex-1 cursor-zoom-in items-center justify-center"
+      className="group absolute inset-0 flex cursor-zoom-in items-center justify-center"
     >
       <img
         src={url}
@@ -155,14 +157,16 @@ export function PlaygroundGenerationCard({
             {entry.images.map((image, index) => (
               <div
                 key={image.assetId || image.filePath || index}
-                className="flex min-h-0 items-center justify-center"
+                className="relative min-h-0 min-w-0"
               >
                 <CardImage image={image} onClick={() => setLightboxIndex(index)} />
               </div>
             ))}
           </div>
         ) : entry.images.length === 1 ? (
-          <CardImage image={entry.images[0]} onClick={() => setLightboxIndex(0)} />
+          <div className="relative h-full w-full">
+            <CardImage image={entry.images[0]} onClick={() => setLightboxIndex(0)} />
+          </div>
         ) : (
           <div
             className={cn(
