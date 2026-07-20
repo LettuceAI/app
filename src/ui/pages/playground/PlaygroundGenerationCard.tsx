@@ -11,6 +11,7 @@ import {
   ImageUp,
   Maximize2,
   RefreshCw,
+  Scan,
   Trash2,
   X,
 } from "lucide-react";
@@ -139,6 +140,11 @@ export function PlaygroundGenerationCard({
   const failed = entry.status === "failed";
   const cancelled = entry.status === "cancelled";
   const interrupted = entry.status === "pending";
+  const firstImage = entry.images[0];
+  const dimensions =
+    firstImage?.width && firstImage?.height
+      ? `${firstImage.width}x${firstImage.height}`
+      : entry.params.size ?? entry.params.advancedModelSettings?.sdSize ?? null;
   const timestamp = new Date(entry.createdAt).toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit",
@@ -212,6 +218,12 @@ export function PlaygroundGenerationCard({
         <span className="max-w-[220px] truncate rounded-md bg-fg/6 px-1.5 py-0.5">
           {entry.modelName}
         </span>
+        {dimensions && (
+          <span className="flex items-center gap-1 rounded-md bg-fg/6 px-1.5 py-0.5 font-mono">
+            <Scan size={10} />
+            {dimensions}
+          </span>
+        )}
         {entry.seed != null && (
           <span className="flex items-center gap-1 rounded-md bg-fg/6 px-1.5 py-0.5 font-mono">
             <Dices size={10} />

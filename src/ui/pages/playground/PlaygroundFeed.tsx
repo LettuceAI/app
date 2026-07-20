@@ -16,6 +16,16 @@ import type { PlaygroundGenerationController } from "./usePlaygroundGeneration";
 
 const PAGE_SIZE = 30;
 
+function pendingAspectRatio(entry: PlaygroundGenerationEntry): string {
+  const size = entry.params.size ?? entry.params.advancedModelSettings?.sdSize ?? "";
+  const match = /^\s*(\d+)\s*x\s*(\d+)\s*$/i.exec(size);
+  if (!match) return "1 / 1";
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  if (!width || !height) return "1 / 1";
+  return `${width} / ${height}`;
+}
+
 function progressLabelKey(progress: SdcppGenerationProgress | null): TranslationKey {
   switch (progress?.phase) {
     case "loading":
@@ -202,46 +212,56 @@ export function PlaygroundFeed({
           </motion.div>
         ))}
         {active && (
-          <div className="flex h-full w-full snap-start snap-always items-center justify-center px-6">
-            <motion.div
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.25, ease: "easeOut" }}
-              className="w-full max-w-md rounded-2xl border border-accent/20 bg-accent/[0.05] p-4"
-            >
-              <div className="flex items-center gap-3">
-                <Loader size={15} className="shrink-0 animate-spin text-accent/70" />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[12.5px] font-medium text-fg/80">{active.prompt}</p>
-                  <p className="mt-0.5 text-[11px] text-fg/45">
-                    {t(progressLabelKey(progress))}
-                    {progress?.phase === "queued" && progress.queuePosition != null
-                      ? ` (${progress.queuePosition})`
-                      : ""}
-                    {progress?.phase === "sampling" && progress.step != null && progress.steps
-                      ? ` ${progress.step}/${progress.steps}`
-                      : ""}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => void generation.cancel()}
-                  title={t("playground.feed.cancel")}
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-fg/10 bg-fg/4 text-fg/50 transition-all hover:border-danger/40 hover:text-danger active:scale-95"
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.3, ease: "easeOut" }}
+            className="flex h-full w-full snap-start snap-always flex-col items-center gap-3 px-4 pb-4 pt-3 sm:px-8"
+          >
+            <div className="relative min-h-0 w-full flex-1">
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div
+                  style={{ aspectRatio: pendingAspectRatio(active) }}
+                  className="relative h-full max-h-full max-w-full"
                 >
-                  <Square size={12} />
-                </button>
-              </div>
-              {samplingPercent != null && (
-                <div className="mt-3 h-1 overflow-hidden rounded-full bg-fg/8">
-                  <div
-                    className={cn("h-full rounded-full bg-accent/70 transition-[width]")}
-                    style={{ width: `${samplingPercent}%` }}
-                  />
+                  <div className="absolute inset-0 animate-pulse rounded-xl border border-fg/8 bg-fg/5" />
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4">
+                    <Loader size={18} className="animate-spin text-accent/70" />
+                    <p className="text-center text-[12px] font-medium text-fg/60">
+                      {t(progressLabelKey(progress))}
+                      {progress?.phase === "queued" && progress.queuePosition != null
+                        ? ` (${progress.queuePosition})`
+                        : ""}
+                      {progress?.phase === "sampling" && progress.step != null && progress.steps
+                        ? ` ${progress.step}/${progress.steps}`
+                        : ""}
+                    </p>
+                    {samplingPercent != null && (
+                      <div className="h-1 w-44 overflow-hidden rounded-full bg-fg/10">
+                        <div
+                          className={cn("h-full rounded-full bg-accent/70 transition-[width]")}
+                          style={{ width: `${samplingPercent}%` }}
+                        />
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => void generation.cancel()}
+                      title={t("playground.feed.cancel")}
+                      className="mt-1 flex h-8 w-8 items-center justify-center rounded-lg border border-fg/10 bg-fg/5 text-fg/50 transition-all hover:border-danger/40 hover:text-danger active:scale-95"
+                    >
+                      <Square size={12} />
+                    </button>
+                  </div>
                 </div>
-              )}
-            </motion.div>
-          </div>
+              </div>
+            </div>
+            <div className="w-full max-w-2xl shrink-0 rounded-2xl border border-fg/10 bg-fg/4 px-3.5 py-3">
+              <p className="text-[12.5px] leading-relaxed text-fg/60 line-clamp-2">
+                {active.prompt}
+              </p>
+            </div>
+          </motion.div>
         )}
         <div ref={bottomRef} />
       </div>
