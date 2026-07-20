@@ -1,8 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Check, ChevronDown, Dices } from "lucide-react";
+import { Check, ChevronDown, Dices, SlidersHorizontal, Sparkles } from "lucide-react";
 
 import { cn } from "../../design-tokens";
-import { BottomMenu } from "../../components/BottomMenu";
+import { BottomMenu, MenuButton, MenuSection } from "../../components/BottomMenu";
 import { ModelSelectionBottomMenu } from "../../components/ModelSelectionBottomMenu";
 import { NumberInput } from "../../components/NumberInput";
 import { Switch } from "../../components/Switch";
@@ -35,39 +35,51 @@ function OptionPickerMenu({
   isOpen,
   onClose,
   title,
+  defaultLabel,
   options,
   selected,
   onSelect,
+  onClear,
 }: {
   isOpen: boolean;
   onClose: () => void;
   title: string;
+  defaultLabel: string;
   options: readonly string[];
   selected: string | null;
   onSelect: (value: string) => void;
+  onClear: () => void;
 }) {
   return (
     <BottomMenu isOpen={isOpen} onClose={onClose} title={title}>
-      <div className="max-h-[50vh] space-y-1 overflow-y-auto">
-        {options.map((option) => (
-          <button
-            key={option}
-            type="button"
+      <div className="max-h-[60vh] overflow-y-auto">
+        <MenuSection>
+          <MenuButton
+            icon={Sparkles}
+            title={defaultLabel}
+            color="from-accent to-accent/80"
+            rightElement={selected === null ? <Check className="h-4 w-4 text-accent" /> : null}
             onClick={() => {
-              onSelect(option);
+              onClear();
               onClose();
             }}
-            className={cn(
-              "flex w-full items-center justify-between rounded-lg border px-3.5 py-2.5 text-left font-mono text-[12.5px] transition",
-              selected === option
-                ? "border-accent/40 bg-accent/10 text-accent"
-                : "border-fg/10 bg-fg/3 text-fg/75 hover:border-fg/20",
-            )}
-          >
-            {option}
-            {selected === option && <Check size={13} />}
-          </button>
-        ))}
+          />
+          {options.map((option) => (
+            <MenuButton
+              key={option}
+              icon={SlidersHorizontal}
+              title={option}
+              color="from-white/10 to-white/5"
+              rightElement={
+                selected === option ? <Check className="h-4 w-4 text-accent" /> : null
+              }
+              onClick={() => {
+                onSelect(option);
+                onClose();
+              }}
+            />
+          ))}
+        </MenuSection>
       </div>
     </BottomMenu>
   );
@@ -383,25 +395,31 @@ export function PlaygroundSettingsPane({
         isOpen={samplerMenuOpen}
         onClose={() => setSamplerMenuOpen(false)}
         title={t("playground.settings.sampler")}
+        defaultLabel={t("editModel.generationAdvanced.modelDefault")}
         options={SDCPP_SAMPLERS}
         selected={draft.sampler ?? null}
         onSelect={(sampler) => updateDraft({ sampler })}
+        onClear={() => updateDraft({ sampler: null })}
       />
       <OptionPickerMenu
         isOpen={hiresMenuOpen}
         onClose={() => setHiresMenuOpen(false)}
         title={t("playground.settings.hiresUpscaler")}
+        defaultLabel={t("editModel.generationAdvanced.modelDefault")}
         options={hiresUpscalers}
         selected={draft.hiresUpscaler ?? null}
         onSelect={(hiresUpscaler) => updateDraft({ hiresUpscaler })}
+        onClear={() => updateDraft({ hiresUpscaler: null })}
       />
       <OptionPickerMenu
         isOpen={schedulerMenuOpen}
         onClose={() => setSchedulerMenuOpen(false)}
         title={t("playground.settings.scheduler")}
+        defaultLabel={t("editModel.generationAdvanced.modelDefault")}
         options={SDCPP_SCHEDULERS}
         selected={draft.scheduler ?? null}
         onSelect={(scheduler) => updateDraft({ scheduler })}
+        onClear={() => updateDraft({ scheduler: null })}
       />
     </div>
   );

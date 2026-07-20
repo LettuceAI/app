@@ -1,10 +1,9 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useNavigate } from "react-router-dom";
-import { Layers, Plus, X } from "lucide-react";
+import { AlertTriangle, Check, FolderOpen, Layers, Plus, X } from "lucide-react";
 
-import { cn } from "../../design-tokens";
-import { BottomMenu } from "../../components/BottomMenu";
+import { BottomMenu, MenuButton, MenuSection } from "../../components/BottomMenu";
 import { NumberInput } from "../../components/NumberInput";
 import { useI18n } from "../../../core/i18n/context";
 import {
@@ -132,7 +131,14 @@ export function PlaygroundLoraSection({
         onClose={() => setPickerOpen(false)}
         title={t("playground.loras.pickerTitle")}
       >
-        <div className="max-h-[55vh] space-y-1.5 overflow-y-auto">
+        <MenuSection>
+          <MenuButton
+            icon={<FolderOpen className="h-5 w-5 text-accent/70" />}
+            title={t("playground.loras.openLibrary")}
+            description={t("loraLibrary.subtitle")}
+            color="from-accent/20 to-accent/10"
+            onClick={() => navigate(`${Routes.settingsModelsLoras}?returnTo=${Routes.playground}`)}
+          />
           {files.length === 0 ? (
             <p className="rounded-xl border border-dashed border-fg/10 bg-fg/2 px-4 py-6 text-center text-[12px] text-fg/45">
               {t("playground.loras.none")}
@@ -142,42 +148,29 @@ export function PlaygroundLoraSection({
               const selected = selectedPaths.has(file.path);
               const incompatible = file.compatibility === "incompatible";
               return (
-                <button
+                <MenuButton
                   key={file.path}
-                  type="button"
-                  disabled={selected || incompatible}
+                  icon={<Layers className="h-5 w-5 text-accent/60" />}
+                  title={file.filename}
+                  description={`${loraArchitectureLabel(
+                    file.architecture,
+                    t("editModel.sdcpp.architectureUnknown"),
+                  )}${incompatible ? ` · ${t("editModel.sdcpp.loraIncompatible")}` : ""}`}
+                  color="from-accent/15 to-accent/5"
+                  rightElement={
+                    selected ? (
+                      <Check className="h-4 w-4 text-accent" />
+                    ) : incompatible ? (
+                      <AlertTriangle className="h-4 w-4 text-danger" />
+                    ) : undefined
+                  }
                   onClick={() => addLora(file)}
-                  className={cn(
-                    "flex w-full items-center justify-between gap-3 rounded-xl border px-3.5 py-2.5 text-left transition",
-                    selected
-                      ? "border-accent/30 bg-accent/8 opacity-60"
-                      : incompatible
-                        ? "border-fg/8 bg-fg/2 opacity-45"
-                        : "border-fg/10 bg-fg/3 hover:border-fg/20",
-                  )}
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-mono text-[12px] text-fg/85">{file.filename}</p>
-                    <p className="text-[10.5px] text-fg/45">
-                      {loraArchitectureLabel(
-                        file.architecture,
-                        t("editModel.sdcpp.architectureUnknown"),
-                      )}
-                      {incompatible ? ` · ${t("editModel.sdcpp.loraIncompatible")}` : ""}
-                    </p>
-                  </div>
-                </button>
+                  disabled={selected || incompatible}
+                />
               );
             })
           )}
-        </div>
-        <button
-          type="button"
-          onClick={() => navigate(`${Routes.settingsModelsLoras}?returnTo=${Routes.playground}`)}
-          className="mt-3 w-full rounded-xl border border-fg/10 bg-fg/4 px-4 py-2.5 text-[12.5px] font-medium text-fg/70 transition hover:border-fg/20 hover:text-fg"
-        >
-          {t("playground.loras.openLibrary")}
-        </button>
+        </MenuSection>
       </BottomMenu>
     </div>
   );

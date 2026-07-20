@@ -16,14 +16,46 @@ import type { PlaygroundGenerationController } from "./usePlaygroundGeneration";
 
 const PAGE_SIZE = 30;
 
-function pendingAspectRatio(entry: PlaygroundGenerationEntry): string {
+function pendingRatio(entry: PlaygroundGenerationEntry): number {
   const size = entry.params.size ?? entry.params.advancedModelSettings?.sdSize ?? "";
   const match = /^\s*(\d+)\s*x\s*(\d+)\s*$/i.exec(size);
-  if (!match) return "1 / 1";
+  if (!match) return 1;
   const width = Number(match[1]);
   const height = Number(match[2]);
-  if (!width || !height) return "1 / 1";
-  return `${width} / ${height}`;
+  if (!width || !height) return 1;
+  return width / height;
+}
+
+function FittedSkeleton({ ratio }: { ratio: number }) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [box, setBox] = useState<{ width: number; height: number } | null>(null);
+
+  useEffect(() => {
+    const element = containerRef.current;
+    if (!element) return;
+    const compute = () => {
+      const containerWidth = element.clientWidth;
+      const containerHeight = element.clientHeight;
+      if (!containerWidth || !containerHeight) return;
+      const height = Math.min(containerHeight, containerWidth / ratio);
+      setBox({ width: height * ratio, height });
+    };
+    compute();
+    const observer = new ResizeObserver(compute);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [ratio]);
+
+  return (
+    <div ref={containerRef} className="absolute inset-0 flex items-center justify-center">
+      {box && (
+        <div
+          style={{ width: box.width, height: box.height }}
+          className="rounded-xl border border-fg/8 bg-fg/5"
+        />
+      )}
+    </div>
+  );
 }
 
 function progressLabelKey(progress: SdcppGenerationProgress | null): TranslationKey {
@@ -219,32 +251,22 @@ export function PlaygroundFeed({
             className="flex h-full w-full snap-start snap-always flex-col items-center gap-3 px-4 pb-4 pt-3 sm:px-8"
           >
             <div className="relative min-h-0 w-full flex-1">
-              <div className="absolute inset-0 flex items-center justify-center">
-                {(active.params.n ?? 1) > 1 ? (
-                  <div
-                    className={cn(
-                      "grid h-full w-full auto-rows-fr gap-3",
-                      (active.params.n ?? 1) === 2 ? "grid-cols-2" : "grid-cols-2 sm:grid-cols-3",
-                    )}
-                  >
-                    {Array.from({ length: Math.min(active.params.n ?? 1, 8) }).map((_, index) => (
-                      <div key={index} className="relative min-h-0 min-w-0">
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <div
-                            style={{ aspectRatio: pendingAspectRatio(active) }}
-                            className="h-full max-h-full max-w-full rounded-xl border border-fg/8 bg-fg/5"
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div
-                    style={{ aspectRatio: pendingAspectRatio(active) }}
-                    className="h-full max-h-full max-w-full rounded-xl border border-fg/8 bg-fg/5"
-                  />
-                )}
-              </div>
+              {(active.params.n ?? 1) > 1 ? (
+                <div
+                  className={cn(
+                    "absolute inset-0 grid auto-rows-fr gap-3",
+                    (active.params.n ?? 1) === 2 ? "grid-cols-2" : "grid-cols-2 sm:grid-cols-3",
+                  )}
+                >
+                  {Array.from({ length: Math.min(active.params.n ?? 1, 8) }).map((_, index) => (
+                    <div key={index} className="relative min-h-0 min-w-0">
+                      <FittedSkeleton ratio={pendingRatio(active)} />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <FittedSkeleton ratio={pendingRatio(active)} />
+              )}
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4">
                 <Loader size={18} className="animate-spin text-accent/70" />
                 <p className="text-center text-[12px] font-medium text-fg/60">
