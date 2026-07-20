@@ -220,40 +220,58 @@ export function PlaygroundFeed({
           >
             <div className="relative min-h-0 w-full flex-1">
               <div className="absolute inset-0 flex items-center justify-center">
-                <div
-                  style={{ aspectRatio: pendingAspectRatio(active) }}
-                  className="relative h-full max-h-full max-w-full"
-                >
-                  <div className="absolute inset-0 animate-pulse rounded-xl border border-fg/8 bg-fg/5" />
-                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4">
-                    <Loader size={18} className="animate-spin text-accent/70" />
-                    <p className="text-center text-[12px] font-medium text-fg/60">
-                      {t(progressLabelKey(progress))}
-                      {progress?.phase === "queued" && progress.queuePosition != null
-                        ? ` (${progress.queuePosition})`
-                        : ""}
-                      {progress?.phase === "sampling" && progress.step != null && progress.steps
-                        ? ` ${progress.step}/${progress.steps}`
-                        : ""}
-                    </p>
-                    {samplingPercent != null && (
-                      <div className="h-1 w-44 overflow-hidden rounded-full bg-fg/10">
-                        <div
-                          className={cn("h-full rounded-full bg-accent/70 transition-[width]")}
-                          style={{ width: `${samplingPercent}%` }}
-                        />
-                      </div>
+                {(active.params.n ?? 1) > 1 ? (
+                  <div
+                    className={cn(
+                      "grid h-full w-full auto-rows-fr gap-3",
+                      (active.params.n ?? 1) === 2 ? "grid-cols-2" : "grid-cols-2 sm:grid-cols-3",
                     )}
-                    <button
-                      type="button"
-                      onClick={() => void generation.cancel()}
-                      title={t("playground.feed.cancel")}
-                      className="mt-1 flex h-8 w-8 items-center justify-center rounded-lg border border-fg/10 bg-fg/5 text-fg/50 transition-all hover:border-danger/40 hover:text-danger active:scale-95"
-                    >
-                      <Square size={12} />
-                    </button>
+                  >
+                    {Array.from({ length: Math.min(active.params.n ?? 1, 8) }).map((_, index) => (
+                      <div key={index} className="relative min-h-0 min-w-0">
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <div
+                            style={{ aspectRatio: pendingAspectRatio(active) }}
+                            className="h-full max-h-full max-w-full rounded-xl border border-fg/8 bg-fg/5"
+                          />
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                </div>
+                ) : (
+                  <div
+                    style={{ aspectRatio: pendingAspectRatio(active) }}
+                    className="h-full max-h-full max-w-full rounded-xl border border-fg/8 bg-fg/5"
+                  />
+                )}
+              </div>
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4">
+                <Loader size={18} className="animate-spin text-accent/70" />
+                <p className="text-center text-[12px] font-medium text-fg/60">
+                  {t(progressLabelKey(progress))}
+                  {progress?.phase === "queued" && progress.queuePosition != null
+                    ? ` (${progress.queuePosition})`
+                    : ""}
+                  {progress?.phase === "sampling" && progress.step != null && progress.steps
+                    ? ` ${progress.step}/${progress.steps}`
+                    : ""}
+                </p>
+                {samplingPercent != null && (
+                  <div className="h-1 w-44 overflow-hidden rounded-full bg-fg/10">
+                    <div
+                      className={cn("h-full rounded-full bg-accent/70 transition-[width]")}
+                      style={{ width: `${samplingPercent}%` }}
+                    />
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void generation.cancel()}
+                  title={t("playground.feed.cancel")}
+                  className="mt-1 flex h-8 w-8 items-center justify-center rounded-lg border border-fg/10 bg-fg/5 text-fg/50 transition-all hover:border-danger/40 hover:text-danger active:scale-95"
+                >
+                  <Square size={12} />
+                </button>
               </div>
             </div>
             <div className="w-full max-w-2xl shrink-0 rounded-2xl border border-fg/10 bg-fg/4 px-3.5 py-3">
