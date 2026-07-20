@@ -59,30 +59,30 @@ function CardImage({
   overlay?: React.ReactNode;
 }) {
   const url = useResolvedImageUrl(image);
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const [naturalRatio, setNaturalRatio] = useState<number | null>(null);
-  const [box, setBox] = useState<{ width: number; height: number } | null>(null);
-  const metadataRatio =
-    image.width && image.height && image.width > 0 && image.height > 0
-      ? image.width / image.height
-      : null;
-  const ratio = metadataRatio ?? naturalRatio ?? 1;
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const imgRef = useRef<HTMLImageElement | null>(null);
+  const [corner, setCorner] = useState<{ right: number; bottom: number } | null>(null);
 
   useEffect(() => {
-    const element = containerRef.current;
-    if (!element) return;
+    if (!url) return;
+    const wrapper = wrapperRef.current;
+    const img = imgRef.current;
+    if (!wrapper || !img) return;
     const compute = () => {
-      const containerWidth = element.clientWidth;
-      const containerHeight = element.clientHeight;
-      if (!containerWidth || !containerHeight) return;
-      const height = Math.min(containerHeight, containerWidth / ratio);
-      setBox({ width: height * ratio, height });
+      const wrapperRect = wrapper.getBoundingClientRect();
+      const imgRect = img.getBoundingClientRect();
+      if (!imgRect.width || !imgRect.height) return;
+      setCorner({
+        right: Math.max(0, wrapperRect.right - imgRect.right),
+        bottom: Math.max(0, wrapperRect.bottom - imgRect.bottom),
+      });
     };
     compute();
     const observer = new ResizeObserver(compute);
-    observer.observe(element);
+    observer.observe(wrapper);
+    observer.observe(img);
     return () => observer.disconnect();
-  }, [ratio, url]);
+  }, [url]);
 
   if (!url) {
     return (
@@ -94,30 +94,27 @@ function CardImage({
     );
   }
   return (
-    <div ref={containerRef} className="absolute inset-0 flex items-center justify-center">
-      {box && (
-        <div style={{ width: box.width, height: box.height }} className="relative">
-          <button
-            type="button"
-            onClick={onClick}
-            className="group absolute inset-0 cursor-zoom-in"
-          >
-            <img
-              src={url}
-              alt=""
-              loading="lazy"
-              decoding="async"
-              onLoad={(event) => {
-                if (metadataRatio) return;
-                const target = event.currentTarget;
-                if (target.naturalWidth > 0 && target.naturalHeight > 0) {
-                  setNaturalRatio(target.naturalWidth / target.naturalHeight);
-                }
-              }}
-              className="h-full w-full rounded-xl border border-fg/8 object-cover shadow-[0_20px_60px_rgba(0,0,0,0.35)] transition group-hover:brightness-105"
-            />
-          </button>
-          {overlay && <div className="absolute bottom-2 right-2 z-10">{overlay}</div>}
+    <div ref={wrapperRef} className="absolute inset-0">
+      <button
+        type="button"
+        onClick={onClick}
+        className="group absolute inset-0 flex cursor-zoom-in items-center justify-center"
+      >
+        <img
+          ref={imgRef}
+          src={url}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          className="max-h-full max-w-full rounded-xl border border-fg/8 object-contain shadow-[0_20px_60px_rgba(0,0,0,0.35)] transition group-hover:brightness-105"
+        />
+      </button>
+      {overlay && (
+        <div
+          style={{ right: (corner?.right ?? 0) + 8, bottom: (corner?.bottom ?? 0) + 8 }}
+          className="absolute z-10"
+        >
+          {overlay}
         </div>
       )}
     </div>
