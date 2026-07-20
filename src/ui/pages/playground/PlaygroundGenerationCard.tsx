@@ -70,7 +70,7 @@ function CardImage({
         alt=""
         loading="lazy"
         decoding="async"
-        className="w-full rounded-lg border border-fg/8 object-cover transition group-hover:brightness-105"
+        className="w-full rounded-xl border border-fg/8 object-cover transition group-hover:brightness-105"
         style={{
           aspectRatio:
             image.width && image.height && image.width > 0 && image.height > 0
@@ -145,13 +145,13 @@ export function PlaygroundGenerationCard({
   });
 
   return (
-    <div className="rounded-xl border border-fg/8 bg-fg/[0.02] p-3">
+    <div className="rounded-2xl border border-fg/10 bg-fg/4 p-3.5">
       {entry.images.length > 0 && (
         <div
           className={cn(
             "mb-3 grid gap-2",
             entry.images.length === 1
-              ? "grid-cols-1 sm:max-w-[420px]"
+              ? "mx-auto w-full max-w-[520px] grid-cols-1"
               : entry.images.length === 2
                 ? "grid-cols-2"
                 : "grid-cols-2 sm:grid-cols-3",
@@ -186,15 +186,17 @@ export function PlaygroundGenerationCard({
         </div>
       )}
       <p className="text-[12.5px] leading-relaxed text-fg/75 line-clamp-3">{entry.prompt}</p>
-      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10.5px] text-fg/40">
-        <span className="truncate">{entry.modelName}</span>
+      <div className="mt-2.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[10.5px] text-fg/45">
+        <span className="max-w-[220px] truncate rounded-md bg-fg/6 px-1.5 py-0.5">
+          {entry.modelName}
+        </span>
         {entry.seed != null && (
-          <span className="flex items-center gap-1 font-mono">
+          <span className="flex items-center gap-1 rounded-md bg-fg/6 px-1.5 py-0.5 font-mono">
             <Dices size={10} />
             {entry.seed}
           </span>
         )}
-        <span className="flex items-center gap-1">
+        <span className="flex items-center gap-1 px-1">
           <Clock size={10} />
           {timestamp}
         </span>

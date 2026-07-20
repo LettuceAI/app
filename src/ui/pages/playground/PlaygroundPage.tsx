@@ -202,13 +202,13 @@ export function PlaygroundPage() {
   const settingsPane = <PlaygroundSettingsPane controller={settings} />;
 
   return (
-    <div className="flex h-full flex-col bg-bg">
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-fg/8 px-3">
+    <div className="flex h-full flex-col bg-surface">
+      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-fg/8 bg-surface/95 px-4 backdrop-blur-md">
         <button
           type="button"
           onClick={() => backOrReplace(Routes.settingsImageGeneration)}
           aria-label={t("playground.back")}
-          className="flex h-8 w-8 items-center justify-center rounded-lg text-fg/50 transition hover:bg-fg/8 hover:text-fg"
+          className="flex h-8 w-8 items-center justify-center rounded-full text-fg/50 transition-all hover:bg-fg/10 hover:text-fg active:scale-95"
         >
           <ArrowLeft size={16} />
         </button>
@@ -235,10 +235,10 @@ export function PlaygroundPage() {
         </div>
       </header>
       <div className="flex min-h-0 flex-1">
-        <aside className="hidden w-[300px] shrink-0 flex-col border-r border-fg/8 lg:flex">
+        <aside className="hidden w-[300px] shrink-0 flex-col border-r border-fg/8 bg-surface lg:flex">
           {promptPane}
         </aside>
-        <section className="flex min-w-0 flex-1 flex-col">
+        <section className="flex min-w-0 flex-1 flex-col bg-bg/40">
           <PlaygroundFeed
             generation={generation}
             onSendToImg2img={showInitImage ? (image) => void sendToImg2img(image) : undefined}
@@ -252,7 +252,7 @@ export function PlaygroundPage() {
             busy={upscaling}
           />
         </section>
-        <aside className="hidden w-[340px] shrink-0 flex-col border-l border-fg/8 lg:flex">
+        <aside className="hidden w-[340px] shrink-0 flex-col border-l border-fg/8 bg-surface lg:flex">
           {settingsPane}
         </aside>
       </div>

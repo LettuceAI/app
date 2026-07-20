@@ -77,7 +77,7 @@ export function PlaygroundPromptPane({
             onChange={(event) => onPromptChange(event.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={t("playground.prompt.placeholder")}
-            className="min-h-[140px] w-full flex-1 resize-none rounded-xl border border-fg/10 bg-surface px-3 py-2.5 text-[13px] leading-relaxed text-fg outline-none transition focus:border-accent/40"
+            className="min-h-[140px] w-full flex-1 resize-none rounded-xl border border-fg/10 bg-fg/5 px-3.5 py-3 text-[13px] leading-relaxed text-fg placeholder-fg/40 transition-all focus:border-fg/20 focus:bg-fg/[0.07] focus:outline-none"
           />
         </div>
         {showNegativePrompt && (
@@ -91,7 +91,7 @@ export function PlaygroundPromptPane({
               onKeyDown={handleKeyDown}
               placeholder={t("playground.prompt.negativePlaceholder")}
               rows={4}
-              className="w-full resize-none rounded-xl border border-fg/10 bg-surface px-3 py-2.5 text-[13px] leading-relaxed text-fg outline-none transition focus:border-accent/40"
+              className="w-full resize-none rounded-xl border border-fg/10 bg-fg/5 px-3.5 py-3 text-[13px] leading-relaxed text-fg placeholder-fg/40 transition-all focus:border-fg/20 focus:bg-fg/[0.07] focus:outline-none"
             />
           </div>
         )}
@@ -101,7 +101,7 @@ export function PlaygroundPromptPane({
               {t("playground.prompt.initImageLabel")}
             </p>
             {initImage ? (
-              <div className="rounded-xl border border-fg/10 bg-fg/[0.025] p-2.5">
+              <div className="rounded-xl border border-fg/10 bg-fg/4 p-2.5">
                 <div className="flex items-start gap-2.5">
                   <img
                     src={initImage.dataUrl}
@@ -146,7 +146,7 @@ export function PlaygroundPromptPane({
               <button
                 type="button"
                 onClick={() => void pickInitImage()}
-                className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-fg/15 bg-fg/2 px-3 py-3 text-[12px] font-medium text-fg/50 transition hover:border-fg/25 hover:text-fg/75"
+                className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-fg/15 bg-fg/2 px-3 py-3 text-[12px] font-medium text-fg/50 transition-all hover:border-fg/25 hover:bg-fg/5 hover:text-fg/75 active:scale-[0.99]"
               >
                 <ImageUp size={13} />
                 {t("playground.prompt.pickInitImage")}

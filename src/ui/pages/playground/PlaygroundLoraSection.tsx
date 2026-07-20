@@ -60,7 +60,7 @@ export function PlaygroundLoraSection({
   };
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2.5 rounded-2xl border border-fg/10 bg-fg/4 p-3.5">
       <div className="flex items-center justify-between">
         <p className="text-[11px] font-medium uppercase tracking-wide text-fg/40">
           {t("playground.loras.title")}
@@ -68,7 +68,7 @@ export function PlaygroundLoraSection({
         <button
           type="button"
           onClick={() => setPickerOpen(true)}
-          className="flex items-center gap-1 rounded-lg border border-fg/10 bg-fg/4 px-2 py-1 text-[11px] font-medium text-fg/65 transition hover:border-fg/20 hover:text-fg"
+          className="flex items-center gap-1 rounded-lg border border-fg/10 bg-fg/5 px-2 py-1 text-[11px] font-medium text-fg/65 transition-all hover:border-fg/15 hover:bg-fg/[0.07] hover:text-fg active:scale-95"
         >
           <Plus size={11} />
           {t("playground.loras.add")}
@@ -84,7 +84,7 @@ export function PlaygroundLoraSection({
             return (
               <div
                 key={lora.path}
-                className="flex items-center gap-2 rounded-lg border border-fg/8 bg-fg/[0.025] px-2.5 py-2"
+                className="flex items-center gap-2 rounded-xl border border-fg/10 bg-fg/5 px-2.5 py-2"
               >
                 <Layers size={12} className="shrink-0 text-accent/60" />
                 <div className="min-w-0 flex-1">

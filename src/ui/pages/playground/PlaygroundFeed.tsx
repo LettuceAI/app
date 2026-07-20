@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { motion } from "framer-motion";
 import { ImagePlus, Loader, Square } from "lucide-react";
 
 import { cn } from "../../design-tokens";
@@ -149,8 +150,10 @@ export function PlaygroundFeed({
 
   if (entries.length === 0 && !active) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center">
-        <ImagePlus size={22} className="text-fg/20" />
+      <div className="flex flex-1 flex-col items-center justify-center gap-1.5 text-center">
+        <div className="mb-2 flex h-16 w-16 items-center justify-center rounded-2xl border border-fg/10 bg-fg/5">
+          <ImagePlus size={22} className="text-fg/30" />
+        </div>
         <p className="text-[13px] font-medium text-fg/60">{t("playground.emptyFeed")}</p>
         <p className="text-[12px] text-fg/40">{t("playground.emptyFeedHint")}</p>
       </div>
@@ -159,7 +162,7 @@ export function PlaygroundFeed({
 
   return (
     <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 px-4 py-4">
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-3.5 px-4 py-5">
         {hasOlder && (
           <button
             type="button"
@@ -172,8 +175,13 @@ export function PlaygroundFeed({
           </button>
         )}
         {entries.map((entry) => (
-          <PlaygroundGenerationCard
+          <motion.div
             key={entry.id}
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.25, ease: "easeOut" }}
+          >
+          <PlaygroundGenerationCard
             entry={entry}
             actions={{
               onDelete: (item, deleteImages) => void handleDelete(item, deleteImages),
@@ -184,9 +192,15 @@ export function PlaygroundFeed({
               disabled: generation.generating || busy,
             }}
           />
+          </motion.div>
         ))}
         {active && (
-          <div className="rounded-xl border border-accent/20 bg-accent/[0.04] p-3">
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.25, ease: "easeOut" }}
+            className="rounded-2xl border border-accent/20 bg-accent/[0.05] p-3.5"
+          >
             <div className="flex items-center gap-3">
               <Loader size={14} className="shrink-0 animate-spin text-accent/70" />
               <div className="min-w-0 flex-1">
@@ -218,7 +232,7 @@ export function PlaygroundFeed({
                 />
               </div>
             )}
-          </div>
+          </motion.div>
         )}
         <div ref={bottomRef} />
       </div>

@@ -74,7 +74,7 @@ function OptionPickerMenu({
 }
 
 const NUMBER_INPUT_CLASS =
-  "h-8 w-24 rounded-lg border border-fg/10 bg-surface px-2 text-center text-[12.5px] text-fg transition focus:border-accent/40 focus:outline-none";
+  "h-8 w-24 rounded-lg border border-fg/10 bg-fg/5 px-2 text-center text-[12.5px] text-fg transition-all focus:border-fg/20 focus:bg-fg/[0.07] focus:outline-none";
 
 export function PlaygroundSettingsPane({
   controller,
@@ -118,7 +118,7 @@ export function PlaygroundSettingsPane({
         <button
           type="button"
           onClick={() => setModelMenuOpen(true)}
-          className="flex w-full items-center gap-2.5 rounded-xl border border-fg/10 bg-fg/3 px-3 py-2.5 text-left transition hover:border-fg/20"
+          className="flex w-full items-center gap-2.5 rounded-xl border border-fg/10 bg-fg/5 px-3.5 py-3 text-left transition-all hover:border-fg/15 hover:bg-fg/[0.07] active:scale-[0.99]"
         >
           {selectedModel ? (
             <>
@@ -143,6 +143,7 @@ export function PlaygroundSettingsPane({
           <p className="text-[11px] font-medium uppercase tracking-wide text-fg/40">
             {t("playground.settings.generation")}
           </p>
+          <div className="space-y-3 rounded-2xl border border-fg/10 bg-fg/4 p-3.5">
           <div>
             <p className="mb-1.5 text-[12px] text-fg/55">{t("playground.settings.size")}</p>
             {presetSizes.length > 0 && (
@@ -168,7 +169,7 @@ export function PlaygroundSettingsPane({
               value={draft.size ?? ""}
               onChange={(event) => updateDraft({ size: event.target.value || null })}
               placeholder={t("playground.settings.sizePlaceholder")}
-              className="h-8 w-full rounded-lg border border-fg/10 bg-surface px-2.5 font-mono text-[12px] text-fg transition focus:border-accent/40 focus:outline-none"
+              className="h-8 w-full rounded-lg border border-fg/10 bg-fg/5 px-2.5 font-mono text-[12px] text-fg placeholder-fg/40 transition-all focus:border-fg/20 focus:bg-fg/[0.07] focus:outline-none"
             />
           </div>
 
@@ -198,7 +199,7 @@ export function PlaygroundSettingsPane({
                 <button
                   type="button"
                   onClick={() => setSamplerMenuOpen(true)}
-                  className="flex h-8 items-center gap-1.5 rounded-lg border border-fg/10 bg-surface px-2.5 font-mono text-[12px] text-fg/75 transition hover:border-fg/20"
+                  className="flex h-8 items-center gap-1.5 rounded-lg border border-fg/10 bg-fg/5 px-2.5 font-mono text-[12px] text-fg/75 transition-all hover:border-fg/15 hover:bg-fg/[0.07] active:scale-[0.98]"
                 >
                   {draft.sampler || t("playground.settings.defaultOption")}
                   <ChevronDown size={12} className="text-fg/40" />
@@ -208,7 +209,7 @@ export function PlaygroundSettingsPane({
                 <button
                   type="button"
                   onClick={() => setSchedulerMenuOpen(true)}
-                  className="flex h-8 items-center gap-1.5 rounded-lg border border-fg/10 bg-surface px-2.5 font-mono text-[12px] text-fg/75 transition hover:border-fg/20"
+                  className="flex h-8 items-center gap-1.5 rounded-lg border border-fg/10 bg-fg/5 px-2.5 font-mono text-[12px] text-fg/75 transition-all hover:border-fg/15 hover:bg-fg/[0.07] active:scale-[0.98]"
                 >
                   {draft.scheduler || t("playground.settings.defaultOption")}
                   <ChevronDown size={12} className="text-fg/40" />
@@ -223,13 +224,13 @@ export function PlaygroundSettingsPane({
                     value={draft.seed ?? null}
                     onChange={(value) => updateDraft({ seed: value })}
                     placeholder={t("playground.settings.seedRandom")}
-                    className="h-8 w-28 rounded-lg border border-fg/10 bg-surface px-2 text-center text-[12px] text-fg transition focus:border-accent/40 focus:outline-none"
+                    className="h-8 w-28 rounded-lg border border-fg/10 bg-fg/5 px-2 text-center text-[12px] text-fg placeholder-fg/40 transition-all focus:border-fg/20 focus:bg-fg/[0.07] focus:outline-none"
                   />
                   <button
                     type="button"
                     onClick={() => updateDraft({ seed: randomPlaygroundSeed() })}
                     title={t("playground.settings.rollSeed")}
-                    className="flex h-8 w-8 items-center justify-center rounded-lg border border-fg/10 bg-fg/4 text-fg/50 transition hover:border-fg/20 hover:text-fg"
+                    className="flex h-8 w-8 items-center justify-center rounded-lg border border-fg/10 bg-fg/5 text-fg/50 transition-all hover:border-fg/15 hover:bg-fg/[0.07] hover:text-fg active:scale-95"
                   >
                     <Dices size={13} />
                   </button>
@@ -238,8 +239,10 @@ export function PlaygroundSettingsPane({
             </>
           )}
 
+          </div>
+
           {isLocal && (
-            <div className="space-y-3 rounded-xl border border-fg/8 bg-fg/[0.02] p-3">
+            <div className="space-y-3 rounded-2xl border border-fg/10 bg-fg/4 p-3.5">
               <div className="flex items-center justify-between">
                 <span className="text-[12px] font-medium text-fg/70">
                   {t("playground.settings.hires")}
@@ -256,7 +259,7 @@ export function PlaygroundSettingsPane({
                       type="button"
                       onClick={() => setHiresMenuOpen(true)}
                       disabled={hiresUpscalers.length === 0}
-                      className="flex h-8 max-w-[160px] items-center gap-1.5 rounded-lg border border-fg/10 bg-surface px-2.5 font-mono text-[11.5px] text-fg/75 transition hover:border-fg/20 disabled:opacity-50"
+                      className="flex h-8 max-w-[160px] items-center gap-1.5 rounded-lg border border-fg/10 bg-fg/5 px-2.5 font-mono text-[11.5px] text-fg/75 transition-all hover:border-fg/15 hover:bg-fg/[0.07] disabled:opacity-50"
                     >
                       <span className="truncate">
                         {draft.hiresUpscaler ||
@@ -304,6 +307,7 @@ export function PlaygroundSettingsPane({
 
           {isLocal && <PlaygroundLoraSection controller={controller} />}
 
+          <div className="space-y-3 rounded-2xl border border-fg/10 bg-fg/4 p-3.5">
           <FieldRow label={t("playground.settings.batch")}>
             <NumberInput
               min={1}
@@ -360,6 +364,7 @@ export function PlaygroundSettingsPane({
               </FieldRow>
             </>
           )}
+          </div>
         </div>
       )}
 
