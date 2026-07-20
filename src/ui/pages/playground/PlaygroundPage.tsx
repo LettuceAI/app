@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, SlidersHorizontal, TerminalSquare } from "lucide-react";
 
 import { BottomMenu } from "../../components/BottomMenu";
@@ -25,6 +25,88 @@ import { usePlaygroundSettings } from "./usePlaygroundSettings";
 
 const NEGATIVE_PROMPT_PROVIDERS = new Set(["sdcpp", "comfyui", "automatic1111", "diffusers"]);
 
+const LEFT_PANE_DEFAULT = 300;
+const RIGHT_PANE_DEFAULT = 340;
+const LEFT_PANE_RANGE = { min: 230, max: 480 };
+const RIGHT_PANE_RANGE = { min: 270, max: 540 };
+
+function clampWidth(value: number, range: { min: number; max: number }): number {
+  return Math.min(range.max, Math.max(range.min, value));
+}
+
+function usePaneWidth(
+  storageKey: string,
+  defaultWidth: number,
+  range: { min: number; max: number },
+) {
+  const [width, setWidth] = useState(() => {
+    try {
+      const stored = Number(localStorage.getItem(storageKey));
+      return Number.isFinite(stored) && stored > 0 ? clampWidth(stored, range) : defaultWidth;
+    } catch {
+      return defaultWidth;
+    }
+  });
+  const resize = (delta: number) => {
+    setWidth((current) => {
+      const next = clampWidth(current + delta, range);
+      try {
+        localStorage.setItem(storageKey, String(next));
+      } catch {
+        return next;
+      }
+      return next;
+    });
+  };
+  const reset = () => {
+    setWidth(defaultWidth);
+    try {
+      localStorage.removeItem(storageKey);
+    } catch {
+      return;
+    }
+  };
+  return { width, resize, reset };
+}
+
+function PaneResizeHandle({
+  onDelta,
+  onReset,
+}: {
+  onDelta: (delta: number) => void;
+  onReset: () => void;
+}) {
+  const lastX = useRef(0);
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      onDoubleClick={onReset}
+      onPointerDown={(event) => {
+        event.preventDefault();
+        lastX.current = event.clientX;
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }}
+      onPointerMove={(event) => {
+        if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+        const delta = event.clientX - lastX.current;
+        if (delta !== 0) {
+          lastX.current = event.clientX;
+          onDelta(delta);
+        }
+      }}
+      onPointerUp={(event) => {
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+          event.currentTarget.releasePointerCapture(event.pointerId);
+        }
+      }}
+      className="group hidden w-1.5 shrink-0 cursor-col-resize touch-none items-stretch justify-center lg:flex"
+    >
+      <div className="w-px bg-fg/8 transition-colors group-hover:bg-accent/50 group-active:bg-accent/70" />
+    </div>
+  );
+}
+
 export function PlaygroundPage() {
   const { t } = useI18n();
   const { backOrReplace } = useNavigationManager();
@@ -46,6 +128,8 @@ export function PlaygroundPage() {
 
   const [upscalerReady, setUpscalerReady] = useState(false);
   const [upscaling, setUpscaling] = useState(false);
+  const leftPane = usePaneWidth("playground:pane:left", LEFT_PANE_DEFAULT, LEFT_PANE_RANGE);
+  const rightPane = usePaneWidth("playground:pane:right", RIGHT_PANE_DEFAULT, RIGHT_PANE_RANGE);
 
   useEffect(() => {
     if (getPlatform().type === "mobile") return;
@@ -235,9 +319,13 @@ export function PlaygroundPage() {
         </div>
       </header>
       <div className="flex min-h-0 flex-1">
-        <aside className="hidden w-[300px] shrink-0 flex-col border-r border-fg/8 bg-surface lg:flex">
+        <aside
+          style={{ width: leftPane.width }}
+          className="hidden shrink-0 flex-col bg-surface lg:flex"
+        >
           {promptPane}
         </aside>
+        <PaneResizeHandle onDelta={leftPane.resize} onReset={leftPane.reset} />
         <section className="flex min-w-0 flex-1 flex-col bg-bg/40">
           <PlaygroundFeed
             generation={generation}
@@ -252,7 +340,11 @@ export function PlaygroundPage() {
             busy={upscaling}
           />
         </section>
-        <aside className="hidden w-[340px] shrink-0 flex-col border-l border-fg/8 bg-surface lg:flex">
+        <PaneResizeHandle onDelta={(delta) => rightPane.resize(-delta)} onReset={rightPane.reset} />
+        <aside
+          style={{ width: rightPane.width }}
+          className="hidden shrink-0 flex-col bg-surface lg:flex"
+        >
           {settingsPane}
         </aside>
       </div>
