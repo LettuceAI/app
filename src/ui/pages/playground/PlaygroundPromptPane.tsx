@@ -1,4 +1,5 @@
-import { ImageUp, Loader, Sparkles, X } from "lucide-react";
+import { useState } from "react";
+import { History, ImageUp, Loader, Sparkles, X } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 
 import { cn } from "../../design-tokens";
@@ -6,6 +7,8 @@ import { useI18n } from "../../../core/i18n/context";
 import { convertFilePathToDataUrl } from "../../../core/storage/images";
 import { toast } from "../../components/toast";
 import { ADVANCED_SD_DENOISING_STRENGTH_RANGE } from "../../components/AdvancedModelSettingsForm";
+import type { PlaygroundGenerationImage } from "../../../core/image-generation/playground";
+import { PlaygroundInitImagePicker } from "./PlaygroundInitImagePicker";
 
 export type PlaygroundInitImage = {
   dataUrl: string;
@@ -39,6 +42,20 @@ export function PlaygroundPromptPane({
   onGenerate: () => void;
 }) {
   const { t } = useI18n();
+  const [historyPickerOpen, setHistoryPickerOpen] = useState(false);
+
+  const pickFromHistory = async (image: PlaygroundGenerationImage) => {
+    const dataUrl = await convertFilePathToDataUrl(image.filePath);
+    if (!dataUrl) {
+      toast.error(t("playground.prompt.initImageFailed"));
+      return;
+    }
+    onInitImageChange({
+      dataUrl,
+      assetId: image.assetId || null,
+      denoisingStrength: initImage?.denoisingStrength ?? 0.6,
+    });
+  };
 
   const pickInitImage = async () => {
     const selection = await open({
@@ -143,18 +160,33 @@ export function PlaygroundPromptPane({
                 </div>
               </div>
             ) : (
-              <button
-                type="button"
-                onClick={() => void pickInitImage()}
-                className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-fg/15 bg-fg/2 px-3 py-3 text-[12px] font-medium text-fg/50 transition-all hover:border-fg/25 hover:bg-fg/5 hover:text-fg/75 active:scale-[0.99]"
-              >
-                <ImageUp size={13} />
-                {t("playground.prompt.pickInitImage")}
-              </button>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => void pickInitImage()}
+                  className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-fg/15 bg-fg/2 px-3 py-3 text-[12px] font-medium text-fg/50 transition-all hover:border-fg/25 hover:bg-fg/5 hover:text-fg/75 active:scale-[0.99]"
+                >
+                  <ImageUp size={13} />
+                  {t("playground.prompt.pickInitImageFile")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHistoryPickerOpen(true)}
+                  className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-fg/15 bg-fg/2 px-3 py-3 text-[12px] font-medium text-fg/50 transition-all hover:border-fg/25 hover:bg-fg/5 hover:text-fg/75 active:scale-[0.99]"
+                >
+                  <History size={13} />
+                  {t("playground.prompt.pickInitImageHistory")}
+                </button>
+              </div>
             )}
           </div>
         )}
       </div>
+      <PlaygroundInitImagePicker
+        isOpen={historyPickerOpen}
+        onClose={() => setHistoryPickerOpen(false)}
+        onPick={(image) => void pickFromHistory(image)}
+      />
       <button
         type="button"
         onClick={onGenerate}
