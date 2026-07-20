@@ -163,9 +163,36 @@ export function PlaygroundGenerationCard({
             {entry.images.map((image, index) => (
               <div
                 key={image.assetId || image.filePath || index}
-                className="relative min-h-0 min-w-0"
+                className="group/cell relative min-h-0 min-w-0"
               >
                 <CardImage image={image} onClick={() => setLightboxIndex(index)} />
+                {entry.status === "complete" &&
+                  (actions.onSendToImg2img || actions.onUpscale) && (
+                    <div className="absolute bottom-2 right-2 z-10 flex items-center gap-1 rounded-lg bg-black/60 p-1 opacity-0 backdrop-blur-md transition-opacity group-hover/cell:opacity-100">
+                      {actions.onUpscale && (
+                        <button
+                          type="button"
+                          onClick={() => actions.onUpscale?.(entry, image)}
+                          disabled={actions.disabled}
+                          title={t("playground.feed.upscale")}
+                          className="rounded-md p-1.5 text-white/75 transition hover:bg-white/15 hover:text-white disabled:opacity-40"
+                        >
+                          <Maximize2 size={13} />
+                        </button>
+                      )}
+                      {actions.onSendToImg2img && (
+                        <button
+                          type="button"
+                          onClick={() => actions.onSendToImg2img?.(image)}
+                          disabled={actions.disabled}
+                          title={t("playground.feed.sendToImg2img")}
+                          className="rounded-md p-1.5 text-white/75 transition hover:bg-white/15 hover:text-white disabled:opacity-40"
+                        >
+                          <ImageUp size={13} />
+                        </button>
+                      )}
+                    </div>
+                  )}
               </div>
             ))}
           </div>
@@ -269,7 +296,7 @@ export function PlaygroundGenerationCard({
               <RefreshCw size={13} />
             </button>
           )}
-          {actions.onUpscale && entry.status === "complete" && entry.images[0] && (
+          {actions.onUpscale && entry.status === "complete" && entry.images.length === 1 && (
             <button
               type="button"
               onClick={() => actions.onUpscale?.(entry, entry.images[0])}
@@ -280,7 +307,7 @@ export function PlaygroundGenerationCard({
               <Maximize2 size={13} />
             </button>
           )}
-          {actions.onSendToImg2img && entry.status === "complete" && entry.images[0] && (
+          {actions.onSendToImg2img && entry.status === "complete" && entry.images.length === 1 && (
             <button
               type="button"
               onClick={() => actions.onSendToImg2img?.(entry.images[0])}
