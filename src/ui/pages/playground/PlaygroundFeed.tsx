@@ -99,7 +99,35 @@ export function PlaygroundFeed({
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [hasOlder, setHasOlder] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const bottomRef = useRef<HTMLDivElement | null>(null);
+  const wheelLockRef = useRef(false);
+  const wheelAccumRef = useRef(0);
+
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    const handler = (event: WheelEvent) => {
+      event.preventDefault();
+      if (wheelLockRef.current) return;
+      wheelAccumRef.current += event.deltaY;
+      if (Math.abs(wheelAccumRef.current) < 40) return;
+      const direction = wheelAccumRef.current > 0 ? 1 : -1;
+      wheelAccumRef.current = 0;
+      const slideHeight = element.clientHeight;
+      if (!slideHeight) return;
+      const currentPage = Math.round(element.scrollTop / slideHeight);
+      const lastPage = Math.max(0, Math.round(element.scrollHeight / slideHeight) - 1);
+      const target = Math.min(lastPage, Math.max(0, currentPage + direction));
+      if (target === currentPage && element.scrollTop === target * slideHeight) return;
+      wheelLockRef.current = true;
+      element.scrollTo({ top: target * slideHeight, behavior: "smooth" });
+      window.setTimeout(() => {
+        wheelLockRef.current = false;
+        wheelAccumRef.current = 0;
+      }, 350);
+    };
+    element.addEventListener("wheel", handler, { passive: false });
+    return () => element.removeEventListener("wheel", handler);
+  }, [loading]);
 
   useEffect(() => {
     let cancelled = false;
@@ -137,10 +165,10 @@ export function PlaygroundFeed({
   const initializedRef = useRef(false);
   useEffect(() => {
     if (loading) return;
-    bottomRef.current?.scrollIntoView({
-      behavior: initializedRef.current ? "smooth" : "auto",
-      block: "end",
-    });
+    const element = scrollRef.current;
+    if (!element) return;
+    const top = Math.max(0, element.scrollHeight - element.clientHeight);
+    element.scrollTo({ top, behavior: initializedRef.current ? "smooth" : "auto" });
     initializedRef.current = true;
   }, [loading, entries.length, generation.activeEntry?.id]);
 
@@ -221,7 +249,7 @@ export function PlaygroundFeed({
           {t("playground.feed.loadOlder")}
         </button>
       )}
-      <div ref={scrollRef} className="h-full snap-y snap-mandatory overflow-y-auto">
+      <div ref={scrollRef} className="h-full snap-y snap-proximity overflow-y-auto">
         {entries.map((entry) => (
           <motion.div
             key={entry.id}
@@ -303,7 +331,6 @@ export function PlaygroundFeed({
             </div>
           </motion.div>
         )}
-        <div ref={bottomRef} />
       </div>
     </div>
   );
