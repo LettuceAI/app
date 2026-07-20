@@ -158,6 +158,24 @@ export function PlaygroundGenerationCard({
   const { t } = useI18n();
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [deleteMenuOpen, setDeleteMenuOpen] = useState(false);
+  const [promptExpanded, setPromptExpanded] = useState(false);
+  const [promptClamped, setPromptClamped] = useState(true);
+  const infoCardRef = useRef<HTMLDivElement | null>(null);
+  const promptRef = useRef<HTMLParagraphElement | null>(null);
+  const [slotHeight, setSlotHeight] = useState<number | null>(null);
+  const [expandTarget, setExpandTarget] = useState(240);
+  const promptOverlayActive = promptExpanded || !promptClamped;
+
+  const togglePrompt = () => {
+    if (promptExpanded) {
+      setPromptExpanded(false);
+      return;
+    }
+    setSlotHeight(infoCardRef.current?.offsetHeight ?? null);
+    setExpandTarget(Math.min(promptRef.current?.scrollHeight ?? 240, 240));
+    setPromptClamped(false);
+    setPromptExpanded(true);
+  };
 
   useEffect(() => {
     if (lightboxIndex === null) return;
@@ -263,7 +281,18 @@ export function PlaygroundGenerationCard({
           </div>
         )}
       </div>
-      <div className="w-full max-w-2xl shrink-0 rounded-2xl border border-fg/10 bg-fg/4 px-3.5 py-3">
+      <div
+        className="relative w-full max-w-2xl shrink-0"
+        style={promptOverlayActive && slotHeight ? { height: slotHeight } : undefined}
+      >
+      <div
+        ref={infoCardRef}
+        className={cn(
+          "rounded-2xl border border-fg/10 bg-surface-el px-3.5 py-3",
+          promptOverlayActive &&
+            "absolute bottom-0 left-0 right-0 z-20 shadow-[0_16px_50px_rgba(0,0,0,0.45)]",
+        )}
+      >
       {(failed || cancelled || interrupted) && entry.images.length > 0 && (
         <div
           className={cn(
@@ -283,7 +312,31 @@ export function PlaygroundGenerationCard({
           </span>
         </div>
       )}
-      <p className="text-[12.5px] leading-relaxed text-fg/75 line-clamp-2">{entry.prompt}</p>
+      <button
+        type="button"
+        onClick={togglePrompt}
+        className="block w-full cursor-pointer text-left"
+      >
+        <motion.p
+          ref={promptRef}
+          initial={false}
+          animate={{ maxHeight: promptExpanded ? expandTarget : 40 }}
+          transition={{ duration: 0.25, ease: "easeOut" }}
+          onAnimationComplete={() => {
+            if (!promptExpanded) {
+              setPromptClamped(true);
+              setSlotHeight(null);
+            }
+          }}
+          className={cn(
+            "text-[12.5px] leading-relaxed text-fg/75",
+            promptClamped ? "line-clamp-2" : "pr-1",
+            promptExpanded ? "overflow-y-auto" : "overflow-hidden",
+          )}
+        >
+          {entry.prompt}
+        </motion.p>
+      </button>
       <div className="mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[10.5px] text-fg/45">
         <span className="max-w-[220px] truncate rounded-md bg-fg/6 px-1.5 py-0.5">
           {entry.modelName}
@@ -371,6 +424,7 @@ export function PlaygroundGenerationCard({
             <Trash2 size={13} />
           </button>
         </span>
+      </div>
       </div>
       </div>
 

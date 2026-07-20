@@ -326,7 +326,7 @@ export function PlaygroundPage() {
           {promptPane}
         </aside>
         <PaneResizeHandle onDelta={leftPane.resize} onReset={leftPane.reset} />
-        <section className="flex min-w-0 flex-1 flex-col bg-bg/40">
+        <section className="flex min-w-0 flex-1 flex-col">
           <PlaygroundFeed
             generation={generation}
             onSendToImg2img={showInitImage ? (image) => void sendToImg2img(image) : undefined}

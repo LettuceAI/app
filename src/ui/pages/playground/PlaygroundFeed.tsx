@@ -105,7 +105,19 @@ export function PlaygroundFeed({
   useEffect(() => {
     const element = scrollRef.current;
     if (!element) return;
+    const hasScrollableAncestor = (target: EventTarget | null): boolean => {
+      let node = target instanceof Element ? target : null;
+      while (node && node !== element) {
+        if (node.scrollHeight > node.clientHeight + 1) {
+          const overflowY = getComputedStyle(node).overflowY;
+          if (overflowY === "auto" || overflowY === "scroll") return true;
+        }
+        node = node.parentElement;
+      }
+      return false;
+    };
     const handler = (event: WheelEvent) => {
+      if (hasScrollableAncestor(event.target)) return;
       event.preventDefault();
       if (wheelLockRef.current) return;
       wheelAccumRef.current += event.deltaY;
