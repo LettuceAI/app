@@ -395,8 +395,8 @@ export function ModelsPage() {
             <button
               onClick={() => navigate(Routes.settingsModelsBrowse)}
               className={cn(
-                "group w-full rounded-xl border border-dashed border-fg/15 bg-fg/2 px-4 py-3 text-left transition",
-                "hover:border-fg/25 hover:bg-fg/5 active:scale-[0.995]",
+                "group w-full rounded-xl border border-fg/10 bg-fg/[0.035] px-4 py-3 text-left transition",
+                "hover:bg-fg/[0.06] active:scale-[0.995]",
               )}
             >
               <div className="flex items-center gap-3">
@@ -404,8 +404,10 @@ export function ModelsPage() {
                   <Download size={14} className="text-fg/50" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <span className="text-sm font-medium text-fg/70">{t("hfBrowser.title")}</span>
-                  <p className="text-[11px] text-fg/40">{t("hfBrowser.browseOnHuggingFace")}</p>
+                  <span className="text-sm font-semibold text-fg">{t("hfBrowser.title")}</span>
+                  <p className="truncate text-[11px] text-fg/45">
+                    {t("hfBrowser.browseOnHuggingFace")}
+                  </p>
                 </div>
                 <ChevronRight size={14} className="text-fg/25 group-hover:text-fg/50 transition" />
               </div>
@@ -413,8 +415,8 @@ export function ModelsPage() {
             <button
               onClick={() => navigate(Routes.settingsModelsRuntimeDefaults)}
               className={cn(
-                "group w-full rounded-xl border border-dashed border-fg/15 bg-fg/2 px-4 py-3 text-left transition",
-                "hover:border-fg/25 hover:bg-fg/5 active:scale-[0.995]",
+                "group w-full rounded-xl border border-fg/10 bg-fg/[0.035] px-4 py-3 text-left transition",
+                "hover:bg-fg/[0.06] active:scale-[0.995]",
                 showBrowseOnMobile && "hidden md:block",
               )}
             >
@@ -423,10 +425,12 @@ export function ModelsPage() {
                   <Cpu size={14} className="text-fg/50" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <span className="text-sm font-medium text-fg/70">
+                  <span className="text-sm font-semibold text-fg">
                     {t("runtimeDefaults.title")}
                   </span>
-                  <p className="text-[11px] text-fg/40">{t("runtimeDefaults.subtitle")}</p>
+                  <p className="truncate text-[11px] text-fg/45">
+                    {t("runtimeDefaults.subtitle")}
+                  </p>
                 </div>
                 <ChevronRight size={14} className="text-fg/25 group-hover:text-fg/50 transition" />
               </div>
@@ -434,8 +438,8 @@ export function ModelsPage() {
             <button
               onClick={() => navigate(Routes.settingsModelsLoras)}
               className={cn(
-                "group w-full rounded-xl border border-dashed border-fg/15 bg-fg/2 px-4 py-3 text-left transition",
-                "hover:border-fg/25 hover:bg-fg/5 active:scale-[0.995]",
+                "group w-full rounded-xl border border-fg/10 bg-fg/[0.035] px-4 py-3 text-left transition",
+                "hover:bg-fg/[0.06] active:scale-[0.995]",
                 showBrowseOnMobile && "hidden md:block",
               )}
             >
@@ -444,8 +448,8 @@ export function ModelsPage() {
                   <Layers size={14} className="text-fg/50" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <span className="text-sm font-medium text-fg/70">{t("loraLibrary.title")}</span>
-                  <p className="text-[11px] text-fg/40">{t("loraLibrary.subtitle")}</p>
+                  <span className="text-sm font-semibold text-fg">{t("loraLibrary.title")}</span>
+                  <p className="truncate text-[11px] text-fg/45">{t("loraLibrary.subtitle")}</p>
                 </div>
                 <ChevronRight size={14} className="text-fg/25 group-hover:text-fg/50 transition" />
               </div>

@@ -5024,7 +5024,7 @@ export const enMessages = {
   },
   loraLibrary: {
     title: "LoRA Library",
-    subtitle: "Manage local LoRAs and download new ones from CivitAI.",
+    subtitle: "Manage LoRAs and download from CivitAI.",
     tabLibrary: "Library",
     tabBrowse: "Browse CivitAI",
     installedCount: "{{count}} LoRAs in your library",
