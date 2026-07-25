@@ -24,6 +24,7 @@ import { BottomMenu } from "../../components/BottomMenu";
 import { toast } from "../../components/toast";
 import { cn } from "../../design-tokens";
 import { InlineDownloadCards } from "./components/DownloadQueueBar";
+import { GuidedTour, useGuidedTour } from "../../components/GuidedTour";
 
 type RuntimeAsset = {
   name: string;
@@ -876,6 +877,7 @@ function ComputePolicyMenu({
 export function StableDiffusionSettingsPage() {
   const { t } = useI18n();
   const platform = useMemo(() => getPlatform(), []);
+  const { shouldShow: showEngineTour, dismiss: dismissEngineTour } = useGuidedTour("sdEngine");
   const downloadQueue = useDownloadQueueOptional();
   const [inventory, setInventory] = useState<RuntimeInventory | null>(null);
   const [upscalerInventory, setUpscalerInventory] = useState<UpscalerInventory | null>(null);
@@ -1511,7 +1513,7 @@ export function StableDiffusionSettingsPage() {
               </section>
             ) : null}
 
-            <section>
+            <section data-tour-id="sd-installed">
               <h2 className="mb-3 text-sm font-semibold text-fg">
                 {t("imageGeneration.local.engineManager.installedTitle")}
               </h2>
@@ -1681,7 +1683,7 @@ export function StableDiffusionSettingsPage() {
               )}
             </section>
 
-            <section className="border-t border-fg/8 pt-5">
+            <section data-tour-id="sd-upscaler" className="border-t border-fg/8 pt-5">
               <h2 className="mb-3 text-sm font-semibold text-fg">
                 {t("imageGeneration.local.upscaler.title")}
               </h2>
@@ -1743,7 +1745,7 @@ export function StableDiffusionSettingsPage() {
               </div>
             </section>
 
-            <section className="border-t border-fg/8 pt-5">
+            <section data-tour-id="sd-install" className="border-t border-fg/8 pt-5">
               <h2 className="text-sm font-semibold text-fg">
                 {inventory?.installed.length
                   ? t("imageGeneration.local.engineManager.addVersion")
@@ -1908,7 +1910,7 @@ export function StableDiffusionSettingsPage() {
           </div>
 
           <div className="space-y-6">
-            <section className="border-t border-fg/8 pt-5 lg:border-t-0 lg:pt-0">
+            <section data-tour-id="sd-models" className="border-t border-fg/8 pt-5 lg:border-t-0 lg:pt-0">
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
                   <h2 className="text-sm font-semibold text-fg">
@@ -2279,6 +2281,8 @@ export function StableDiffusionSettingsPage() {
         onClose={() => setComputePolicyOpen(false)}
         onSave={(policy) => void saveComputePolicy(policy)}
       />
+
+      {showEngineTour && <GuidedTour tour="sdEngine" onDismiss={dismissEngineTour} />}
     </main>
   );
 }

@@ -85,7 +85,7 @@ export function PlaygroundPromptPane({
   return (
     <div className="flex h-full flex-col gap-4 overflow-y-auto p-4">
       <div className="flex min-h-0 flex-1 flex-col gap-4">
-        <div className="flex min-h-0 flex-1 flex-col">
+        <div data-tour-id="playground-prompt" className="flex min-h-0 flex-1 flex-col">
           <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-fg/40">
             {t("playground.prompt.label")}
           </p>
@@ -189,6 +189,7 @@ export function PlaygroundPromptPane({
       />
       <button
         type="button"
+        data-tour-id="playground-generate"
         onClick={onGenerate}
         disabled={!canGenerate || generating}
         className={cn(

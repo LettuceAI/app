@@ -59,7 +59,7 @@ export function PlaygroundLoraSection({
   };
 
   return (
-    <div className="space-y-2.5 rounded-2xl border border-fg/10 bg-fg/4 p-3.5">
+    <div data-tour-id="playground-loras" className="space-y-2.5 rounded-2xl border border-fg/10 bg-fg/4 p-3.5">
       <div className="flex items-center justify-between">
         <p className="text-[11px] font-medium uppercase tracking-wide text-fg/40">
           {t("playground.loras.title")}

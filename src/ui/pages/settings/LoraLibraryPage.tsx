@@ -39,7 +39,13 @@ import {
   type SdcppLoraKeywordDiscovery,
 } from "../../../core/image-generation/loras";
 import { InlineDownloadCards } from "./components/DownloadQueueBar";
-import { CivitaiTokenMenu, isCivitaiAuthError } from "./components/CivitaiTokenMenu";
+import {
+  CivitaiTokenMenu,
+  isCivitaiAuthError,
+  type CivitaiAuthStatus,
+} from "./components/CivitaiTokenMenu";
+import { GuidedTour, useGuidedTour } from "../../components/GuidedTour";
+import { getPlatform } from "../../../core/utils/platform";
 
 type CivitaiImage = {
   url: string;
@@ -198,10 +204,33 @@ export function LoraLibraryPage() {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [queuingFileId, setQueuingFileId] = useState<number | null>(null);
   const [tokenMenuOpen, setTokenMenuOpen] = useState(false);
+  const [civitaiAuth, setCivitaiAuth] = useState<CivitaiAuthStatus | null>(null);
+
+  const { shouldShow: showLibraryTour, dismiss: dismissLibraryTour } =
+    useGuidedTour("loraLibrary");
+  const { shouldShow: showBrowseTour, dismiss: dismissBrowseTour } =
+    useGuidedTour("civitaiBrowse");
 
   const searchSeq = useRef(0);
 
+  useEffect(() => {
+    if (tab !== "browse") return;
+    let cancelled = false;
+    invoke<CivitaiAuthStatus>("civitai_auth_status")
+      .then((status) => {
+        if (!cancelled) setCivitaiAuth(status);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [tab]);
+
   const loadInstalled = useCallback(async () => {
+    if (getPlatform().type === "mobile") {
+      setInstalledLoading(false);
+      return;
+    }
     try {
       const files = await invoke<SdcppLoraFile[]>("sdcpp_loras", { profileId: null });
       setInstalled(files);
@@ -482,6 +511,7 @@ export function LoraLibraryPage() {
         </p>
         <button
           type="button"
+          data-tour-id="lora-import"
           onClick={() => void handleImport()}
           disabled={importing}
           className={cn(
@@ -509,7 +539,7 @@ export function LoraLibraryPage() {
           <p className="mt-1 text-[12px] text-fg/45">{t("loraLibrary.installedEmptyHint")}</p>
         </div>
       ) : (
-        <div className="space-y-2">
+        <div data-tour-id="lora-installed" className="space-y-2">
           {installed.map((file) => (
             <div
               key={file.path}
@@ -661,7 +691,7 @@ export function LoraLibraryPage() {
   const renderBrowse = () => (
     <div className="min-h-0 flex-1 overflow-y-auto pb-10">
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <div className="relative min-w-0 flex-1">
+        <div data-tour-id="civitai-search" className="relative min-w-0 flex-1">
           <Search
             size={14}
             className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-fg/30"
@@ -675,6 +705,7 @@ export function LoraLibraryPage() {
         </div>
         <button
           type="button"
+          data-tour-id="civitai-sort"
           onClick={() => setSortMenuOpen(true)}
           className="flex h-10 items-center gap-1.5 rounded-xl border border-fg/10 bg-fg/4 px-3 text-[12px] font-medium text-fg/70 transition hover:border-fg/20 hover:text-fg"
         >
@@ -683,6 +714,7 @@ export function LoraLibraryPage() {
         </button>
         <button
           type="button"
+          data-tour-id="civitai-token"
           onClick={() => setTokenMenuOpen(true)}
           title={t("loraLibrary.tokenTitle")}
           className="flex h-10 w-10 items-center justify-center rounded-xl border border-fg/10 bg-fg/4 text-fg/50 transition hover:border-fg/20 hover:text-fg"
@@ -691,7 +723,7 @@ export function LoraLibraryPage() {
         </button>
       </div>
       {availableBaseModels.length > 0 && (
-        <div className="mb-3 flex flex-wrap gap-1.5">
+        <div data-tour-id="civitai-filters" className="mb-3 flex flex-wrap gap-1.5">
           <button
             type="button"
             onClick={() => setBaseModelFilter(null)}
@@ -726,6 +758,28 @@ export function LoraLibraryPage() {
       {!showNsfw && (
         <p className="mb-3 text-[11px] text-fg/40">{t("loraLibrary.pureModeNote")}</p>
       )}
+      {civitaiAuth && (!civitaiAuth.saved || civitaiAuth.errorKind === "invalidOrExpired") && (
+        <div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-warning/25 bg-warning/10 px-4 py-3">
+          <KeyRound size={15} className="shrink-0 text-warning/80" />
+          <div className="min-w-0 flex-1">
+            <p className="text-[12.5px] font-medium text-fg/85">
+              {civitaiAuth.saved
+                ? t("loraLibrary.tokenStatusInvalid")
+                : t("loraLibrary.tokenWarningTitle")}
+            </p>
+            <p className="mt-0.5 text-[12px] leading-5 text-fg/55">
+              {t("loraLibrary.tokenWarningBody")}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setTokenMenuOpen(true)}
+            className="rounded-xl border border-fg/10 bg-fg/4 px-3 py-2 text-[12px] font-medium text-fg/80 transition hover:border-fg/20 hover:text-fg"
+          >
+            {civitaiAuth.saved ? t("loraLibrary.tokenReplace") : t("loraLibrary.tokenAdd")}
+          </button>
+        </div>
+      )}
       <InlineDownloadCards filter={(item) => item.queueKind === "civitai_lora"} />
       {searchError ? (
         <div className="rounded-xl border border-danger/20 bg-danger/5 px-4 py-6 text-center">
@@ -742,7 +796,10 @@ export function LoraLibraryPage() {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+          <div
+            data-tour-id="civitai-results"
+            className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
+          >
             {results.map(renderCard)}
           </div>
           {nextCursor && (
@@ -1050,6 +1107,21 @@ export function LoraLibraryPage() {
     );
   };
 
+  if (getPlatform().type === "mobile") {
+    return (
+      <main className="flex min-h-screen items-center justify-center px-6 text-center">
+        <div>
+          <h1 className="text-lg font-semibold text-fg">
+            {t("imageGeneration.local.hub.desktopOnlyTitle")}
+          </h1>
+          <p className="mt-2 text-sm text-fg/50">
+            {t("imageGeneration.local.hub.desktopOnlyBody")}
+          </p>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <div
       className="mx-auto flex w-full max-w-[1280px] flex-col gap-5 overflow-hidden px-5 pt-5 sm:px-8"
@@ -1058,7 +1130,10 @@ export function LoraLibraryPage() {
       {!detailId && (
         <header className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1 rounded-full border border-fg/8 bg-fg/[0.025] p-0.5">
+            <div
+              data-tour-id="lora-tabs"
+              className="flex items-center gap-1 rounded-full border border-fg/8 bg-fg/[0.025] p-0.5"
+            >
               {(
                 [
                   { key: "library", label: t("loraLibrary.tabLibrary") },
@@ -1070,6 +1145,7 @@ export function LoraLibraryPage() {
                   <button
                     key={key}
                     type="button"
+                    data-tour-id={key === "browse" ? "lora-tab-browse" : undefined}
                     onClick={() => setTab(key)}
                     className={cn(
                       "relative flex items-center gap-2 rounded-full px-3.5 py-1.5 text-[12.5px] font-medium transition-colors",
@@ -1249,10 +1325,18 @@ export function LoraLibraryPage() {
         isOpen={tokenMenuOpen}
         onClose={() => setTokenMenuOpen(false)}
         onSaved={(status) => {
+          setCivitaiAuth(status);
           if (status.valid) toast.success(t("loraLibrary.tokenSaved"));
           else toast.warning(t("loraLibrary.tokenUnverified"));
         }}
       />
+
+      {!detailId && tab === "library" && showLibraryTour && (
+        <GuidedTour tour="loraLibrary" onDismiss={dismissLibraryTour} />
+      )}
+      {!detailId && tab === "browse" && showBrowseTour && (
+        <GuidedTour tour="civitaiBrowse" onDismiss={dismissBrowseTour} />
+      )}
     </div>
   );
 }

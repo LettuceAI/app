@@ -33,6 +33,7 @@ import { useI18n } from "../../../core/i18n/context";
 import { getProviderIcon } from "../../../core/utils/providerIcons";
 import { cn, spacing, typography } from "../../design-tokens";
 import { Switch } from "../../components/Switch";
+import { GuidedTour, useGuidedTour } from "../../components/GuidedTour";
 import { getPlatform } from "../../../core/utils/platform";
 import { Routes } from "../../navigation";
 import { useDownloadQueueOptional } from "../../../core/downloads/DownloadQueueContext";
@@ -76,7 +77,7 @@ function StableDiffusionEngineEntry() {
     <Link
       to={Routes.settingsImageGenerationLocal}
       className={cn(
-        "flex w-full items-center justify-between gap-4 rounded-[10px] border border-fg/10 bg-fg/[0.035] px-4 py-4 text-left transition-colors hover:bg-fg/[0.06]",
+        "flex h-full w-full items-center justify-between gap-4 rounded-[10px] border border-fg/10 bg-fg/[0.035] px-4 py-4 text-left transition-colors hover:bg-fg/[0.06]",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/55 focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
       )}
     >
@@ -144,6 +145,7 @@ type SelectorCardProps = {
   accentClassName: string;
   onToggle?: () => void;
   onClick: () => void;
+  tourId?: string;
 };
 
 type ModeOptionProps = {
@@ -157,13 +159,15 @@ function SettingsSection({
   title,
   icon,
   children,
+  tourId,
 }: {
   title: string;
   icon: ReactNode;
   children: ReactNode;
+  tourId?: string;
 }) {
   return (
-    <section className="space-y-3">
+    <section data-tour-id={tourId} className="space-y-3">
       <div className="flex items-center gap-2 px-1">
         <span className="text-fg/30">{icon}</span>
         <h2
@@ -270,6 +274,7 @@ function SelectorCard({
   accentClassName,
   onToggle,
   onClick,
+  tourId,
 }: SelectorCardProps) {
   const { t } = useI18n();
   const toggleId = `image-generation-toggle-${title.toLowerCase().replace(/\s+/g, "-")}`;
@@ -282,7 +287,7 @@ function SelectorCard({
     : t("common.labels.on");
 
   return (
-    <section className="rounded-[12px] border border-fg/10 bg-fg/5">
+    <section data-tour-id={tourId} className="rounded-[12px] border border-fg/10 bg-fg/5">
       <div className="border-b border-fg/8 px-4 py-4">
         <div className="flex items-start gap-3">
           <div className={cn("rounded-[9px] border p-1.5", accentClassName)}>
@@ -331,6 +336,8 @@ export function ImageGenerationPage() {
   const { t } = useI18n();
   const navigate = useNavigate();
   const isMobile = useMemo(() => getPlatform().type === "mobile", []);
+  const { shouldShow: showImageGenTour, dismiss: dismissImageGenTour } =
+    useGuidedTour("imageGeneration");
   const [state, setState] = useState<ImageGenerationState>({
     loading: true,
     error: null,
@@ -548,25 +555,33 @@ export function ImageGenerationPage() {
     <div className="flex min-h-screen flex-col">
       <main className="flex-1 px-4 pb-24 pt-5">
         <div className={cn("mx-auto w-full max-w-5xl space-y-7", spacing.section)}>
-          <button
-            type="button"
-            onClick={() => navigate(Routes.playground)}
-            className={cn(
-              "flex w-full items-center justify-between gap-4 rounded-[10px] border border-fg/10 bg-fg/[0.035] px-4 py-4 text-left transition-colors hover:bg-fg/[0.06]",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/55 focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
-            )}
-          >
-            <div className="flex min-w-0 items-center gap-3">
-              <ImagePlus aria-hidden="true" className="h-5 w-5 shrink-0 text-accent/80" />
-              <div className="min-w-0">
-                <div className="text-sm font-semibold text-fg">{t("playground.open")}</div>
-                <p className="mt-0.5 truncate text-xs text-fg/48">
-                  {t("playground.openDescription")}
-                </p>
+          {!isMobile && (
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <button
+                type="button"
+                data-tour-id="imagegen-playground"
+                onClick={() => navigate(Routes.playground)}
+                className={cn(
+                  "flex w-full min-w-0 items-center justify-between gap-4 rounded-[10px] border border-fg/10 bg-fg/[0.035] px-4 py-4 text-left transition-colors hover:bg-fg/[0.06]",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/55 focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
+                )}
+              >
+                <div className="flex min-w-0 items-center gap-3">
+                  <ImagePlus aria-hidden="true" className="h-5 w-5 shrink-0 text-accent/80" />
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-fg">{t("playground.open")}</div>
+                    <p className="mt-0.5 truncate text-xs text-fg/48">
+                      {t("playground.openDescription")}
+                    </p>
+                  </div>
+                </div>
+                <ChevronRight aria-hidden="true" className="h-4 w-4 shrink-0 text-fg/50" />
+              </button>
+              <div data-tour-id="imagegen-engine" className="min-w-0">
+                <StableDiffusionEngineEntry />
               </div>
             </div>
-            <ChevronRight aria-hidden="true" className="h-4 w-4 shrink-0 text-fg/50" />
-          </button>
+          )}
           {state.error && (
             <motion.div
               initial={{ opacity: 0, y: -6 }}
@@ -578,14 +593,6 @@ export function ImageGenerationPage() {
           )}
 
           <div className="space-y-7">
-            {!isMobile ? (
-              <SettingsSection
-                title={t("imageGeneration.local.engineManager.title")}
-                icon={<HardDrive size={12} />}
-              >
-                <StableDiffusionEngineEntry />
-              </SettingsSection>
-            ) : null}
             {hasGenerationModels ? (
               <motion.div
                 initial={{ opacity: 0, y: 12 }}
@@ -607,6 +614,7 @@ export function ImageGenerationPage() {
                       accentClassName="border-warning/30 bg-warning/10 text-warning/80"
                       onToggle={() => void persistToggle("avatarEnabled", !state.avatarEnabled)}
                       onClick={() => setShowAvatarMenu(true)}
+                      tourId="imagegen-avatar"
                     />
 
                     <SelectorCard
@@ -619,6 +627,7 @@ export function ImageGenerationPage() {
                       accentClassName="border-accent/30 bg-accent/10 text-accent/80"
                       onToggle={() => void persistToggle("sceneEnabled", !state.sceneEnabled)}
                       onClick={() => setShowSceneMenu(true)}
+                      tourId="imagegen-scene"
                     />
                   </div>
                 </SettingsSection>
@@ -634,6 +643,7 @@ export function ImageGenerationPage() {
                 <SettingsSection
                   title={t("imageGeneration.sections.promptingTitle")}
                   icon={<PenLine size={12} />}
+                  tourId="imagegen-prompting"
                 >
                   <div className="space-y-4">
                     <SelectorCard
@@ -762,6 +772,10 @@ export function ImageGenerationPage() {
           },
         }}
       />
+
+      {showImageGenTour && (
+        <GuidedTour tour="imageGeneration" onDismiss={dismissImageGenTour} />
+      )}
     </div>
   );
 }

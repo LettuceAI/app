@@ -123,7 +123,7 @@ export function PlaygroundSettingsPane({
 
   return (
     <div className="flex h-full flex-col gap-4 overflow-y-auto p-4">
-      <div>
+      <div data-tour-id="playground-model">
         <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-fg/40">
           {t("playground.settings.model")}
         </p>

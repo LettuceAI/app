@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { ImagePlus, Loader, Square } from "lucide-react";
+import { Dices, ImagePlus, Loader, Scan, Square } from "lucide-react";
 
 import { cn } from "../../design-tokens";
 import { toast } from "../../components/toast";
@@ -58,6 +58,65 @@ function FittedSkeleton({ ratio }: { ratio: number }) {
   );
 }
 
+const DEMO_PROMPT =
+  "A lone lighthouse keeper's daughter stands on the rusted spiral staircase inside a colossal abandoned lighthouse, its shattered lens crown open to a violet dusk sky. Hundreds of paper lanterns drift upward through the tower like slow embers, casting warm amber light across peeling teal paint and tangled ivy. Far below, waves crash silver against black rocks in the mist. Cinematic wide shot from below, painterly anime illustration, soft volumetric light, intricate detail, melancholic and serene";
+const DEMO_SEED = "1891643658";
+const DEMO_SIZE = "1152x896";
+const DEMO_MODEL = "FLUX.2 Klein 4B (Q4 0)";
+
+function PlaygroundDemoCard() {
+  const { t } = useI18n();
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void import("../../../assets/demoimage.webp")
+      .then((module) => {
+        if (!cancelled) setUrl(module.default);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return (
+    <div className="flex h-full min-h-0 w-full flex-col items-center gap-3 px-4 pb-4 pt-3 sm:px-8">
+      <div className="flex min-h-0 w-full flex-1 items-center justify-center">
+        {url ? (
+          <img
+            src={url}
+            alt=""
+            decoding="async"
+            className="max-h-full max-w-full rounded-xl border border-fg/8 object-contain shadow-[0_20px_60px_rgba(0,0,0,0.35)]"
+          />
+        ) : (
+          <div className="h-40 w-40 rounded-xl border border-fg/8 bg-fg/5" />
+        )}
+      </div>
+      <div className="w-full max-w-2xl shrink-0 rounded-2xl border border-fg/10 bg-fg/4 px-3.5 py-3">
+        <p className="line-clamp-2 text-[12.5px] leading-relaxed text-fg/75">{DEMO_PROMPT}</p>
+        <div className="mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[10.5px] text-fg/45">
+          <span className="rounded-md bg-accent/12 px-1.5 py-0.5 font-medium text-accent/80">
+            {t("playground.demoExample")}
+          </span>
+          <span className="max-w-[220px] truncate rounded-md bg-fg/6 px-1.5 py-0.5">
+            {DEMO_MODEL}
+          </span>
+          <span className="flex items-center gap-1 rounded-md bg-fg/6 px-1.5 py-0.5 font-mono">
+            <Scan size={10} />
+            {DEMO_SIZE}
+          </span>
+          <span className="flex items-center gap-1 rounded-md bg-fg/6 px-1.5 py-0.5 font-mono">
+            <Dices size={10} />
+            {DEMO_SEED}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function progressLabelKey(progress: SdcppGenerationProgress | null): TranslationKey {
   switch (progress?.phase) {
     case "loading":
@@ -82,6 +141,7 @@ export function PlaygroundFeed({
   onReuseSeed,
   onRegenerate,
   busy = false,
+  showDemo = false,
 }: {
   generation: PlaygroundGenerationController;
   onSendToImg2img?: (image: PlaygroundGenerationEntry["images"][number]) => void;
@@ -92,6 +152,7 @@ export function PlaygroundFeed({
   onReuseSeed?: (entry: PlaygroundGenerationEntry) => void;
   onRegenerate?: (entry: PlaygroundGenerationEntry) => void;
   busy?: boolean;
+  showDemo?: boolean;
 }) {
   const { t } = useI18n();
   const [entries, setEntries] = useState<PlaygroundGenerationEntry[]>([]);
@@ -237,6 +298,9 @@ export function PlaygroundFeed({
   }
 
   if (entries.length === 0 && !active) {
+    if (showDemo) {
+      return <PlaygroundDemoCard />;
+    }
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-1.5 text-center">
         <div className="mb-2 flex h-16 w-16 items-center justify-center rounded-2xl border border-fg/10 bg-fg/5">

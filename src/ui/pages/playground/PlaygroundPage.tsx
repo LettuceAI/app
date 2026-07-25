@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, SlidersHorizontal, TerminalSquare } from "lucide-react";
 
 import { BottomMenu } from "../../components/BottomMenu";
+import { GuidedTour, useGuidedTour } from "../../components/GuidedTour";
 import { useI18n } from "../../../core/i18n/context";
 import { Routes, useNavigationManager } from "../../navigation";
 import { convertFilePathToDataUrl } from "../../../core/storage/images";
@@ -116,6 +117,23 @@ export function PlaygroundPage() {
   const [negativePrompt, setNegativePrompt] = useState("");
   const [initImage, setInitImage] = useState<PlaygroundInitImage | null>(null);
   const [promptSheetOpen, setPromptSheetOpen] = useState(false);
+  const { shouldShow: showPlaygroundTour, dismiss: dismissPlaygroundTour } =
+    useGuidedTour("playground");
+  const [feedStepActive, setFeedStepActive] = useState(false);
+
+  useEffect(() => {
+    if (!showPlaygroundTour) {
+      setFeedStepActive(false);
+      return;
+    }
+    const handler = (event: Event) => {
+      const { tour, stepId } = (event as CustomEvent).detail ?? {};
+      if (tour !== "playground") return;
+      setFeedStepActive(stepId === "playground-feed");
+    };
+    window.addEventListener("tour:step", handler);
+    return () => window.removeEventListener("tour:step", handler);
+  }, [showPlaygroundTour]);
   const [settingsSheetOpen, setSettingsSheetOpen] = useState(false);
 
   const showNegativePrompt = NEGATIVE_PROMPT_PROVIDERS.has(
@@ -267,6 +285,21 @@ export function PlaygroundPage() {
     });
   };
 
+  if (getPlatform().type === "mobile") {
+    return (
+      <main className="flex h-full items-center justify-center px-6 text-center">
+        <div>
+          <h1 className="text-lg font-semibold text-fg">
+            {t("imageGeneration.local.hub.desktopOnlyTitle")}
+          </h1>
+          <p className="mt-2 text-sm text-fg/50">
+            {t("imageGeneration.local.hub.desktopOnlyBody")}
+          </p>
+        </div>
+      </main>
+    );
+  }
+
   const promptPane = (
     <PlaygroundPromptPane
       prompt={prompt}
@@ -326,9 +359,10 @@ export function PlaygroundPage() {
           {promptPane}
         </aside>
         <PaneResizeHandle onDelta={leftPane.resize} onReset={leftPane.reset} />
-        <section className="flex min-w-0 flex-1 flex-col">
+        <section data-tour-id="playground-feed" className="flex min-w-0 flex-1 flex-col">
           <PlaygroundFeed
             generation={generation}
+            showDemo={showPlaygroundTour && feedStepActive}
             onSendToImg2img={showInitImage ? (image) => void sendToImg2img(image) : undefined}
             onUpscale={
               upscalerReady
@@ -363,6 +397,10 @@ export function PlaygroundPage() {
       >
         <div className="max-h-[70vh]">{settingsPane}</div>
       </BottomMenu>
+
+      {showPlaygroundTour && (
+        <GuidedTour tour="playground" onDismiss={dismissPlaygroundTour} />
+      )}
     </div>
   );
 }

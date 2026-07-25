@@ -575,7 +575,7 @@ export function LocalRuntimeDefaultsPage() {
             </SettingRow>
           </div>
 
-          <div className="space-y-4">
+          <div data-tour-id="runtime-defaults-civitai" className="space-y-4">
             <SectionHeading label={t("loraLibrary.tokenTitle")} />
             <p className="px-1 text-xs text-fg/50">{t("loraLibrary.tokenBody")}</p>
 

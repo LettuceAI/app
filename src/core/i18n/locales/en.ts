@@ -4938,6 +4938,7 @@ export const enMessages = {
     settingsTab: "Settings",
     emptyFeed: "No generations yet",
     emptyFeedHint: "Write a prompt and hit Generate.",
+    demoExample: "Example",
     settings: {
       model: "Model",
       pickModel: "Pick an image model",
@@ -5088,6 +5089,8 @@ export const enMessages = {
     tokenSave: "Save token",
     tokenSaved: "Token saved",
     tokenUnverified: "Token saved but it could not be verified.",
+    tokenWarningTitle: "No CivitAI token saved",
+    tokenWarningBody: "You can browse without one, but restricted and early-access files will fail to download. Add a token to unlock everything.",
     tokenStatusMissing: "No token saved.",
     tokenStatusSaved: "Token saved.",
     tokenStatusInvalid: "The saved token is invalid or expired.",
@@ -8916,6 +8919,10 @@ export const enMessages = {
         title: "Split models across GPUs",
         body: "With two or more graphics cards, turn this on to spread layers across them. Models set to Inherit follow this switch automatically.",
       },
+      civitai: {
+        title: "Your CivitAI token lives here",
+        body: "Save an API token to unlock restricted and early-access downloads in the LoRA browser. You can replace or remove it anytime.",
+      },
     },
     hfBrowser: {
       panel: {
@@ -8977,6 +8984,108 @@ export const enMessages = {
       embedding: {
         title: "Powered by a small local model",
         body: "Recall works through embeddings computed on your device. This section manages the embedding model version and its settings.",
+      },
+    },
+    imageGeneration: {
+      playground: {
+        title: "Experiment in the Playground",
+        body: "Generate images freely with prompts, model settings, and LoRAs. It's the best place to test a model before wiring it into chats.",
+      },
+      engine: {
+        title: "Local images run on this engine",
+        body: "The Stable Diffusion engine handles on-device generation. Open Manage to update it, switch backends, or check its status.",
+      },
+      avatar: {
+        title: "Avatars come from this model",
+        body: "Generating a profile image from the avatar picker uses the model set here. Turn the toggle off to hide avatar generation everywhere.",
+      },
+      scene: {
+        title: "Scenes come from this one",
+        body: "Scene images built from conversation context use this model. It doesn't have to match your avatar model.",
+      },
+      prompting: {
+        title: "How scene prompts get written",
+        body: "The scene writer turns the conversation into an image prompt. Pick whether scenes generate automatically, ask you first, or wait for a manual request.",
+      },
+    },
+    playground: {
+      prompt: {
+        title: "Describe the image",
+        body: "Write what you want to see here. When the model supports it, a negative prompt and a starting image appear below for finer control.",
+      },
+      generate: {
+        title: "Generate when ready",
+        body: "One tap starts the generation. Pressing Ctrl+Enter from the prompt box works too.",
+      },
+      feed: {
+        title: "Results land in the feed",
+        body: "Every generation appears here with its settings. Reuse a seed, regenerate, upscale, or send an image back as a starting point.",
+      },
+      model: {
+        title: "Pick the model first",
+        body: "Choose any image model you've set up, local or cloud. The settings below adapt to what the model supports.",
+      },
+      loras: {
+        title: "Stack LoRAs on top",
+        body: "LoRAs add styles and characters to a local model. Add one or more and tune each one's strength.",
+      },
+    },
+    loraLibrary: {
+      tabs: {
+        title: "Library and Browse",
+        body: "Library shows the LoRAs installed on this device. Browse searches CivitAI when you want more.",
+      },
+      import: {
+        title: "Bring your own files",
+        body: "Already have LoRA files on disk? Import them here and they'll join your library.",
+      },
+      installed: {
+        title: "Manage what's installed",
+        body: "Each LoRA keeps its trigger keywords here. Fetch them from CivitAI, edit them, or delete files you no longer need.",
+      },
+      browse: {
+        title: "Discover more on CivitAI",
+        body: "Switch to Browse to search CivitAI and download LoRAs straight into your library.",
+      },
+    },
+    sdEngine: {
+      installed: {
+        title: "Engine builds live here",
+        body: "Each installed build shows its version and backend. You can keep several around and switch the active one anytime.",
+      },
+      install: {
+        title: "Install a build for your hardware",
+        body: "Pick a version and variant. Your GPU is detected and the best compatible build gets preselected, so the default is usually right.",
+      },
+      models: {
+        title: "Download image models",
+        body: "Browse model families checked against your hardware. Downloads go to your model folder, ready for the Playground and chats.",
+      },
+      upscaler: {
+        title: "One small model for upscaling",
+        body: "This ESRGAN model powers the Upscale action and the high-resolution pass. Install it once and forget about it.",
+      },
+    },
+    civitaiBrowse: {
+      search: {
+        title: "Search all of CivitAI",
+        body: "Type to find LoRAs by name or keyword. Results update as you search.",
+      },
+      sort: {
+        title: "Sort the results",
+        body: "Order by rating, downloads, or newest, and pick the time period that matters.",
+      },
+      filters: {
+        title: "Match your base model",
+        body: "A LoRA only works with the model family it was trained for. Filter by base model so downloads actually fit your setup.",
+      },
+      token: {
+        title: "Some files need a token",
+        body: "Restricted and early-access files only download with a CivitAI API token. Add yours here; creating one on civitai.com is free.",
+      },
+      results: {
+        title: "Download into your library",
+        body: "Open a result to pick a version and file. Downloads land straight in your library, ready to use in the Playground.",
       },
     },
     stepCounter: "Step {{current}} of {{total}}",
