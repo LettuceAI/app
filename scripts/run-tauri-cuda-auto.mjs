@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 
+import { existsSync } from "node:fs";
+import { mkdir } from "node:fs/promises";
 import { execFileSync, spawn } from "node:child_process";
+import path from "node:path";
 
 function detectCudaArchitectures() {
   try {
@@ -34,6 +37,13 @@ if (!mode || !["dev", "build"].includes(mode)) {
 
 const arches = detectCudaArchitectures();
 const env = { ...process.env };
+const localTmpDir = path.join(process.cwd(), ".tmp", "cuda-build");
+
+await mkdir(localTmpDir, { recursive: true });
+env.TMPDIR = localTmpDir;
+env.TMP = localTmpDir;
+env.TEMP = localTmpDir;
+console.log(`[cuda-auto] Using TMPDIR=${localTmpDir}`);
 
 if (!env.CMAKE_CUDA_ARCHITECTURES && arches.length > 0) {
   env.CMAKE_CUDA_ARCHITECTURES = arches.join(";");
@@ -52,7 +62,6 @@ if (!env.CMAKE_CUDA_ARCHITECTURES && arches.length > 0) {
 // Pick the newest GCC ≤ 15 available as the CUDA host compiler.
 if (process.platform === "linux" && !env.CMAKE_CUDA_HOST_COMPILER && !env.CUDAHOSTCXX) {
   const candidates = ["/usr/bin/g++-15", "/usr/bin/g++-14", "/usr/bin/g++-13"];
-  const { existsSync } = await import("node:fs");
   const hostCxx = candidates.find(existsSync);
   if (hostCxx) {
     env.CMAKE_CUDA_HOST_COMPILER = hostCxx;

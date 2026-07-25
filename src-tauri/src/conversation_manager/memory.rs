@@ -10,10 +10,11 @@ pub(crate) fn event_is_reverted(event: &Value) -> bool {
 }
 
 pub(crate) fn event_advances_cursor(event: &Value) -> bool {
-    !matches!(
-        event.get("status").and_then(Value::as_str),
-        Some("error") | Some(USER_EDIT_EVENT_STATUS)
-    )
+    !event_is_reverted(event)
+        && !matches!(
+            event.get("status").and_then(Value::as_str),
+            Some("error") | Some(USER_EDIT_EVENT_STATUS)
+        )
 }
 
 pub(crate) fn build_user_memory_edit_event(
@@ -313,11 +314,32 @@ where
     Ok((0, true))
 }
 
+pub(crate) fn next_window(
+    last_window_end: usize,
+    total_conversation_count: usize,
+    window_size: usize,
+    force_recent_window: bool,
+) -> (usize, usize) {
+    let start = if force_recent_window {
+        total_conversation_count.saturating_sub(window_size)
+    } else {
+        last_window_end.min(total_conversation_count)
+    };
+    let end = if force_recent_window {
+        total_conversation_count
+    } else {
+        start
+            .saturating_add(window_size)
+            .min(total_conversation_count)
+    };
+    (start, end)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        event_advances_cursor, replay_memory_state_after_rewind, resolve_last_valid_window_end,
-        MemoryEmbedding,
+        event_advances_cursor, next_window, replay_memory_state_after_rewind,
+        resolve_last_valid_window_end, MemoryEmbedding,
     };
     use serde_json::json;
 
@@ -359,6 +381,9 @@ mod tests {
         assert!(event_advances_cursor(&json!({ "status": "complete" })));
         assert!(event_advances_cursor(&json!({ "windowEnd": 2 })));
         assert!(!event_advances_cursor(&json!({ "status": "user_edit" })));
+        assert!(!event_advances_cursor(
+            &json!({ "status": "complete", "revertedAt": 123 })
+        ));
     }
 
     #[test]
@@ -514,5 +539,48 @@ mod tests {
         let resolved =
             resolve_last_valid_window_end(&events, |id| Ok((id == "first").then_some(4))).unwrap();
         assert_eq!(resolved, (4, true));
+    }
+
+    #[test]
+    fn rewound_cycle_resumes_after_last_surviving_success() {
+        let events = vec![
+            json!({
+                "windowMessageIds": ["m20"],
+                "windowEnd": 20,
+                "summary": "S20",
+                "status": "complete",
+                "actions": [],
+            }),
+            json!({
+                "windowMessageIds": ["m40"],
+                "windowEnd": 40,
+                "summary": "S40",
+                "status": "complete",
+                "actions": [],
+            }),
+        ];
+        let replayed =
+            replay_memory_state_after_rewind(&events, &[], "S40", 32, |id| Ok(id == "m20"))
+                .unwrap()
+                .expect("latest cycle should be reverted");
+        let (last_window_end, cursor_rewound) =
+            resolve_last_valid_window_end(&events, |id| {
+                Ok(match id {
+                    "m20" => Some(20),
+                    _ => None,
+                })
+            })
+            .unwrap();
+
+        assert!(cursor_rewound);
+        assert_eq!(replayed.summary, "S20");
+        assert_eq!(next_window(last_window_end, 32, 20, false), (20, 32));
+    }
+
+    #[test]
+    fn catch_up_windows_are_bounded_for_local_models() {
+        assert_eq!(next_window(20, 100, 20, false), (20, 40));
+        assert_eq!(next_window(0, 100, 20, false), (0, 20));
+        assert_eq!(next_window(20, 100, 20, true), (80, 100));
     }
 }

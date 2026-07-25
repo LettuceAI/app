@@ -320,6 +320,7 @@ export function MemoryCycleHub({
                   <p className="text-xs leading-relaxed text-danger/80">{errorMessage}</p>
                   <div className="mt-2.5 flex flex-wrap gap-2">
                     <button
+                      type="button"
                       onClick={onRetry}
                       className={cn(
                         smallButton,
@@ -331,6 +332,7 @@ export function MemoryCycleHub({
                     </button>
                     {onPickModel && (
                       <button
+                        type="button"
                         onClick={onPickModel}
                         className={cn(
                           smallButton,
@@ -400,6 +402,7 @@ export function MemoryCycleHub({
 
         <div className="flex shrink-0 items-center">
           <button
+            type="button"
             onClick={
               state === "running"
                 ? onCancel
