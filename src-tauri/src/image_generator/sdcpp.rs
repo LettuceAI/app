@@ -3852,6 +3852,17 @@ fn profile_lora_architecture(profile_id: Option<&str>) -> Option<&'static str> {
     }
 }
 
+pub(crate) fn lora_architecture_supported(architecture: &str) -> bool {
+    if PROFILES
+        .iter()
+        .filter_map(|profile| profile_lora_architecture(Some(profile.id)))
+        .any(|target| target == architecture)
+    {
+        return true;
+    }
+    matches!(architecture, "flux" | "flux2" | "qwen-image" | "qwen-image-edit")
+}
+
 fn lora_compatibility(architecture: Option<&str>, profile_id: Option<&str>) -> String {
     let Some(target) = profile_lora_architecture(profile_id) else {
         return "unknown".to_string();

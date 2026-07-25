@@ -278,7 +278,10 @@ fn model_allowed(model: &ApiModel, pure_active: bool) -> bool {
 }
 
 fn supported_base_model(value: &str) -> bool {
-    crate::image_generator::sdcpp::normalize_lora_architecture(value).is_some()
+    crate::image_generator::sdcpp::normalize_lora_architecture(value)
+        .is_some_and(|architecture| {
+            crate::image_generator::sdcpp::lora_architecture_supported(&architecture)
+        })
 }
 
 fn model_supported(model: &ApiModel) -> bool {
@@ -339,60 +342,88 @@ pub async fn civitai_search_loras(
     cursor: Option<String>,
     limit: Option<u8>,
 ) -> Result<CivitaiSearchPage, String> {
+    const PAGE_FETCH_LIMIT: u8 = 100;
+    const MAX_PAGE_FETCHES: usize = 5;
+
     let pure_active = read_pure_mode_level(&app) != "off";
     let client = civitai_client(&app)?;
-    let limit = limit.unwrap_or(30).clamp(1, 100);
+    let target = limit.unwrap_or(30).clamp(1, 100) as usize;
     let sort = match sort.as_deref() {
         Some("Most Downloaded") => "Most Downloaded",
         Some("Newest") => "Newest",
         _ => "Highest Rated",
     };
-    let mut request = client
-        .get(format!("{API_BASE}/models"))
-        .query(&[("types", "LORA"), ("sort", sort)])
-        .query(&[("limit", limit.to_string())])
-        .query(&[("nsfw", if pure_active { "false" } else { "true" })]);
-    if let Some(period) = period.as_deref().map(str::trim) {
-        if matches!(period, "AllTime" | "Year" | "Month" | "Week" | "Day") {
+    let period = period
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| matches!(*value, "AllTime" | "Year" | "Month" | "Week" | "Day"))
+        .map(str::to_string);
+    let query = query
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let base_models: Vec<String> = base_models
+        .unwrap_or_default()
+        .into_iter()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .collect();
+    let mut cursor = cursor
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+
+    let mut items: Vec<CivitaiLoraSummary> = Vec::new();
+    let mut next_cursor: Option<String> = None;
+    for _ in 0..MAX_PAGE_FETCHES {
+        let mut request = client
+            .get(format!("{API_BASE}/models"))
+            .query(&[("types", "LORA"), ("sort", sort)])
+            .query(&[("limit", PAGE_FETCH_LIMIT.to_string())])
+            .query(&[("nsfw", if pure_active { "false" } else { "true" })]);
+        if let Some(period) = period.as_deref() {
             request = request.query(&[("period", period)]);
         }
-    }
-    if let Some(query) = query.as_deref().map(str::trim).filter(|value| !value.is_empty()) {
-        request = request.query(&[("query", query)]);
-    }
-    for base_model in base_models.unwrap_or_default() {
-        let base_model = base_model.trim();
-        if !base_model.is_empty() {
+        if let Some(query) = query.as_deref() {
+            request = request.query(&[("query", query)]);
+        }
+        for base_model in &base_models {
             request = request.query(&[("baseModels", base_model)]);
         }
-    }
-    if let Some(cursor) = cursor.as_deref().map(str::trim).filter(|value| !value.is_empty()) {
-        request = request.query(&[("cursor", cursor)]);
+        if let Some(cursor) = cursor.as_deref() {
+            request = request.query(&[("cursor", cursor)]);
+        }
+
+        let response = request
+            .send()
+            .await
+            .map_err(|error| format!("Could not reach CivitAI: {error}"))?;
+        if !response.status().is_success() {
+            return Err(status_error(&app, response.status()));
+        }
+        let payload: ApiModelsResponse = response
+            .json()
+            .await
+            .map_err(|error| format!("Could not read the CivitAI response: {error}"))?;
+        items.extend(
+            payload
+                .items
+                .into_iter()
+                .filter(|model| model.model_type.eq_ignore_ascii_case("LORA"))
+                .filter(|model| model_allowed(model, pure_active))
+                .filter(model_supported)
+                .map(|model| summarize(model, pure_active)),
+        );
+        next_cursor = payload.metadata.next_cursor;
+        if next_cursor.is_none() || items.len() >= target {
+            break;
+        }
+        cursor = next_cursor.clone();
     }
 
-    let response = request
-        .send()
-        .await
-        .map_err(|error| format!("Could not reach CivitAI: {error}"))?;
-    if !response.status().is_success() {
-        return Err(status_error(&app, response.status()));
-    }
-    let payload: ApiModelsResponse = response
-        .json()
-        .await
-        .map_err(|error| format!("Could not read the CivitAI response: {error}"))?;
-    let items = payload
-        .items
-        .into_iter()
-        .filter(|model| model.model_type.eq_ignore_ascii_case("LORA"))
-        .filter(|model| model_allowed(model, pure_active))
-        .filter(model_supported)
-        .map(|model| summarize(model, pure_active))
-        .collect();
-    Ok(CivitaiSearchPage {
-        items,
-        next_cursor: payload.metadata.next_cursor,
-    })
+    Ok(CivitaiSearchPage { items, next_cursor })
 }
 
 #[tauri::command]
