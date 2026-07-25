@@ -4701,9 +4701,12 @@ export const frMessages: DeepPartialMessageTree<LocaleMessages> = {
       toggle: "Basculer le streaming llama.cpp",
     },
   },
+  playground: {
+    demoExample: "Exemple",
+  },
   loraLibrary: {
     title: "Bibliothèque LoRA",
-    subtitle: "Gérez les LoRA locaux et téléchargez-en de nouveaux depuis CivitAI.",
+    subtitle: "Gérez les LoRA et téléchargez depuis CivitAI.",
     tabLibrary: "Bibliothèque",
     tabBrowse: "Parcourir CivitAI",
     installedCount: "{{count}} LoRA dans votre bibliothèque",
@@ -4768,6 +4771,8 @@ export const frMessages: DeepPartialMessageTree<LocaleMessages> = {
     tokenSave: "Enregistrer le jeton",
     tokenSaved: "Jeton enregistré",
     tokenUnverified: "Jeton enregistré mais impossible à vérifier.",
+    tokenWarningTitle: "Aucun jeton CivitAI enregistré",
+    tokenWarningBody: "Vous pouvez parcourir sans jeton, mais les fichiers restreints et en accès anticipé échoueront au téléchargement. Ajoutez un jeton pour tout débloquer.",
     tokenStatusMissing: "Aucun jeton enregistré.",
     tokenStatusSaved: "Jeton enregistré.",
     tokenStatusInvalid: "Le jeton enregistré est invalide ou expiré.",
@@ -7971,6 +7976,10 @@ export const frMessages: DeepPartialMessageTree<LocaleMessages> = {
         title: "Répartissez les modèles entre GPU",
         body: "Avec deux cartes graphiques ou plus, activez ceci pour répartir les couches entre elles. Les modèles réglés sur Hériter suivent cet interrupteur automatiquement.",
       },
+      civitai: {
+        title: "Votre jeton CivitAI vit ici",
+        body: "Enregistrez un jeton d'API pour débloquer les téléchargements restreints et en accès anticipé dans le navigateur de LoRA. Vous pouvez le remplacer ou le supprimer à tout moment.",
+      },
     },
     hfBrowser: {
       panel: {
@@ -8032,6 +8041,108 @@ export const frMessages: DeepPartialMessageTree<LocaleMessages> = {
       embedding: {
         title: "Propulsé par un petit modèle local",
         body: "Le rappel fonctionne grâce à des embeddings calculés sur votre appareil. Cette section gère la version du modèle d'embedding et ses paramètres.",
+      },
+    },
+    imageGeneration: {
+      playground: {
+        title: "Expérimentez dans le Playground",
+        body: "Générez des images librement avec des prompts, des réglages de modèle et des LoRA. C'est le meilleur endroit pour tester un modèle avant de le brancher aux discussions.",
+      },
+      engine: {
+        title: "Les images locales tournent sur ce moteur",
+        body: "Le moteur Stable Diffusion gère la génération sur l'appareil. Ouvrez Gérer pour le mettre à jour, changer de backend ou vérifier son état.",
+      },
+      avatar: {
+        title: "Les avatars viennent de ce modèle",
+        body: "Générer une image de profil depuis le sélecteur d'avatar utilise le modèle défini ici. Désactivez l'interrupteur pour masquer la génération d'avatars partout.",
+      },
+      scene: {
+        title: "Les scènes viennent de celui-ci",
+        body: "Les images de scène construites à partir du contexte de la conversation utilisent ce modèle. Il n'est pas obligé d'être le même que votre modèle d'avatar.",
+      },
+      prompting: {
+        title: "Comment s'écrivent les prompts de scène",
+        body: "Le rédacteur de scène transforme la conversation en prompt d'image. Choisissez si les scènes se génèrent automatiquement, vous demandent d'abord ou attendent une demande manuelle.",
+      },
+    },
+    playground: {
+      prompt: {
+        title: "Décrivez l'image",
+        body: "Écrivez ici ce que vous voulez voir. Quand le modèle le permet, un prompt négatif et une image de départ apparaissent en dessous pour un contrôle plus fin.",
+      },
+      generate: {
+        title: "Générez quand vous êtes prêt",
+        body: "Un appui lance la génération. Ctrl+Enter depuis la zone de prompt fonctionne aussi.",
+      },
+      feed: {
+        title: "Les résultats arrivent dans le fil",
+        body: "Chaque génération apparaît ici avec ses réglages. Réutilisez un seed, régénérez, agrandissez ou renvoyez une image comme point de départ.",
+      },
+      model: {
+        title: "Choisissez d'abord le modèle",
+        body: "Choisissez n'importe quel modèle d'image configuré, local ou cloud. Les réglages en dessous s'adaptent à ce que le modèle prend en charge.",
+      },
+      loras: {
+        title: "Empilez des LoRA par-dessus",
+        body: "Les LoRA ajoutent des styles et des personnages à un modèle local. Ajoutez-en un ou plusieurs et réglez la force de chacun.",
+      },
+    },
+    loraLibrary: {
+      tabs: {
+        title: "Bibliothèque et Parcourir",
+        body: "Bibliothèque montre les LoRA installés sur cet appareil. Parcourir cherche sur CivitAI quand vous en voulez plus.",
+      },
+      import: {
+        title: "Apportez vos propres fichiers",
+        body: "Vous avez déjà des fichiers LoRA sur le disque ? Importez-les ici et ils rejoindront votre bibliothèque.",
+      },
+      installed: {
+        title: "Gérez ce qui est installé",
+        body: "Chaque LoRA garde ici ses mots-clés déclencheurs. Récupérez-les depuis CivitAI, modifiez-les ou supprimez les fichiers dont vous n'avez plus besoin.",
+      },
+      browse: {
+        title: "Découvrez-en plus sur CivitAI",
+        body: "Passez sur Parcourir pour chercher sur CivitAI et télécharger des LoRA directement dans votre bibliothèque.",
+      },
+    },
+    sdEngine: {
+      installed: {
+        title: "Les builds du moteur vivent ici",
+        body: "Chaque build installé affiche sa version et son backend. Vous pouvez en garder plusieurs et changer le build actif à tout moment.",
+      },
+      install: {
+        title: "Installez un build pour votre matériel",
+        body: "Choisissez une version et une variante. Votre GPU est détecté et le build compatible le plus adapté est présélectionné, donc le choix par défaut est en général le bon.",
+      },
+      models: {
+        title: "Téléchargez des modèles d'image",
+        body: "Parcourez des familles de modèles vérifiées par rapport à votre matériel. Les téléchargements vont dans votre dossier de modèles, prêts pour le Playground et les discussions.",
+      },
+      upscaler: {
+        title: "Un petit modèle pour l'agrandissement",
+        body: "Ce modèle ESRGAN alimente l'action Agrandir et la passe haute résolution. Installez-le une fois et oubliez-le.",
+      },
+    },
+    civitaiBrowse: {
+      search: {
+        title: "Cherchez dans tout CivitAI",
+        body: "Tapez pour trouver des LoRA par nom ou mot-clé. Les résultats se mettent à jour au fil de votre recherche.",
+      },
+      sort: {
+        title: "Triez les résultats",
+        body: "Classez par note, téléchargements ou nouveauté, et choisissez la période qui compte.",
+      },
+      filters: {
+        title: "Accordez-vous à votre modèle de base",
+        body: "Un LoRA ne fonctionne qu'avec la famille de modèles pour laquelle il a été entraîné. Filtrez par modèle de base pour que les téléchargements conviennent vraiment à votre installation.",
+      },
+      token: {
+        title: "Certains fichiers exigent un jeton",
+        body: "Les fichiers restreints et en accès anticipé ne se téléchargent qu'avec un jeton d'API CivitAI. Ajoutez le vôtre ici ; en créer un sur civitai.com est gratuit.",
+      },
+      results: {
+        title: "Téléchargez dans votre bibliothèque",
+        body: "Ouvrez un résultat pour choisir une version et un fichier. Les téléchargements arrivent directement dans votre bibliothèque, prêts à servir dans le Playground.",
       },
     },
     stepCounter: "Étape {{current}} sur {{total}}",

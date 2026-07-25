@@ -4700,9 +4700,12 @@ export const zhHantMessages: DeepPartialMessageTree<LocaleMessages> = {
       toggle: "切換 llama.cpp 串流",
     },
   },
+  playground: {
+    demoExample: "範例",
+  },
   loraLibrary: {
     title: "LoRA 庫",
-    subtitle: "管理本地 LoRA，並從 CivitAI 下載新的 LoRA。",
+    subtitle: "管理 LoRA，並從 CivitAI 下載。",
     tabLibrary: "庫",
     tabBrowse: "瀏覽 CivitAI",
     installedCount: "庫中有 {{count}} 個 LoRA",
@@ -4767,6 +4770,8 @@ export const zhHantMessages: DeepPartialMessageTree<LocaleMessages> = {
     tokenSave: "儲存權杖",
     tokenSaved: "權杖已儲存",
     tokenUnverified: "權杖已儲存，但無法驗證。",
+    tokenWarningTitle: "未儲存 CivitAI 權杖",
+    tokenWarningBody: "沒有權杖也能瀏覽，但受限和搶先體驗檔案會下載失敗。新增權杖即可解鎖全部內容。",
     tokenStatusMissing: "未儲存權杖。",
     tokenStatusSaved: "權杖已儲存。",
     tokenStatusInvalid: "已儲存的權杖無效或已過期。",
@@ -7970,6 +7975,10 @@ export const zhHantMessages: DeepPartialMessageTree<LocaleMessages> = {
         title: "把模型分到多張 GPU 上",
         body: "有兩張或更多顯示卡時，打開它就能把層分散到各張卡上。設為繼承的模型會自動跟隨這個開關。",
       },
+      civitai: {
+        title: "你的 CivitAI 權杖放在這裡",
+        body: "儲存一個 API 權杖，就能在 LoRA 瀏覽器裡下載受限和搶先體驗檔案。你隨時可以更換或移除它。",
+      },
     },
     hfBrowser: {
       panel: {
@@ -8031,6 +8040,108 @@ export const zhHantMessages: DeepPartialMessageTree<LocaleMessages> = {
       embedding: {
         title: "由一個小型本機模型驅動",
         body: "回想功能依靠在你裝置上計算的嵌入向量。這一部分管理嵌入模型的版本和它的設定。",
+      },
+    },
+    imageGeneration: {
+      playground: {
+        title: "在 Playground 裡盡情實驗",
+        body: "用提示詞、模型設定和 LoRA 自由生成圖片。在把模型接入對話之前，這裡是試用它的最佳場所。",
+      },
+      engine: {
+        title: "本機圖片靠這個引擎執行",
+        body: "Stable Diffusion 引擎負責裝置端生成。打開管理即可更新它、切換後端或查看它的狀態。",
+      },
+      avatar: {
+        title: "頭像來自這個模型",
+        body: "在頭像選擇器裡生成個人檔案圖片時，用的就是這裡設定的模型。關掉開關，就能在所有地方隱藏頭像生成。",
+      },
+      scene: {
+        title: "場景則來自這一個",
+        body: "根據對話上下文生成的場景圖片使用這個模型。它不必和你的頭像模型相同。",
+      },
+      prompting: {
+        title: "場景提示詞是怎麼寫出來的",
+        body: "場景撰寫器會把對話變成圖片提示詞。你可以選擇場景要自動生成、先詢問你，還是等待手動請求。",
+      },
+    },
+    playground: {
+      prompt: {
+        title: "描述這張圖片",
+        body: "把你想看到的寫在這裡。模型支援時，下方會出現負面提示詞和起始圖片，讓你更精細地控制。",
+      },
+      generate: {
+        title: "準備好了就生成",
+        body: "輕點一下即可開始生成。在提示詞框裡按 Ctrl+Enter 也可以。",
+      },
+      feed: {
+        title: "結果會集中到這條動態",
+        body: "每次生成都會連同它的設定顯示在這裡。你可以重複使用種子、重新生成、放大，或把圖片送回去當起始圖片。",
+      },
+      model: {
+        title: "先挑模型",
+        body: "選擇任何你已設定好的圖片模型，本機或雲端都行。下方的設定會依模型支援的功能自動調整。",
+      },
+      loras: {
+        title: "再疊上 LoRA",
+        body: "LoRA 能為本機模型加入風格和角色。新增一個或多個，並分別調整它們的強度。",
+      },
+    },
+    loraLibrary: {
+      tabs: {
+        title: "庫與瀏覽",
+        body: "庫顯示這台裝置上已安裝的 LoRA。想要更多時，瀏覽可以搜尋 CivitAI。",
+      },
+      import: {
+        title: "帶上你自己的檔案",
+        body: "磁碟上已經有 LoRA 檔案？在這裡匯入，它們就會加入你的庫。",
+      },
+      installed: {
+        title: "管理已安裝的內容",
+        body: "每個 LoRA 的觸發關鍵字都保存在這裡。你可以從 CivitAI 取得、編輯它們，或刪除不再需要的檔案。",
+      },
+      browse: {
+        title: "在 CivitAI 上發現更多",
+        body: "切換到瀏覽即可搜尋 CivitAI，並把 LoRA 直接下載進你的庫。",
+      },
+    },
+    sdEngine: {
+      installed: {
+        title: "引擎建置都在這裡",
+        body: "每個已安裝的建置都會顯示版本和後端。你可以同時保留多個，並隨時切換使用中的那個。",
+      },
+      install: {
+        title: "為你的硬體安裝一個建置",
+        body: "挑一個版本和變體。系統會偵測你的 GPU 並預選最相容的建置，所以預設選項通常就是對的。",
+      },
+      models: {
+        title: "下載圖片模型",
+        body: "瀏覽已對照你的硬體檢查過的模型家族。下載會存到你的模型資料夾，供 Playground 和對話使用。",
+      },
+      upscaler: {
+        title: "一個負責放大的小模型",
+        body: "這個 ESRGAN 模型驅動放大操作和高解析度處理。裝一次就不用再管它了。",
+      },
+    },
+    civitaiBrowse: {
+      search: {
+        title: "搜尋整個 CivitAI",
+        body: "輸入名稱或關鍵字來尋找 LoRA。結果會隨著你的輸入即時更新。",
+      },
+      sort: {
+        title: "為結果排序",
+        body: "按評分、下載量或最新排序，並選擇你在意的時間範圍。",
+      },
+      filters: {
+        title: "對上你的基礎模型",
+        body: "LoRA 只對它訓練時所用的模型家族有效。按基礎模型篩選，下載的檔案才真正適合你的設定。",
+      },
+      token: {
+        title: "有些檔案需要權杖",
+        body: "受限和搶先體驗檔案只有搭配 CivitAI API 權杖才能下載。在這裡新增你的權杖，在 civitai.com 上建立一個是免費的。",
+      },
+      results: {
+        title: "下載進你的庫",
+        body: "打開一個結果，挑選版本和檔案。下載會直接進入你的庫，隨時可以在 Playground 裡使用。",
       },
     },
     stepCounter: "第 {{current}} 步，共 {{total}} 步",

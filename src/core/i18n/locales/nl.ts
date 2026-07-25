@@ -4042,9 +4042,12 @@ export const nlMessages: DeepPartialMessageTree<LocaleMessages> = {
       viewInBrowser: "Bekijken in browser",
     },
   },
+  playground: {
+    demoExample: "Voorbeeld",
+  },
   loraLibrary: {
     title: "LoRA-bibliotheek",
-    subtitle: "Beheer lokale LoRA's en download nieuwe van CivitAI.",
+    subtitle: "Beheer LoRA's en download van CivitAI.",
     tabLibrary: "Bibliotheek",
     tabBrowse: "CivitAI verkennen",
     installedCount: "{{count}} LoRA's in je bibliotheek",
@@ -4109,6 +4112,8 @@ export const nlMessages: DeepPartialMessageTree<LocaleMessages> = {
     tokenSave: "Token opslaan",
     tokenSaved: "Token opgeslagen",
     tokenUnverified: "Token opgeslagen maar kon niet worden geverifieerd.",
+    tokenWarningTitle: "Geen CivitAI-token opgeslagen",
+    tokenWarningBody: "Je kunt zonder token bladeren, maar beperkte en early-access bestanden zullen niet downloaden. Voeg een token toe om alles te ontgrendelen.",
     tokenStatusMissing: "Geen token opgeslagen.",
     tokenStatusSaved: "Token opgeslagen.",
     tokenStatusInvalid: "Het opgeslagen token is ongeldig of verlopen.",
@@ -7971,6 +7976,10 @@ export const nlMessages: DeepPartialMessageTree<LocaleMessages> = {
         title: "Verdeel modellen over GPU's",
         body: "Met twee of meer videokaarten zet je dit aan om lagen over ze te verspreiden. Modellen die op Overnemen staan volgen deze schakelaar automatisch.",
       },
+      civitai: {
+        title: "Je CivitAI-token woont hier",
+        body: "Sla een API-token op om beperkte en early-access downloads in de LoRA-browser te ontgrendelen. Je kunt hem altijd vervangen of verwijderen.",
+      },
     },
     hfBrowser: {
       panel: {
@@ -8032,6 +8041,108 @@ export const nlMessages: DeepPartialMessageTree<LocaleMessages> = {
       embedding: {
         title: "Aangedreven door een klein lokaal model",
         body: "Herinneringen ophalen werkt via embeddings die op je apparaat worden berekend. Deze sectie beheert de versie van het embeddingmodel en zijn instellingen.",
+      },
+    },
+    imageGeneration: {
+      playground: {
+        title: "Experimenteer in de Playground",
+        body: "Genereer vrij afbeeldingen met prompts, modelinstellingen en LoRA's. Het is de beste plek om een model te testen voordat je het aan chats koppelt.",
+      },
+      engine: {
+        title: "Lokale afbeeldingen draaien op deze engine",
+        body: "De Stable Diffusion-engine verzorgt generatie op het apparaat. Open Beheren om hem bij te werken, van backend te wisselen of de status te bekijken.",
+      },
+      avatar: {
+        title: "Avatars komen van dit model",
+        body: "Een profielafbeelding genereren vanuit de avatarkiezer gebruikt het model dat je hier instelt. Zet de schakelaar uit om avatargeneratie overal te verbergen.",
+      },
+      scene: {
+        title: "Scènes komen van deze",
+        body: "Scèneafbeeldingen die uit de gesprekscontext worden opgebouwd gebruiken dit model. Het hoeft niet hetzelfde te zijn als je avatarmodel.",
+      },
+      prompting: {
+        title: "Hoe scèneprompts worden geschreven",
+        body: "De scèneschrijver zet het gesprek om in een afbeeldingsprompt. Kies of scènes automatisch worden gegenereerd, eerst aan jou vragen, of wachten op een handmatig verzoek.",
+      },
+    },
+    playground: {
+      prompt: {
+        title: "Beschrijf de afbeelding",
+        body: "Schrijf hier wat je wilt zien. Als het model het ondersteunt, verschijnen hieronder een negatieve prompt en een startafbeelding voor fijnere controle.",
+      },
+      generate: {
+        title: "Genereer wanneer je klaar bent",
+        body: "Eén tik start de generatie. Ctrl+Enter indrukken vanuit het promptvak werkt ook.",
+      },
+      feed: {
+        title: "Resultaten belanden in de feed",
+        body: "Elke generatie verschijnt hier met zijn instellingen. Hergebruik een seed, genereer opnieuw, doe een upscale of stuur een afbeelding terug als startpunt.",
+      },
+      model: {
+        title: "Kies eerst het model",
+        body: "Kies elk afbeeldingsmodel dat je hebt ingesteld, lokaal of in de cloud. De instellingen hieronder passen zich aan aan wat het model ondersteunt.",
+      },
+      loras: {
+        title: "Stapel er LoRA's bovenop",
+        body: "LoRA's voegen stijlen en karakters toe aan een lokaal model. Voeg er een of meer toe en stel de sterkte van elk afzonderlijk af.",
+      },
+    },
+    loraLibrary: {
+      tabs: {
+        title: "Bibliotheek en Verkennen",
+        body: "Bibliotheek toont de LoRA's die op dit apparaat zijn geïnstalleerd. Verkennen doorzoekt CivitAI als je meer wilt.",
+      },
+      import: {
+        title: "Breng je eigen bestanden mee",
+        body: "Heb je al LoRA-bestanden op schijf? Importeer ze hier en ze sluiten aan bij je bibliotheek.",
+      },
+      installed: {
+        title: "Beheer wat er geïnstalleerd is",
+        body: "Elke LoRA bewaart hier zijn triggerwoorden. Haal ze op van CivitAI, bewerk ze, of verwijder bestanden die je niet meer nodig hebt.",
+      },
+      browse: {
+        title: "Ontdek meer op CivitAI",
+        body: "Schakel naar Verkennen om CivitAI te doorzoeken en LoRA's rechtstreeks naar je bibliotheek te downloaden.",
+      },
+    },
+    sdEngine: {
+      installed: {
+        title: "Engine-builds wonen hier",
+        body: "Elke geïnstalleerde build toont zijn versie en backend. Je kunt er meerdere bewaren en altijd wisselen welke actief is.",
+      },
+      install: {
+        title: "Installeer een build voor jouw hardware",
+        body: "Kies een versie en variant. Je GPU wordt gedetecteerd en de beste compatibele build wordt voorgeselecteerd, dus de standaard zit meestal goed.",
+      },
+      models: {
+        title: "Download afbeeldingsmodellen",
+        body: "Blader door modelfamilies die tegen je hardware zijn getoetst. Downloads gaan naar je modelmap, klaar voor de Playground en chats.",
+      },
+      upscaler: {
+        title: "Eén klein model voor upscaling",
+        body: "Dit ESRGAN-model drijft de Upscale-actie en de hogeresolutiestap aan. Installeer het één keer en vergeet het daarna.",
+      },
+    },
+    civitaiBrowse: {
+      search: {
+        title: "Doorzoek heel CivitAI",
+        body: "Typ om LoRA's op naam of trefwoord te vinden. De resultaten worden bijgewerkt terwijl je zoekt.",
+      },
+      sort: {
+        title: "Sorteer de resultaten",
+        body: "Rangschik op beoordeling, downloads of nieuwste, en kies de periode die ertoe doet.",
+      },
+      filters: {
+        title: "Match je basismodel",
+        body: "Een LoRA werkt alleen met de modelfamilie waarvoor hij is getraind. Filter op basismodel zodat downloads echt bij je setup passen.",
+      },
+      token: {
+        title: "Sommige bestanden vereisen een token",
+        body: "Beperkte en early-access bestanden downloaden alleen met een CivitAI API-token. Voeg de jouwe hier toe; er een aanmaken op civitai.com is gratis.",
+      },
+      results: {
+        title: "Download naar je bibliotheek",
+        body: "Open een resultaat om een versie en bestand te kiezen. Downloads belanden rechtstreeks in je bibliotheek, klaar voor gebruik in de Playground.",
       },
     },
     stepCounter: "Stap {{current}} van {{total}}",

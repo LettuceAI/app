@@ -4701,9 +4701,12 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
       toggle: "llama.cpp 스트리밍 전환",
     },
   },
+  playground: {
+    demoExample: "예시",
+  },
   loraLibrary: {
     title: "LoRA 라이브러리",
-    subtitle: "로컬 LoRA를 관리하고 CivitAI에서 새 LoRA를 다운로드하세요.",
+    subtitle: "LoRA를 관리하고 CivitAI에서 다운로드하세요.",
     tabLibrary: "라이브러리",
     tabBrowse: "CivitAI 둘러보기",
     installedCount: "라이브러리에 {{count}}개의 LoRA",
@@ -4768,6 +4771,8 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
     tokenSave: "토큰 저장",
     tokenSaved: "토큰이 저장되었습니다",
     tokenUnverified: "토큰이 저장되었지만 확인할 수 없었습니다.",
+    tokenWarningTitle: "저장된 CivitAI 토큰이 없습니다",
+    tokenWarningBody: "토큰 없이도 둘러볼 수 있지만, 제한된 파일과 얼리 액세스 파일은 다운로드에 실패합니다. 토큰을 추가하면 모두 이용할 수 있습니다.",
     tokenStatusMissing: "저장된 토큰이 없습니다.",
     tokenStatusSaved: "토큰이 저장되었습니다.",
     tokenStatusInvalid: "저장된 토큰이 유효하지 않거나 만료되었습니다.",
@@ -7971,6 +7976,10 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
         title: "모델을 여러 GPU에 분산",
         body: "그래픽 카드가 두 개 이상이라면 이 옵션을 켜서 레이어를 나눠 배치하세요. 상속으로 설정된 모델은 이 스위치를 자동으로 따릅니다.",
       },
+      civitai: {
+        title: "CivitAI 토큰은 여기에",
+        body: "API 토큰을 저장하면 LoRA 브라우저에서 제한된 파일과 얼리 액세스 다운로드가 열립니다. 언제든 교체하거나 제거할 수 있습니다.",
+      },
     },
     hfBrowser: {
       panel: {
@@ -8032,6 +8041,108 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
       embedding: {
         title: "작은 로컬 모델로 동작",
         body: "회상은 기기에서 계산되는 임베딩으로 동작합니다. 이 섹션에서 임베딩 모델의 버전과 설정을 관리합니다.",
+      },
+    },
+    imageGeneration: {
+      playground: {
+        title: "Playground에서 실험해 보세요",
+        body: "프롬프트, 모델 설정, LoRA로 자유롭게 이미지를 생성하세요. 모델을 채팅에 연결하기 전에 시험해 보기 가장 좋은 곳입니다.",
+      },
+      engine: {
+        title: "로컬 이미지는 이 엔진으로 실행됩니다",
+        body: "Stable Diffusion 엔진이 기기 내 생성을 담당합니다. 관리를 열어 엔진을 업데이트하거나, 백엔드를 바꾸거나, 상태를 확인하세요.",
+      },
+      avatar: {
+        title: "아바타는 이 모델에서 나옵니다",
+        body: "아바타 선택기에서 프로필 이미지를 생성할 때 여기서 설정한 모델을 사용합니다. 토글을 끄면 모든 곳에서 아바타 생성이 숨겨집니다.",
+      },
+      scene: {
+        title: "장면은 이 모델에서 나옵니다",
+        body: "대화 컨텍스트로 만들어지는 장면 이미지는 이 모델을 사용합니다. 아바타 모델과 같을 필요는 없습니다.",
+      },
+      prompting: {
+        title: "장면 프롬프트가 작성되는 방식",
+        body: "장면 작성기가 대화를 이미지 프롬프트로 바꿔 줍니다. 장면을 자동으로 생성할지, 먼저 물어볼지, 수동 요청을 기다릴지 선택하세요.",
+      },
+    },
+    playground: {
+      prompt: {
+        title: "이미지를 묘사하세요",
+        body: "보고 싶은 것을 여기에 적으세요. 모델이 지원하면 더 세밀한 제어를 위한 네거티브 프롬프트와 시작 이미지가 아래에 나타납니다.",
+      },
+      generate: {
+        title: "준비되면 생성",
+        body: "한 번의 탭으로 생성이 시작됩니다. 프롬프트 상자에서 Ctrl+Enter를 눌러도 됩니다.",
+      },
+      feed: {
+        title: "결과는 피드에 쌓입니다",
+        body: "모든 생성 결과가 설정과 함께 여기에 표시됩니다. 시드를 재사용하고, 다시 생성하고, 업스케일하고, 이미지를 시작 이미지로 되돌려 보낼 수 있습니다.",
+      },
+      model: {
+        title: "먼저 모델을 고르세요",
+        body: "로컬이든 클라우드든 설정해 둔 이미지 모델 아무거나 선택하세요. 아래 설정은 모델이 지원하는 기능에 맞춰 달라집니다.",
+      },
+      loras: {
+        title: "LoRA를 얹어 보세요",
+        body: "LoRA는 로컬 모델에 스타일과 캐릭터를 더합니다. 하나 이상 추가하고 각각의 강도를 조절하세요.",
+      },
+    },
+    loraLibrary: {
+      tabs: {
+        title: "라이브러리와 둘러보기",
+        body: "라이브러리에는 이 기기에 설치된 LoRA가 표시됩니다. 더 필요하면 둘러보기에서 CivitAI를 검색하세요.",
+      },
+      import: {
+        title: "가진 파일 가져오기",
+        body: "디스크에 LoRA 파일이 이미 있나요? 여기서 가져오면 라이브러리에 추가됩니다.",
+      },
+      installed: {
+        title: "설치된 항목 관리",
+        body: "각 LoRA는 트리거 키워드를 여기에 보관합니다. CivitAI에서 가져오거나, 편집하거나, 더 이상 필요 없는 파일을 삭제하세요.",
+      },
+      browse: {
+        title: "CivitAI에서 더 찾아보기",
+        body: "둘러보기로 전환해 CivitAI를 검색하고 LoRA를 바로 라이브러리로 다운로드하세요.",
+      },
+    },
+    sdEngine: {
+      installed: {
+        title: "엔진 빌드는 여기에",
+        body: "설치된 각 빌드에는 버전과 백엔드가 표시됩니다. 여러 개를 두고 언제든 활성 빌드를 바꿀 수 있습니다.",
+      },
+      install: {
+        title: "하드웨어에 맞는 빌드 설치",
+        body: "버전과 변형을 고르세요. GPU를 감지해 가장 잘 맞는 빌드를 미리 선택해 두므로 보통은 기본값이 맞습니다.",
+      },
+      models: {
+        title: "이미지 모델 다운로드",
+        body: "하드웨어와 대조해 확인된 모델 계열을 둘러보세요. 다운로드는 모델 폴더에 저장되어 Playground와 채팅에서 바로 쓸 수 있습니다.",
+      },
+      upscaler: {
+        title: "업스케일을 위한 작은 모델 하나",
+        body: "이 ESRGAN 모델이 업스케일 동작과 고해상도 패스를 담당합니다. 한 번 설치해 두면 신경 쓸 일이 없습니다.",
+      },
+    },
+    civitaiBrowse: {
+      search: {
+        title: "CivitAI 전체 검색",
+        body: "이름이나 키워드로 LoRA를 찾아보세요. 입력하는 대로 결과가 갱신됩니다.",
+      },
+      sort: {
+        title: "결과 정렬",
+        body: "평점, 다운로드 수, 최신순으로 정렬하고 원하는 기간을 선택하세요.",
+      },
+      filters: {
+        title: "베이스 모델 맞추기",
+        body: "LoRA는 학습된 모델 계열에서만 동작합니다. 베이스 모델로 필터링해 다운로드가 내 설정에 실제로 맞도록 하세요.",
+      },
+      token: {
+        title: "토큰이 필요한 파일도 있습니다",
+        body: "제한된 파일과 얼리 액세스 파일은 CivitAI API 토큰이 있어야 다운로드됩니다. 여기에 토큰을 추가하세요. civitai.com에서 무료로 만들 수 있습니다.",
+      },
+      results: {
+        title: "라이브러리로 다운로드",
+        body: "결과를 열어 버전과 파일을 고르세요. 다운로드는 바로 라이브러리에 저장되어 Playground에서 쓸 준비가 됩니다.",
       },
     },
     stepCounter: "{{total}}단계 중 {{current}}단계",

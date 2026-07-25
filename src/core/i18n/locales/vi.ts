@@ -3953,9 +3953,12 @@ export const viMessages: DeepPartialMessageTree<LocaleMessages> = {
       completed: "Đã tải {{size}}",
     },
   },
+  playground: {
+    demoExample: "Ví dụ",
+  },
   loraLibrary: {
     title: "Thư viện LoRA",
-    subtitle: "Quản lý LoRA cục bộ và tải LoRA mới từ CivitAI.",
+    subtitle: "Quản lý LoRA và tải từ CivitAI.",
     tabLibrary: "Thư viện",
     tabBrowse: "Duyệt CivitAI",
     installedCount: "{{count}} LoRA trong thư viện của bạn",
@@ -4020,6 +4023,8 @@ export const viMessages: DeepPartialMessageTree<LocaleMessages> = {
     tokenSave: "Lưu token",
     tokenSaved: "Đã lưu token",
     tokenUnverified: "Đã lưu token nhưng không thể xác minh.",
+    tokenWarningTitle: "Chưa lưu token CivitAI",
+    tokenWarningBody: "Bạn vẫn có thể duyệt mà không cần token, nhưng các tệp bị hạn chế và truy cập sớm sẽ không tải được. Thêm token để mở khóa tất cả.",
     tokenStatusMissing: "Chưa lưu token.",
     tokenStatusSaved: "Đã lưu token.",
     tokenStatusInvalid: "Token đã lưu không hợp lệ hoặc đã hết hạn.",
@@ -7223,6 +7228,10 @@ export const viMessages: DeepPartialMessageTree<LocaleMessages> = {
         title: "Chia mô hình giữa các GPU",
         body: "Nếu có từ hai card đồ họa trở lên, hãy bật tính năng này để phân bổ các lớp giữa chúng. Mô hình đặt ở chế độ Kế thừa sẽ tự động theo công tắc này.",
       },
+      civitai: {
+        title: "Token CivitAI của bạn nằm ở đây",
+        body: "Lưu token API để mở khóa các bản tải bị hạn chế và truy cập sớm trong trình duyệt LoRA. Bạn có thể thay hoặc gỡ token bất cứ lúc nào.",
+      },
     },
     hfBrowser: {
       panel: {
@@ -7284,6 +7293,108 @@ export const viMessages: DeepPartialMessageTree<LocaleMessages> = {
       embedding: {
         title: "Chạy nhờ một mô hình cục bộ nhỏ",
         body: "Việc gợi nhớ hoạt động qua các embedding được tính ngay trên thiết bị của bạn. Phần này quản lý phiên bản mô hình embedding và các cài đặt của nó.",
+      },
+    },
+    imageGeneration: {
+      playground: {
+        title: "Thử nghiệm trong Playground",
+        body: "Tạo hình ảnh thoải mái với prompt, cài đặt mô hình và LoRA. Đây là nơi tốt nhất để thử một mô hình trước khi đưa nó vào trò chuyện.",
+      },
+      engine: {
+        title: "Hình ảnh cục bộ chạy trên engine này",
+        body: "Engine Stable Diffusion đảm nhận việc tạo ảnh ngay trên thiết bị. Mở Quản lý để cập nhật, đổi backend hoặc kiểm tra trạng thái.",
+      },
+      avatar: {
+        title: "Avatar được tạo từ mô hình này",
+        body: "Việc tạo ảnh hồ sơ từ trình chọn avatar dùng mô hình đặt ở đây. Tắt công tắc để ẩn tính năng tạo avatar ở mọi nơi.",
+      },
+      scene: {
+        title: "Cảnh thì dùng mô hình này",
+        body: "Ảnh cảnh dựng từ ngữ cảnh cuộc trò chuyện dùng mô hình này. Nó không cần trùng với mô hình avatar của bạn.",
+      },
+      prompting: {
+        title: "Prompt cảnh được viết thế nào",
+        body: "Trình viết cảnh biến cuộc trò chuyện thành prompt hình ảnh. Chọn để cảnh được tạo tự động, hỏi bạn trước, hoặc chờ yêu cầu thủ công.",
+      },
+    },
+    playground: {
+      prompt: {
+        title: "Mô tả hình ảnh",
+        body: "Viết những gì bạn muốn thấy vào đây. Khi mô hình hỗ trợ, prompt phủ định và ảnh khởi đầu sẽ hiện bên dưới để kiểm soát tinh hơn.",
+      },
+      generate: {
+        title: "Sẵn sàng thì tạo",
+        body: "Một chạm là bắt đầu tạo ảnh. Nhấn Ctrl+Enter từ ô prompt cũng được.",
+      },
+      feed: {
+        title: "Kết quả hiện trong luồng này",
+        body: "Mỗi lần tạo đều xuất hiện ở đây cùng các cài đặt của nó. Dùng lại seed, tạo lại, phóng to, hoặc gửi ảnh ngược lại làm ảnh khởi đầu.",
+      },
+      model: {
+        title: "Chọn mô hình trước",
+        body: "Chọn bất kỳ mô hình hình ảnh nào bạn đã thiết lập, cục bộ hay đám mây. Các cài đặt bên dưới thay đổi theo những gì mô hình hỗ trợ.",
+      },
+      loras: {
+        title: "Xếp thêm LoRA lên trên",
+        body: "LoRA thêm phong cách và nhân vật cho mô hình cục bộ. Thêm một hoặc nhiều LoRA và chỉnh cường độ của từng cái.",
+      },
+    },
+    loraLibrary: {
+      tabs: {
+        title: "Thư viện và Duyệt",
+        body: "Thư viện hiển thị các LoRA đã cài trên thiết bị này. Duyệt sẽ tìm trên CivitAI khi bạn muốn thêm.",
+      },
+      import: {
+        title: "Mang tệp của riêng bạn",
+        body: "Đã có sẵn tệp LoRA trên đĩa? Nhập chúng vào đây và chúng sẽ vào thư viện của bạn.",
+      },
+      installed: {
+        title: "Quản lý những gì đã cài",
+        body: "Mỗi LoRA giữ các từ khóa kích hoạt của nó ở đây. Lấy chúng từ CivitAI, chỉnh sửa, hoặc xóa những tệp bạn không còn cần.",
+      },
+      browse: {
+        title: "Khám phá thêm trên CivitAI",
+        body: "Chuyển sang Duyệt để tìm trên CivitAI và tải LoRA thẳng vào thư viện của bạn.",
+      },
+    },
+    sdEngine: {
+      installed: {
+        title: "Các bản build engine nằm ở đây",
+        body: "Mỗi bản build đã cài hiển thị phiên bản và backend của nó. Bạn có thể giữ nhiều bản cùng lúc và đổi bản đang hoạt động bất cứ lúc nào.",
+      },
+      install: {
+        title: "Cài bản build cho phần cứng của bạn",
+        body: "Chọn phiên bản và biến thể. GPU của bạn được nhận diện và bản build tương thích nhất được chọn sẵn, nên mặc định thường là đúng.",
+      },
+      models: {
+        title: "Tải mô hình hình ảnh",
+        body: "Duyệt các dòng mô hình đã được kiểm tra với phần cứng của bạn. Bản tải về nằm trong thư mục mô hình, sẵn sàng cho Playground và trò chuyện.",
+      },
+      upscaler: {
+        title: "Một mô hình nhỏ để phóng to ảnh",
+        body: "Mô hình ESRGAN này vận hành thao tác Phóng to và bước xử lý độ phân giải cao. Cài một lần rồi quên nó đi.",
+      },
+    },
+    civitaiBrowse: {
+      search: {
+        title: "Tìm trên toàn bộ CivitAI",
+        body: "Gõ để tìm LoRA theo tên hoặc từ khóa. Kết quả cập nhật ngay khi bạn tìm.",
+      },
+      sort: {
+        title: "Sắp xếp kết quả",
+        body: "Sắp theo đánh giá, lượt tải hoặc mới nhất, và chọn khoảng thời gian bạn quan tâm.",
+      },
+      filters: {
+        title: "Khớp với mô hình gốc của bạn",
+        body: "LoRA chỉ hoạt động với dòng mô hình mà nó được huấn luyện. Lọc theo mô hình gốc để bản tải về thực sự hợp với thiết lập của bạn.",
+      },
+      token: {
+        title: "Một số tệp cần token",
+        body: "Tệp bị hạn chế và truy cập sớm chỉ tải được với token API CivitAI. Thêm token của bạn ở đây; tạo token trên civitai.com là miễn phí.",
+      },
+      results: {
+        title: "Tải về thư viện của bạn",
+        body: "Mở một kết quả để chọn phiên bản và tệp. Bản tải về vào thẳng thư viện của bạn, sẵn sàng dùng trong Playground.",
       },
     },
     stepCounter: "Bước {{current}} / {{total}}",

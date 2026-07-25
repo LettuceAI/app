@@ -4701,9 +4701,12 @@ export const noMessages: DeepPartialMessageTree<LocaleMessages> = {
       toggle: "Veksle llama.cpp-strømming",
     },
   },
+  playground: {
+    demoExample: "Eksempel",
+  },
   loraLibrary: {
     title: "LoRA-bibliotek",
-    subtitle: "Administrer lokale LoRA-er og last ned nye fra CivitAI.",
+    subtitle: "Administrer LoRA-er og last ned fra CivitAI.",
     tabLibrary: "Bibliotek",
     tabBrowse: "Utforsk CivitAI",
     installedCount: "{{count}} LoRA-er i biblioteket ditt",
@@ -4768,6 +4771,8 @@ export const noMessages: DeepPartialMessageTree<LocaleMessages> = {
     tokenSave: "Lagre token",
     tokenSaved: "Token lagret",
     tokenUnverified: "Token lagret, men kunne ikke verifiseres.",
+    tokenWarningTitle: "Ingen CivitAI-token lagret",
+    tokenWarningBody: "Du kan utforske uten et, men nedlasting av begrensede filer og filer med tidlig tilgang vil mislykkes. Legg til et token for å låse opp alt.",
     tokenStatusMissing: "Ingen token lagret.",
     tokenStatusSaved: "Token lagret.",
     tokenStatusInvalid: "Det lagrede tokenet er ugyldig eller utløpt.",
@@ -7971,6 +7976,10 @@ export const noMessages: DeepPartialMessageTree<LocaleMessages> = {
         title: "Del modeller mellom GPU-er",
         body: "Med to eller flere skjermkort kan du slå på dette for å spre lag mellom dem. Modeller satt til Arv følger denne bryteren automatisk.",
       },
+      civitai: {
+        title: "CivitAI-tokenet ditt bor her",
+        body: "Lagre et API-token for å låse opp nedlasting av begrensede filer og filer med tidlig tilgang i LoRA-utforskeren. Du kan erstatte eller fjerne det når som helst.",
+      },
     },
     hfBrowser: {
       panel: {
@@ -8032,6 +8041,108 @@ export const noMessages: DeepPartialMessageTree<LocaleMessages> = {
       embedding: {
         title: "Drevet av en liten lokal modell",
         body: "Gjenkalling fungerer gjennom embeddings beregnet på enheten din. Denne seksjonen håndterer versjonen av embedding-modellen og innstillingene dens.",
+      },
+    },
+    imageGeneration: {
+      playground: {
+        title: "Eksperimenter i Playground",
+        body: "Generer bilder fritt med prompts, modellinnstillinger og LoRA-er. Det er det beste stedet å teste en modell før du kobler den til chatter.",
+      },
+      engine: {
+        title: "Lokale bilder kjører på denne motoren",
+        body: "Stable Diffusion-motoren håndterer generering på enheten. Åpne administrasjonen for å oppdatere den, bytte backend eller sjekke statusen.",
+      },
+      avatar: {
+        title: "Avatarer kommer fra denne modellen",
+        body: "Generering av profilbilde fra avatarvelgeren bruker modellen som er satt her. Slå av bryteren for å skjule avatargenerering overalt.",
+      },
+      scene: {
+        title: "Scener kommer fra denne",
+        body: "Scenebilder bygget fra samtalekonteksten bruker denne modellen. Den trenger ikke å være den samme som avatarmodellen din.",
+      },
+      prompting: {
+        title: "Slik skrives sceneprompts",
+        body: "Sceneskriveren gjør samtalen om til en bildeprompt. Velg om scener genereres automatisk, spør deg først eller venter på en manuell forespørsel.",
+      },
+    },
+    playground: {
+      prompt: {
+        title: "Beskriv bildet",
+        body: "Skriv hva du vil se her. Når modellen støtter det, dukker en negativ prompt og et startbilde opp nedenfor for finere kontroll.",
+      },
+      generate: {
+        title: "Generer når du er klar",
+        body: "Ett trykk starter genereringen. Ctrl+Enter fra promptboksen fungerer også.",
+      },
+      feed: {
+        title: "Resultatene lander i feeden",
+        body: "Hver generering vises her med innstillingene sine. Gjenbruk en seed, regenerer, oppskaler eller send et bilde tilbake som startpunkt.",
+      },
+      model: {
+        title: "Velg modellen først",
+        body: "Velg en hvilken som helst bildemodell du har satt opp, lokal eller i skyen. Innstillingene nedenfor tilpasser seg det modellen støtter.",
+      },
+      loras: {
+        title: "Legg LoRA-er på toppen",
+        body: "LoRA-er gir en lokal modell stiler og karakterer. Legg til én eller flere og juster styrken på hver av dem.",
+      },
+    },
+    loraLibrary: {
+      tabs: {
+        title: "Bibliotek og Utforsk",
+        body: "Bibliotek viser LoRA-ene som er installert på denne enheten. Utforsk søker på CivitAI når du vil ha flere.",
+      },
+      import: {
+        title: "Ta med dine egne filer",
+        body: "Har du allerede LoRA-filer på disk? Importer dem her, så blir de en del av biblioteket ditt.",
+      },
+      installed: {
+        title: "Administrer det som er installert",
+        body: "Hver LoRA beholder utløserordene sine her. Hent dem fra CivitAI, rediger dem, eller slett filer du ikke trenger lenger.",
+      },
+      browse: {
+        title: "Oppdag mer på CivitAI",
+        body: "Bytt til Utforsk for å søke på CivitAI og laste ned LoRA-er rett inn i biblioteket ditt.",
+      },
+    },
+    sdEngine: {
+      installed: {
+        title: "Motorbygg bor her",
+        body: "Hvert installerte bygg viser versjonen og backenden sin. Du kan beholde flere og bytte det aktive når som helst.",
+      },
+      install: {
+        title: "Installer et bygg for maskinvaren din",
+        body: "Velg en versjon og variant. GPU-en din oppdages og det beste kompatible bygget forhåndsvelges, så standarden er som regel riktig.",
+      },
+      models: {
+        title: "Last ned bildemodeller",
+        body: "Bla i modellfamilier sjekket mot maskinvaren din. Nedlastinger går til modellmappen din, klare for Playground og chatter.",
+      },
+      upscaler: {
+        title: "Én liten modell for oppskalering",
+        body: "Denne ESRGAN-modellen driver oppskaleringshandlingen og høyoppløsningspasset. Installer den én gang og glem den.",
+      },
+    },
+    civitaiBrowse: {
+      search: {
+        title: "Søk i hele CivitAI",
+        body: "Skriv for å finne LoRA-er etter navn eller nøkkelord. Resultatene oppdateres mens du søker.",
+      },
+      sort: {
+        title: "Sorter resultatene",
+        body: "Sorter etter vurdering, nedlastinger eller nyeste, og velg tidsperioden som betyr noe.",
+      },
+      filters: {
+        title: "Match basismodellen din",
+        body: "En LoRA fungerer bare med modellfamilien den ble trent for. Filtrer på basismodell så nedlastingene faktisk passer oppsettet ditt.",
+      },
+      token: {
+        title: "Noen filer krever et token",
+        body: "Begrensede filer og filer med tidlig tilgang kan bare lastes ned med et CivitAI API-token. Legg til ditt her, det er gratis å opprette et på civitai.com.",
+      },
+      results: {
+        title: "Last ned til biblioteket ditt",
+        body: "Åpne et resultat for å velge versjon og fil. Nedlastinger lander rett i biblioteket ditt, klare til bruk i Playground.",
       },
     },
     stepCounter: "Steg {{current}} av {{total}}",

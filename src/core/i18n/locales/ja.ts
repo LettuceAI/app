@@ -3953,9 +3953,12 @@ export const jaMessages: DeepPartialMessageTree<LocaleMessages> = {
       completed: "{{size}} ダウンロード済み",
     },
   },
+  playground: {
+    demoExample: "サンプル",
+  },
   loraLibrary: {
     title: "LoRAライブラリ",
-    subtitle: "ローカルLoRAを管理し、CivitAIから新しくダウンロードできます。",
+    subtitle: "LoRAを管理し、CivitAIからダウンロードできます。",
     tabLibrary: "ライブラリ",
     tabBrowse: "CivitAIを探す",
     installedCount: "ライブラリに{{count}}個のLoRA",
@@ -4020,6 +4023,8 @@ export const jaMessages: DeepPartialMessageTree<LocaleMessages> = {
     tokenSave: "トークンを保存",
     tokenSaved: "トークンを保存しました",
     tokenUnverified: "トークンは保存されましたが検証できませんでした。",
+    tokenWarningTitle: "CivitAIトークンが保存されていません",
+    tokenWarningBody: "トークンなしでも閲覧できますが、制限付きファイルや早期アクセスファイルのダウンロードは失敗します。トークンを追加するとすべて利用できます。",
     tokenStatusMissing: "トークンは保存されていません。",
     tokenStatusSaved: "トークンを保存しました。",
     tokenStatusInvalid: "保存されたトークンは無効か期限切れです。",
@@ -7223,6 +7228,10 @@ export const jaMessages: DeepPartialMessageTree<LocaleMessages> = {
         title: "モデルを複数のGPUに分割",
         body: "グラフィックスカードが2枚以上あるなら、これをオンにするとレイヤーが各カードに分散されます。継承に設定されたモデルは自動的にこのスイッチに従います。",
       },
+      civitai: {
+        title: "CivitAIトークンはここに保存されます",
+        body: "APIトークンを保存すると、LoRAブラウザで制限付きや早期アクセスのダウンロードが解放されます。いつでも置き換えや削除ができます。",
+      },
     },
     hfBrowser: {
       panel: {
@@ -7284,6 +7293,108 @@ export const jaMessages: DeepPartialMessageTree<LocaleMessages> = {
       embedding: {
         title: "小さなローカルモデルが動力源",
         body: "リコールはデバイス上で計算されるエンベディングで動作します。このセクションでエンベディングモデルのバージョンと設定を管理します。",
+      },
+    },
+    imageGeneration: {
+      playground: {
+        title: "Playgroundで実験しよう",
+        body: "プロンプト、モデル設定、LoRAを使って自由に画像を生成できます。チャットに組み込む前にモデルを試すのに最適な場所です。",
+      },
+      engine: {
+        title: "ローカル画像はこのエンジンで動きます",
+        body: "Stable Diffusionエンジンがデバイス上の生成を担当します。管理を開くと、更新、バックエンドの切り替え、状態の確認ができます。",
+      },
+      avatar: {
+        title: "アバターはこのモデルから",
+        body: "アバターピッカーからプロフィール画像を生成するときは、ここで設定したモデルが使われます。トグルをオフにすると、アバター生成はどこにも表示されなくなります。",
+      },
+      scene: {
+        title: "シーンはこちらのモデルから",
+        body: "会話のコンテキストから作られるシーン画像はこのモデルを使います。アバターのモデルと同じである必要はありません。",
+      },
+      prompting: {
+        title: "シーンプロンプトの書かれ方",
+        body: "シーンライターが会話を画像プロンプトに変換します。シーンを自動で生成するか、先に確認するか、手動リクエストを待つかを選べます。",
+      },
+    },
+    playground: {
+      prompt: {
+        title: "画像を説明しよう",
+        body: "見たいものをここに書きます。モデルが対応していれば、ネガティブプロンプトと開始画像が下に表示され、より細かくコントロールできます。",
+      },
+      generate: {
+        title: "準備ができたら生成",
+        body: "ワンタップで生成が始まります。プロンプト欄からCtrl+Enterを押しても動きます。",
+      },
+      feed: {
+        title: "結果はフィードに届きます",
+        body: "すべての生成が設定とともにここに表示されます。シードの再利用、再生成、アップスケールのほか、画像を開始画像として送り返すこともできます。",
+      },
+      model: {
+        title: "まずモデルを選ぼう",
+        body: "設定済みの画像モデルなら、ローカルでもクラウドでもどれでも選べます。下の設定はモデルの対応内容に合わせて変わります。",
+      },
+      loras: {
+        title: "LoRAを重ねよう",
+        body: "LoRAはローカルモデルにスタイルやキャラクターを追加します。1つ以上追加して、それぞれの強度を調整できます。",
+      },
+    },
+    loraLibrary: {
+      tabs: {
+        title: "ライブラリと探すタブ",
+        body: "ライブラリにはこのデバイスにインストール済みのLoRAが表示されます。もっと欲しいときは、探すタブでCivitAIを検索できます。",
+      },
+      import: {
+        title: "手持ちのファイルを追加",
+        body: "ディスクにあるLoRAファイルをここからインポートすると、ライブラリに加わります。",
+      },
+      installed: {
+        title: "インストール済みを管理",
+        body: "各LoRAのトリガーキーワードはここに保存されます。CivitAIから取得したり、編集したり、不要になったファイルを削除したりできます。",
+      },
+      browse: {
+        title: "CivitAIでもっと見つけよう",
+        body: "探すタブに切り替えると、CivitAIを検索してLoRAをそのままライブラリにダウンロードできます。",
+      },
+    },
+    sdEngine: {
+      installed: {
+        title: "エンジンのビルドはここに",
+        body: "インストール済みの各ビルドにはバージョンとバックエンドが表示されます。複数を保持しておき、アクティブなビルドをいつでも切り替えられます。",
+      },
+      install: {
+        title: "ハードウェアに合うビルドをインストール",
+        body: "バージョンとバリアントを選びます。GPUが検出され、最も互換性の高いビルドがあらかじめ選択されるので、デフォルトのままで大抵は大丈夫です。",
+      },
+      models: {
+        title: "画像モデルをダウンロード",
+        body: "ハードウェアと照合済みのモデルファミリーを閲覧できます。ダウンロードはモデルフォルダに保存され、Playgroundやチャットですぐ使えます。",
+      },
+      upscaler: {
+        title: "アップスケール用の小さなモデル",
+        body: "このESRGANモデルがアップスケール操作と高解像度パスを支えます。一度インストールすれば、あとは忘れて大丈夫です。",
+      },
+    },
+    civitaiBrowse: {
+      search: {
+        title: "CivitAI全体を検索",
+        body: "入力すると名前やキーワードでLoRAを探せます。検索するそばから結果が更新されます。",
+      },
+      sort: {
+        title: "結果を並べ替え",
+        body: "評価、ダウンロード数、新着順で並べ替え、気になる期間を選べます。",
+      },
+      filters: {
+        title: "ベースモデルを合わせよう",
+        body: "LoRAは学習されたモデルファミリーでしか動きません。ベースモデルで絞り込めば、ダウンロードが本当にあなたの構成に合います。",
+      },
+      token: {
+        title: "トークンが必要なファイルもあります",
+        body: "制限付きファイルや早期アクセスファイルはCivitAI APIトークンがないとダウンロードできません。ここにトークンを追加してください。civitai.comでの作成は無料です。",
+      },
+      results: {
+        title: "ライブラリにダウンロード",
+        body: "結果を開いてバージョンとファイルを選びます。ダウンロードはそのままライブラリに入り、Playgroundですぐ使えます。",
       },
     },
     stepCounter: "ステップ {{current}} / {{total}}",

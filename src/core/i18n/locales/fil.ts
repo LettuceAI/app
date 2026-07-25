@@ -4701,9 +4701,12 @@ export const filMessages: DeepPartialMessageTree<LocaleMessages> = {
       toggle: "I-toggle ang llama.cpp streaming",
     },
   },
+  playground: {
+    demoExample: "Halimbawa",
+  },
   loraLibrary: {
     title: "LoRA Library",
-    subtitle: "Pamahalaan ang mga lokal na LoRA at mag-download ng bago mula sa CivitAI.",
+    subtitle: "Pamahalaan ang mga LoRA at mag-download mula sa CivitAI.",
     tabLibrary: "Library",
     tabBrowse: "I-browse ang CivitAI",
     installedCount: "{{count}} LoRA sa iyong library",
@@ -4768,6 +4771,8 @@ export const filMessages: DeepPartialMessageTree<LocaleMessages> = {
     tokenSave: "I-save ang token",
     tokenSaved: "Na-save ang token",
     tokenUnverified: "Na-save ang token pero hindi ma-verify.",
+    tokenWarningTitle: "Walang naka-save na CivitAI token",
+    tokenWarningBody: "Pwede kang mag-browse kahit wala nito, pero mabibigo ang pag-download ng mga restricted at early-access na file. Magdagdag ng token para ma-unlock ang lahat.",
     tokenStatusMissing: "Walang naka-save na token.",
     tokenStatusSaved: "Na-save ang token.",
     tokenStatusInvalid: "Ang naka-save na token ay invalid o expired na.",
@@ -7971,6 +7976,10 @@ export const filMessages: DeepPartialMessageTree<LocaleMessages> = {
         title: "Hatiin ang mga modelo sa mga GPU",
         body: "Kung dalawa o higit pa ang graphics card mo, buksan ito para ikalat ang mga layer sa kanila. Awtomatikong sumusunod sa switch na ito ang mga modelong nakaset sa Manahin.",
       },
+      civitai: {
+        title: "Dito nakatira ang CivitAI token mo",
+        body: "Mag-save ng API token para ma-unlock ang pag-download ng mga restricted at early-access na file sa LoRA browser. Pwede mo itong palitan o alisin anumang oras.",
+      },
     },
     hfBrowser: {
       panel: {
@@ -8032,6 +8041,108 @@ export const filMessages: DeepPartialMessageTree<LocaleMessages> = {
       embedding: {
         title: "Pinapatakbo ng maliit na lokal na modelo",
         body: "Gumagana ang recall gamit ang mga embedding na kinakalkula sa device mo. Pinamamahalaan ng section na ito ang bersyon ng embedding model at ang mga setting nito.",
+      },
+    },
+    imageGeneration: {
+      playground: {
+        title: "Mag-eksperimento sa Playground",
+        body: "Malayang gumawa ng mga imahe gamit ang mga prompt, model setting, at LoRA. Ito ang pinakamagandang lugar para subukan ang isang model bago ito ikabit sa mga chat.",
+      },
+      engine: {
+        title: "Sa engine na ito tumatakbo ang mga lokal na imahe",
+        body: "Ang Stable Diffusion engine ang humahawak ng generation sa device. Buksan ang Manage para i-update ito, magpalit ng backend, o tingnan ang status nito.",
+      },
+      avatar: {
+        title: "Mula sa model na ito ang mga avatar",
+        body: "Ang paggawa ng profile image mula sa avatar picker ay gumagamit ng model na nakaset dito. I-off ang toggle para itago ang avatar generation kahit saan.",
+      },
+      scene: {
+        title: "Mula naman dito ang mga scene",
+        body: "Ang mga scene image na binuo mula sa konteksto ng usapan ay gumagamit ng model na ito. Hindi kailangang pareho ito sa avatar model mo.",
+      },
+      prompting: {
+        title: "Paano isinusulat ang mga scene prompt",
+        body: "Ginagawang image prompt ng scene writer ang usapan. Piliin kung awtomatikong gagawa ng mga scene, magtatanong muna sa iyo, o maghihintay ng manwal na request.",
+      },
+    },
+    playground: {
+      prompt: {
+        title: "Ilarawan ang imahe",
+        body: "Isulat dito kung ano ang gusto mong makita. Kapag suportado ng model, lalabas sa ibaba ang negative prompt at starting image para sa mas pinong kontrol.",
+      },
+      generate: {
+        title: "Mag-generate kapag handa ka na",
+        body: "Isang tap lang para simulan ang generation. Gumagana rin ang pagpindot ng Ctrl+Enter mula sa prompt box.",
+      },
+      feed: {
+        title: "Sa feed dumadating ang mga resulta",
+        body: "Lumalabas dito ang bawat generation kasama ang mga setting nito. Gamitin ulit ang seed, mag-regenerate, mag-upscale, o ibalik ang isang imahe bilang starting point.",
+      },
+      model: {
+        title: "Piliin muna ang model",
+        body: "Pumili ng kahit anong image model na na-set up mo, lokal man o cloud. Umaangkop ang mga setting sa ibaba sa kung ano ang suportado ng model.",
+      },
+      loras: {
+        title: "Magpatong ng mga LoRA",
+        body: "Nagdadagdag ang mga LoRA ng mga istilo at karakter sa isang lokal na model. Magdagdag ng isa o higit pa at i-tune ang lakas ng bawat isa.",
+      },
+    },
+    loraLibrary: {
+      tabs: {
+        title: "Library at Browse",
+        body: "Ipinapakita ng Library ang mga LoRA na naka-install sa device na ito. Naghahanap ang Browse sa CivitAI kapag gusto mo pa ng iba.",
+      },
+      import: {
+        title: "Dalhin ang sarili mong mga file",
+        body: "May mga LoRA file ka na ba sa disk? I-import ang mga ito dito at sasali sila sa library mo.",
+      },
+      installed: {
+        title: "Pamahalaan ang mga naka-install",
+        body: "Iniingatan ng bawat LoRA ang mga trigger keyword nito dito. Kunin ang mga ito mula sa CivitAI, i-edit, o burahin ang mga file na hindi mo na kailangan.",
+      },
+      browse: {
+        title: "Tumuklas pa sa CivitAI",
+        body: "Lumipat sa Browse para maghanap sa CivitAI at mag-download ng mga LoRA diretso sa library mo.",
+      },
+    },
+    sdEngine: {
+      installed: {
+        title: "Dito nakatira ang mga engine build",
+        body: "Ipinapakita ng bawat naka-install na build ang bersyon at backend nito. Pwede kang magtabi ng ilan at magpalit ng aktibo anumang oras.",
+      },
+      install: {
+        title: "Mag-install ng build para sa hardware mo",
+        body: "Pumili ng bersyon at variant. Nade-detect ang GPU mo at paunang napipili ang pinakabagay na compatible na build, kaya kadalasang tama na ang default.",
+      },
+      models: {
+        title: "Mag-download ng mga image model",
+        body: "Mag-browse ng mga model family na na-check laban sa hardware mo. Napupunta ang mga download sa model folder mo, handa na para sa Playground at mga chat.",
+      },
+      upscaler: {
+        title: "Isang maliit na model para sa upscaling",
+        body: "Ang ESRGAN model na ito ang nagpapatakbo ng Upscale action at ng high-resolution pass. I-install ito nang isang beses at kalimutan na.",
+      },
+    },
+    civitaiBrowse: {
+      search: {
+        title: "Hanapin ang buong CivitAI",
+        body: "Mag-type para makahanap ng mga LoRA ayon sa pangalan o keyword. Nag-a-update ang mga resulta habang naghahanap ka.",
+      },
+      sort: {
+        title: "Ayusin ang mga resulta",
+        body: "Pagsunod-sunurin ayon sa rating, mga download, o pinakabago, at piliin ang time period na mahalaga sa iyo.",
+      },
+      filters: {
+        title: "Itugma sa base model mo",
+        body: "Gumagana lang ang isang LoRA sa model family na pinagsanayan nito. Mag-filter ayon sa base model para talagang bagay ang mga download sa setup mo.",
+      },
+      token: {
+        title: "May mga file na nangangailangan ng token",
+        body: "Ang mga restricted at early-access na file ay nada-download lang gamit ang CivitAI API token. Idagdag ang sa iyo dito, libre ang paggawa ng isa sa civitai.com.",
+      },
+      results: {
+        title: "I-download diretso sa library mo",
+        body: "Buksan ang isang resulta para pumili ng bersyon at file. Diretsong dumarating ang mga download sa library mo, handa nang gamitin sa Playground.",
       },
     },
     stepCounter: "Hakbang {{current}} ng {{total}}",

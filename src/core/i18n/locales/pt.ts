@@ -3953,9 +3953,12 @@ export const ptMessages: DeepPartialMessageTree<LocaleMessages> = {
       completed: "{{size}} baixados",
     },
   },
+  playground: {
+    demoExample: "Exemplo",
+  },
   loraLibrary: {
     title: "Biblioteca de LoRA",
-    subtitle: "Gerencie LoRAs locais e baixe novos do CivitAI.",
+    subtitle: "Gerencie LoRAs e baixe do CivitAI.",
     tabLibrary: "Biblioteca",
     tabBrowse: "Explorar CivitAI",
     installedCount: "{{count}} LoRAs na sua biblioteca",
@@ -4020,6 +4023,8 @@ export const ptMessages: DeepPartialMessageTree<LocaleMessages> = {
     tokenSave: "Salvar token",
     tokenSaved: "Token salvo",
     tokenUnverified: "Token salvo, mas não foi possível verificá-lo.",
+    tokenWarningTitle: "Nenhum token do CivitAI salvo",
+    tokenWarningBody: "Você pode explorar sem um, mas arquivos restritos e de acesso antecipado vão falhar ao baixar. Adicione um token para desbloquear tudo.",
     tokenStatusMissing: "Nenhum token salvo.",
     tokenStatusSaved: "Token salvo.",
     tokenStatusInvalid: "O token salvo é inválido ou expirou.",
@@ -7223,6 +7228,10 @@ export const ptMessages: DeepPartialMessageTree<LocaleMessages> = {
         title: "Divida modelos entre GPUs",
         body: "Com duas ou mais placas de vídeo, ative isto para espalhar as camadas entre elas. Modelos definidos como Herdar seguem esta chave automaticamente.",
       },
+      civitai: {
+        title: "Seu token do CivitAI fica aqui",
+        body: "Salve um token de API para desbloquear downloads restritos e de acesso antecipado no navegador de LoRAs. Você pode substituí-lo ou removê-lo a qualquer momento.",
+      },
     },
     hfBrowser: {
       panel: {
@@ -7284,6 +7293,108 @@ export const ptMessages: DeepPartialMessageTree<LocaleMessages> = {
       embedding: {
         title: "Movido por um pequeno modelo local",
         body: "A recuperação funciona por embeddings calculados no seu dispositivo. Esta seção gerencia a versão do modelo de embedding e suas configurações.",
+      },
+    },
+    imageGeneration: {
+      playground: {
+        title: "Experimente no Playground",
+        body: "Gere imagens livremente com prompts, configurações de modelo e LoRAs. É o melhor lugar para testar um modelo antes de conectá-lo às conversas.",
+      },
+      engine: {
+        title: "Imagens locais rodam neste motor",
+        body: "O motor Stable Diffusion cuida da geração no dispositivo. Abra Gerenciar para atualizá-lo, trocar de backend ou verificar o status.",
+      },
+      avatar: {
+        title: "Avatares vêm deste modelo",
+        body: "Gerar uma imagem de perfil pelo seletor de avatar usa o modelo definido aqui. Desative a chave para esconder a geração de avatares em todo lugar.",
+      },
+      scene: {
+        title: "Cenas vêm deste outro",
+        body: "Imagens de cena construídas a partir do contexto da conversa usam este modelo. Ele não precisa ser o mesmo do seu modelo de avatar.",
+      },
+      prompting: {
+        title: "Como os prompts de cena são escritos",
+        body: "O escritor de cenas transforma a conversa em um prompt de imagem. Escolha se as cenas são geradas automaticamente, se ele pergunta antes ou se espera um pedido manual.",
+      },
+    },
+    playground: {
+      prompt: {
+        title: "Descreva a imagem",
+        body: "Escreva aqui o que você quer ver. Quando o modelo suporta, um prompt negativo e uma imagem inicial aparecem abaixo para um controle mais fino.",
+      },
+      generate: {
+        title: "Gere quando estiver pronto",
+        body: "Um toque inicia a geração. Pressionar Ctrl+Enter na caixa do prompt também funciona.",
+      },
+      feed: {
+        title: "Os resultados chegam ao feed",
+        body: "Cada geração aparece aqui com suas configurações. Reutilize um seed, gere de novo, faça upscale ou envie uma imagem de volta como ponto de partida.",
+      },
+      model: {
+        title: "Escolha o modelo primeiro",
+        body: "Escolha qualquer modelo de imagem que você configurou, local ou na nuvem. As configurações abaixo se adaptam ao que o modelo suporta.",
+      },
+      loras: {
+        title: "Empilhe LoRAs por cima",
+        body: "LoRAs adicionam estilos e personagens a um modelo local. Adicione um ou mais e ajuste a intensidade de cada um.",
+      },
+    },
+    loraLibrary: {
+      tabs: {
+        title: "Biblioteca e Explorar",
+        body: "Biblioteca mostra os LoRAs instalados neste dispositivo. Explorar pesquisa no CivitAI quando você quer mais.",
+      },
+      import: {
+        title: "Traga seus próprios arquivos",
+        body: "Já tem arquivos de LoRA no disco? Importe-os aqui e eles entram na sua biblioteca.",
+      },
+      installed: {
+        title: "Gerencie o que está instalado",
+        body: "Cada LoRA guarda aqui suas palavras-chave de ativação. Busque-as no CivitAI, edite-as ou exclua arquivos que você não precisa mais.",
+      },
+      browse: {
+        title: "Descubra mais no CivitAI",
+        body: "Mude para Explorar para pesquisar no CivitAI e baixar LoRAs direto para a sua biblioteca.",
+      },
+    },
+    sdEngine: {
+      installed: {
+        title: "As builds do motor ficam aqui",
+        body: "Cada build instalada mostra sua versão e backend. Você pode manter várias e trocar a ativa a qualquer momento.",
+      },
+      install: {
+        title: "Instale uma build para o seu hardware",
+        body: "Escolha uma versão e uma variante. Sua GPU é detectada e a melhor build compatível vem pré-selecionada, então o padrão costuma estar certo.",
+      },
+      models: {
+        title: "Baixe modelos de imagem",
+        body: "Explore famílias de modelos verificadas contra o seu hardware. Os downloads vão para a sua pasta de modelos, prontos para o Playground e as conversas.",
+      },
+      upscaler: {
+        title: "Um pequeno modelo para upscale",
+        body: "Este modelo ESRGAN alimenta a ação de Upscale e a passagem em alta resolução. Instale uma vez e esqueça.",
+      },
+    },
+    civitaiBrowse: {
+      search: {
+        title: "Pesquise em todo o CivitAI",
+        body: "Digite para encontrar LoRAs por nome ou palavra-chave. Os resultados se atualizam enquanto você pesquisa.",
+      },
+      sort: {
+        title: "Ordene os resultados",
+        body: "Ordene por avaliação, downloads ou mais recentes, e escolha o período que importa.",
+      },
+      filters: {
+        title: "Combine com o seu modelo base",
+        body: "Um LoRA só funciona com a família de modelos para a qual foi treinado. Filtre por modelo base para que os downloads realmente sirvam na sua configuração.",
+      },
+      token: {
+        title: "Alguns arquivos precisam de token",
+        body: "Arquivos restritos e de acesso antecipado só baixam com um token de API do CivitAI. Adicione o seu aqui; criar um no civitai.com é grátis.",
+      },
+      results: {
+        title: "Baixe para a sua biblioteca",
+        body: "Abra um resultado para escolher a versão e o arquivo. Os downloads vão direto para a sua biblioteca, prontos para usar no Playground.",
       },
     },
     stepCounter: "Passo {{current}} de {{total}}",

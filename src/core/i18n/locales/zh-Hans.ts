@@ -4700,9 +4700,12 @@ export const zhHansMessages: DeepPartialMessageTree<LocaleMessages> = {
       toggle: "切换 llama.cpp 流式传输",
     },
   },
+  playground: {
+    demoExample: "示例",
+  },
   loraLibrary: {
     title: "LoRA 库",
-    subtitle: "管理本地 LoRA，并从 CivitAI 下载新的 LoRA。",
+    subtitle: "管理 LoRA，并从 CivitAI 下载。",
     tabLibrary: "库",
     tabBrowse: "浏览 CivitAI",
     installedCount: "库中有 {{count}} 个 LoRA",
@@ -4767,6 +4770,8 @@ export const zhHansMessages: DeepPartialMessageTree<LocaleMessages> = {
     tokenSave: "保存令牌",
     tokenSaved: "令牌已保存",
     tokenUnverified: "令牌已保存，但无法验证。",
+    tokenWarningTitle: "未保存 CivitAI 令牌",
+    tokenWarningBody: "没有令牌也能浏览，但受限和抢先体验文件会下载失败。添加令牌即可解锁全部内容。",
     tokenStatusMissing: "未保存令牌。",
     tokenStatusSaved: "令牌已保存。",
     tokenStatusInvalid: "已保存的令牌无效或已过期。",
@@ -7970,6 +7975,10 @@ export const zhHansMessages: DeepPartialMessageTree<LocaleMessages> = {
         title: "把模型分到多张 GPU 上",
         body: "有两张或更多显卡时，打开它就能把层分散到各张卡上。设为继承的模型会自动跟随这个开关。",
       },
+      civitai: {
+        title: "你的 CivitAI 令牌放在这里",
+        body: "保存一个 API 令牌，就能在 LoRA 浏览器里下载受限和抢先体验文件。你随时可以替换或移除它。",
+      },
     },
     hfBrowser: {
       panel: {
@@ -8031,6 +8040,108 @@ export const zhHansMessages: DeepPartialMessageTree<LocaleMessages> = {
       embedding: {
         title: "由一个小型本地模型驱动",
         body: "回忆功能依靠在你设备上计算的嵌入向量。这一部分管理嵌入模型的版本和它的设置。",
+      },
+    },
+    imageGeneration: {
+      playground: {
+        title: "在 Playground 里尽情实验",
+        body: "用提示词、模型设置和 LoRA 自由生成图片。在把模型接入聊天之前，这里是试用它的最佳场所。",
+      },
+      engine: {
+        title: "本地图片靠这个引擎运行",
+        body: "Stable Diffusion 引擎负责设备端生成。打开管理即可更新它、切换后端或查看它的状态。",
+      },
+      avatar: {
+        title: "头像来自这个模型",
+        body: "在头像选择器里生成资料图片时，用的就是这里设置的模型。关掉开关，就能在所有地方隐藏头像生成。",
+      },
+      scene: {
+        title: "场景则来自这一个",
+        body: "根据对话上下文生成的场景图片使用这个模型。它不必和你的头像模型相同。",
+      },
+      prompting: {
+        title: "场景提示词是怎么写出来的",
+        body: "场景撰写器会把对话变成图片提示词。你可以选择场景是自动生成、先询问你，还是等待手动请求。",
+      },
+    },
+    playground: {
+      prompt: {
+        title: "描述这张图片",
+        body: "把你想看到的写在这里。模型支持时，下方会出现负面提示词和起始图片，供你更精细地控制。",
+      },
+      generate: {
+        title: "准备好了就生成",
+        body: "轻点一下即可开始生成。在提示词框里按 Ctrl+Enter 也可以。",
+      },
+      feed: {
+        title: "结果会落到信息流里",
+        body: "每次生成都会连同它的设置显示在这里。你可以复用种子、重新生成、放大，或把图片送回去当起始图片。",
+      },
+      model: {
+        title: "先挑模型",
+        body: "选择任何你已设置好的图片模型，本地或云端都行。下方的设置会根据模型支持的功能自动调整。",
+      },
+      loras: {
+        title: "再叠上 LoRA",
+        body: "LoRA 能为本地模型加入风格和角色。添加一个或多个，并分别调整它们的强度。",
+      },
+    },
+    loraLibrary: {
+      tabs: {
+        title: "库与浏览",
+        body: "库显示这台设备上已安装的 LoRA。想要更多时，浏览可以搜索 CivitAI。",
+      },
+      import: {
+        title: "带上你自己的文件",
+        body: "磁盘上已经有 LoRA 文件？在这里导入，它们就会加入你的库。",
+      },
+      installed: {
+        title: "管理已安装的内容",
+        body: "每个 LoRA 的触发关键词都保存在这里。你可以从 CivitAI 获取、编辑它们，或删除不再需要的文件。",
+      },
+      browse: {
+        title: "在 CivitAI 上发现更多",
+        body: "切换到浏览即可搜索 CivitAI，并把 LoRA 直接下载进你的库。",
+      },
+    },
+    sdEngine: {
+      installed: {
+        title: "引擎构建都在这里",
+        body: "每个已安装的构建都会显示版本和后端。你可以同时保留多个，并随时切换当前使用的那个。",
+      },
+      install: {
+        title: "为你的硬件安装一个构建",
+        body: "挑一个版本和变体。系统会检测你的 GPU 并预选最兼容的构建，所以默认选项通常就是对的。",
+      },
+      models: {
+        title: "下载图片模型",
+        body: "浏览已对照你的硬件检查过的模型家族。下载会保存到你的模型文件夹，供 Playground 和聊天使用。",
+      },
+      upscaler: {
+        title: "一个负责放大的小模型",
+        body: "这个 ESRGAN 模型驱动放大操作和高分辨率处理。装一次就不用再管它了。",
+      },
+    },
+    civitaiBrowse: {
+      search: {
+        title: "搜索整个 CivitAI",
+        body: "输入名称或关键词来查找 LoRA。结果会随着你的输入实时更新。",
+      },
+      sort: {
+        title: "为结果排序",
+        body: "按评分、下载量或最新排序，并选择你关心的时间范围。",
+      },
+      filters: {
+        title: "匹配你的基础模型",
+        body: "LoRA 只对它训练时所用的模型家族有效。按基础模型筛选，下载的文件才真正适合你的配置。",
+      },
+      token: {
+        title: "有些文件需要令牌",
+        body: "受限和抢先体验文件只有搭配 CivitAI API 令牌才能下载。在这里添加你的令牌，在 civitai.com 上创建一个是免费的。",
+      },
+      results: {
+        title: "下载进你的库",
+        body: "打开一个结果，挑选版本和文件。下载会直接进入你的库，随时可以在 Playground 里使用。",
       },
     },
     stepCounter: "第 {{current}} 步，共 {{total}} 步",

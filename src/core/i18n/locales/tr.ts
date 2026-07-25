@@ -4702,9 +4702,12 @@ export const trMessages: DeepPartialMessageTree<LocaleMessages> = {
       toggle: "llama.cpp akışını aç/kapat",
     },
   },
+  playground: {
+    demoExample: "Örnek",
+  },
   loraLibrary: {
     title: "LoRA Kütüphanesi",
-    subtitle: "Yerel LoRA'ları yönetin ve CivitAI'den yenilerini indirin.",
+    subtitle: "LoRA'ları yönetin ve CivitAI'den indirin.",
     tabLibrary: "Kütüphane",
     tabBrowse: "CivitAI'ye Göz At",
     installedCount: "Kütüphanenizde {{count}} LoRA var",
@@ -4769,6 +4772,8 @@ export const trMessages: DeepPartialMessageTree<LocaleMessages> = {
     tokenSave: "Anahtarı kaydet",
     tokenSaved: "Anahtar kaydedildi",
     tokenUnverified: "Anahtar kaydedildi ancak doğrulanamadı.",
+    tokenWarningTitle: "Kayıtlı CivitAI anahtarı yok",
+    tokenWarningBody: "Anahtar olmadan göz atabilirsiniz ancak kısıtlı ve erken erişim dosyaları indirilemez. Her şeyin kilidini açmak için bir anahtar ekleyin.",
     tokenStatusMissing: "Kayıtlı anahtar yok.",
     tokenStatusSaved: "Anahtar kaydedildi.",
     tokenStatusInvalid: "Kayıtlı anahtar geçersiz veya süresi dolmuş.",
@@ -7972,6 +7977,10 @@ export const trMessages: DeepPartialMessageTree<LocaleMessages> = {
         title: "Modelleri GPU'lar arasında böl",
         body: "İki veya daha fazla ekran kartın varsa, katmanları aralarında dağıtmak için bunu aç. Devral olarak ayarlanan modeller bu anahtarı otomatik takip eder.",
       },
+      civitai: {
+        title: "CivitAI anahtarın burada yaşıyor",
+        body: "LoRA tarayıcısında kısıtlı ve erken erişim indirmelerinin kilidini açmak için bir API anahtarı kaydet. İstediğin zaman değiştirebilir veya kaldırabilirsin.",
+      },
     },
     hfBrowser: {
       panel: {
@@ -8033,6 +8042,108 @@ export const trMessages: DeepPartialMessageTree<LocaleMessages> = {
       embedding: {
         title: "Küçük bir yerel modelle çalışır",
         body: "Hatırlama, cihazında hesaplanan embedding'ler üzerinden çalışır. Bu bölüm embedding modelinin sürümünü ve ayarlarını yönetir.",
+      },
+    },
+    imageGeneration: {
+      playground: {
+        title: "Playground'da deney yap",
+        body: "Promptlar, model ayarları ve LoRA'larla özgürce görsel oluştur. Bir modeli sohbetlere bağlamadan önce denemek için en iyi yer burası.",
+      },
+      engine: {
+        title: "Yerel görseller bu motorda çalışır",
+        body: "Stable Diffusion motoru cihaz üzerindeki üretimi üstlenir. Güncellemek, arka uç değiştirmek veya durumunu kontrol etmek için Yönet'i aç.",
+      },
+      avatar: {
+        title: "Avatarlar bu modelden gelir",
+        body: "Avatar seçicisinden profil görseli oluşturmak burada ayarlanan modeli kullanır. Avatar üretimini her yerden gizlemek için anahtarı kapat.",
+      },
+      scene: {
+        title: "Sahneler ise bunu kullanır",
+        body: "Konuşma bağlamından oluşturulan sahne görselleri bu modeli kullanır. Avatar modelinle aynı olmak zorunda değil.",
+      },
+      prompting: {
+        title: "Sahne promptları nasıl yazılır",
+        body: "Sahne yazarı konuşmayı bir görsel promptuna dönüştürür. Sahnelerin otomatik mi oluşturulacağını, önce sana mı sorulacağını yoksa manuel bir isteği mi bekleyeceğini seç.",
+      },
+    },
+    playground: {
+      prompt: {
+        title: "Görseli tarif et",
+        body: "Görmek istediğini buraya yaz. Model destekliyorsa, daha ince kontrol için aşağıda bir negatif prompt ve bir başlangıç görseli belirir.",
+      },
+      generate: {
+        title: "Hazır olunca oluştur",
+        body: "Tek dokunuş üretimi başlatır. Prompt kutusundayken Ctrl+Enter'a basmak da işe yarar.",
+      },
+      feed: {
+        title: "Sonuçlar akışa düşer",
+        body: "Her üretim ayarlarıyla birlikte burada görünür. Bir seed'i yeniden kullan, tekrar oluştur, büyüt veya bir görseli başlangıç noktası olarak geri gönder.",
+      },
+      model: {
+        title: "Önce modeli seç",
+        body: "Kurduğun herhangi bir görsel modelini seç, yerel veya bulut. Aşağıdaki ayarlar modelin desteklediklerine uyum sağlar.",
+      },
+      loras: {
+        title: "Üzerine LoRA'lar ekle",
+        body: "LoRA'lar yerel bir modele stiller ve karakterler katar. Bir veya birkaç tane ekle ve her birinin gücünü ayarla.",
+      },
+    },
+    loraLibrary: {
+      tabs: {
+        title: "Kütüphane ve Göz At",
+        body: "Kütüphane bu cihazda kurulu LoRA'ları gösterir. Daha fazlasını istediğinde Göz At CivitAI'de arama yapar.",
+      },
+      import: {
+        title: "Kendi dosyalarını getir",
+        body: "Diskte zaten LoRA dosyaların mı var? Buradan içe aktar, kütüphanene katılsınlar.",
+      },
+      installed: {
+        title: "Kurulu olanları yönet",
+        body: "Her LoRA, tetikleyici anahtar kelimelerini burada tutar. Onları CivitAI'den getir, düzenle veya artık ihtiyacın olmayan dosyaları sil.",
+      },
+      browse: {
+        title: "CivitAI'de daha fazlasını keşfet",
+        body: "CivitAI'de arama yapmak ve LoRA'ları doğrudan kütüphanene indirmek için Göz At'a geç.",
+      },
+    },
+    sdEngine: {
+      installed: {
+        title: "Motor derlemeleri burada yaşıyor",
+        body: "Kurulu her derleme, sürümünü ve arka ucunu gösterir. Birkaç tanesini elinde tutabilir ve etkin olanı istediğin zaman değiştirebilirsin.",
+      },
+      install: {
+        title: "Donanımına uygun bir derleme kur",
+        body: "Bir sürüm ve varyant seç. GPU'n algılanır ve en uyumlu derleme önceden seçilir, yani varsayılan genellikle doğrudur.",
+      },
+      models: {
+        title: "Görsel modelleri indir",
+        body: "Donanımına göre denetlenmiş model ailelerine göz at. İndirmeler model klasörüne gider, Playground ve sohbetler için hazır.",
+      },
+      upscaler: {
+        title: "Büyütme için küçük bir model",
+        body: "Bu ESRGAN modeli, Büyüt eylemini ve yüksek çözünürlük geçişini çalıştırır. Bir kez kur ve unut.",
+      },
+    },
+    civitaiBrowse: {
+      search: {
+        title: "Tüm CivitAI'de ara",
+        body: "LoRA'ları ada veya anahtar kelimeye göre bulmak için yaz. Sonuçlar sen aradıkça güncellenir.",
+      },
+      sort: {
+        title: "Sonuçları sırala",
+        body: "Puana, indirmeye veya en yeniye göre sırala ve önemsediğin zaman aralığını seç.",
+      },
+      filters: {
+        title: "Temel modelinle eşleştir",
+        body: "Bir LoRA yalnızca eğitildiği model ailesiyle çalışır. İndirdiklerin kurulumuna gerçekten uysun diye temel modele göre filtrele.",
+      },
+      token: {
+        title: "Bazı dosyalar anahtar ister",
+        body: "Kısıtlı ve erken erişim dosyaları yalnızca bir CivitAI API anahtarıyla iner. Anahtarını buraya ekle; civitai.com'da bir tane oluşturmak ücretsiz.",
+      },
+      results: {
+        title: "Kütüphanene indir",
+        body: "Bir sürüm ve dosya seçmek için bir sonucu aç. İndirmeler doğrudan kütüphanene düşer, Playground'da kullanıma hazır.",
       },
     },
     stepCounter: "Adım {{current}} / {{total}}",

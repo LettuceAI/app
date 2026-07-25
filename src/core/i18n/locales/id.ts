@@ -3953,9 +3953,12 @@ export const idMessages: DeepPartialMessageTree<LocaleMessages> = {
       completed: "{{size}} terunduh",
     },
   },
+  playground: {
+    demoExample: "Contoh",
+  },
   loraLibrary: {
     title: "Pustaka LoRA",
-    subtitle: "Kelola LoRA lokal dan unduh yang baru dari CivitAI.",
+    subtitle: "Kelola LoRA dan unduh dari CivitAI.",
     tabLibrary: "Pustaka",
     tabBrowse: "Jelajahi CivitAI",
     installedCount: "{{count}} LoRA di pustaka Anda",
@@ -4020,6 +4023,8 @@ export const idMessages: DeepPartialMessageTree<LocaleMessages> = {
     tokenSave: "Simpan token",
     tokenSaved: "Token disimpan",
     tokenUnverified: "Token disimpan tetapi tidak dapat diverifikasi.",
+    tokenWarningTitle: "Belum ada token CivitAI tersimpan",
+    tokenWarningBody: "Anda bisa menjelajah tanpa token, tetapi berkas terbatas dan akses awal akan gagal diunduh. Tambahkan token untuk membuka semuanya.",
     tokenStatusMissing: "Belum ada token tersimpan.",
     tokenStatusSaved: "Token disimpan.",
     tokenStatusInvalid: "Token tersimpan tidak valid atau kedaluwarsa.",
@@ -7223,6 +7228,10 @@ export const idMessages: DeepPartialMessageTree<LocaleMessages> = {
         title: "Bagi model ke beberapa GPU",
         body: "Dengan dua kartu grafis atau lebih, nyalakan ini untuk menyebar layer ke semuanya. Model yang diatur ke Warisi akan mengikuti sakelar ini secara otomatis.",
       },
+      civitai: {
+        title: "Token CivitAI Anda tersimpan di sini",
+        body: "Simpan token API untuk membuka unduhan terbatas dan akses awal di penjelajah LoRA. Anda bisa mengganti atau menghapusnya kapan saja.",
+      },
     },
     hfBrowser: {
       panel: {
@@ -7284,6 +7293,108 @@ export const idMessages: DeepPartialMessageTree<LocaleMessages> = {
       embedding: {
         title: "Ditenagai model lokal kecil",
         body: "Pengingatan bekerja lewat embedding yang dihitung di perangkat Anda. Bagian ini mengelola versi model embedding dan pengaturannya.",
+      },
+    },
+    imageGeneration: {
+      playground: {
+        title: "Bereksperimen di Playground",
+        body: "Hasilkan gambar dengan bebas memakai prompt, pengaturan model, dan LoRA. Ini tempat terbaik untuk menguji model sebelum memasangnya ke obrolan.",
+      },
+      engine: {
+        title: "Gambar lokal berjalan di engine ini",
+        body: "Engine Stable Diffusion menangani pembuatan gambar di perangkat. Buka Kelola untuk memperbaruinya, mengganti backend, atau memeriksa statusnya.",
+      },
+      avatar: {
+        title: "Avatar berasal dari model ini",
+        body: "Membuat gambar profil dari pemilih avatar memakai model yang diatur di sini. Matikan sakelar untuk menyembunyikan pembuatan avatar di mana pun.",
+      },
+      scene: {
+        title: "Adegan berasal dari yang ini",
+        body: "Gambar adegan yang dibangun dari konteks percakapan memakai model ini. Tidak harus sama dengan model avatar Anda.",
+      },
+      prompting: {
+        title: "Cara prompt adegan ditulis",
+        body: "Penulis adegan mengubah percakapan menjadi prompt gambar. Pilih apakah adegan dibuat otomatis, bertanya dulu kepada Anda, atau menunggu permintaan manual.",
+      },
+    },
+    playground: {
+      prompt: {
+        title: "Jelaskan gambarnya",
+        body: "Tulis apa yang ingin Anda lihat di sini. Jika model mendukung, prompt negatif dan gambar awal muncul di bawah untuk kendali lebih rinci.",
+      },
+      generate: {
+        title: "Hasilkan saat siap",
+        body: "Satu ketukan memulai pembuatan gambar. Menekan Ctrl+Enter dari kotak prompt juga bisa.",
+      },
+      feed: {
+        title: "Hasil muncul di umpan",
+        body: "Setiap hasil muncul di sini beserta pengaturannya. Pakai ulang seed, hasilkan ulang, perbesar resolusinya, atau kirim kembali sebuah gambar sebagai gambar awal.",
+      },
+      model: {
+        title: "Pilih model dulu",
+        body: "Pilih model gambar mana pun yang sudah Anda siapkan, lokal atau cloud. Pengaturan di bawah menyesuaikan dengan kemampuan model.",
+      },
+      loras: {
+        title: "Tumpuk LoRA di atasnya",
+        body: "LoRA menambahkan gaya dan karakter ke model lokal. Tambahkan satu atau lebih dan atur kekuatan masing-masing.",
+      },
+    },
+    loraLibrary: {
+      tabs: {
+        title: "Pustaka dan Jelajahi",
+        body: "Pustaka menampilkan LoRA yang terpasang di perangkat ini. Jelajahi mencari di CivitAI saat Anda ingin lebih banyak.",
+      },
+      import: {
+        title: "Bawa berkas Anda sendiri",
+        body: "Sudah punya berkas LoRA di disk? Impor di sini dan berkas itu akan masuk ke pustaka Anda.",
+      },
+      installed: {
+        title: "Kelola yang terpasang",
+        body: "Setiap LoRA menyimpan kata kunci pemicunya di sini. Ambil dari CivitAI, sunting, atau hapus berkas yang tidak lagi Anda perlukan.",
+      },
+      browse: {
+        title: "Temukan lebih banyak di CivitAI",
+        body: "Beralih ke Jelajahi untuk mencari di CivitAI dan mengunduh LoRA langsung ke pustaka Anda.",
+      },
+    },
+    sdEngine: {
+      installed: {
+        title: "Build engine tersimpan di sini",
+        body: "Setiap build yang terpasang menampilkan versi dan backend-nya. Anda bisa menyimpan beberapa sekaligus dan mengganti yang aktif kapan saja.",
+      },
+      install: {
+        title: "Pasang build untuk perangkat keras Anda",
+        body: "Pilih versi dan varian. GPU Anda terdeteksi dan build kompatibel terbaik dipilih otomatis, jadi default biasanya sudah tepat.",
+      },
+      models: {
+        title: "Unduh model gambar",
+        body: "Jelajahi keluarga model yang sudah diperiksa terhadap perangkat keras Anda. Unduhan masuk ke folder model Anda, siap untuk Playground dan obrolan.",
+      },
+      upscaler: {
+        title: "Satu model kecil untuk memperbesar resolusi",
+        body: "Model ESRGAN ini menggerakkan aksi perbesar resolusi dan tahap resolusi tinggi. Pasang sekali dan lupakan.",
+      },
+    },
+    civitaiBrowse: {
+      search: {
+        title: "Cari di seluruh CivitAI",
+        body: "Ketik untuk menemukan LoRA berdasarkan nama atau kata kunci. Hasil diperbarui saat Anda mencari.",
+      },
+      sort: {
+        title: "Urutkan hasil",
+        body: "Urutkan berdasarkan penilaian, unduhan, atau terbaru, dan pilih rentang waktu yang penting bagi Anda.",
+      },
+      filters: {
+        title: "Cocokkan model dasar Anda",
+        body: "LoRA hanya bekerja dengan keluarga model tempat ia dilatih. Saring berdasarkan model dasar agar unduhan benar-benar cocok dengan penyiapan Anda.",
+      },
+      token: {
+        title: "Beberapa berkas butuh token",
+        body: "Berkas terbatas dan akses awal hanya bisa diunduh dengan token API CivitAI. Tambahkan milik Anda di sini; membuatnya di civitai.com gratis.",
+      },
+      results: {
+        title: "Unduh ke pustaka Anda",
+        body: "Buka sebuah hasil untuk memilih versi dan berkas. Unduhan langsung masuk ke pustaka Anda, siap dipakai di Playground.",
       },
     },
     stepCounter: "Langkah {{current}} dari {{total}}",
