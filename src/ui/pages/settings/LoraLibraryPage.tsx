@@ -505,28 +505,6 @@ export function LoraLibraryPage() {
 
   const renderLibrary = () => (
     <div className="min-h-0 flex-1 overflow-y-auto pb-10">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <p className="text-[12px] text-fg/45">
-          {t("loraLibrary.installedCount", { count: installed.length })}
-        </p>
-        <button
-          type="button"
-          data-tour-id="lora-import"
-          onClick={() => void handleImport()}
-          disabled={importing}
-          className={cn(
-            "flex items-center gap-2 rounded-xl border border-fg/10 bg-fg/4 px-3 py-2 text-[12.5px] font-medium text-fg/80 transition",
-            importing ? "cursor-not-allowed opacity-60" : "hover:border-fg/20 hover:text-fg",
-          )}
-        >
-          {importing ? (
-            <Loader size={13} className="animate-spin" />
-          ) : (
-            <FileUp size={13} className="text-fg/45" />
-          )}
-          {t("loraLibrary.importButton")}
-        </button>
-      </div>
       <InlineDownloadCards filter={(item) => item.queueKind === "civitai_lora"} />
       {installedLoading ? (
         <div className="flex items-center justify-center py-16">
@@ -1165,16 +1143,42 @@ export function LoraLibraryPage() {
               })}
             </div>
           </div>
-          {returnTo && (
-            <button
-              type="button"
-              onClick={() => navigate(returnTo)}
-              className="flex items-center gap-1.5 rounded-xl border border-fg/10 bg-fg/4 px-3 py-2 text-[12.5px] font-medium text-fg/75 transition hover:border-fg/20 hover:text-fg"
-            >
-              <ArrowLeft size={13} />
-              {t("loraLibrary.backToCaller")}
-            </button>
-          )}
+          <div className="flex items-center gap-3">
+            {tab === "library" && (
+              <>
+                <p className="text-[12px] text-fg/45">
+                  {t("loraLibrary.installedCount", { count: installed.length })}
+                </p>
+                <button
+                  type="button"
+                  data-tour-id="lora-import"
+                  onClick={() => void handleImport()}
+                  disabled={importing}
+                  className={cn(
+                    "flex items-center gap-2 rounded-xl border border-fg/10 bg-fg/4 px-3 py-2 text-[12.5px] font-medium text-fg/80 transition",
+                    importing ? "cursor-not-allowed opacity-60" : "hover:border-fg/20 hover:text-fg",
+                  )}
+                >
+                  {importing ? (
+                    <Loader size={13} className="animate-spin" />
+                  ) : (
+                    <FileUp size={13} className="text-fg/45" />
+                  )}
+                  {t("loraLibrary.importButton")}
+                </button>
+              </>
+            )}
+            {returnTo && (
+              <button
+                type="button"
+                onClick={() => navigate(returnTo)}
+                className="flex items-center gap-1.5 rounded-xl border border-fg/10 bg-fg/4 px-3 py-2 text-[12.5px] font-medium text-fg/75 transition hover:border-fg/20 hover:text-fg"
+              >
+                <ArrowLeft size={13} />
+                {t("loraLibrary.backToCaller")}
+              </button>
+            )}
+          </div>
         </header>
       )}
 
