@@ -815,7 +815,9 @@ function VoiceEditor({ isOpen, voice, providers, onClose, onSave }: VoiceEditorP
         playAudioFromBase64(response.audioBase64, response.format);
       }
     } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
       console.error("TTS preview failed:", e);
+      setPreviewError(message || "TTS preview failed.");
     } finally {
       setIsPlaying(false);
     }

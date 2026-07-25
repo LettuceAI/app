@@ -56,6 +56,139 @@ export interface TtsPreviewResponse {
   format: string;
 }
 
+export interface TtsTextChunk {
+  index: number;
+  text: string;
+  start: number;
+  end: number;
+}
+
+const DEFAULT_TTS_QUEUE_CHUNK_CHARS = 300;
+
+function charCount(value: string): number {
+  return Array.from(value).length;
+}
+
+function indexAfterChars(value: string, start: number, count: number): number {
+  if (count <= 0) return start;
+  let index = start;
+  let seen = 0;
+  while (index < value.length && seen < count) {
+    const codePoint = value.codePointAt(index);
+    index += codePoint && codePoint > 0xffff ? 2 : 1;
+    seen += 1;
+  }
+  return index;
+}
+
+function isSentenceBoundary(ch: string): boolean {
+  return [".", "!", "?", "…", "。", "！", "？", "\n", "\r"].includes(ch);
+}
+
+function isClauseBoundary(ch: string): boolean {
+  return [",", ";", ":", "，", "；", "：", "、", "—", "–"].includes(ch);
+}
+
+function isTrailingCloser(ch: string): boolean {
+  return ["\"", "'", "”", "’", ")", "]", "}", "»", "›", "）", "】", "』", "」"].includes(ch);
+}
+
+function includeTrailingClosers(value: string, index: number, maxIndex: number): number {
+  let current = index;
+  while (current < maxIndex) {
+    const ch = Array.from(value.slice(current, maxIndex))[0];
+    if (!ch || !isTrailingCloser(ch)) break;
+    current += ch.length;
+  }
+  return current;
+}
+
+function findLastBoundary(
+  value: string,
+  start: number,
+  maxIndex: number,
+  minIndex: number,
+  predicate: (ch: string) => boolean,
+): number | null {
+  let best: number | null = null;
+  for (let index = start; index < maxIndex; ) {
+    const ch = Array.from(value.slice(index, maxIndex))[0];
+    if (!ch) break;
+    const end = index + ch.length;
+    if (end >= minIndex && predicate(ch)) {
+      best = includeTrailingClosers(value, end, maxIndex);
+    }
+    index = end;
+  }
+  return best;
+}
+
+function findSplitIndex(value: string, start: number, maxIndex: number, minChars: number): number {
+  const minIndex = indexAfterChars(value, start, minChars);
+  return (
+    findLastBoundary(value, start, maxIndex, minIndex, isSentenceBoundary) ??
+    findLastBoundary(value, start, maxIndex, minIndex, isClauseBoundary) ??
+    findLastBoundary(value, start, maxIndex, minIndex, (ch) => /\s/.test(ch)) ??
+    maxIndex
+  );
+}
+
+function trimStartIndex(value: string, index: number): number {
+  let current = index;
+  while (current < value.length) {
+    const ch = Array.from(value.slice(current))[0];
+    if (!ch || !/\s/.test(ch)) break;
+    current += ch.length;
+  }
+  return current;
+}
+
+function trimEndIndex(value: string, start: number, end: number): number {
+  let current = end;
+  while (current > start) {
+    const chars = Array.from(value.slice(start, current));
+    const ch = chars[chars.length - 1];
+    if (!ch || !/\s/.test(ch)) break;
+    current -= ch.length;
+  }
+  return current;
+}
+
+export function splitTextForTtsQueue(
+  text: string,
+  maxChars = DEFAULT_TTS_QUEUE_CHUNK_CHARS,
+): TtsTextChunk[] {
+  const limit = Math.max(1, maxChars);
+  const minSplitChars = Math.max(1, Math.floor(limit / 2));
+  const chunks: TtsTextChunk[] = [];
+  let start = trimStartIndex(text, 0);
+
+  while (start < text.length) {
+    const remaining = text.slice(start);
+    let splitEnd: number;
+
+    if (charCount(remaining) <= limit) {
+      splitEnd = text.length;
+    } else {
+      const maxIndex = indexAfterChars(text, start, limit);
+      splitEnd = findSplitIndex(text, start, maxIndex, minSplitChars);
+    }
+
+    const end = trimEndIndex(text, start, splitEnd);
+    if (end > start) {
+      chunks.push({
+        index: chunks.length,
+        text: text.slice(start, end),
+        start,
+        end,
+      });
+    }
+    start = trimStartIndex(text, splitEnd);
+  }
+
+  return chunks;
+}
+
 export type KokoroModelVariant = "fp32" | "fp16" | "int8";
 
 export interface KokoroSupportedVariant {
@@ -320,8 +453,21 @@ export async function kokoroPreview(
 }
 
 export function playAudioFromBase64(audioBase64: string, format: string): HTMLAudioElement {
-  const audio = new Audio(`data:${format};base64,${audioBase64}`);
-  void audio.play();
+  const byteString = atob(audioBase64);
+  const bytes = new Uint8Array(byteString.length);
+  for (let i = 0; i < byteString.length; i += 1) {
+    bytes[i] = byteString.charCodeAt(i);
+  }
+
+  const url = URL.createObjectURL(new Blob([bytes], { type: format }));
+  const audio = new Audio(url);
+  const cleanup = () => URL.revokeObjectURL(url);
+  audio.addEventListener("ended", cleanup, { once: true });
+  audio.addEventListener("error", cleanup, { once: true });
+  void audio.play().catch((err) => {
+    cleanup();
+    console.error("Audio playback failed:", err);
+  });
   return audio;
 }
 

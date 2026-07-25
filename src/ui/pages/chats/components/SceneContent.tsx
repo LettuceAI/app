@@ -10,11 +10,12 @@ interface SceneContentProps {
   className?: string;
   onImageClick?: MarkdownProps["onImageClick"];
   textColors?: MarkdownProps["textColors"];
+  highlightRange?: MarkdownProps["highlightRange"];
 }
 
 type Segment =
-  | { type: "text"; value: string }
-  | { type: "image"; id: string; ext: string };
+  | { type: "text"; value: string; start: number; end: number }
+  | { type: "image"; id: string; ext: string; start: number; end: number };
 
 function parseSegments(content: string): Segment[] {
   const segments: Segment[] = [];
@@ -23,15 +24,42 @@ function parseSegments(content: string): Segment[] {
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(content)) !== null) {
     if (match.index > lastIndex) {
-      segments.push({ type: "text", value: content.slice(lastIndex, match.index) });
+      segments.push({
+        type: "text",
+        value: content.slice(lastIndex, match.index),
+        start: lastIndex,
+        end: match.index,
+      });
     }
-    segments.push({ type: "image", id: match[1], ext: match[2] });
+    segments.push({
+      type: "image",
+      id: match[1],
+      ext: match[2],
+      start: match.index,
+      end: match.index + match[0].length,
+    });
     lastIndex = match.index + match[0].length;
   }
   if (lastIndex < content.length) {
-    segments.push({ type: "text", value: content.slice(lastIndex) });
+    segments.push({
+      type: "text",
+      value: content.slice(lastIndex),
+      start: lastIndex,
+      end: content.length,
+    });
   }
   return segments;
+}
+
+function relativeHighlightRange(
+  segment: Extract<Segment, { type: "text" }>,
+  highlightRange?: MarkdownProps["highlightRange"],
+): MarkdownProps["highlightRange"] {
+  if (!highlightRange) return null;
+  const start = Math.max(segment.start, highlightRange.start);
+  const end = Math.min(segment.end, highlightRange.end);
+  if (end <= start) return null;
+  return { start: start - segment.start, end: end - segment.start };
 }
 
 function SceneInlineImage({
@@ -54,7 +82,13 @@ function SceneInlineImage({
   );
 }
 
-export function SceneContent({ content, className, onImageClick, textColors }: SceneContentProps) {
+export function SceneContent({
+  content,
+  className,
+  onImageClick,
+  textColors,
+  highlightRange,
+}: SceneContentProps) {
   const segments = parseSegments(content);
 
   if (segments.length === 1 && segments[0].type === "text") {
@@ -64,6 +98,7 @@ export function SceneContent({ content, className, onImageClick, textColors }: S
         className={className}
         onImageClick={onImageClick}
         textColors={textColors}
+        highlightRange={highlightRange}
       />
     );
   }
@@ -80,6 +115,7 @@ export function SceneContent({ content, className, onImageClick, textColors }: S
             className={className}
             onImageClick={onImageClick}
             textColors={textColors}
+            highlightRange={relativeHighlightRange(segment, highlightRange)}
           />
         ) : (
           <Fragment key={`empty-${index}`} />

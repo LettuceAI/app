@@ -55,6 +55,7 @@ interface ChatMessageProps {
   displayContent?: string;
   onImageClick?: (src: string, alt: string) => void;
   audioStatus?: "loading" | "playing";
+  audioHighlight?: { start: number; end: number } | null;
   onPlayAudio?: (message: StoredMessage, text: string) => Promise<void>;
   onStopAudio?: (message: StoredMessage) => void;
   onCancelAudio?: (message: StoredMessage) => void;
@@ -606,6 +607,7 @@ function ChatMessageInner({
   displayContent,
   onImageClick,
   audioStatus,
+  audioHighlight,
   onPlayAudio,
   onStopAudio,
   onCancelAudio,
@@ -1079,6 +1081,7 @@ function ChatMessageInner({
               content={resolvedDisplayContent}
               className="text-inherit select-none"
               onImageClick={onImageClick}
+              highlightRange={audioHighlight}
               textColors={
                 chatAppearance?.messageTextColorHex ||
                 chatAppearance?.plainTextColorHex ||
@@ -1349,6 +1352,8 @@ export const ChatMessage = React.memo(ChatMessageInner, (prev, next) => {
     prev.scenePromptStreaming === next.scenePromptStreaming &&
     prev.swapPlaces === next.swapPlaces &&
     prev.audioStatus === next.audioStatus &&
+    prev.audioHighlight?.start === next.audioHighlight?.start &&
+    prev.audioHighlight?.end === next.audioHighlight?.end &&
     a.reasoning === b.reasoning &&
     prev.reasoning === next.reasoning &&
     prev.onPlayAudio === next.onPlayAudio &&

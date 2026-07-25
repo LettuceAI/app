@@ -442,9 +442,19 @@ pub async fn chat_completion(
     app: AppHandle,
     args: ChatCompletionArgs,
 ) -> Result<ChatTurnResult, String> {
-    super::flows::completion::CompletionFlow::new(app)
-        .execute(args)
-        .await
+    tauri::async_runtime::spawn(async move {
+        super::flows::completion::CompletionFlow::new(app)
+            .execute(args)
+            .await
+    })
+    .await
+    .map_err(|err| {
+        crate::utils::err_msg(
+            module_path!(),
+            line!(),
+            format!("chat_completion task failed: {err}"),
+        )
+    })?
 }
 
 #[tauri::command]
@@ -452,9 +462,19 @@ pub async fn chat_regenerate(
     app: AppHandle,
     args: ChatRegenerateArgs,
 ) -> Result<RegenerateResult, String> {
-    super::flows::regenerate::RegenerateFlow::new(app)
-        .execute(args)
-        .await
+    tauri::async_runtime::spawn(async move {
+        super::flows::regenerate::RegenerateFlow::new(app)
+            .execute(args)
+            .await
+    })
+    .await
+    .map_err(|err| {
+        crate::utils::err_msg(
+            module_path!(),
+            line!(),
+            format!("chat_regenerate task failed: {err}"),
+        )
+    })?
 }
 
 #[tauri::command]
@@ -462,9 +482,19 @@ pub async fn chat_continue(
     app: AppHandle,
     args: ChatContinueArgs,
 ) -> Result<ContinueResult, String> {
-    super::flows::continuation::ContinueFlow::new(app)
-        .execute(args)
-        .await
+    tauri::async_runtime::spawn(async move {
+        super::flows::continuation::ContinueFlow::new(app)
+            .execute(args)
+            .await
+    })
+    .await
+    .map_err(|err| {
+        crate::utils::err_msg(
+            module_path!(),
+            line!(),
+            format!("chat_continue task failed: {err}"),
+        )
+    })?
 }
 
 #[tauri::command]

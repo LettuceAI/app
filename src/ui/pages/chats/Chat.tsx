@@ -39,10 +39,12 @@ import {
 import {
   abortAudioPreview,
   generateTtsForMessage,
+  generateTtsPreview,
   listAudioModels,
   listAudioProviders,
   listUserVoices,
   playAudioFromBase64,
+  splitTextForTtsQueue,
   type AudioModel,
   type AudioProvider,
   type AudioProviderType,
@@ -130,6 +132,16 @@ import {
   type AsrInstalledWhisperModel,
   type AsrLearnedSuggestion,
 } from "../../../core/asr";
+
+type AudioHighlightRange = { start: number; end: number };
+
+type QueuedAudioPlayback = {
+  queueId: string;
+  messageId: string;
+  cancelled: boolean;
+  activeRequestId: string | null;
+  resolveCurrentChunk: (() => void) | null;
+};
 
 const LONG_PRESS_DELAY = 450;
 const SCROLL_THRESHOLD = 10; // pixels of movement to cancel long press
@@ -258,9 +270,13 @@ export function ChatConversationPage() {
   const [audioStatusByMessage, setAudioStatusByMessage] = useState<
     Record<string, "loading" | "playing">
   >({});
+  const [audioHighlightByMessage, setAudioHighlightByMessage] = useState<
+    Record<string, AudioHighlightRange>
+  >({});
   const audioPlaybackRef = useRef<HTMLAudioElement | null>(null);
   const audioPlayingMessageIdRef = useRef<string | null>(null);
   const audioRequestRef = useRef<{ requestId: string; messageId: string } | null>(null);
+  const audioQueueRef = useRef<QueuedAudioPlayback | null>(null);
   const cancelledAudioRequestsRef = useRef<Set<string>>(new Set());
   const abortRequestedRef = useRef(false);
   const abortSoundRef = useRef(false);
@@ -984,7 +1000,7 @@ export function ChatConversationPage() {
             const seen = new Set<string>();
             const merged: AsrLearnedSuggestion[] = [];
             const key = (s: AsrLearnedSuggestion) =>
-              `${s.normalizedWrong} ${s.normalizedCorrect}`;
+              `${s.normalizedWrong}::${s.normalizedCorrect}`;
             for (const s of prev) {
               if (next.some((n) => key(n) === key(s))) {
                 seen.add(key(s));
@@ -1204,6 +1220,23 @@ export function ChatConversationPage() {
     });
   }, []);
 
+  const setAudioHighlight = useCallback(
+    (messageId: string, range: AudioHighlightRange | null) => {
+      setAudioHighlightByMessage((prev) => {
+        if (range === null) {
+          if (!(messageId in prev)) return prev;
+          const next = { ...prev };
+          delete next[messageId];
+          return next;
+        }
+        const current = prev[messageId];
+        if (current?.start === range.start && current.end === range.end) return prev;
+        return { ...prev, [messageId]: range };
+      });
+    },
+    [],
+  );
+
   const buildAudioCacheKey = useCallback(
     (params: {
       providerId: string;
@@ -1228,8 +1261,139 @@ export function ChatConversationPage() {
     }
   }, []);
 
+  const startQueuedOpenAiAudioPlayback = useCallback(
+    async (params: {
+      messageId: string;
+      providerId: string;
+      modelId: string;
+      voiceId: string;
+      text: string;
+      prompt?: string;
+      baseCacheKey: string;
+    }) => {
+      const chunks = splitTextForTtsQueue(params.text);
+      if (chunks.length === 0) return;
+
+      const queueId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
+      const queue: QueuedAudioPlayback = {
+        queueId,
+        messageId: params.messageId,
+        cancelled: false,
+        activeRequestId: null,
+        resolveCurrentChunk: null,
+      };
+      audioQueueRef.current = queue;
+      audioRequestRef.current = null;
+      setAudioStatus(params.messageId, "loading");
+      setAudioHighlight(params.messageId, null);
+
+      const ensureActive = () => {
+        if (queue.cancelled || audioQueueRef.current?.queueId !== queueId) {
+          throw new Error("Request aborted by user");
+        }
+      };
+
+      const getChunkResponse = async (chunkIndex: number): Promise<TtsPreviewResponse> => {
+        ensureActive();
+        const chunk = chunks[chunkIndex];
+        const chunkCacheKey = `${params.baseCacheKey}::openai-tts-chunk::${chunk.index}:${chunk.start}:${chunk.end}`;
+        const cached = audioPreviewCacheRef.current.get(chunkCacheKey);
+        if (cached) return cached;
+
+        const requestId = `${queueId}-${chunk.index}`;
+        queue.activeRequestId = requestId;
+        audioRequestRef.current = { requestId, messageId: params.messageId };
+        try {
+          const response = await generateTtsPreview(
+            params.providerId,
+            params.modelId,
+            params.voiceId,
+            chunk.text,
+            params.prompt,
+            requestId,
+          );
+          ensureActive();
+          cacheAudioPreview(chunkCacheKey, response);
+          return response;
+        } finally {
+          if (queue.activeRequestId === requestId) {
+            queue.activeRequestId = null;
+          }
+          if (audioRequestRef.current?.requestId === requestId) {
+            audioRequestRef.current = null;
+          }
+        }
+      };
+
+      const queueChunkResponse = (chunkIndex: number): Promise<TtsPreviewResponse> => {
+        const promise = getChunkResponse(chunkIndex);
+        void promise.catch(() => undefined);
+        return promise;
+      };
+
+      const playChunk = (chunkIndex: number, response: TtsPreviewResponse) =>
+        new Promise<void>((resolve) => {
+          ensureActive();
+          const chunk = chunks[chunkIndex];
+          setAudioHighlight(params.messageId, { start: chunk.start, end: chunk.end });
+          setAudioStatus(params.messageId, "playing");
+          const audio = playAudioFromBase64(response.audioBase64, response.format);
+          audioPlaybackRef.current = audio;
+          audioPlayingMessageIdRef.current = params.messageId;
+
+          let done = false;
+          const finish = () => {
+            if (done) return;
+            done = true;
+            if (queue.resolveCurrentChunk === finish) {
+              queue.resolveCurrentChunk = null;
+            }
+            if (audioPlaybackRef.current === audio) {
+              audioPlaybackRef.current = null;
+              audioPlayingMessageIdRef.current = null;
+            }
+            resolve();
+          };
+
+          queue.resolveCurrentChunk = finish;
+          audio.onended = finish;
+          audio.onerror = finish;
+        });
+
+      try {
+        let nextResponsePromise: Promise<TtsPreviewResponse> | null = queueChunkResponse(0);
+        for (let index = 0; index < chunks.length; index += 1) {
+          ensureActive();
+          if (!nextResponsePromise) break;
+          const response = await nextResponsePromise;
+          ensureActive();
+          nextResponsePromise = index + 1 < chunks.length ? queueChunkResponse(index + 1) : null;
+          await playChunk(index, response);
+          ensureActive();
+          if (nextResponsePromise) {
+            setAudioStatus(params.messageId, "loading");
+          }
+        }
+      } finally {
+        if (audioQueueRef.current?.queueId === queueId) {
+          audioQueueRef.current = null;
+          setAudioHighlight(params.messageId, null);
+          setAudioStatus(params.messageId, null);
+          const activeRequest = audioRequestRef.current as
+            | { requestId: string; messageId: string }
+            | null;
+          if (activeRequest?.requestId.startsWith(queueId)) {
+            audioRequestRef.current = null;
+          }
+        }
+      }
+    },
+    [cacheAudioPreview, setAudioHighlight, setAudioStatus],
+  );
+
   const startAudioPlayback = useCallback(
     (messageId: string, response: TtsPreviewResponse) => {
+      setAudioHighlight(messageId, null);
       setAudioStatus(messageId, "playing");
       const audio = playAudioFromBase64(response.audioBase64, response.format);
       audioPlaybackRef.current = audio;
@@ -1249,10 +1413,25 @@ export function ChatConversationPage() {
         }
       };
     },
-    [setAudioStatus],
+    [setAudioHighlight, setAudioStatus],
   );
 
   const stopAudioPlayback = useCallback(() => {
+    const queue = audioQueueRef.current;
+    if (queue) {
+      queue.cancelled = true;
+      if (queue.activeRequestId) {
+        cancelledAudioRequestsRef.current.add(queue.activeRequestId);
+        void abortAudioPreview(queue.activeRequestId).catch((error) => {
+          console.warn("Failed to cancel queued audio chunk:", error);
+        });
+      }
+      queue.resolveCurrentChunk?.();
+      setAudioHighlight(queue.messageId, null);
+      setAudioStatus(queue.messageId, null);
+      audioQueueRef.current = null;
+    }
+
     const audio = audioPlaybackRef.current;
     if (audio) {
       audio.pause();
@@ -1264,22 +1443,44 @@ export function ChatConversationPage() {
     const messageId = audioPlayingMessageIdRef.current;
     if (messageId) {
       audioPlayingMessageIdRef.current = null;
+      setAudioHighlight(messageId, null);
       setAudioStatus(messageId, null);
     }
-  }, [setAudioStatus]);
+  }, [setAudioHighlight, setAudioStatus]);
 
   const cancelAudioGeneration = useCallback(async () => {
     const pending = audioRequestRef.current;
+    const queue = audioQueueRef.current;
+    if (!pending && !queue) return;
+
+    if (queue) {
+      queue.cancelled = true;
+      queue.resolveCurrentChunk?.();
+      const audio = audioPlaybackRef.current;
+      if (audio) {
+        audio.pause();
+        audio.currentTime = 0;
+        audio.onended = null;
+        audio.onerror = null;
+      }
+      audioPlaybackRef.current = null;
+      audioPlayingMessageIdRef.current = null;
+      setAudioHighlight(queue.messageId, null);
+      setAudioStatus(queue.messageId, null);
+      audioQueueRef.current = null;
+    }
+
     if (!pending) return;
     audioRequestRef.current = null;
     cancelledAudioRequestsRef.current.add(pending.requestId);
+    setAudioHighlight(pending.messageId, null);
     setAudioStatus(pending.messageId, null);
     try {
       await abortAudioPreview(pending.requestId);
     } catch (error) {
       console.warn("Failed to cancel audio preview:", error);
     }
-  }, [setAudioStatus]);
+  }, [setAudioHighlight, setAudioStatus]);
 
   const handleStopAudio = useCallback(
     (message: StoredMessage) => {
@@ -1386,6 +1587,34 @@ export function ChatConversationPage() {
           text: trimmedText,
           prompt: voice.prompt,
         });
+
+        if (provider.providerType === "openai_tts") {
+          try {
+            await startQueuedOpenAiAudioPlayback({
+              messageId: message.id,
+              providerId: voice.providerId,
+              modelId: voice.modelId,
+              voiceId: voice.voiceId,
+              text: trimmedText,
+              prompt: voice.prompt,
+              baseCacheKey: cacheKey,
+            });
+          } catch (error) {
+            if (audioRequestRef.current?.requestId === requestId) {
+              audioRequestRef.current = null;
+            }
+            setAudioHighlight(message.id, null);
+            setAudioStatus(message.id, null);
+            const messageText = error instanceof Error ? error.message : String(error);
+            const isAbort =
+              messageText.toLowerCase().includes("aborted") ||
+              messageText.toLowerCase().includes("cancel");
+            if (isAbort) return;
+            throw error;
+          }
+          return;
+        }
+
         const cached = audioPreviewCacheRef.current.get(cacheKey);
         if (cached) {
           if (audioRequestRef.current?.requestId !== requestId) {
@@ -1468,6 +1697,33 @@ export function ChatConversationPage() {
           voiceId,
           text: trimmedText,
         });
+
+        if (provider.providerType === "openai_tts") {
+          try {
+            await startQueuedOpenAiAudioPlayback({
+              messageId: message.id,
+              providerId,
+              modelId,
+              voiceId,
+              text: trimmedText,
+              baseCacheKey: cacheKey,
+            });
+          } catch (error) {
+            if (audioRequestRef.current?.requestId === requestId) {
+              audioRequestRef.current = null;
+            }
+            setAudioHighlight(message.id, null);
+            setAudioStatus(message.id, null);
+            const messageText = error instanceof Error ? error.message : String(error);
+            const isAbort =
+              messageText.toLowerCase().includes("aborted") ||
+              messageText.toLowerCase().includes("cancel");
+            if (isAbort) return;
+            throw error;
+          }
+          return;
+        }
+
         const cached = audioPreviewCacheRef.current.get(cacheKey);
         if (cached) {
           if (audioRequestRef.current?.requestId !== requestId) {
@@ -1527,8 +1783,10 @@ export function ChatConversationPage() {
       ensureAudioModels,
       ensureAudioProviders,
       ensureUserVoices,
+      setAudioHighlight,
       setAudioStatus,
       startAudioPlayback,
+      startQueuedOpenAiAudioPlayback,
       stopAudioPlayback,
     ],
   );
@@ -2916,6 +3174,7 @@ export function ChatConversationPage() {
                     character={character}
                     persona={persona}
                     audioStatus={audioStatusByMessage[message.id]}
+                    audioHighlight={audioHighlightByMessage[message.id]}
                     onPlayAudio={handlePlayMessageAudio}
                     onStopAudio={handleStopAudio}
                     onCancelAudio={handleCancelAudio}
