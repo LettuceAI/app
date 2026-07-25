@@ -1187,7 +1187,7 @@ export const idMessages: DeepPartialMessageTree<LocaleMessages> = {
       unknownModel: "Model tidak dikenal",
       loadingModel: "Memuat model...",
       systemMessage: "Pesan sistem",
-      companionChanges: "Perubahan companion",
+      companionChanges: "Reaksi terhadap pesan Anda",
       companionProcessing: "Memproses",
       companionFailed: "Gagal",
       companionLoadError: "Tidak dapat memuat analisis companion untuk giliran ini.",

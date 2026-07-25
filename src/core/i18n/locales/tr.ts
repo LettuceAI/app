@@ -1187,7 +1187,7 @@ export const trMessages: DeepPartialMessageTree<LocaleMessages> = {
       unknownModel: "Bilinmeyen model",
       loadingModel: "Model yükleniyor...",
       systemMessage: "Sistem mesajı",
-      companionChanges: "Yoldaş değişiklikleri",
+      companionChanges: "Mesajınıza verilen tepki",
       companionProcessing: "İşleniyor",
       companionFailed: "Başarısız oldu",
       companionLoadError: "Bu turun yoldaş analizi yüklenemedi.",

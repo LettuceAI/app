@@ -1187,7 +1187,7 @@ export const ruMessages: DeepPartialMessageTree<LocaleMessages> = {
       unknownModel: "Неизвестная модель",
       loadingModel: "Загрузка модели...",
       systemMessage: "Системное сообщение",
-      companionChanges: "Изменения компаньона",
+      companionChanges: "Реакция на ваше сообщение",
       companionProcessing: "Обработка",
       companionFailed: "Сбой",
       companionLoadError: "Не удалось загрузить анализ компаньона для этого хода.",

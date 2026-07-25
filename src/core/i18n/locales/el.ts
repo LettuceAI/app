@@ -1187,7 +1187,7 @@ export const elMessages: DeepPartialMessageTree<LocaleMessages> = {
       unknownModel: "Άγνωστο μοντέλο",
       loadingModel: "Φόρτωση μοντέλου...",
       systemMessage: "Μήνυμα συστήματος",
-      companionChanges: "Αλλαγές συντρόφου",
+      companionChanges: "Αντίδραση στο μήνυμά σας",
       companionProcessing: "Επεξεργασία",
       companionFailed: "Απέτυχε",
       companionLoadError: "Δεν ήταν δυνατή η φόρτωση της ανάλυσης συντρόφου για αυτόν τον γύρο.",

@@ -1187,7 +1187,7 @@ export const jaMessages: DeepPartialMessageTree<LocaleMessages> = {
       unknownModel: "不明なモデル",
       loadingModel: "モデルを読み込み中...",
       systemMessage: "システムメッセージ",
-      companionChanges: "コンパニオンの変更",
+      companionChanges: "あなたのメッセージへの反応",
       companionProcessing: "処理中",
       companionFailed: "失敗",
       companionLoadError: "このターンのコンパニオン分析を読み込めませんでした。",

@@ -1294,7 +1294,7 @@ export const enMessages = {
       unknownModel: "Unknown model",
       loadingModel: "Loading model...",
       systemMessage: "System message",
-      companionChanges: "Companion changes",
+      companionChanges: "Reaction to your message",
       companionProcessing: "Processing",
       companionFailed: "Failed",
       companionLoadError: "Could not load this turn's companion analysis.",

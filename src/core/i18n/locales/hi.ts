@@ -1187,7 +1187,7 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
       unknownModel: "अज्ञात मॉडल",
       loadingModel: "मॉडल लोड हो रहा है...",
       systemMessage: "सिस्टम मैसेज",
-      companionChanges: "साथी के बदलाव",
+      companionChanges: "आपके संदेश पर प्रतिक्रिया",
       companionProcessing: "प्रोसेसिंग",
       companionFailed: "विफल रहा",
       companionLoadError: "इस टर्न के साथी के विश्लेषण को लोड नहीं किया जा सका।",

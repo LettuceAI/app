@@ -1187,7 +1187,7 @@ export const deMessages: DeepPartialMessageTree<LocaleMessages> = {
       unknownModel: "Unbekanntes Modell",
       loadingModel: "Modell laden...",
       systemMessage: "Systemnachricht",
-      companionChanges: "Companion-Änderungen",
+      companionChanges: "Reaktion auf deine Nachricht",
       companionProcessing: "Wird verarbeitet",
       companionFailed: "Fehlgeschlagen",
       companionLoadError: "Die Companion-Analyse dieses Zugs konnte nicht geladen werden.",

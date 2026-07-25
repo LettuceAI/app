@@ -1187,7 +1187,7 @@ export const nlMessages: DeepPartialMessageTree<LocaleMessages> = {
       unknownModel: "Onbekend model",
       loadingModel: "Model laden...",
       systemMessage: "Systeembericht",
-      companionChanges: "Companion-wijzigingen",
+      companionChanges: "Reactie op je bericht",
       companionProcessing: "Verwerken",
       companionFailed: "Mislukt",
       companionLoadError: "Kon de companion-analyse van deze beurt niet laden.",

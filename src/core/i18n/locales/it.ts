@@ -1187,7 +1187,7 @@ export const itMessages: DeepPartialMessageTree<LocaleMessages> = {
       unknownModel: "Modello sconosciuto",
       loadingModel: "Caricamento modello...",
       systemMessage: "Messaggio di sistema",
-      companionChanges: "Modifiche del compagno",
+      companionChanges: "Reazione al tuo messaggio",
       companionProcessing: "Elaborazione",
       companionFailed: "Non riuscito",
       companionLoadError: "Impossibile caricare l'analisi del compagno per questo turno.",

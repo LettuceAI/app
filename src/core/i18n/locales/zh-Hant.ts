@@ -1197,7 +1197,7 @@ export const zhHantMessages: DeepPartialMessageTree<LocaleMessages> = {
       attachments: "附件",
       filename: "檔案名稱",
       systemMessage: "系統消息",
-      companionChanges: "同伴變更",
+      companionChanges: "對你訊息的反應",
       companionProcessing: "處理中",
       companionFailed: "失敗",
       companionLoadError: "無法載入此回合的同伴分析。",

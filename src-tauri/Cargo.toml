@@ -134,3 +134,8 @@ whisper-rs-sys = { git = "https://codeberg.org/MegalithOfficial/whisper-rs.git" 
 
 [profile.dev.package.sha2]
 opt-level = 3
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = "none"

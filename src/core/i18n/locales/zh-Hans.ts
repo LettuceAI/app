@@ -1186,7 +1186,7 @@ export const zhHansMessages: DeepPartialMessageTree<LocaleMessages> = {
       unknownModel: "未知模型",
       loadingModel: "加载模型中...",
       systemMessage: "系统消息",
-      companionChanges: "伙伴变更",
+      companionChanges: "对你消息的反应",
       companionProcessing: "处理中",
       companionFailed: "失败",
       companionLoadError: "无法加载此回合的伙伴分析。",

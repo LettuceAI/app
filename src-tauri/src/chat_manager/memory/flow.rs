@@ -2276,9 +2276,9 @@ async fn process_dynamic_memory_cycle_with_model(
     };
 
     // Cursor-based delta summary window:
-    // - Normal cycles summarize all new conversation messages since last windowEnd.
-    // - If backlog > window_size, include the whole backlog in this run (one-time catch-up),
-    //   then future cycles continue at window_size cadence.
+    // - Normal cycles summarize the next conversation slice after the last windowEnd.
+    // - Backlogs are processed one window at a time so local models stay within the configured
+    //   interval; future cycles continue from the newly persisted windowEnd.
     // - Forced cycles (retry/manual trigger/model override) summarize the most recent window_size
     //   messages, even if there are no new messages.
     let (last_window_end, cursor_rewound) = resolve_last_valid_window_end(app, session)?;
@@ -2294,7 +2294,7 @@ async fn process_dynamic_memory_cycle_with_model(
     );
 
     // For retry/manual trigger/model override, skip the "enough new messages" gate.
-    // Also skip if we detected a rewind; we need to rebuild the summary/memory state.
+    // Also skip if we detected a rewind so the retained tail is rebuilt immediately.
     if model_id_override.is_none() && !force && !cursor_rewound {
         if total_convo_at_start <= last_window_end {
             log_info(
@@ -2363,14 +2363,13 @@ async fn process_dynamic_memory_cycle_with_model(
     app.state::<crate::dynamic_memory_approval::DynamicMemoryApprovalManager>()
         .clear(&session.id);
 
-    let mut window_start = if cursor_rewound {
-        0
-    } else if force || model_id_override.is_some() {
-        total_convo_at_start.saturating_sub(window_size)
-    } else {
-        last_window_end
-    };
-    let mut window_end = total_convo_at_start;
+    let (mut window_start, mut window_end) =
+        crate::conversation_manager::memory::next_window(
+            last_window_end,
+            total_convo_at_start,
+            window_size,
+            !cursor_rewound && (force || model_id_override.is_some()),
+        );
 
     let convo_window = match fetch_conversation_messages_range(
         app,
@@ -2534,11 +2533,7 @@ async fn process_dynamic_memory_cycle_with_model(
         summary_model,
         &api_key,
         &convo_window,
-        if cursor_rewound {
-            None
-        } else {
-            session.memory_summary.as_deref()
-        },
+        session.memory_summary.as_deref(),
         character,
         session,
         settings,

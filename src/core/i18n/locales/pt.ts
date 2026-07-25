@@ -1187,7 +1187,7 @@ export const ptMessages: DeepPartialMessageTree<LocaleMessages> = {
       unknownModel: "Modelo desconhecido",
       loadingModel: "Carregando modelo...",
       systemMessage: "Mensagem de sistema",
-      companionChanges: "Alterações do companion",
+      companionChanges: "Reação à sua mensagem",
       companionProcessing: "Processando",
       companionFailed: "Falhou",
       companionLoadError: "Não foi possível carregar a análise do companion deste turno.",

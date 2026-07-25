@@ -1187,7 +1187,7 @@ export const esMessages: DeepPartialMessageTree<LocaleMessages> = {
       unknownModel: "Modelo desconocido",
       loadingModel: "Cargando modelo...",
       systemMessage: "Mensaje del sistema",
-      companionChanges: "Cambios del compañero",
+      companionChanges: "Reacción a tu mensaje",
       companionProcessing: "Procesando",
       companionFailed: "Falló",
       companionLoadError: "No se pudo cargar el análisis del compañero de este turno.",

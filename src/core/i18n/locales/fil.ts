@@ -1187,7 +1187,7 @@ export const filMessages: DeepPartialMessageTree<LocaleMessages> = {
       unknownModel: "Hindi kilalang modelo",
       loadingModel: "Naglo-load ng modelo...",
       systemMessage: "System message",
-      companionChanges: "Mga pagbabago sa companion",
+      companionChanges: "Reaksyon sa mensahe mo",
       companionProcessing: "Pinoproseso",
       companionFailed: "Nabigo",
       companionLoadError: "Hindi ma-load ang pagsusuri ng companion para sa turn na ito.",

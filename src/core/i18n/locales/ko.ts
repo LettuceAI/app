@@ -1187,7 +1187,7 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
       unknownModel: "알 수 없는 모델",
       loadingModel: "모델 로딩 중...",
       systemMessage: "시스템 메시지",
-      companionChanges: "컴패니언 변경 사항",
+      companionChanges: "메시지에 대한 반응",
       companionProcessing: "처리 중",
       companionFailed: "실패",
       companionLoadError: "이 턴의 컴패니언 분석을 불러올 수 없습니다.",

@@ -1187,7 +1187,7 @@ export const viMessages: DeepPartialMessageTree<LocaleMessages> = {
       unknownModel: "Mô hình không xác định",
       loadingModel: "Đang tải mô hình...",
       systemMessage: "Tin nhắn hệ thống",
-      companionChanges: "Thay đổi bạn đồng hành",
+      companionChanges: "Phản ứng với tin nhắn của bạn",
       companionProcessing: "Đang xử lý",
       companionFailed: "Thất bại",
       companionLoadError: "Không thể tải phân tích bạn đồng hành của lượt này.",
