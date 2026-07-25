@@ -718,6 +718,16 @@ pub fn render_prompt_state(
         ),
         "Do not apply these metrics to third-party people mentioned in character definitions, persona descriptions, lore, or memories unless that relationship is explicitly stated.".to_string(),
         "Closeness, trust, and affection are bidirectional: they can run negative, meaning the character actively dislikes, distrusts, or wants distance from the partner, not merely feels neutral.".to_string(),
+        "Treat these metrics as supporting signals, not as permission to contradict the chat history, memories, or established relationship events. Preserve established emotional breakthroughs as settled continuity; never reset or rediscover them merely because a metric band is lower.".to_string(),
+        format!(
+            "Relationship duration context: this session state has tracked {} user interaction{}.",
+            rel.interaction_count,
+            if rel.interaction_count == 1 {
+                ""
+            } else {
+                "s"
+            },
+        ),
         format!(
             "Current {} <-> {} relationship stance: closeness {}, trust {}, affection {}; tension {:.0}%.",
             character.name,
@@ -1482,24 +1492,20 @@ fn clamp_signed(value: f64) -> f64 {
 
 struct AxisDynamics {
     neg_mult: f64,
-    leak_decay: f64,
-    leak_recover: f64,
+    recovery_rate: f64,
 }
 
 const TRUST_DYN: AxisDynamics = AxisDynamics {
     neg_mult: 1.6,
-    leak_decay: 0.04,
-    leak_recover: 0.012,
+    recovery_rate: 0.012,
 };
 const AFFECTION_DYN: AxisDynamics = AxisDynamics {
     neg_mult: 1.4,
-    leak_decay: 0.045,
-    leak_recover: 0.018,
+    recovery_rate: 0.018,
 };
 const CLOSENESS_DYN: AxisDynamics = AxisDynamics {
     neg_mult: 1.3,
-    leak_decay: 0.03,
-    leak_recover: 0.02,
+    recovery_rate: 0.02,
 };
 
 fn apply_bipolar_delta(current: f64, raw_delta: f64, baseline: f64, cfg: &AxisDynamics) -> f64 {
@@ -1515,12 +1521,12 @@ fn apply_bipolar_delta(current: f64, raw_delta: f64, baseline: f64, cfg: &AxisDy
     };
     let v = current + d * headroom.max(0.0);
     let gap = v - baseline;
-    let leak = if gap < 0.0 {
-        cfg.leak_recover
+    let out = if gap < 0.0 {
+        v - cfg.recovery_rate * gap
     } else {
-        cfg.leak_decay
+        v
     };
-    clamp_signed(v - leak * gap)
+    clamp_signed(out)
 }
 
 fn default_closeness() -> f64 {
@@ -1610,26 +1616,34 @@ mod tests {
     }
 
     #[test]
-    fn neutral_turns_leak_inflated_axis_toward_baseline() {
+    fn neutral_turns_preserve_earned_relationship_state() {
         let baseline = 0.15;
         let mut affection = 0.8;
         for _ in 0..20 {
             affection = apply_bipolar_delta(affection, 0.0, baseline, &AFFECTION_DYN);
         }
-        assert!(affection < 0.8);
-        assert!(affection > baseline);
+        assert!((affection - 0.8).abs() < f64::EPSILON);
     }
 
     #[test]
-    fn grudge_recovers_slower_than_warmth_decays() {
+    fn relationship_damage_recovers_without_erasing_earned_warmth() {
         let baseline = 0.3;
         let recovered = apply_bipolar_delta(baseline - 0.4, 0.0, baseline, &TRUST_DYN);
         let recover_step = recovered - (baseline - 0.4);
-        let decayed = apply_bipolar_delta(baseline + 0.4, 0.0, baseline, &TRUST_DYN);
-        let decay_step = (baseline + 0.4) - decayed;
+        let preserved = apply_bipolar_delta(baseline + 0.4, 0.0, baseline, &TRUST_DYN);
         assert!(recover_step > 0.0);
-        assert!(decay_step > 0.0);
-        assert!(recover_step < decay_step);
+        assert!((preserved - (baseline + 0.4)).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn sparse_positive_signals_accumulate_across_neutral_turns() {
+        let baseline = 0.05;
+        let mut affection = baseline;
+        for turn in 0..100 {
+            let delta = if turn % 20 == 0 { 0.03 } else { 0.0 };
+            affection = apply_bipolar_delta(affection, delta, baseline, &AFFECTION_DYN);
+        }
+        assert!(affection > 0.15);
     }
 
     #[test]

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  AlertTriangle,
   ArrowLeft,
   Bot,
   Brain,
@@ -17,7 +16,6 @@ import {
   Plus,
   RefreshCw,
   Save,
-  ScrollText,
   Search,
   Shield,
   Snowflake,
@@ -56,19 +54,14 @@ import {
   type CompanionMemoryItem,
 } from "./companionUi";
 import { useI18n } from "../../../core/i18n/context";
-import type { TranslationKey } from "../../../core/i18n/context";
 import { RELATIONSHIP_AXIS_ANCHORS } from "../characters/utils/companionDefaults";
 import { storageBridge } from "../../../core/storage/files";
+import {
+  MemoryCycleHub,
+  type DynamicMemoryCycleStatus,
+} from "../../components/MemoryCycleHub";
 
 type MemoryFilter = "all" | "active" | "superseded";
-
-const MEMORY_PROGRESS_TOTAL = 4;
-const MEMORY_STEP_LABELS = {
-  1: "chats.companionMemoryPage.steps.summarizing",
-  2: "chats.companionMemoryPage.steps.analyzing",
-  3: "chats.companionMemoryPage.steps.applying",
-  4: "chats.companionMemoryPage.steps.organizing",
-} as const satisfies Record<number, TranslationKey>;
 
 const sectionIcons: Record<CompanionMemoryCategory, React.ComponentType<{ className?: string; size?: number }>> = {
   relationship: Heart,
@@ -578,12 +571,35 @@ export function CompanionMemoryPage() {
   const [showSummaryEditor, setShowSummaryEditor] = useState(false);
   const [summaryDraft, setSummaryDraft] = useState("");
   const [savingSummary, setSavingSummary] = useState(false);
+  const [cycleStatus, setCycleStatus] = useState<DynamicMemoryCycleStatus | null>(null);
+  const [retrying, setRetrying] = useState(false);
+  const [retrySuccess, setRetrySuccess] = useState(false);
 
   const companion = character?.companion ?? null;
   const companionState = session?.companionState;
   const relationshipState = companionState?.relationshipState;
   const emotionalState = companionState?.emotionalState;
   const activeSignals = companionState?.activeSignals ?? [];
+  const isDynamic = character?.memoryType === "dynamic";
+
+  useEffect(() => {
+    if (!isDynamic || !session?.id) {
+      setCycleStatus(null);
+      return;
+    }
+    let cancelled = false;
+    storageBridge
+      .dynamicMemoryCycleStatus(session.id)
+      .then((status) => {
+        if (!cancelled) setCycleStatus(status);
+      })
+      .catch(() => {
+        if (!cancelled) setCycleStatus(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isDynamic, session?.id, session?.memoryStatus, session?.memoryToolEvents?.length]);
 
   useEffect(() => {
     if (!session?.id) return;
@@ -642,7 +658,7 @@ export function CompanionMemoryPage() {
   }, [reload, session?.id]);
 
   const memoryProcessing = session?.memoryStatus === "processing";
-  const memoryCycleActive = memoryProcessing || triggering;
+  const memoryCycleActive = memoryProcessing || triggering || retrying;
 
   useEffect(() => {
     let mounted = true;
@@ -704,13 +720,22 @@ export function CompanionMemoryPage() {
     }
   }, [session, cancelling, setSession]);
 
-  const handleMemoryButton = useCallback(() => {
-    if (memoryCycleActive) {
-      void handleCancelMemory();
-    } else {
-      void handleTriggerMemory();
+  const handleRetryMemory = useCallback(async () => {
+    if (!session?.id || retrying) return;
+    setRetrying(true);
+    setRetrySuccess(false);
+    try {
+      await storageBridge.retryDynamicMemory(session.id);
+      await reload();
+      setRetrySuccess(true);
+      window.setTimeout(() => setRetrySuccess(false), 3000);
+    } catch (err) {
+      console.error("Failed to retry companion memory processing:", err);
+      await reload();
+    } finally {
+      setRetrying(false);
     }
-  }, [memoryCycleActive, handleCancelMemory, handleTriggerMemory]);
+  }, [session?.id, retrying, reload]);
 
   useEffect(() => {
     if (!showSummaryEditor) setSummaryDraft(session?.memorySummary ?? "");
@@ -949,99 +974,48 @@ export function CompanionMemoryPage() {
         subtitle={session.title || character.name}
         onBack={() => backOrReplace(Routes.chatSession(character.id, session.id))}
         right={
-          <>
-            <button
-              onClick={handleMemoryButton}
-              disabled={cancelling}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[11px] font-medium disabled:opacity-50",
-                memoryCycleActive
-                  ? "border-rose-500/25 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20"
-                  : "border-fg/10 bg-fg/4 text-fg/70 hover:border-fg/20 hover:bg-fg/8 hover:text-fg",
-                interactive.transition.fast,
-              )}
-              title={
-                memoryCycleActive
-                  ? t("chats.companionMemoryPage.cancelCycleTitle")
-                  : t("chats.companionMemoryPage.processMemoryTitle")
-              }
-            >
-              {memoryCycleActive ? (
-                <Loader2 size={12} className="animate-spin" />
-              ) : (
-                <Sparkles size={12} />
-              )}
-              {cancelling ? t("chats.companionMemoryPage.cancelling") : memoryCycleActive ? t("common.buttons.cancel") : t("chats.companionMemoryPage.processMemory")}
-            </button>
-            <button
-              onClick={() => go(Routes.chatCompanionRelationship(character.id, session.id))}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-md border border-fg/10 bg-fg/4 px-2.5 py-1.5 text-[11px] font-medium text-fg/70",
-                "hover:border-fg/20 hover:bg-fg/8 hover:text-fg",
-                interactive.transition.fast,
-              )}
-            >
-              <Heart size={12} /> {t("chats.companionMemoryPage.relationship")}
-            </button>
-          </>
+          <button
+            onClick={() => go(Routes.chatCompanionRelationship(character.id, session.id))}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-md border border-fg/10 bg-fg/4 px-2.5 py-1.5 text-[11px] font-medium text-fg/70",
+              "hover:border-fg/20 hover:bg-fg/8 hover:text-fg",
+              interactive.transition.fast,
+            )}
+          >
+            <Heart size={12} /> {t("chats.companionMemoryPage.relationship")}
+          </button>
         }
       />
 
-      <main className="flex-1 overflow-y-auto px-3 pb-[calc(env(safe-area-inset-bottom)+24px)] pt-4 lg:px-8">
-        {memoryCycleActive && (
-          <div className="mx-auto mb-4 w-full max-w-7xl">
-            <div className={cn(radius.md, "border border-blue-500/20 bg-blue-500/10 p-3 space-y-2")}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <RefreshCw className="h-4 w-4 shrink-0 animate-spin text-blue-400" />
-                  <span className="text-[13px] font-semibold text-blue-200">
-                    {progressStep && MEMORY_STEP_LABELS[progressStep as keyof typeof MEMORY_STEP_LABELS]
-                      ? t(MEMORY_STEP_LABELS[progressStep as keyof typeof MEMORY_STEP_LABELS])
-                      : t("chats.companionMemoryPage.processingMemories")}
-                  </span>
-                </div>
-                {progressStep ? (
-                  <span className="text-[12px] tabular-nums text-blue-300/60">
-                    {progressStep}/{MEMORY_PROGRESS_TOTAL}
-                  </span>
-                ) : null}
-              </div>
-              <div className="h-1.5 w-full overflow-hidden rounded-full bg-blue-500/15">
-                {progressStep ? (
-                  <div
-                    className="h-full rounded-full bg-blue-400/70 transition-all duration-500 ease-out"
-                    style={{ width: `${(progressStep / MEMORY_PROGRESS_TOTAL) * 100}%` }}
-                  />
-                ) : (
-                  <div className="h-full w-1/3 rounded-full bg-blue-400/70 animate-[indeterminate_1.5s_ease-in-out_infinite]" />
-                )}
-              </div>
-              {genTokens != null &&
-                (generationStalled ? (
-                  <p className="flex items-center gap-1.5 text-[11px] tabular-nums text-amber-300/80">
-                    <AlertTriangle size={11} className="shrink-0" />
-                    {t("chats.companionMemoryPage.stalled", { seconds: Math.round((generationStalledMs ?? 0) / 1000) })}
-                  </p>
-                ) : (
-                  <p className="text-[11px] tabular-nums text-blue-300/60">
-                    {t("chats.companionMemoryPage.generatingTokens", { count: genTokens })}
-                    {genTps && genTps > 0 ? ` · ${t("chats.companionMemoryPage.tokensPerSecond", { tps: genTps.toFixed(1) })}` : ""}
-                  </p>
-                ))}
-              {developerMode && genRecentText != null && (
-                <button
-                  type="button"
-                  onClick={() => setShowLiveOutput(true)}
-                  className="mt-1 inline-flex items-center gap-1.5 self-start rounded-md border border-blue-500/25 bg-blue-500/10 px-2 py-1 text-[11px] font-medium text-blue-200/80 transition hover:bg-blue-500/20"
-                >
-                  <ScrollText size={12} />
-                  {t("chats.companionMemoryPage.viewLiveOutput")}
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-        <motion.div
+      <main className="flex-1 overflow-y-auto pb-[calc(env(safe-area-inset-bottom)+24px)]">
+        {isDynamic &&
+          (cycleStatus ||
+            memoryCycleActive ||
+            session.memoryError ||
+            retrySuccess) && (
+            <MemoryCycleHub
+              status={cycleStatus}
+              running={memoryCycleActive}
+              retrying={retrying}
+              retrySuccess={retrySuccess}
+              errorMessage={session.memoryError ?? null}
+              step={progressStep ?? session.memoryProgressStep ?? null}
+              generationTokens={genTokens}
+              generationTps={genTps}
+              generationStalled={generationStalled}
+              generationStalledSeconds={Math.round((generationStalledMs ?? 0) / 1000)}
+              liveOutputAvailable={developerMode && genRecentText != null}
+              onRun={() => void handleTriggerMemory()}
+              onCancel={() => void handleCancelMemory()}
+              onRetry={() => void handleRetryMemory()}
+              onDismissError={() => void handleCancelMemory()}
+              onDismissSuccess={() => setRetrySuccess(false)}
+              onShowLiveOutput={() => setShowLiveOutput(true)}
+              conversationScope={session.parentSessionId ? "branch" : "conversation"}
+            />
+          )}
+        <div className="px-3 pt-4 lg:px-8">
+          <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.2, ease: "easeOut" }}
@@ -1352,7 +1326,8 @@ export function CompanionMemoryPage() {
               </motion.div>
             )}
           </section>
-        </motion.div>
+          </motion.div>
+        </div>
       </main>
 
       <BottomMenu
