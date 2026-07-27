@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use tauri::Manager;
 use uuid;
 
-use super::db::{now_ms, open_db};
+use super::db::{now_ms, open_db, tracked_write, tracked_write_string};
 use crate::chat_manager::types::{
     AdvancedModelSettings, ImageAttachment, MemoryEmbedding, MessageVariant, Session,
     StoredMessage, UsageSummary,
@@ -284,7 +284,7 @@ fn write_resolved_memories_json(
 }
 
 fn persist_shared_memory_from_session_json(
-    conn: &mut rusqlite::Connection,
+    conn: &rusqlite::Connection,
     session_id: &str,
     character_id: &str,
     mode: &str,
@@ -321,7 +321,7 @@ fn persist_shared_memory_from_session_json(
         character_id,
         &shared_state,
     )?;
-    crate::storage_manager::memory_embeddings::replace_all_from_json(
+    crate::storage_manager::memory_embeddings::replace_all_from_json_in_transaction(
         conn,
         character_id,
         crate::storage_manager::memory_embeddings::SessionKind::CompanionShared,
@@ -1348,7 +1348,7 @@ fn upsert_messages_batch_value(
     session_id: &str,
     msgs: &[JsonValue],
 ) -> Result<(), String> {
-    let mut conn = open_db(app)?;
+    let conn = open_db(app)?;
 
     log_info(
         app,
@@ -1361,16 +1361,8 @@ fn upsert_messages_batch_value(
     );
 
     let now = now_ms() as i64;
-    let tx = conn.transaction().map_err(|e| {
-        log_error(
-            app,
-            "messages_upsert_batch",
-            format!("Failed to begin transaction: {}", e),
-        );
-        e.to_string()
-    })?;
-
-    for m in msgs {
+    tracked_write_string(&conn, |tx| {
+        for m in msgs {
         let mid = m
             .get("id")
             .and_then(|v| v.as_str())
@@ -1500,16 +1492,15 @@ fn upsert_messages_batch_value(
                 }
             }
         }
-    }
+        }
 
-    tx.execute(
-        "UPDATE sessions SET updated_at = ? WHERE id = ?",
-        params![now, session_id],
-    )
-    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-
-    tx.commit()
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
+        tx.execute(
+            "UPDATE sessions SET updated_at = ? WHERE id = ?",
+            params![now, session_id],
+        )
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        Ok(())
+    })
 }
 
 pub fn session_get_meta_internal(
@@ -1963,11 +1954,12 @@ fn reconcile_stale_dynamic_memory_session_state(
         return Ok(());
     }
 
-    conn.execute(
-        "UPDATE sessions SET memory_status = 'idle', memory_error = NULL, updated_at = ?1 WHERE id = ?2",
-        params![now_ms() as i64, session_id],
-    )
-    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    tracked_write(conn, |tx| {
+        tx.execute(
+            "UPDATE sessions SET memory_status = 'idle', memory_error = NULL, updated_at = ?1 WHERE id = ?2",
+            params![now_ms() as i64, session_id],
+        )
+    })?;
 
     if let Some(map) = session.as_object_mut() {
         map.insert("memoryStatus".into(), JsonValue::String("idle".into()));
@@ -3170,23 +3162,25 @@ pub fn message_delete(
     );
     let conn = open_db(&app)?;
     let now = now_ms() as i64;
-    conn.execute(
-        "DELETE FROM messages WHERE id = ? AND session_id = ?",
-        params![&message_id, &session_id],
-    )
-    .map_err(|e| {
+    tracked_write(&conn, |tx| {
+        tx.execute(
+            "DELETE FROM messages WHERE id = ? AND session_id = ?",
+            params![&message_id, &session_id],
+        )?;
+        tx.execute(
+            "UPDATE sessions SET updated_at = ? WHERE id = ?",
+            params![now, &session_id],
+        )?;
+        Ok(())
+    })
+    .map_err(|error| {
         log_error(
             &app,
             "message_delete",
-            format!("Failed to delete message: {}", e),
+            format!("Failed to delete message: {}", error),
         );
-        e.to_string()
+        error
     })?;
-    conn.execute(
-        "UPDATE sessions SET updated_at = ? WHERE id = ?",
-        params![now, &session_id],
-    )
-    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     Ok(())
 }
 
@@ -3198,58 +3192,59 @@ pub fn messages_delete_after(
 ) -> Result<(), String> {
     let mut conn = open_db(&app)?;
     let now = now_ms() as i64;
-    let tx = conn
-        .transaction()
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    tracked_write_string(&conn, |tx| {
+        let ids: Vec<String> = {
+            let mut stmt = tx
+                .prepare(
+                    "SELECT id FROM messages WHERE session_id = ? ORDER BY created_at ASC, id ASC",
+                )
+                .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+            let rows = stmt
+                .query_map(params![&session_id], |r| r.get::<_, String>(0))
+                .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+            let mut ids: Vec<String> = Vec::new();
+            for row in rows {
+                ids.push(
+                    row.map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?,
+                );
+            }
+            ids
+        };
 
-    let ids: Vec<String> = {
-        let mut stmt = tx
-            .prepare("SELECT id FROM messages WHERE session_id = ? ORDER BY created_at ASC, id ASC")
+        let Some(pos) = ids.iter().position(|id| id == &message_id) else {
+            return Err(crate::utils::err_msg(
+                module_path!(),
+                line!(),
+                "Message not found in session",
+            ));
+        };
+
+        let to_delete = &ids[(pos + 1)..];
+        log_info(
+            &app,
+            "messages_delete_after",
+            format!(
+                "Rewinding session {} after message {} (deleting {} messages)",
+                session_id,
+                message_id,
+                to_delete.len()
+            ),
+        );
+        for id in to_delete {
+            tx.execute(
+                "DELETE FROM messages WHERE id = ? AND session_id = ?",
+                params![id, &session_id],
+            )
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-        let rows = stmt
-            .query_map(params![&session_id], |r| r.get::<_, String>(0))
-            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-        let mut ids: Vec<String> = Vec::new();
-        for row in rows {
-            ids.push(row.map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?);
         }
-        ids
-    };
 
-    let Some(pos) = ids.iter().position(|id| id == &message_id) else {
-        return Err(crate::utils::err_msg(
-            module_path!(),
-            line!(),
-            "Message not found in session",
-        ));
-    };
-
-    let to_delete = &ids[(pos + 1)..];
-    log_info(
-        &app,
-        "messages_delete_after",
-        format!(
-            "Rewinding session {} after message {} (deleting {} messages)",
-            session_id,
-            message_id,
-            to_delete.len()
-        ),
-    );
-    for id in to_delete {
         tx.execute(
-            "DELETE FROM messages WHERE id = ? AND session_id = ?",
-            params![id, &session_id],
+            "UPDATE sessions SET updated_at = ? WHERE id = ?",
+            params![now, &session_id],
         )
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-    }
-
-    tx.execute(
-        "UPDATE sessions SET updated_at = ? WHERE id = ?",
-        params![now, &session_id],
-    )
-    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-    tx.commit()
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        Ok(())
+    })?;
 
     rewind_session_memory_state(&mut conn, &session_id)?;
     Ok(())
@@ -3257,7 +3252,7 @@ pub fn messages_delete_after(
 
 #[tauri::command]
 pub fn session_upsert(app: tauri::AppHandle, session_json: String) -> Result<(), String> {
-    let mut conn = open_db(&app)?;
+    let conn = open_db(&app)?;
     let s: JsonValue = serde_json::from_str(&session_json)
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     let id = s
@@ -3364,45 +3359,6 @@ pub fn session_upsert(app: tauri::AppHandle, session_json: String) -> Result<(),
         None => "[]".to_string(),
     };
     let companion_state_json = resolve_companion_state_json(&conn, &character_id, &mode, &s)?;
-    let shared_memory_enabled = persist_shared_memory_from_session_json(
-        &mut conn,
-        &id,
-        &character_id,
-        &mode,
-        &memories_json,
-        &memory_embeddings_json,
-        memory_summary.clone(),
-        memory_summary_token_count,
-        &memory_tool_events_json,
-        None,
-        None,
-        None,
-    )?;
-    let session_memories_json = if shared_memory_enabled {
-        "[]".to_string()
-    } else {
-        memories_json.clone()
-    };
-    let session_memory_embeddings_json = if shared_memory_enabled {
-        "[]".to_string()
-    } else {
-        memory_embeddings_json.clone()
-    };
-    let session_memory_summary = if shared_memory_enabled {
-        None
-    } else {
-        memory_summary.clone()
-    };
-    let session_memory_summary_token_count = if shared_memory_enabled {
-        0
-    } else {
-        memory_summary_token_count
-    };
-    let session_memory_tool_events_json = if shared_memory_enabled {
-        "[]".to_string()
-    } else {
-        memory_tool_events_json.clone()
-    };
 
     let adv = s.get("advancedModelSettings");
     let advanced_model_settings_json = serialize_session_advanced_model_settings(adv);
@@ -3421,10 +3377,47 @@ pub fn session_upsert(app: tauri::AppHandle, session_json: String) -> Result<(),
         .and_then(|v| v.as_f64());
     let top_k = adv.and_then(|v| v.get("topK")).and_then(|v| v.as_i64());
 
-    let tx = conn
-        .transaction()
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-    tx.execute(
+    tracked_write_string(&conn, |tx| {
+        let shared_memory_enabled = persist_shared_memory_from_session_json(
+            tx,
+            &id,
+            &character_id,
+            &mode,
+            &memories_json,
+            &memory_embeddings_json,
+            memory_summary.clone(),
+            memory_summary_token_count,
+            &memory_tool_events_json,
+            None,
+            None,
+            None,
+        )?;
+        let session_memories_json = if shared_memory_enabled {
+            "[]".to_string()
+        } else {
+            memories_json.clone()
+        };
+        let session_memory_embeddings_json = if shared_memory_enabled {
+            "[]".to_string()
+        } else {
+            memory_embeddings_json.clone()
+        };
+        let session_memory_summary = if shared_memory_enabled {
+            None
+        } else {
+            memory_summary.clone()
+        };
+        let session_memory_summary_token_count = if shared_memory_enabled {
+            0
+        } else {
+            memory_summary_token_count
+        };
+        let session_memory_tool_events_json = if shared_memory_enabled {
+            "[]".to_string()
+        } else {
+            memory_tool_events_json.clone()
+        };
+        tx.execute(
         r#"INSERT INTO sessions (id, character_id, title, parent_session_id, branched_from_message_id, root_session_id, background_image_path, system_prompt, mode, selected_scene_id, prompt_template_id, lorebook_ids_override, author_note, persona_id, persona_disabled, voice_autoplay, temperature, top_p, max_output_tokens, frequency_penalty, presence_penalty, top_k, advanced_model_settings, companion_state, memories, memory_embeddings, memory_summary, memory_summary_token_count, memory_tool_events, archived, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
@@ -3597,37 +3590,32 @@ pub fn session_upsert(app: tauri::AppHandle, session_json: String) -> Result<(),
                 }
             }
         }
-    }
-    tx.commit()
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
+        }
+        Ok(())
+    })
 }
 
 #[tauri::command]
 pub fn session_delete(app: tauri::AppHandle, id: String) -> Result<(), String> {
     log_info(&app, "session_delete", format!("Deleting session {}", id));
-    let mut conn = open_db(&app)?;
-    let tx = conn
-        .transaction()
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-
-    crate::storage_manager::memory_embeddings::delete_all_for_session(
-        &tx,
-        &id,
-        crate::storage_manager::memory_embeddings::SessionKind::Session,
-    )?;
-
-    tx.execute("DELETE FROM sessions WHERE id = ?", params![id])
-        .map_err(|e| {
-            log_error(
-                &app,
-                "session_delete",
-                format!("Failed to delete session: {}", e),
-            );
-            e.to_string()
-        })?;
-
-    tx.commit()
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    let conn = open_db(&app)?;
+    tracked_write_string(&conn, |tx| {
+        crate::storage_manager::memory_embeddings::delete_all_for_session(
+            tx,
+            &id,
+            crate::storage_manager::memory_embeddings::SessionKind::Session,
+        )?;
+        tx.execute("DELETE FROM sessions WHERE id = ?", params![id])
+            .map_err(|e| {
+                log_error(
+                    &app,
+                    "session_delete",
+                    format!("Failed to delete session: {}", e),
+                );
+                e.to_string()
+            })?;
+        Ok(())
+    })?;
 
     Ok(())
 }
@@ -3636,11 +3624,12 @@ pub fn session_delete(app: tauri::AppHandle, id: String) -> Result<(), String> {
 pub fn session_archive(app: tauri::AppHandle, id: String, archived: bool) -> Result<(), String> {
     let conn = open_db(&app)?;
     let now = now_ms() as i64;
-    conn.execute(
-        "UPDATE sessions SET archived = ?, updated_at = ? WHERE id = ?",
-        params![if archived { 1 } else { 0 }, now, id],
-    )
-    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    tracked_write(&conn, |tx| {
+        tx.execute(
+            "UPDATE sessions SET archived = ?, updated_at = ? WHERE id = ?",
+            params![if archived { 1 } else { 0 }, now, id],
+        )
+    })?;
     Ok(())
 }
 
@@ -3652,11 +3641,12 @@ pub fn session_update_title(
 ) -> Result<(), String> {
     let conn = open_db(&app)?;
     let now = now_ms() as i64;
-    conn.execute(
-        "UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?",
-        params![title, now, id],
-    )
-    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    tracked_write(&conn, |tx| {
+        tx.execute(
+            "UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?",
+            params![title, now, id],
+        )
+    })?;
     Ok(())
 }
 
@@ -3671,11 +3661,12 @@ pub fn session_update_author_note(
     let author_note = author_note
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
-    conn.execute(
-        "UPDATE sessions SET author_note = ?, updated_at = ? WHERE id = ?",
-        params![author_note, now, id],
-    )
-    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    tracked_write(&conn, |tx| {
+        tx.execute(
+            "UPDATE sessions SET author_note = ?, updated_at = ? WHERE id = ?",
+            params![author_note, now, id],
+        )
+    })?;
     Ok(())
 }
 
@@ -3695,11 +3686,12 @@ pub fn message_toggle_pin(
         .optional()
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     if let Some(is_pinned) = current {
-        conn.execute(
-            "UPDATE messages SET is_pinned = ? WHERE id = ?",
-            params![if is_pinned == 0 { 1 } else { 0 }, &message_id],
-        )
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        tracked_write(&conn, |tx| {
+            tx.execute(
+                "UPDATE messages SET is_pinned = ? WHERE id = ?",
+                params![if is_pinned == 0 { 1 } else { 0 }, &message_id],
+            )
+        })?;
         if let Some(json) = read_session(&conn, &session_id)? {
             return Ok(Some(serde_json::to_string(&json).map_err(|e| {
                 crate::utils::err_to_string(module_path!(), line!(), e)
@@ -3729,16 +3721,17 @@ pub fn message_toggle_pin_state(
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     if let Some(is_pinned) = current {
         let next = if is_pinned == 0 { 1 } else { 0 };
-        conn.execute(
-            "UPDATE messages SET is_pinned = ? WHERE id = ? AND session_id = ?",
-            params![next, &message_id, &session_id],
-        )
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-        conn.execute(
-            "UPDATE sessions SET updated_at = ? WHERE id = ?",
-            params![now, &session_id],
-        )
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        tracked_write(&conn, |tx| {
+            tx.execute(
+                "UPDATE messages SET is_pinned = ? WHERE id = ? AND session_id = ?",
+                params![next, &message_id, &session_id],
+            )?;
+            tx.execute(
+                "UPDATE sessions SET updated_at = ? WHERE id = ?",
+                params![now, &session_id],
+            )?;
+            Ok(())
+        })?;
         Ok(Some(next != 0))
     } else {
         Ok(None)

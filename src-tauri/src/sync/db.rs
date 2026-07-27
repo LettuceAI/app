@@ -230,7 +230,7 @@ pub struct AssetRecord {
     pub size_bytes: u64,
 }
 
-pub fn get_or_create_local_device_id(conn: &DbConnection) -> Result<String, String> {
+pub fn get_or_create_local_device_id(conn: &rusqlite::Connection) -> Result<String, String> {
     if let Ok(device_id) = conn.query_row(
         "SELECT value FROM sync_local_state WHERE key = 'device_id'",
         [],

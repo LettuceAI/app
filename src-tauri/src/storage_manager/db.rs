@@ -282,6 +282,24 @@ pub fn open_db(app: &tauri::AppHandle) -> Result<DbConnection, String> {
     swappable.get_connection()
 }
 
+pub fn tracked_write<T, F>(conn: &Connection, mutate: F) -> Result<T, String>
+where
+    F: FnOnce(&Connection) -> Result<T, rusqlite::Error>,
+{
+    crate::sync::v2::capture_local_transaction(conn, now_ms() as i64, mutate)
+        .map(|captured| captured.value)
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
+}
+
+pub fn tracked_write_string<T, F>(conn: &Connection, mutate: F) -> Result<T, String>
+where
+    F: FnOnce(&Connection) -> Result<T, String>,
+{
+    crate::sync::v2::capture_local_string_transaction(conn, now_ms() as i64, mutate)
+        .map(|captured| captured.value)
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
+}
+
 pub fn init_db(_app: &tauri::AppHandle, conn: &Connection) -> Result<(), String> {
     conn.execute_batch(
         r#"
@@ -1104,6 +1122,9 @@ pub fn init_db(_app: &tauri::AppHandle, conn: &Connection) -> Result<(), String>
       "#,
     )
     .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+
+    crate::sync::v2::create_schema(conn)
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 
     let _ = conn.execute(
         "ALTER TABLE llm_generation_metrics ADD COLUMN message_id TEXT",
@@ -2280,6 +2301,9 @@ pub fn init_db(_app: &tauri::AppHandle, conn: &Connection) -> Result<(), String>
                 now
             ],
         )
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+
+    crate::sync::v2::audit_sync_catalog(conn)
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 
     Ok(())

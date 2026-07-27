@@ -48,6 +48,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "str
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio"] }
 tower-http = { version = "0.6", default-features = false, features = ["cors"] }
 futures-util = "0.3"
+fallible-streaming-iterator = "0.1"
 chacha20poly1305 = { version = "0.10", default-features = false, features = ["std"] }
 rand = "0.8"
 blake3 = "1"
@@ -61,7 +62,7 @@ chrono = "0.4"
 regex = "1"
 quick-xml = "0.38.4"
 image = { version = "0.25", default-features = false, features = ["webp", "png", "jpeg"] }
-rusqlite = { version = "0.31", features = ["bundled", "backup", "trace"] }
+rusqlite = { version = "0.31", features = ["bundled", "backup", "trace", "session"] }
 r2d2 = "0.8"
 r2d2_sqlite = "0.24"
 zip = "2"

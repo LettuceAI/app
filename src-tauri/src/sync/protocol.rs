@@ -112,4 +112,5 @@ pub enum P2PMessage {
     AssetContentComplete {
         entity_id: String,
     },
+    V2(crate::sync::v2::protocol::SyncV2Message),
 }

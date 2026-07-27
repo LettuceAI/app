@@ -368,15 +368,40 @@ pub fn replace_all(
     let tx = conn
         .transaction()
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    replace_all_in_transaction(&tx, session_id, kind, memories)?;
+    tx.commit()
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    Ok(())
+}
 
-    tx.execute(
+pub(crate) fn replace_all_from_json_in_transaction(
+    conn: &Connection,
+    session_id: &str,
+    kind: SessionKind,
+    raw: Option<&str>,
+) -> Result<(), String> {
+    let parsed = raw.map(parse_legacy_json).unwrap_or_default();
+    if parsed.is_empty() {
+        delete_all_for_session(conn, session_id, kind)
+    } else {
+        replace_all_in_transaction(conn, session_id, kind, &parsed)
+    }
+}
+
+pub(crate) fn replace_all_in_transaction(
+    conn: &Connection,
+    session_id: &str,
+    kind: SessionKind,
+    memories: &[MemoryEmbedding],
+) -> Result<(), String> {
+    conn.execute(
         "DELETE FROM memory_embeddings WHERE session_id = ?1 AND session_kind = ?2",
         params![session_id, kind.as_str()],
     )
     .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 
     {
-        let mut stmt = tx
+        let mut stmt = conn
             .prepare(
                 "INSERT INTO memory_embeddings (\
                     session_id, session_kind, memory_id, embedding, embedding_dim, \
@@ -441,8 +466,6 @@ pub fn replace_all(
         }
     }
 
-    tx.commit()
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     Ok(())
 }
 
