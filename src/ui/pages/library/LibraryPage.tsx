@@ -342,11 +342,40 @@ export function LibraryPage() {
     );
   };
 
+  const filterChips = (
+    ["All", "Characters", "Personas", "Lorebooks", "Images", "Audio"] as FilterOption[]
+  ).map((option) => {
+    const filterLabels: Record<FilterOption, string> = {
+      All: t("library.filters.all"),
+      Characters: t("library.filters.characters"),
+      Personas: t("library.filters.personas"),
+      Lorebooks: t("library.filters.lorebooks"),
+      Images: t("library.filters.images"),
+      Audio: t("library.filters.audio"),
+    };
+
+    return (
+      <button
+        key={option}
+        type="button"
+        onClick={() => setLibraryFilter(option)}
+        className={cn(
+          "shrink-0 rounded-xl border px-4 py-2 text-sm font-medium transition",
+          filter === option
+            ? "border-fg/15 bg-fg/10 text-fg"
+            : "border-fg/10 bg-surface-el/40 text-fg/60 hover:bg-fg/5 hover:text-fg",
+        )}
+      >
+        {filterLabels[option]}
+      </button>
+    );
+  });
+
   return (
     <div className="flex h-full flex-col pb-6 text-fg/80">
       <main
         ref={mainRef}
-        className="flex-1 overflow-y-auto px-4 pt-4 mx-auto w-full lg:max-w-6xl lg:px-8"
+        className="flex-1 overflow-y-auto px-4 pt-4 mx-auto w-full lg:max-w-[1600px] lg:px-8"
       >
         {inlineHeader && (
           <PageHeader
@@ -354,6 +383,7 @@ export function LibraryPage() {
             searchValue={query}
             onSearchChange={setQuery}
             searchPlaceholder={t("pageHeader.searchLibrary")}
+            filters={filterChips}
             actions={
               railSettings ? undefined : (
                 <PageHeaderAction
@@ -365,41 +395,14 @@ export function LibraryPage() {
             }
           />
         )}
-        <div className="mb-4 flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-3">
-          <div className="flex shrink-0 gap-2 overflow-x-auto pb-1 lg:pb-0 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {(["All", "Characters", "Personas", "Lorebooks", "Images", "Audio"] as FilterOption[]).map(
-              (option) => {
-                const filterLabels: Record<FilterOption, string> = {
-                  All: t("library.filters.all"),
-                  Characters: t("library.filters.characters"),
-                  Personas: t("library.filters.personas"),
-                  Lorebooks: t("library.filters.lorebooks"),
-                  Images: t("library.filters.images"),
-                  Audio: t("library.filters.audio"),
-                };
-
-                return (
-                  <button
-                    key={option}
-                    type="button"
-                    onClick={() => setLibraryFilter(option)}
-                    className={cn(
-                      "shrink-0 rounded-xl border px-4 py-2 text-sm font-medium transition",
-                      filter === option
-                        ? "border-fg/15 bg-fg/10 text-fg"
-                        : "border-fg/10 bg-surface-el/40 text-fg/60 hover:bg-fg/5 hover:text-fg",
-                    )}
-                  >
-                    {filterLabels[option]}
-                  </button>
-                );
-              },
-            )}
+        {!inlineHeader && (
+          <div className="mb-4 flex shrink-0 gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {filterChips}
           </div>
-          {filter === "Images" && isDesktop && (
-            <div ref={setToolbarHost} className="hidden min-w-0 flex-1 lg:flex" />
-          )}
-        </div>
+        )}
+        {filter === "Images" && isDesktop && (
+          <div ref={setToolbarHost} className="mb-4 hidden min-w-0 lg:flex" />
+        )}
 
         {filter === "Images" ? (
           <ImageLibraryPanel
