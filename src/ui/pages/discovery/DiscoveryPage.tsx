@@ -9,7 +9,6 @@ import {
   AlertCircle,
   Sparkles,
   Loader2,
-  X,
 } from "lucide-react";
 import { cn } from "../../design-tokens";
 import { useI18n } from "../../../core/i18n/context";
@@ -21,6 +20,7 @@ import {
   DiscoveryGridSkeleton,
   InfiniteScrollSentinel,
 } from "./components";
+import { PageHeader } from "../../components/App";
 import { useDiscoverySearch } from "./hooks/useDiscoverySearch";
 import { useIsMobileViewport } from "./hooks/useIsMobileViewport";
 import { useShowNsfwImages } from "./hooks/useDiscoveryNsfw";
@@ -162,19 +162,51 @@ export function DiscoveryPage() {
     ? sections.trending.filter((card) => card.id !== featuredCard?.id)
     : [];
 
+  const tabBar = TABS.map((tab) => {
+    const isActive = activeTab === tab.id;
+    const Icon = tab.icon;
+
+    return (
+      <button
+        key={tab.id}
+        onClick={() => setActiveTab(tab.id)}
+        className={cn(
+          "flex shrink-0 items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition-all",
+          isActive
+            ? "bg-fg text-surface shadow-lg shadow-fg/20"
+            : "border border-fg/10 bg-fg/5 text-fg/70 hover:bg-fg/10 hover:text-fg",
+        )}
+      >
+        <Icon className="h-3.5 w-3.5" />
+        {tab.label}
+      </button>
+    );
+  });
+
+  const searchResultsSummary = search.results
+    ? `${
+        search.results.totalHits !== undefined
+          ? search.results.totalHits.toLocaleString()
+          : search.results.hits.length
+      } ${t("discovery.search.resultsUnit")}${
+        search.results.processingTimeMs !== undefined
+          ? ` (${search.results.processingTimeMs}${t("discovery.search.timingUnit")})`
+          : ""
+      }`
+    : undefined;
+
   return (
-    <div className="flex h-full flex-col bg-surface">
+    <div className="flex h-full flex-col bg-surface lg:px-4">
       {/* Main content with bottom padding for safe area */}
       <main
-        className="flex-1 overflow-y-auto"
+        className="flex-1 overflow-y-auto mx-auto w-full lg:max-w-6xl"
         style={{
           paddingBottom: "calc(env(safe-area-inset-bottom) + 80px)",
         }}
       >
-        {/* Sticky search + tabs */}
-        <div className="sticky top-0 z-20 bg-surface/95 backdrop-blur-md">
-          <div className="px-4 py-3 lg:px-8">
-            {isMobileViewport ? (
+        {isMobileViewport ? (
+          <div className="sticky top-0 z-20 bg-surface/95 backdrop-blur-md">
+            <div className="px-4 py-3">
               <button
                 onClick={() => navigate("/discover/search")}
                 className="flex w-full items-center gap-3 rounded-xl border border-fg/10 bg-fg/5 px-4 py-3 text-left transition-all hover:border-fg/15 hover:bg-fg/[0.07] active:scale-[0.99]"
@@ -182,77 +214,25 @@ export function DiscoveryPage() {
                 <Search className="h-4 w-4 text-fg/40" />
                 <span className="text-sm text-fg/40">{t("discovery.searchPlaceholder")}</span>
               </button>
-            ) : (
-              <div className="relative">
-                <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-fg/40" />
-                <input
-                  type="text"
-                  value={search.query}
-                  onChange={(e) => search.setQuery(e.target.value)}
-                  placeholder={t("discovery.searchPlaceholder")}
-                  className="w-full rounded-xl border border-fg/10 bg-fg/5 py-3 pl-11 pr-10 text-sm text-fg placeholder-fg/40 transition-all focus:border-fg/20 focus:bg-fg/[0.07] focus:outline-none"
-                />
-                {search.query && (
-                  <button
-                    onClick={search.clear}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-fg/40 hover:bg-fg/10 hover:text-fg"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
-            )}
+            </div>
+            <div className="scrollbar-hide flex gap-2 overflow-x-auto px-4 pb-4">{tabBar}</div>
           </div>
-
-          {/* Tab bar */}
-          {!searching && (
-            <div className="scrollbar-hide flex gap-2 overflow-x-auto px-4 pb-4 lg:px-8">
-              {TABS.map((tab) => {
-                const isActive = activeTab === tab.id;
-                const Icon = tab.icon;
-
-                return (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveTab(tab.id)}
-                    className={cn(
-                      "flex shrink-0 items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition-all",
-                      isActive
-                        ? "bg-fg text-surface shadow-lg shadow-fg/20"
-                        : "border border-fg/10 bg-fg/5 text-fg/70 hover:bg-fg/10 hover:text-fg",
-                    )}
-                  >
-                    <Icon className="h-3.5 w-3.5" />
-                    {tab.label}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Inline search result count */}
-          {searching && search.results && (
-            <div className="px-4 pb-3 lg:px-8">
-              <p className="text-xs text-fg/50">
-                {search.results.totalHits !== undefined
-                  ? `${search.results.totalHits.toLocaleString()} ${t("discovery.search.resultsUnit")}`
-                  : `${search.results.hits.length} ${t("discovery.search.resultsUnit")}`}
-                {search.results.processingTimeMs !== undefined && (
-                  <span className="ml-2 text-fg/30">
-                    ({search.results.processingTimeMs}
-                    {t("discovery.search.timingUnit")})
-                  </span>
-                )}
-              </p>
-            </div>
-          )}
-        </div>
+        ) : (
+          <PageHeader
+            title={t("common.bottomNav.discover")}
+            meta={searching ? searchResultsSummary : undefined}
+            searchValue={search.query}
+            onSearchChange={search.setQuery}
+            searchPlaceholder={t("discovery.searchPlaceholder")}
+            filters={searching ? undefined : tabBar}
+          />
+        )}
 
         {/* Inline search results (desktop) */}
         {searching && (
           <div className="pt-1">
             {search.loading && (
-              <div className="lg:px-4">
+              <div className="lg:px-8">
                 <DiscoveryGridSkeleton cardCount={8} />
               </div>
             )}
@@ -340,7 +320,7 @@ export function DiscoveryPage() {
                 <DiscoverySectionSkeleton />
               </>
             ) : (
-              <div className="px-0 lg:px-4">
+              <div className="px-0 lg:px-8">
                 <DiscoveryGridSkeleton cardCount={12} />
               </div>
             )}

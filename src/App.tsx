@@ -938,13 +938,18 @@ function AppContent() {
     headerStyle === "inline" &&
     CONTENT_COLUMN_ROUTES.includes(location.pathname);
 
+  const usesDiscoveryPageHeader =
+    isLgViewport &&
+    (location.pathname === "/discover" || location.pathname === "/discover/browse");
+
   const showTopNav =
     !isOnboardingRoute &&
     !isChatDetailRoute &&
     !isCreateRoute &&
     !isSearchRoute &&
     !isLorebookEditorRoute &&
-    !usesInlineHeader;
+    !usesInlineHeader &&
+    !usesDiscoveryPageHeader;
   const showBottomNav =
     !isSettingRoute &&
     !isOnboardingRoute &&

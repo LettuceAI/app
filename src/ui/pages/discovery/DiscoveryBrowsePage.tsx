@@ -5,6 +5,7 @@ import { TrendingUp, Flame, Clock, AlertCircle, ArrowUpDown, Check } from "lucid
 import { cn, interactive } from "../../design-tokens";
 import { useI18n } from "../../../core/i18n/context";
 import { DiscoveryCard, DiscoveryGridSkeleton } from "./components";
+import { PageHeader } from "../../components/App";
 import { useIsMobileViewport } from "./hooks/useIsMobileViewport";
 import { useShowNsfwImages } from "./hooks/useDiscoveryNsfw";
 import { useNavigationManager } from "../../navigation";
@@ -128,33 +129,50 @@ export function DiscoveryBrowsePage() {
 
   const currentSortLabel = SORT_OPTIONS.find((opt) => opt.value === sortBy)?.label || t("discovery.sortBy");
 
+  const sortButton = (
+    <button
+      onClick={() => setShowSortMenu(true)}
+      className={cn(
+        "flex items-center gap-1.5 rounded-lg border border-fg/10 bg-fg/5 px-3 py-1.5",
+        "text-xs font-medium text-fg/70",
+        "transition-all hover:border-fg/20 hover:bg-fg/10 hover:text-fg",
+        interactive.active.scale,
+      )}
+    >
+      <ArrowUpDown className="h-3.5 w-3.5" />
+      {currentSortLabel}
+    </button>
+  );
+
   return (
-    <div className="flex h-full flex-col bg-surface">
+    <div className="flex h-full flex-col bg-surface lg:px-4">
       {/* Main content */}
       <main
-        className="flex-1 overflow-y-auto"
+        className="flex-1 overflow-y-auto mx-auto w-full lg:max-w-6xl"
         style={{
           paddingBottom: "calc(env(safe-area-inset-bottom) + 24px)",
         }}
       >
-        {/* Toolbar */}
-        <div className="flex items-center justify-between px-4 py-3 lg:px-8">
-          <div className="text-xs text-fg/50">
-            {!loading && cards.length > 0 && `${cards.length} ${t("discovery.resultsUnit")}`}
+        {isMobileViewport ? (
+          <div className="flex items-center justify-between px-4 py-3">
+            <div className="text-xs text-fg/50">
+              {!loading && cards.length > 0 && `${cards.length} ${t("discovery.resultsUnit")}`}
+            </div>
+            {sortButton}
           </div>
-          <button
-            onClick={() => setShowSortMenu(true)}
-            className={cn(
-              "flex items-center gap-1.5 rounded-lg border border-fg/10 bg-fg/5 px-3 py-1.5",
-              "text-xs font-medium text-fg/70",
-              "transition-all hover:border-fg/20 hover:bg-fg/10 hover:text-fg",
-              interactive.active.scale,
-            )}
-          >
-            <ArrowUpDown className="h-3.5 w-3.5" />
-            {currentSortLabel}
-          </button>
-        </div>
+        ) : (
+          <PageHeader
+            title={config.title}
+            meta={
+              !loading && cards.length > 0
+                ? `${cards.length} ${t("discovery.resultsUnit")}`
+                : undefined
+            }
+            onBack={() => navigate("/discover")}
+            backLabel={t("common.bottomNav.discover")}
+            actions={sortButton}
+          />
+        )}
 
         {/* Error state */}
         {error && (
@@ -190,7 +208,7 @@ export function DiscoveryBrowsePage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.2 }}
-            className="px-4 pt-4"
+            className="px-4 pt-4 lg:px-8"
           >
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-4">
               {cards.map((card, index) => (
