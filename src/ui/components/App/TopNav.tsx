@@ -23,7 +23,7 @@ import { typography, interactive, cn } from "../../design-tokens";
 import { dragRegionAttr } from "./TitleBar";
 import { TabItem } from "./NavItem";
 import { resolveCreateAction, resolveNavEntries } from "./navDestinations";
-import { CONTENT_COLUMN_ROUTES } from "./navPrefs";
+import { CONTENT_COLUMN_MAX_W_LG, CONTENT_COLUMN_ROUTES } from "./navPrefs";
 import type { NavItemId } from "../../../core/storage/schemas";
 import { toast } from "../toast";
 import { openDocs } from "../../../core/utils/docs";
@@ -728,7 +728,7 @@ export function TopNav({
       className={
         floating
           ? "fixed left-[calc(var(--appnav-top-w,0px)+2rem)] right-[calc(var(--appnav-top-wr,0px)+2rem)] top-[calc(var(--titlebar-h,0px)+12px)] z-40 rounded-full border border-fg/10 shadow-[0_12px_32px_rgba(0,0,0,0.35)] backdrop-blur-md bg-nav/90"
-          : "fixed left-[var(--appnav-top-w,0px)] right-[var(--appnav-top-wr,0px)] top-[var(--titlebar-h,0px)] z-40 border-b border-fg/10 backdrop-blur-md bg-nav/80"
+          : "fixed left-[var(--appnav-top-w,0px)] right-[var(--appnav-top-wr,0px)] top-[var(--titlebar-h,0px)] z-40 border-b border-fg/10 backdrop-blur-md bg-nav/80 lg:px-4"
       }
       style={{
         paddingTop: isDesktop ? "8px" : "calc(env(safe-area-inset-top) + 12px)",
@@ -738,8 +738,9 @@ export function TopNav({
     >
       <div
         className={cn(
-          "relative mx-auto flex h-10 w-full max-w-md items-center justify-between px-3 lg:px-8",
-          alignToContentColumn ? "lg:max-w-6xl" : "lg:max-w-none",
+          "relative mx-auto flex h-10 w-full max-w-md items-center justify-between px-3",
+          floating ? "lg:px-4" : "lg:px-8",
+          alignToContentColumn ? CONTENT_COLUMN_MAX_W_LG : "lg:max-w-none",
         )}
         style={isMacOS ? { paddingLeft: "72px" } : undefined}
         {...dragRegionAttr}
@@ -776,13 +777,8 @@ export function TopNav({
         )}
         {/* Left side: */}
         <div className="flex items-center gap-1 overflow-hidden h-full" {...dragRegionAttr}>
-          <div
-            className={cn(
-              "flex items-center justify-center shrink-0",
-              showBackButton ? "w-10" : "w-0",
-            )}
-          >
-            {showBackButton && (
+          {showBackButton && (
+            <div className="flex w-10 shrink-0 items-center justify-center">
               <button
                 onClick={handleBack}
                 className={cn(
@@ -795,8 +791,8 @@ export function TopNav({
               >
                 <ArrowLeft size={20} strokeWidth={2.5} />
               </button>
-            )}
-          </div>
+            </div>
+          )}
 
           <motion.h1
             key={title}
