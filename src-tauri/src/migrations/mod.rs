@@ -7,7 +7,7 @@ use crate::storage_manager::settings::{read_settings_typed, write_settings_typed
 use crate::utils::log_info;
 
 /// Current migration version
-pub const CURRENT_MIGRATION_VERSION: u32 = 79;
+pub const CURRENT_MIGRATION_VERSION: u32 = 83;
 
 pub fn run_migrations(app: &AppHandle) -> Result<(), String> {
     log_info(app, "migrations", "Starting migration check");
@@ -827,6 +827,46 @@ pub fn run_migrations(app: &AppHandle) -> Result<(), String> {
         );
         migrate_v78_to_v79(app)?;
         version = 79;
+    }
+
+    if version < 80 {
+        log_info(
+            app,
+            "migrations",
+            "Running migration v79 -> v80: Add shared image LoRA library metadata",
+        );
+        migrate_v79_to_v80(app)?;
+        version = 80;
+    }
+
+    if version < 81 {
+        log_info(
+            app,
+            "migrations",
+            "Running migration v80 -> v81: Repair shared image LoRA metadata columns",
+        );
+        migrate_v80_to_v81(app)?;
+        version = 81;
+    }
+
+    if version < 82 {
+        log_info(
+            app,
+            "migrations",
+            "Running migration v81 -> v82: Rename stable-diffusion.cpp provider",
+        );
+        migrate_v81_to_v82(app)?;
+        version = 82;
+    }
+
+    if version < 83 {
+        log_info(
+            app,
+            "migrations",
+            "Running migration v82 -> v83: Add playground generation history",
+        );
+        migrate_v82_to_v83(app)?;
+        version = 83;
     }
 
     // Update the stored version
@@ -4130,6 +4170,115 @@ fn migrate_v78_to_v79(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+fn migrate_v79_to_v80(app: &AppHandle) -> Result<(), String> {
+    let conn = crate::storage_manager::db::open_db(app)?;
+    conn.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS image_loras (
+          path TEXT PRIMARY KEY,
+          filename TEXT NOT NULL,
+          bytes_on_disk INTEGER NOT NULL DEFAULT 0,
+          modified_at INTEGER NOT NULL DEFAULT 0,
+          sha256 TEXT,
+          keywords TEXT NOT NULL DEFAULT '[]',
+          keyword_source TEXT NOT NULL DEFAULT 'none',
+          architecture TEXT,
+          architecture_source TEXT NOT NULL DEFAULT 'none',
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_image_loras_sha256
+          ON image_loras(sha256)
+          WHERE sha256 IS NOT NULL;
+        "#,
+    )
+    .map_err(|error| crate::utils::err_to_string(module_path!(), line!(), error))?;
+    Ok(())
+}
+
+fn migrate_v82_to_v83(app: &AppHandle) -> Result<(), String> {
+    let conn = crate::storage_manager::db::open_db(app)?;
+    conn.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS playground_generations (
+          id TEXT PRIMARY KEY,
+          created_at INTEGER NOT NULL,
+          provider_id TEXT NOT NULL,
+          model_id TEXT NOT NULL,
+          model_name TEXT NOT NULL DEFAULT '',
+          prompt TEXT NOT NULL,
+          negative_prompt TEXT,
+          seed INTEGER,
+          params_json TEXT NOT NULL DEFAULT '{}',
+          status TEXT NOT NULL DEFAULT 'pending',
+          error TEXT,
+          images_json TEXT NOT NULL DEFAULT '[]'
+        );
+        CREATE INDEX IF NOT EXISTS idx_playground_generations_created_at
+          ON playground_generations(created_at);
+        "#,
+    )
+    .map_err(|error| crate::utils::err_to_string(module_path!(), line!(), error))?;
+    Ok(())
+}
+
+fn migrate_v80_to_v81(app: &AppHandle) -> Result<(), String> {
+    let conn = crate::storage_manager::db::open_db(app)?;
+    migrate_image_lora_metadata_columns(&conn)
+}
+
+fn migrate_v81_to_v82(app: &AppHandle) -> Result<(), String> {
+    let conn = crate::storage_manager::db::open_db(app)?;
+    conn.execute(
+        "UPDATE provider_credentials SET label = ?1 WHERE provider_id = ?2 AND label = ?3",
+        rusqlite::params!["stable-diffusion.cpp", "sdcpp", "Local Image Generation"],
+    )
+    .map_err(|error| crate::utils::err_to_string(module_path!(), line!(), error))?;
+    Ok(())
+}
+
+fn migrate_image_lora_metadata_columns(conn: &rusqlite::Connection) -> Result<(), String> {
+    let has_column = |name: &str| -> Result<bool, String> {
+        conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM pragma_table_info('image_loras') WHERE name = ?1)",
+            [name],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(|error| crate::utils::err_to_string(module_path!(), line!(), error))
+    };
+
+    if !has_column("keyword_source")? {
+        conn.execute(
+            "ALTER TABLE image_loras ADD COLUMN keyword_source TEXT NOT NULL DEFAULT 'none'",
+            [],
+        )
+        .map_err(|error| crate::utils::err_to_string(module_path!(), line!(), error))?;
+    }
+    if !has_column("architecture_source")? {
+        conn.execute(
+            "ALTER TABLE image_loras ADD COLUMN architecture_source TEXT NOT NULL DEFAULT 'none'",
+            [],
+        )
+        .map_err(|error| crate::utils::err_to_string(module_path!(), line!(), error))?;
+    }
+    if has_column("metadata_source")? {
+        conn.execute(
+            "UPDATE image_loras
+             SET keyword_source = CASE
+                    WHEN keywords != '[]' AND keyword_source = 'none' THEN metadata_source
+                    ELSE keyword_source
+                 END,
+                 architecture_source = CASE
+                    WHEN architecture IS NOT NULL AND architecture_source = 'none' THEN metadata_source
+                    ELSE architecture_source
+                 END",
+            [],
+        )
+        .map_err(|error| crate::utils::err_to_string(module_path!(), line!(), error))?;
+    }
+    Ok(())
+}
+
 fn migrate_v77_to_v78(app: &AppHandle) -> Result<(), String> {
     use rusqlite::params;
 
@@ -4356,4 +4505,44 @@ fn migrate_v71_to_v72(app: &AppHandle) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::migrate_image_lora_metadata_columns;
+
+    #[test]
+    fn repairs_the_partial_image_lora_schema() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            r#"
+            CREATE TABLE image_loras (
+              path TEXT PRIMARY KEY,
+              filename TEXT NOT NULL,
+              bytes_on_disk INTEGER NOT NULL DEFAULT 0,
+              modified_at INTEGER NOT NULL DEFAULT 0,
+              sha256 TEXT,
+              keywords TEXT NOT NULL DEFAULT '[]',
+              architecture TEXT,
+              metadata_source TEXT NOT NULL DEFAULT 'none',
+              created_at INTEGER NOT NULL,
+              updated_at INTEGER NOT NULL
+            );
+            "#,
+        )
+        .unwrap();
+
+        migrate_image_lora_metadata_columns(&conn).unwrap();
+        migrate_image_lora_metadata_columns(&conn).unwrap();
+
+        let columns = conn
+            .prepare("SELECT name FROM pragma_table_info('image_loras')")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert!(columns.iter().any(|column| column == "keyword_source"));
+        assert!(columns.iter().any(|column| column == "architecture_source"));
+    }
 }

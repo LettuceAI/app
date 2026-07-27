@@ -5,12 +5,14 @@ import { listen } from "@tauri-apps/api/event";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "../../ui/components/toast";
 import { Routes } from "../../ui/navigation";
+import { SETTINGS_UPDATED_EVENT } from "../storage/repo";
 
 export interface QueuedDownload {
   id: string;
   modelId: string;
   filename: string;
   status: "queued" | "downloading" | "complete" | "error" | "cancelled";
+  phase?: "verifying" | null;
   downloaded: number;
   total: number;
   speedBytesPerSec: number;
@@ -27,12 +29,26 @@ export interface QueuedDownload {
   llamaOffloadKqv: boolean | null;
   llamaGpuLayers: number | null;
   llamaModelOffloadMode: "auto" | "cpu" | "gpu" | "mixed" | null;
-  downloadRole: "model" | "mmproj" | "mtp" | null;
+  downloadRole:
+    | "model"
+    | "diffusion_model"
+    | "mmproj"
+    | "mtp"
+    | "vae"
+    | "text_encoder"
+    | "vision_encoder"
+    | "runtime"
+    | "runtime_dependency"
+    | null;
   queueKind?: string | null;
   assetRoot?: string | null;
   installKind?: string | null;
   variant?: string | null;
   voiceId?: string | null;
+  expectedSize?: number | null;
+  sha256?: string | null;
+  runtimeRelease?: string | null;
+  runtimeAsset?: string | null;
 }
 
 interface DownloadQueueContextValue {
@@ -98,6 +114,7 @@ export function isCreateableModelDownload(item: QueuedDownload): boolean {
     item.queueKind !== "whisper" &&
     item.queueKind !== "sd" &&
     item.queueKind !== "sdcpp" &&
+    item.queueKind !== "civitai_lora" &&
     !isSidecarDownload(item)
   );
 }
@@ -131,6 +148,7 @@ export function groupQueueDownloads(queue: QueuedDownload[]): {
     }
     const model =
       items.find((item) => item.downloadRole === "model") ??
+      items.find((item) => item.downloadRole === "diffusion_model") ??
       items.find((item) => !isSidecarDownload(item)) ??
       null;
     groups.push({ installId, model, items });
@@ -139,7 +157,9 @@ export function groupQueueDownloads(queue: QueuedDownload[]): {
 }
 
 async function registerCompletedSdDownload(item: QueuedDownload): Promise<void> {
-  void item;
+  if (item.queueKind === "sdcpp") {
+    window.dispatchEvent(new CustomEvent(SETTINGS_UPDATED_EVENT));
+  }
 }
 
 export function DownloadQueueProvider({ children }: { children: ReactNode }) {
@@ -178,10 +198,21 @@ export function DownloadQueueProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    void listen(SETTINGS_UPDATED_EVENT, () => {
+      window.dispatchEvent(new CustomEvent(SETTINGS_UPDATED_EVENT));
+    }).then((dispose) => {
+      unlisten = dispose;
+    });
+    return () => unlisten?.();
+  }, []);
+
   // Detect state transitions and fire toasts when not on HF browser page
   useEffect(() => {
     const prev = prevQueueRef.current;
     const isOnHfPage = locationRef.current.startsWith(Routes.settingsModelsBrowse);
+    const isOnLoraPage = locationRef.current.startsWith(Routes.settingsModelsLoras);
 
     for (const item of queue) {
       const prevItem = prev.find((p) => p.id === item.id);
@@ -190,9 +221,15 @@ export function DownloadQueueProvider({ children }: { children: ReactNode }) {
       // Download just completed
       if (prevItem.status !== "complete" && item.status === "complete") {
         void registerCompletedSdDownload(item);
-        if (!isOnHfPage && item.queueKind !== "sd" && item.queueKind !== "sdcpp") {
+        const suppressLoraToast = item.queueKind === "civitai_lora" && isOnLoraPage;
+        if (
+          !isOnHfPage &&
+          !suppressLoraToast &&
+          item.queueKind !== "sd" &&
+          item.queueKind !== "sdcpp"
+        ) {
           const displayName =
-            item.queueKind === "kokoro"
+            item.queueKind === "kokoro" || item.queueKind === "civitai_lora"
               ? item.displayName || item.filename
               : extractShortName(item.modelId).replace(/-GGUF$/i, "");
           toast.success("Download complete", `${displayName} — ${item.filename}`, {

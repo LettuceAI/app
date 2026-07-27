@@ -29,33 +29,33 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
-reqwest = { version = "0.11", default-features = false, features = ["blocking", "rustls-tls"] }
-zip = "0.6"
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
+zip = "2"
 anyhow = "1"
 flate2 = "1.0"
 tar = "0.4"
 serde_json = "1"
 
 [dependencies]
-tauri = { version = "2", features = ["protocol-asset"] }
+tauri = { version = "2", features = ["protocol-asset", "rustls-tls"] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 unified-entity-card = "0.2.0"
-keyring = "2"
-zeroize = "1"
 tauri-plugin-aptabase = { path = "crates/tauri-plugin-aptabase" }
-reqwest = { version = "0.11", default-features = false, features = ["json", "stream", "multipart", "rustls-tls"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "stream", "multipart", "query", "rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio"] }
 tower-http = { version = "0.6", default-features = false, features = ["cors"] }
 futures-util = "0.3"
 chacha20poly1305 = { version = "0.10", default-features = false, features = ["std"] }
 rand = "0.8"
 blake3 = "1"
+sha2 = "0.10"
 whoami = "1"
 uuid = { version = "1", features = ["v4"] }
-tauri-plugin-app-events = "0.2.0"
 base64 = "0.22"
 tauri-plugin-process = "2"
 tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "process", "rt-multi-thread", "sync", "time"] }
@@ -68,7 +68,7 @@ r2d2 = "0.8"
 r2d2_sqlite = "0.24"
 zip = "2"
 walkdir = "2"
-dirs = "5"
+dirs = "6"
 tokenizers = "0.20"
 ndarray = "0.16"
 lazy_static = "1.5.0"
@@ -130,3 +130,11 @@ tauri-plugin-haptics = "2"
 esaxx-rs = { path = "crates/esaxx-rs-0.1.10" }
 whisper-rs = { git = "https://codeberg.org/MegalithOfficial/whisper-rs.git" }
 whisper-rs-sys = { git = "https://codeberg.org/MegalithOfficial/whisper-rs.git" }
+
+[profile.dev.package.sha2]
+opt-level = 3
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = "none"

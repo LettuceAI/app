@@ -46,6 +46,8 @@ fn macos_archive_candidates(target_arch: &str) -> Vec<(String, String)> {
 }
 
 fn main() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     println!("cargo:rerun-if-env-changed=ORT_LIB_LOCATION");
     println!("cargo:rerun-if-env-changed=KOKORO_ESPEAK_ANDROID_BUNDLE_URL");
     println!("cargo:rerun-if-env-changed=KOKORO_ESPEAK_ANDROID_BUNDLE_PATH");

@@ -80,6 +80,7 @@ export function TopNav({
       { match: (p) => p.includes("view=advanced"), titleKey: "common.nav.responseStyle" },
       { match: (p) => p === "/settings/models/installed", titleKey: "hfBrowser.libraryTitle" },
       { match: (p) => p === "/settings/models/browse", titleKey: "hfBrowser.title" },
+      { match: (p) => p.startsWith("/settings/models/loras"), titleKey: "loraLibrary.title" },
       {
         match: (p) => p === "/settings/models" || p.startsWith("/settings/models/"),
         titleKey: "common.nav.models",

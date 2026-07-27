@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { useState, useEffect, useMemo, type ReactNode } from "react";
+import { useState, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 
@@ -13,8 +13,19 @@ import {
   ADVANCED_TOP_K_RANGE,
   ADVANCED_SD_CFG_SCALE_RANGE,
   ADVANCED_SD_DENOISING_STRENGTH_RANGE,
+  ADVANCED_SD_ETA_RANGE,
+  ADVANCED_SD_FLOW_SHIFT_RANGE,
+  ADVANCED_SD_HIRES_DENOISING_RANGE,
+  ADVANCED_SD_SLG_SCALE_RANGE,
+  ADVANCED_SD_SLG_FRACTION_RANGE,
+  SD_CACHE_MODES,
+  ADVANCED_SD_HIRES_DIMENSION_RANGE,
+  ADVANCED_SD_HIRES_SCALE_RANGE,
+  ADVANCED_SD_HIRES_STEPS_RANGE,
   ADVANCED_SD_SEED_RANGE,
   ADVANCED_SD_STEPS_RANGE,
+  ADVANCED_SD_VAE_TILE_OVERLAP_RANGE,
+  ADVANCED_SD_VAE_TILE_SIZE_RANGE,
   ADVANCED_REASONING_BUDGET_RANGE,
   ADVANCED_LLAMA_GPU_LAYERS_RANGE,
   ADVANCED_LLAMA_THREADS_RANGE,
@@ -46,7 +57,14 @@ import {
   sanitizeFeatureGenerationSettings,
 } from "../../components/AdvancedModelSettingsForm";
 import { FeatureGenerationSettingsEditor } from "../../components/FeatureGenerationSettings";
+import {
+  loraArchitectureLabel as sharedLoraArchitectureLabel,
+  parseLoraKeywordDraft,
+  type SdcppLoraFile,
+  type SdcppLoraKeywordDiscovery,
+} from "../../../core/image-generation/loras";
 import { BottomMenu, MenuButton, MenuSection } from "../../components/BottomMenu";
+import type { BundleRecipe } from "./components/imageBundle/types";
 import { GuidedTour, useGuidedTour } from "../../components/GuidedTour";
 import { ModelSelectionBottomMenu } from "../../components/ModelSelectionBottomMenu";
 import { NumberInput } from "../../components/NumberInput";
@@ -84,8 +102,8 @@ import { ProviderParameterSupportInfo } from "../../components/ProviderParameter
 import { LlamaSamplerOrderEditor } from "../../components/LlamaSamplerOrderEditor";
 import { toast } from "../../components/toast";
 import { useModelEditorController } from "./hooks/useModelEditorController";
-import { useNavigationManager } from "../../navigation";
-import { useSearchParams, useNavigate } from "react-router-dom";
+import { useNavigationManager, Routes } from "../../navigation";
+import { useSearchParams, useNavigate, useLocation } from "react-router-dom";
 import { addOrUpdateModel, readSettings, readSettingsCached } from "../../../core/storage/repo";
 import type {
   FeatureGenerationKey,
@@ -114,6 +132,65 @@ type DownloadedGgufModel = {
   isMtp?: boolean;
 };
 
+type SdcppComponentLibraryEntry = {
+  path: string;
+  filename: string;
+  bytes: number;
+  role: string | null;
+  source: string;
+};
+
+type SdcppInstalledModel = {
+  profileId: string;
+  variantId: string;
+  displayName: string;
+  runtimeRelease: string | null;
+  runtimeAsset: string | null;
+  runtimeBackend: string | null;
+  componentBytesOnDisk: number;
+  modelId: string | null;
+  supportsTextToImage: boolean;
+  supportsImageEdit: boolean;
+  recommendedForScenes: boolean;
+  requiresReferenceImage: boolean;
+  defaultWidth: number;
+  defaultHeight: number;
+  defaultSteps: number;
+  defaultCfg: number;
+  modelPath: string;
+  components: SdcppInstalledComponent[];
+};
+
+type SdcppInstalledComponent = {
+  role: string;
+  filename: string;
+  path: string;
+  bytesOnDisk: number;
+};
+
+type SdcppDownloadedFile = {
+  modelId: string;
+  filename: string;
+  size: number;
+  quantization: string | null;
+  imageRole: string | null;
+  path: string;
+};
+
+
+import { SDCPP_SAMPLERS, SDCPP_SCHEDULERS } from "../../../core/image-generation/sdcpp-options";
+
+const SDCPP_HIRES_UPSCALERS = [
+  "Lanczos",
+  "Nearest",
+  "Latent",
+  "Latent (nearest)",
+  "Latent (nearest-exact)",
+  "Latent (antialiased)",
+  "Latent (bicubic)",
+  "Latent (bicubic antialiased)",
+] as const;
+
 type LocalLibraryPickerMode = "model" | "mmproj" | "mtp";
 
 type OpenRouterEndpoint = {
@@ -130,61 +207,6 @@ type OpenRouterEndpoint = {
 };
 
 type ProviderSortMode = "price" | "uptime" | "caching" | "alphabetical";
-
-type SdModelRole =
-  | "checkpoint"
-  | "diffusionModel"
-  | "clipL"
-  | "clipG"
-  | "t5xxl"
-  | "llm"
-  | "llmVision"
-  | "vae";
-
-type SdLocalFile = {
-  filename: string;
-  path: string;
-  size: number;
-};
-
-type SdModelEntry = {
-  id: string;
-  name: string;
-  family: string;
-  files: Partial<Record<SdModelRole, string | null>>;
-  complete: boolean;
-  totalBytes: number;
-};
-
-async function sdListModels(): Promise<SdModelEntry[]> {
-  return [];
-}
-
-async function sdListLocalFiles(): Promise<SdLocalFile[]> {
-  return [];
-}
-
-async function sdImportModel(
-  name: string,
-  files: Partial<Record<SdModelRole, string | null>>,
-): Promise<SdModelEntry> {
-  return { id: name, name, family: "unsupported", files, complete: false, totalBytes: 0 };
-}
-
-async function sdSetModelFile(
-  modelId: string,
-  role: SdModelRole,
-  path: string | null,
-): Promise<SdModelEntry> {
-  return {
-    id: modelId,
-    name: modelId,
-    family: "unsupported",
-    files: { [role]: path },
-    complete: false,
-    totalBytes: 0,
-  };
-}
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";
@@ -509,17 +531,43 @@ export function EditModelPage() {
     "balanced" | "throughput" | "vram" | "cpu_ram" | null
   >(null);
   const [showPlatformSelector, setShowPlatformSelector] = useState(false);
+  const [sdcppInstalled, setSdcppInstalled] = useState<SdcppInstalledModel[]>([]);
+  const [sdcppHiresUpscalerNames, setSdcppHiresUpscalerNames] = useState<string[]>([]);
+  const [sdcppActiveRuntime, setSdcppActiveRuntime] = useState<{
+    release: string;
+    asset: string;
+  } | null>(null);
+  const [showSdcppModelPicker, setShowSdcppModelPicker] = useState(false);
+  const [sdcppDownloadedFiles, setSdcppDownloadedFiles] = useState<SdcppDownloadedFile[]>([]);
+  const [sdcppProfiles, setSdcppProfiles] = useState<BundleRecipe[]>([]);
+  const [sdcppDetection, setSdcppDetection] = useState<{
+    path: string;
+    exists: boolean;
+    profile: BundleRecipe | null;
+  } | null>(null);
+  const sdcppDetectTimerRef = useRef<number | null>(null);
+  const sdcppDetectRequestRef = useRef<string | null>(null);
+  const [sdcppComponentPickerKey, setSdcppComponentPickerKey] = useState<
+    "sdcppTextEncoderPath" | "sdcppVaePath" | "sdcppVisionEncoderPath" | null
+  >(null);
+  const [sdcppComponentLibrary, setSdcppComponentLibrary] = useState<SdcppComponentLibraryEntry[]>(
+    [],
+  );
+  const [showSdcppLoraPicker, setShowSdcppLoraPicker] = useState(false);
+  const [discoveringSdcppLoraPath, setDiscoveringSdcppLoraPath] = useState<string | null>(null);
+  const [editingSdcppLoraKeywords, setEditingSdcppLoraKeywords] = useState<number | null>(null);
+  const [sdcppLoraKeywordDraft, setSdcppLoraKeywordDraft] = useState("");
+  const [savingSdcppLoraKeywords, setSavingSdcppLoraKeywords] = useState(false);
+  const [showSdcppSamplerMenu, setShowSdcppSamplerMenu] = useState(false);
+  const [showSdcppSchedulerMenu, setShowSdcppSchedulerMenu] = useState(false);
+  const [showSdcppAdvancedGeneration, setShowSdcppAdvancedGeneration] = useState(false);
+  const [sdcppLoras, setSdcppLoras] = useState<SdcppLoraFile[]>([]);
+  const [importingSdcppLora, setImportingSdcppLora] = useState(false);
   const [showProviderPicker, setShowProviderPicker] = useState(false);
   const [openRouterEndpoints, setOpenRouterEndpoints] = useState<OpenRouterEndpoint[]>([]);
   const [providerEndpointsLoading, setProviderEndpointsLoading] = useState(false);
   const [providerEndpointsError, setProviderEndpointsError] = useState<string | null>(null);
   const [providerSortMode, setProviderSortMode] = useState<ProviderSortMode>("price");
-  const [sdEntries, setSdEntries] = useState<SdModelEntry[] | null>(null);
-  const [showSdModelPicker, setShowSdModelPicker] = useState(false);
-  const [sdFilesDraft, setSdFilesDraft] = useState<Record<string, string>>({});
-  const [sdMainPathDraft, setSdMainPathDraft] = useState("");
-  const [sdLibraryFiles, setSdLibraryFiles] = useState<SdLocalFile[] | null>(null);
-  const [sdLibraryRole, setSdLibraryRole] = useState<SdModelRole | null>(null);
   const [llamaContextInfo, setLlamaContextInfo] = useState<LlamaCppContextInfo | null>(null);
   const [llamaContextError, setLlamaContextError] = useState<string | null>(null);
   const [llamaContextLoading, setLlamaContextLoading] = useState(false);
@@ -676,6 +724,7 @@ export function EditModelPage() {
   } = useModelEditorController();
   useNavigationManager();
   const editNavigate = useNavigate();
+  const editLocation = useLocation();
   const [editSearchParams] = useSearchParams();
   const returnTo = editSearchParams.get("returnTo");
   const isOnboardingReturnFlow = !!returnTo?.startsWith("/onboarding");
@@ -1203,6 +1252,31 @@ export function EditModelPage() {
 
   // Intercept save for llamacpp models to check if move prompt is needed
   const handleSaveWithMoveCheck = async (options?: { navigateAfterSave?: boolean }) => {
+    if (hasMissingSdcppComponents) {
+      setActivePanel("configuration");
+      toast.error(
+        t("editModel.sdcpp.componentsRequiredTitle"),
+        t("editModel.sdcpp.componentsRequiredBody"),
+      );
+      return;
+    }
+    if (hasIncompatibleSdcppLora) {
+      setActivePanel("configuration");
+      toast.error(
+        t("editModel.sdcpp.loraIncompatible"),
+        t("editModel.sdcpp.removeIncompatibleLora"),
+      );
+      return;
+    }
+    if (hasMissingSdcppLoraKeywords) {
+      setActivePanel("configuration");
+      openSdcppLoraKeywordEditor(firstMissingSdcppLoraKeywordIndex);
+      toast.warning(
+        t("editModel.sdcpp.keywordsRequired"),
+        t("editModel.sdcpp.keywordsRequiredDescription"),
+      );
+      return;
+    }
     const shouldNavigateAfterSave = options?.navigateAfterSave && !!returnTo;
     if (!isLocalModel || !editorModel?.name?.trim()) {
       const success = await saveModel();
@@ -1299,6 +1373,7 @@ export function EditModelPage() {
     if (!selectedProviderCredential) return false;
     if (
       selectedProviderCredential.providerId === "llamacpp" ||
+      selectedProviderCredential.providerId === "sdcpp" ||
       selectedProviderCredential.providerId === "intenserp" ||
       selectedProviderCredential.providerId === "stability"
     ) {
@@ -1563,131 +1638,472 @@ export function EditModelPage() {
         ? "Download the mtp-*.gguf sidecar from the model's repository in the model browser."
         : t("hfBrowser.libraryEmptyHint");
   const isAutomatic1111Provider = editorModel?.providerId === "automatic1111";
-  const isLocalDiffusionModel = false;
-  const isFixedImageProvider = isAutomatic1111Provider || isLocalDiffusionModel;
+  const isSdcppModel = editorModel?.providerId === "sdcpp";
+  const isFixedImageProvider = isAutomatic1111Provider || isSdcppModel;
+  const selectedSdcppEntry = isSdcppModel
+    ? (sdcppInstalled.find((entry) => entry.modelPath === editorModel?.name) ?? null)
+    : null;
+  const isCustomSdcppModel = isSdcppModel && !selectedSdcppEntry;
+  const scopesLocked = isFixedImageProvider && !isCustomSdcppModel;
+  const selectedSdcppProfileId =
+    modelAdvancedDraft.sdcppProfileId ?? selectedSdcppEntry?.profileId ?? null;
+  const selectedSdcppProfile =
+    sdcppProfiles.find((profile) => profile.id === selectedSdcppProfileId) ?? null;
+  const sdcppDownloadedDiffusionFiles = (() => {
+    if (!isSdcppModel) return [];
+    const registered = new Set(sdcppInstalled.map((entry) => entry.modelPath));
+    return sdcppDownloadedFiles.filter(
+      (file) => file.imageRole === "diffusionModel" && !registered.has(file.path),
+    );
+  })();
+  const sdcppRequiredComponentKeys = ((): Array<
+    "sdcppTextEncoderPath" | "sdcppVaePath" | "sdcppVisionEncoderPath"
+  > => {
+    if (!isSdcppModel) return [];
+    const roles: string[] = selectedSdcppProfile?.requiredRoles ?? ["text_encoder", "vae"];
+    const keys: Array<"sdcppTextEncoderPath" | "sdcppVaePath" | "sdcppVisionEncoderPath"> = [];
+    if (roles.includes("text_encoder")) keys.push("sdcppTextEncoderPath");
+    if (roles.includes("vae")) keys.push("sdcppVaePath");
+    if (roles.includes("vision_encoder")) keys.push("sdcppVisionEncoderPath");
+    return keys;
+  })();
+  const missingSdcppComponentKeys = sdcppRequiredComponentKeys.filter(
+    (key) => !(modelAdvancedDraft[key] ?? "").trim(),
+  );
+  const hasMissingSdcppComponents =
+    missingSdcppComponentKeys.length > 0 && !!editorModel?.name?.trim();
+  const referencedSdcppLoraPaths = (modelAdvancedDraft.sdBaseLoras ?? [])
+    .map((lora) => lora.path)
+    .sort()
+    .join("\u0000");
 
   useEffect(() => {
-    if (!isLocalDiffusionModel || sdEntries !== null) return;
-    sdListModels()
-      .then(setSdEntries)
-      .catch(() => setSdEntries([]));
-  }, [isLocalDiffusionModel, sdEntries]);
-
-  const selectedSdEntry = sdEntries?.find((entry) => entry.id === editorModel?.name) ?? null;
-
-  useEffect(() => {
-    const files = selectedSdEntry?.files ?? {};
-    setSdFilesDraft({
-      checkpoint: files.checkpoint ?? "",
-      diffusionModel: files.diffusionModel ?? "",
-      clipL: files.clipL ?? "",
-      clipG: files.clipG ?? "",
-      t5xxl: files.t5xxl ?? "",
-      llm: files.llm ?? "",
-      llmVision: files.llmVision ?? "",
-      vae: files.vae ?? "",
-    });
-    setSdMainPathDraft(files.checkpoint ?? files.diffusionModel ?? "");
-  }, [selectedSdEntry]);
-
-  useEffect(() => {
-    if (sdLibraryRole === null || sdLibraryFiles !== null) return;
-    sdListLocalFiles()
-      .then(setSdLibraryFiles)
-      .catch(() => setSdLibraryFiles([]));
-  }, [sdLibraryRole, sdLibraryFiles]);
-
-  const commitSdFile = async (role: SdModelRole, rawPath: string) => {
-    const path = rawPath.trim() || null;
-    try {
-      if (selectedSdEntry) {
-        const current = (selectedSdEntry.files as Record<string, string | null | undefined>)[role] ?? "";
-        if ((path ?? "") === current) return;
-        await sdSetModelFile(selectedSdEntry.id, role, path);
-        setSdEntries(null);
-      } else if (path) {
-        const fallbackName =
-          editorModel?.displayName?.trim() ||
-          path.split(/[\\/]/).pop()?.replace(/\.(safetensors|gguf|ckpt|sft)$/i, "") ||
-          "Local model";
-        const entry = await sdImportModel(fallbackName, { [role]: path });
-        handleModelNameChange(entry.id);
-        if (!editorModel?.displayName?.trim()) {
-          handleDisplayNameChange(entry.name);
+    if (!isSdcppModel) return;
+    let cancelled = false;
+    invoke<SdcppInstalledModel[]>("sdcpp_installed")
+      .then((models) => {
+        if (!cancelled) setSdcppInstalled(models);
+      })
+      .catch(() => {
+        if (!cancelled) setSdcppInstalled([]);
+      });
+    invoke<{ hiresUpscalerNames: string[] }>("sdcpp_upscaler_inventory")
+      .then((inventory) => {
+        if (!cancelled) setSdcppHiresUpscalerNames(inventory.hiresUpscalerNames);
+      })
+      .catch(() => {
+        if (!cancelled) setSdcppHiresUpscalerNames([]);
+      });
+    invoke<{ active: { release: string; asset: string } | null }>("sdcpp_runtime_inventory")
+      .then((inventory) => {
+        if (!cancelled) setSdcppActiveRuntime(inventory.active);
+      })
+      .catch(() => {
+        if (!cancelled) setSdcppActiveRuntime(null);
+      });
+    invoke<BundleRecipe[]>("hf_image_bundle_profiles")
+      .then((profiles) => {
+        if (!cancelled) setSdcppProfiles(profiles);
+      })
+      .catch(() => {
+        if (!cancelled) setSdcppProfiles([]);
+      });
+    invoke<SdcppDownloadedFile[]>("hf_list_downloaded_image_models")
+      .then((files) => {
+        if (!cancelled) setSdcppDownloadedFiles(files);
+      })
+      .catch(() => {
+        if (!cancelled) setSdcppDownloadedFiles([]);
+      });
+    invoke<SdcppLoraFile[]>("sdcpp_loras", { profileId: selectedSdcppProfileId })
+      .then(async (files) => {
+        if (cancelled) return;
+        setSdcppLoras(files);
+        const referenced = new Set(referencedSdcppLoraPaths.split("\u0000").filter(Boolean));
+        const analyzed = [...files];
+        for (let index = 0; index < analyzed.length; index++) {
+          const file = analyzed[index];
+          if (!referenced.has(file.path) || file.compatibility !== "unknown") continue;
+          try {
+            const discovery = await invoke<SdcppLoraKeywordDiscovery>(
+              "sdcpp_discover_lora_keywords",
+              { path: file.path, profileId: selectedSdcppProfileId },
+            );
+            analyzed[index] = {
+              ...file,
+              keywords: discovery.keywords,
+              keywordSource: discovery.source,
+              architecture: discovery.architecture,
+              architectureSource: discovery.architectureSource,
+              compatibility: discovery.compatibility,
+            };
+            if (!cancelled) setSdcppLoras([...analyzed]);
+          } catch (error) {
+            console.warn("Failed to analyze referenced LoRA metadata", error);
+          }
         }
-        setSdEntries(null);
-      }
-    } catch (err: any) {
+      })
+      .catch(() => {
+        if (!cancelled) setSdcppLoras([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isSdcppModel, referencedSdcppLoraPaths, selectedSdcppProfileId]);
+
+  const sdcppDefaultSteps = selectedSdcppEntry?.defaultSteps ?? 20;
+  const sdcppDefaultCfg = selectedSdcppEntry?.defaultCfg ?? 7;
+  const sdcppDefaultSize = selectedSdcppEntry
+    ? `${selectedSdcppEntry.defaultWidth}x${selectedSdcppEntry.defaultHeight}`
+    : "1024x1024";
+  const sdcppSupportsImageEdit =
+    selectedSdcppEntry?.supportsImageEdit ?? modelAdvancedDraft.sdcppSupportsImageEdit === true;
+  const sdcppLoraInfoByPath = new Map(sdcppLoras.map((lora) => [lora.path, lora]));
+  const loraArchitectureLabel = (architecture: string | null | undefined) =>
+    sharedLoraArchitectureLabel(architecture, t("editModel.sdcpp.architectureUnknown"));
+  const loraCompatibilityLabel = (compatibility: SdcppLoraFile["compatibility"]) => {
+    if (compatibility === "compatible") return t("editModel.sdcpp.loraCompatible");
+    if (compatibility === "incompatible") return t("editModel.sdcpp.loraIncompatible");
+    return t("editModel.sdcpp.loraCompatibilityUnknown");
+  };
+  const firstMissingSdcppLoraKeywordIndex = isSdcppModel
+    ? (modelAdvancedDraft.sdBaseLoras ?? []).findIndex((lora) => {
+      const info = sdcppLoraInfoByPath.get(lora.path);
+      const keywords = info?.keywords ?? lora.keywords ?? [];
+      return keywords.length === 0 && (info?.keywordSource ?? "none") === "none";
+    })
+    : -1;
+  const hasMissingSdcppLoraKeywords = firstMissingSdcppLoraKeywordIndex >= 0;
+  const hasIncompatibleSdcppLora = isSdcppModel
+    && (modelAdvancedDraft.sdBaseLoras ?? []).some(
+      (lora) => sdcppLoraInfoByPath.get(lora.path)?.compatibility === "incompatible",
+    );
+  const canSaveModel =
+    canSave &&
+    !hasMissingSdcppLoraKeywords &&
+    !hasIncompatibleSdcppLora &&
+    !hasMissingSdcppComponents;
+
+  const updateBaseLoras = (
+    next: NonNullable<typeof modelAdvancedDraft.sdBaseLoras> | null,
+  ) => {
+    setModelAdvancedDraft({
+      ...modelAdvancedDraft,
+      sdBaseLoras: next && next.length > 0 ? next : null,
+    });
+  };
+
+  const openSdcppLoraKeywordEditor = (index: number, keywords?: string[]) => {
+    const lora = modelAdvancedDraft.sdBaseLoras?.[index];
+    const sharedKeywords = lora ? sdcppLoraInfoByPath.get(lora.path)?.keywords : undefined;
+    setSdcppLoraKeywordDraft((keywords ?? sharedKeywords ?? lora?.keywords ?? []).join("\n"));
+    setEditingSdcppLoraKeywords(index);
+  };
+
+  const saveSdcppLoraKeywords = async (alwaysActive = false) => {
+    if (editingSdcppLoraKeywords === null) return;
+    const keywords = alwaysActive ? [] : parseLoraKeywordDraft(sdcppLoraKeywordDraft);
+    if (!alwaysActive && keywords.length === 0) {
+      toast.warning(
+        t("editModel.sdcpp.keywordsRequired"),
+        t("editModel.sdcpp.keywordsRequiredDescription"),
+      );
+      return;
+    }
+    const next = [...(modelAdvancedDraft.sdBaseLoras ?? [])];
+    const lora = next[editingSdcppLoraKeywords];
+    if (!lora) return;
+    setSavingSdcppLoraKeywords(true);
+    try {
+      const saved = await invoke<SdcppLoraKeywordDiscovery>("sdcpp_update_lora_keywords", {
+        path: lora.path,
+        keywords,
+        profileId: selectedSdcppProfileId,
+      });
+      next[editingSdcppLoraKeywords] = { ...lora, keywords: saved.keywords };
+      updateBaseLoras(next);
+      setSdcppLoras((current) => current.map((file) => file.path === lora.path
+        ? {
+          ...file,
+          keywords: saved.keywords,
+          keywordSource: saved.source,
+          architecture: saved.architecture,
+          architectureSource: saved.architectureSource,
+          compatibility: saved.compatibility,
+        }
+        : file));
+      setEditingSdcppLoraKeywords(null);
+      setSdcppLoraKeywordDraft("");
+    } catch (error: any) {
       toast.error(
-        t("imageGeneration.local.updateFailed"),
-        typeof err === "string" ? err : err?.message || String(err),
+        t("editModel.sdcpp.keywordSaveFailed"),
+        typeof error === "string" ? error : error?.message || String(error),
+      );
+    } finally {
+      setSavingSdcppLoraKeywords(false);
+    }
+  };
+
+  const addBaseLora = async (file: SdcppLoraFile) => {
+    const current = modelAdvancedDraft.sdBaseLoras ?? [];
+    if (current.some((lora) => lora.path === file.path && !lora.isHighNoise)) {
+      setShowSdcppLoraPicker(false);
+      return;
+    }
+    setDiscoveringSdcppLoraPath(file.path);
+    let keywords = file.keywords;
+    let keywordSource = file.keywordSource;
+    let compatibility = file.compatibility;
+    try {
+      const discovery = await invoke<SdcppLoraKeywordDiscovery>(
+        "sdcpp_discover_lora_keywords",
+        { path: file.path, profileId: selectedSdcppProfileId },
+      );
+      keywords = discovery.keywords;
+      keywordSource = discovery.source;
+      compatibility = discovery.compatibility;
+      setSdcppLoras((current) => current.map((candidate) => candidate.path === file.path
+        ? {
+          ...candidate,
+          keywords: discovery.keywords,
+          keywordSource: discovery.source,
+          architecture: discovery.architecture,
+          architectureSource: discovery.architectureSource,
+          compatibility: discovery.compatibility,
+        }
+        : candidate));
+    } catch (error) {
+      console.warn("Failed to discover LoRA metadata", error);
+    }
+    if (compatibility === "incompatible") {
+      setDiscoveringSdcppLoraPath(null);
+      toast.error(
+        t("editModel.sdcpp.loraIncompatible"),
+        t("editModel.sdcpp.loraIncompatibleDescription"),
+      );
+      return;
+    }
+    if (compatibility === "unknown") {
+      toast.warning(
+        t("editModel.sdcpp.loraCompatibilityUnknown"),
+        t("editModel.sdcpp.loraCompatibilityUnknownDescription"),
+      );
+    }
+    const index = current.length;
+    updateBaseLoras([
+      ...current,
+      {
+        path: file.path,
+        multiplier: 0.8,
+        ...(keywords.length > 0 ? { keywords } : {}),
+      },
+    ]);
+    setDiscoveringSdcppLoraPath(null);
+    setShowSdcppLoraPicker(false);
+    if (keywords.length === 0 && keywordSource === "none") {
+      openSdcppLoraKeywordEditor(index, []);
+      toast.warning(
+        t("editModel.sdcpp.keywordsRequired"),
+        t("editModel.sdcpp.keywordsRequiredDescription"),
       );
     }
   };
 
-  const browseSdFile = async (role: SdModelRole) => {
+  const importBaseLora = async () => {
     const selection = await open({
       multiple: false,
       filters: [
-        { name: t("editModel.localDiffusion.modelFilesFilter"), extensions: ["safetensors", "gguf", "ckpt", "sft"] },
+        {
+          name: t("editModel.sdcpp.loraFiles"),
+          extensions: ["safetensors", "ckpt", "pt"],
+        },
       ],
     });
     if (typeof selection !== "string") return;
-    setSdFilesDraft((draft) => ({ ...draft, [role]: selection }));
-    await commitSdFile(role, selection);
+    setImportingSdcppLora(true);
+    try {
+      const imported = await invoke<SdcppLoraFile>("sdcpp_import_lora", {
+        sourcePath: selection,
+      });
+      const files = await invoke<SdcppLoraFile[]>("sdcpp_loras", {
+        profileId: selectedSdcppProfileId,
+      });
+      setSdcppLoras(files);
+      await addBaseLora(files.find((file) => file.path === imported.path) ?? imported);
+    } catch (error: any) {
+      toast.error(
+        t("editModel.sdcpp.importFailed"),
+        typeof error === "string" ? error : error?.message || String(error),
+      );
+    } finally {
+      setImportingSdcppLora(false);
+    }
   };
 
-  const commitSdMainModel = async (rawPath: string) => {
-    const path = rawPath.trim();
-    if (!path) return;
-    const role: SdModelRole = path.toLowerCase().endsWith(".gguf")
-      ? "diffusionModel"
-      : "checkpoint";
-    const sibling: SdModelRole = role === "checkpoint" ? "diffusionModel" : "checkpoint";
-    try {
-      if (selectedSdEntry) {
-        const currentMain =
-          selectedSdEntry.files.checkpoint ?? selectedSdEntry.files.diffusionModel ?? "";
-        if (path === currentMain) return;
-        await sdSetModelFile(selectedSdEntry.id, role, path);
-        const siblingValue = (selectedSdEntry.files as Record<string, string | null | undefined>)[
-          sibling
-        ];
-        if (siblingValue) {
-          await sdSetModelFile(selectedSdEntry.id, sibling, null);
+  const selectSdcppModel = (entry: SdcppInstalledModel) => {
+    const componentPathByRole = (role: string) =>
+      entry.components.find((component) => component.role === role)?.path ?? null;
+    updateEditorModel({
+      name: entry.modelPath,
+      inputScopes: entry.supportsImageEdit ? ["text", "image"] : ["text"],
+      outputScopes: ["image"],
+      ...(editorModel?.displayName?.trim() ? {} : { displayName: entry.displayName }),
+    });
+    setModelAdvancedDraft({
+      ...modelAdvancedDraft,
+      sdcppProfileId: entry.profileId,
+      sdcppVariantId: entry.variantId,
+      sdcppTextEncoderPath: componentPathByRole("text_encoder"),
+      sdcppVaePath: componentPathByRole("vae"),
+      sdcppVisionEncoderPath: componentPathByRole("vision_encoder"),
+      sdcppRuntimeRelease: sdcppActiveRuntime?.release ?? entry.runtimeRelease ?? null,
+      sdcppRuntimeAsset: sdcppActiveRuntime?.asset ?? entry.runtimeAsset ?? null,
+      sdcppRuntimeBackend: entry.runtimeBackend,
+      sdcppSupportsLora: true,
+      sdcppSupportsTextToImage: entry.supportsTextToImage,
+      sdcppSupportsImageEdit: entry.supportsImageEdit,
+      sdcppRecommendedForScenes: entry.recommendedForScenes,
+      sdcppRequiresReferenceImage: entry.requiresReferenceImage,
+    });
+    setShowSdcppModelPicker(false);
+  };
+
+  const applySdcppDetection = (path: string, detection: {
+    exists: boolean;
+    profile: BundleRecipe | null;
+  }) => {
+    if (sdcppDetectRequestRef.current !== path) return;
+    setSdcppDetection({ path, exists: detection.exists, profile: detection.profile });
+    const profile = detection.profile;
+    const draft = profile
+      ? {
+          ...modelAdvancedDraft,
+          sdcppProfileId: profile.id,
+          sdcppVariantId: null,
+          sdcppRuntimeRelease: sdcppActiveRuntime?.release ?? null,
+          sdcppRuntimeAsset: sdcppActiveRuntime?.asset ?? null,
+          sdcppSupportsLora: true,
+          sdcppSupportsTextToImage: profile.supportsTextToImage,
+          sdcppSupportsImageEdit: profile.supportsImageEdit,
+          sdcppRecommendedForScenes: profile.recommendedForScenes,
+          sdcppRequiresReferenceImage: profile.requiresReferenceImage,
         }
-        setSdEntries(null);
-        return;
-      }
-      const fallbackName =
-        editorModel?.displayName?.trim() ||
-        path.split(/[\\/]/).pop()?.replace(/\.(safetensors|gguf|ckpt|sft)$/i, "") ||
-        "Local model";
-      const entry = await sdImportModel(fallbackName, { [role]: path });
-      handleModelNameChange(entry.id);
+      : modelAdvancedDraft;
+    if (profile) {
+      updateEditorModel({
+        inputScopes: profile.supportsImageEdit ? ["text", "image"] : ["text"],
+        outputScopes: ["image"],
+      });
+      setModelAdvancedDraft(draft);
+    }
+    const requiredRoles: string[] = profile?.requiredRoles ?? ["text_encoder", "vae"];
+    const stillMissing = (
+      [
+        ["text_encoder", "sdcppTextEncoderPath"],
+        ["vae", "sdcppVaePath"],
+        ["vision_encoder", "sdcppVisionEncoderPath"],
+      ] as const
+    ).some(([role, key]) => requiredRoles.includes(role) && !(draft[key] ?? "").trim());
+    if (stillMissing && detection.exists) setActivePanel("configuration");
+  };
+
+  const scheduleSdcppDetection = (path: string) => {
+    if (sdcppDetectTimerRef.current != null) window.clearTimeout(sdcppDetectTimerRef.current);
+    setSdcppDetection(null);
+    const trimmed = path.trim();
+    sdcppDetectRequestRef.current = trimmed || null;
+    if (!trimmed) return;
+    sdcppDetectTimerRef.current = window.setTimeout(() => {
+      void invoke<{ exists: boolean; profile: BundleRecipe | null }>("sdcpp_detect_model_file", {
+        path: trimmed,
+      })
+        .then((detection) => applySdcppDetection(trimmed, detection))
+        .catch(() => {});
+    }, 500);
+  };
+
+  const handleSdcppModelPathChange = (path: string) => {
+    const match = sdcppInstalled.find((entry) => entry.modelPath === path);
+    if (match) {
+      if (sdcppDetectTimerRef.current != null) window.clearTimeout(sdcppDetectTimerRef.current);
+      sdcppDetectRequestRef.current = null;
+      setSdcppDetection(null);
+      selectSdcppModel(match);
+      return;
+    }
+    updateEditorModel({ name: path });
+    if (modelAdvancedDraft.sdcppProfileId || modelAdvancedDraft.sdcppVariantId) {
+      setModelAdvancedDraft({
+        ...modelAdvancedDraft,
+        sdcppProfileId: null,
+        sdcppVariantId: null,
+      });
+    }
+    scheduleSdcppDetection(path);
+  };
+
+  const browseSdcppModelFile = async () => {
+    try {
+      const selected = await open({
+        multiple: false,
+        filters: [{ name: "GGUF Model", extensions: ["gguf"] }],
+      });
+      if (!selected || typeof selected !== "string") return;
+      handleSdcppModelPathChange(selected);
       if (!editorModel?.displayName?.trim()) {
-        handleDisplayNameChange(entry.name);
+        handleDisplayNameChange(deriveDisplayNameFromPath(selected));
       }
-      setSdEntries(null);
-    } catch (err: any) {
-      toast.error(
-        t("imageGeneration.local.updateFailed"),
-        typeof err === "string" ? err : err?.message || String(err),
-      );
+    } catch (error) {
+      console.error("Failed to browse for local image model", error);
     }
   };
 
-  const browseSdMainModel = async () => {
-    const selection = await open({
-      multiple: false,
-      filters: [
-        { name: t("editModel.localDiffusion.modelFilesFilter"), extensions: ["safetensors", "gguf", "ckpt", "sft"] },
-      ],
-    });
-    if (typeof selection !== "string") return;
-    setSdMainPathDraft(selection);
-    await commitSdMainModel(selection);
+  const browseSdcppComponentFile = async (
+    key: "sdcppTextEncoderPath" | "sdcppVaePath" | "sdcppVisionEncoderPath",
+  ) => {
+    try {
+      const selected = await open({
+        multiple: false,
+        filters: [
+          { name: t("editModel.sdcpp.componentFilesFilter"), extensions: ["gguf", "safetensors", "sft"] },
+        ],
+      });
+      if (!selected || typeof selected !== "string") return;
+      setModelAdvancedDraft({ ...modelAdvancedDraft, [key]: selected });
+    } catch (error) {
+      console.error("Failed to browse for local image component", error);
+    }
   };
+
+  const openSdcppComponentPicker = async (
+    key: "sdcppTextEncoderPath" | "sdcppVaePath" | "sdcppVisionEncoderPath",
+  ) => {
+    try {
+      setSdcppComponentLibrary(
+        await invoke<SdcppComponentLibraryEntry[]>("sdcpp_component_library"),
+      );
+    } catch (error) {
+      console.error("Failed to load the local component library", error);
+      setSdcppComponentLibrary([]);
+    }
+    setSdcppComponentPickerKey(key);
+  };
+
+  const sdcppComponentPickerEntries = (() => {
+    if (!sdcppComponentPickerKey) return [];
+    const role = {
+      sdcppTextEncoderPath: "text_encoder",
+      sdcppVaePath: "vae",
+      sdcppVisionEncoderPath: "vision_encoder",
+    }[sdcppComponentPickerKey];
+    return sdcppComponentLibrary.filter((entry) => {
+      if (entry.role) return entry.role === role;
+      const filename = entry.filename.toLowerCase();
+      if (role === "vae") return filename.endsWith(".safetensors") || filename.endsWith(".sft");
+      if (role === "vision_encoder") return filename.includes("mmproj");
+      return filename.endsWith(".gguf");
+    });
+  })();
 
   // Get reasoning support for the current provider
   const reasoningSupport: ReasoningSupport = editorModel?.providerId
@@ -1795,7 +2211,7 @@ export function EditModelPage() {
   const activeDetailPanel = activePanel;
   const editorPanels: { key: EditorSectionKey; label: string }[] = [
     { key: "generation", label: t("editModel.sections.generation") },
-    ...(isLocalDiffusionModel
+    ...(isSdcppModel
       ? [{ key: "configuration" as const, label: t("editModel.sections.configuration") }]
       : []),
     ...(hasRuntimePanel
@@ -2085,14 +2501,14 @@ export function EditModelPage() {
   useEffect(() => {
     const globalWindow = window as any;
     globalWindow.__saveModel = () => void handleSaveWithMoveCheck();
-    globalWindow.__saveModelCanSave = canSave;
+    globalWindow.__saveModelCanSave = canSave && !hasMissingSdcppComponents;
     globalWindow.__saveModelSaving = saving || verifying;
     return () => {
       delete globalWindow.__saveModel;
       delete globalWindow.__saveModelCanSave;
       delete globalWindow.__saveModelSaving;
     };
-  }, [handleSaveWithMoveCheck, canSave, saving, verifying]);
+  }, [handleSaveWithMoveCheck, canSave, saving, verifying, hasMissingSdcppComponents]);
 
   useEffect(() => {
     const handleDiscard = () => resetToInitial();
@@ -2103,14 +2519,20 @@ export function EditModelPage() {
   useEffect(() => {
     if (activePanel === "runtime" && !hasRuntimePanel) {
       setActivePanel(showReasoningSection ? "reasoning" : "generation");
-    } else if (activePanel === "configuration" && !isLocalDiffusionModel) {
+    } else if (activePanel === "configuration" && !isSdcppModel) {
       setActivePanel("generation");
     } else if (activePanel === "reasoning" && !showReasoningSection) {
       setActivePanel(hasRuntimePanel ? "runtime" : "generation");
     } else if (activePanel === "caching" && !showCachingSection) {
       setActivePanel("generation");
     }
-  }, [activePanel, hasRuntimePanel, isLocalDiffusionModel, showReasoningSection, showCachingSection]);
+  }, [
+    activePanel,
+    hasRuntimePanel,
+    isSdcppModel,
+    showReasoningSection,
+    showCachingSection,
+  ]);
 
   useEffect(() => {
     if (!showLlamaRuntimeReport) return;
@@ -2292,13 +2714,16 @@ export function EditModelPage() {
     enabled: boolean,
   ) => {
     if (!editorModel) return;
-    if (isFixedImageProvider) return;
+    if (scopesLocked) return;
     const current = new Set((editorModel as any)[key] ?? ["text"]);
     if (enabled) current.add(scope);
     else current.delete(scope);
     let next = scopeOrder.filter((s) => current.has(s));
     if (next.length === 0) next = ["text"];
     updateEditorModel({ [key]: next } as any);
+    if (isCustomSdcppModel && key === "inputScopes" && scope === "image") {
+      setModelAdvancedDraft({ ...modelAdvancedDraft, sdcppSupportsImageEdit: enabled });
+    }
   };
 
   const inferScopesFromFetchedModel = (model: (typeof fetchedModels)[number]) => {
@@ -2459,7 +2884,10 @@ export function EditModelPage() {
                         <button
                           type="button"
                           onClick={() => setShowPlatformSelector(true)}
-                          className="flex w-full items-center justify-between rounded-lg border border-fg/10 bg-surface-el/20 px-4 py-3 text-fg transition hover:bg-surface-el/30"
+                          className={cn(
+                            "flex w-full items-center justify-between rounded-lg border border-fg/10 bg-surface-el/20 px-4 py-3 text-fg transition",
+                            "hover:bg-surface-el/30",
+                          )}
                         >
                           <div className="flex min-w-0 items-center gap-3">
                             <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-fg/10 bg-fg/5 text-fg/60">
@@ -2613,7 +3041,7 @@ export function EditModelPage() {
                         </div>
                       </FieldBlock>
                     </div>
-                  ) : isLocalDiffusionModel ? (
+                  ) : isSdcppModel ? (
                     <div className="grid items-start grid-cols-1 gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
                       <FieldBlock label={t("editModel.fields.displayName")}>
                         <input
@@ -2626,20 +3054,27 @@ export function EditModelPage() {
                       </FieldBlock>
 
                       <FieldBlock
-                        label={t("editModel.fields.localDiffusionModel")}
+                        label={t("editModel.fields.modelPath")}
                         action={
                           <div className="flex items-center gap-2">
                             <button
                               type="button"
-                              onClick={() => setShowSdModelPicker(true)}
+                              onClick={() => {
+                                setShowSdcppModelPicker(true);
+                                void invoke<SdcppDownloadedFile[]>(
+                                  "hf_list_downloaded_image_models",
+                                )
+                                  .then(setSdcppDownloadedFiles)
+                                  .catch(() => {});
+                              }}
                               className="inline-flex items-center gap-1.5 rounded-md border border-fg/10 bg-fg/5 px-2.5 py-1.5 text-[12px] font-medium text-fg/68 transition hover:border-fg/20 hover:bg-fg/10 hover:text-fg"
                             >
                               <FolderOpen className="h-3.5 w-3.5 text-accent/70" />
-                              {t("hfBrowser.selectFromLibrary")}
+                              {t("editModel.setup.sdcppSelectModel")}
                             </button>
                             <button
                               type="button"
-                              onClick={() => void browseSdMainModel()}
+                              onClick={() => void browseSdcppModelFile()}
                               className="rounded-md border border-fg/10 px-2.5 py-1.5 text-[12px] font-medium text-fg/65 transition hover:border-fg/20 hover:bg-fg/5 hover:text-fg/90"
                             >
                               {t("common.buttons.browseFiles")}
@@ -2650,24 +3085,45 @@ export function EditModelPage() {
                         <div className="space-y-3">
                           <input
                             type="text"
-                            value={sdMainPathDraft}
-                            onChange={(e) => setSdMainPathDraft(e.target.value)}
-                            onBlur={(e) => void commitSdMainModel(e.target.value)}
-                            placeholder={t("editModel.localDiffusion.pathPlaceholder")}
+                            value={editorModel.name}
+                            onChange={(e) => handleSdcppModelPathChange(e.target.value)}
+                            placeholder={t("editModel.placeholders.modelPath")}
                             className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-4 py-3 font-mono text-[13px] text-fg placeholder-fg/40 transition focus:border-fg/30 focus:outline-none"
                           />
                           <p className="text-[13px] leading-relaxed text-fg/45">
-                            {selectedSdEntry
-                              ? `${selectedSdEntry.name} · ${selectedSdEntry.family.toUpperCase()}${selectedSdEntry.totalBytes > 0 ? ` · ${formatBytes(selectedSdEntry.totalBytes)}` : ""}`
-                              : t("editModel.localDiffusion.idHelp")}
+                            {selectedSdcppEntry
+                              ? t("editModel.setup.sdcppManaged")
+                              : t("editModel.setup.sdcppCustomHelp")}
                           </p>
+                          {!selectedSdcppEntry &&
+                            sdcppDetection &&
+                            sdcppDetection.path === editorModel.name.trim() &&
+                            (sdcppDetection.profile ? (
+                              <p className="text-[12px] leading-relaxed text-accent/90">
+                                {t("editModel.sdcpp.detectedArchitecture", {
+                                  name: sdcppDetection.profile.displayName,
+                                })}
+                              </p>
+                            ) : sdcppDetection.exists ? (
+                              <div
+                                role="alert"
+                                className="space-y-1 rounded-lg border border-warning/20 bg-warning/5 px-3 py-2 text-[12px] leading-relaxed text-warning/85"
+                              >
+                                <p className="font-medium">
+                                  {t("editModel.sdcpp.unsupportedArchitectureTitle")}
+                                </p>
+                                <p>{t("editModel.sdcpp.unsupportedArchitectureDescription")}</p>
+                              </div>
+                            ) : null)}
+
                           <BottomMenu
-                            isOpen={showSdModelPicker}
-                            onClose={() => setShowSdModelPicker(false)}
-                            title={t("editModel.localDiffusion.selectModel")}
+                            isOpen={showSdcppModelPicker}
+                            onClose={() => setShowSdcppModelPicker(false)}
+                            title={t("editModel.setup.sdcppSelectModel")}
                           >
                             <MenuSection>
-                              {!sdEntries || sdEntries.length === 0 ? (
+                              {sdcppInstalled.length === 0 &&
+                              sdcppDownloadedDiffusionFiles.length === 0 ? (
                                 <div className="flex flex-col items-center gap-2 py-16 text-center">
                                   <HardDrive size={32} className="text-fg/20" />
                                   <p className="px-6 text-[13px] text-fg/40">
@@ -2675,31 +3131,53 @@ export function EditModelPage() {
                                   </p>
                                 </div>
                               ) : (
-                                sdEntries
-                                  .filter((entry) => entry.complete)
-                                  .map((entry) => (
+                                <>
+                                  {sdcppInstalled.map((entry) => (
                                     <MenuButton
-                                      key={entry.id}
+                                      key={entry.modelPath}
                                       icon={<HardDrive className="h-5 w-5 text-accent/60" />}
-                                      title={entry.name}
-                                      description={`${entry.family.toUpperCase()} · ${formatBytes(entry.totalBytes)}`}
+                                      title={entry.displayName}
+                                      description={`${
+                                        entry.runtimeBackend
+                                          ? `${entry.runtimeBackend.toUpperCase()} · `
+                                          : ""
+                                      }${formatBytes(entry.componentBytesOnDisk)}`}
                                       color="from-accent/20 to-accent/10"
                                       rightElement={
-                                        editorModel.name === entry.id ? (
+                                        editorModel.name === entry.modelPath ? (
+                                          <Check className="h-4 w-4 text-accent" />
+                                        ) : (
+                                          <ArrowRight className="h-4 w-4 text-fg/20" />
+                                        )
+                                      }
+                                      onClick={() => selectSdcppModel(entry)}
+                                    />
+                                  ))}
+                                  {sdcppDownloadedDiffusionFiles.map((file) => (
+                                    <MenuButton
+                                      key={file.path}
+                                      icon={<HardDrive className="h-5 w-5 text-fg/45" />}
+                                      title={file.filename}
+                                      description={`${file.modelId} · ${formatBytes(file.size)}`}
+                                      rightElement={
+                                        editorModel.name === file.path ? (
                                           <Check className="h-4 w-4 text-accent" />
                                         ) : (
                                           <ArrowRight className="h-4 w-4 text-fg/20" />
                                         )
                                       }
                                       onClick={() => {
-                                        handleModelNameChange(entry.id);
-                                        if (!editorModel.displayName?.trim()) {
-                                          handleDisplayNameChange(entry.name);
+                                        setShowSdcppModelPicker(false);
+                                        handleSdcppModelPathChange(file.path);
+                                        if (!editorModel?.displayName?.trim()) {
+                                          handleDisplayNameChange(
+                                            deriveDisplayNameFromPath(file.path),
+                                          );
                                         }
-                                        setShowSdModelPicker(false);
                                       }}
                                     />
-                                  ))
+                                  ))}
+                                </>
                               )}
                             </MenuSection>
                           </BottomMenu>
@@ -3249,7 +3727,7 @@ export function EditModelPage() {
                             {isFixedImageProvider ? (
                               <div className="space-y-5">
                                 <div className="text-[13px] leading-relaxed text-fg/55">
-                                  {isLocalDiffusionModel
+                                  {isSdcppModel
                                     ? t("editModel.generation.localDiffusionHelp")
                                     : t("editModel.generation.automatic1111Help")}
                                 </div>
@@ -3266,7 +3744,7 @@ export function EditModelPage() {
                                         </span>
                                       </div>
                                       <span className="font-mono text-[13px] text-fg/55">
-                                        {modelAdvancedDraft.sdSteps ?? "28"}
+                                        {modelAdvancedDraft.sdSteps ?? (isSdcppModel ? sdcppDefaultSteps : 28)}
                                       </span>
                                     </div>
                                     <NumberInput
@@ -3300,7 +3778,8 @@ export function EditModelPage() {
                                         </span>
                                       </div>
                                       <span className="font-mono text-[13px] text-fg/55">
-                                        {modelAdvancedDraft.sdCfgScale?.toFixed(1) ?? "6.5"}
+                                        {modelAdvancedDraft.sdCfgScale?.toFixed(1) ??
+                                          (isSdcppModel ? sdcppDefaultCfg : 6.5).toFixed(1)}
                                       </span>
                                     </div>
                                     <NumberInput
@@ -3330,7 +3809,8 @@ export function EditModelPage() {
                                         </span>
                                       </div>
                                       <span className="font-mono text-[13px] text-fg/55">
-                                        {modelAdvancedDraft.sdSize ?? "1024x1024"}
+                                        {modelAdvancedDraft.sdSize ??
+                                          (isSdcppModel ? sdcppDefaultSize : "1024x1024")}
                                       </span>
                                     </div>
                                     <input
@@ -3354,14 +3834,58 @@ export function EditModelPage() {
                                         {t("editModel.generationDescriptions.sdSampler")}
                                       </span>
                                     </div>
-                                    <input
-                                      type="text"
-                                      value={modelAdvancedDraft.sdSampler ?? ""}
-                                      onChange={(e) => updateSdSetting("sdSampler", e.target.value)}
-                                      placeholder={t("editModel.placeholders.sdSampler")}
-                                      className={selectInputClassName}
-                                    />
+                                    {isSdcppModel ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => setShowSdcppSamplerMenu(true)}
+                                        className={cn(
+                                          selectInputClassName,
+                                          "flex items-center justify-between text-left",
+                                        )}
+                                      >
+                                        <span>
+                                          {modelAdvancedDraft.sdSampler ??
+                                            t("editModel.generationAdvanced.modelDefault")}
+                                        </span>
+                                        <ChevronDown className="h-4 w-4 text-fg/35" />
+                                      </button>
+                                    ) : (
+                                      <input
+                                        type="text"
+                                        value={modelAdvancedDraft.sdSampler ?? ""}
+                                        onChange={(e) => updateSdSetting("sdSampler", e.target.value)}
+                                        placeholder={t("editModel.placeholders.sdSampler")}
+                                        className={selectInputClassName}
+                                      />
+                                    )}
                                   </div>
+
+                                  {isSdcppModel ? (
+                                    <div className="space-y-4">
+                                      <div className="space-y-0.5">
+                                        <span className="block text-[13px] font-medium text-fg/70">
+                                          {t("editModel.generationAdvanced.scheduler")}
+                                        </span>
+                                        <span className="block text-[13px] text-fg/40">
+                                          {t("editModel.generationAdvanced.schedulerDescription")}
+                                        </span>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => setShowSdcppSchedulerMenu(true)}
+                                        className={cn(
+                                          selectInputClassName,
+                                          "flex items-center justify-between text-left",
+                                        )}
+                                      >
+                                        <span>
+                                          {modelAdvancedDraft.sdScheduler ??
+                                            t("editModel.generationAdvanced.modelDefault")}
+                                        </span>
+                                        <ChevronDown className="h-4 w-4 text-fg/35" />
+                                      </button>
+                                    </div>
+                                  ) : null}
 
                                   <div className="space-y-4">
                                     <div className="flex items-center justify-between">
@@ -3397,38 +3921,100 @@ export function EditModelPage() {
                                     </div>
                                   </div>
 
-                                  <div className="space-y-4">
-                                    <div className="flex items-center justify-between">
-                                      <div className="space-y-0.5">
-                                        <span className="block text-[13px] font-medium text-fg/70">
-                                          {t("editModel.genLabels.img2imgDenoise")}
-                                        </span>
-                                        <span className="block text-[13px] text-fg/40">
-                                          {t("editModel.generationDescriptions.sdDenoise")}
+                                  {!isSdcppModel || sdcppSupportsImageEdit ? (
+                                    <div className="space-y-4">
+                                      <div className="flex items-center justify-between">
+                                        <div className="space-y-0.5">
+                                          <span className="block text-[13px] font-medium text-fg/70">
+                                            {t("editModel.genLabels.img2imgDenoise")}
+                                          </span>
+                                          <span className="block text-[13px] text-fg/40">
+                                            {t("editModel.generationDescriptions.sdDenoise")}
+                                          </span>
+                                        </div>
+                                        <span className="font-mono text-[13px] text-fg/55">
+                                          {modelAdvancedDraft.sdDenoisingStrength?.toFixed(2) ??
+                                            "0.75"}
                                         </span>
                                       </div>
-                                      <span className="font-mono text-[13px] text-fg/55">
-                                        {modelAdvancedDraft.sdDenoisingStrength?.toFixed(2) ??
-                                          "0.75"}
-                                      </span>
+                                      <NumberInput
+                                        min={ADVANCED_SD_DENOISING_STRENGTH_RANGE.min}
+                                        max={ADVANCED_SD_DENOISING_STRENGTH_RANGE.max}
+                                        step={0.01}
+                                        decimals={2}
+                                        value={modelAdvancedDraft.sdDenoisingStrength ?? null}
+                                        onChange={(next) =>
+                                          updateSdSetting("sdDenoisingStrength", next)
+                                        }
+                                        placeholder={t("editModel.placeholders.sdDenoise")}
+                                        className={numberInputClassName}
+                                      />
+                                      <div className="flex justify-between text-[13px] text-fg/30 px-0.5 mt-1">
+                                        <span>{ADVANCED_SD_DENOISING_STRENGTH_RANGE.min}</span>
+                                        <span>{ADVANCED_SD_DENOISING_STRENGTH_RANGE.max}</span>
+                                      </div>
                                     </div>
-                                    <NumberInput
-                                      min={ADVANCED_SD_DENOISING_STRENGTH_RANGE.min}
-                                      max={ADVANCED_SD_DENOISING_STRENGTH_RANGE.max}
-                                      step={0.01}
-                                      decimals={2}
-                                      value={modelAdvancedDraft.sdDenoisingStrength ?? null}
-                                      onChange={(next) =>
-                                        updateSdSetting("sdDenoisingStrength", next)
-                                      }
-                                      placeholder={t("editModel.placeholders.sdDenoise")}
-                                      className={numberInputClassName}
-                                    />
-                                    <div className="flex justify-between text-[13px] text-fg/30 px-0.5 mt-1">
-                                      <span>{ADVANCED_SD_DENOISING_STRENGTH_RANGE.min}</span>
-                                      <span>{ADVANCED_SD_DENOISING_STRENGTH_RANGE.max}</span>
+                                  ) : null}
+
+                                  {isSdcppModel && sdcppSupportsImageEdit ? (
+                                    <div className="space-y-4">
+                                      <div className="flex items-center justify-between">
+                                        <div className="space-y-0.5">
+                                          <span className="block text-[13px] font-medium text-fg/70">
+                                            {t("editModel.generationAdvanced.imageGuidance")}
+                                          </span>
+                                          <span className="block text-[13px] text-fg/40">
+                                            {t("editModel.generationAdvanced.imageGuidanceDescription")}
+                                          </span>
+                                        </div>
+                                        <span className="font-mono text-[13px] text-fg/55">
+                                          {modelAdvancedDraft.sdImageCfgScale?.toFixed(2) ??
+                                            t("editModel.generationAdvanced.modelDefault")}
+                                        </span>
+                                      </div>
+                                      <NumberInput
+                                        min={ADVANCED_SD_CFG_SCALE_RANGE.min}
+                                        max={ADVANCED_SD_CFG_SCALE_RANGE.max}
+                                        step={0.1}
+                                        decimals={2}
+                                        value={modelAdvancedDraft.sdImageCfgScale ?? null}
+                                        onChange={(next) => updateSdSetting("sdImageCfgScale", next)}
+                                        placeholder={t("editModel.generationAdvanced.modelDefault")}
+                                        className={numberInputClassName}
+                                      />
                                     </div>
-                                  </div>
+                                  ) : null}
+
+                                  {isSdcppModel ? (
+                                    <div className="space-y-4">
+                                      <div className="flex items-center justify-between">
+                                        <div className="space-y-0.5">
+                                          <span className="block text-[13px] font-medium text-fg/70">
+                                            {t("editModel.generationAdvanced.distilledGuidance")}
+                                          </span>
+                                          <span className="block text-[13px] text-fg/40">
+                                            {t("editModel.generationAdvanced.distilledGuidanceDescription")}
+                                          </span>
+                                        </div>
+                                        <span className="font-mono text-[13px] text-fg/55">
+                                          {modelAdvancedDraft.sdDistilledGuidance?.toFixed(2) ??
+                                            t("editModel.generationAdvanced.modelDefault")}
+                                        </span>
+                                      </div>
+                                      <NumberInput
+                                        min={ADVANCED_SD_CFG_SCALE_RANGE.min}
+                                        max={ADVANCED_SD_CFG_SCALE_RANGE.max}
+                                        step={0.1}
+                                        decimals={2}
+                                        value={modelAdvancedDraft.sdDistilledGuidance ?? null}
+                                        onChange={(next) =>
+                                          updateSdSetting("sdDistilledGuidance", next)
+                                        }
+                                        placeholder={t("editModel.generationAdvanced.modelDefault")}
+                                        className={numberInputClassName}
+                                      />
+                                    </div>
+                                  ) : null}
                                 </div>
 
                                 <div className="space-y-4">
@@ -3451,6 +4037,29 @@ export function EditModelPage() {
                                   />
                                 </div>
 
+                                {isSdcppModel ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowSdcppAdvancedGeneration(true)}
+                                    className="flex w-full items-center justify-between rounded-xl border border-fg/10 bg-fg/[0.035] px-4 py-3.5 text-left transition hover:border-fg/20 hover:bg-fg/[0.06]"
+                                  >
+                                    <span className="flex min-w-0 items-center gap-3">
+                                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-accent/20 bg-accent/10 text-accent">
+                                        <SlidersHorizontal className="h-4 w-4" />
+                                      </span>
+                                      <span className="min-w-0">
+                                        <span className="block text-[13px] font-medium text-fg/80">
+                                          {t("editModel.generationAdvanced.title")}
+                                        </span>
+                                        <span className="mt-0.5 block text-[12px] text-fg/45">
+                                          {t("editModel.generationAdvanced.description")}
+                                        </span>
+                                      </span>
+                                    </span>
+                                    <ChevronRight className="h-4 w-4 shrink-0 text-fg/35" />
+                                  </button>
+                                ) : null}
+
                                 <div className="space-y-4">
                                   <div className="space-y-0.5">
                                     <span className="block text-[13px] font-medium text-fg/70">
@@ -3462,91 +4071,40 @@ export function EditModelPage() {
                                   </div>
                                   <textarea
                                     value={modelAdvancedDraft.sdExtraPrompt ?? ""}
-                                    onChange={(e) =>
-                                      updateSdSetting("sdExtraPrompt", e.target.value)
-                                    }
+                                    onChange={(e) => updateSdSetting("sdExtraPrompt", e.target.value)}
                                     placeholder={t("editModel.placeholders.sdExtraPrompt")}
                                     rows={4}
                                     className={textAreaInputClassName}
                                   />
                                 </div>
 
-                                <div className="space-y-4">
-                                  <div className="space-y-0.5">
-                                    <span className="block text-[13px] font-medium text-fg/70">
-                                      {t(
-                                        "editModel.generationDescriptions.sdWriterInstructionsTitle",
-                                      )}
-                                    </span>
-                                    <span className="block text-[13px] text-fg/40">
-                                      {t("editModel.generationDescriptions.sdWriterInstructions")}
-                                    </span>
-                                  </div>
-                                  <textarea
-                                    value={modelAdvancedDraft.sdPromptWriterInstructions ?? ""}
-                                    onChange={(e) =>
-                                      updateSdSetting("sdPromptWriterInstructions", e.target.value)
-                                    }
-                                    placeholder={t("editModel.placeholders.sdWriterInstructions")}
-                                    rows={4}
-                                    className={textAreaInputClassName}
-                                  />
-                                </div>
-
-                                {isLocalDiffusionModel ? (
-                                  <div className="space-y-4">
-                                    <div className="space-y-0.5">
-                                      <span className="block text-[13px] font-medium text-fg/70">
-                                        {t("editModel.generationDescriptions.sdOffloadTitle")}
-                                      </span>
-                                      <span className="block text-[13px] text-fg/40">
-                                        {t("editModel.generationDescriptions.sdOffloadMode")}
-                                      </span>
+                                {!isSdcppModel ? (
+                                    <div className="space-y-4">
+                                      <div className="space-y-0.5">
+                                        <span className="block text-[13px] font-medium text-fg/70">
+                                          {t(
+                                            "editModel.generationDescriptions.sdWriterInstructionsTitle",
+                                          )}
+                                        </span>
+                                        <span className="block text-[13px] text-fg/40">
+                                          {t("editModel.generationDescriptions.sdWriterInstructions")}
+                                        </span>
+                                      </div>
+                                      <textarea
+                                        value={modelAdvancedDraft.sdPromptWriterInstructions ?? ""}
+                                        onChange={(e) =>
+                                          updateSdSetting(
+                                            "sdPromptWriterInstructions",
+                                            e.target.value,
+                                          )
+                                        }
+                                        placeholder={t("editModel.placeholders.sdWriterInstructions")}
+                                        rows={4}
+                                        className={textAreaInputClassName}
+                                      />
                                     </div>
-                                    <div className="grid grid-cols-3 gap-2">
-                                      {(
-                                        [
-                                          ["auto", t("editModel.sdOffload.auto"), t("editModel.sdOffload.autoHint")],
-                                          ["gpu", t("editModel.sdOffload.gpu"), t("editModel.sdOffload.gpuHint")],
-                                          ["mixed", t("editModel.sdOffload.mixed"), t("editModel.sdOffload.mixedHint")],
-                                        ] as const
-                                      ).map(([value, label, hint]) => {
-                                        const active =
-                                          (modelAdvancedDraft.sdOffloadMode ?? "auto") === value;
-                                        return (
-                                          <button
-                                            key={value}
-                                            type="button"
-                                            onClick={() =>
-                                              updateSdSetting(
-                                                "sdOffloadMode",
-                                                value === "auto" ? null : value,
-                                              )
-                                            }
-                                            className={cn(
-                                              "rounded-lg border px-3 py-2.5 text-left transition",
-                                              active
-                                                ? "border-accent/30 bg-accent/10"
-                                                : "border-fg/10 bg-fg/5 hover:border-fg/20 hover:bg-fg/8",
-                                            )}
-                                          >
-                                            <span
-                                              className={cn(
-                                                "block text-[13px] font-medium",
-                                                active ? "text-accent" : "text-fg/70",
-                                              )}
-                                            >
-                                              {label}
-                                            </span>
-                                            <span className="mt-0.5 block text-[12px] leading-snug text-fg/40">
-                                              {hint}
-                                            </span>
-                                          </button>
-                                        );
-                                      })}
-                                    </div>
-                                  </div>
                                 ) : null}
+
                               </div>
                             ) : (
                               <div className="grid grid-cols-1 gap-x-6 gap-y-8 md:grid-cols-2 xl:grid-cols-3 xl:gap-x-8">
@@ -4361,118 +4919,465 @@ export function EditModelPage() {
                           </div>
                         )}
 
-                        {/* Local llama.cpp Settings */}
-                        {activeDetailPanel === "configuration" && isLocalDiffusionModel && (
-                          <div className="space-y-6">
-                            <p className="text-[13px] leading-relaxed text-fg/55">
-                              {t("editModel.localDiffusion.configurationHelp")}
-                            </p>
-                            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-                              {(
-                                [
-                                  ["checkpoint", t("imageGeneration.local.roles.checkpoint")],
-                                  ["diffusionModel", t("imageGeneration.local.roles.diffusionModel")],
-                                  ["clipL", t("imageGeneration.local.roles.clipL")],
-                                  ["clipG", t("imageGeneration.local.roles.clipG")],
-                                  ["t5xxl", t("imageGeneration.local.roles.t5xxl")],
-                                  ["llm", t("imageGeneration.local.roles.llm")],
-                                  ["llmVision", t("imageGeneration.local.roles.llmVision")],
-                                  ["vae", t("imageGeneration.local.roles.vae")],
-                                ] as Array<[SdModelRole, string]>
-                              ).map(([role, label]) => (
-                                <FieldBlock
-                                  key={role}
-                                  label={label}
-                                  action={
-                                    <div className="flex items-center gap-2">
-                                      <button
-                                        type="button"
-                                        onClick={() => setSdLibraryRole(role)}
-                                        className="inline-flex items-center gap-1.5 rounded-md border border-fg/10 bg-fg/5 px-2.5 py-1.5 text-[12px] font-medium text-fg/68 transition hover:border-fg/20 hover:bg-fg/10 hover:text-fg"
-                                      >
-                                        <FolderOpen className="h-3.5 w-3.5 text-accent/70" />
-                                        {t("hfBrowser.selectFromLibrary")}
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => void browseSdFile(role)}
-                                        className="rounded-md border border-fg/10 px-2.5 py-1.5 text-[12px] font-medium text-fg/65 transition hover:border-fg/20 hover:bg-fg/5 hover:text-fg/90"
-                                      >
-                                        {t("common.buttons.browseFiles")}
-                                      </button>
+                        {activeDetailPanel === "configuration" && isSdcppModel && (
+                          <div className="space-y-10">
+                            <section className="space-y-4">
+                              <div className="space-y-1">
+                                <h3 className="text-[13px] font-semibold text-fg/82">
+                                  {t("editModel.sdcpp.modelFiles")}
+                                </h3>
+                                <p className="max-w-2xl text-[13px] leading-relaxed text-fg/45">
+                                  {t("editModel.sdcpp.modelFilesDescription")}
+                                </p>
+                                {missingSdcppComponentKeys.length > 0 && (
+                                  <p className="text-[12px] leading-relaxed text-warning/80">
+                                    {t("editModel.sdcpp.modelFilesIncomplete")}
+                                  </p>
+                                )}
+                              </div>
+                              <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                                {(
+                                  [
+                                    ["sdcppTextEncoderPath", t("editModel.sdcpp.textEncoder")],
+                                    ["sdcppVaePath", t("editModel.sdcpp.vae")],
+                                    ["sdcppVisionEncoderPath", t("editModel.sdcpp.visionEncoder")],
+                                  ] as Array<
+                                    [
+                                      "sdcppTextEncoderPath" | "sdcppVaePath" | "sdcppVisionEncoderPath",
+                                      string,
+                                    ]
+                                  >
+                                ).map(([key, label]) => {
+                                  const required = sdcppRequiredComponentKeys.includes(key);
+                                  const missing = missingSdcppComponentKeys.includes(key);
+                                  return (
+                                    <FieldBlock
+                                      key={key}
+                                      label={
+                                        required
+                                          ? label
+                                          : `${label} (${t("editModel.sdcpp.optionalFile")})`
+                                      }
+                                      action={
+                                        <div className="flex items-center gap-2">
+                                          <button
+                                            type="button"
+                                            onClick={() => void openSdcppComponentPicker(key)}
+                                            className="rounded-md border border-fg/10 px-2.5 py-1.5 text-[12px] font-medium text-fg/65 transition hover:border-fg/20 hover:bg-fg/5 hover:text-fg/90"
+                                          >
+                                            {t("editModel.sdcpp.chooseFromLibrary")}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => void browseSdcppComponentFile(key)}
+                                            className="rounded-md border border-fg/10 px-2.5 py-1.5 text-[12px] font-medium text-fg/65 transition hover:border-fg/20 hover:bg-fg/5 hover:text-fg/90"
+                                          >
+                                            {t("common.buttons.browseFiles")}
+                                          </button>
+                                        </div>
+                                      }
+                                    >
+                                      <input
+                                        type="text"
+                                        value={modelAdvancedDraft[key] ?? ""}
+                                        onChange={(e) =>
+                                          setModelAdvancedDraft({
+                                            ...modelAdvancedDraft,
+                                            [key]: e.target.value || null,
+                                          })
+                                        }
+                                        placeholder={t("editModel.placeholders.modelPath")}
+                                        className={cn(
+                                          "w-full rounded-lg border bg-surface-el/20 px-4 py-3 font-mono text-[13px] text-fg placeholder-fg/40 transition focus:outline-none",
+                                          missing
+                                            ? "border-warning/60 focus:border-warning/80"
+                                            : "border-fg/10 focus:border-fg/30",
+                                        )}
+                                      />
+                                    </FieldBlock>
+                                  );
+                                })}
+                              </div>
+                              <BottomMenu
+                                isOpen={sdcppComponentPickerKey !== null}
+                                onClose={() => setSdcppComponentPickerKey(null)}
+                                title={t("editModel.sdcpp.componentPickerTitle")}
+                              >
+                                <MenuSection>
+                                  {sdcppComponentPickerEntries.length === 0 ? (
+                                    <div className="flex flex-col items-center gap-2 py-16 text-center">
+                                      <HardDrive size={32} className="text-fg/20" />
+                                      <p className="px-6 text-[13px] text-fg/40">
+                                        {t("editModel.sdcpp.componentLibraryEmpty")}
+                                      </p>
+                                      <p className="px-6 text-[12px] text-fg/30">
+                                        {t("editModel.sdcpp.componentLibraryEmptyHint")}
+                                      </p>
                                     </div>
-                                  }
+                                  ) : (
+                                    sdcppComponentPickerEntries.map((entry) => (
+                                      <MenuButton
+                                        key={entry.path}
+                                        icon={<HardDrive className="h-5 w-5 text-accent/60" />}
+                                        title={entry.filename}
+                                        description={`${
+                                          entry.source === "llmLibrary"
+                                            ? t("editModel.sdcpp.sourceLlmLibrary")
+                                            : entry.source === "imageDownloads"
+                                              ? t("editModel.sdcpp.sourceImageDownloads")
+                                              : t("editModel.sdcpp.sourceImageComponents")
+                                        } · ${formatBytes(entry.bytes)}`}
+                                        color="from-accent/20 to-accent/10"
+                                        rightElement={
+                                          sdcppComponentPickerKey &&
+                                          modelAdvancedDraft[sdcppComponentPickerKey] ===
+                                            entry.path ? (
+                                            <Check className="h-4 w-4 text-accent" />
+                                          ) : (
+                                            <ArrowRight className="h-4 w-4 text-fg/20" />
+                                          )
+                                        }
+                                        onClick={() => {
+                                          if (sdcppComponentPickerKey) {
+                                            setModelAdvancedDraft({
+                                              ...modelAdvancedDraft,
+                                              [sdcppComponentPickerKey]: entry.path,
+                                            });
+                                          }
+                                          setSdcppComponentPickerKey(null);
+                                        }}
+                                      />
+                                    ))
+                                  )}
+                                </MenuSection>
+                              </BottomMenu>
+                            </section>
+
+                            <section className="space-y-4">
+                              <div className="flex items-start justify-between gap-4">
+                                <div className="space-y-1">
+                                  <h3 className="text-[13px] font-semibold text-fg/82">
+                                    {t("editModel.sdcpp.baseLoras")}
+                                  </h3>
+                                  <p className="max-w-2xl text-[13px] leading-relaxed text-fg/45">
+                                    {t("editModel.sdcpp.baseLorasDescription")}
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowSdcppLoraPicker(true)}
+                                  className="shrink-0 rounded-md border border-fg/12 bg-fg/5 px-3 py-1.5 text-[12px] font-medium text-fg/72 transition hover:border-fg/22 hover:bg-fg/8 hover:text-fg"
                                 >
-                                  <input
-                                    type="text"
-                                    value={sdFilesDraft[role] ?? ""}
-                                    onChange={(e) =>
-                                      setSdFilesDraft((draft) => ({
-                                        ...draft,
-                                        [role]: e.target.value,
-                                      }))
-                                    }
-                                    onBlur={(e) => void commitSdFile(role, e.target.value)}
-                                    placeholder={t("editModel.localDiffusion.pathPlaceholder")}
-                                    className="w-full rounded-lg border border-fg/10 bg-surface-el/20 px-4 py-3 font-mono text-[13px] text-fg placeholder-fg/40 transition focus:border-fg/30 focus:outline-none"
-                                  />
-                                </FieldBlock>
-                              ))}
-                            </div>
-                            {selectedSdEntry && !selectedSdEntry.complete ? (
-                              <p className="text-[12px] leading-relaxed text-warning/80">
-                                {t("imageGeneration.local.missingFiles")}
-                              </p>
-                            ) : null}
+                                  {t("editModel.sdcpp.addLora")}
+                                </button>
+                              </div>
+
+                              {(modelAdvancedDraft.sdBaseLoras ?? []).length === 0 ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setShowSdcppLoraPicker(true)}
+                                  className="flex w-full items-center justify-between rounded-lg border border-dashed border-fg/12 px-4 py-3.5 text-left transition hover:border-fg/22 hover:bg-fg/[0.025]"
+                                >
+                                  <span className="text-[13px] text-fg/45">
+                                    {t("editModel.sdcpp.noBaseLoras")}
+                                  </span>
+                                  <span className="text-[12px] font-medium text-accent/75">
+                                    {t("editModel.sdcpp.chooseLora")}
+                                  </span>
+                                </button>
+                              ) : (
+                                <div className="divide-y divide-fg/8 rounded-lg border border-fg/10">
+                                  {(modelAdvancedDraft.sdBaseLoras ?? []).map((lora, index) => {
+                                    const info = sdcppLoraInfoByPath.get(lora.path);
+                                    const compatibility = info?.compatibility ?? "unknown";
+                                    const keywords = info?.keywords ?? lora.keywords ?? [];
+                                    const fileName = lora.path.split(/[\\/]/).pop() || lora.path;
+                                    return (
+                                      <div
+                                        key={`${lora.path}:${lora.isHighNoise === true}`}
+                                        className="px-4 py-3"
+                                      >
+                                        <div className="flex items-center gap-3">
+                                          <div className="min-w-0 flex-1">
+                                            <div
+                                              className="truncate font-mono text-[13px] text-fg/85"
+                                              title={lora.path}
+                                            >
+                                              {fileName}
+                                            </div>
+                                            <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[11px] text-fg/40">
+                                              <span>{loraArchitectureLabel(info?.architecture)}</span>
+                                              <span aria-hidden="true">·</span>
+                                              <span className={cn(
+                                                "font-medium",
+                                                compatibility === "compatible"
+                                                  ? "text-success/80"
+                                                  : compatibility === "incompatible"
+                                                    ? "text-danger/85"
+                                                    : "text-warning/80",
+                                              )}>
+                                                {loraCompatibilityLabel(compatibility)}
+                                              </span>
+                                            </div>
+                                          </div>
+                                          <label className="flex shrink-0 items-center gap-2">
+                                            <span className="text-[11px] text-fg/40">
+                                              {t("editModel.sdcpp.strength")}
+                                            </span>
+                                            <NumberInput
+                                              min={0}
+                                              max={2}
+                                              step={0.05}
+                                              value={lora.multiplier}
+                                              onChange={(value) => {
+                                                const next = [...(modelAdvancedDraft.sdBaseLoras ?? [])];
+                                                next[index] = { ...next[index], multiplier: value ?? 0.8 };
+                                                updateBaseLoras(next);
+                                              }}
+                                              className="h-9 w-20 rounded-lg border border-fg/10 bg-surface-el/20 px-2.5 text-center text-[13px] text-fg transition focus:border-fg/30 focus:outline-none"
+                                            />
+                                          </label>
+                                          <button
+                                            type="button"
+                                            onClick={() => updateBaseLoras(
+                                              (modelAdvancedDraft.sdBaseLoras ?? []).filter(
+                                                (_, itemIndex) => itemIndex !== index,
+                                              ),
+                                            )}
+                                            aria-label={t("editModel.sdcpp.removeLora")}
+                                            title={t("editModel.sdcpp.removeLora")}
+                                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-fg/38 transition hover:bg-danger/8 hover:text-danger"
+                                          >
+                                            <X className="h-4 w-4" />
+                                          </button>
+                                        </div>
+                                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                                          {keywords.length > 0 ? (
+                                            <>
+                                              <span
+                                                className="text-[11px] text-fg/38"
+                                                title={t("editModel.sdcpp.loraKeywordsDescription")}
+                                              >
+                                                {t("editModel.sdcpp.loraKeywords")}
+                                              </span>
+                                              {keywords.map((keyword) => (
+                                                <span
+                                                  key={keyword}
+                                                  className="rounded-md border border-accent/15 bg-accent/[0.07] px-2 py-0.5 font-mono text-[11px] text-accent/80"
+                                                >
+                                                  {keyword}
+                                                </span>
+                                              ))}
+                                              <button
+                                                type="button"
+                                                onClick={() => openSdcppLoraKeywordEditor(index)}
+                                                className="rounded-md border border-fg/12 bg-fg/5 px-2.5 py-0.5 text-[11px] font-medium text-fg/65 transition hover:border-fg/22 hover:bg-fg/8 hover:text-fg"
+                                              >
+                                                {t("editModel.sdcpp.editKeywords")}
+                                              </button>
+                                            </>
+                                          ) : (info?.keywordSource ?? "none") !== "none" ? (
+                                            <>
+                                              <span className="text-[11px] text-fg/38">
+                                                {t("editModel.sdcpp.loraAlwaysActive")}
+                                              </span>
+                                              <button
+                                                type="button"
+                                                onClick={() => openSdcppLoraKeywordEditor(index)}
+                                                className="rounded-md border border-fg/12 bg-fg/5 px-2.5 py-0.5 text-[11px] font-medium text-fg/65 transition hover:border-fg/22 hover:bg-fg/8 hover:text-fg"
+                                              >
+                                                {t("editModel.sdcpp.editKeywords")}
+                                              </button>
+                                            </>
+                                          ) : (
+                                            <button
+                                              type="button"
+                                              onClick={() => openSdcppLoraKeywordEditor(index)}
+                                              className="inline-flex items-center gap-1.5 text-[12px] font-medium text-warning/85 transition hover:text-warning"
+                                            >
+                                              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                                              <span>{t("editModel.sdcpp.keywordsRequiredDescription")}</span>
+                                            </button>
+                                          )}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </section>
+
+                            <section className="space-y-4">
+                              <div className="space-y-1">
+                                <h3 className="text-[13px] font-semibold text-fg/82">
+                                  {t("editModel.sdcpp.installedFiles")}
+                                </h3>
+                                <p className="max-w-2xl text-[13px] leading-relaxed text-fg/45">
+                                  {t("editModel.sdcpp.installedFilesDescription")}
+                                </p>
+                              </div>
+                              {selectedSdcppEntry ? (
+                                <div className="grid grid-cols-1 gap-x-6 gap-y-5 lg:grid-cols-2">
+                                  <FieldBlock label={t("editModel.sdcpp.modelPath")}>
+                                    <input
+                                      type="text"
+                                      readOnly
+                                      value={selectedSdcppEntry.modelPath}
+                                      title={selectedSdcppEntry.modelPath}
+                                      className="w-full rounded-lg border border-fg/10 bg-surface-el/15 px-3 py-2.5 font-mono text-[12px] text-fg/72 focus:outline-none"
+                                    />
+                                  </FieldBlock>
+                                  {selectedSdcppEntry.components
+                                    .filter((component) => component.role !== "diffusion_model")
+                                    .map((component) => (
+                                      <FieldBlock
+                                        key={component.role}
+                                        label={
+                                          component.role === "text_encoder"
+                                            ? t("editModel.sdcpp.textEncoderPath")
+                                            : component.role === "vision_encoder"
+                                              ? t("editModel.sdcpp.visionEncoderPath")
+                                              : component.role === "vae"
+                                                ? t("editModel.sdcpp.vaePath")
+                                                : component.role
+                                        }
+                                      >
+                                        <input
+                                          type="text"
+                                          readOnly
+                                          value={component.path}
+                                          title={component.path}
+                                          className="w-full rounded-lg border border-fg/10 bg-surface-el/15 px-3 py-2.5 font-mono text-[12px] text-fg/72 focus:outline-none"
+                                        />
+                                        <p className="text-[11px] text-fg/35">
+                                          {component.filename} · {formatBytes(component.bytesOnDisk)}
+                                        </p>
+                                      </FieldBlock>
+                                    ))}
+                                </div>
+                              ) : (
+                                <p className="rounded-lg border border-fg/10 px-4 py-3 text-[13px] text-fg/45">
+                                  {t("editModel.sdcpp.noInstalledFiles")}
+                                </p>
+                              )}
+                            </section>
 
                             <BottomMenu
-                              isOpen={sdLibraryRole !== null}
-                              onClose={() => setSdLibraryRole(null)}
-                              title={t("hfBrowser.selectFromLibrary")}
+                              isOpen={showSdcppLoraPicker}
+                              onClose={() => setShowSdcppLoraPicker(false)}
+                              title={t("editModel.sdcpp.chooseLora")}
                             >
                               <MenuSection>
-                                {!sdLibraryFiles ? (
-                                  <div className="flex items-center justify-center gap-2 py-12 text-fg/50">
-                                    <Loader size={18} className="animate-spin" />
-                                    <span className="text-[13px]">{t("hfBrowser.searching")}</span>
-                                  </div>
-                                ) : sdLibraryFiles.length === 0 ? (
-                                  <div className="flex flex-col items-center gap-2 py-16 text-center">
-                                    <HardDrive size={32} className="text-fg/20" />
-                                    <p className="text-[13px] font-medium text-fg/60">
-                                      {t("hfBrowser.libraryEmpty")}
-                                    </p>
-                                  </div>
-                                ) : (
-                                  sdLibraryFiles.map((file) => (
+                                <MenuButton
+                                  icon={<FolderOpen className="h-5 w-5 text-accent/70" />}
+                                  title={t("editModel.sdcpp.importLora")}
+                                  description={t("editModel.sdcpp.importLoraDescription")}
+                                  color="from-accent/20 to-accent/10"
+                                  onClick={() => void importBaseLora()}
+                                  loading={importingSdcppLora}
+                                  disabled={importingSdcppLora}
+                                />
+                                <MenuButton
+                                  icon={<Layers className="h-5 w-5 text-accent/70" />}
+                                  title={t("loraLibrary.openLibrary")}
+                                  description={t("loraLibrary.openLibraryDescription")}
+                                  color="from-accent/20 to-accent/10"
+                                  onClick={() =>
+                                    editNavigate(
+                                      `${Routes.settingsModelsLoras}?returnTo=${encodeURIComponent(editLocation.pathname)}`,
+                                    )
+                                  }
+                                />
+                                {sdcppLoras.map((file) => {
+                                  const selected = (modelAdvancedDraft.sdBaseLoras ?? []).some(
+                                    (lora) => lora.path === file.path && !lora.isHighNoise,
+                                  );
+                                  return (
                                     <MenuButton
                                       key={file.path}
-                                      icon={<HardDrive className="h-5 w-5 text-accent/60" />}
+                                      icon={<Layers className="h-5 w-5 text-accent/60" />}
                                       title={file.filename}
-                                      description={formatBytes(file.size)}
-                                      color="from-accent/20 to-accent/10"
-                                      rightElement={
-                                        sdLibraryRole !== null &&
-                                        sdFilesDraft[sdLibraryRole] === file.path ? (
-                                          <Check className="h-4 w-4 text-accent" />
-                                        ) : (
-                                          <ArrowRight className="h-4 w-4 text-fg/20" />
-                                        )
-                                      }
-                                      onClick={() => {
-                                        const role = sdLibraryRole;
-                                        setSdLibraryRole(null);
-                                        if (!role) return;
-                                        setSdFilesDraft((draft) => ({
-                                          ...draft,
-                                          [role]: file.path,
-                                        }));
-                                        void commitSdFile(role, file.path);
-                                      }}
+                                      description={`${formatBytes(file.bytesOnDisk)} · ${loraArchitectureLabel(file.architecture)} · ${loraCompatibilityLabel(file.compatibility)}`}
+                                      color="from-accent/15 to-accent/5"
+                                      rightElement={selected
+                                        ? <Check className="h-4 w-4 text-accent" />
+                                        : file.compatibility === "compatible"
+                                          ? <Check className="h-4 w-4 text-success" />
+                                          : file.compatibility === "incompatible"
+                                            ? <AlertTriangle className="h-4 w-4 text-danger" />
+                                            : <HelpCircle className="h-4 w-4 text-warning" />}
+                                      onClick={() => void addBaseLora(file)}
+                                      loading={discoveringSdcppLoraPath === file.path}
+                                      disabled={discoveringSdcppLoraPath !== null}
                                     />
-                                  ))
-                                )}
+                                  );
+                                })}
                               </MenuSection>
+                            </BottomMenu>
+
+                            <BottomMenu
+                              isOpen={editingSdcppLoraKeywords !== null}
+                              onClose={() => {
+                                setEditingSdcppLoraKeywords(null);
+                                setSdcppLoraKeywordDraft("");
+                              }}
+                              title={t("editModel.sdcpp.keywordEditorTitle")}
+                            >
+                              <div className="space-y-5 pb-4">
+                                <div className="space-y-1">
+                                  <p className="text-[13px] leading-relaxed text-fg/55">
+                                    {t("editModel.sdcpp.keywordEditorDescription")}
+                                  </p>
+                                  {editingSdcppLoraKeywords !== null ? (
+                                    <p className="truncate font-mono text-[11px] text-fg/35">
+                                      {modelAdvancedDraft.sdBaseLoras?.[editingSdcppLoraKeywords]?.path}
+                                    </p>
+                                  ) : null}
+                                </div>
+                                <textarea
+                                  autoFocus
+                                  value={sdcppLoraKeywordDraft}
+                                  onChange={(event) => setSdcppLoraKeywordDraft(event.target.value)}
+                                  placeholder={t("editModel.sdcpp.keywordPlaceholder")}
+                                  rows={5}
+                                  className={textAreaInputClassName}
+                                />
+                                {parseLoraKeywordDraft(sdcppLoraKeywordDraft).length > 0 ? (
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {parseLoraKeywordDraft(sdcppLoraKeywordDraft).map((keyword) => (
+                                      <span
+                                        key={keyword}
+                                        className="rounded-md border border-accent/15 bg-accent/[0.07] px-2 py-1 font-mono text-[11px] text-accent/80"
+                                      >
+                                        {keyword}
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <div className="flex items-start gap-2 rounded-lg border border-warning/25 bg-warning/[0.06] px-3 py-2.5 text-[12px] leading-relaxed text-warning/85">
+                                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                                    <span>{t("editModel.sdcpp.keywordsRequiredDescription")}</span>
+                                  </div>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => void saveSdcppLoraKeywords()}
+                                  disabled={savingSdcppLoraKeywords}
+                                  className="inline-flex h-10 w-full items-center justify-center rounded-lg bg-accent px-4 text-sm font-semibold text-bg transition-[filter] hover:brightness-110 disabled:cursor-wait disabled:opacity-50"
+                                >
+                                  {savingSdcppLoraKeywords
+                                    ? t("common.buttons.saving")
+                                    : t("common.buttons.save")}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void saveSdcppLoraKeywords(true)}
+                                  disabled={savingSdcppLoraKeywords}
+                                  className="inline-flex h-10 w-full items-center justify-center rounded-lg border border-fg/12 bg-fg/5 px-4 text-[13px] font-medium text-fg/72 transition hover:border-fg/22 hover:bg-fg/8 hover:text-fg disabled:cursor-wait disabled:opacity-50"
+                                >
+                                  {t("editModel.sdcpp.markLoraAlwaysActive")}
+                                </button>
+                              </div>
                             </BottomMenu>
                           </div>
                         )}
@@ -6709,7 +7614,7 @@ export function EditModelPage() {
                                   <button
                                     key={scope}
                                     type="button"
-                                    disabled={isFixedImageProvider}
+                                    disabled={scopesLocked}
                                     onClick={() =>
                                       toggleScope(
                                         "inputScopes",
@@ -6719,7 +7624,7 @@ export function EditModelPage() {
                                     }
                                     className={cn(
                                       "flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-[13px] transition",
-                                      isFixedImageProvider && "cursor-not-allowed opacity-60",
+                                      scopesLocked && "cursor-not-allowed opacity-60",
                                       editorModel.inputScopes?.includes(scope as any)
                                         ? "border-accent/25 bg-accent/10 text-accent"
                                         : "border-fg/10 bg-fg/5 text-fg/55 hover:border-fg/20 hover:bg-fg/8 hover:text-fg/85",
@@ -6741,7 +7646,7 @@ export function EditModelPage() {
                                   <button
                                     key={scope}
                                     type="button"
-                                    disabled={isFixedImageProvider}
+                                    disabled={scopesLocked}
                                     onClick={() =>
                                       toggleScope(
                                         "outputScopes",
@@ -6751,7 +7656,7 @@ export function EditModelPage() {
                                     }
                                     className={cn(
                                       "flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-[13px] transition",
-                                      isFixedImageProvider && "cursor-not-allowed opacity-60",
+                                      scopesLocked && "cursor-not-allowed opacity-60",
                                       editorModel.outputScopes?.includes(scope as any)
                                         ? "border-accent/25 bg-accent/10 text-accent"
                                         : "border-fg/10 bg-fg/5 text-fg/55 hover:border-fg/20 hover:bg-fg/8 hover:text-fg/85",
@@ -6765,9 +7670,9 @@ export function EditModelPage() {
                                 ))}
                               </div>
                             </div>
-                            {isFixedImageProvider && (
+                            {scopesLocked && (
                               <p className="text-[12px] leading-relaxed text-fg/45">
-                                {isLocalDiffusionModel
+                                {isSdcppModel
                                   ? t("editModel.capabilities.localDiffusionFixed")
                                   : t("editModel.capabilities.automatic1111Fixed")}
                               </p>
@@ -6932,6 +7837,469 @@ export function EditModelPage() {
         )}
       </AnimatePresence>
 
+      <BottomMenu
+        isOpen={showSdcppSamplerMenu}
+        onClose={() => setShowSdcppSamplerMenu(false)}
+        title={t("editModel.generationAdvanced.sampler")}
+      >
+        <MenuSection>
+          <MenuButton
+            icon={Sparkles}
+            title={t("editModel.generationAdvanced.modelDefault")}
+            color="from-accent to-accent/80"
+            rightElement={!modelAdvancedDraft.sdSampler ? <Check className="h-4 w-4 text-accent" /> : null}
+            onClick={() => {
+              updateSdSetting("sdSampler", null);
+              setShowSdcppSamplerMenu(false);
+            }}
+          />
+          {SDCPP_SAMPLERS.map((sampler) => (
+            <MenuButton
+              key={sampler}
+              icon={SlidersHorizontal}
+              title={sampler}
+              color="from-white/10 to-white/5"
+              rightElement={
+                modelAdvancedDraft.sdSampler === sampler ? (
+                  <Check className="h-4 w-4 text-accent" />
+                ) : null
+              }
+              onClick={() => {
+                updateSdSetting("sdSampler", sampler);
+                setShowSdcppSamplerMenu(false);
+              }}
+            />
+          ))}
+        </MenuSection>
+      </BottomMenu>
+
+      <BottomMenu
+        isOpen={showSdcppSchedulerMenu}
+        onClose={() => setShowSdcppSchedulerMenu(false)}
+        title={t("editModel.generationAdvanced.scheduler")}
+      >
+        <MenuSection>
+          <MenuButton
+            icon={Sparkles}
+            title={t("editModel.generationAdvanced.modelDefault")}
+            color="from-accent to-accent/80"
+            rightElement={!modelAdvancedDraft.sdScheduler ? <Check className="h-4 w-4 text-accent" /> : null}
+            onClick={() => {
+              updateSdSetting("sdScheduler", null);
+              setShowSdcppSchedulerMenu(false);
+            }}
+          />
+          {SDCPP_SCHEDULERS.map((scheduler) => (
+            <MenuButton
+              key={scheduler}
+              icon={Gauge}
+              title={scheduler}
+              color="from-white/10 to-white/5"
+              rightElement={
+                modelAdvancedDraft.sdScheduler === scheduler ? (
+                  <Check className="h-4 w-4 text-accent" />
+                ) : null
+              }
+              onClick={() => {
+                updateSdSetting("sdScheduler", scheduler);
+                setShowSdcppSchedulerMenu(false);
+              }}
+            />
+          ))}
+        </MenuSection>
+      </BottomMenu>
+
+      <BottomMenu
+        isOpen={showSdcppAdvancedGeneration}
+        onClose={() => setShowSdcppAdvancedGeneration(false)}
+        title={t("editModel.generationAdvanced.title")}
+        includeExitIcon
+      >
+        <div className="space-y-8 pb-4">
+          <section className="space-y-4">
+            <div className="space-y-1">
+              <h4 className="text-[13px] font-semibold text-fg/85">
+                {t("editModel.generationAdvanced.samplingSection")}
+              </h4>
+              <p className="text-[12px] leading-relaxed text-fg/45">
+                {t("editModel.generationAdvanced.description")}
+              </p>
+            </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <div>
+                  <div className="text-[13px] font-medium text-fg/70">
+                    {t("editModel.generationAdvanced.eta")}
+                  </div>
+                  <div className="text-[12px] text-fg/40">
+                    {t("editModel.generationAdvanced.etaDescription")}
+                  </div>
+                </div>
+                <NumberInput
+                  min={ADVANCED_SD_ETA_RANGE.min}
+                  max={ADVANCED_SD_ETA_RANGE.max}
+                  step={0.01}
+                  decimals={3}
+                  value={modelAdvancedDraft.sdEta ?? null}
+                  onChange={(next) => updateSdSetting("sdEta", next)}
+                  placeholder={t("editModel.generationAdvanced.modelDefault")}
+                  className={numberInputClassName}
+                />
+              </div>
+              <div className="space-y-2">
+                <div>
+                  <div className="text-[13px] font-medium text-fg/70">
+                    {t("editModel.generationAdvanced.flowShift")}
+                  </div>
+                  <div className="text-[12px] text-fg/40">
+                    {t("editModel.generationAdvanced.flowShiftDescription")}
+                  </div>
+                </div>
+                <NumberInput
+                  min={ADVANCED_SD_FLOW_SHIFT_RANGE.min}
+                  max={ADVANCED_SD_FLOW_SHIFT_RANGE.max}
+                  step={0.1}
+                  decimals={3}
+                  value={modelAdvancedDraft.sdFlowShift ?? null}
+                  onChange={(next) => updateSdSetting("sdFlowShift", next)}
+                  placeholder={t("editModel.generationAdvanced.modelDefault")}
+                  className={numberInputClassName}
+                />
+              </div>
+            </div>
+          </section>
+
+          <section className="space-y-4 border-t border-fg/10 pt-6">
+            <div className="space-y-1">
+              <h4 className="text-[13px] font-semibold text-fg/85">
+                {t("editModel.generationAdvanced.stepCaching")}
+              </h4>
+              <p className="text-[12px] leading-relaxed text-fg/45">
+                {t("editModel.generationAdvanced.stepCachingDescription")}
+              </p>
+            </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <div className="text-[12px] font-medium text-fg/55">
+                  {t("editModel.generationAdvanced.cacheMode")}
+                </div>
+                <select
+                  value={modelAdvancedDraft.sdCacheMode ?? "disabled"}
+                  onChange={(event) =>
+                    updateSdSetting(
+                      "sdCacheMode",
+                      event.target.value === "disabled"
+                        ? null
+                        : (event.target.value as (typeof SD_CACHE_MODES)[number]),
+                    )
+                  }
+                  className={selectInputClassName}
+                >
+                  {SD_CACHE_MODES.map((mode) => (
+                    <option key={mode} value={mode}>
+                      {mode === "disabled"
+                        ? t("editModel.generationAdvanced.cacheModeDisabled")
+                        : mode}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <div className="text-[12px] font-medium text-fg/55">
+                  {t("editModel.generationAdvanced.cacheOption")}
+                </div>
+                <input
+                  type="text"
+                  value={modelAdvancedDraft.sdCacheOption ?? ""}
+                  onChange={(event) =>
+                    updateSdSetting("sdCacheOption", event.target.value.trim() || null)
+                  }
+                  placeholder={t("editModel.generationAdvanced.cacheOptionPlaceholder")}
+                  disabled={!modelAdvancedDraft.sdCacheMode}
+                  className={cn(numberInputClassName, "disabled:opacity-40")}
+                />
+              </div>
+            </div>
+          </section>
+
+          <section className="space-y-4 border-t border-fg/10 pt-6">
+            <div className="space-y-1">
+              <h4 className="text-[13px] font-semibold text-fg/85">
+                {t("editModel.generationAdvanced.slgSection")}
+              </h4>
+              <p className="text-[12px] leading-relaxed text-fg/45">
+                {t("editModel.generationAdvanced.slgSectionDescription")}
+              </p>
+            </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <div className="text-[12px] font-medium text-fg/55">
+                  {t("editModel.generationAdvanced.slgScale")}
+                </div>
+                <NumberInput
+                  min={ADVANCED_SD_SLG_SCALE_RANGE.min}
+                  max={ADVANCED_SD_SLG_SCALE_RANGE.max}
+                  step={0.1}
+                  decimals={2}
+                  value={modelAdvancedDraft.sdSlgScale ?? null}
+                  onChange={(next) => updateSdSetting("sdSlgScale", next)}
+                  placeholder={t("editModel.generationAdvanced.slgDisabled")}
+                  className={numberInputClassName}
+                />
+              </div>
+              <div className="space-y-2">
+                <div className="text-[12px] font-medium text-fg/55">
+                  {t("editModel.generationAdvanced.slgLayers")}
+                </div>
+                <input
+                  type="text"
+                  value={modelAdvancedDraft.sdSlgLayers ?? ""}
+                  onChange={(event) =>
+                    updateSdSetting("sdSlgLayers", event.target.value.trim() || null)
+                  }
+                  placeholder="7,8,9"
+                  disabled={!modelAdvancedDraft.sdSlgScale}
+                  className={cn(numberInputClassName, "disabled:opacity-40")}
+                />
+              </div>
+              <div className="space-y-2">
+                <div className="text-[12px] font-medium text-fg/55">
+                  {t("editModel.generationAdvanced.slgLayerStart")}
+                </div>
+                <NumberInput
+                  min={ADVANCED_SD_SLG_FRACTION_RANGE.min}
+                  max={ADVANCED_SD_SLG_FRACTION_RANGE.max}
+                  step={0.01}
+                  decimals={2}
+                  value={modelAdvancedDraft.sdSlgLayerStart ?? null}
+                  onChange={(next) => updateSdSetting("sdSlgLayerStart", next)}
+                  placeholder={t("editModel.generationAdvanced.modelDefault")}
+                  className={numberInputClassName}
+                />
+              </div>
+              <div className="space-y-2">
+                <div className="text-[12px] font-medium text-fg/55">
+                  {t("editModel.generationAdvanced.slgLayerEnd")}
+                </div>
+                <NumberInput
+                  min={ADVANCED_SD_SLG_FRACTION_RANGE.min}
+                  max={ADVANCED_SD_SLG_FRACTION_RANGE.max}
+                  step={0.01}
+                  decimals={2}
+                  value={modelAdvancedDraft.sdSlgLayerEnd ?? null}
+                  onChange={(next) => updateSdSetting("sdSlgLayerEnd", next)}
+                  placeholder={t("editModel.generationAdvanced.modelDefault")}
+                  className={numberInputClassName}
+                />
+              </div>
+            </div>
+          </section>
+
+          <section className="space-y-4 border-t border-fg/10 pt-6">
+            <div className="flex items-center justify-between gap-4">
+              <div className="space-y-1">
+                <h4 className="text-[13px] font-semibold text-fg/85">
+                  {t("editModel.generationAdvanced.vaeTiling")}
+                </h4>
+                <p className="text-[12px] leading-relaxed text-fg/45">
+                  {t("editModel.generationAdvanced.vaeTilingDescription")}
+                </p>
+              </div>
+              <Switch
+                checked={modelAdvancedDraft.sdVaeTilingEnabled ?? true}
+                onChange={(checked) => updateSdSetting("sdVaeTilingEnabled", checked)}
+                aria-label={t("editModel.generationAdvanced.vaeTiling")}
+              />
+            </div>
+            {(modelAdvancedDraft.sdVaeTilingEnabled ?? true) ? (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                {([
+                  ["sdVaeTileSizeX", "tileWidth"],
+                  ["sdVaeTileSizeY", "tileHeight"],
+                ] as const).map(([key, label]) => (
+                  <div key={key} className="space-y-2">
+                    <div className="text-[12px] font-medium text-fg/55">
+                      {t(`editModel.generationAdvanced.${label}`)}
+                    </div>
+                    <NumberInput
+                      min={ADVANCED_SD_VAE_TILE_SIZE_RANGE.min}
+                      max={ADVANCED_SD_VAE_TILE_SIZE_RANGE.max}
+                      step={8}
+                      value={modelAdvancedDraft[key] ?? null}
+                      onChange={(next) =>
+                        updateSdSetting(key, next === null ? null : Math.trunc(next))
+                      }
+                      placeholder={t("editModel.generationAdvanced.modelDefault")}
+                      className={numberInputClassName}
+                    />
+                  </div>
+                ))}
+                <div className="space-y-2">
+                  <div className="text-[12px] font-medium text-fg/55">
+                    {t("editModel.generationAdvanced.tileOverlap")}
+                  </div>
+                  <NumberInput
+                    min={ADVANCED_SD_VAE_TILE_OVERLAP_RANGE.min}
+                    max={ADVANCED_SD_VAE_TILE_OVERLAP_RANGE.max}
+                    step={0.05}
+                    decimals={2}
+                    value={modelAdvancedDraft.sdVaeTileOverlap ?? null}
+                    onChange={(next) => updateSdSetting("sdVaeTileOverlap", next)}
+                    placeholder={t("editModel.generationAdvanced.modelDefault")}
+                    className={numberInputClassName}
+                  />
+                </div>
+              </div>
+            ) : null}
+          </section>
+
+          {sdcppSupportsImageEdit ? (
+            <section className="space-y-4 border-t border-fg/10 pt-6">
+              <h4 className="text-[13px] font-semibold text-fg/85">
+                {t("editModel.generationAdvanced.referencesSection")}
+              </h4>
+              <div className="divide-y divide-fg/10 rounded-xl border border-fg/10 bg-fg/[0.025] px-4">
+                <div className="flex items-center justify-between gap-4 py-4">
+                  <div>
+                    <div className="text-[13px] font-medium text-fg/70">
+                      {t("editModel.generationAdvanced.autoResizeReferences")}
+                    </div>
+                    <div className="mt-0.5 text-[12px] text-fg/40">
+                      {t("editModel.generationAdvanced.autoResizeReferencesDescription")}
+                    </div>
+                  </div>
+                  <Switch
+                    checked={modelAdvancedDraft.sdAutoResizeRefImages ?? true}
+                    onChange={(checked) => updateSdSetting("sdAutoResizeRefImages", checked)}
+                    aria-label={t("editModel.generationAdvanced.autoResizeReferences")}
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-4 py-4">
+                  <div>
+                    <div className="text-[13px] font-medium text-fg/70">
+                      {t("editModel.generationAdvanced.increaseReferenceIndex")}
+                    </div>
+                    <div className="mt-0.5 text-[12px] text-fg/40">
+                      {t("editModel.generationAdvanced.increaseReferenceIndexDescription")}
+                    </div>
+                  </div>
+                  <Switch
+                    checked={modelAdvancedDraft.sdIncreaseRefIndex ?? false}
+                    onChange={(checked) => updateSdSetting("sdIncreaseRefIndex", checked)}
+                    aria-label={t("editModel.generationAdvanced.increaseReferenceIndex")}
+                  />
+                </div>
+              </div>
+            </section>
+          ) : null}
+
+          <section className="space-y-4 border-t border-fg/10 pt-6">
+            <div className="flex items-center justify-between gap-4">
+              <div className="space-y-1">
+                <h4 className="text-[13px] font-semibold text-fg/85">
+                  {t("editModel.generationAdvanced.hiresFix")}
+                </h4>
+                <p className="text-[12px] leading-relaxed text-fg/45">
+                  {t("editModel.generationAdvanced.hiresFixDescription")}
+                </p>
+              </div>
+              <Switch
+                checked={modelAdvancedDraft.sdHiresEnabled ?? false}
+                onChange={(checked) => updateSdSetting("sdHiresEnabled", checked)}
+                aria-label={t("editModel.generationAdvanced.hiresFix")}
+              />
+            </div>
+            {modelAdvancedDraft.sdHiresEnabled ? (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <div className="text-[12px] font-medium text-fg/55">
+                    {t("editModel.generationAdvanced.upscaler")}
+                  </div>
+                  <select
+                    value={modelAdvancedDraft.sdHiresUpscaler ?? "Latent"}
+                    onChange={(event) => updateSdSetting("sdHiresUpscaler", event.target.value)}
+                    className={selectInputClassName}
+                  >
+                    {[
+                      ...SDCPP_HIRES_UPSCALERS,
+                      ...sdcppHiresUpscalerNames.filter(
+                        (name) => !SDCPP_HIRES_UPSCALERS.includes(name as never),
+                      ),
+                    ].map((upscaler) => (
+                      <option key={upscaler} value={upscaler}>
+                        {upscaler}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <div className="text-[12px] font-medium text-fg/55">
+                      {t("editModel.generationAdvanced.scale")}
+                    </div>
+                    <NumberInput
+                      min={ADVANCED_SD_HIRES_SCALE_RANGE.min}
+                      max={ADVANCED_SD_HIRES_SCALE_RANGE.max}
+                      step={0.1}
+                      decimals={2}
+                      value={modelAdvancedDraft.sdHiresScale ?? null}
+                      onChange={(next) => updateSdSetting("sdHiresScale", next)}
+                      placeholder={t("editModel.generationAdvanced.modelDefault")}
+                      className={numberInputClassName}
+                    />
+                  </div>
+                  {([
+                    ["sdHiresWidth", "targetWidth"],
+                    ["sdHiresHeight", "targetHeight"],
+                    ["sdHiresSteps", "secondPassSteps"],
+                  ] as const).map(([key, label]) => (
+                    <div key={key} className="space-y-2">
+                      <div className="text-[12px] font-medium text-fg/55">
+                        {t(`editModel.generationAdvanced.${label}`)}
+                      </div>
+                      <NumberInput
+                        min={
+                          key === "sdHiresSteps"
+                            ? ADVANCED_SD_HIRES_STEPS_RANGE.min
+                            : ADVANCED_SD_HIRES_DIMENSION_RANGE.min
+                        }
+                        max={
+                          key === "sdHiresSteps"
+                            ? ADVANCED_SD_HIRES_STEPS_RANGE.max
+                            : ADVANCED_SD_HIRES_DIMENSION_RANGE.max
+                        }
+                        step={1}
+                        value={modelAdvancedDraft[key] ?? null}
+                        onChange={(next) =>
+                          updateSdSetting(key, next === null ? null : Math.trunc(next))
+                        }
+                        placeholder={t("editModel.generationAdvanced.modelDefault")}
+                        className={numberInputClassName}
+                      />
+                    </div>
+                  ))}
+                  <div className="space-y-2">
+                    <div className="text-[12px] font-medium text-fg/55">
+                      {t("editModel.generationAdvanced.denoisingStrength")}
+                    </div>
+                    <NumberInput
+                      min={ADVANCED_SD_HIRES_DENOISING_RANGE.min}
+                      max={ADVANCED_SD_HIRES_DENOISING_RANGE.max}
+                      step={0.01}
+                      decimals={2}
+                      value={modelAdvancedDraft.sdHiresDenoisingStrength ?? null}
+                      onChange={(next) => updateSdSetting("sdHiresDenoisingStrength", next)}
+                      placeholder={t("editModel.generationAdvanced.modelDefault")}
+                      className={numberInputClassName}
+                    />
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </section>
+        </div>
+      </BottomMenu>
+
       {/* PARAMETER SUPPORT MODAL */}
       <BottomMenu
         isOpen={showParameterSupport}
@@ -7067,14 +8435,19 @@ export function EditModelPage() {
 
       {/* Continue Setup button when coming from onboarding */}
       {returnTo && (() => {
-        const canContinueWithCurrentModel = !isNew && !hasUnsavedChanges;
+        const canContinueWithCurrentModel =
+          !isNew
+          && !hasUnsavedChanges
+          && !hasMissingSdcppLoraKeywords
+          && !hasIncompatibleSdcppLora
+          && !hasMissingSdcppComponents;
         const canContinueSetup =
-          !(saving || verifying) && (canSave || canContinueWithCurrentModel);
+          !(saving || verifying) && (canSaveModel || canContinueWithCurrentModel);
         return (
           <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
             <button
               onClick={() => {
-                if (canSave) {
+                if (canSaveModel) {
                   void handleSaveWithMoveCheck({ navigateAfterSave: true });
                   return;
                 }

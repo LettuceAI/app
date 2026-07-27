@@ -45,14 +45,10 @@ jobs:
           bun-version: "latest"
 
       - name: Install Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: ./.github/actions/setup-rust-build
         with:
-          toolchain: stable
-          cache: true
-
-      - name: Add Rust iOS targets
-        run: |
-          rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+          cache-key: ios
+          target: aarch64-apple-ios,aarch64-apple-ios-sim
 
       - name: Ensure iOS toolchain deps
         run: |

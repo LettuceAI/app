@@ -344,7 +344,13 @@ pub async fn asr_whisper_queue_model_download(
         voice_id: None,
         download_url: Some(format!("{WHISPER_RESOLVE_BASE}/{}", filename)),
         destination_path: Some(destination_path.to_string_lossy().to_string()),
+        expected_size: None,
+        sha256: None,
+        runtime_release: None,
+        runtime_asset: None,
         force_redownload: false,
+        lora_keywords: None,
+        lora_base_model: None,
     };
 
     crate::hf_browser::hf_queue_download(app, WHISPER_REPO.to_string(), filename, Some(metadata))

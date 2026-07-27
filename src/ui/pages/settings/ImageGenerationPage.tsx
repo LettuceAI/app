@@ -1,19 +1,121 @@
-import { type ReactNode, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { Link, useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowRight, Check, ChevronDown, Image, LucideIcon, PenLine, Sparkles } from "lucide-react";
+import {
+  ArrowRight,
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  HardDrive,
+  Image,
+  ImagePlus,
+  Loader2,
+  LucideIcon,
+  PenLine,
+  Sparkles,
+  TriangleAlert,
+} from "lucide-react";
 
 import { ModelSelectionBottomMenu } from "../../components/ModelSelectionBottomMenu";
 import {
   resolveImageGenerationOptions,
   resolveSceneWriterOptions,
 } from "../../../core/image-generation";
-import { readSettings, saveAdvancedSettings } from "../../../core/storage/repo";
+import {
+  readSettings,
+  saveAdvancedSettings,
+  SETTINGS_UPDATED_EVENT,
+} from "../../../core/storage/repo";
 import type { Model } from "../../../core/storage/schemas";
 import { useI18n } from "../../../core/i18n/context";
 import { getProviderIcon } from "../../../core/utils/providerIcons";
 import { cn, spacing, typography } from "../../design-tokens";
 import { Switch } from "../../components/Switch";
+import { GuidedTour, useGuidedTour } from "../../components/GuidedTour";
+import { getPlatform } from "../../../core/utils/platform";
+import { Routes } from "../../navigation";
+import { useDownloadQueueOptional } from "../../../core/downloads/DownloadQueueContext";
+
+type RuntimeInventorySummary = {
+  installed: { release: string; backend: string; active: boolean }[];
+};
+
+function StableDiffusionEngineEntry() {
+  const { t } = useI18n();
+  const downloads = useDownloadQueueOptional();
+  const [activeBuild, setActiveBuild] = useState<string | null>(null);
+  const [installedCount, setInstalledCount] = useState<number | null>(null);
+  const [failed, setFailed] = useState(false);
+  const installing = (downloads?.queue ?? []).some(
+    (item) =>
+      item.queueKind === "sdcpp" &&
+      item.installKind === "runtime" &&
+      (item.status === "queued" || item.status === "downloading"),
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    invoke<RuntimeInventorySummary>("sdcpp_runtime_inventory")
+      .then((inventory) => {
+        if (cancelled) return;
+        const active = inventory.installed.find((runtime) => runtime.active);
+        setInstalledCount(inventory.installed.length);
+        setActiveBuild(active ? `${active.release} · ${active.backend.toUpperCase()}` : null);
+        setFailed(false);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [installing]);
+
+  return (
+    <Link
+      to={Routes.settingsImageGenerationLocal}
+      className={cn(
+        "flex h-full w-full items-center justify-between gap-4 rounded-[10px] border border-fg/10 bg-fg/[0.035] px-4 py-4 text-left transition-colors hover:bg-fg/[0.06]",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/55 focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
+      )}
+    >
+      <div className="flex min-w-0 items-center gap-3">
+        {installing ? (
+          <Loader2
+            aria-hidden="true"
+            className="h-5 w-5 shrink-0 animate-spin text-accent motion-reduce:animate-none"
+          />
+        ) : failed ? (
+          <TriangleAlert aria-hidden="true" className="h-5 w-5 shrink-0 text-warning" />
+        ) : installedCount ? (
+          <CheckCircle2 aria-hidden="true" className="h-5 w-5 shrink-0 text-success" />
+        ) : (
+          <HardDrive aria-hidden="true" className="h-5 w-5 shrink-0 text-fg/40" />
+        )}
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-fg">
+            {t("imageGeneration.local.engineManager.title")}
+          </div>
+          <p className="mt-0.5 truncate text-xs text-fg/48">
+            {installing
+              ? t("imageGeneration.local.engineManager.installing")
+              : failed
+                ? t("imageGeneration.local.engineManager.inventoryFailed")
+                : activeBuild ?? t("imageGeneration.local.engineManager.notInstalledBody")}
+          </p>
+        </div>
+      </div>
+      <span className="flex shrink-0 items-center gap-2 text-xs font-medium text-fg/50">
+        {installedCount
+          ? t("imageGeneration.local.entryCard.manage")
+          : t("imageGeneration.local.engineManager.install")}
+        <ChevronRight aria-hidden="true" className="h-4 w-4" />
+      </span>
+    </Link>
+  );
+}
 
 interface ImageGenerationState {
   loading: boolean;
@@ -43,6 +145,7 @@ type SelectorCardProps = {
   accentClassName: string;
   onToggle?: () => void;
   onClick: () => void;
+  tourId?: string;
 };
 
 type ModeOptionProps = {
@@ -56,13 +159,15 @@ function SettingsSection({
   title,
   icon,
   children,
+  tourId,
 }: {
   title: string;
   icon: ReactNode;
   children: ReactNode;
+  tourId?: string;
 }) {
   return (
-    <section className="space-y-3">
+    <section data-tour-id={tourId} className="space-y-3">
       <div className="flex items-center gap-2 px-1">
         <span className="text-fg/30">{icon}</span>
         <h2
@@ -169,6 +274,7 @@ function SelectorCard({
   accentClassName,
   onToggle,
   onClick,
+  tourId,
 }: SelectorCardProps) {
   const { t } = useI18n();
   const toggleId = `image-generation-toggle-${title.toLowerCase().replace(/\s+/g, "-")}`;
@@ -181,7 +287,7 @@ function SelectorCard({
     : t("common.labels.on");
 
   return (
-    <section className="rounded-[12px] border border-fg/10 bg-fg/5">
+    <section data-tour-id={tourId} className="rounded-[12px] border border-fg/10 bg-fg/5">
       <div className="border-b border-fg/8 px-4 py-4">
         <div className="flex items-start gap-3">
           <div className={cn("rounded-[9px] border p-1.5", accentClassName)}>
@@ -196,11 +302,7 @@ function SelectorCard({
               {hasToggle ? (
                 <div className="flex items-center gap-2 pt-0.5">
                   <span className="text-[11px] font-medium text-fg/50">{stateLabel}</span>
-                  <Switch
-                    id={toggleId}
-                    checked={enabled}
-                    onChange={() => onToggle()}
-                  />
+                  <Switch id={toggleId} checked={enabled} onChange={() => onToggle()} />
                 </div>
               ) : null}
             </div>
@@ -233,6 +335,9 @@ function SelectorCard({
 export function ImageGenerationPage() {
   const { t } = useI18n();
   const navigate = useNavigate();
+  const isMobile = useMemo(() => getPlatform().type === "mobile", []);
+  const { shouldShow: showImageGenTour, dismiss: dismissImageGenTour } =
+    useGuidedTour("imageGeneration");
   const [state, setState] = useState<ImageGenerationState>({
     loading: true,
     error: null,
@@ -283,6 +388,8 @@ export function ImageGenerationPage() {
     };
 
     void load();
+    window.addEventListener(SETTINGS_UPDATED_EVENT, load);
+    return () => window.removeEventListener(SETTINGS_UPDATED_EVENT, load);
   }, []);
 
   const persistSelection = async (key: SelectorKey, modelId: string | null) => {
@@ -417,7 +524,7 @@ export function ImageGenerationPage() {
     );
   }
 
-  if (state.models.length === 0 && state.writerModels.length === 0) {
+  if (isMobile && state.models.length === 0 && state.writerModels.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center px-6">
         <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-fg/10 bg-fg/5">
@@ -448,6 +555,33 @@ export function ImageGenerationPage() {
     <div className="flex min-h-screen flex-col">
       <main className="flex-1 px-4 pb-24 pt-5">
         <div className={cn("mx-auto w-full max-w-5xl space-y-7", spacing.section)}>
+          {!isMobile && (
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <button
+                type="button"
+                data-tour-id="imagegen-playground"
+                onClick={() => navigate(Routes.playground)}
+                className={cn(
+                  "flex w-full min-w-0 items-center justify-between gap-4 rounded-[10px] border border-fg/10 bg-fg/[0.035] px-4 py-4 text-left transition-colors hover:bg-fg/[0.06]",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/55 focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
+                )}
+              >
+                <div className="flex min-w-0 items-center gap-3">
+                  <ImagePlus aria-hidden="true" className="h-5 w-5 shrink-0 text-accent/80" />
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-fg">{t("playground.open")}</div>
+                    <p className="mt-0.5 truncate text-xs text-fg/48">
+                      {t("playground.openDescription")}
+                    </p>
+                  </div>
+                </div>
+                <ChevronRight aria-hidden="true" className="h-4 w-4 shrink-0 text-fg/50" />
+              </button>
+              <div data-tour-id="imagegen-engine" className="min-w-0">
+                <StableDiffusionEngineEntry />
+              </div>
+            </div>
+          )}
           {state.error && (
             <motion.div
               initial={{ opacity: 0, y: -6 }}
@@ -460,105 +594,114 @@ export function ImageGenerationPage() {
 
           <div className="space-y-7">
             {hasGenerationModels ? (
-            <motion.div
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.22, ease: "easeOut" }}
-            >
-              <SettingsSection title={t("imageGeneration.sections.generationTitle")} icon={<Sparkles size={12} />}>
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                  <SelectorCard
-                    title={t("imageGeneration.sections.avatar.title")}
-                    description={t("imageGeneration.sections.avatar.description")}
-                    enabled={state.avatarEnabled}
-                    selectedModel={selectedAvatarModel}
-                    fallbackLabel={t("imageGeneration.labels.useFirstAvailable")}
-                    icon={Image}
-                    accentClassName="border-warning/30 bg-warning/10 text-warning/80"
-                    onToggle={() => void persistToggle("avatarEnabled", !state.avatarEnabled)}
-                    onClick={() => setShowAvatarMenu(true)}
-                  />
+              <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.22, ease: "easeOut" }}
+              >
+                <SettingsSection
+                  title={t("imageGeneration.sections.generationTitle")}
+                  icon={<Sparkles size={12} />}
+                >
+                  <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                    <SelectorCard
+                      title={t("imageGeneration.sections.avatar.title")}
+                      description={t("imageGeneration.sections.avatar.description")}
+                      enabled={state.avatarEnabled}
+                      selectedModel={selectedAvatarModel}
+                      fallbackLabel={t("imageGeneration.labels.useFirstAvailable")}
+                      icon={Image}
+                      accentClassName="border-warning/30 bg-warning/10 text-warning/80"
+                      onToggle={() => void persistToggle("avatarEnabled", !state.avatarEnabled)}
+                      onClick={() => setShowAvatarMenu(true)}
+                      tourId="imagegen-avatar"
+                    />
 
-                  <SelectorCard
-                    title={t("imageGeneration.sections.scene.title")}
-                    description={t("imageGeneration.sections.scene.description")}
-                    enabled={state.sceneEnabled}
-                    selectedModel={selectedSceneModel}
-                    fallbackLabel={t("imageGeneration.labels.useFirstAvailable")}
-                    icon={Sparkles}
-                    accentClassName="border-accent/30 bg-accent/10 text-accent/80"
-                    onToggle={() => void persistToggle("sceneEnabled", !state.sceneEnabled)}
-                    onClick={() => setShowSceneMenu(true)}
-                  />
-                </div>
-              </SettingsSection>
-            </motion.div>
+                    <SelectorCard
+                      title={t("imageGeneration.sections.scene.title")}
+                      description={t("imageGeneration.sections.scene.description")}
+                      enabled={state.sceneEnabled}
+                      selectedModel={selectedSceneModel}
+                      fallbackLabel={t("imageGeneration.labels.useFirstAvailable")}
+                      icon={Sparkles}
+                      accentClassName="border-accent/30 bg-accent/10 text-accent/80"
+                      onToggle={() => void persistToggle("sceneEnabled", !state.sceneEnabled)}
+                      onClick={() => setShowSceneMenu(true)}
+                      tourId="imagegen-scene"
+                    />
+                  </div>
+                </SettingsSection>
+              </motion.div>
             ) : null}
 
             {hasGenerationModels ? (
-            <motion.div
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.22, delay: 0.06, ease: "easeOut" }}
-            >
-              <SettingsSection title={t("imageGeneration.sections.promptingTitle")} icon={<PenLine size={12} />}>
-                <div className="space-y-4">
-                  <SelectorCard
-                    title={t("imageGeneration.sections.writer.title")}
-                    description={t("imageGeneration.sections.writer.description")}
-                    selectedModel={selectedWriterModel}
-                    fallbackLabel={t("imageGeneration.labels.useFirstCompatible")}
-                    icon={PenLine}
-                    accentClassName="border-info/30 bg-info/10 text-info/80"
-                    onClick={() => setShowWriterMenu(true)}
-                  />
+              <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.22, delay: 0.06, ease: "easeOut" }}
+              >
+                <SettingsSection
+                  title={t("imageGeneration.sections.promptingTitle")}
+                  icon={<PenLine size={12} />}
+                  tourId="imagegen-prompting"
+                >
+                  <div className="space-y-4">
+                    <SelectorCard
+                      title={t("imageGeneration.sections.writer.title")}
+                      description={t("imageGeneration.sections.writer.description")}
+                      selectedModel={selectedWriterModel}
+                      fallbackLabel={t("imageGeneration.labels.useFirstCompatible")}
+                      icon={PenLine}
+                      accentClassName="border-info/30 bg-info/10 text-info/80"
+                      onClick={() => setShowWriterMenu(true)}
+                    />
 
-                  <AnimatePresence initial={false}>
-                    {state.sceneEnabled ? (
-                      <motion.section
-                        key="scene-mode"
-                        initial={{ opacity: 0, y: 8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -6 }}
-                        transition={{ duration: 0.16, ease: "easeOut" }}
-                        className="rounded-[12px] border border-fg/10 bg-fg/5"
-                      >
-                        <div className="border-b border-fg/8 px-4 py-4">
-                          <div className="space-y-1">
-                            <h3 className="text-sm font-semibold text-fg">
-                              {t("imageGeneration.mode.title")}
-                            </h3>
-                            <p className="text-sm leading-6 text-fg/52">
-                              {t("imageGeneration.mode.description")}
-                            </p>
+                    <AnimatePresence initial={false}>
+                      {state.sceneEnabled ? (
+                        <motion.section
+                          key="scene-mode"
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -6 }}
+                          transition={{ duration: 0.16, ease: "easeOut" }}
+                          className="rounded-[12px] border border-fg/10 bg-fg/5"
+                        >
+                          <div className="border-b border-fg/8 px-4 py-4">
+                            <div className="space-y-1">
+                              <h3 className="text-sm font-semibold text-fg">
+                                {t("imageGeneration.mode.title")}
+                              </h3>
+                              <p className="text-sm leading-6 text-fg/52">
+                                {t("imageGeneration.mode.description")}
+                              </p>
+                            </div>
                           </div>
-                        </div>
-                        <div className="grid grid-cols-1 gap-3 px-4 py-4">
-                          <ModeOption
-                            title={t("imageGeneration.mode.auto")}
-                            description={t("imageGeneration.mode.autoDescription")}
-                            active={state.sceneMode === "auto"}
-                            onClick={() => void persistSceneMode("auto")}
-                          />
-                          <ModeOption
-                            title={t("imageGeneration.mode.askFirst")}
-                            description={t("imageGeneration.mode.askFirstDescription")}
-                            active={state.sceneMode === "askFirst"}
-                            onClick={() => void persistSceneMode("askFirst")}
-                          />
-                          <ModeOption
-                            title={t("imageGeneration.mode.manual")}
-                            description={t("imageGeneration.mode.manualDescription")}
-                            active={state.sceneMode === "manual"}
-                            onClick={() => void persistSceneMode("manual")}
-                          />
-                        </div>
-                      </motion.section>
-                    ) : null}
-                  </AnimatePresence>
-                </div>
-              </SettingsSection>
-            </motion.div>
+                          <div className="grid grid-cols-1 gap-3 px-4 py-4">
+                            <ModeOption
+                              title={t("imageGeneration.mode.auto")}
+                              description={t("imageGeneration.mode.autoDescription")}
+                              active={state.sceneMode === "auto"}
+                              onClick={() => void persistSceneMode("auto")}
+                            />
+                            <ModeOption
+                              title={t("imageGeneration.mode.askFirst")}
+                              description={t("imageGeneration.mode.askFirstDescription")}
+                              active={state.sceneMode === "askFirst"}
+                              onClick={() => void persistSceneMode("askFirst")}
+                            />
+                            <ModeOption
+                              title={t("imageGeneration.mode.manual")}
+                              description={t("imageGeneration.mode.manualDescription")}
+                              active={state.sceneMode === "manual"}
+                              onClick={() => void persistSceneMode("manual")}
+                            />
+                          </div>
+                        </motion.section>
+                      ) : null}
+                    </AnimatePresence>
+                  </div>
+                </SettingsSection>
+              </motion.div>
             ) : null}
           </div>
         </div>
@@ -629,6 +772,10 @@ export function ImageGenerationPage() {
           },
         }}
       />
+
+      {showImageGenTour && (
+        <GuidedTour tour="imageGeneration" onDismiss={dismissImageGenTour} />
+      )}
     </div>
   );
 }

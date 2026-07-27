@@ -6,7 +6,6 @@
   "permissions": [
     "core:default",
     "opener:default",
-    "app-events:default",
     "process:default",
     "dialog:default",
     "fs:default",

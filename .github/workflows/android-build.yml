@@ -187,18 +187,21 @@ jobs:
           bun-version: "latest"
 
       - name: Install Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: ./.github/actions/setup-rust-build
         with:
-          toolchain: stable
-          cache: true
-          rust-src-dir: src-tauri
-          cache-workspaces: src-tauri
+          cache-key: android
+          cache-targets: false
+          target: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
 
       - name: Setup JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: "17"
           distribution: "temurin"
+          cache: gradle
+          cache-dependency-path: |
+            src-tauri/gen/android/**/*.gradle*
+            src-tauri/gen/android/gradle/wrapper/gradle-wrapper.properties
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
@@ -231,14 +234,6 @@ jobs:
             pkg-config \
             libssl-dev \
             perl
-
-      - name: Install Android Rust targets
-        run: |
-          rustup target add \
-            aarch64-linux-android \
-            armv7-linux-androideabi \
-            i686-linux-android \
-            x86_64-linux-android
 
       - name: Provide Android AR/RANLIB shims for OpenSSL
         run: |
@@ -338,7 +333,6 @@ jobs:
           NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
           LETTUCE_ANDROID_APPLICATION_ID: dev.lettuceai.app
           RUST_BACKTRACE: 1
-          RUSTFLAGS: "--cfg DEV_BUILD"
         run: |
           bun run tauri android build --ci --config "$TAURI_CONFIG_OVERRIDE" --apk
 

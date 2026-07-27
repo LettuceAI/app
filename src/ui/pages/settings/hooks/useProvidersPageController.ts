@@ -47,7 +47,7 @@ function getInitialProvidersState(): ProvidersPageState {
   const cached = readSettingsCached();
   if (cached) {
     const visibleProviders = cached.providerCredentials.filter(
-      (provider) => provider.providerId !== "llamacpp",
+      (provider) => provider.providerId !== "llamacpp" && provider.providerId !== "sdcpp",
     );
     return {
       ...initialProvidersPageState,
@@ -74,7 +74,7 @@ export function useProvidersPageController(): ControllerReturn {
       })),
     );
     const visibleProviders = settings.providerCredentials.filter(
-      (provider) => provider.providerId !== "llamacpp",
+      (provider) => provider.providerId !== "llamacpp" && provider.providerId !== "sdcpp",
     );
     dispatch({ type: "set_providers", payload: visibleProviders });
   }, []);

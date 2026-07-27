@@ -2,6 +2,9 @@ name: PR Check
 
 on:
   pull_request:
+    paths-ignore:
+      - "**/*.md"
+      - "LICENSE"
   workflow_dispatch:
 
 concurrency:
@@ -15,6 +18,26 @@ env:
   NDK_VERSION: r26d
 
 jobs:
+  frontend:
+    name: Frontend Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "latest"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build frontend
+        run: bun run build
+
   linux:
     name: Linux Check
     runs-on: ubuntu-latest
@@ -24,21 +47,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "lts/*"
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: "latest"
-
       - name: Install Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: ./.github/actions/setup-rust-build
         with:
-          toolchain: stable
-          cache: true
+          cache-key: linux-check
 
       - name: Install Linux system dependencies
         run: |
@@ -65,11 +77,8 @@ jobs:
           echo "LIBCLANG_PATH=$LIBCLANG_PATH" >> "$GITHUB_ENV"
           printf '#include <stdbool.h>\n' | clang -E -x c - >/dev/null
 
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Run checks
-        run: bun run check
+      - name: Run Rust check
+        run: cargo check --manifest-path src-tauri/Cargo.toml
 
   android:
     name: Android Check
@@ -80,21 +89,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "lts/*"
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: "latest"
-
       - name: Install Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: ./.github/actions/setup-rust-build
         with:
-          toolchain: stable
-          cache: true
+          cache-key: android-check
+          target: aarch64-linux-android
 
       - name: Setup JDK 17
         uses: actions/setup-java@v4
@@ -119,23 +118,7 @@ jobs:
             build-essential \
             pkg-config \
             libssl-dev \
-            libgtk-3-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libwebkit2gtk-4.1-dev \
-            libspeechd-dev \
-            patchelf \
-            zip \
             perl
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Run shared checks
-        run: bun run check
-
-      - name: Add Android Rust target
-        run: rustup target add aarch64-linux-android
 
       - name: Configure Android OpenSSL toolchain
         run: |
@@ -183,27 +166,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "lts/*"
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: "latest"
-
       - name: Install Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: ./.github/actions/setup-rust-build
         with:
-          toolchain: stable
-          cache: true
+          cache-key: macos-check
 
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Run checks
-        run: bun run check
+      - name: Run Rust check
+        run: cargo check --manifest-path src-tauri/Cargo.toml
 
   windows:
     name: Windows Check
@@ -222,16 +191,6 @@ jobs:
         run: |
           git config --system core.longpaths true
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\FileSystem" /v LongPathsEnabled /t REG_DWORD /d 1 /f
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "lts/*"
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: "latest"
 
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
@@ -256,16 +215,13 @@ jobs:
           echo "LIBCLANG_PATH=C:\\Program Files\\LLVM\\bin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Install Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: ./.github/actions/setup-rust-build
         with:
-          toolchain: stable
-          cache: true
+          cache-key: windows-check
+          cache-workspaces: src-tauri -> C:\t
 
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Run checks
+      - name: Run Rust check
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path $env:CARGO_TARGET_DIR | Out-Null
-          bun run check
+          cargo check --manifest-path src-tauri/Cargo.toml

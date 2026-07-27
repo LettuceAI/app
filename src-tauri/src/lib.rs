@@ -11,6 +11,7 @@ mod app;
 mod asr_manager;
 pub mod chat_appearance;
 pub mod chat_manager;
+mod civitai;
 pub mod content_filter;
 mod conversation_manager;
 pub mod creation_helper;
@@ -46,5 +47,6 @@ pub(crate) use platform::android_monitor;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
     app::run();
 }

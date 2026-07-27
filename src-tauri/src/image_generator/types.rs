@@ -4,6 +4,17 @@ use crate::chat_manager::types::AdvancedModelSettings;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ImageLora {
+    pub path: String,
+    pub multiplier: f64,
+    #[serde(default)]
+    pub is_high_noise: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub keywords: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ImageGenerationRequest {
     pub prompt: String,
     pub model: String,
@@ -13,6 +24,10 @@ pub struct ImageGenerationRequest {
     pub advanced_model_settings: Option<AdvancedModelSettings>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub input_images: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mask_image: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub loras: Option<Vec<ImageLora>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output_modalities: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]

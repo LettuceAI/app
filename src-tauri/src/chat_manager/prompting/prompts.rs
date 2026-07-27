@@ -1,8 +1,8 @@
 use crate::chat_manager::prompt_engine;
 use crate::chat_manager::prompting::parameter_engine;
 use crate::chat_manager::types::{
-    PromptEntryImageSlot, PromptEntryPayload, PromptEntryPosition, PromptEntryRole,
-    PromptTemplateType, SystemPromptEntry, SystemPromptTemplate,
+    PromptEntryCondition, PromptEntryImageSlot, PromptEntryPayload, PromptEntryPosition,
+    PromptEntryRole, PromptTemplateType, SystemPromptEntry, SystemPromptTemplate,
 };
 use crate::{
     chat_manager::storage::{get_base_prompt, get_base_prompt_entries, PromptType},
@@ -450,6 +450,81 @@ fn backfill_missing_entry_conditions(
         Some(next_entries),
         None,
     )?;
+
+    Ok(())
+}
+
+fn condition_has_local_image_model_value(
+    condition: &PromptEntryCondition,
+    expected: Option<bool>,
+) -> bool {
+    match condition {
+        PromptEntryCondition::IsLocalImageGenerationModel { value } => {
+            expected.map(|expected| expected == *value).unwrap_or(true)
+        }
+        PromptEntryCondition::All { conditions } | PromptEntryCondition::Any { conditions } => {
+            conditions
+                .iter()
+                .any(|condition| condition_has_local_image_model_value(condition, expected))
+        }
+        PromptEntryCondition::Not { condition } => {
+            condition_has_local_image_model_value(condition, expected)
+        }
+        _ => false,
+    }
+}
+
+fn migrate_scene_writer_model_conditions(
+    app: &AppHandle,
+    defaults: &[SystemPromptEntry],
+) -> Result<(), String> {
+    let Some(template) = get_template(app, APP_SCENE_PROMPT_WRITER_TEMPLATE_ID)? else {
+        return Ok(());
+    };
+    let mut entries = template.entries;
+    let mut changed = false;
+
+    for entry in &mut entries {
+        let already_scoped = entry
+            .conditions
+            .as_ref()
+            .is_some_and(|condition| condition_has_local_image_model_value(condition, None));
+        if already_scoped {
+            continue;
+        }
+        let remote_gate = PromptEntryCondition::IsLocalImageGenerationModel { value: false };
+        entry.conditions = Some(match entry.conditions.take() {
+            Some(existing) => PromptEntryCondition::All {
+                conditions: vec![remote_gate, existing],
+            },
+            None => remote_gate,
+        });
+        changed = true;
+    }
+
+    for default_entry in defaults.iter().filter(|entry| {
+        entry.conditions.as_ref().is_some_and(|condition| {
+            condition_has_local_image_model_value(condition, Some(true))
+        })
+    }) {
+        if !entries.iter().any(|entry| entry.id == default_entry.id) {
+            entries.push(default_entry.clone());
+            changed = true;
+        }
+    }
+
+    if changed {
+        let content = template_entries_to_content(&entries);
+        let _ = update_template(
+            app,
+            APP_SCENE_PROMPT_WRITER_TEMPLATE_ID.to_string(),
+            None,
+            None,
+            Some(content),
+            Some(entries),
+            None,
+        )?;
+    }
 
     Ok(())
 }
@@ -1095,6 +1170,16 @@ pub fn ensure_app_default_template(app: &AppHandle) -> Result<String, String> {
                 .cloned()
                 .find(|entry| entry.id == "entry_author_note")
                 .expect("author note entry should exist"),
+        );
+        let _ = append_missing_entry(
+            app,
+            APP_DEFAULT_TEMPLATE_ID,
+            "entry_scene_image_protocol_local",
+            defaults
+                .iter()
+                .cloned()
+                .find(|entry| entry.id == "entry_scene_image_protocol_local")
+                .expect("local scene image protocol entry should exist"),
         );
         let _ = append_missing_entry(
             app,
@@ -2053,6 +2138,7 @@ pub fn ensure_scene_prompt_writer_template(app: &AppHandle) -> Result<(), String
         );
         let _ =
             backfill_missing_entry_conditions(app, APP_SCENE_PROMPT_WRITER_TEMPLATE_ID, &entries);
+        migrate_scene_writer_model_conditions(app, &entries)?;
     }
 
     Ok(())

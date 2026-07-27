@@ -382,6 +382,8 @@ mod tests {
             credential_id: "cred".to_string(),
             advanced_model_settings: None,
             input_images: None,
+            mask_image: None,
+            loras: None,
             output_modalities: None,
             size: Some(size.to_string()),
             quality: None,

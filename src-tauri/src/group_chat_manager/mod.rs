@@ -2081,10 +2081,14 @@ async fn process_group_dynamic_memory_cycle(
     app.state::<crate::dynamic_memory_approval::DynamicMemoryApprovalManager>()
         .clear(&session.id);
 
-    // Cursor-based delta summary window: summarize everything since last_window_end.
-    // If backlog > window_size, include the whole backlog in this run (one-time catch-up).
-    let mut window_start = if cursor_rewound { 0 } else { last_window_end };
-    let mut window_end = total_convo;
+    // Cursor-based delta summary window: process one bounded interval after last_window_end.
+    let (mut window_start, mut window_end) =
+        crate::conversation_manager::memory::next_window(
+            last_window_end,
+            total_convo,
+            window_size,
+            false,
+        );
     let convo_window = match fetch_group_conversation_messages_range(
         &conn,
         &session.id,
@@ -2269,7 +2273,7 @@ async fn process_group_dynamic_memory_cycle(
 
     ensure_group_dynamic_memory_not_cancelled(app, session, pool, &cancel_token)?;
 
-    let prior_summary = if cursor_rewound || session.memory_summary.is_empty() {
+    let prior_summary = if session.memory_summary.is_empty() {
         None
     } else {
         Some(session.memory_summary.clone())
@@ -2500,7 +2504,7 @@ async fn process_group_dynamic_memory_cycle(
     let memory_event = json!({
         "id": Uuid::new_v4().to_string(),
         "windowStart": window_start,
-        "windowEnd": total_convo,
+        "windowEnd": window_end,
         "windowMessageIds": window_message_ids,
         "summary": session.memory_summary,
         "actions": actions,
@@ -2542,7 +2546,7 @@ async fn process_group_dynamic_memory_cycle(
             "dynamic memory cycle complete: memories={}, events={}, windowEnd={}",
             session.memory_embeddings.len(),
             session.memory_tool_events.len(),
-            total_convo
+            window_end
         ),
     );
 
@@ -5392,6 +5396,8 @@ fn build_group_system_prompt(
         info_source: PromptEntryInfoSource::Messages,
         scene_generation_enabled: group_scene_generation_enabled(settings),
         avatar_generation_enabled: group_avatar_generation_enabled(settings),
+        is_local_image_generation_model: false,
+        is_scene_generation_local_image_model: false,
         has_scene,
         has_scene_direction,
         has_persona: persona.is_some(),

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use tauri::AppHandle;
 use uuid::Uuid;
@@ -14,7 +14,68 @@ use crate::utils::{log_error, log_info, now_millis};
 
 use super::provider_adapter::{get_adapter, ImageRequestPayload, ImageResponseData};
 use super::storage::save_image;
-use super::types::{GeneratedImage, ImageGenerationRequest, ImageGenerationResponse};
+use super::types::{GeneratedImage, ImageGenerationRequest, ImageGenerationResponse, ImageLora};
+
+fn merged_lora_keywords(base: Option<&[ImageLora]>, request: Option<&[ImageLora]>) -> Vec<String> {
+    let mut keywords = Vec::new();
+    let mut seen = HashSet::new();
+    let mut active_loras = base.unwrap_or_default().iter().collect::<Vec<_>>();
+    for lora in request.unwrap_or_default() {
+        if let Some(existing) = active_loras.iter_mut().find(|existing| {
+            existing.path == lora.path && existing.is_high_noise == lora.is_high_noise
+        }) {
+            *existing = lora;
+        } else {
+            active_loras.push(lora);
+        }
+    }
+    for keyword in active_loras.iter().flat_map(|lora| lora.keywords.iter()) {
+        let keyword = keyword.trim();
+        if keyword.is_empty() {
+            continue;
+        }
+        if seen.insert(keyword.to_lowercase()) {
+            keywords.push(keyword.to_string());
+        }
+    }
+    keywords
+}
+
+fn active_lora_keywords(request: &ImageGenerationRequest) -> Vec<String> {
+    merged_lora_keywords(
+        request
+            .advanced_model_settings
+            .as_ref()
+            .and_then(|settings| settings.sd_base_loras.as_deref()),
+        request.loras.as_deref(),
+    )
+}
+
+fn compose_image_prompt(
+    prompt: &str,
+    pre_prompt: Option<&str>,
+    lora_keywords: &[String],
+) -> String {
+    let mut parts = Vec::new();
+    let existing_prompt_text = format!("{}\n{}", pre_prompt.unwrap_or_default(), prompt);
+    let existing_prompt_text = existing_prompt_text.to_lowercase();
+    if let Some(pre_prompt) = pre_prompt.map(str::trim).filter(|value| !value.is_empty()) {
+        parts.push(pre_prompt.to_string());
+    }
+    parts.extend(
+        lora_keywords
+            .iter()
+            .map(|keyword| keyword.trim())
+            .filter(|keyword| !keyword.is_empty())
+            .filter(|keyword| !existing_prompt_text.contains(&keyword.to_lowercase()))
+            .map(str::to_string),
+    );
+    let prompt = prompt.trim();
+    if !prompt.is_empty() {
+        parts.push(prompt.to_string());
+    }
+    parts.join(", ")
+}
 
 fn gemini_image_endpoint(base_url: &str, model: &str, api_key: &str) -> String {
     let base = base_url.trim_end_matches('/');
@@ -114,19 +175,16 @@ pub async fn generate_image(
     app: AppHandle,
     mut request: ImageGenerationRequest,
 ) -> Result<ImageGenerationResponse, String> {
-    let extra_prompt = request
+    if request.provider_id == "sdcpp" {
+        super::sdcpp::hydrate_lora_keywords(&app, &mut request)?;
+    }
+    let pre_prompt = request
         .advanced_model_settings
         .as_ref()
         .and_then(|settings| settings.sd_extra_prompt.as_ref())
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty());
-    if let Some(extra) = extra_prompt {
-        request.prompt = if request.prompt.trim().is_empty() {
-            extra
-        } else {
-            format!("{}, {}", extra, request.prompt)
-        };
-    }
+        .map(String::as_str);
+    let lora_keywords = active_lora_keywords(&request);
+    request.prompt = compose_image_prompt(&request.prompt, pre_prompt, &lora_keywords);
 
     let mut provider_label = request.provider_id.clone();
 
@@ -152,6 +210,11 @@ pub async fn generate_image(
             &request.credential_id,
         )?;
         provider_label = provider_cred.label.clone();
+
+        if request.provider_id == "sdcpp" {
+            let response = super::sdcpp::generate(&app, &request).await?;
+            return Ok((response, None));
+        }
 
         if request.provider_id == "comfyui" {
             let api_key = provider_cred.api_key.clone().unwrap_or_default();
@@ -347,4 +410,65 @@ pub async fn generate_image(
     }
 
     result.map(|(response, _)| response)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{compose_image_prompt, merged_lora_keywords, ImageLora};
+
+    #[test]
+    fn pre_prompt_is_applied_once_before_the_user_prompt() {
+        assert_eq!(
+            compose_image_prompt("a portrait", Some("cinematic lighting"), &[]),
+            "cinematic lighting, a portrait"
+        );
+        assert_eq!(compose_image_prompt("a portrait", Some("  "), &[]), "a portrait");
+        assert_eq!(
+            compose_image_prompt("  ", Some("cinematic lighting"), &[]),
+            "cinematic lighting"
+        );
+    }
+
+    #[test]
+    fn lora_keywords_are_inserted_between_the_pre_prompt_and_user_prompt() {
+        let keywords = vec!["ArsMovieStill".to_string(), "cinematic still".to_string()];
+        assert_eq!(
+            compose_image_prompt("a portrait", Some("high detail"), &keywords),
+            "high detail, ArsMovieStill, cinematic still, a portrait"
+        );
+    }
+
+    #[test]
+    fn lora_keywords_already_written_by_the_scene_writer_are_not_duplicated() {
+        let keywords = vec!["ArsSamuel".to_string(), "MayaTrigger".to_string()];
+        assert_eq!(
+            compose_image_prompt(
+                "ArsSamuel offers a mug to MayaTrigger",
+                None,
+                &keywords
+            ),
+            "ArsSamuel offers a mug to MayaTrigger"
+        );
+    }
+
+    #[test]
+    fn request_lora_keywords_override_model_level_keywords_for_the_same_lora() {
+        let base = vec![ImageLora {
+            path: "style.safetensors".to_string(),
+            multiplier: 0.8,
+            is_high_noise: false,
+            keywords: vec!["old trigger".to_string()],
+        }];
+        let request = vec![ImageLora {
+            path: "style.safetensors".to_string(),
+            multiplier: 1.0,
+            is_high_noise: false,
+            keywords: vec!["new trigger".to_string()],
+        }];
+
+        assert_eq!(
+            merged_lora_keywords(Some(&base), Some(&request)),
+            vec!["new trigger"]
+        );
+    }
 }

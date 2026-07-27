@@ -164,7 +164,12 @@ export function InlineDownloadCards({
               )}
             >
               <div className="flex items-center gap-3">
-                {item.status === "downloading" ? (
+                {item.status === "downloading" && item.phase === "verifying" ? (
+                  <Loader
+                    size={compact ? 13 : 14}
+                    className="shrink-0 text-accent/70 animate-spin"
+                  />
+                ) : item.status === "downloading" ? (
                   <Download
                     size={compact ? 13 : 14}
                     className="shrink-0 text-accent/70 animate-pulse"
@@ -188,7 +193,12 @@ export function InlineDownloadCards({
                   <X size={13} />
                 </button>
               </div>
-              {item.status === "downloading" && (
+              {item.status === "downloading" && item.phase === "verifying" && (
+                <p className="mt-1.5 text-[10px] text-accent/60">
+                  {t("onboarding.common.verifying")}
+                </p>
+              )}
+              {item.status === "downloading" && item.phase !== "verifying" && (
                 <div className="mt-2 flex items-center gap-2">
                   <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-fg/10">
                     <div

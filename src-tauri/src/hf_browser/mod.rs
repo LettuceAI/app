@@ -1,5 +1,6 @@
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::io::Read;
 use std::path::Path;
@@ -12,6 +13,7 @@ use tokio::sync::Mutex as TokioMutex;
 use crate::utils::{log_info, log_info_global, log_warn_global};
 
 mod sprout;
+pub(crate) mod image_bundle;
 
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
@@ -179,6 +181,8 @@ pub struct DownloadedGgufModel {
     pub is_mtp: bool,
     pub architecture: Option<String>,
     pub context_length: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_role: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -202,6 +206,7 @@ pub struct QueuedDownload {
     pub model_id: String,
     pub filename: String,
     pub status: String, // "queued" | "downloading" | "complete" | "error" | "cancelled"
+    pub phase: Option<String>, // null | "verifying"
     pub downloaded: u64,
     pub total: u64,
     pub speed_bytes_per_sec: u64,
@@ -226,7 +231,13 @@ pub struct QueuedDownload {
     pub voice_id: Option<String>,
     pub download_url: Option<String>,
     pub destination_path: Option<String>,
+    pub expected_size: Option<u64>,
+    pub sha256: Option<String>,
+    pub runtime_release: Option<String>,
+    pub runtime_asset: Option<String>,
     pub force_redownload: bool,
+    pub lora_keywords: Option<Vec<String>>,
+    pub lora_base_model: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -284,7 +295,19 @@ pub struct QueueDownloadMetadata {
     #[serde(default)]
     pub destination_path: Option<String>,
     #[serde(default)]
+    pub expected_size: Option<u64>,
+    #[serde(default)]
+    pub sha256: Option<String>,
+    #[serde(default)]
+    pub runtime_release: Option<String>,
+    #[serde(default)]
+    pub runtime_asset: Option<String>,
+    #[serde(default)]
     pub force_redownload: bool,
+    #[serde(default)]
+    pub lora_keywords: Option<Vec<String>>,
+    #[serde(default)]
+    pub lora_base_model: Option<String>,
 }
 
 struct DownloadQueueState {
@@ -337,8 +360,8 @@ async fn fetch_avatar_url(client: &reqwest::Client, author: &str) -> String {
 }
 
 #[tauri::command]
-pub async fn hf_get_avatars(authors: Vec<String>) -> Result<HashMap<String, String>, String> {
-    let client = build_client()?;
+pub async fn hf_get_avatars(app: AppHandle, authors: Vec<String>) -> Result<HashMap<String, String>, String> {
+    let client = build_hf_client(&app)?;
     let cache = HF_AVATAR_CACHE.lock().await;
     let mut result: HashMap<String, String> = HashMap::new();
 
@@ -435,6 +458,7 @@ pub(crate) async fn finish_external_item(
     let mut state = HF_DOWNLOAD_QUEUE.lock().await;
     if let Some(item) = state.queue.iter_mut().find(|d| d.id == queue_id) {
         item.status = if success { "complete" } else { "error" }.to_string();
+        item.phase = None;
         item.error = error;
         if success && item.total > 0 {
             item.downloaded = item.total;
@@ -449,6 +473,7 @@ pub(crate) async fn cancel_external_item(app: &AppHandle, queue_id: &str) {
     let mut state = HF_DOWNLOAD_QUEUE.lock().await;
     if let Some(item) = state.queue.iter_mut().find(|d| d.id == queue_id) {
         item.status = "cancelled".to_string();
+        item.phase = None;
         item.speed_bytes_per_sec = 0;
     }
     state.cancel_ids.remove(queue_id);
@@ -1943,7 +1968,11 @@ fn build_client() -> Result<reqwest::Client, String> {
         .user_agent("LettuceAI/1.0")
         .timeout(std::time::Duration::from_secs(30))
         .build()
-        .map_err(|e| format!("Failed to build HTTP client: {}", e))
+        .map_err(|error| format!("Failed to build HTTP client: {error}"))
+}
+
+fn build_hf_client(app: &AppHandle) -> Result<reqwest::Client, String> {
+    image_bundle::authenticated_client(app)
 }
 
 #[tauri::command]
@@ -1954,14 +1983,80 @@ pub async fn hf_search_models(
     sort: Option<String>,
     offset: Option<u32>,
     author: Option<String>,
+    mode: Option<String>,
+    profile_id: Option<String>,
+    bundle_role: Option<String>,
+    unfiltered: Option<bool>,
 ) -> Result<Vec<HfSearchResult>, String> {
     let limit = limit.unwrap_or(20).min(100);
     let sort_field = sort.unwrap_or_else(|| "trendingScore".to_string());
     let offset = offset.unwrap_or(0);
+    let unfiltered = unfiltered.unwrap_or(false);
+
+    let mode = mode.as_deref().unwrap_or("llm");
+    if mode == "imageBundle" {
+        if let (Some(profile_id), Some(role)) = (profile_id.as_deref(), bundle_role.as_deref()) {
+            if offset > 0 {
+                return Ok(Vec::new());
+            }
+            return image_bundle::bundle_role_search(
+                &app,
+                profile_id,
+                role,
+                query.trim(),
+                &sort_field,
+                author.as_deref(),
+            )
+            .await;
+        }
+    }
+    if !unfiltered && matches!(mode, "image" | "imageBundle") {
+        let mut merged = HashMap::<String, HfSearchResult>::new();
+        for task in ["text-to-image", "image-to-image"] {
+            let mut url = format!(
+                "https://huggingface.co/api/models?pipeline_tag={task}&limit={}&sort={}&direction=-1&offset={}",
+                limit, sort_field, offset
+            );
+            if let Some(author) = author.as_deref().map(str::trim).filter(|author| !author.is_empty()) {
+                url.push_str(&format!("&author={}", urlencoding::encode(author)));
+            }
+            if !query.trim().is_empty() {
+                url.push_str(&format!("&search={}", urlencoding::encode(query.trim())));
+            }
+            for result in fetch_models_list(&app, &url).await? {
+                merged.entry(result.model_id.clone()).or_insert(result);
+            }
+        }
+        if !query.trim().is_empty() {
+            let mut url = format!(
+                "https://huggingface.co/api/models?limit={}&sort={}&direction=-1&offset={}",
+                limit, sort_field, offset
+            );
+            if let Some(author) = author.as_deref().map(str::trim).filter(|author| !author.is_empty()) {
+                url.push_str(&format!("&author={}", urlencoding::encode(author)));
+            }
+            url.push_str(&format!("&search={}", urlencoding::encode(query.trim())));
+            for result in fetch_models_list(&app, &url).await? {
+                merged.entry(result.model_id.clone()).or_insert(result);
+            }
+        }
+        let mut results = merged.into_values().collect::<Vec<_>>();
+        match sort_field.as_str() {
+            "likes" => results.sort_by_key(|result| std::cmp::Reverse(result.likes)),
+            "lastModified" => results.sort_by(|a, b| b.last_modified.cmp(&a.last_modified)),
+            "trendingScore" => results.sort_by(|a, b| b.trending_score.partial_cmp(&a.trending_score).unwrap_or(std::cmp::Ordering::Equal)),
+            _ => results.sort_by_key(|result| std::cmp::Reverse(result.downloads)),
+        }
+        results.truncate(limit as usize);
+        return Ok(results);
+    }
 
     let mut url = format!(
-        "https://huggingface.co/api/models?filter=gguf&limit={}&sort={}&offset={}",
-        limit, sort_field, offset
+        "https://huggingface.co/api/models?{}limit={}&sort={}&offset={}",
+        if unfiltered { "" } else { "filter=gguf&" },
+        limit,
+        sort_field,
+        offset
     );
     if let Some(author) = author.as_deref().map(str::trim).filter(|a| !a.is_empty()) {
         url.push_str(&format!("&author={}", urlencoding::encode(author)));
@@ -1972,7 +2067,22 @@ pub async fn hf_search_models(
     }
 
     log_info(&app, "hf_browser", format!("searching: {}", url));
-    let results = fetch_models_list(&url).await?;
+    let mut results = fetch_models_list(&app, &url).await?;
+    if !unfiltered && trimmed.contains('/') && !trimmed.contains(char::is_whitespace) {
+        let mut generic_url = format!(
+            "https://huggingface.co/api/models?limit={}&sort={}&offset={}",
+            limit, sort_field, offset
+        );
+        if let Some(author) = author.as_deref().map(str::trim).filter(|a| !a.is_empty()) {
+            generic_url.push_str(&format!("&author={}", urlencoding::encode(author)));
+        }
+        generic_url.push_str(&format!("&search={}", urlencoding::encode(trimmed)));
+        for result in fetch_models_list(&app, &generic_url).await? {
+            if !results.iter().any(|existing| existing.model_id == result.model_id) {
+                results.push(result);
+            }
+        }
+    }
     log_info(
         &app,
         "hf_browser",
@@ -1982,8 +2092,8 @@ pub async fn hf_search_models(
     Ok(results)
 }
 
-async fn fetch_models_list(url: &str) -> Result<Vec<HfSearchResult>, String> {
-    let client = build_client()?;
+pub(crate) async fn fetch_models_list(app: &AppHandle, url: &str) -> Result<Vec<HfSearchResult>, String> {
+    let client = build_hf_client(app)?;
     let response = client.get(url).send().await.map_err(|e| {
         crate::utils::err_msg(
             module_path!(),
@@ -1992,6 +2102,16 @@ async fn fetch_models_list(url: &str) -> Result<Vec<HfSearchResult>, String> {
         )
     })?;
 
+    if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+        return Err(if image_bundle::hf_token(app).is_some() {
+            "The saved Hugging Face token is invalid or expired.".to_string()
+        } else {
+            "This Hugging Face file requires an access token.".to_string()
+        });
+    }
+    if response.status() == reqwest::StatusCode::FORBIDDEN {
+        return Err("Accept the gated model license on Hugging Face, then retry.".to_string());
+    }
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
@@ -2068,7 +2188,7 @@ pub async fn hf_get_author_models(
     }
 
     log_info(&app, "hf_browser", format!("author models: {}", url));
-    let results = fetch_models_list(&url).await?;
+    let results = fetch_models_list(&app, &url).await?;
     log_info(
         &app,
         "hf_browser",
@@ -2093,7 +2213,7 @@ pub async fn hf_get_author_overview(
     }
     log_info(&app, "hf_browser", format!("author overview: {}", author));
     let encoded = urlencoding::encode(&author);
-    let client = build_client()?;
+    let client = build_hf_client(&app)?;
     // An author may be a user or an org; try user overview first, then org.
     let urls = [
         format!("https://huggingface.co/api/users/{}/overview", encoded),
@@ -2154,6 +2274,7 @@ pub async fn hf_get_author_overview(
 pub async fn hf_get_model_files(
     app: AppHandle,
     model_id: String,
+    mode: Option<String>,
 ) -> Result<HfModelInfo, String> {
     log_info(
         &app,
@@ -2161,7 +2282,7 @@ pub async fn hf_get_model_files(
         format!("fetching model info: {}", model_id),
     );
 
-    let client = build_client()?;
+    let client = build_hf_client(&app)?;
 
     let detail_url = format!("https://huggingface.co/api/models/{}", model_id);
     let detail_resp = client.get(&detail_url).send().await.map_err(|e| {
@@ -2172,6 +2293,16 @@ pub async fn hf_get_model_files(
         )
     })?;
 
+    if detail_resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+        return Err(if image_bundle::hf_token(&app).is_some() {
+            "The saved Hugging Face token is invalid or expired.".to_string()
+        } else {
+            "This Hugging Face model requires an access token.".to_string()
+        });
+    }
+    if detail_resp.status() == reqwest::StatusCode::FORBIDDEN {
+        return Err(format!("Accept access to {model_id} on Hugging Face, then retry."));
+    }
     if !detail_resp.status().is_success() {
         let status = detail_resp.status();
         return Err(crate::utils::err_msg(
@@ -2189,9 +2320,11 @@ pub async fn hf_get_model_files(
         )
     })?;
 
+    let is_image = matches!(mode.as_deref(), Some("image") | Some("imageBundle"));
     let tree_url = format!(
-        "https://huggingface.co/api/models/{}/tree/main?recursive=false",
-        model_id
+        "https://huggingface.co/api/models/{}/tree/main?recursive={}",
+        model_id,
+        if is_image { "true" } else { "false" }
     );
     let tree_resp = client.get(&tree_url).send().await.map_err(|e| {
         crate::utils::err_msg(
@@ -2201,6 +2334,16 @@ pub async fn hf_get_model_files(
         )
     })?;
 
+    if tree_resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+        return Err(if image_bundle::hf_token(&app).is_some() {
+            "The saved Hugging Face token is invalid or expired.".to_string()
+        } else {
+            "This Hugging Face repository requires an access token.".to_string()
+        });
+    }
+    if tree_resp.status() == reqwest::StatusCode::FORBIDDEN {
+        return Err(format!("Accept access to {model_id} on Hugging Face, then retry."));
+    }
     let tree_entries: Vec<HfTreeEntry> = if tree_resp.status().is_success() {
         tree_resp.json().await.unwrap_or_default()
     } else {
@@ -2225,6 +2368,7 @@ pub async fn hf_get_model_files(
                 return false;
             }
             lower.ends_with(".gguf")
+                || (is_image && (lower.ends_with(".safetensors") || lower.ends_with(".sft")))
         })
         .map(|s| {
             let lower = s.rfilename.to_lowercase();
@@ -2293,8 +2437,9 @@ pub async fn hf_queue_download(
             model_id: model_id.clone(),
             filename: filename.clone(),
             status: "queued".to_string(),
+            phase: None,
             downloaded: 0,
-            total: 0,
+            total: metadata.expected_size.unwrap_or(0),
             speed_bytes_per_sec: 0,
             error: None,
             result_path: None,
@@ -2317,7 +2462,13 @@ pub async fn hf_queue_download(
             voice_id: metadata.voice_id,
             download_url: metadata.download_url,
             destination_path: metadata.destination_path,
+            expected_size: metadata.expected_size,
+            sha256: metadata.sha256,
+            runtime_release: metadata.runtime_release,
+            runtime_asset: metadata.runtime_asset,
             force_redownload: metadata.force_redownload,
+            lora_keywords: metadata.lora_keywords,
+            lora_base_model: metadata.lora_base_model,
         });
         emit_queue(&app, &state.queue);
     }
@@ -2399,11 +2550,24 @@ async fn process_download_queue(app: &AppHandle) {
             let mut state = HF_DOWNLOAD_QUEUE.lock().await;
             if let Some(d) = state.queue.iter_mut().find(|d| d.id == item.id) {
                 d.status = "downloading".to_string();
+                d.phase = None;
             }
             emit_queue(app, &state.queue);
         }
 
-        let result = do_queue_download(app, &item).await;
+        let result = match do_queue_download(app, &item).await {
+            Ok(path) => match crate::image_generator::sdcpp::handle_download_completed(app, &item, &path).await {
+                Ok(()) => {
+                    image_bundle::handle_download_completed(app, &item, &path).await;
+                    match crate::image_generator::sdcpp::handle_lora_download_completed(app, &item, &path) {
+                        Ok(()) => Ok(path),
+                        Err(error) => Err(error),
+                    }
+                }
+                Err(error) => Err(error),
+            },
+            Err(error) => Err(error),
+        };
 
         {
             let mut state = HF_DOWNLOAD_QUEUE.lock().await;
@@ -2412,14 +2576,20 @@ async fn process_download_queue(app: &AppHandle) {
                 match result {
                     Ok(path) => {
                         d.status = "complete".to_string();
+                        d.phase = None;
                         d.downloaded = d.total;
+                        d.speed_bytes_per_sec = 0;
                         d.result_path = Some(path);
                     }
                     Err(ref e) if e.contains("cancelled") => {
                         d.status = "cancelled".to_string();
+                        d.phase = None;
+                        d.speed_bytes_per_sec = 0;
                     }
                     Err(ref e) => {
                         d.status = "error".to_string();
+                        d.phase = None;
+                        d.speed_bytes_per_sec = 0;
                         d.error = Some(e.clone());
                     }
                 }
@@ -2435,6 +2605,22 @@ async fn do_queue_download(app: &AppHandle, item: &QueuedDownload) -> Result<Str
     let filename = item.filename.as_str();
     let dest_path = if let Some(destination_path) = item.destination_path.as_deref() {
         PathBuf::from(destination_path)
+    } else if item.queue_kind.as_deref() == Some("hf_image_manual") {
+        let relative = Path::new(filename);
+        if relative.is_absolute()
+            || !relative
+                .components()
+                .all(|component| matches!(component, std::path::Component::Normal(_)))
+        {
+            return Err("The selected image component has an unsafe repository path.".to_string());
+        }
+        crate::utils::lettuce_dir(app)?
+            .join("models")
+            .join("image")
+            .join("huggingface")
+            .join("manual")
+            .join(model_id.replace('/', "--"))
+            .join(relative)
     } else {
         let models_dir = hf_models_dir(app)?;
         let safe_model_name = model_id.replace('/', "--");
@@ -2469,7 +2655,23 @@ async fn do_queue_download(app: &AppHandle, item: &QueuedDownload) -> Result<Str
             } else {
                 1_000_000
             };
-            if m.len() >= min_existing_size {
+            let size_matches = item.expected_size.map_or(true, |size| m.len() == size);
+            let hash_matches = if size_matches {
+                if item.sha256.is_some() {
+                    let mut state = HF_DOWNLOAD_QUEUE.lock().await;
+                    if let Some(d) = state.queue.iter_mut().find(|d| d.id == queue_id) {
+                        d.phase = Some("verifying".to_string());
+                        d.total = m.len();
+                        d.downloaded = m.len();
+                        d.speed_bytes_per_sec = 0;
+                    }
+                    emit_queue(app, &state.queue);
+                }
+                verify_sha256(&dest_path, item.sha256.as_deref()).await?
+            } else {
+                false
+            };
+            if m.len() >= min_existing_size && size_matches && hash_matches {
                 log_info(
                     app,
                     "hf_browser",
@@ -2488,6 +2690,14 @@ async fn do_queue_download(app: &AppHandle, item: &QueuedDownload) -> Result<Str
                 }
                 return Ok(dest_path.to_string_lossy().to_string());
             }
+            log_info(
+                app,
+                "hf_browser",
+                format!(
+                    "Existing file failed integrity validation; downloading again: {}",
+                    dest_path.display()
+                ),
+            );
         }
     }
 
@@ -2501,20 +2711,35 @@ async fn do_queue_download(app: &AppHandle, item: &QueuedDownload) -> Result<Str
     log_info(
         app,
         "hf_browser",
-        format!(
-            "starting download: {} → {}",
-            download_url,
-            dest_path.display()
-        ),
+        format!("starting verified download: {}/{}", model_id, filename),
     );
 
     let client = reqwest::Client::builder()
         .user_agent("LettuceAI/1.0")
         .redirect(reqwest::redirect::Policy::limited(10))
+        .connect_timeout(std::time::Duration::from_secs(30))
         .build()
-        .map_err(|e| format!("Failed to build client: {}", e))?;
-
-    let response = client.get(&download_url).send().await.map_err(|e| {
+        .map_err(|error| format!("Failed to build download client: {error}"))?;
+    let mut request = client.get(&download_url);
+    let is_hugging_face_download = reqwest::Url::parse(&download_url)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_string))
+        .is_some_and(|host| host == "huggingface.co" || host.ends_with(".huggingface.co"));
+    let is_civitai_download = reqwest::Url::parse(&download_url)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_string))
+        .is_some_and(|host| host == "civitai.com" || host.ends_with(".civitai.com"));
+    if is_hugging_face_download {
+        if let Some(token) = image_bundle::hf_token(app) {
+            request = request.bearer_auth(token);
+        }
+    }
+    if is_civitai_download {
+        if let Some(token) = crate::civitai::civitai_token(app) {
+            request = request.bearer_auth(token);
+        }
+    }
+    let response = request.send().await.map_err(|e| {
         crate::utils::err_msg(
             module_path!(),
             line!(),
@@ -2522,6 +2747,30 @@ async fn do_queue_download(app: &AppHandle, item: &QueuedDownload) -> Result<Str
         )
     })?;
 
+    if is_hugging_face_download && response.status() == reqwest::StatusCode::UNAUTHORIZED {
+        return Err(if image_bundle::hf_token(app).is_some() {
+            "The saved Hugging Face token is invalid or expired.".to_string()
+        } else {
+            "This Hugging Face file requires an access token.".to_string()
+        });
+    }
+    if is_hugging_face_download && response.status() == reqwest::StatusCode::FORBIDDEN {
+        return Err(format!(
+            "Accept access to {model_id} on its Hugging Face model card, then retry."
+        ));
+    }
+    if is_civitai_download && response.status() == reqwest::StatusCode::UNAUTHORIZED {
+        return Err(if crate::civitai::civitai_token(app).is_some() {
+            "The saved CivitAI token is invalid or expired.".to_string()
+        } else {
+            "This CivitAI file requires an API token. Add one in Runtime Defaults.".to_string()
+        });
+    }
+    if is_civitai_download && response.status() == reqwest::StatusCode::FORBIDDEN {
+        return Err(
+            "This CivitAI file is restricted or in early access for your account.".to_string(),
+        );
+    }
     if !response.status().is_success() {
         return Err(crate::utils::err_msg(
             module_path!(),
@@ -2530,12 +2779,24 @@ async fn do_queue_download(app: &AppHandle, item: &QueuedDownload) -> Result<Str
         ));
     }
 
-    let total_size = response.content_length().unwrap_or(0);
+    let reported_total_size = response.content_length();
+    if let (Some(expected), Some(reported)) = (item.expected_size, reported_total_size) {
+        if reported != expected {
+            return Err(format!(
+                "Download size mismatch before transfer: expected {} bytes, server reported {} bytes",
+                expected, reported
+            ));
+        }
+    }
+    let total_size = reported_total_size.or(item.expected_size).unwrap_or(0);
 
     {
         let mut state = HF_DOWNLOAD_QUEUE.lock().await;
         if let Some(d) = state.queue.iter_mut().find(|d| d.id == queue_id) {
             d.total = total_size;
+            d.downloaded = 0;
+            d.speed_bytes_per_sec = 0;
+            d.phase = None;
         }
         state.last_speed_sample = std::time::Instant::now();
         state.speed_bytes_window = 0;
@@ -2554,7 +2815,16 @@ async fn do_queue_download(app: &AppHandle, item: &QueuedDownload) -> Result<Str
     let mut stream = response.bytes_stream();
     let mut last_emit = std::time::Instant::now();
 
-    while let Some(chunk_result) = stream.next().await {
+    while let Some(chunk_result) =
+        match tokio::time::timeout(std::time::Duration::from_secs(120), stream.next()).await {
+            Ok(next) => next,
+            Err(_) => {
+                drop(file);
+                let _ = tokio::fs::remove_file(&temp_path).await;
+                return Err("The download stalled and timed out.".to_string());
+            }
+        }
+    {
         {
             let state = HF_DOWNLOAD_QUEUE.lock().await;
             if state.cancel_ids.contains(queue_id) {
@@ -2618,6 +2888,44 @@ async fn do_queue_download(app: &AppHandle, item: &QueuedDownload) -> Result<Str
     })?;
     drop(file);
 
+    let downloaded_size = tokio::fs::metadata(&temp_path)
+        .await
+        .map_err(|e| format!("Failed to inspect downloaded file: {}", e))?
+        .len();
+    if let Some(expected) = item.expected_size {
+        if downloaded_size != expected {
+            let _ = tokio::fs::remove_file(&temp_path).await;
+            return Err(format!(
+                "Downloaded file has the wrong size: expected {} bytes, received {} bytes",
+                expected, downloaded_size
+            ));
+        }
+    }
+    if item.sha256.is_some() {
+        let mut state = HF_DOWNLOAD_QUEUE.lock().await;
+        if let Some(d) = state.queue.iter_mut().find(|d| d.id == queue_id) {
+            d.phase = Some("verifying".to_string());
+            d.downloaded = downloaded_size;
+            if d.total == 0 {
+                d.total = downloaded_size;
+            }
+            d.speed_bytes_per_sec = 0;
+        }
+        emit_queue(app, &state.queue);
+    }
+    if !verify_sha256(&temp_path, item.sha256.as_deref()).await? {
+        let _ = tokio::fs::remove_file(&temp_path).await;
+        return Err("Downloaded file failed SHA-256 validation".to_string());
+    }
+    {
+        let state = HF_DOWNLOAD_QUEUE.lock().await;
+        if state.cancel_ids.contains(queue_id) {
+            drop(state);
+            let _ = tokio::fs::remove_file(&temp_path).await;
+            return Err("Download cancelled".to_string());
+        }
+    }
+
     tokio::fs::rename(&temp_path, &dest_path)
         .await
         .map_err(|e| {
@@ -2637,6 +2945,36 @@ async fn do_queue_download(app: &AppHandle, item: &QueuedDownload) -> Result<Str
     );
 
     Ok(final_path)
+}
+
+async fn verify_sha256(path: &Path, expected: Option<&str>) -> Result<bool, String> {
+    let Some(expected) = expected else {
+        return Ok(true);
+    };
+    let expected = expected.trim().to_ascii_lowercase();
+    if expected.len() != 64 || !expected.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err("Invalid expected SHA-256 digest".to_string());
+    }
+
+    let path = path.to_path_buf();
+    tokio::task::spawn_blocking(move || {
+        let mut file = std::fs::File::open(path)
+            .map_err(|e| format!("Failed to open file for integrity validation: {}", e))?;
+        let mut hasher = Sha256::new();
+        let mut buffer = vec![0_u8; 1024 * 1024];
+        loop {
+            let read = std::io::Read::read(&mut file, &mut buffer)
+                .map_err(|e| format!("Failed to validate downloaded file: {}", e))?;
+            if read == 0 {
+                break;
+            }
+            hasher.update(&buffer[..read]);
+        }
+        let actual = format!("{:x}", hasher.finalize());
+        Ok(actual == expected)
+    })
+    .await
+    .map_err(|e| format!("File integrity validation task failed: {}", e))?
 }
 
 #[tauri::command]
@@ -2689,12 +3027,159 @@ pub async fn hf_list_downloaded_models(app: AppHandle) -> Result<Vec<DownloadedG
                         is_mtp,
                         architecture: meta.as_ref().and_then(|value| value.architecture.clone()),
                         context_length: meta.as_ref().and_then(|value| value.context_length),
+                        image_role: None,
                     });
                 }
             }
         }
     }
 
+    Ok(results)
+}
+
+fn frontend_image_role(role: &str) -> &'static str {
+    match role {
+        "text_encoder" => "llm",
+        "vision_encoder" => "llmVision",
+        "vae" => "vae",
+        _ => "diffusionModel",
+    }
+}
+
+fn infer_image_role(filename: &str) -> &'static str {
+    if filename.contains("vae") || filename.starts_with("ae.") {
+        "vae"
+    } else if filename.contains("mmproj") || filename.contains("vision") {
+        "llmVision"
+    } else if ["qwen3", "qwen2.5", "qwen2_5", "t5", "umt5", "clip"]
+        .iter()
+        .any(|marker| filename.contains(marker))
+    {
+        "llm"
+    } else {
+        "diffusionModel"
+    }
+}
+
+#[tauri::command]
+pub async fn hf_list_downloaded_image_models(
+    app: AppHandle,
+) -> Result<Vec<DownloadedGgufModel>, String> {
+    let image_root = crate::utils::lettuce_dir(&app)?.join("models").join("image");
+    let mut results = Vec::new();
+    if !image_root.exists() {
+        return Ok(results);
+    }
+    let mut role_by_path: HashMap<String, String> = HashMap::new();
+    if let Ok(entries) = std::fs::read_dir(image_root.join("huggingface").join("bundles")) {
+        for entry in entries.flatten() {
+            let Ok(bytes) = std::fs::read(entry.path()) else { continue };
+            let Ok(manifest) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+                continue;
+            };
+            for asset in manifest
+                .get("assets")
+                .and_then(|assets| assets.as_array())
+                .into_iter()
+                .flatten()
+            {
+                if let (Some(local_path), Some(role)) = (
+                    asset.get("localPath").and_then(|value| value.as_str()),
+                    asset.get("role").and_then(|value| value.as_str()),
+                ) {
+                    role_by_path
+                        .insert(local_path.to_string(), frontend_image_role(role).to_string());
+                }
+            }
+        }
+    }
+    let mut stack = vec![image_root.clone()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            let fname = path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
+            let lower = fname.to_lowercase();
+            if !(lower.ends_with(".gguf")
+                || lower.ends_with(".safetensors")
+                || lower.ends_with(".sft"))
+            {
+                continue;
+            }
+            let segments = path
+                .strip_prefix(&image_root)
+                .unwrap_or(&path)
+                .components()
+                .filter_map(|component| match component {
+                    std::path::Component::Normal(part) => {
+                        Some(part.to_string_lossy().to_string())
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            let model_id = if segments.first().map(String::as_str) == Some("huggingface") {
+                if segments.get(1).map(String::as_str) == Some("manual") {
+                    segments
+                        .get(2)
+                        .map(|part| part.replace("--", "/"))
+                        .unwrap_or_else(|| "huggingface".to_string())
+                } else if segments.len() >= 3 {
+                    format!("{}/{}", segments[1], segments[2])
+                } else {
+                    "huggingface".to_string()
+                }
+            } else {
+                segments.first().cloned().unwrap_or_default()
+            };
+            let meta = if lower.ends_with(".gguf") {
+                read_local_gguf_meta(&path)
+            } else {
+                None
+            };
+            let path_string = path.to_string_lossy().to_string();
+            let image_role = role_by_path
+                .get(&path_string)
+                .cloned()
+                .or_else(|| {
+                    if segments.first().map(String::as_str) == Some("components") {
+                        segments
+                            .get(1)
+                            .and_then(|sha| {
+                                crate::image_generator::sdcpp::catalog_component_role(sha)
+                            })
+                            .map(|role| frontend_image_role(role).to_string())
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_else(|| infer_image_role(&lower).to_string());
+            results.push(DownloadedGgufModel {
+                model_id,
+                filename: fname,
+                size: entry.metadata().map(|metadata| metadata.len()).unwrap_or(0),
+                quantization: extract_quantization(&path_string),
+                is_mmproj: lower.contains("mmproj"),
+                is_mtp: false,
+                architecture: meta.as_ref().and_then(|value| value.architecture.clone()),
+                context_length: None,
+                image_role: Some(image_role),
+                path: path_string,
+            });
+        }
+    }
+    results.sort_by(|left, right| {
+        left.model_id
+            .cmp(&right.model_id)
+            .then(left.filename.cmp(&right.filename))
+    });
     Ok(results)
 }
 
@@ -2707,7 +3192,8 @@ pub async fn hf_delete_downloaded_model(app: AppHandle, file_path: String) -> Re
     }
 
     let models_dir = hf_models_dir(&app)?;
-    if !path.starts_with(&models_dir) {
+    let image_root = crate::utils::lettuce_dir(&app)?.join("models").join("image");
+    if !path.starts_with(&models_dir) && !path.starts_with(&image_root) {
         return Err("Cannot delete files outside the models directory".to_string());
     }
 
@@ -2720,7 +3206,7 @@ pub async fn hf_delete_downloaded_model(app: AppHandle, file_path: String) -> Re
     })?;
 
     if let Some(parent) = path.parent() {
-        if parent != models_dir {
+        if parent != models_dir && parent != image_root {
             let _ = tokio::fs::remove_dir(parent).await;
         }
     }
@@ -3011,7 +3497,7 @@ pub async fn hf_fetch_readme(app: AppHandle, model_id: String) -> Result<String,
         format!("fetching README for: {}", model_id),
     );
 
-    let client = build_client()?;
+    let client = build_hf_client(&app)?;
 
     let url = format!("https://huggingface.co/{}/raw/main/README.md", model_id);
 
@@ -3021,6 +3507,16 @@ pub async fn hf_fetch_readme(app: AppHandle, model_id: String) -> Result<String,
         .await
         .map_err(|e| format!("Failed to fetch README: {}", e))?;
 
+    if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+        return Err(if image_bundle::hf_token(&app).is_some() {
+            "The saved Hugging Face token is invalid or expired.".to_string()
+        } else {
+            "This Hugging Face model requires an access token.".to_string()
+        });
+    }
+    if resp.status() == reqwest::StatusCode::FORBIDDEN {
+        return Err(format!("Accept access to {model_id} on Hugging Face, then retry."));
+    }
     if !resp.status().is_success() {
         return Err(format!(
             "README not found (HTTP {})",
@@ -3062,12 +3558,7 @@ async fn fetch_gguf_meta(
         model_id, representative.filename
     );
 
-    let client = reqwest::Client::builder()
-        .user_agent("LettuceAI/1.0")
-        .redirect(reqwest::redirect::Policy::limited(10))
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-        .ok()?;
+    let client = build_hf_client(app).ok()?;
 
     // First attempt: 512KB
     let meta = fetch_gguf_range(&client, &url, 524_287).await;

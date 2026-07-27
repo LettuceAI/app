@@ -16,6 +16,7 @@ pub mod media;
 pub mod memory_embeddings;
 pub mod models;
 pub mod personas;
+pub mod playground;
 pub mod providers;
 pub mod sessions;
 pub mod settings;

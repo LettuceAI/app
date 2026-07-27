@@ -204,16 +204,16 @@ function generateMockMessages(
     messages.push({
       id: `mock-user-${i}`,
       role: "user",
-      label: t("systemPrompts.preview.mock.userLabel" as TranslationKey, { n: i }),
-      content: t("systemPrompts.preview.mock.userContent" as TranslationKey, { n: i }),
+      label: t("systemPrompts.preview.mock.userLabel", { n: i }),
+      content: t("systemPrompts.preview.mock.userContent", { n: i }),
       isMock: true,
     });
     if (i < turnCount) {
       messages.push({
         id: `mock-assistant-${i}`,
         role: "assistant",
-        label: t("systemPrompts.preview.mock.assistantLabel" as TranslationKey, { n: i }),
-        content: t("systemPrompts.preview.mock.assistantContent" as TranslationKey, { n: i }),
+        label: t("systemPrompts.preview.mock.assistantLabel", { n: i }),
+        content: t("systemPrompts.preview.mock.assistantContent", { n: i }),
         isMock: true,
       });
     }

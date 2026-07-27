@@ -165,9 +165,10 @@ export function InstalledModelsPage() {
     if (mode === "initial") setLoading(true);
     else setRefreshing(true);
     try {
-      const [dir, downloaded] = await Promise.all([
+      const [dir, downloaded, imageFiles] = await Promise.all([
         invoke<string>("hf_get_gguf_models_dir"),
         invoke<InstalledGgufModel[]>("hf_list_downloaded_models"),
+        invoke<InstalledGgufModel[]>("hf_list_downloaded_image_models"),
       ]);
       setModelsDir(dir);
       setModels(
@@ -177,7 +178,7 @@ export function InstalledModelsPage() {
             : l.filename.localeCompare(r.filename),
         ),
       );
-      setImageModels([]);
+      setImageModels(imageFiles);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -1190,7 +1191,7 @@ function TypeBadge({ isMmproj, imageRole }: { isMmproj: boolean; imageRole?: str
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-md px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider",
+        "inline-flex items-center whitespace-nowrap rounded-md px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider",
         imageRole
           ? "bg-violet-400/12 text-violet-300 ring-1 ring-inset ring-violet-400/20"
           : isMmproj

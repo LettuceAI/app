@@ -200,14 +200,14 @@ export function useCompanionSessionData(characterId?: string, requestedSessionId
   const [error, setError] = useState<string | null>(null);
   const { t } = useI18n();
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (showLoading: boolean) => {
     if (!characterId) {
       setError(t("chats.companionUi.missingCharacterId"));
       setLoading(false);
       return;
     }
 
-    setLoading(true);
+    if (showLoading) setLoading(true);
     setError(null);
     try {
       const characters = await listCharacters();
@@ -236,13 +236,15 @@ export function useCompanionSessionData(characterId?: string, requestedSessionId
       setSession(null);
       setError(err?.message || t("chats.companionUi.failedLoadCompanion"));
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   }, [characterId, requestedSessionId, t]);
 
   useEffect(() => {
-    void load();
+    void load(true);
   }, [load]);
+
+  const reload = useCallback(() => load(false), [load]);
 
   const memoryItems = useMemo(() => buildCompanionMemoryItems(session), [session]);
 
@@ -252,7 +254,7 @@ export function useCompanionSessionData(characterId?: string, requestedSessionId
     character,
     loading,
     error,
-    reload: load,
+    reload,
     memoryItems,
   };
 }

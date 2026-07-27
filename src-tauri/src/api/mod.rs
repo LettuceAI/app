@@ -68,6 +68,7 @@ pub async fn api_request(app: tauri::AppHandle, req: ApiRequest) -> Result<ApiRe
     }
 
     if llama_cpp::is_llama_cpp(req.provider_id.as_deref()) {
+        crate::image_generator::sdcpp::stop_for_llama().await?;
         return llama_cpp::handle_local_request(app, req).await;
     }
     if crate::ollama::is_ollama_provider(req.provider_id.as_deref()) {

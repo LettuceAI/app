@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Activity, Gauge, Timer, Hash, Trash2, RefreshCw, Loader2 } from "lucide-react";
+import {
+  Activity,
+  Gauge,
+  Timer,
+  Hash,
+  Trash2,
+  RefreshCw,
+  Loader2,
+  ChevronRight,
+} from "lucide-react";
 import {
   AreaChart,
   Area,
@@ -25,6 +34,9 @@ import {
   GenerationOverlayChart,
   GenerationDetailContent,
 } from "../../components/GenerationDetailView";
+import { cn, interactive } from "../../design-tokens";
+
+const LIST_PAGE_SIZE = 10;
 
 function relativeTime(ms: number): string {
   const diff = Date.now() - ms;
@@ -83,12 +95,14 @@ export default function PerformancePage() {
   const [latestDetail, setLatestDetail] = useState<LlmMetricDetail | null>(null);
   const [selected, setSelected] = useState<LlmMetricDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [page, setPage] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const list = await listLlmMetrics();
       setMetrics(list);
+      setPage(0);
       setLatestDetail(list.length > 0 ? await getLlmMetric(list[0].id) : null);
     } finally {
       setLoading(false);
@@ -144,6 +158,13 @@ export default function PerformancePage() {
         .sort((a, b) => a.createdAt - b.createdAt)
         .map((m, i) => ({ idx: i + 1, tps: round(m.decodeTokensPerSecond, 1) })),
     [metrics],
+  );
+
+  const totalPages = Math.max(1, Math.ceil(metrics.length / LIST_PAGE_SIZE));
+  const clampedPage = Math.min(page, totalPages - 1);
+  const pagedMetrics = useMemo(
+    () => metrics.slice(clampedPage * LIST_PAGE_SIZE, (clampedPage + 1) * LIST_PAGE_SIZE),
+    [metrics, clampedPage],
   );
 
   const speedVsContext = useMemo(
@@ -351,7 +372,7 @@ export default function PerformancePage() {
                 </h3>
               </header>
               <ul className="divide-y divide-fg/5">
-                {metrics.map((m) => (
+                {pagedMetrics.map((m) => (
                   <li key={m.id}>
                     <button
                       onClick={() => void openDetail(m.id)}
@@ -383,6 +404,55 @@ export default function PerformancePage() {
                   </li>
                 ))}
               </ul>
+              {metrics.length > LIST_PAGE_SIZE && (
+                <footer className="flex items-center justify-between gap-2 border-t border-fg/8 px-4 py-2.5">
+                  <span className="text-[11px] tabular-nums text-fg/45">
+                    {t("performance.list.rangeOfTotal", {
+                      from: clampedPage * LIST_PAGE_SIZE + 1,
+                      to: Math.min((clampedPage + 1) * LIST_PAGE_SIZE, metrics.length),
+                      total: metrics.length,
+                    })}
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setPage(Math.max(0, clampedPage - 1))}
+                      disabled={clampedPage === 0}
+                      className={cn(
+                        "flex h-7 w-7 items-center justify-center rounded-lg border border-fg/10 bg-fg/[0.03] text-fg/70",
+                        interactive.transition.fast,
+                        interactive.active.scale,
+                        "hover:border-fg/25 hover:bg-fg/10 hover:text-fg",
+                        "disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-fg/10 disabled:hover:bg-fg/[0.03] disabled:hover:text-fg/70",
+                      )}
+                      aria-label={t("performance.list.previousPage")}
+                    >
+                      <ChevronRight className="h-3.5 w-3.5 rotate-180" />
+                    </button>
+                    <span className="min-w-14 text-center text-[11px] font-semibold tabular-nums text-fg/70">
+                      {t("performance.list.pageOf", {
+                        page: clampedPage + 1,
+                        total: totalPages,
+                      })}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setPage(Math.min(totalPages - 1, clampedPage + 1))}
+                      disabled={clampedPage >= totalPages - 1}
+                      className={cn(
+                        "flex h-7 w-7 items-center justify-center rounded-lg border border-fg/10 bg-fg/[0.03] text-fg/70",
+                        interactive.transition.fast,
+                        interactive.active.scale,
+                        "hover:border-fg/25 hover:bg-fg/10 hover:text-fg",
+                        "disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-fg/10 disabled:hover:bg-fg/[0.03] disabled:hover:text-fg/70",
+                      )}
+                      aria-label={t("performance.list.nextPage")}
+                    >
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </footer>
+              )}
             </section>
           </div>
         )}

@@ -844,6 +844,7 @@ pub async fn ollama_pull_model(
         model_id: trimmed_ref.to_string(),
         filename: display_name.clone(),
         status: "queued".to_string(),
+        phase: None,
         downloaded: 0,
         total: 0,
         speed_bytes_per_sec: 0,
@@ -868,7 +869,13 @@ pub async fn ollama_pull_model(
         voice_id: metadata.voice_id.clone(),
         download_url: Some(format!("ollama://{}/{}", credential.id, trimmed_ref)),
         destination_path: metadata.destination_path.clone(),
+        expected_size: metadata.expected_size,
+        sha256: metadata.sha256.clone(),
+        runtime_release: metadata.runtime_release.clone(),
+        runtime_asset: metadata.runtime_asset.clone(),
         force_redownload: metadata.force_redownload,
+        lora_keywords: metadata.lora_keywords.clone(),
+        lora_base_model: metadata.lora_base_model.clone(),
     };
 
     crate::hf_browser::enqueue_external_item(&app, item).await;

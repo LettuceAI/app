@@ -10,6 +10,7 @@ import type {
 import { convertToImageUrl } from "../storage/images";
 import { getPromptTemplate } from "../prompts/service";
 import { isRenderableImageUrl } from "../utils/image";
+import { getPlatform } from "../utils/platform";
 import {
   APP_AVATAR_EDIT_TEMPLATE_ID,
   APP_AVATAR_GENERATION_TEMPLATE_ID,
@@ -25,6 +26,8 @@ export interface ImageGenerationRequest {
   credentialId: string;
   advancedModelSettings?: AdvancedModelSettings | null;
   inputImages?: string[];
+  maskImage?: string | null;
+  loras?: { path: string; multiplier: number; isHighNoise?: boolean; keywords?: string[] }[];
   outputModalities?: string[];
   size?: string;
   quality?: string;
@@ -80,12 +83,69 @@ export async function generateImage(
       credentialId: request.credentialId,
       advancedModelSettings: request.advancedModelSettings ?? null,
       inputImages: request.inputImages ?? null,
+      maskImage: request.maskImage ?? null,
+      loras: request.loras ?? null,
+      outputModalities: request.outputModalities ?? null,
       size: request.size ?? null,
       quality: request.quality ?? null,
       style: request.style ?? null,
       n: request.n ?? 1,
+      sessionId: request.sessionId ?? null,
+      characterId: request.characterId ?? null,
+      characterName: request.characterName ?? null,
+      usageSource: request.usageSource ?? null,
     },
   });
+}
+
+export const SDCPP_GENERATION_PROGRESS_EVENT = "sdcpp-generation-progress";
+export const SDCPP_GENERATION_CANCELLED_MESSAGE = "Local image generation was cancelled.";
+
+export interface SdcppGenerationProgress {
+  phase: "starting" | "loading" | "queued" | "generating" | "sampling" | "retrying" | "cancelled";
+  step?: number;
+  steps?: number;
+  queuePosition?: number | null;
+}
+
+export function isGenerationCancelledError(error: unknown): boolean {
+  const message =
+    typeof error === "string"
+      ? error
+      : error instanceof Error
+        ? error.message
+        : typeof (error as { message?: unknown })?.message === "string"
+          ? ((error as { message: string }).message)
+          : "";
+  return message.includes(SDCPP_GENERATION_CANCELLED_MESSAGE);
+}
+
+export async function cancelLocalImageGeneration(): Promise<boolean> {
+  return invoke<boolean>("sdcpp_cancel_generation");
+}
+
+export interface SdcppUpscalerInventory {
+  models: string[];
+  hiresUpscalerNames: string[];
+  recommendedFilename: string;
+  recommendedBytes: number;
+  recommendedInstalled: boolean;
+}
+
+export async function getSdcppUpscalerInventory(): Promise<SdcppUpscalerInventory> {
+  return invoke<SdcppUpscalerInventory>("sdcpp_upscaler_inventory");
+}
+
+export async function installSdcppUpscaler(): Promise<SdcppUpscalerInventory> {
+  return invoke<SdcppUpscalerInventory>("sdcpp_install_upscaler");
+}
+
+export async function removeSdcppUpscaler(filename: string): Promise<SdcppUpscalerInventory> {
+  return invoke<SdcppUpscalerInventory>("sdcpp_remove_upscaler", { filename });
+}
+
+export async function upscaleLocalImage(imageDataUrl: string): Promise<GeneratedImage> {
+  return invoke<GeneratedImage>("sdcpp_upscale_image", { image: imageDataUrl });
 }
 
 type PromptTemplateLike = {
@@ -250,13 +310,22 @@ export function isImageTextToTextModel(model: Model): boolean {
   );
 }
 
+export function isImageGenerationModelAvailable(model: Model): boolean {
+  return (
+    model.outputScopes?.includes("image") === true &&
+    (getPlatform().type !== "mobile" || model.providerId !== "sdcpp")
+  );
+}
+
 function resolveImageGenerationOptionsWithPreference(
   settings: Settings,
   preferredModelId?: string | null,
   enabled = true,
 ): ImageGenerationOptions {
-  const models = settings.models.filter((model) => model.outputScopes?.includes("image"));
-  const providers = settings.providerCredentials;
+  const models = settings.models.filter(isImageGenerationModelAvailable);
+  const providers = settings.providerCredentials.filter(
+    (provider) => getPlatform().type !== "mobile" || provider.providerId !== "sdcpp",
+  );
   if (!enabled) {
     return {
       models,
@@ -376,7 +445,7 @@ export function getModelSizes(providerId: string, modelId: string): readonly str
     return ["512x512", "768x768", "1024x1024", "1152x896", "896x1152"];
   }
 
-  if (providerId === "comfyui" || providerId === "diffusers") {
+  if (providerId === "comfyui" || providerId === "diffusers" || providerId === "sdcpp") {
     return ["512x512", "768x768", "1024x1024", "1152x896", "896x1152"];
   }
 

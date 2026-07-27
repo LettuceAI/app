@@ -552,6 +552,32 @@ pub async fn update_state_for_user_message(
             + (elapsed_minutes / 180.0).min(0.05),
     );
 
+    let mut effect_baseline_state = state.clone();
+    effect_baseline_state.emotional_state.expressed =
+        regulate_expressed(&effect_baseline_state.emotional_state.felt, &regulation);
+    effect_baseline_state.emotional_state.blocked = effect_baseline_state
+        .emotional_state
+        .felt
+        .subtract_positive(&effect_baseline_state.emotional_state.expressed);
+    effect_baseline_state.relationship_state.closeness = apply_bipolar_delta(
+        effect_baseline_state.relationship_state.closeness,
+        0.0,
+        config.relationship_defaults.closeness,
+        &CLOSENESS_DYN,
+    );
+    effect_baseline_state.relationship_state.trust = apply_bipolar_delta(
+        effect_baseline_state.relationship_state.trust,
+        0.0,
+        config.relationship_defaults.trust,
+        &TRUST_DYN,
+    );
+    effect_baseline_state.relationship_state.affection = apply_bipolar_delta(
+        effect_baseline_state.relationship_state.affection,
+        0.0,
+        config.relationship_defaults.affection,
+        &AFFECTION_DYN,
+    );
+
     let bundle = detect_signals(app, user_message).await;
     let volatility = 0.75 + regulation.volatility * 0.9;
     let delta = bundle.delta.scaled(volatility);
@@ -595,28 +621,36 @@ pub async fn update_state_for_user_message(
     state.updated_at = now;
 
     session.companion_state = serde_json::to_value(&state).ok();
-    Some(companion_turn_effect_seed(&previous_state, &state))
+    Some(companion_turn_effect_seed(
+        &previous_state,
+        &effect_baseline_state,
+        &state,
+    ))
 }
 
 fn companion_turn_effect_seed(
     previous: &CompanionSessionState,
+    effect_baseline: &CompanionSessionState,
     current: &CompanionSessionState,
 ) -> CompanionTurnEffectSeed {
     let relationship_delta = json!({
-        "closeness": current.relationship_state.closeness - previous.relationship_state.closeness,
-        "trust": current.relationship_state.trust - previous.relationship_state.trust,
-        "affection": current.relationship_state.affection - previous.relationship_state.affection,
-        "tension": current.relationship_state.tension - previous.relationship_state.tension,
-        "stability": current.relationship_state.stability - previous.relationship_state.stability,
+        "closeness": current.relationship_state.closeness - effect_baseline.relationship_state.closeness,
+        "trust": current.relationship_state.trust - effect_baseline.relationship_state.trust,
+        "affection": current.relationship_state.affection - effect_baseline.relationship_state.affection,
+        "tension": current.relationship_state.tension - effect_baseline.relationship_state.tension,
+        "stability": current.relationship_state.stability - effect_baseline.relationship_state.stability,
     });
     let emotion_delta = json!({
-        "felt": emotion_vector_delta(&previous.emotional_state.felt, &current.emotional_state.felt),
+        "felt": emotion_vector_delta(
+            &effect_baseline.emotional_state.felt,
+            &current.emotional_state.felt,
+        ),
         "expressed": emotion_vector_delta(
-            &previous.emotional_state.expressed,
+            &effect_baseline.emotional_state.expressed,
             &current.emotional_state.expressed,
         ),
         "blocked": emotion_vector_delta(
-            &previous.emotional_state.blocked,
+            &effect_baseline.emotional_state.blocked,
             &current.emotional_state.blocked,
         ),
     });
@@ -684,6 +718,16 @@ pub fn render_prompt_state(
         ),
         "Do not apply these metrics to third-party people mentioned in character definitions, persona descriptions, lore, or memories unless that relationship is explicitly stated.".to_string(),
         "Closeness, trust, and affection are bidirectional: they can run negative, meaning the character actively dislikes, distrusts, or wants distance from the partner, not merely feels neutral.".to_string(),
+        "Treat these metrics as supporting signals, not as permission to contradict the chat history, memories, or established relationship events. Preserve established emotional breakthroughs as settled continuity; never reset or rediscover them merely because a metric band is lower.".to_string(),
+        format!(
+            "Relationship duration context: this session state has tracked {} user interaction{}.",
+            rel.interaction_count,
+            if rel.interaction_count == 1 {
+                ""
+            } else {
+                "s"
+            },
+        ),
         format!(
             "Current {} <-> {} relationship stance: closeness {}, trust {}, affection {}; tension {:.0}%.",
             character.name,
@@ -1448,24 +1492,20 @@ fn clamp_signed(value: f64) -> f64 {
 
 struct AxisDynamics {
     neg_mult: f64,
-    leak_decay: f64,
-    leak_recover: f64,
+    recovery_rate: f64,
 }
 
 const TRUST_DYN: AxisDynamics = AxisDynamics {
     neg_mult: 1.6,
-    leak_decay: 0.04,
-    leak_recover: 0.012,
+    recovery_rate: 0.012,
 };
 const AFFECTION_DYN: AxisDynamics = AxisDynamics {
     neg_mult: 1.4,
-    leak_decay: 0.045,
-    leak_recover: 0.018,
+    recovery_rate: 0.018,
 };
 const CLOSENESS_DYN: AxisDynamics = AxisDynamics {
     neg_mult: 1.3,
-    leak_decay: 0.03,
-    leak_recover: 0.02,
+    recovery_rate: 0.02,
 };
 
 fn apply_bipolar_delta(current: f64, raw_delta: f64, baseline: f64, cfg: &AxisDynamics) -> f64 {
@@ -1481,12 +1521,12 @@ fn apply_bipolar_delta(current: f64, raw_delta: f64, baseline: f64, cfg: &AxisDy
     };
     let v = current + d * headroom.max(0.0);
     let gap = v - baseline;
-    let leak = if gap < 0.0 {
-        cfg.leak_recover
+    let out = if gap < 0.0 {
+        v - cfg.recovery_rate * gap
     } else {
-        cfg.leak_decay
+        v
     };
-    clamp_signed(v - leak * gap)
+    clamp_signed(out)
 }
 
 fn default_closeness() -> f64 {
@@ -1576,26 +1616,34 @@ mod tests {
     }
 
     #[test]
-    fn neutral_turns_leak_inflated_axis_toward_baseline() {
+    fn neutral_turns_preserve_earned_relationship_state() {
         let baseline = 0.15;
         let mut affection = 0.8;
         for _ in 0..20 {
             affection = apply_bipolar_delta(affection, 0.0, baseline, &AFFECTION_DYN);
         }
-        assert!(affection < 0.8);
-        assert!(affection > baseline);
+        assert!((affection - 0.8).abs() < f64::EPSILON);
     }
 
     #[test]
-    fn grudge_recovers_slower_than_warmth_decays() {
+    fn relationship_damage_recovers_without_erasing_earned_warmth() {
         let baseline = 0.3;
         let recovered = apply_bipolar_delta(baseline - 0.4, 0.0, baseline, &TRUST_DYN);
         let recover_step = recovered - (baseline - 0.4);
-        let decayed = apply_bipolar_delta(baseline + 0.4, 0.0, baseline, &TRUST_DYN);
-        let decay_step = (baseline + 0.4) - decayed;
+        let preserved = apply_bipolar_delta(baseline + 0.4, 0.0, baseline, &TRUST_DYN);
         assert!(recover_step > 0.0);
-        assert!(decay_step > 0.0);
-        assert!(recover_step < decay_step);
+        assert!((preserved - (baseline + 0.4)).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn sparse_positive_signals_accumulate_across_neutral_turns() {
+        let baseline = 0.05;
+        let mut affection = baseline;
+        for turn in 0..100 {
+            let delta = if turn % 20 == 0 { 0.03 } else { 0.0 };
+            affection = apply_bipolar_delta(affection, delta, baseline, &AFFECTION_DYN);
+        }
+        assert!(affection > 0.15);
     }
 
     #[test]
@@ -1628,12 +1676,54 @@ mod tests {
         current.emotional_state.felt.warmth = 0.47;
         current.active_signals = vec!["emotion:love".into()];
 
-        let seed = companion_turn_effect_seed(&previous, &current);
+        let seed = companion_turn_effect_seed(&previous, &previous, &current);
         let affection = seed.relationship_delta["affection"].as_f64().unwrap();
         let warmth = seed.emotion_delta["felt"]["warmth"].as_f64().unwrap();
         assert!((affection - 0.04).abs() < f64::EPSILON * 4.0);
         assert!((warmth - 0.07).abs() < f64::EPSILON * 4.0);
         assert_eq!(seed.signal_changes["added"], json!(["emotion:love"]));
         assert_eq!(seed.signal_changes["removed"], json!(["emotion:neutral"]));
+    }
+
+    #[test]
+    fn turn_effect_seed_excludes_passive_state_drift() {
+        let mut previous = CompanionSessionState::default();
+        previous.relationship_state.closeness = 0.5;
+        previous.emotional_state.felt.warmth = 0.7;
+        previous.emotional_state.expressed.warmth = 0.55;
+        previous.active_signals = vec!["emotion:positive".into()];
+
+        let mut effect_baseline = previous.clone();
+        effect_baseline.relationship_state.closeness = 0.488;
+        effect_baseline.emotional_state.felt.warmth = 0.62;
+        effect_baseline.emotional_state.expressed.warmth = 0.49;
+
+        let mut current = effect_baseline.clone();
+        current.active_signals.clear();
+
+        let seed = companion_turn_effect_seed(&previous, &effect_baseline, &current);
+        assert_eq!(seed.relationship_delta["closeness"], json!(0.0));
+        assert_eq!(seed.emotion_delta["felt"]["warmth"], json!(0.0));
+        assert_eq!(seed.emotion_delta["expressed"]["warmth"], json!(0.0));
+        assert_eq!(
+            seed.signal_changes["removed"],
+            json!(["emotion:positive"])
+        );
+    }
+
+    #[test]
+    fn turn_effect_seed_measures_message_change_after_passive_drift() {
+        let mut previous = CompanionSessionState::default();
+        previous.emotional_state.felt.warmth = 0.7;
+
+        let mut effect_baseline = previous.clone();
+        effect_baseline.emotional_state.felt.warmth = 0.62;
+
+        let mut current = effect_baseline.clone();
+        current.emotional_state.felt.warmth = 0.67;
+
+        let seed = companion_turn_effect_seed(&previous, &effect_baseline, &current);
+        let warmth = seed.emotion_delta["felt"]["warmth"].as_f64().unwrap();
+        assert!((warmth - 0.05).abs() < f64::EPSILON * 4.0);
     }
 }

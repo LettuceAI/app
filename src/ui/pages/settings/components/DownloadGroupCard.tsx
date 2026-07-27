@@ -207,7 +207,9 @@ export function DownloadGroupCard({
           return (
             <div key={item.id}>
               <div className="flex items-center gap-2.5">
-                {item.status === "downloading" ? (
+                {item.status === "downloading" && item.phase === "verifying" ? (
+                  <Loader size={12} className="shrink-0 text-accent/70 animate-spin" />
+                ) : item.status === "downloading" ? (
                   <Download size={12} className="shrink-0 text-accent/70 animate-pulse" />
                 ) : item.status === "queued" ? (
                   <Loader size={12} className="shrink-0 text-fg/30 animate-spin" />
@@ -246,7 +248,12 @@ export function DownloadGroupCard({
                   </button>
                 )}
               </div>
-              {item.status === "downloading" && (
+              {item.status === "downloading" && item.phase === "verifying" && (
+                <p className="mt-1 pl-[22px] text-[10px] text-accent/60">
+                  {t("onboarding.common.verifying")}
+                </p>
+              )}
+              {item.status === "downloading" && item.phase !== "verifying" && (
                 <div className="mt-1.5 flex items-center gap-2 pl-[22px]">
                   <div className="h-1 flex-1 overflow-hidden rounded-full bg-fg/10">
                     <div

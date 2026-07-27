@@ -11,6 +11,7 @@ import { ChevronsRight, SendHorizonal, Square } from "lucide-react";
 
 import { hasSeenTooltip, setTooltipSeen } from "../../core/storage/appState";
 import { useI18n, type TranslationKey } from "../../core/i18n/context";
+import { getPlatform } from "../../core/utils/platform";
 
 type TourStep = {
   id: string;
@@ -20,6 +21,8 @@ type TourStep = {
   title?: string;
   body?: string;
   extra?: ReactNode;
+  desktopOnly?: boolean;
+  optional?: boolean;
 };
 
 type TourConfig = {
@@ -36,7 +39,12 @@ export type TourId =
   | "runtimeDefaults"
   | "hfBrowser"
   | "groupChatDetail"
-  | "dynamicMemory";
+  | "dynamicMemory"
+  | "imageGeneration"
+  | "playground"
+  | "loraLibrary"
+  | "civitaiBrowse"
+  | "sdEngine";
 
 const TOURS: Record<TourId, TourConfig> = {
   appShell: {
@@ -217,6 +225,12 @@ const TOURS: Record<TourId, TourConfig> = {
         titleKey: "tour.runtimeDefaults.multiGpu.title",
         bodyKey: "tour.runtimeDefaults.multiGpu.body",
       },
+      {
+        id: "runtime-defaults-civitai",
+        targetAttr: "runtime-defaults-civitai",
+        titleKey: "tour.runtimeDefaults.civitai.title",
+        bodyKey: "tour.runtimeDefaults.civitai.body",
+      },
     ],
   },
 
@@ -345,6 +359,179 @@ const TOURS: Record<TourId, TourConfig> = {
       },
     ],
   },
+
+  imageGeneration: {
+    storageKey: "image_gen_tour_v1",
+    steps: [
+      {
+        id: "imagegen-playground",
+        targetAttr: "imagegen-playground",
+        titleKey: "tour.imageGeneration.playground.title",
+        bodyKey: "tour.imageGeneration.playground.body",
+        desktopOnly: true,
+      },
+      {
+        id: "imagegen-engine",
+        targetAttr: "imagegen-engine",
+        titleKey: "tour.imageGeneration.engine.title",
+        bodyKey: "tour.imageGeneration.engine.body",
+        desktopOnly: true,
+      },
+      {
+        id: "imagegen-avatar",
+        targetAttr: "imagegen-avatar",
+        titleKey: "tour.imageGeneration.avatar.title",
+        bodyKey: "tour.imageGeneration.avatar.body",
+      },
+      {
+        id: "imagegen-scene",
+        targetAttr: "imagegen-scene",
+        titleKey: "tour.imageGeneration.scene.title",
+        bodyKey: "tour.imageGeneration.scene.body",
+      },
+      {
+        id: "imagegen-prompting",
+        targetAttr: "imagegen-prompting",
+        titleKey: "tour.imageGeneration.prompting.title",
+        bodyKey: "tour.imageGeneration.prompting.body",
+      },
+    ],
+  },
+
+  playground: {
+    storageKey: "playground_tour_v1",
+    steps: [
+      {
+        id: "playground-prompt",
+        targetAttr: "playground-prompt",
+        titleKey: "tour.playground.prompt.title",
+        bodyKey: "tour.playground.prompt.body",
+      },
+      {
+        id: "playground-generate",
+        targetAttr: "playground-generate",
+        titleKey: "tour.playground.generate.title",
+        bodyKey: "tour.playground.generate.body",
+      },
+      {
+        id: "playground-feed",
+        targetAttr: "playground-feed",
+        titleKey: "tour.playground.feed.title",
+        bodyKey: "tour.playground.feed.body",
+      },
+      {
+        id: "playground-model",
+        targetAttr: "playground-model",
+        titleKey: "tour.playground.model.title",
+        bodyKey: "tour.playground.model.body",
+      },
+      {
+        id: "playground-loras",
+        targetAttr: "playground-loras",
+        titleKey: "tour.playground.loras.title",
+        bodyKey: "tour.playground.loras.body",
+        optional: true,
+      },
+    ],
+  },
+
+  loraLibrary: {
+    storageKey: "lora_library_tour_v1",
+    steps: [
+      {
+        id: "lora-tabs",
+        targetAttr: "lora-tabs",
+        titleKey: "tour.loraLibrary.tabs.title",
+        bodyKey: "tour.loraLibrary.tabs.body",
+      },
+      {
+        id: "lora-import",
+        targetAttr: "lora-import",
+        titleKey: "tour.loraLibrary.import.title",
+        bodyKey: "tour.loraLibrary.import.body",
+      },
+      {
+        id: "lora-installed",
+        targetAttr: "lora-installed",
+        titleKey: "tour.loraLibrary.installed.title",
+        bodyKey: "tour.loraLibrary.installed.body",
+        optional: true,
+      },
+      {
+        id: "lora-tab-browse",
+        targetAttr: "lora-tab-browse",
+        titleKey: "tour.loraLibrary.browse.title",
+        bodyKey: "tour.loraLibrary.browse.body",
+      },
+    ],
+  },
+
+  civitaiBrowse: {
+    storageKey: "civitai_browse_tour_v1",
+    steps: [
+      {
+        id: "civitai-search",
+        targetAttr: "civitai-search",
+        titleKey: "tour.civitaiBrowse.search.title",
+        bodyKey: "tour.civitaiBrowse.search.body",
+      },
+      {
+        id: "civitai-sort",
+        targetAttr: "civitai-sort",
+        titleKey: "tour.civitaiBrowse.sort.title",
+        bodyKey: "tour.civitaiBrowse.sort.body",
+      },
+      {
+        id: "civitai-filters",
+        targetAttr: "civitai-filters",
+        titleKey: "tour.civitaiBrowse.filters.title",
+        bodyKey: "tour.civitaiBrowse.filters.body",
+      },
+      {
+        id: "civitai-token",
+        targetAttr: "civitai-token",
+        titleKey: "tour.civitaiBrowse.token.title",
+        bodyKey: "tour.civitaiBrowse.token.body",
+      },
+      {
+        id: "civitai-results",
+        targetAttr: "civitai-results",
+        titleKey: "tour.civitaiBrowse.results.title",
+        bodyKey: "tour.civitaiBrowse.results.body",
+        optional: true,
+      },
+    ],
+  },
+
+  sdEngine: {
+    storageKey: "sd_engine_tour_v1",
+    steps: [
+      {
+        id: "sd-installed",
+        targetAttr: "sd-installed",
+        titleKey: "tour.sdEngine.installed.title",
+        bodyKey: "tour.sdEngine.installed.body",
+      },
+      {
+        id: "sd-install",
+        targetAttr: "sd-install",
+        titleKey: "tour.sdEngine.install.title",
+        bodyKey: "tour.sdEngine.install.body",
+      },
+      {
+        id: "sd-models",
+        targetAttr: "sd-models",
+        titleKey: "tour.sdEngine.models.title",
+        bodyKey: "tour.sdEngine.models.body",
+      },
+      {
+        id: "sd-upscaler",
+        targetAttr: "sd-upscaler",
+        titleKey: "tour.sdEngine.upscaler.title",
+        bodyKey: "tour.sdEngine.upscaler.body",
+      },
+    ],
+  },
 };
 
 const LEGACY_TOOLTIP_KEY = "create_button";
@@ -369,7 +556,11 @@ export function GuidedTour({
 }) {
   const { t } = useI18n();
   const config = TOURS[tour];
-  const steps = config.steps;
+  const [steps] = useState(() =>
+    getPlatform().type === "mobile"
+      ? config.steps.filter((s) => !s.desktopOnly)
+      : config.steps,
+  );
   const totalSteps = steps.length;
 
   const [stepIdx, setStepIdx] = useState(0);
@@ -406,13 +597,17 @@ export function GuidedTour({
     }
   }, [isLastStep, finish]);
 
+  useEffect(() => {
+    if (totalSteps === 0) finish();
+  }, [totalSteps, finish]);
+
   useLayoutEffect(() => {
     if (!step) return;
 
     let raf = 0;
     let retryTimer = 0;
     let retryCount = 0;
-    const MAX_RETRIES = 20;
+    const MAX_RETRIES = step.optional ? 2 : 20;
 
     const measure = () => {
       const el = document.querySelector<HTMLElement>(
