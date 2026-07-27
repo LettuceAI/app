@@ -199,7 +199,7 @@ export function DiscoveryPage() {
     <div className="flex h-full flex-col bg-surface lg:px-4">
       {/* Main content with bottom padding for safe area */}
       <main
-        className="flex-1 overflow-y-auto mx-auto w-full lg:max-w-6xl"
+        className="flex-1 overflow-y-auto mx-auto w-full lg:max-w-[1600px]"
         style={{
           paddingBottom: "calc(env(safe-area-inset-bottom) + 80px)",
         }}

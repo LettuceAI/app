@@ -14,7 +14,7 @@ const SkeletonCard = memo(function SkeletonCard({ variant = "default" }: Skeleto
       className={cn(
         "relative overflow-hidden rounded-xl border border-fg/10 bg-fg/5",
         isFeatured
-          ? "aspect-16/10 w-full lg:aspect-21/9 lg:max-w-5xl lg:mx-auto xl:max-w-6xl"
+          ? "aspect-16/10 w-full lg:aspect-21/9"
           : isCompact
             ? "aspect-3/4 w-36 shrink-0"
             : "aspect-3/4 w-full",

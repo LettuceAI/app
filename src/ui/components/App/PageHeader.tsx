@@ -4,6 +4,7 @@ import { ArrowLeft, Search, X } from "lucide-react";
 
 import { useI18n } from "../../../core/i18n/context";
 import { interactive, cn } from "../../design-tokens";
+import { CONTENT_COLUMN_MAX_W } from "./navPrefs";
 
 interface PageHeaderProps {
   title: string;
@@ -62,7 +63,7 @@ export function PageHeader({
       className="fixed left-[var(--appnav-w,0px)] right-[var(--appnav-wr,0px)] top-[calc(var(--titlebar-h,0px)+var(--topnav-h,0px))] z-40 bg-surface"
     >
       <div className="px-4">
-        <div className="mx-auto w-full max-w-6xl px-8">
+        <div className={cn("mx-auto w-full px-8", CONTENT_COLUMN_MAX_W)}>
           <div
             className={cn(
               "border-b border-fg/10",

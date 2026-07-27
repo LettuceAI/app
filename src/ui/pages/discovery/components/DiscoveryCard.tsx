@@ -109,7 +109,7 @@ export const DiscoveryCard = memo(function DiscoveryCard({
         "border border-fg/10 hover:border-fg/20",
         "transition-all duration-200 active:scale-[0.98]",
         isFeatured
-          ? "aspect-16/10 w-full rounded-xl lg:aspect-21/9 lg:max-w-5xl lg:mx-auto xl:max-w-6xl"
+          ? "aspect-16/10 w-full rounded-xl lg:aspect-21/9"
           : isCompact
             ? "aspect-3/4 w-36 shrink-0 rounded-xl"
             : "aspect-3/4 w-full rounded-xl",

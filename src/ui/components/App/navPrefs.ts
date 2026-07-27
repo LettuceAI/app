@@ -24,6 +24,9 @@ const EDGE_KEY = "appnav.edge";
 
 const NavItemsSchema = z.array(NavItemIdSchema);
 
+export const CONTENT_COLUMN_MAX_W = "max-w-[1600px]";
+export const CONTENT_COLUMN_MAX_W_LG = "lg:max-w-[1600px]";
+
 export const CONTENT_COLUMN_ROUTES: readonly string[] = [
   "/",
   "/chat",
