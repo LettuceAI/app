@@ -24,6 +24,13 @@ const EDGE_KEY = "appnav.edge";
 
 const NavItemsSchema = z.array(NavItemIdSchema);
 
+export const CONTENT_COLUMN_ROUTES: readonly string[] = [
+  "/",
+  "/chat",
+  "/group-chats",
+  "/library",
+];
+
 export type NavPrefs = {
   style: NavigationStyle;
   side: NavigationSide;

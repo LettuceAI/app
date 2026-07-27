@@ -23,6 +23,7 @@ import { typography, interactive, cn } from "../../design-tokens";
 import { dragRegionAttr } from "./TitleBar";
 import { TabItem } from "./NavItem";
 import { resolveCreateAction, resolveNavEntries } from "./navDestinations";
+import { CONTENT_COLUMN_ROUTES } from "./navPrefs";
 import type { NavItemId } from "../../../core/storage/schemas";
 import { toast } from "../toast";
 import { openDocs } from "../../../core/utils/docs";
@@ -227,6 +228,11 @@ export function TopNav({
       basePath === "/group-chats"
     );
   }, [basePath]);
+
+  const alignToContentColumn = useMemo(
+    () => CONTENT_COLUMN_ROUTES.includes(basePath),
+    [basePath],
+  );
 
   const showLayoutToggle = useMemo(() => {
     return (
@@ -712,6 +718,7 @@ export function TopNav({
     ro.observe(el);
     return () => {
       ro.disconnect();
+      document.documentElement.style.setProperty("--topnav-h", "0px");
     };
   }, [floating]);
 
@@ -730,7 +737,10 @@ export function TopNav({
       {...dragRegionAttr}
     >
       <div
-        className="relative mx-auto flex h-10 w-full max-w-md items-center justify-between px-3 lg:max-w-none lg:px-8"
+        className={cn(
+          "relative mx-auto flex h-10 w-full max-w-md items-center justify-between px-3 lg:px-8",
+          alignToContentColumn ? "lg:max-w-6xl" : "lg:max-w-none",
+        )}
         style={isMacOS ? { paddingLeft: "72px" } : undefined}
         {...dragRegionAttr}
       >
