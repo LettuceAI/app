@@ -23,7 +23,11 @@ import { typography, interactive, cn } from "../../design-tokens";
 import { dragRegionAttr } from "./TitleBar";
 import { TabItem } from "./NavItem";
 import { resolveCreateAction, resolveNavEntries } from "./navDestinations";
-import { CONTENT_COLUMN_MAX_W_LG, CONTENT_COLUMN_ROUTES } from "./navPrefs";
+import {
+  CONTENT_COLUMN_MAX_W_LG,
+  CONTENT_COLUMN_ROUTES,
+  CONTENT_INNER_MAX_W_LG,
+} from "./navPrefs";
 import type { NavItemId } from "../../../core/storage/schemas";
 import { toast } from "../toast";
 import { openDocs } from "../../../core/utils/docs";
@@ -727,7 +731,12 @@ export function TopNav({
       ref={headerRef}
       className={
         floating
-          ? "fixed left-[calc(var(--appnav-top-w,0px)+2rem)] right-[calc(var(--appnav-top-wr,0px)+2rem)] top-[calc(var(--titlebar-h,0px)+12px)] z-40 rounded-full border border-fg/10 shadow-[0_12px_32px_rgba(0,0,0,0.35)] backdrop-blur-md bg-nav/90"
+          ? cn(
+            "fixed left-[calc(var(--appnav-top-w,0px)+2rem)] right-[calc(var(--appnav-top-wr,0px)+2rem)]",
+            "lg:left-[calc(var(--appnav-top-w,0px)+3rem)] lg:right-[calc(var(--appnav-top-wr,0px)+3rem)] lg:mx-auto",
+            CONTENT_INNER_MAX_W_LG,
+            "top-[calc(var(--titlebar-h,0px)+12px)] z-40 rounded-full border border-fg/10 shadow-[0_12px_32px_rgba(0,0,0,0.35)] backdrop-blur-md bg-nav/90",
+          )
           : "fixed left-[var(--appnav-top-w,0px)] right-[var(--appnav-top-wr,0px)] top-[var(--titlebar-h,0px)] z-40 border-b border-fg/10 backdrop-blur-md bg-nav/80 lg:px-4"
       }
       style={{
@@ -739,8 +748,8 @@ export function TopNav({
       <div
         className={cn(
           "relative mx-auto flex h-10 w-full max-w-md items-center justify-between px-3",
-          floating ? "lg:px-4" : "lg:px-8",
-          alignToContentColumn ? CONTENT_COLUMN_MAX_W_LG : "lg:max-w-none",
+          floating ? "lg:px-6" : "lg:px-8",
+          !floating && alignToContentColumn ? CONTENT_COLUMN_MAX_W_LG : "lg:max-w-none",
         )}
         style={isMacOS ? { paddingLeft: "72px" } : undefined}
         {...dragRegionAttr}
