@@ -324,6 +324,7 @@ export const enMessages = {
       header_auto: "Match navigation",
       header_attached: "Attached",
       header_floating: "Floating",
+      header_inline: "In page",
       sidebarFallbackNote: "On narrow windows sidebars switch to a bottom style.",
     },
     easterEggs: {
@@ -392,6 +393,15 @@ export const enMessages = {
       beetrootRain: "Beetroot Rain",
       beetrootDesc: "Beetroots fall when chats mention them",
     },
+  },
+  pageHeader: {
+    clearSearch: "Clear search",
+    searchChats: "Search chats",
+    searchGroups: "Search group chats",
+    searchLibrary: "Search library",
+    results: "{{count}} of {{total}}",
+    noResultsTitle: "No matches",
+    noResultsBody: 'Nothing here matches "{{query}}".',
   },
   topNav: {
     unsavedChangesTitle: "Unsaved changes",

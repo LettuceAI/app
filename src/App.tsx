@@ -128,6 +128,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { emit, listen, UnlistenFn } from "@tauri-apps/api/event";
 import { useAndroidBackHandler } from "./ui/hooks/useAndroidBackHandler";
 import {
+  CONTENT_COLUMN_ROUTES,
   readCachedNavPrefs,
   writeCachedNavPrefs,
   type NavPrefs,
@@ -931,12 +932,19 @@ function AppContent() {
     [location.pathname],
   );
 
+  const usesInlineHeader =
+    isDesktopPlatform &&
+    isLgViewport &&
+    headerStyle === "inline" &&
+    CONTENT_COLUMN_ROUTES.includes(location.pathname);
+
   const showTopNav =
     !isOnboardingRoute &&
     !isChatDetailRoute &&
     !isCreateRoute &&
     !isSearchRoute &&
-    !isLorebookEditorRoute;
+    !isLorebookEditorRoute &&
+    !usesInlineHeader;
   const showBottomNav =
     !isSettingRoute &&
     !isOnboardingRoute &&

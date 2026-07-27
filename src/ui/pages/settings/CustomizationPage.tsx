@@ -104,6 +104,8 @@ const NAV_STYLE_OPTIONS = [
   },
 ] as const;
 
+const HEADER_STYLE_OPTIONS = ["auto", "attached", "floating", "inline"] as const;
+
 const SIDEBAR_NAV_STYLES: readonly NavigationStyle[] = ["sidebar", "floatingSidebar"];
 const DESKTOP_ONLY_NAV_STYLES: readonly NavigationStyle[] = [
   "sidebar",
@@ -820,7 +822,7 @@ export function CustomizationPage() {
               </div>
             </div>
             <div className="flex shrink-0 gap-1 rounded-lg border border-fg/10 bg-fg/5 p-1">
-              {(["auto", "attached", "floating"] as const).map((style) => (
+              {HEADER_STYLE_OPTIONS.filter((style) => !isMobile || style !== "inline").map((style) => (
                 <button
                   key={style}
                   type="button"

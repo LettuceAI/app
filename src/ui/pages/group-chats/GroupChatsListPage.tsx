@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { History, Plus, Settings, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { History, LayoutGrid, LayoutList, Plus, SearchX, Settings, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 import { useI18n } from "../../../core/i18n/context";
@@ -10,6 +10,12 @@ import {
 } from "../../../core/storage/appState";
 import type { GroupChatsViewMode } from "../../../core/storage/schemas";
 import { BottomMenu } from "../../components";
+import {
+  PageHeader,
+  PageHeaderAction,
+  useInlineHeader,
+  useRailSettings,
+} from "../../components/App";
 import { Routes } from "../../navigation";
 import { useGroupChatsListController } from "./hooks/useGroupChatsListController";
 import { GroupList, GroupListSkeleton, EmptyState } from "./components/list/GroupList";
@@ -32,17 +38,19 @@ export function GroupChatsListPage() {
     window.dispatchEvent(new CustomEvent("groupChats:viewModeChanged"));
   }, [viewMode]);
 
+  const cycleViewMode = useCallback(() => {
+    setViewMode((prev) => {
+      const next: GroupChatsViewMode = prev === "classic" ? "detailed" : "classic";
+      setGroupChatsViewMode(next).catch(() => {});
+      return next;
+    });
+  }, []);
+
   useEffect(() => {
-    const handler = () => {
-      setViewMode((prev) => {
-        const next: GroupChatsViewMode = prev === "classic" ? "detailed" : "classic";
-        setGroupChatsViewMode(next).catch(() => {});
-        return next;
-      });
-    };
+    const handler = () => cycleViewMode();
     window.addEventListener("groupChats:cycleViewMode", handler);
     return () => window.removeEventListener("groupChats:cycleViewMode", handler);
-  }, []);
+  }, [cycleViewMode]);
   const {
     groups,
     characters,
@@ -58,6 +66,16 @@ export function GroupChatsListPage() {
     handleNewChat,
   } = useGroupChatsListController();
 
+  const [query, setQuery] = useState("");
+  const inlineHeader = useInlineHeader();
+  const railSettings = useRailSettings();
+
+  const visibleGroups = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return groups;
+    return groups.filter((group) => group.name.toLowerCase().includes(needle));
+  }, [groups, query]);
+
   const menuActionClass =
     "flex w-full items-center gap-3 rounded-xl border border-fg/10 bg-fg/5 px-4 py-3 text-left transition hover:border-fg/20 hover:bg-fg/10";
   const menuIconClass =
@@ -65,12 +83,44 @@ export function GroupChatsListPage() {
 
   return (
     <div className="flex h-full flex-col pb-6 text-fg/80">
-      <main className="flex-1 overflow-y-auto px-1 lg:px-8 pt-4 mx-auto w-full max-w-md lg:max-w-none">
+      <main className="flex-1 overflow-y-auto px-1 lg:px-8 pt-4 mx-auto w-full max-w-md lg:max-w-6xl">
+        {inlineHeader && (
+          <PageHeader
+            title={t("common.nav.groupChats")}
+            meta={
+              query.trim()
+                ? t("pageHeader.results", {
+                    count: String(visibleGroups.length),
+                    total: String(groups.length),
+                  })
+                : undefined
+            }
+            searchValue={query}
+            onSearchChange={setQuery}
+            searchPlaceholder={t("pageHeader.searchGroups")}
+            actions={
+              <>
+                <PageHeaderAction
+                  icon={viewMode === "detailed" ? LayoutList : LayoutGrid}
+                  label={t("topNav.changeLayout")}
+                  onClick={cycleViewMode}
+                />
+                {!railSettings && (
+                  <PageHeaderAction
+                    icon={Settings}
+                    label={t("topNav.settings")}
+                    onClick={() => navigate("/settings")}
+                  />
+                )}
+              </>
+            }
+          />
+        )}
         {loading ? (
           <GroupListSkeleton />
-        ) : groups.length ? (
+        ) : visibleGroups.length ? (
           <GroupList
-            groups={groups}
+            groups={visibleGroups}
             characters={characters}
             viewMode={viewMode}
             openingGroupId={openingGroupId}
@@ -81,6 +131,16 @@ export function GroupChatsListPage() {
             }}
             onLongPress={(group) => setSelectedGroup(group)}
           />
+        ) : groups.length ? (
+          <div className="rounded-2xl border border-dashed border-fg/10 bg-fg/2 p-8 text-center">
+            <SearchX className="mx-auto h-6 w-6 text-fg/30" />
+            <h3 className="mt-3 text-base font-semibold text-fg">
+              {t("pageHeader.noResultsTitle")}
+            </h3>
+            <p className="mt-1 text-sm text-fg/50">
+              {t("pageHeader.noResultsBody", { query })}
+            </p>
+          </div>
         ) : (
           <EmptyState />
         )}

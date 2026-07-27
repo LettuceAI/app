@@ -1,5 +1,17 @@
-import { useEffect, useState, memo, useRef } from "react";
-import { Edit2, Trash2, Download, EyeOff, Paintbrush, Upload } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, memo, useRef } from "react";
+import {
+  Edit2,
+  Trash2,
+  Download,
+  EyeOff,
+  Paintbrush,
+  Upload,
+  Settings,
+  SearchX,
+  LayoutGrid,
+  LayoutList,
+  Grid3X3,
+} from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
@@ -15,6 +27,12 @@ import {
 import type { Character, ChatsViewMode } from "../../../core/storage/schemas";
 import { typography, radius, spacing, interactive, cn } from "../../design-tokens";
 import { BottomMenu, CharacterExportMenu } from "../../components";
+import {
+  PageHeader,
+  PageHeaderAction,
+  useInlineHeader,
+  useRailSettings,
+} from "../../components/App";
 import { AvatarImage } from "../../components/AvatarImage";
 import { useAvatar } from "../../hooks/useAvatar";
 import { useAvatarGradient } from "../../hooks/useAvatarGradient";
@@ -57,8 +75,33 @@ export function ChatPage() {
   const [templateSelectorCharacter, setTemplateSelectorCharacter] = useState<Character | null>(
     null,
   );
+  const [query, setQuery] = useState("");
   const navigate = useNavigate();
   const { t } = useI18n();
+  const inlineHeader = useInlineHeader();
+  const railSettings = useRailSettings();
+
+  const visibleCharacters = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return characters;
+    return characters.filter(
+      (character) =>
+        character.name.toLowerCase().includes(needle) ||
+        (character.description ?? "").toLowerCase().includes(needle),
+    );
+  }, [characters, query]);
+
+  const cycleViewMode = useCallback(() => {
+    setViewMode((prev) => {
+      const modes: ChatsViewMode[] = ["hero", "gallery", "list"];
+      const next = modes[(modes.indexOf(prev) + 1) % modes.length];
+      setChatsViewMode(next).catch(() => {});
+      return next;
+    });
+  }, []);
+
+  const ChatsLayoutIcon =
+    viewMode === "hero" ? LayoutGrid : viewMode === "gallery" ? Grid3X3 : LayoutList;
 
   useEffect(() => {
     getChatsViewMode()
@@ -78,17 +121,10 @@ export function ChatPage() {
 
   // Listen for cycle event from TopNav
   useEffect(() => {
-    const handler = () => {
-      setViewMode((prev) => {
-        const modes: ChatsViewMode[] = ["hero", "gallery", "list"];
-        const next = modes[(modes.indexOf(prev) + 1) % modes.length];
-        setChatsViewMode(next).catch(() => {});
-        return next;
-      });
-    };
+    const handler = () => cycleViewMode();
     window.addEventListener("chats:cycleViewMode", handler);
     return () => window.removeEventListener("chats:cycleViewMode", handler);
-  }, []);
+  }, [cycleViewMode]);
 
   useEffect(() => {
     cleanupOldDrafts();
@@ -294,15 +330,50 @@ export function ChatPage() {
   return (
     <div className="flex h-full flex-col pb-6 text-gray-200">
       <main className="flex-1 overflow-y-auto px-1 lg:px-8 pt-4 mx-auto w-full max-w-md lg:max-w-6xl">
+        {inlineHeader && (
+          <PageHeader
+            title={t("common.nav.chats")}
+            meta={
+              query.trim()
+                ? t("pageHeader.results", {
+                    count: String(visibleCharacters.length),
+                    total: String(characters.length),
+                  })
+                : undefined
+            }
+            searchValue={query}
+            onSearchChange={setQuery}
+            searchPlaceholder={t("pageHeader.searchChats")}
+            actions={
+              <>
+                <PageHeaderAction
+                  icon={ChatsLayoutIcon}
+                  label={t("topNav.changeLayout")}
+                  onClick={cycleViewMode}
+                />
+                {!railSettings && (
+                  <PageHeaderAction
+                    icon={Settings}
+                    label={t("topNav.settings")}
+                    onClick={() => navigate("/settings")}
+                    dataTourId="top-settings"
+                  />
+                )}
+              </>
+            }
+          />
+        )}
         {loading ? (
           <CharacterSkeleton />
-        ) : characters.length ? (
+        ) : visibleCharacters.length ? (
           <CharacterList
-            characters={characters}
+            characters={visibleCharacters}
             viewMode={viewMode}
             onSelect={startChat}
             onLongPress={setSelectedCharacter}
           />
+        ) : characters.length ? (
+          <NoResultsState query={query} />
         ) : (
           <EmptyState />
         )}
@@ -603,6 +674,29 @@ function EmptyState() {
         </h3>
         <p className={cn(typography.body.size, typography.body.lineHeight, "text-white/50")}>
           {t("chats.createFirstCharacter")}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function NoResultsState({ query }: { query: string }) {
+  const { t } = useI18n();
+  return (
+    <div
+      className={cn(
+        "p-8 text-center",
+        radius.lg,
+        "border border-dashed border-white/10 bg-white/2",
+      )}
+    >
+      <div className={spacing.field}>
+        <SearchX className="mx-auto h-6 w-6 text-white/30" />
+        <h3 className={cn(typography.h3.size, typography.h3.weight, "text-white")}>
+          {t("pageHeader.noResultsTitle")}
+        </h3>
+        <p className={cn(typography.body.size, typography.body.lineHeight, "text-white/50")}>
+          {t("pageHeader.noResultsBody", { query })}
         </p>
       </div>
     </div>

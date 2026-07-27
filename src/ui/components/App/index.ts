@@ -7,3 +7,5 @@ export * from "./SidebarNav";
 export * from "./AppNav";
 export * from "./navDestinations";
 export * from "./TitleBar";
+export * from "./PageHeader";
+export * from "./useInlineHeader";
