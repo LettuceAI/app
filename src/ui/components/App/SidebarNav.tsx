@@ -60,10 +60,12 @@ export function SidebarNav({
   items?: readonly NavItemId[] | null;
 }) {
   const entries = resolveNavEntries(items);
-  const destinations = entries.flatMap((entry) =>
-    entry.kind === "destination" && entry.destination.id !== "settings" ? [entry.destination] : [],
+  const hasExplicitSettings = entries.some(
+    (entry) => entry.kind === "destination" && entry.destination.id === "settings",
   );
-  const settingsDestination = NAV_DESTINATIONS.find((entry) => entry.id === "settings");
+  const settingsDestination = hasExplicitSettings
+    ? undefined
+    : NAV_DESTINATIONS.find((entry) => entry.id === "settings");
   const { pathname } = useLocation();
   const { t } = useI18n();
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -82,12 +84,15 @@ export function SidebarNav({
     ? `fixed ${floatingAnchor} z-30 flex flex-col items-center gap-1 rounded-full border border-fg/10 bg-nav/95 px-1.5 py-2 text-fg shadow-[0_12px_32px_rgba(0,0,0,0.35)] backdrop-blur-md ${
         side === "right" ? "right-8" : "left-8"
       }`
-    : `fixed bottom-0 top-[var(--titlebar-h,0px)] z-30 flex w-16 flex-col items-center gap-1 pt-3 pb-20 text-fg ${
+    : `fixed bottom-0 top-[var(--titlebar-h,0px)] z-30 flex w-16 flex-col items-center gap-1 pt-3 ${
+        settingsDestination ? "pb-20" : "pb-3"
+      } text-fg ${
         align === "center" ? "justify-center" : align === "end" ? "justify-end" : "justify-start"
       } ${side === "right" ? "right-0" : "left-0"}`;
 
-  const createButton = (
+  const createButton = (key: string) => (
     <button
+      key={key}
       onClick={() => resolveCreateAction(pathname, onCreateClick)}
       data-tour-id="nav-create"
       title={t("common.bottomNav.create")}
@@ -114,34 +119,35 @@ export function SidebarNav({
 
   return (
     <div ref={containerRef} className={containerClassName}>
-      {createButton}
-      <div className={dividerClassName} />
-      {destinations.map((destination) => (
-        <TabItem
-          key={destination.id}
-          to={destination.to}
-          icon={destination.icon}
-          label={t(destination.labelKey)}
-          active={destination.isActive(pathname)}
-          className="h-12 w-12"
-          dataTourId={destination.dataTourId}
-          layoutId={layoutId}
-          rounded={itemRounded}
-        />
-      ))}
-      {floating ? (
-        settingsButton && (
+      {entries.map((entry, index) =>
+        entry.kind === "create" ? (
+          createButton(`create-${index}`)
+        ) : (
+          <TabItem
+            key={entry.destination.id}
+            to={entry.destination.to}
+            icon={entry.destination.icon}
+            label={t(entry.destination.labelKey)}
+            active={entry.destination.isActive(pathname)}
+            className="h-12 w-12"
+            dataTourId={entry.destination.dataTourId}
+            layoutId={layoutId}
+            rounded={itemRounded}
+          />
+        ),
+      )}
+      {settingsButton &&
+        (floating ? (
           <>
             <div className={dividerClassName} />
             {settingsButton}
           </>
-        )
-      ) : (
-        <div className="absolute inset-x-0 bottom-3 flex flex-col items-center gap-1">
-          <div className={dividerClassName} />
-          {settingsButton}
-        </div>
-      )}
+        ) : (
+          <div className="absolute inset-x-0 bottom-3 flex flex-col items-center gap-1">
+            <div className={dividerClassName} />
+            {settingsButton}
+          </div>
+        ))}
     </div>
   );
 }
