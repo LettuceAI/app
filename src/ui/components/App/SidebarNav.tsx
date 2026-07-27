@@ -3,7 +3,7 @@ import { useLayoutEffect, useRef } from "react";
 import { useLocation } from "react-router-dom";
 
 import { TabItem } from "./NavItem";
-import { resolveCreateAction, resolveNavEntries } from "./navDestinations";
+import { NAV_DESTINATIONS, resolveCreateAction, resolveNavEntries } from "./navDestinations";
 import { useI18n } from "../../../core/i18n/context";
 import type { NavAlign, NavigationSide, NavItemId } from "../../../core/storage/schemas";
 
@@ -60,6 +60,10 @@ export function SidebarNav({
   items?: readonly NavItemId[] | null;
 }) {
   const entries = resolveNavEntries(items);
+  const destinations = entries.flatMap((entry) =>
+    entry.kind === "destination" && entry.destination.id !== "settings" ? [entry.destination] : [],
+  );
+  const settingsDestination = NAV_DESTINATIONS.find((entry) => entry.id === "settings");
   const { pathname } = useLocation();
   const { t } = useI18n();
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -67,6 +71,7 @@ export function SidebarNav({
 
   const layoutId = floating ? "activeTabSidebarFloating" : "activeTabSidebar";
   const itemRounded = floating ? "rounded-full" : "rounded-2xl";
+  const dividerClassName = "my-1 h-px w-7 shrink-0 bg-fg/10";
   const floatingAnchor =
     align === "center"
       ? "top-1/2 -translate-y-1/2"
@@ -77,39 +82,65 @@ export function SidebarNav({
     ? `fixed ${floatingAnchor} z-30 flex flex-col items-center gap-1 rounded-full border border-fg/10 bg-nav/95 px-1.5 py-2 text-fg shadow-[0_12px_32px_rgba(0,0,0,0.35)] backdrop-blur-md ${
         side === "right" ? "right-8" : "left-8"
       }`
-    : `fixed bottom-0 top-[var(--titlebar-h,0px)] z-30 flex w-16 flex-col items-center gap-1 bg-nav/95 py-3 text-fg ${
+    : `fixed bottom-0 top-[var(--titlebar-h,0px)] z-30 flex w-16 flex-col items-center gap-1 pt-3 pb-20 text-fg ${
         align === "center" ? "justify-center" : align === "end" ? "justify-end" : "justify-start"
-      } ${side === "right" ? "right-0 border-l border-fg/8" : "left-0 border-r border-fg/8"}`;
+      } ${side === "right" ? "right-0" : "left-0"}`;
+
+  const createButton = (
+    <button
+      onClick={() => resolveCreateAction(pathname, onCreateClick)}
+      data-tour-id="nav-create"
+      title={t("common.bottomNav.create")}
+      className={`flex h-12 w-12 shrink-0 items-center justify-center ${
+        floating ? "rounded-full" : "rounded-2xl"
+      } border border-fg/15 bg-fg/10 text-fg shadow-[0_8px_20px_rgba(0,0,0,0.25)] transition hover:border-fg/25 hover:bg-fg/20`}
+      aria-label={t("common.bottomNav.create")}
+    >
+      <Plus size={20} />
+    </button>
+  );
+
+  const settingsButton = settingsDestination ? (
+    <TabItem
+      to={settingsDestination.to}
+      icon={settingsDestination.icon}
+      label={t(settingsDestination.labelKey)}
+      active={settingsDestination.isActive(pathname)}
+      className="h-12 w-12"
+      layoutId={layoutId}
+      rounded={itemRounded}
+    />
+  ) : null;
 
   return (
     <div ref={containerRef} className={containerClassName}>
-      {entries.map((entry, index) =>
-        entry.kind === "create" ? (
-          <button
-            key={`create-${index}`}
-            onClick={() => resolveCreateAction(pathname, onCreateClick)}
-            data-tour-id="nav-create"
-            title={t("common.bottomNav.create")}
-            className={`flex h-12 w-12 items-center justify-center ${
-              floating ? "rounded-full" : "rounded-2xl"
-            } border border-fg/15 bg-fg/10 text-fg shadow-[0_8px_20px_rgba(0,0,0,0.25)] transition hover:border-fg/25 hover:bg-fg/20`}
-            aria-label={t("common.bottomNav.create")}
-          >
-            <Plus size={20} />
-          </button>
-        ) : (
-          <TabItem
-            key={entry.destination.id}
-            to={entry.destination.to}
-            icon={entry.destination.icon}
-            label={t(entry.destination.labelKey)}
-            active={entry.destination.isActive(pathname)}
-            className="h-12 w-12"
-            dataTourId={entry.destination.dataTourId}
-            layoutId={layoutId}
-            rounded={itemRounded}
-          />
-        ),
+      {createButton}
+      <div className={dividerClassName} />
+      {destinations.map((destination) => (
+        <TabItem
+          key={destination.id}
+          to={destination.to}
+          icon={destination.icon}
+          label={t(destination.labelKey)}
+          active={destination.isActive(pathname)}
+          className="h-12 w-12"
+          dataTourId={destination.dataTourId}
+          layoutId={layoutId}
+          rounded={itemRounded}
+        />
+      ))}
+      {floating ? (
+        settingsButton && (
+          <>
+            <div className={dividerClassName} />
+            {settingsButton}
+          </>
+        )
+      ) : (
+        <div className="absolute inset-x-0 bottom-3 flex flex-col items-center gap-1">
+          <div className={dividerClassName} />
+          {settingsButton}
+        </div>
       )}
     </div>
   );
