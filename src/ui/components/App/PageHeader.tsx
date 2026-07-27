@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ComponentType } from "react";
 import { createPortal } from "react-dom";
-import { Search, X } from "lucide-react";
+import { ArrowLeft, Search, X } from "lucide-react";
 
 import { useI18n } from "../../../core/i18n/context";
 import { interactive, cn } from "../../design-tokens";
@@ -8,19 +8,25 @@ import { interactive, cn } from "../../design-tokens";
 interface PageHeaderProps {
   title: string;
   meta?: string;
+  onBack?: () => void;
+  backLabel?: string;
   searchValue?: string;
   onSearchChange?: (value: string) => void;
   searchPlaceholder?: string;
   actions?: React.ReactNode;
+  filters?: React.ReactNode;
 }
 
 export function PageHeader({
   title,
   meta,
+  onBack,
+  backLabel,
   searchValue,
   onSearchChange,
   searchPlaceholder,
   actions,
+  filters,
 }: PageHeaderProps) {
   const { t } = useI18n();
   const sentinelRef = useRef<HTMLDivElement | null>(null);
@@ -53,17 +59,31 @@ export function PageHeader({
   const bar = (
     <div
       ref={barRef}
-      className="fixed left-[var(--appnav-w,0px)] right-[var(--appnav-wr,0px)] top-[var(--titlebar-h,0px)] z-40 bg-surface"
+      className="fixed left-[var(--appnav-w,0px)] right-[var(--appnav-wr,0px)] top-[calc(var(--titlebar-h,0px)+var(--topnav-h,0px))] z-40 bg-surface"
     >
       <div className="px-4">
         <div className="mx-auto w-full max-w-6xl px-8">
           <div
             className={cn(
-              "flex items-end justify-between gap-6 border-b border-fg/10",
+              "border-b border-fg/10",
               condensed ? "pb-2 pt-2" : "pb-4 pt-4",
               interactive.transition.default,
             )}
           >
+          {onBack && (
+            <button
+              type="button"
+              onClick={onBack}
+              className={cn(
+                "mb-1.5 flex items-center gap-1 text-xs font-medium text-fg/45 hover:text-fg",
+                interactive.transition.fast,
+              )}
+            >
+              <ArrowLeft size={13} strokeWidth={2.5} />
+              {backLabel ?? t("common.buttons.back")}
+            </button>
+          )}
+          <div className="flex items-end justify-between gap-6">
             <div className="flex min-w-0 items-baseline gap-3">
               <h1
                 className={cn(
@@ -113,6 +133,10 @@ export function PageHeader({
               )}
               {actions}
             </div>
+          </div>
+          {filters && (
+            <div className="scrollbar-hide mt-3 flex gap-2 overflow-x-auto">{filters}</div>
+          )}
           </div>
         </div>
       </div>
