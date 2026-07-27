@@ -2958,7 +2958,7 @@ export type NavigationStyle = z.infer<typeof NavigationStyleSchema>;
 export const NavigationSideSchema = z.enum(["left", "right"]);
 export type NavigationSide = z.infer<typeof NavigationSideSchema>;
 
-export const HeaderStyleSchema = z.enum(["auto", "attached", "floating"]);
+export const HeaderStyleSchema = z.enum(["auto", "attached", "floating", "inline"]);
 export type HeaderStyle = z.infer<typeof HeaderStyleSchema>;
 
 export const NavAlignSchema = z.enum(["start", "center", "end"]);
