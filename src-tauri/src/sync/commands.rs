@@ -2,18 +2,18 @@ use crate::sync::manager::{self, SyncStatus};
 use tauri::{AppHandle, Manager};
 
 #[tauri::command]
-pub async fn start_driver(app: AppHandle, port: u16) -> Result<String, String> {
-    manager::start_driver(app, port).await
+pub async fn share_sync_device(app: AppHandle, port: u16) -> Result<String, String> {
+    manager::share_device(app, port).await
 }
 
 #[tauri::command]
-pub async fn connect_as_passenger(
+pub async fn connect_sync_device(
     app: AppHandle,
     ip: String,
     port: u16,
     pin: String,
 ) -> Result<(), String> {
-    manager::connect_as_passenger(app, ip, port, pin).await
+    manager::connect_device(app, ip, port, pin).await
 }
 
 #[tauri::command]

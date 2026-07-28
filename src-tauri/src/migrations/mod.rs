@@ -7,7 +7,7 @@ use crate::storage_manager::settings::{read_settings_typed, write_settings_typed
 use crate::utils::log_info;
 
 /// Current migration version
-pub const CURRENT_MIGRATION_VERSION: u32 = 83;
+pub const CURRENT_MIGRATION_VERSION: u32 = 85;
 
 pub fn run_migrations(app: &AppHandle) -> Result<(), String> {
     log_info(app, "migrations", "Starting migration check");
@@ -867,6 +867,16 @@ pub fn run_migrations(app: &AppHandle) -> Result<(), String> {
         );
         migrate_v82_to_v83(app)?;
         version = 83;
+    }
+
+    if version < 85 {
+        log_info(
+            app,
+            "migrations",
+            "Running migration to v85: Replace sync v1 metadata and repair pre-release sync v2 state",
+        );
+        migrate_to_v85(app)?;
+        version = 85;
     }
 
     // Update the stored version
@@ -4222,6 +4232,42 @@ fn migrate_v82_to_v83(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+fn migrate_to_v85(app: &AppHandle) -> Result<(), String> {
+    let conn = crate::storage_manager::db::open_db(app)?;
+    migrate_sync_v2_schema(&conn)
+}
+
+fn migrate_sync_v2_schema(conn: &rusqlite::Connection) -> Result<(), String> {
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|error| crate::utils::err_to_string(module_path!(), line!(), error))?;
+    tx.execute_batch(
+        "DROP TABLE IF EXISTS sync_v2_change_blobs;
+         DROP TABLE IF EXISTS sync_v2_incoming_revisions;
+         DROP TABLE IF EXISTS sync_v2_row_versions;
+         DROP TABLE IF EXISTS sync_v2_change_context;
+         DROP TABLE IF EXISTS sync_v2_conflicts;
+         DROP TABLE IF EXISTS sync_v2_peer_frontiers;
+         DROP TABLE IF EXISTS sync_v2_frontiers;
+         DROP TABLE IF EXISTS sync_v2_incoming_batches;
+         DROP TABLE IF EXISTS sync_v2_blobs;
+         DROP TABLE IF EXISTS sync_v2_changes;
+         DROP TABLE IF EXISTS sync_v2_local_state;",
+    )
+    .map_err(|error| crate::utils::err_to_string(module_path!(), line!(), error))?;
+    crate::sync::v2::create_schema(&tx)
+        .map_err(|error| crate::utils::err_to_string(module_path!(), line!(), error))?;
+    tx.execute_batch(
+        "DROP TABLE IF EXISTS sync_peer_cursors;
+         DROP TABLE IF EXISTS sync_entity_heads;
+         DROP TABLE IF EXISTS sync_changes;
+         DROP TABLE IF EXISTS sync_local_state;",
+    )
+    .map_err(|error| crate::utils::err_to_string(module_path!(), line!(), error))?;
+    tx.commit()
+        .map_err(|error| crate::utils::err_to_string(module_path!(), line!(), error))
+}
+
 fn migrate_v80_to_v81(app: &AppHandle) -> Result<(), String> {
     let conn = crate::storage_manager::db::open_db(app)?;
     migrate_image_lora_metadata_columns(&conn)
@@ -4509,7 +4555,7 @@ fn migrate_v71_to_v72(app: &AppHandle) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::migrate_image_lora_metadata_columns;
+    use super::{migrate_image_lora_metadata_columns, migrate_sync_v2_schema};
 
     #[test]
     fn repairs_the_partial_image_lora_schema() {
@@ -4544,5 +4590,66 @@ mod tests {
             .unwrap();
         assert!(columns.iter().any(|column| column == "keyword_source"));
         assert!(columns.iter().any(|column| column == "architecture_source"));
+    }
+
+    #[test]
+    fn sync_v2_migration_replaces_v1_metadata_idempotently() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "PRAGMA foreign_keys = ON;
+             CREATE TABLE sync_peer_cursors (id TEXT PRIMARY KEY);
+             CREATE TABLE sync_entity_heads (id TEXT PRIMARY KEY);
+             CREATE TABLE sync_changes (id TEXT PRIMARY KEY);
+             CREATE TABLE sync_local_state (id TEXT PRIMARY KEY);",
+        )
+        .unwrap();
+
+        migrate_sync_v2_schema(&conn).unwrap();
+        migrate_sync_v2_schema(&conn).unwrap();
+
+        for old_table in [
+            "sync_peer_cursors",
+            "sync_entity_heads",
+            "sync_changes",
+            "sync_local_state",
+        ] {
+            let exists = conn
+                .query_row(
+                    "SELECT EXISTS(
+                       SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = ?1
+                     )",
+                    [old_table],
+                    |row| row.get::<_, bool>(0),
+                )
+                .unwrap();
+            assert!(!exists, "{old_table} should be removed");
+        }
+        for new_table in [
+            "sync_v2_local_state",
+            "sync_v2_changes",
+            "sync_v2_frontiers",
+            "sync_v2_row_versions",
+            "sync_v2_conflicts",
+            "sync_v2_incoming_batches",
+            "sync_v2_blobs",
+        ] {
+            let exists = conn
+                .query_row(
+                    "SELECT EXISTS(
+                       SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = ?1
+                     )",
+                    [new_table],
+                    |row| row.get::<_, bool>(0),
+                )
+                .unwrap();
+            assert!(exists, "{new_table} should be created");
+        }
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .unwrap(),
+            0
+        );
     }
 }

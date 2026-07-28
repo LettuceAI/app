@@ -26,6 +26,7 @@ import { useI18n } from "../../../core/i18n/context";
 import { setOnboardingCompleted } from "../../../core/storage/appState";
 import { storageBridge } from "../../../core/storage/files";
 import { MissingModelRequirementsSheet } from "../../components/MissingModelRequirementsSheet";
+import { SyncStageProgress } from "../../components/SyncStageProgress";
 import {
   buildModelRequirementsQueuePath,
   getPostSyncMissingModelRequirementsSettled,
@@ -51,14 +52,13 @@ type SyncingDetails = {
 
 type SyncStatus =
   | { status: "Idle" }
-  | { status: "DriverRunning"; details: { ip: string; port: number; pin: string; clients: number } }
+  | { status: "Sharing"; details: { ip: string; port: number; pin: string; clients: number } }
   | { status: "PendingApproval"; details: { ip: string; device_name: string } }
-  | { status: "PendingSyncStart"; details: { ip: string; device_name: string } }
-  | { status: "PassengerConnecting" }
-  | { status: "PassengerConnected"; details: { driver_ip: string } }
-  | { status: "WaitingConfirmation"; details: { driver_ip: string } }
+  | { status: "PendingStart"; details: { ip: string; device_name: string } }
+  | { status: "Connecting" }
+  | { status: "WaitingForApproval"; details: { peer: string } }
   | { status: "Syncing"; details: SyncingDetails }
-  | { status: "SyncCompleted" }
+  | { status: "Completed" }
   | { status: "Error"; details: { message: string } };
 
 const COMPLETION_DESTINATION = "/chat";
@@ -136,7 +136,7 @@ export function OnboardingSyncStep() {
   }, [status]);
 
   useEffect(() => {
-    if (status.status !== "SyncCompleted") {
+    if (status.status !== "Completed") {
       handledCompletionRef.current = false;
       return;
     }
@@ -205,7 +205,7 @@ export function OnboardingSyncStep() {
         }
       }
 
-      await invoke("connect_as_passenger", { ip: ipToUse, port: portToUse, pin: pinToUse });
+      await invoke("connect_sync_device", { ip: ipToUse, port: portToUse, pin: pinToUse });
     } catch (e) {
       console.error("Failed to connect", e);
       setIsConnecting(false);
@@ -278,11 +278,10 @@ export function OnboardingSyncStep() {
 
   const isIdle = status.status === "Idle";
   const isError = status.status === "Error";
-  const isPassengerConnecting = status.status === "PassengerConnecting";
-  const isPassengerConnected = status.status === "PassengerConnected";
-  const isWaitingConfirmation = status.status === "WaitingConfirmation";
+  const isConnectionInProgress = status.status === "Connecting";
+  const isWaitingForApproval = status.status === "WaitingForApproval";
   const isSyncing = status.status === "Syncing";
-  const isCompleted = status.status === "SyncCompleted" && !rejected;
+  const isCompleted = status.status === "Completed" && !rejected;
 
   const syncingDetails = isSyncing
     ? (status as Extract<SyncStatus, { status: "Syncing" }>).details
@@ -435,9 +434,8 @@ export function OnboardingSyncStep() {
             </div>
           )}
 
-          {(isPassengerConnecting ||
-            isPassengerConnected ||
-            isWaitingConfirmation ||
+          {(isConnectionInProgress ||
+            isWaitingForApproval ||
             isSyncing ||
             isCompleted) && (
             <div
@@ -460,23 +458,16 @@ export function OnboardingSyncStep() {
                     <p className="text-[13px] font-semibold text-white">
                       {isCompleted
                         ? t("sync.messages.completed")
-                        : isPassengerConnecting
+                        : isConnectionInProgress
                           ? t("sync.status.connecting")
-                          : isWaitingConfirmation
+                          : isWaitingForApproval
                             ? t("sync.status.waitingConfirmation")
-                            : isPassengerConnected
-                              ? t("sync.status.connected")
-                              : t("sync.status.syncing")}
+                            : t("sync.status.syncing")}
                     </p>
                   </div>
-                  {isWaitingConfirmation && (
+                  {isWaitingForApproval && (
                     <p className="mt-0.5 truncate text-[11px] leading-relaxed text-white/50">
                       {t("sync.status.waitingConfirmationDesc")}
-                    </p>
-                  )}
-                  {isSyncing && syncingDetails?.phase && (
-                    <p className="mt-0.5 truncate text-[11px] leading-relaxed text-white/50">
-                      {syncingDetails.phase}
                     </p>
                   )}
                   {isCompleted && (
@@ -496,25 +487,30 @@ export function OnboardingSyncStep() {
               </div>
 
               {isSyncing && (
-                <div className="px-4 pb-4">
-                  <div className="relative h-1 w-full overflow-hidden rounded-full bg-white/8">
-                    <div
-                      className={cn(
-                        "h-full rounded-full bg-emerald-400/80",
-                        ratio !== null
-                          ? "transition-[width] duration-500 ease-out"
-                          : "w-1/4 animate-pulse",
-                      )}
-                      style={ratio !== null ? { width: `${ratio * 100}%` } : undefined}
-                    />
+                <>
+                  <div className="px-4 pb-4">
+                    <div className="relative h-1 w-full overflow-hidden rounded-full bg-white/8">
+                      <div
+                        className={cn(
+                          "h-full rounded-full bg-emerald-400/80",
+                          ratio !== null
+                            ? "transition-[width] duration-500 ease-out"
+                            : "w-1/4 animate-pulse",
+                        )}
+                        style={ratio !== null ? { width: `${ratio * 100}%` } : undefined}
+                      />
+                    </div>
+                    {(syncingDetails?.bytes_total ?? 0) > 0 && (
+                      <p className="mt-2 text-[11px] tabular-nums text-white/45">
+                        {formatBytes(syncingDetails?.bytes_done ?? 0)} /{" "}
+                        {formatBytes(syncingDetails?.bytes_total ?? 0)}
+                      </p>
+                    )}
                   </div>
-                  {(syncingDetails?.bytes_total ?? 0) > 0 && (
-                    <p className="mt-2 text-[11px] tabular-nums text-white/45">
-                      {formatBytes(syncingDetails?.bytes_done ?? 0)} /{" "}
-                      {formatBytes(syncingDetails?.bytes_total ?? 0)}
-                    </p>
+                  {syncingDetails?.phase && (
+                    <SyncStageProgress phase={syncingDetails.phase} surface="onboarding" />
                   )}
-                </div>
+                </>
               )}
 
               {completing && isCompleted && (
@@ -525,7 +521,7 @@ export function OnboardingSyncStep() {
             </div>
           )}
 
-          {(isPassengerConnecting || isPassengerConnected || isWaitingConfirmation) && (
+          {(isConnectionInProgress || isWaitingForApproval) && (
             <button
               onClick={() => void handleBack()}
               className={cn(

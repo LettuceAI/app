@@ -2,7 +2,13 @@ use chrono::Local;
 use rusqlite::{params, OptionalExtension};
 use serde_json::{Map as JsonMap, Value as JsonValue};
 
-use super::{db::now_ms, db::open_db, legacy::read_encrypted_file, legacy::settings_path};
+use super::{
+    db::now_ms,
+    db::open_db,
+    db::tracked_write_string,
+    legacy::read_encrypted_file,
+    legacy::settings_path,
+};
 use crate::utils::{log_error, log_info};
 
 fn summarize_app_state_for_logs(app_state: &JsonValue) -> String {
@@ -332,7 +338,7 @@ fn db_read_settings_json(app: &tauri::AppHandle) -> Result<Option<String>, Strin
 
 fn db_write_settings_json(app: &tauri::AppHandle, data: String) -> Result<(), String> {
     log_info(app, "settings", "Writing settings to DB");
-    let mut conn = open_db(app)?;
+    let conn = open_db(app)?;
     let now = now_ms() as i64;
     let json: JsonValue = serde_json::from_str(&data).map_err(|e| {
         log_error(
@@ -390,9 +396,7 @@ fn db_write_settings_json(app: &tauri::AppHandle, data: String) -> Result<(), St
         }
     });
 
-    let tx = conn
-        .transaction()
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    tracked_write_string(&conn, |tx| {
     let settings_rows = tx.execute(
         r#"INSERT INTO settings (id, default_provider_credential_id, default_model_id, app_state, advanced_model_settings, prompt_template_id, system_prompt, migration_version, advanced_settings, created_at, updated_at)
             VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -599,8 +603,8 @@ fn db_write_settings_json(app: &tauri::AppHandle, data: String) -> Result<(), St
             );
         }
     }
-    tx.commit()
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    Ok(())
+    })?;
     log_info(
         app,
         "settings",
@@ -646,6 +650,18 @@ fn ensure_settings_row(conn: &rusqlite::Connection) -> Result<(), String> {
     )
     .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     Ok(())
+}
+
+fn tracked_settings_update<F>(conn: &rusqlite::Connection, mutate: F) -> Result<(), String>
+where
+    F: FnOnce(&rusqlite::Connection) -> Result<usize, rusqlite::Error>,
+{
+    tracked_write_string(conn, |tx| {
+        ensure_settings_row(tx)?;
+        mutate(tx)
+            .map(|_| ())
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
+    })
 }
 
 pub fn settings_increment_app_active_usage_ms(
@@ -774,19 +790,16 @@ pub fn settings_set_defaults(
     default_model_id: Option<String>,
 ) -> Result<(), String> {
     let conn = open_db(&app)?;
-    ensure_settings_row(&conn)?;
     let now = now_ms() as i64;
-    conn.execute(
+    tracked_settings_update(&conn, |tx| tx.execute(
         "UPDATE settings SET default_provider_credential_id = ?, default_model_id = ?, updated_at = ? WHERE id = 1",
         params![default_provider_credential_id, default_model_id, now],
-    ).map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-    Ok(())
+    ))
 }
 
 #[tauri::command]
 pub fn settings_set_advanced(app: tauri::AppHandle, advanced_json: String) -> Result<(), String> {
     let conn = open_db(&app)?;
-    ensure_settings_row(&conn)?;
     let now = now_ms() as i64;
     let db_val: Option<String> = {
         let s = advanced_json.trim();
@@ -796,12 +809,10 @@ pub fn settings_set_advanced(app: tauri::AppHandle, advanced_json: String) -> Re
             Some(s.to_string())
         }
     };
-    conn.execute(
+    tracked_settings_update(&conn, |tx| tx.execute(
         "UPDATE settings SET advanced_settings = ?, updated_at = ? WHERE id = 1",
         params![db_val, now],
-    )
-    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-    Ok(())
+    ))
 }
 
 #[tauri::command]
@@ -810,7 +821,6 @@ pub fn settings_set_advanced_model_settings(
     advanced_json: String,
 ) -> Result<(), String> {
     let conn = open_db(&app)?;
-    ensure_settings_row(&conn)?;
     let now = now_ms() as i64;
     let db_val: Option<String> = {
         let s = advanced_json.trim();
@@ -820,12 +830,10 @@ pub fn settings_set_advanced_model_settings(
             Some(s.to_string())
         }
     };
-    conn.execute(
+    tracked_settings_update(&conn, |tx| tx.execute(
         "UPDATE settings SET advanced_model_settings = ?, updated_at = ? WHERE id = 1",
         params![db_val, now],
-    )
-    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-    Ok(())
+    ))
 }
 
 #[tauri::command]
@@ -834,37 +842,30 @@ pub fn settings_set_default_provider(
     id: Option<String>,
 ) -> Result<(), String> {
     let conn = open_db(&app)?;
-    ensure_settings_row(&conn)?;
     let now = now_ms() as i64;
-    conn.execute(
+    tracked_settings_update(&conn, |tx| tx.execute(
         "UPDATE settings SET default_provider_credential_id = ?, updated_at = ? WHERE id = 1",
         params![id, now],
-    )
-    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-    Ok(())
+    ))
 }
 
 #[tauri::command]
 pub fn settings_set_default_model(app: tauri::AppHandle, id: Option<String>) -> Result<(), String> {
     let conn = open_db(&app)?;
-    ensure_settings_row(&conn)?;
     let now = now_ms() as i64;
-    conn.execute(
+    tracked_settings_update(&conn, |tx| tx.execute(
         "UPDATE settings SET default_model_id = ?, updated_at = ? WHERE id = 1",
         params![id, now],
-    )
-    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-    Ok(())
+    ))
 }
 
 #[tauri::command]
 pub fn settings_set_app_state(app: tauri::AppHandle, state_json: String) -> Result<(), String> {
     let conn = open_db(&app)?;
-    ensure_settings_row(&conn)?;
-
-    let merged_state_json = {
+    let merged_state_json = tracked_write_string(&conn, |tx| {
+        ensure_settings_row(tx)?;
         let incoming = serde_json::from_str::<JsonValue>(&state_json).ok();
-        let existing_json: Option<String> = conn
+        let existing_json: Option<String> = tx
             .query_row("SELECT app_state FROM settings WHERE id = 1", [], |r| {
                 r.get(0)
             })
@@ -874,7 +875,7 @@ pub fn settings_set_app_state(app: tauri::AppHandle, state_json: String) -> Resu
             .as_deref()
             .and_then(|raw| serde_json::from_str::<JsonValue>(raw).ok());
 
-        match (incoming, existing) {
+        let merged = match (incoming, existing) {
             (Some(mut incoming_value), Some(existing_value)) => {
                 if let (Some(incoming_obj), Some(existing_obj)) =
                     (incoming_value.as_object_mut(), existing_value.as_object())
@@ -896,15 +897,15 @@ pub fn settings_set_app_state(app: tauri::AppHandle, state_json: String) -> Resu
                     .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
             }
             _ => state_json,
-        }
-    };
-
-    let now = now_ms() as i64;
-    conn.execute(
-        "UPDATE settings SET app_state = ?, updated_at = ? WHERE id = 1",
-        params![merged_state_json, now],
-    )
-    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        };
+        let now = now_ms() as i64;
+        tx.execute(
+            "UPDATE settings SET app_state = ?, updated_at = ? WHERE id = 1",
+            params![merged, now],
+        )
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        Ok(merged)
+    })?;
     if let Ok(app_state) = serde_json::from_str::<JsonValue>(&merged_state_json) {
         sync_content_filter_from_app_state(&app, &app_state);
     }
@@ -917,14 +918,11 @@ pub fn settings_set_prompt_template(
     id: Option<String>,
 ) -> Result<(), String> {
     let conn = open_db(&app)?;
-    ensure_settings_row(&conn)?;
     let now = now_ms() as i64;
-    conn.execute(
+    tracked_settings_update(&conn, |tx| tx.execute(
         "UPDATE settings SET prompt_template_id = ?, updated_at = ? WHERE id = 1",
         params![id, now],
-    )
-    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-    Ok(())
+    ))
 }
 
 #[tauri::command]
@@ -933,27 +931,21 @@ pub fn settings_set_system_prompt(
     prompt: Option<String>,
 ) -> Result<(), String> {
     let conn = open_db(&app)?;
-    ensure_settings_row(&conn)?;
     let now = now_ms() as i64;
-    conn.execute(
+    tracked_settings_update(&conn, |tx| tx.execute(
         "UPDATE settings SET system_prompt = ?, updated_at = ? WHERE id = 1",
         params![prompt, now],
-    )
-    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-    Ok(())
+    ))
 }
 
 #[tauri::command]
 pub fn settings_set_migration_version(app: tauri::AppHandle, version: i64) -> Result<(), String> {
     let conn = open_db(&app)?;
-    ensure_settings_row(&conn)?;
     let now = now_ms() as i64;
-    conn.execute(
+    tracked_settings_update(&conn, |tx| tx.execute(
         "UPDATE settings SET migration_version = ?, updated_at = ? WHERE id = 1",
         params![version, now],
-    )
-    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-    Ok(())
+    ))
 }
 
 pub fn get_model_output_scopes(

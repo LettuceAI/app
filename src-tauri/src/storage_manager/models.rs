@@ -1,7 +1,7 @@
 use rusqlite::{params, OptionalExtension};
 use serde_json::{Map as JsonMap, Value as JsonValue};
 
-use super::db::{now_ms, open_db};
+use super::db::{now_ms, open_db, tracked_write};
 
 pub fn model_set_llama_runtime_report(
     app: &tauri::AppHandle,
@@ -53,11 +53,12 @@ pub fn model_set_llama_runtime_report(
     let updated_advanced_json = serde_json::to_string(&advanced_value)
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 
-    conn.execute(
-        "UPDATE models SET advanced_model_settings = ?1 WHERE id = ?2",
-        params![updated_advanced_json, model_id],
-    )
-    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    tracked_write(&conn, |tx| {
+        tx.execute(
+            "UPDATE models SET advanced_model_settings = ?1 WHERE id = ?2",
+            params![updated_advanced_json, model_id],
+        )
+    })?;
 
     Ok(true)
 }
@@ -216,7 +217,7 @@ pub fn model_upsert(app: tauri::AppHandle, model_json: String) -> Result<String,
         .flatten()
     });
     let provider_credential_id_for_db = provider_credential_id.clone();
-    conn.execute(
+    tracked_write(&conn, |tx| tx.execute(
         r#"INSERT INTO models (id, name, provider_id, provider_credential_id, provider_label, display_name, created_at, model_type, input_scopes, output_scopes, advanced_model_settings, prompt_template_id, system_prompt)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
@@ -245,7 +246,7 @@ pub fn model_upsert(app: tauri::AppHandle, model_json: String) -> Result<String,
             prompt_template_id,
             system_prompt
         ],
-    ).map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    ))?;
     let mut out = JsonMap::new();
     out.insert("id".into(), JsonValue::String(id));
     out.insert("name".into(), JsonValue::String(name.to_string()));
@@ -299,22 +300,23 @@ pub fn model_upsert(app: tauri::AppHandle, model_json: String) -> Result<String,
 #[tauri::command]
 pub fn model_delete(app: tauri::AppHandle, id: String) -> Result<(), String> {
     let conn = open_db(&app)?;
-    conn.execute("DELETE FROM models WHERE id = ?", params![id])
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    tracked_write(&conn, |tx| {
+        tx.execute("DELETE FROM models WHERE id = ?", params![id])
+    })?;
     Ok(())
 }
 
 pub fn clear_all_llama_runtime_layer_caches(app: &tauri::AppHandle) -> Result<usize, String> {
     let conn = open_db(app)?;
-    let rows = conn
-        .execute(
+    let rows = tracked_write(&conn, |tx| {
+        tx.execute(
             "UPDATE models
              SET advanced_model_settings = json_remove(advanced_model_settings, '$.llamaLastRuntimeReport.actualGpuLayersUsed')
              WHERE provider_id = 'llamacpp'
                AND json_extract(advanced_model_settings, '$.llamaLastRuntimeReport.actualGpuLayersUsed') IS NOT NULL",
             [],
         )
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    })?;
     Ok(rows)
 }
 

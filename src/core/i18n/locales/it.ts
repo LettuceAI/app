@@ -6920,10 +6920,10 @@ export const itMessages: DeepPartialMessageTree<LocaleMessages> = {
   },
   sync: {
     modes: {
-      join: "Unisciti",
-      joinDesc: "Ricevi dati dall'host",
-      host: "Host",
-      hostDesc: "Invia i dati di questo dispositivo",
+      join: "Connetti",
+      joinDesc: "Inserisci l'indirizzo di un altro dispositivo",
+      host: "Condividi",
+      hostDesc: "Crea una connessione per un altro dispositivo",
     },
     sections: {
       mode: "Modalità",
@@ -6948,7 +6948,7 @@ export const itMessages: DeepPartialMessageTree<LocaleMessages> = {
       startHosting: "Avvia hosting",
       startingServer: "Avvio server...",
       stopHosting: "Ferma hosting",
-      hostAgain: "Ospita di nuovo",
+      hostAgain: "Sincronizza un altro dispositivo",
       done: "Fatto",
     },
     status: {
@@ -6959,14 +6959,27 @@ export const itMessages: DeepPartialMessageTree<LocaleMessages> = {
       syncing: "Sincronizzazione...",
       transferringData: "Trasferimento dati",
       syncInProgress: "Sincronizzazione in corso",
+      bidirectional: "Entrambi i dispositivi inviano e ricevono",
       live: "Attivo",
       broadcasting: "Trasmissione",
       clientsLabel: "Connessi",
       clientsUnit: "Client",
     },
+    progress: {
+      stage: "Fase {{current}} di {{total}}",
+      stages: { verify: "Verifica", compare: "Confronto", data: "Dati", files: "File" },
+      phases: {
+        verifyingDevices: "Verifica di entrambi i dispositivi",
+        comparingChanges: "Confronto delle modifiche al database",
+        exchangingChanges: "Scambio delle modifiche al database",
+        applyingChanges: "Applicazione delle modifiche ricevute",
+        comparingFiles: "Confronto dei file",
+        exchangingFiles: "Scambio dei file",
+      },
+    },
     pinDescription: "Condividi questo PIN con il dispositivo che si connette",
-    hostingDesc1: "Altri dispositivi possono connettersi e sincronizzare i dati da questo dispositivo.",
-    hostingDesc2: "I tuoi dati verranno condivisi con i client connessi.",
+    hostingDesc1: "Rendi questo dispositivo disponibile a un altro dispositivo nella rete.",
+    hostingDesc2: "Dopo la connessione, entrambi i dispositivi confrontano e scambiano le ultime modifiche.",
     setupSteps: {
       step1: "Apri l'app su un altro dispositivo",
       step2: "Vai a Impostazioni → Sincronizzazione locale",
@@ -6978,7 +6991,7 @@ export const itMessages: DeepPartialMessageTree<LocaleMessages> = {
       error: "Errore di connessione",
       outdatedClient: "Client obsoleto rilevato",
     },
-    disclaimer: "La sincronizzazione funziona sulla tua rete locale. Entrambi i dispositivi devono essere sulla stessa rete WiFi.",
+    disclaimer: "Entrambi i dispositivi inviano e ricevono modifiche sulla rete locale. Devono usare la stessa versione di LettuceAI.",
     modals: {
       connectionRequest: "Richiesta di connessione",
       requestMessage: "vuole sincronizzarsi con questo dispositivo.",
@@ -7009,6 +7022,8 @@ export const itMessages: DeepPartialMessageTree<LocaleMessages> = {
     panel: {
       items: "Elementi",
       itemsSent: "Elementi inviati",
+      sent: "Inviati",
+      received: "Ricevuti",
       transferred: "Trasferito",
       breakdown: "Analisi dettagliata",
     },

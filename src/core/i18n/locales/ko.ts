@@ -7668,10 +7668,10 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
   },
   sync: {
     modes: {
-      join: "참여",
-      joinDesc: "호스트에서 데이터 받기",
-      host: "호스트",
-      hostDesc: "이 기기의 데이터 보내기",
+      join: "연결",
+      joinDesc: "다른 기기의 주소 입력",
+      host: "공유",
+      hostDesc: "다른 기기를 위한 연결 만들기",
     },
     sections: {
       mode: "모드",
@@ -7696,7 +7696,7 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
       startHosting: "호스팅 시작",
       startingServer: "서버 시작 중...",
       stopHosting: "호스팅 중지",
-      hostAgain: "다시 호스팅",
+      hostAgain: "다른 기기 동기화",
       done: "완료",
     },
     status: {
@@ -7707,14 +7707,27 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
       syncing: "동기화 중...",
       transferringData: "데이터 전송 중",
       syncInProgress: "동기화 진행 중",
+      bidirectional: "두 기기 모두 보내고 받습니다",
       live: "라이브",
       broadcasting: "브로드캐스팅",
       clientsLabel: "연결됨",
       clientsUnit: "클라이언트",
     },
+    progress: {
+      stage: "{{total}}단계 중 {{current}}단계",
+      stages: { verify: "확인", compare: "비교", data: "데이터", files: "파일" },
+      phases: {
+        verifyingDevices: "두 기기 확인 중",
+        comparingChanges: "데이터베이스 변경 사항 비교 중",
+        exchangingChanges: "데이터베이스 변경 사항 교환 중",
+        applyingChanges: "받은 변경 사항 적용 중",
+        comparingFiles: "파일 비교 중",
+        exchangingFiles: "파일 교환 중",
+      },
+    },
     pinDescription: "연결 기기와 이 PIN을 공유하세요",
-    hostingDesc1: "다른 기기가 이 기기에서 데이터를 연결하고 동기화할 수 있습니다.",
-    hostingDesc2: "연결된 클라이언트와 데이터가 공유됩니다.",
+    hostingDesc1: "네트워크의 다른 기기에서 이 기기에 연결할 수 있게 합니다.",
+    hostingDesc2: "연결되면 두 기기가 최신 변경 사항을 비교하고 교환합니다.",
     setupSteps: {
       step1: "다른 기기에서 앱 열기",
       step2: "설정 → 로컬 동기화로 이동",
@@ -7726,7 +7739,7 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
       error: "연결 오류",
       outdatedClient: "구버전 클라이언트 감지됨",
     },
-    disclaimer: "동기화는 로컬 네트워크를 통해 작동합니다. 두 기기가 같은 WiFi에 있어야 합니다.",
+    disclaimer: "두 기기 모두 로컬 네트워크를 통해 변경 사항을 보내고 받습니다. LettuceAI 버전이 같아야 합니다.",
     modals: {
       connectionRequest: "연결 요청",
       requestMessage: "이 기기와 동기화하려고 합니다.",
@@ -7757,6 +7770,8 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
     panel: {
       items: "항목",
       itemsSent: "전송된 항목",
+      sent: "보냄",
+      received: "받음",
       transferred: "전송됨",
       breakdown: "세부 내역",
     },

@@ -1,9 +1,11 @@
 pub mod apply;
+pub mod assets;
 pub mod batch;
 pub mod blob_store;
 pub mod capture;
 pub mod catalog;
 mod changeset;
+pub mod identity;
 pub mod model;
 pub mod planner;
 pub mod protocol;
@@ -21,13 +23,14 @@ pub use blob_store::{
 };
 pub use capture::{
     capture_local_string_transaction, capture_local_transaction, capture_transaction,
-    CaptureError, CapturedTransaction,
+    ensure_current_database_seeded, CaptureError, CapturedTransaction,
 };
 pub use catalog::{
     audit_sync_catalog, cached_schema_fingerprint, schema_fingerprint,
     syncable_tables, CatalogError, TableInfo,
 };
 pub use model::{ApplyOutcome, ApplyResult, ChangeRevision, Frontier, HybridTimestamp};
+pub use identity::get_or_create_device_id;
 pub use planner::{outbound_ranges, MissingRange};
 pub use replication::{
     build_outbound_batch, plan_outbound, record_peer_acknowledgement, ReplicationError,

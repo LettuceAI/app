@@ -8635,10 +8635,10 @@ export const enMessages = {
   },
   sync: {
     modes: {
-      join: "Join",
-      joinDesc: "Receive data from host",
-      host: "Host",
-      hostDesc: "Send this device's data",
+      join: "Connect",
+      joinDesc: "Enter another device's address",
+      host: "Share",
+      hostDesc: "Create a connection for another device",
     },
     sections: {
       mode: "Mode",
@@ -8663,7 +8663,7 @@ export const enMessages = {
       startHosting: "Start Hosting",
       startingServer: "Starting server...",
       stopHosting: "Stop Hosting",
-      hostAgain: "Host Again",
+      hostAgain: "Sync Another Device",
       done: "Done",
     },
     status: {
@@ -8674,14 +8674,32 @@ export const enMessages = {
       syncing: "Syncing...",
       transferringData: "Transferring data",
       syncInProgress: "Sync in Progress",
+      bidirectional: "Both devices send and receive",
       live: "Live",
       broadcasting: "Broadcasting",
       clientsLabel: "Connected",
       clientsUnit: "Clients",
     },
+    progress: {
+      stage: "Stage {{current}} of {{total}}",
+      stages: {
+        verify: "Verify",
+        compare: "Compare",
+        data: "Data",
+        files: "Files",
+      },
+      phases: {
+        verifyingDevices: "Verifying both devices",
+        comparingChanges: "Comparing database changes",
+        exchangingChanges: "Exchanging database changes",
+        applyingChanges: "Applying received changes",
+        comparingFiles: "Comparing files",
+        exchangingFiles: "Exchanging files",
+      },
+    },
     pinDescription: "Share this PIN with the connecting device",
-    hostingDesc1: "Other devices can connect and sync data from this device.",
-    hostingDesc2: "Your data will be shared with connected clients.",
+    hostingDesc1: "Make this device available to another device on your network.",
+    hostingDesc2: "Once connected, both devices compare and exchange their latest changes.",
     setupSteps: {
       step1: "Open app on another device",
       step2: "Go to Settings → Local Sync",
@@ -8693,7 +8711,7 @@ export const enMessages = {
       error: "Connection Error",
       outdatedClient: "Outdated Client Detected",
     },
-    disclaimer: "Sync works over your local network. Both devices must be on the same WiFi.",
+    disclaimer: "Both devices send and receive changes over your local network. They must use the same LettuceAI version.",
     modals: {
       connectionRequest: "Connection Request",
       requestMessage: "wants to sync with this device.",
@@ -8724,6 +8742,8 @@ export const enMessages = {
     panel: {
       items: "Items",
       itemsSent: "Items sent",
+      sent: "Sent",
+      received: "Received",
       transferred: "Transferred",
       breakdown: "Breakdown",
     },

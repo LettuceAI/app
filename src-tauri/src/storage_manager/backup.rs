@@ -2348,9 +2348,9 @@ fn import_characters(app: &tauri::AppHandle, data: &JsonValue) -> Result<(), Str
 
 fn export_asr_learning(app: &tauri::AppHandle) -> Result<JsonValue, String> {
     let conn = open_db(app)?;
-    let vocabulary_terms = crate::sync::db::fetch_asr_vocabulary_terms(&conn)?;
-    let corrections = crate::sync::db::fetch_asr_corrections(&conn)?;
-    let ignored_suggestions = crate::sync::db::fetch_asr_ignored_suggestions(&conn)?;
+    let vocabulary_terms = super::asr_backup::fetch_vocabulary_terms(&conn)?;
+    let corrections = super::asr_backup::fetch_corrections(&conn)?;
+    let ignored_suggestions = super::asr_backup::fetch_ignored_suggestions(&conn)?;
     Ok(serde_json::json!({
         "vocabularyTerms": vocabulary_terms,
         "corrections": corrections,
@@ -2382,7 +2382,7 @@ fn import_asr_learning(app: &tauri::AppHandle, data: &JsonValue) -> Result<(), S
     let tx = conn
         .transaction()
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-    crate::sync::db::apply_asr_learning_tables(
+    super::asr_backup::apply_learning_tables(
         &tx,
         &vocabulary_terms,
         &corrections,

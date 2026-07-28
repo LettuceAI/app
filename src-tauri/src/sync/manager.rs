@@ -2,52 +2,39 @@ use chacha20poly1305::{
     aead::{Aead, KeyInit},
     ChaCha20Poly1305, Key, Nonce,
 };
-use futures::{SinkExt, StreamExt};
+use futures::{
+    future::join,
+    stream::{SplitSink, SplitStream},
+    SinkExt, StreamExt,
+};
 use rand::{thread_rng, RngCore};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
+use std::fs::File;
+use std::io::{Read, Seek, SeekFrom};
 use std::net::SocketAddr;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{broadcast, Mutex, RwLock};
+use tokio::sync::{broadcast, Mutex, RwLock, Semaphore};
 use tokio_util::codec::Framed;
+use uuid::Uuid;
 
 use crate::sync::codec::P2PCodec;
-use crate::sync::db as sync_db;
-use crate::sync::protocol::{ChangeOp, DomainPlan, P2PMessage, SyncDomain};
-use crate::utils::{log_error, log_info, log_warn};
+use crate::sync::protocol::P2PMessage;
+use crate::sync::v2::protocol::{
+    validate_hello, BlobDescriptor, BlobRequestDescriptor, SyncHello, SyncLimits,
+    SyncV2Message,
+    SYNC_V2_PROTOCOL_VERSION,
+};
+use crate::sync::v2::{
+    apply_staged_batch, begin_blob_receive, build_outbound_batch,
+    cached_schema_fingerprint, finish_blob_receive, get_or_create_device_id,
+    load_frontier, plan_outbound, record_peer_acknowledgement,
+    revision_batch_hash, stage_revision_batch, write_blob_chunk, BlobReceiveState,
+};
+use crate::utils::{log_error, log_info};
 
-const PROTOCOL_VERSION: u32 = 12;
-const MANIFEST_MIN_PROTOCOL: u32 = 10;
-const READY_MIN_PROTOCOL: u32 = 11;
-const MAX_PUSH_BATCH_BYTES: u64 = 4 * 1024 * 1024;
-const MAX_PUSH_BATCH_COUNT: usize = 2000;
-const ASSET_CHUNK_PROTOCOL: u32 = 11;
-const ASSET_CHUNK_SIZE: usize = 256 * 1024;
-
-struct PendingAssetFile {
-    path: String,
-    content_hash: String,
-}
-
-struct PendingAssetBatch {
-    changes: Vec<crate::sync::protocol::ChangeRecord>,
-    expected_files: HashMap<String, PendingAssetFile>,
-    received_entity_ids: HashSet<String>,
-    last_change_id: i64,
-    bytes_received: u64,
-    payload_bytes: u64,
-    delete_count: u64,
-}
-
-struct PendingIncomingAsset {
-    entity_id: String,
-    path: String,
-    content_hash: String,
-    total_bytes: u64,
-    bytes_received: u64,
-    content: Vec<u8>,
-}
+const QUIESCENT_ACK: &str = "quiescent";
 
 fn derive_key(pin: &str, salt: &[u8]) -> [u8; 32] {
     let mut hasher = blake3::Hasher::new_derive_key("lettuce_sync_v1");
@@ -58,58 +45,32 @@ fn derive_key(pin: &str, salt: &[u8]) -> [u8; 32] {
     output
 }
 
-fn version_mismatch_error(
-    local_app_version: &str,
-    peer_name: &str,
-    peer_app_version: &str,
-    peer_protocol_version: u32,
-) -> Option<String> {
-    if peer_app_version == local_app_version && peer_protocol_version == PROTOCOL_VERSION {
-        return None;
-    }
-
-    let peer_label = if peer_name.is_empty() {
-        "The other device"
-    } else {
-        peer_name
-    };
-    Some(format!(
-        "Sync requires both devices to run exactly the same Lettuce AI version. {peer_label} uses app {peer_app_version} with protocol {peer_protocol_version}; this device uses app {local_app_version} with protocol {PROTOCOL_VERSION}. Update the mismatched device, fully restart both apps, and try again."
-    ))
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "status", content = "details")]
 pub enum SyncStatus {
     Idle,
-    DriverRunning {
+    Sharing {
         ip: String,
         port: u16,
-        pin: String, // Added PIN to status
+        pin: String,
         clients: usize,
     },
-    PassengerConnecting,
-    PassengerConnected {
-        driver_ip: String,
-    },
-    WaitingConfirmation {
-        driver_ip: String,
+    Connecting,
+    WaitingForApproval {
+        peer: String,
     },
     Syncing {
         phase: String,
         progress: Option<f32>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        current_domain: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         items_done: Option<u64>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         items_total: Option<u64>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         bytes_done: Option<u64>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         bytes_total: Option<u64>,
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        domain_progress: Vec<DomainProgress>,
+        items_sent: Option<u64>,
+        items_received: Option<u64>,
+        bytes_sent: Option<u64>,
+        bytes_received: Option<u64>,
+        conflicts_detected: Option<u64>,
     },
     Error {
         message: String,
@@ -118,123 +79,48 @@ pub enum SyncStatus {
         ip: String,
         device_name: String,
     },
-    PendingSyncStart {
+    PendingStart {
         ip: String,
         device_name: String,
     },
-    SyncCompleted,
+    Completed,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct DomainProgress {
-    pub domain: String,
-    pub items_done: u64,
-    pub items_total: u64,
+#[derive(Debug, Default)]
+struct TransferStats {
+    planned_items: u64,
+    planned_bytes: u64,
+    items_sent: u64,
+    items_received: u64,
+    bytes_sent: u64,
+    bytes_received: u64,
+    conflicts_detected: u64,
 }
 
-#[derive(Debug, Default, Clone)]
-struct SyncProgressTracker {
-    plan: Vec<(SyncDomain, u64)>, // (domain, change_count)
-    items_done_per_domain: HashMap<SyncDomain, u64>,
-    total_items: u64,
-    total_bytes: u64,
-    bytes_done: u64,
-}
-
-impl SyncProgressTracker {
-    fn from_plan(plan: &[DomainPlan]) -> Self {
-        let mut total_items = 0u64;
-        let mut total_bytes = 0u64;
-        let mut entries = Vec::with_capacity(plan.len());
-        for entry in plan {
-            total_items += entry.change_count as u64;
-            total_bytes += entry.estimated_bytes;
-            entries.push((entry.domain, entry.change_count as u64));
-        }
-        Self {
-            plan: entries,
-            items_done_per_domain: HashMap::new(),
-            total_items,
-            total_bytes,
-            bytes_done: 0,
-        }
-    }
-
-    fn items_done(&self) -> u64 {
-        self.items_done_per_domain.values().sum()
-    }
-
-    fn progress(&self) -> Option<f32> {
-        if self.total_bytes > 0 {
-            Some((self.bytes_done as f32 / self.total_bytes as f32).clamp(0.0, 1.0))
-        } else if self.total_items > 0 {
-            Some((self.items_done() as f32 / self.total_items as f32).clamp(0.0, 1.0))
+impl TransferStats {
+    fn status(&self, phase: impl Into<String>) -> SyncStatus {
+        let items_done = self.items_sent.saturating_add(self.items_received);
+        let bytes_done = self.bytes_sent.saturating_add(self.bytes_received);
+        let progress = if self.planned_bytes > 0 {
+            Some((bytes_done as f32 / self.planned_bytes as f32).clamp(0.0, 1.0))
+        } else if self.planned_items > 0 {
+            Some((items_done as f32 / self.planned_items as f32).clamp(0.0, 1.0))
         } else {
             None
-        }
-    }
-
-    fn record(&mut self, domain: SyncDomain, items: u64, bytes: u64) {
-        *self.items_done_per_domain.entry(domain).or_insert(0) += items;
-        self.bytes_done = self.bytes_done.saturating_add(bytes);
-    }
-
-    fn record_items(&mut self, domain: SyncDomain, items: u64) {
-        *self.items_done_per_domain.entry(domain).or_insert(0) += items;
-    }
-
-    fn record_bytes(&mut self, bytes: u64) {
-        self.bytes_done = self.bytes_done.saturating_add(bytes);
-    }
-
-    fn breakdown(&self) -> Vec<DomainProgress> {
-        self.plan
-            .iter()
-            .map(|(d, total)| DomainProgress {
-                domain: domain_label(*d).to_string(),
-                items_done: *self.items_done_per_domain.get(d).unwrap_or(&0),
-                items_total: *total,
-            })
-            .collect()
-    }
-
-    fn syncing_status(&self, phase: String, current_domain: Option<SyncDomain>) -> SyncStatus {
+        };
         SyncStatus::Syncing {
-            phase,
-            progress: self.progress(),
-            current_domain: current_domain.map(|d| domain_label(d).to_string()),
-            items_done: Some(self.items_done()),
-            items_total: Some(self.total_items),
-            bytes_done: Some(self.bytes_done),
-            bytes_total: Some(self.total_bytes),
-            domain_progress: self.breakdown(),
+            phase: phase.into(),
+            progress,
+            items_done: Some(items_done),
+            items_total: Some(self.planned_items),
+            bytes_done: Some(bytes_done),
+            bytes_total: Some(self.planned_bytes),
+            items_sent: Some(self.items_sent),
+            items_received: Some(self.items_received),
+            bytes_sent: Some(self.bytes_sent),
+            bytes_received: Some(self.bytes_received),
+            conflicts_detected: Some(self.conflicts_detected),
         }
-    }
-}
-
-fn syncing(phase: impl Into<String>) -> SyncStatus {
-    SyncStatus::Syncing {
-        phase: phase.into(),
-        progress: None,
-        current_domain: None,
-        items_done: None,
-        items_total: None,
-        bytes_done: None,
-        bytes_total: None,
-        domain_progress: Vec::new(),
-    }
-}
-
-fn domain_label(domain: SyncDomain) -> &'static str {
-    match domain {
-        SyncDomain::Core => "Core",
-        SyncDomain::Tts => "Voices",
-        SyncDomain::Lorebooks => "Lorebooks",
-        SyncDomain::Characters => "Characters",
-        SyncDomain::Groups => "Groups",
-        SyncDomain::Sessions => "Sessions",
-        SyncDomain::Messages => "Messages",
-        SyncDomain::Assets => "Assets",
     }
 }
 
@@ -242,9 +128,12 @@ pub struct SyncManagerState {
     pub status: RwLock<SyncStatus>,
     shutdown_tx: Mutex<Option<broadcast::Sender<()>>>,
     pub pending_approvals:
-        RwLock<std::collections::HashMap<String, tokio::sync::oneshot::Sender<bool>>>,
-    pub pending_starts: RwLock<std::collections::HashMap<String, tokio::sync::oneshot::Sender<()>>>,
-    pub pin: RwLock<Option<String>>, // Added PIN storage
+        RwLock<HashMap<String, tokio::sync::oneshot::Sender<bool>>>,
+    pub pending_starts:
+        RwLock<HashMap<String, tokio::sync::oneshot::Sender<()>>>,
+    pub pin: RwLock<Option<String>>,
+    sharing_port: RwLock<Option<u16>>,
+    connection_slot: Semaphore,
 }
 
 impl Default for SyncManagerState {
@@ -252,9 +141,11 @@ impl Default for SyncManagerState {
         Self {
             status: RwLock::new(SyncStatus::Idle),
             shutdown_tx: Mutex::new(None),
-            pending_approvals: RwLock::new(std::collections::HashMap::new()),
-            pending_starts: RwLock::new(std::collections::HashMap::new()),
+            pending_approvals: RwLock::new(HashMap::new()),
+            pending_starts: RwLock::new(HashMap::new()),
             pin: RwLock::new(None),
+            sharing_port: RwLock::new(None),
+            connection_slot: Semaphore::new(1),
         }
     }
 }
@@ -269,20 +160,24 @@ impl SyncManagerState {
         let _ = app.emit("sync-status-changed", status);
     }
 
-    pub async fn clear_pending(&self) {
+    async fn clear_pending(&self) {
         self.pending_approvals.write().await.clear();
         self.pending_starts.write().await.clear();
     }
 }
 
-async fn set_driver_running_status(app: &AppHandle, state: &SyncManagerState, port: u16) {
-    let my_ip = crate::utils::get_local_ip().unwrap_or_else(|_| "0.0.0.0".to_string());
+async fn set_sharing_status(
+    app: &AppHandle,
+    state: &SyncManagerState,
+    port: u16,
+) {
+    let ip = crate::utils::get_local_ip().unwrap_or_else(|_| "0.0.0.0".to_string());
     let pin = state.pin.read().await.clone().unwrap_or_default();
     state
         .set_status(
             app,
-            SyncStatus::DriverRunning {
-                ip: my_ip,
+            SyncStatus::Sharing {
+                ip,
                 port,
                 pin,
                 clients: 0,
@@ -291,29 +186,25 @@ async fn set_driver_running_status(app: &AppHandle, state: &SyncManagerState, po
         .await;
 }
 
-// Driver Logic (Host)
-pub async fn start_driver(app: AppHandle, _port: u16) -> Result<String, String> {
+pub async fn share_device(app: AppHandle, _port: u16) -> Result<String, String> {
     let state = app.state::<SyncManagerState>();
-    let mut current_tx = state.shutdown_tx.lock().await;
-    if current_tx.is_some() {
-        return Err(crate::utils::err_msg(
-            module_path!(),
-            line!(),
-            "Sync service is already running",
-        ));
+    let mut shutdown = state.shutdown_tx.lock().await;
+    if shutdown.is_some() {
+        let pin = state.pin.read().await.clone();
+        drop(shutdown);
+        if let Some(pin) = pin {
+            if let Some(port) = *state.sharing_port.read().await {
+                set_sharing_status(&app, state.inner(), port).await;
+            }
+            return Ok(pin);
+        }
+        return Err("A sync session is already running".to_string());
     }
 
     let listener = TcpListener::bind("0.0.0.0:0")
         .await
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-    let port = listener
-        .local_addr()
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
-        .port();
-
-    let my_ip = crate::utils::get_local_ip().unwrap_or_else(|_| "0.0.0.0".into());
-
-    // Generate PIN
+        .map_err(|error| error.to_string())?;
+    let port = listener.local_addr().map_err(|error| error.to_string())?.port();
     let pin: String = (0..6)
         .map(|_| {
             let mut byte = [0u8; 1];
@@ -321,65 +212,73 @@ pub async fn start_driver(app: AppHandle, _port: u16) -> Result<String, String> 
             (byte[0] % 10).to_string()
         })
         .collect();
-
-    let (tx, mut rx) = broadcast::channel(1);
-    let task_tx = tx.clone();
-    *current_tx = Some(tx);
+    let (shutdown_tx, mut shutdown_rx) = broadcast::channel(4);
+    let task_tx = shutdown_tx.clone();
+    *shutdown = Some(shutdown_tx);
     *state.pin.write().await = Some(pin.clone());
+    *state.sharing_port.write().await = Some(port);
     state.clear_pending().await;
+    drop(shutdown);
+    set_sharing_status(&app, state.inner(), port).await;
 
     let app_clone = app.clone();
-
-    state
-        .set_status(
-            &app,
-            SyncStatus::DriverRunning {
-                ip: my_ip,
-                port,
-                pin: pin.clone(),
-                clients: 0,
-            },
-        )
-        .await;
-
     tokio::spawn(async move {
         loop {
             tokio::select! {
-                _ = rx.recv() => {
-                    break;
-                }
-                res = listener.accept() => {
-                    match res {
-                        Ok((stream, remote_addr)) => {
-                            let app_inner = app_clone.clone();
+                _ = shutdown_rx.recv() => break,
+                accepted = listener.accept() => {
+                    match accepted {
+                        Ok((stream, address)) => {
+                            let connection_app = app_clone.clone();
                             tokio::spawn(async move {
-                                if let Err(e) = handle_driver_connection(app_inner.clone(), stream, remote_addr, port).await {
-                                    log_error(&app_inner, "sync_driver", format!("Driver connection error: {}", e));
+                                if let Err(error) =
+                                    handle_driver_connection(connection_app.clone(), stream, address, port).await
+                                {
+                                    log_error(
+                                        &connection_app,
+                                        "sync_v2_driver",
+                                        format!("Connection failed: {error}"),
+                                    );
+                                    let state = connection_app.state::<SyncManagerState>();
+                                    if state.shutdown_tx.lock().await.is_some() {
+                                        set_sharing_status(
+                                            &connection_app,
+                                            state.inner(),
+                                            port,
+                                        )
+                                        .await;
+                                    }
                                 }
                             });
                         }
-                        Err(e) => {
-                            log_error(&app_clone, "sync_driver", format!("Listener accept error: {}", e));
+                        Err(error) => {
+                            log_error(
+                                &app_clone,
+                                "sync_v2_driver",
+                                format!("Accept failed: {error}"),
+                            );
                         }
                     }
                 }
             }
         }
+
         let state = app_clone.state::<SyncManagerState>();
         state.clear_pending().await;
-        let should_cleanup = {
-            let mut current_tx = state.shutdown_tx.lock().await;
-            match current_tx.as_ref() {
-                Some(current) if current.same_channel(&task_tx) => {
-                    current_tx.take();
+        let should_clear = {
+            let mut current = state.shutdown_tx.lock().await;
+            match current.as_ref() {
+                Some(sender) if sender.same_channel(&task_tx) => {
+                    current.take();
                     true
                 }
                 None => true,
                 _ => false,
             }
         };
-        if should_cleanup {
+        if should_clear {
             *state.pin.write().await = None;
+            *state.sharing_port.write().await = None;
             state.set_status(&app_clone, SyncStatus::Idle).await;
         }
     });
@@ -390,1504 +289,1064 @@ pub async fn start_driver(app: AppHandle, _port: u16) -> Result<String, String> 
 async fn handle_driver_connection(
     app: AppHandle,
     stream: TcpStream,
-    _addr: SocketAddr,
+    _address: SocketAddr,
     port: u16,
 ) -> Result<(), String> {
     let remote_ip = stream
         .peer_addr()
-        .map(|a| a.ip().to_string())
+        .map(|address| address.ip().to_string())
         .unwrap_or_else(|_| "unknown".to_string());
-    let mut framed = Framed::new(stream, P2PCodec::new());
-
-    // Security Handshake
     let state = app.state::<SyncManagerState>();
-
+    let _connection_slot = match state.connection_slot.try_acquire() {
+        Ok(slot) => slot,
+        Err(_) => {
+            let mut framed = Framed::new(stream, P2PCodec::new());
+            let _ = framed
+                .send(P2PMessage::Error(
+                    "This device is already syncing with another device".to_string(),
+                ))
+                .await;
+            return Ok(());
+        }
+    };
     let pin = state
         .pin
         .read()
         .await
         .clone()
-        .ok_or("Driver not running or no PIN")?;
+        .ok_or_else(|| "Sync sharing is not active".to_string())?;
+    let mut framed = Framed::new(stream, P2PCodec::new());
 
     let mut salt = [0u8; 16];
     let mut challenge = [0u8; 16];
     thread_rng().fill_bytes(&mut salt);
     thread_rng().fill_bytes(&mut challenge);
-    let device_id = {
+    let local_device_id = {
         let conn = crate::storage_manager::db::open_db(&app)?;
-        sync_db::get_or_create_local_device_id(&conn)?
+        get_or_create_device_id(&conn).map_err(|error| error.to_string())?
     };
-
-    // Send Handshake
     framed
         .send(P2PMessage::Handshake {
-            protocol_version: PROTOCOL_VERSION,
+            protocol_version: SYNC_V2_PROTOCOL_VERSION,
             app_version: app.package_info().version.to_string(),
             device_name: whoami::devicename(),
-            device_id,
+            device_id: local_device_id,
             salt,
             challenge,
         })
         .await
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        .map_err(|error| error.to_string())?;
 
-    // Wait for AuthRequest
-    let (encrypted_challenge, their_challenge) = match framed.next().await {
-        Some(Ok(P2PMessage::AuthRequest {
+    let (encrypted_challenge, peer_challenge) = match receive_message(&mut framed).await? {
+        P2PMessage::AuthRequest {
             encrypted_challenge,
             my_challenge,
-        })) => (encrypted_challenge, my_challenge),
-        Some(Ok(msg)) => {
-            return Err(crate::utils::err_msg(
-                module_path!(),
-                line!(),
-                format!("Expected AuthRequest, got {:?}", msg),
-            ))
-        }
-        Some(Err(e)) => return Err(e.to_string()),
-        None => {
-            return Err(crate::utils::err_msg(
-                module_path!(),
-                line!(),
-                "Connection closed during handshake",
-            ))
-        }
+        } => (encrypted_challenge, my_challenge),
+        message => return Err(format!("Expected authentication request, got {message:?}")),
     };
-
-    // Verify
     let key = derive_key(&pin, &salt);
     let cipher = ChaCha20Poly1305::new(&Key::from(key));
-
-    // Try to decrypt their response to our challenge
-    // The encrypted_challenge should be [Nonce 12][Ciphertext] if we follow P2PCodec pattern,
-    // BUT P2PCodec is NOT encryption-enabled yet.
-    // The other side manually encrypted the blob.
-    // We assume they prepended the nonce.
-    if encrypted_challenge.len() < 12 {
-        return Err(crate::utils::err_msg(
-            module_path!(),
-            line!(),
-            "Auth challenge too short",
-        ));
-    }
-    let mut n_bytes = [0u8; 12];
-    n_bytes.copy_from_slice(&encrypted_challenge[..12]);
-    let nonce = Nonce::from(n_bytes);
-    let ciphertext = &encrypted_challenge[12..];
-
-    let decrypted = cipher
-        .decrypt(&nonce, ciphertext)
-        .map_err(|_| "Auth failed (bad PIN)".to_string())?;
-
+    let decrypted = decrypt_challenge(&cipher, &encrypted_challenge, "authentication request")?;
     if decrypted != challenge {
-        return Err(crate::utils::err_msg(
-            module_path!(),
-            line!(),
-            "Auth failed (challenge mismatch)",
-        ));
+        return Err("Authentication challenge did not match".to_string());
     }
-
-    // Auth Success!
-    // Encrypt their challenge to prove we are the driver
-    let mut response_nonce_bytes = [0u8; 12];
-    thread_rng().fill_bytes(&mut response_nonce_bytes);
-    let response_nonce = Nonce::from(response_nonce_bytes);
-    let response_ciphertext = cipher
-        .encrypt(&response_nonce, their_challenge.as_ref())
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-
-    let mut response_payload = Vec::new();
-    response_payload.extend_from_slice(&response_nonce_bytes);
-    response_payload.extend_from_slice(&response_ciphertext);
-
+    let response = encrypt_challenge(&cipher, &peer_challenge)?;
     framed
         .send(P2PMessage::AuthResponse {
-            encrypted_challenge: response_payload,
+            encrypted_challenge: response,
         })
         .await
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-
-    // Enable Encryption for session
+        .map_err(|error| error.to_string())?;
     framed.codec_mut().set_key(&key);
 
-    // Wait for Handshake (WAIT, we already did Handshake)
-    // The previous code waited for Handshake here to get device_name.
-    // But we already got Handshake? No, wait.
-    // The protocol was:
-    // 1. Driver sends Handshake (Server -> Client)
-    // 2. Client sends Handshake (Client -> Server)
-    //
-    // MY NEW PROTOCOL:
-    // 1. Driver sends Handshake { salt, challenge }
-    // 2. Client sends AuthRequest { enc_challenge, my_challenge }
-    // 3. Driver sends AuthResponse
-    //
-    // Where does the Client send ITS device name?
-    // The original code had Client send Handshake.
-    // We should piggyback Device Name on AuthRequest? Or have Client send Handshake FIRST?
-    // If Client sends Handshake first, it can include device name.
-    // But Driver needs to send Salt/Challenge FIRST for Client to derive key.
-    //
-    // Adjusted Flow:
-    // 1. Client connects.
-    // 2. Driver sends Handshake { version, name, salt, challenge }.
-    // 3. Client receives. Derives key.
-    // 4. Client sends AuthRequest { enc_challenge, my_challenge, device_name? }.
-    //    Ah, I didn't add `device_name` to `AuthRequest`.
-    //    I should have.
-    //    OR, Client sends `Handshake` packet *after* Auth? But that would be encrypted.
-    //    That works! Once encrypted, Client sends `Handshake` with device name.
-    //    Then Driver knows device name.
-    //
-    // So:
-    // Driver: ... Auth Success, Enable Encryption, Send AuthResponse.
-    // Client: ... Receive AuthResponse, Verify, Enable Encryption.
-    // THEN Client sends `Handshake` (Encrypted).
-    // Driver expects `Handshake`.
-
-    // So after `set_key`, Driver should wait for `Handshake`.
-    let (device_name, peer_device_id, peer_app_version, peer_protocol_version) =
-        match framed.next().await {
-            Some(Ok(P2PMessage::Handshake {
+    let (peer_name, peer_device_id, peer_app_version, peer_protocol) =
+        match receive_message(&mut framed).await? {
+            P2PMessage::Handshake {
                 device_name,
                 device_id,
                 app_version,
                 protocol_version,
                 ..
-            })) => (device_name, device_id, app_version, protocol_version),
-            Some(Ok(msg)) => {
-                return Err(crate::utils::err_msg(
-                    module_path!(),
-                    line!(),
-                    format!("Expected Encrypted Handshake, got {:?}", msg),
-                ))
-            }
-            Some(Err(e)) => return Err(e.to_string()),
-            None => {
-                return Err(crate::utils::err_msg(
-                    module_path!(),
-                    line!(),
-                    "Connection closed after auth",
-                ))
-            }
+            } => (device_name, device_id, app_version, protocol_version),
+            message => return Err(format!("Expected encrypted handshake, got {message:?}")),
         };
+    validate_transport_version(&app, &peer_name, &peer_app_version, peer_protocol)?;
 
-    if let Some(message) = version_mismatch_error(
-        &app.package_info().version.to_string(),
-        &device_name,
-        &peer_app_version,
-        peer_protocol_version,
-    ) {
-        framed.send(P2PMessage::Error(message.clone())).await.ok();
-        return Err(crate::utils::err_msg(module_path!(), line!(), message));
-    }
-
-    // Approval Check
-    let (tx, rx) = tokio::sync::oneshot::channel();
-
-    let state = app.state::<SyncManagerState>();
-    {
-        state
-            .pending_approvals
-            .write()
-            .await
-            .insert(remote_ip.clone(), tx);
-    }
-
+    let (approval_tx, approval_rx) = tokio::sync::oneshot::channel();
+    state
+        .pending_approvals
+        .write()
+        .await
+        .insert(remote_ip.clone(), approval_tx);
     state
         .set_status(
             &app,
             SyncStatus::PendingApproval {
                 ip: remote_ip.clone(),
-                device_name: device_name.clone(),
+                device_name: peer_name.clone(),
             },
         )
         .await;
-
-    let approval_result = rx
+    let approved = approval_rx
         .await
-        .map_err(|_| "Connection approval was cancelled".to_string());
+        .map_err(|_| "Connection approval was cancelled".to_string())?;
     state.pending_approvals.write().await.remove(&remote_ip);
-
-    match approval_result {
-        Ok(true) => {
-            log_info(
-                &app,
-                "sync_driver",
-                format!("Connection from {} approved", remote_ip),
-            );
-        }
-        Ok(false) => {
-            set_driver_running_status(&app, state.inner(), port).await;
-            return Err(crate::utils::err_msg(
-                module_path!(),
-                line!(),
-                "Connection rejected by host",
-            ));
-        }
-        Err(reason) => {
-            set_driver_running_status(&app, state.inner(), port).await;
-            return Err(crate::utils::err_msg(module_path!(), line!(), reason));
-        }
+    if !approved {
+        let _ = framed
+            .send(P2PMessage::Error("Connection was declined".to_string()))
+            .await;
+        set_sharing_status(&app, state.inner(), port).await;
+        return Ok(());
     }
 
     let (start_tx, start_rx) = tokio::sync::oneshot::channel();
-    {
-        state
-            .pending_starts
-            .write()
-            .await
-            .insert(remote_ip.clone(), start_tx);
-    }
+    state
+        .pending_starts
+        .write()
+        .await
+        .insert(remote_ip.clone(), start_tx);
     state
         .set_status(
             &app,
-            SyncStatus::PendingSyncStart {
+            SyncStatus::PendingStart {
                 ip: remote_ip.clone(),
-                device_name: device_name.clone(),
+                device_name: peer_name,
             },
         )
         .await;
-
-    let start_result = start_rx
+    start_rx
         .await
-        .map_err(|_| "Sync start was cancelled".to_string());
+        .map_err(|_| "Sync start was cancelled".to_string())?;
     state.pending_starts.write().await.remove(&remote_ip);
-
-    if let Err(reason) = start_result {
-        set_driver_running_status(&app, state.inner(), port).await;
-        return Err(crate::utils::err_msg(module_path!(), line!(), reason));
-    }
-
-    if peer_protocol_version >= READY_MIN_PROTOCOL {
-        framed
-            .send(P2PMessage::Ready)
-            .await
-            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-    }
-
-    // Main Loop
-    while let Some(msg) = framed.next().await {
-        match msg {
-            Ok(P2PMessage::AdvertiseCursors { cursors }) => {
-                handle_advertise_cursors(
-                    &app,
-                    &mut framed,
-                    &peer_device_id,
-                    cursors,
-                    peer_protocol_version,
-                )
-                .await?;
-            }
-            Ok(P2PMessage::Disconnect) => break,
-            Ok(other) => log_warn(
-                &app,
-                "sync_driver",
-                format!("Driver received unexpected message: {:?}", other),
-            ),
-            Err(e) => return Err(e.to_string()),
-        }
-    }
-
-    Ok(())
-}
-
-async fn handle_advertise_cursors(
-    app: &AppHandle,
-    framed: &mut Framed<TcpStream, P2PCodec>,
-    _peer_device_id: &str,
-    passenger_cursors: crate::sync::protocol::CursorSet,
-    peer_protocol_version: u32,
-) -> Result<(), String> {
-    let mut conn = crate::storage_manager::db::open_db(app)?;
-    sync_db::rebuild_change_log(app, &mut conn)?;
-
-    log_info(app, "sync_driver", "Preparing sync manifest");
-
-    // Pre-fetch all changes per domain to build the manifest and to estimate bytes.
-    let mut domain_changes: Vec<(SyncDomain, Vec<crate::sync::protocol::ChangeRecord>, u64)> =
-        Vec::new();
-    for cursor in passenger_cursors.cursors {
-        let changes = sync_db::fetch_changes_since(&conn, cursor.domain, cursor.last_change_id)?;
-        if changes.is_empty() {
-            continue;
-        }
-        let mut bytes: u64 = changes.iter().map(|c| c.payload.len() as u64).sum();
-        if cursor.domain == SyncDomain::Assets {
-            bytes = bytes.saturating_add(estimate_asset_bytes(app, &changes));
-        }
-        domain_changes.push((cursor.domain, changes, bytes));
-    }
-
-    let plan: Vec<DomainPlan> = domain_changes
-        .iter()
-        .map(|(domain, changes, bytes)| DomainPlan {
-            domain: *domain,
-            change_count: changes.len() as u32,
-            estimated_bytes: *bytes,
-        })
-        .collect();
-
-    let total_changes: u32 = plan.iter().map(|p| p.change_count).sum();
-    let total_bytes: u64 = plan.iter().map(|p| p.estimated_bytes).sum();
-
-    let mut tracker = SyncProgressTracker::from_plan(&plan);
-    let state = app.state::<SyncManagerState>();
-
-    if peer_protocol_version >= MANIFEST_MIN_PROTOCOL {
-        framed
-            .send(P2PMessage::SyncManifest {
-                plan,
-                total_changes,
-                total_bytes,
-            })
-            .await
-            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-    }
-
-    state
-        .set_status(
-            app,
-            tracker.syncing_status("Preparing transfer".into(), None),
-        )
-        .await;
-
-    log_info(
-        app,
-        "sync_driver",
-        format!(
-            "Sending {} changes ({} bytes) across {} domains",
-            total_changes,
-            total_bytes,
-            domain_changes.len()
-        ),
-    );
-
-    for (domain, mut changes, _bytes) in domain_changes {
-        let phase = sync_status_text(domain).to_string();
-        state
-            .set_status(app, tracker.syncing_status(phase.clone(), Some(domain)))
-            .await;
-
-        framed
-            .send(P2PMessage::StatusUpdate(phase.clone()))
-            .await
-            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-
-        if domain == SyncDomain::Assets {
-            let prepared_asset_contents = prepare_asset_changes_for_transfer(app, &mut changes)?;
-
-            framed
-                .send(P2PMessage::PushChanges {
-                    domain,
-                    changes: changes.clone(),
-                })
-                .await
-                .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-
-            let payload_bytes: u64 = changes.iter().map(|c| c.payload.len() as u64).sum();
-            let delete_count = changes
-                .iter()
-                .filter(|change| change.op == ChangeOp::Delete)
-                .count() as u64;
-
-            tracker.record(domain, delete_count, payload_bytes);
-            state
-                .set_status(app, tracker.syncing_status(phase.clone(), Some(domain)))
-                .await;
-
-            send_asset_change_contents(
-                app,
-                framed,
-                &changes,
-                &mut tracker,
-                state.inner(),
-                phase.as_str(),
-                peer_protocol_version,
-                &prepared_asset_contents,
-            )
-            .await?;
-            let last_change_id = changes.last().map(|change| change.change_id).unwrap_or(0);
-            framed
-                .send(P2PMessage::AssetBatchComplete { last_change_id })
-                .await
-                .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-        } else {
-            let mut start = 0;
-            while start < changes.len() {
-                let mut end = start;
-                let mut batch_bytes: u64 = 0;
-                while end < changes.len() && end - start < MAX_PUSH_BATCH_COUNT {
-                    let payload_len = changes[end].payload.len() as u64;
-                    if end > start && batch_bytes + payload_len > MAX_PUSH_BATCH_BYTES {
-                        break;
-                    }
-                    batch_bytes += payload_len;
-                    end += 1;
-                }
-
-                framed
-                    .send(P2PMessage::PushChanges {
-                        domain,
-                        changes: changes[start..end].to_vec(),
-                    })
-                    .await
-                    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-
-                tracker.record(domain, (end - start) as u64, batch_bytes);
-                state
-                    .set_status(app, tracker.syncing_status(phase.clone(), Some(domain)))
-                    .await;
-
-                start = end;
-            }
-        }
-    }
-
     framed
-        .send(P2PMessage::SyncComplete)
+        .send(P2PMessage::Ready)
         .await
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        .map_err(|error| error.to_string())?;
 
-    state
-        .set_status(
-            app,
-            tracker.syncing_status("Waiting for receiver confirmation".into(), None),
-        )
-        .await;
-
-    match framed.next().await {
-        Some(Ok(P2PMessage::SyncApplied)) => {
-            state.set_status(app, SyncStatus::SyncCompleted).await;
+    let mut stop = state
+        .shutdown_tx
+        .lock()
+        .await
+        .as_ref()
+        .ok_or_else(|| "Sync service stopped".to_string())?
+        .subscribe();
+    match run_v2_replication(&app, framed, &peer_device_id, &mut stop).await {
+        Ok(()) => {
+            state.set_status(&app, SyncStatus::Completed).await;
+            log_info(
+                &app,
+                "sync_v2_driver",
+                format!("Completed sync with {peer_device_id}"),
+            );
         }
-        Some(Ok(P2PMessage::Disconnect)) => {
-            return Err(crate::utils::err_msg(
-                module_path!(),
-                line!(),
-                "Passenger disconnected before confirming sync completion",
-            ));
+        Err(error) if error == "Sync cancelled" => {
+            state.set_status(&app, SyncStatus::Idle).await;
         }
-        Some(Ok(other)) => {
-            return Err(crate::utils::err_msg(
-                module_path!(),
-                line!(),
-                format!("Expected SyncApplied, got {:?}", other),
-            ));
-        }
-        Some(Err(e)) => {
-            return Err(crate::utils::err_to_string(module_path!(), line!(), e));
-        }
-        None => {
-            return Err(crate::utils::err_msg(
-                module_path!(),
-                line!(),
-                "Connection closed before passenger confirmed sync completion",
-            ));
+        Err(error) => {
+            log_error(
+                &app,
+                "sync_v2_driver",
+                format!("Replication failed: {error}"),
+            );
+            state
+                .set_status(&app, SyncStatus::Error { message: error })
+                .await;
         }
     }
-    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-
     Ok(())
 }
 
-pub async fn connect_as_passenger(
+pub async fn connect_device(
     app: AppHandle,
     ip: String,
     port: u16,
     pin: String,
 ) -> Result<(), String> {
     let state = app.state::<SyncManagerState>();
-    let mut current_tx = state.shutdown_tx.lock().await;
-    if current_tx.is_some() {
-        return Err(crate::utils::err_msg(
-            module_path!(),
-            line!(),
-            "Sync service is already running",
-        ));
+    let mut shutdown = state.shutdown_tx.lock().await;
+    if shutdown.is_some() {
+        return Err("A sync session is already running".to_string());
     }
-
-    let addr = format!("{}:{}", ip, port);
-    let stream = TcpStream::connect(&addr)
-        .await
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-
-    let (tx, mut rx) = broadcast::channel(1);
-    *current_tx = Some(tx);
-
     state
-        .set_status(&app, SyncStatus::PassengerConnecting)
+        .set_status(&app, SyncStatus::Connecting)
         .await;
+    let stream = match TcpStream::connect(format!("{ip}:{port}")).await {
+        Ok(stream) => stream,
+        Err(error) => {
+            let message = error.to_string();
+            state
+                .set_status(
+                    &app,
+                    SyncStatus::Error {
+                        message: message.clone(),
+                    },
+                )
+                .await;
+            return Err(message);
+        }
+    };
+    let (shutdown_tx, mut shutdown_rx) = broadcast::channel(4);
+    let task_tx = shutdown_tx.clone();
+    *shutdown = Some(shutdown_tx);
+    drop(shutdown);
 
     let app_clone = app.clone();
     tokio::spawn(async move {
-        // Re-acquire state here to avoid lifetime issues
+        let result =
+            run_passenger_session(app_clone.clone(), stream, &mut shutdown_rx, pin).await;
         let state = app_clone.state::<SyncManagerState>();
-
-        let result = run_passenger_session(app_clone.clone(), stream, &mut rx, pin).await;
-
-        *state.shutdown_tx.lock().await = None;
-
-        match result {
-            Err(e) => {
-                state
-                    .set_status(
-                        &app_clone,
-                        SyncStatus::Error {
-                            message: e.to_string(),
-                        },
-                    )
-                    .await;
+        let owns_session = {
+            let mut current = state.shutdown_tx.lock().await;
+            match current.as_ref() {
+                Some(sender) if sender.same_channel(&task_tx) => {
+                    current.take();
+                    true
+                }
+                None => true,
+                _ => false,
             }
+        };
+        if !owns_session {
+            return;
+        }
+        match result {
             Ok(()) => {
                 state
-                    .set_status(&app_clone, SyncStatus::SyncCompleted)
+                    .set_status(&app_clone, SyncStatus::Completed)
+                    .await;
+            }
+            Err(error) if error == "Sync cancelled" => {
+                state.set_status(&app_clone, SyncStatus::Idle).await;
+            }
+            Err(error) => {
+                state
+                    .set_status(&app_clone, SyncStatus::Error { message: error })
                     .await;
             }
         }
     });
-
-    Ok(())
-}
-
-fn finalize_pending_domain(
-    app: &AppHandle,
-    conn: &mut crate::storage_manager::db::DbConnection,
-    driver_device_id: &str,
-    pending_domain: &mut Option<(SyncDomain, i64)>,
-) -> Result<(), String> {
-    if let Some((domain, last_change_id)) = pending_domain.take() {
-        sync_db::materialize_domain(conn, domain)?;
-        if last_change_id > 0 {
-            sync_db::record_peer_cursor(conn, driver_device_id, domain, last_change_id)?;
-        }
-        log_info(app, "sync_passenger", format!("Materialized {:?}", domain));
-    }
     Ok(())
 }
 
 async fn run_passenger_session(
     app: AppHandle,
     stream: TcpStream,
-    stop_signal: &mut broadcast::Receiver<()>,
+    stop: &mut broadcast::Receiver<()>,
     pin: String,
 ) -> Result<(), String> {
     let mut framed = Framed::new(stream, P2PCodec::new());
-    let state = app.state::<SyncManagerState>();
+    let (salt, challenge, peer_device_id, peer_name, peer_version, peer_protocol) =
+        match receive_message(&mut framed).await? {
+            P2PMessage::Handshake {
+                salt,
+                challenge,
+                device_id,
+                device_name,
+                app_version,
+                protocol_version,
+            } => (
+                salt,
+                challenge,
+                device_id,
+                device_name,
+                app_version,
+                protocol_version,
+            ),
+            message => return Err(format!("Expected handshake, got {message:?}")),
+        };
+    validate_transport_version(&app, &peer_name, &peer_version, peer_protocol)?;
 
-    // 1. Wait for Handshake from Driver (contains Salt + Challenge)
-    let (
-        salt,
-        challenge,
-        driver_device_id,
-        driver_device_name,
-        driver_app_version,
-        driver_protocol_version,
-    ) = match framed.next().await {
-        Some(Ok(P2PMessage::Handshake {
-            salt,
-            challenge,
-            device_id,
-            device_name,
-            app_version,
-            protocol_version,
-            ..
-        })) => (
-            salt,
-            challenge,
-            device_id,
-            device_name,
-            app_version,
-            protocol_version,
-        ),
-        Some(Ok(msg)) => {
-            return Err(crate::utils::err_msg(
-                module_path!(),
-                line!(),
-                format!("Expected Handshake, got {:?}", msg),
-            ))
-        }
-        Some(Err(e)) => return Err(e.to_string()),
-        None => {
-            return Err(crate::utils::err_msg(
-                module_path!(),
-                line!(),
-                "Connection closed during handshake",
-            ))
-        }
-    };
-
-    if let Some(message) = version_mismatch_error(
-        &app.package_info().version.to_string(),
-        &driver_device_name,
-        &driver_app_version,
-        driver_protocol_version,
-    ) {
-        return Err(crate::utils::err_msg(module_path!(), line!(), message));
-    }
-
-    // 2. Derive Key & Encrypt Challenge & Send AuthRequest
     let key = derive_key(&pin, &salt);
     let cipher = ChaCha20Poly1305::new(&Key::from(key));
-
-    let mut my_challenge = [0u8; 16];
-    thread_rng().fill_bytes(&mut my_challenge);
-
-    let mut nonce_bytes = [0u8; 12];
-    thread_rng().fill_bytes(&mut nonce_bytes);
-    let nonce = Nonce::from(nonce_bytes);
-
-    // Encrypt the Driver's challenge to prove we know the PIN
-    let encrypted_challenge_ciphertext = cipher
-        .encrypt(&nonce, challenge.as_ref())
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-
-    let mut encrypted_challenge = Vec::new();
-    encrypted_challenge.extend_from_slice(&nonce_bytes);
-    encrypted_challenge.extend_from_slice(&encrypted_challenge_ciphertext);
-
+    let mut local_challenge = [0u8; 16];
+    thread_rng().fill_bytes(&mut local_challenge);
     framed
         .send(P2PMessage::AuthRequest {
-            encrypted_challenge,
-            my_challenge,
+            encrypted_challenge: encrypt_challenge(&cipher, &challenge)?,
+            my_challenge: local_challenge,
         })
         .await
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-
-    // 3. Wait for AuthResponse
-    let encrypted_response = match framed.next().await {
-        Some(Ok(P2PMessage::AuthResponse {
+        .map_err(|error| error.to_string())?;
+    let encrypted_response = match receive_message(&mut framed).await? {
+        P2PMessage::AuthResponse {
             encrypted_challenge,
-        })) => encrypted_challenge,
-        Some(Ok(msg)) => {
-            return Err(crate::utils::err_msg(
-                module_path!(),
-                line!(),
-                format!("Expected AuthResponse, got {:?}", msg),
-            ))
-        }
-        Some(Err(e)) => return Err(e.to_string()),
-        None => {
-            return Err(crate::utils::err_msg(
-                module_path!(),
-                line!(),
-                "Connection closed during auth",
-            ))
-        }
+        } => encrypted_challenge,
+        message => return Err(format!("Expected authentication response, got {message:?}")),
     };
-
-    // 4. Verify Driver's response to OUR challenge
-    if encrypted_response.len() < 12 {
-        return Err(crate::utils::err_msg(
-            module_path!(),
-            line!(),
-            "Auth response too short",
-        ));
+    if decrypt_challenge(&cipher, &encrypted_response, "authentication response")?
+        != local_challenge
+    {
+        return Err("Authentication response did not match".to_string());
     }
-    let mut n_bytes = [0u8; 12];
-    n_bytes.copy_from_slice(&encrypted_response[..12]);
-    let resp_nonce = Nonce::from(n_bytes);
-    let resp_ciphertext = &encrypted_response[12..];
-
-    let decrypted_my_challenge = cipher
-        .decrypt(&resp_nonce, resp_ciphertext)
-        .map_err(|_| "Auth failed (Driver Sent Bad Response)".to_string())?;
-
-    if decrypted_my_challenge != my_challenge {
-        return Err(crate::utils::err_msg(
-            module_path!(),
-            line!(),
-            "Auth failed (response mismatch)",
-        ));
-    }
-
-    // Auth Success! Enable Encryption.
     framed.codec_mut().set_key(&key);
 
-    // 5. Send our Handshake (Encrypted) with Device Name
-    let mut conn = crate::storage_manager::db::open_db(&app)?;
-    let local_device_id = sync_db::get_or_create_local_device_id(&conn)?;
+    let local_device_id = {
+        let conn = crate::storage_manager::db::open_db(&app)?;
+        get_or_create_device_id(&conn).map_err(|error| error.to_string())?
+    };
     framed
         .send(P2PMessage::Handshake {
-            protocol_version: PROTOCOL_VERSION,
+            protocol_version: SYNC_V2_PROTOCOL_VERSION,
             app_version: app.package_info().version.to_string(),
             device_name: whoami::devicename(),
             device_id: local_device_id,
-            salt: [0u8; 16],      // Not used post-auth
-            challenge: [0u8; 16], // Not used post-auth
+            salt: [0; 16],
+            challenge: [0; 16],
         })
         .await
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-
-    state
+        .map_err(|error| error.to_string())?;
+    app.state::<SyncManagerState>()
         .set_status(
             &app,
-            SyncStatus::WaitingConfirmation {
-                driver_ip: "unknown".into(),
+            SyncStatus::WaitingForApproval {
+                peer: peer_name,
             },
         )
         .await;
-
-    if sync_db::local_device_has_onboarded(&conn) {
-        sync_db::rebuild_change_log(&app, &mut conn)?;
-    } else {
-        log_info(
-            &app,
-            "sync_passenger",
-            "Fresh install detected; skipping local change log seeding so synced data wins conflicts",
-        );
+    match receive_message(&mut framed).await? {
+        P2PMessage::Ready => {}
+        P2PMessage::Error(message) => return Err(message),
+        message => return Err(format!("Expected sync approval, got {message:?}")),
     }
-    if driver_protocol_version >= READY_MIN_PROTOCOL {
-        match framed.next().await {
-            Some(Ok(P2PMessage::Ready)) => {}
-            Some(Ok(P2PMessage::Error(message))) => {
-                return Err(crate::utils::err_msg(module_path!(), line!(), message))
+    run_v2_replication(&app, framed, &peer_device_id, stop).await
+}
+
+async fn run_v2_replication(
+    app: &AppHandle,
+    mut framed: Framed<TcpStream, P2PCodec>,
+    authenticated_peer_device_id: &str,
+    stop: &mut broadcast::Receiver<()>,
+) -> Result<(), String> {
+    let state = app.state::<SyncManagerState>();
+    state
+        .set_status(app, TransferStats::default().status("Verifying devices"))
+        .await;
+    let local_hello = local_hello(app)?;
+    framed
+        .send(P2PMessage::Sync(SyncV2Message::Hello(
+            local_hello.clone(),
+        )))
+        .await
+        .map_err(|error| error.to_string())?;
+    let peer_hello = match receive_message(&mut framed).await? {
+        P2PMessage::Sync(SyncV2Message::Hello(hello)) => hello,
+        P2PMessage::Error(message) => return Err(message),
+        message => return Err(format!("Expected sync v2 hello, got {message:?}")),
+    };
+    if peer_hello.device_id != authenticated_peer_device_id {
+        return Err("Peer identity changed after authentication".to_string());
+    }
+    let limits = validate_hello(&local_hello, &peer_hello).map_err(|error| error.to_string())?;
+
+    state
+        .set_status(app, TransferStats::default().status("Comparing changes"))
+        .await;
+    let local_frontier = {
+        let conn = crate::storage_manager::db::open_db(app)?;
+        load_frontier(&conn).map_err(|error| error.to_string())?
+    };
+    framed
+        .send(P2PMessage::Sync(SyncV2Message::Frontier(
+            local_frontier,
+        )))
+        .await
+        .map_err(|error| error.to_string())?;
+    let mut remote_frontier = match receive_message(&mut framed).await? {
+        P2PMessage::Sync(SyncV2Message::Frontier(frontier)) => frontier,
+        message => return Err(format!("Expected sync frontier, got {message:?}")),
+    };
+
+    let outbound_plan = {
+        let conn = crate::storage_manager::db::open_db(app)?;
+        plan_outbound(&conn, &remote_frontier).map_err(|error| error.to_string())?
+    };
+    framed
+        .send(P2PMessage::Sync(SyncV2Message::Plan(
+            outbound_plan.clone(),
+        )))
+        .await
+        .map_err(|error| error.to_string())?;
+    let inbound_plan = match receive_message(&mut framed).await? {
+        P2PMessage::Sync(SyncV2Message::Plan(plan)) => plan,
+        message => return Err(format!("Expected sync plan, got {message:?}")),
+    };
+    let mut stats = TransferStats {
+        planned_items: outbound_plan
+            .estimated_revisions
+            .saturating_add(inbound_plan.estimated_revisions),
+        planned_bytes: outbound_plan
+            .estimated_bytes
+            .saturating_add(inbound_plan.estimated_bytes),
+        ..TransferStats::default()
+    };
+    state
+        .set_status(app, stats.status("Exchanging changes"))
+        .await;
+
+    let (mut sink, mut stream) = framed.split();
+    loop {
+        let revisions = {
+            let conn = crate::storage_manager::db::open_db(app)?;
+            build_outbound_batch(
+                &conn,
+                &remote_frontier,
+                limits.max_revisions_per_batch as usize,
+                limits.max_batch_bytes as usize,
+            )
+            .map_err(|error| error.to_string())?
+        };
+        let sent_batch_id = if revisions.is_empty() {
+            None
+        } else {
+            Some(Uuid::new_v4().to_string())
+        };
+        let outgoing = if let Some(batch_id) = &sent_batch_id {
+            P2PMessage::Sync(SyncV2Message::RevisionBatch {
+                batch_id: batch_id.clone(),
+                batch_hash: revision_batch_hash(&revisions)
+                    .map_err(|error| error.to_string())?,
+                revisions: revisions.clone(),
+            })
+        } else {
+            let frontier = {
+                let conn = crate::storage_manager::db::open_db(app)?;
+                load_frontier(&conn).map_err(|error| error.to_string())?
+            };
+            P2PMessage::Sync(SyncV2Message::Quiescent { frontier })
+        };
+
+        let incoming = exchange(&mut sink, &mut stream, outgoing, stop).await?;
+        let (received_batch_id, received_quiescent) = match incoming {
+            P2PMessage::Sync(SyncV2Message::RevisionBatch {
+                batch_id,
+                batch_hash,
+                revisions,
+            }) => {
+                state.set_status(app, stats.status("Applying changes")).await;
+                let now = crate::utils::now_millis()? as i64;
+                let result = {
+                    let conn = crate::storage_manager::db::open_db(app)?;
+                    stage_revision_batch(
+                        &conn,
+                        &peer_hello.device_id,
+                        &batch_id,
+                        &batch_hash,
+                        &revisions,
+                        now,
+                    )
+                    .map_err(|error| error.to_string())?;
+                    apply_staged_batch(&conn, &batch_id, now)
+                        .map_err(|error| error.to_string())?
+                };
+                stats.items_received = stats
+                    .items_received
+                    .saturating_add(result.revisions_applied as u64);
+                stats.bytes_received = stats.bytes_received.saturating_add(
+                    revisions
+                        .iter()
+                        .map(|revision| revision.changeset.len() as u64)
+                        .sum(),
+                );
+                stats.conflicts_detected = stats
+                    .conflicts_detected
+                    .saturating_add(result.conflicts_created as u64);
+                (batch_id, false)
             }
-            Some(Ok(P2PMessage::Disconnect)) => {
-                return Err(crate::utils::err_msg(
-                    module_path!(),
-                    line!(),
-                    "Driver disconnected before sending Ready",
-                ))
+            P2PMessage::Sync(SyncV2Message::Quiescent { .. }) => {
+                (QUIESCENT_ACK.to_string(), true)
             }
-            Some(Ok(other)) => {
-                return Err(crate::utils::err_msg(
-                    module_path!(),
-                    line!(),
-                    format!("Expected Ready, got {:?}", other),
-                ))
+            P2PMessage::Sync(SyncV2Message::Cancel { reason }) => return Err(reason),
+            P2PMessage::Error(message) => return Err(message),
+            message => return Err(format!("Expected revision batch, got {message:?}")),
+        };
+
+        let local_frontier = {
+            let conn = crate::storage_manager::db::open_db(app)?;
+            load_frontier(&conn).map_err(|error| error.to_string())?
+        };
+        let ack = P2PMessage::Sync(SyncV2Message::BatchAck {
+            batch_id: received_batch_id,
+            frontier: local_frontier,
+        });
+        let peer_ack = exchange(&mut sink, &mut stream, ack, stop).await?;
+        let (acknowledged_batch_id, acknowledged_frontier) = match peer_ack {
+            P2PMessage::Sync(SyncV2Message::BatchAck { batch_id, frontier }) => {
+                (batch_id, frontier)
             }
-            Some(Err(e)) => return Err(e.to_string()),
-            None => {
-                return Err(crate::utils::err_msg(
-                    module_path!(),
-                    line!(),
-                    "Connection closed before Ready",
-                ))
-            }
+            P2PMessage::Sync(SyncV2Message::Cancel { reason }) => return Err(reason),
+            P2PMessage::Error(message) => return Err(message),
+            message => return Err(format!("Expected batch acknowledgement, got {message:?}")),
+        };
+        let expected_ack = sent_batch_id.as_deref().unwrap_or(QUIESCENT_ACK);
+        if acknowledged_batch_id != expected_ack {
+            return Err(format!(
+                "Peer acknowledged batch {acknowledged_batch_id}, expected {expected_ack}"
+            ));
+        }
+        if sent_batch_id.is_some() {
+            stats.items_sent = stats.items_sent.saturating_add(revisions.len() as u64);
+            stats.bytes_sent = stats.bytes_sent.saturating_add(
+                revisions
+                    .iter()
+                    .map(|revision| revision.changeset.len() as u64)
+                    .sum(),
+            );
+        }
+        remote_frontier = acknowledged_frontier;
+        {
+            let conn = crate::storage_manager::db::open_db(app)?;
+            record_peer_acknowledgement(
+                &conn,
+                &peer_hello.device_id,
+                &remote_frontier,
+                crate::utils::now_millis()? as i64,
+            )
+            .map_err(|error| error.to_string())?;
+        }
+        state
+            .set_status(app, stats.status("Exchanging changes"))
+            .await;
+
+        if sent_batch_id.is_none() && received_quiescent {
+            break;
         }
     }
 
-    let cursors = sync_db::load_peer_cursors(&conn, &driver_device_id)?;
-    framed
-        .send(P2PMessage::AdvertiseCursors { cursors })
-        .await
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    sync_assets(
+        app,
+        &mut sink,
+        &mut stream,
+        &local_hello,
+        &peer_hello,
+        &limits,
+        &mut stats,
+        stop,
+    )
+    .await?;
+    let frontier = {
+        let conn = crate::storage_manager::db::open_db(app)?;
+        load_frontier(&conn).map_err(|error| error.to_string())?
+    };
+    match exchange(
+        &mut sink,
+        &mut stream,
+        P2PMessage::Sync(SyncV2Message::Complete { frontier }),
+        stop,
+    )
+    .await?
+    {
+        P2PMessage::Sync(SyncV2Message::Complete { .. }) => Ok(()),
+        P2PMessage::Sync(SyncV2Message::Cancel { reason }) => Err(reason),
+        message => Err(format!("Expected sync completion, got {message:?}")),
+    }
+}
 
-    let mut pending_asset_batch: Option<PendingAssetBatch> = None;
-    let mut pending_asset: Option<PendingIncomingAsset> = None;
-    let mut tracker: Option<SyncProgressTracker> = None;
-    let mut latest_phase: String = "Connecting".into();
-    let mut pending_domain: Option<(SyncDomain, i64)> = None;
+async fn sync_assets(
+    app: &AppHandle,
+    sink: &mut SplitSink<Framed<TcpStream, P2PCodec>, P2PMessage>,
+    stream: &mut SplitStream<Framed<TcpStream, P2PCodec>>,
+    local_hello: &SyncHello,
+    peer_hello: &SyncHello,
+    limits: &SyncLimits,
+    stats: &mut TransferStats,
+    stop: &mut broadcast::Receiver<()>,
+) -> Result<(), String> {
+    let state = app.state::<SyncManagerState>();
+    state
+        .set_status(app, stats.status("Comparing files"))
+        .await;
+    let local_assets = crate::sync::v2::assets::collect_local_assets(app)?;
+    let local_inventory = local_assets
+        .values()
+        .map(|asset| asset.descriptor.clone())
+        .collect::<Vec<_>>();
+    let peer_inventory = match exchange(
+        sink,
+        stream,
+        P2PMessage::Sync(SyncV2Message::BlobInventory {
+            blobs: local_inventory,
+        }),
+        stop,
+    )
+    .await?
+    {
+        P2PMessage::Sync(SyncV2Message::BlobInventory { blobs }) => blobs,
+        P2PMessage::Sync(SyncV2Message::Cancel { reason }) => return Err(reason),
+        message => return Err(format!("Expected blob inventory, got {message:?}")),
+    };
 
-    // Client Loop
-    loop {
-        tokio::select! {
-            _ = stop_signal.recv() => {
-                framed.send(P2PMessage::Disconnect).await.ok();
+    let cache_root = crate::sync::v2::assets::blob_cache_root(app)?;
+    let local_path_hashes = local_assets
+        .values()
+        .flat_map(|asset| {
+            asset
+                .descriptor
+                .relative_paths
+                .iter()
+                .cloned()
+                .map(|path| (path, asset.descriptor.content_hash.clone()))
+        })
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let mut requested_descriptors = HashMap::new();
+    let mut local_requests = Vec::new();
+    for mut descriptor in peer_inventory {
+        validate_blob_descriptor(&descriptor)?;
+        crate::sync::v2::assets::retain_remote_winners(
+            &mut descriptor,
+            &local_path_hashes,
+        );
+        if descriptor.relative_paths.is_empty() {
+            continue;
+        }
+        let already_materialized = descriptor.relative_paths.iter().try_fold(
+            true,
+            |all_present, path| {
+                crate::sync::v2::assets::destination_has_hash(
+                    app,
+                    path,
+                    &descriptor.content_hash,
+                )
+                .map(|present| all_present && present)
+            },
+        )?;
+        if already_materialized {
+            continue;
+        }
+        let receive_state = {
+            let conn = crate::storage_manager::db::open_db(app)?;
+            begin_blob_receive(
+                &conn,
+                &cache_root,
+                &descriptor.content_hash,
+                descriptor.size_bytes,
+                crate::utils::now_millis()? as i64,
+            )
+            .map_err(|error| error.to_string())?
+        };
+        match receive_state {
+            BlobReceiveState::Complete { path } => {
+                crate::sync::v2::assets::materialize_blob(
+                    app,
+                    &path,
+                    &descriptor.relative_paths,
+                    &descriptor.content_hash,
+                )?;
+            }
+            BlobReceiveState::Ready { offset } => {
+                local_requests.push(BlobRequestDescriptor {
+                    content_hash: descriptor.content_hash.clone(),
+                    offset,
+                });
+                requested_descriptors
+                    .insert(descriptor.content_hash.clone(), descriptor);
+            }
+        }
+    }
+    local_requests.sort_by(|left, right| left.content_hash.cmp(&right.content_hash));
+    let peer_requests = match exchange(
+        sink,
+        stream,
+        P2PMessage::Sync(SyncV2Message::BlobRequests {
+            requests: local_requests.clone(),
+        }),
+        stop,
+    )
+    .await?
+    {
+        P2PMessage::Sync(SyncV2Message::BlobRequests { mut requests }) => {
+            requests.sort_by(|left, right| left.content_hash.cmp(&right.content_hash));
+            requests
+        }
+        P2PMessage::Sync(SyncV2Message::Cancel { reason }) => return Err(reason),
+        message => return Err(format!("Expected blob requests, got {message:?}")),
+    };
+
+    stats.planned_items = stats
+        .planned_items
+        .saturating_add(local_requests.len() as u64)
+        .saturating_add(peer_requests.len() as u64);
+    stats.planned_bytes = stats.planned_bytes.saturating_add(
+        local_requests
+            .iter()
+            .filter_map(|request| {
+                requested_descriptors
+                    .get(&request.content_hash)
+                    .map(|descriptor| descriptor.size_bytes.saturating_sub(request.offset))
+            })
+            .sum::<u64>(),
+    );
+    stats.planned_bytes = stats.planned_bytes.saturating_add(
+        peer_requests
+            .iter()
+            .filter_map(|request| local_assets.get(&request.content_hash).map(|asset| {
+                asset
+                    .descriptor
+                    .size_bytes
+                    .saturating_sub(request.offset)
+            }))
+            .sum::<u64>(),
+    );
+    state
+        .set_status(app, stats.status("Exchanging files"))
+        .await;
+
+    if local_hello.device_id < peer_hello.device_id {
+        send_requested_blobs(
+            app,
+            sink,
+            stream,
+            &local_assets,
+            &peer_requests,
+            limits.blob_chunk_bytes as usize,
+            stats,
+            stop,
+        )
+        .await?;
+        receive_requested_blobs(
+            app,
+            sink,
+            stream,
+            &cache_root,
+            &local_requests,
+            &requested_descriptors,
+            stats,
+            stop,
+        )
+        .await?;
+    } else {
+        receive_requested_blobs(
+            app,
+            sink,
+            stream,
+            &cache_root,
+            &local_requests,
+            &requested_descriptors,
+            stats,
+            stop,
+        )
+        .await?;
+        send_requested_blobs(
+            app,
+            sink,
+            stream,
+            &local_assets,
+            &peer_requests,
+            limits.blob_chunk_bytes as usize,
+            stats,
+            stop,
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+async fn send_requested_blobs(
+    app: &AppHandle,
+    sink: &mut SplitSink<Framed<TcpStream, P2PCodec>, P2PMessage>,
+    stream: &mut SplitStream<Framed<TcpStream, P2PCodec>>,
+    local_assets: &std::collections::BTreeMap<String, crate::sync::v2::assets::LocalAsset>,
+    requests: &[BlobRequestDescriptor],
+    chunk_bytes: usize,
+    stats: &mut TransferStats,
+    stop: &mut broadcast::Receiver<()>,
+) -> Result<(), String> {
+    for request in requests {
+        let asset = local_assets
+            .get(&request.content_hash)
+            .ok_or_else(|| format!("Requested blob {} is unavailable", request.content_hash))?;
+        if request.offset > asset.descriptor.size_bytes {
+            return Err(format!(
+                "Peer requested invalid offset {} for blob {}",
+                request.offset, request.content_hash
+            ));
+        }
+        let mut file = File::open(&asset.source_path).map_err(|error| error.to_string())?;
+        file.seek(SeekFrom::Start(request.offset))
+            .map_err(|error| error.to_string())?;
+        let mut offset = request.offset;
+        let mut buffer = vec![0u8; chunk_bytes.max(1)];
+        loop {
+            let read = file.read(&mut buffer).map_err(|error| error.to_string())?;
+            if read == 0 {
                 break;
             }
-            msg = framed.next() => {
-                match msg {
-                    Some(Ok(P2PMessage::SyncManifest { plan, total_changes, total_bytes })) => {
-                        log_info(&app, "sync_passenger", format!(
-                            "Received manifest: {} changes, {} bytes across {} domains",
-                            total_changes, total_bytes, plan.len()
+            sink.send(P2PMessage::Sync(SyncV2Message::BlobChunk {
+                content_hash: request.content_hash.clone(),
+                offset,
+                bytes: buffer[..read].to_vec(),
+            }))
+            .await
+            .map_err(|error| error.to_string())?;
+            offset = offset.saturating_add(read as u64);
+            stats.bytes_sent = stats.bytes_sent.saturating_add(read as u64);
+            app.state::<SyncManagerState>()
+                .set_status(app, stats.status("Exchanging files"))
+                .await;
+        }
+        sink.send(P2PMessage::Sync(SyncV2Message::BlobComplete {
+            content_hash: request.content_hash.clone(),
+            size_bytes: asset.descriptor.size_bytes,
+        }))
+        .await
+        .map_err(|error| error.to_string())?;
+        match receive_split(stream, stop).await? {
+            P2PMessage::Sync(SyncV2Message::BlobAck { content_hash })
+                if content_hash == request.content_hash =>
+            {
+                stats.items_sent = stats.items_sent.saturating_add(1);
+            }
+            P2PMessage::Sync(SyncV2Message::Cancel { reason }) => return Err(reason),
+            message => return Err(format!("Expected blob acknowledgement, got {message:?}")),
+        }
+    }
+    Ok(())
+}
+
+async fn receive_requested_blobs(
+    app: &AppHandle,
+    sink: &mut SplitSink<Framed<TcpStream, P2PCodec>, P2PMessage>,
+    stream: &mut SplitStream<Framed<TcpStream, P2PCodec>>,
+    cache_root: &std::path::Path,
+    requests: &[BlobRequestDescriptor],
+    descriptors: &HashMap<String, BlobDescriptor>,
+    stats: &mut TransferStats,
+    stop: &mut broadcast::Receiver<()>,
+) -> Result<(), String> {
+    for request in requests {
+        let descriptor = descriptors
+            .get(&request.content_hash)
+            .ok_or_else(|| format!("Missing descriptor for blob {}", request.content_hash))?;
+        let mut expected_offset = request.offset;
+        loop {
+            match receive_split(stream, stop).await? {
+                P2PMessage::Sync(SyncV2Message::BlobChunk {
+                    content_hash,
+                    offset,
+                    bytes,
+                }) if content_hash == request.content_hash => {
+                    if offset != expected_offset {
+                        return Err(format!(
+                            "Blob {} expected offset {}, received {}",
+                            content_hash, expected_offset, offset
                         ));
-                        let new_tracker = SyncProgressTracker::from_plan(&plan);
-                        latest_phase = "Preparing transfer".into();
-                        state.set_status(&app, new_tracker.syncing_status(latest_phase.clone(), None)).await;
-                        tracker = Some(new_tracker);
                     }
-                    Some(Ok(P2PMessage::PushChanges { domain, changes })) => {
-                        log_info(&app, "sync_passenger", format!("Received {} changes for {:?}", changes.len(), domain));
-                        if pending_domain.as_ref().is_some_and(|(prev, _)| *prev != domain) {
-                            if let Err(e) = finalize_pending_domain(&app, &mut conn, &driver_device_id, &mut pending_domain) {
-                                log_error(&app, "sync_passenger", format!("Failed to materialize pending domain: {}", e));
-                                framed.send(P2PMessage::Disconnect).await.ok();
-                                return Err(e);
-                            }
-                        }
-                        latest_phase = sync_status_text(domain).to_string();
-                        if let Some(t) = tracker.as_ref() {
-                            state.set_status(&app, t.syncing_status(latest_phase.clone(), Some(domain))).await;
-                        } else {
-                            state.set_status(&app, syncing(latest_phase.clone())).await;
-                        }
-                        let last_change_id = changes.last().map(|change| change.change_id).unwrap_or(0);
-                        if domain == SyncDomain::Assets {
-                            let payload_bytes: u64 = changes.iter().map(|c| c.payload.len() as u64).sum();
-                            let delete_count: u64 = changes
-                                .iter()
-                                .filter(|change| change.op == ChangeOp::Delete)
-                                .count() as u64;
-                            if pending_asset_batch.is_some() {
-                                return Err(crate::utils::err_msg(
-                                    module_path!(),
-                                    line!(),
-                                    "Received a new asset batch before the previous batch completed",
-                                ));
-                            }
-
-                            let mut expected_files = HashMap::new();
-                            for change in &changes {
-                                if change.op != ChangeOp::Upsert {
-                                    continue;
-                                }
-
-                                let asset: sync_db::AssetRecord = bincode::deserialize(&change.payload)
-                                    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-                                expected_files.insert(
-                                    change.entity_id.clone(),
-                                    PendingAssetFile {
-                                        path: asset.path,
-                                        content_hash: asset.content_hash,
-                                    },
-                                );
-                            }
-
-                            pending_asset_batch = Some(PendingAssetBatch {
-                                changes,
-                                expected_files,
-                                received_entity_ids: HashSet::new(),
-                                last_change_id,
-                                bytes_received: 0,
-                                payload_bytes,
-                                delete_count,
-                            });
-                            if let Some(t) = tracker.as_mut() {
-                                let pending_batch = pending_asset_batch.as_ref().expect("asset batch just set");
-                                t.record(SyncDomain::Assets, pending_batch.delete_count, pending_batch.payload_bytes);
-                                state.set_status(&app, t.syncing_status(latest_phase.clone(), Some(SyncDomain::Assets))).await;
-                            }
-                            continue;
-                        }
-                        if let Err(e) = sync_db::append_change_batch(&mut conn, domain, &changes) {
-                            log_error(&app, "sync_passenger", format!("Failed to apply domain {:?}: {}", domain, e));
-                            framed.send(P2PMessage::Disconnect).await.ok();
-                            return Err(crate::utils::err_msg(
-                                module_path!(),
-                                line!(),
-                                format!("Sync aborted: failed to apply {:?} changes: {}", domain, e),
-                            ));
-                        }
-                        let pending_cursor = pending_domain
-                            .filter(|(prev, _)| *prev == domain)
-                            .map(|(_, cursor)| cursor)
-                            .unwrap_or(0);
-                        pending_domain = Some((domain, pending_cursor.max(last_change_id)));
-                        let bytes: u64 = changes.iter().map(|c| c.payload.len() as u64).sum();
-                        if let Some(t) = tracker.as_mut() {
-                            t.record(domain, changes.len() as u64, bytes);
-                            state.set_status(&app, t.syncing_status(latest_phase.clone(), Some(domain))).await;
-                        }
-                    }
-                    Some(Ok(P2PMessage::StatusUpdate(msg))) => {
-                        log_info(&app, "sync_passenger", format!("StatusUpdate: {}", msg));
-                        latest_phase = msg.clone();
-                        if let Some(t) = tracker.as_ref() {
-                            state.set_status(&app, t.syncing_status(msg, None)).await;
-                        } else {
-                            state.set_status(&app, syncing(msg)).await;
-                        }
-                    }
-                    Some(Ok(P2PMessage::AssetContent { entity_id, path, content_hash, content })) => {
-                        log_info(&app, "sync_passenger", format!("Received asset content: {}", path));
-                        let pending_batch = pending_asset_batch.as_mut().ok_or_else(|| {
-                            crate::utils::err_msg(
-                                module_path!(),
-                                line!(),
-                                format!("Received unexpected asset content for {}", path),
-                            )
-                        })?;
-                        let pending_file = pending_batch.expected_files.get(&entity_id).ok_or_else(|| {
-                            crate::utils::err_msg(
-                                module_path!(),
-                                line!(),
-                                format!("Received asset content for unknown entity {}", entity_id),
-                            )
-                        })?;
-                        if pending_file.path != path {
-                            return Err(crate::utils::err_msg(
-                                module_path!(),
-                                line!(),
-                                format!(
-                                    "Asset path mismatch for {}: expected {}, got {}",
-                                    entity_id, pending_file.path, path
-                                ),
-                            ));
-                        }
-                        if pending_file.content_hash != content_hash {
-                            return Err(crate::utils::err_msg(
-                                module_path!(),
-                                line!(),
-                                format!(
-                                    "Asset hash metadata mismatch for {}: expected {}, got {}",
-                                    entity_id, pending_file.content_hash, content_hash
-                                ),
-                            ));
-                        }
-                        let actual_hash = blake3::hash(&content).to_hex().to_string();
-                        if actual_hash != content_hash {
-                            return Err(crate::utils::err_msg(
-                                module_path!(),
-                                line!(),
-                                format!(
-                                    "Received corrupted asset content for {}: expected {}, got {}",
-                                    entity_id, content_hash, actual_hash
-                                ),
-                            ));
-                        }
-                        let content_len = content.len() as u64;
-                        write_asset_path(&app, &path, &content).await?;
-                        pending_batch.received_entity_ids.insert(entity_id);
-                        pending_batch.bytes_received = pending_batch.bytes_received.saturating_add(content_len);
-                        if let Some(t) = tracker.as_mut() {
-                            t.record_bytes(content_len);
-                            t.record_items(SyncDomain::Assets, 1);
-                            state.set_status(&app, t.syncing_status(latest_phase.clone(), Some(SyncDomain::Assets))).await;
-                        }
-                    }
-                    Some(Ok(P2PMessage::AssetContentStart { entity_id, path, content_hash, total_bytes })) => {
-                        let pending_batch = pending_asset_batch.as_ref().ok_or_else(|| {
-                            crate::utils::err_msg(
-                                module_path!(),
-                                line!(),
-                                format!("Received unexpected asset start for {}", path),
-                            )
-                        })?;
-                        let pending_file = pending_batch.expected_files.get(&entity_id).ok_or_else(|| {
-                            crate::utils::err_msg(
-                                module_path!(),
-                                line!(),
-                                format!("Received asset start for unknown entity {}", entity_id),
-                            )
-                        })?;
-                        if pending_asset.is_some() {
-                            return Err(crate::utils::err_msg(
-                                module_path!(),
-                                line!(),
-                                "Received AssetContentStart while another asset is still being transferred",
-                            ));
-                        }
-                        if pending_file.path != path || pending_file.content_hash != content_hash {
-                            return Err(crate::utils::err_msg(
-                                module_path!(),
-                                line!(),
-                                format!("Asset metadata mismatch for {}", entity_id),
-                            ));
-                        }
-                        pending_asset = Some(PendingIncomingAsset {
-                            entity_id,
-                            path,
-                            content_hash,
-                            total_bytes,
-                            bytes_received: 0,
-                            content: Vec::with_capacity(total_bytes.min(8 * 1024 * 1024) as usize),
-                        });
-                    }
-                    Some(Ok(P2PMessage::AssetContentChunk { entity_id, chunk })) => {
-                        let current_asset = pending_asset.as_mut().ok_or_else(|| {
-                            crate::utils::err_msg(
-                                module_path!(),
-                                line!(),
-                                format!("Received asset chunk without active asset for {}", entity_id),
-                            )
-                        })?;
-                        if current_asset.entity_id != entity_id {
-                            return Err(crate::utils::err_msg(
-                                module_path!(),
-                                line!(),
-                                format!(
-                                    "Received asset chunk for {} while receiving {}",
-                                    entity_id, current_asset.entity_id
-                                ),
-                            ));
-                        }
-                        current_asset.bytes_received = current_asset.bytes_received.saturating_add(chunk.len() as u64);
-                        current_asset.content.extend_from_slice(&chunk);
-                        pending_batch_bytes_received(&mut pending_asset_batch, chunk.len() as u64)?;
-                        if let Some(t) = tracker.as_mut() {
-                            t.record_bytes(chunk.len() as u64);
-                            state.set_status(&app, t.syncing_status(latest_phase.clone(), Some(SyncDomain::Assets))).await;
-                        }
-                    }
-                    Some(Ok(P2PMessage::AssetContentComplete { entity_id })) => {
-                        let current_asset = pending_asset.take().ok_or_else(|| {
-                            crate::utils::err_msg(
-                                module_path!(),
-                                line!(),
-                                format!("Received asset completion without active asset for {}", entity_id),
-                            )
-                        })?;
-                        if current_asset.entity_id != entity_id {
-                            return Err(crate::utils::err_msg(
-                                module_path!(),
-                                line!(),
-                                format!(
-                                    "Received asset completion for {} while receiving {}",
-                                    entity_id, current_asset.entity_id
-                                ),
-                            ));
-                        }
-                        if current_asset.bytes_received != current_asset.total_bytes {
-                            return Err(crate::utils::err_msg(
-                                module_path!(),
-                                line!(),
-                                format!(
-                                    "Asset {} incomplete: received {} of {} bytes",
-                                    current_asset.path, current_asset.bytes_received, current_asset.total_bytes
-                                ),
-                            ));
-                        }
-                        let actual_hash = blake3::hash(&current_asset.content).to_hex().to_string();
-                        if actual_hash != current_asset.content_hash {
-                            return Err(crate::utils::err_msg(
-                                module_path!(),
-                                line!(),
-                                format!(
-                                    "Received corrupted chunked asset content for {}: expected {}, got {}",
-                                    current_asset.entity_id, current_asset.content_hash, actual_hash
-                                ),
-                            ));
-                        }
-                        write_asset_path(&app, &current_asset.path, &current_asset.content).await?;
-                        let pending_batch = pending_asset_batch.as_mut().ok_or_else(|| {
-                            crate::utils::err_msg(
-                                module_path!(),
-                                line!(),
-                                format!("Completed asset {} without active batch", current_asset.entity_id),
-                            )
-                        })?;
-                        pending_batch.received_entity_ids.insert(current_asset.entity_id);
-                        if let Some(t) = tracker.as_mut() {
-                            t.record_items(SyncDomain::Assets, 1);
-                            state.set_status(&app, t.syncing_status(latest_phase.clone(), Some(SyncDomain::Assets))).await;
-                        }
-                    }
-                    Some(Ok(P2PMessage::AssetBatchComplete { last_change_id })) => {
-                        if pending_asset.is_some() {
-                            return Err(crate::utils::err_msg(
-                                module_path!(),
-                                line!(),
-                                "Received AssetBatchComplete while an asset file was still being transferred",
-                            ));
-                        }
-                        let pending_batch = pending_asset_batch.take().ok_or_else(|| {
-                            crate::utils::err_msg(
-                                module_path!(),
-                                line!(),
-                                "Received AssetBatchComplete without an active asset batch",
-                            )
-                        })?;
-                        if pending_batch.last_change_id != last_change_id {
-                            return Err(crate::utils::err_msg(
-                                module_path!(),
-                                line!(),
-                                format!(
-                                    "Asset batch completion mismatch: expected {}, got {}",
-                                    pending_batch.last_change_id, last_change_id
-                                ),
-                            ));
-                        }
-                        let missing_assets = pending_batch
-                            .expected_files
-                            .keys()
-                            .filter(|entity_id| !pending_batch.received_entity_ids.contains(*entity_id))
-                            .cloned()
-                            .collect::<Vec<_>>();
-                        if !missing_assets.is_empty() {
-                            return Err(crate::utils::err_msg(
-                                module_path!(),
-                                line!(),
-                                format!("Asset batch incomplete, missing entities: {}", missing_assets.join(", ")),
-                            ));
-                        }
-                        for change in &pending_batch.changes {
-                            if change.op == ChangeOp::Delete {
-                                remove_asset_path(&app, &change.entity_id)?;
-                            }
-                        }
-                        sync_db::apply_change_batch(&mut conn, SyncDomain::Assets, &pending_batch.changes)?;
-                        if last_change_id > 0 {
-                            sync_db::record_peer_cursor(&conn, &driver_device_id, SyncDomain::Assets, last_change_id)?;
-                        }
-                    }
-                    Some(Ok(P2PMessage::SyncComplete)) => {
-                        if pending_asset_batch.is_some() {
-                            return Err(crate::utils::err_msg(
-                                module_path!(),
-                                line!(),
-                                "Sync completed while an asset batch was still pending",
-                            ));
-                        }
-                        if let Err(e) = finalize_pending_domain(&app, &mut conn, &driver_device_id, &mut pending_domain) {
-                            log_error(&app, "sync_passenger", format!("Failed to materialize pending domain: {}", e));
-                            framed.send(P2PMessage::Disconnect).await.ok();
-                            return Err(e);
-                        }
-                        log_info(&app, "sync_passenger", "Received SyncComplete");
-                        let _ = app.emit("database-reloaded", ());
-                        framed
-                            .send(P2PMessage::SyncApplied)
-                            .await
-                            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-                        state.set_status(&app, SyncStatus::SyncCompleted).await;
-                        break;
-                    }
-                    Some(Ok(P2PMessage::Disconnect)) => {
-                        log_info(&app, "sync_passenger", "Received Disconnect");
-                        if tracker.is_some() {
-                            return Err(crate::utils::err_msg(
-                                module_path!(),
-                                line!(),
-                                "Driver disconnected before the sync finished",
-                            ));
-                        }
-                        break;
-                    }
-                    Some(Ok(other)) => {
-                        log_info(&app, "sync_passenger", format!("Received unexpected message: {:?}", other));
-                    }
-                    Some(Err(e)) => {
-                        log_error(&app, "sync_passenger", format!("Frame error: {}", e));
-                        return Err(e.to_string());
-                    }
-                    None => {
-                        log_info(&app, "sync_passenger", "Stream ended/Connection closed");
-                        if tracker.is_some() {
-                            return Err(crate::utils::err_msg(
-                                module_path!(),
-                                line!(),
-                                "Connection lost before the sync finished",
-                            ));
-                        }
-                        break;
-                    }
+                    expected_offset = {
+                        let conn = crate::storage_manager::db::open_db(app)?;
+                        write_blob_chunk(
+                            &conn,
+                            cache_root,
+                            &content_hash,
+                            offset,
+                            &bytes,
+                        )
+                        .map_err(|error| error.to_string())?
+                    };
+                    stats.bytes_received =
+                        stats.bytes_received.saturating_add(bytes.len() as u64);
+                    app.state::<SyncManagerState>()
+                        .set_status(app, stats.status("Exchanging files"))
+                        .await;
                 }
+                P2PMessage::Sync(SyncV2Message::BlobComplete {
+                    content_hash,
+                    size_bytes,
+                }) if content_hash == request.content_hash => {
+                    if size_bytes != descriptor.size_bytes {
+                        return Err(format!(
+                            "Blob {} completed with inconsistent size",
+                            content_hash
+                        ));
+                    }
+                    let path = {
+                        let conn = crate::storage_manager::db::open_db(app)?;
+                        finish_blob_receive(&conn, cache_root, &content_hash)
+                            .map_err(|error| error.to_string())?
+                    };
+                    crate::sync::v2::assets::materialize_blob(
+                        app,
+                        &path,
+                        &descriptor.relative_paths,
+                        &content_hash,
+                    )?;
+                    sink.send(P2PMessage::Sync(SyncV2Message::BlobAck {
+                        content_hash,
+                    }))
+                    .await
+                    .map_err(|error| error.to_string())?;
+                    stats.items_received = stats.items_received.saturating_add(1);
+                    break;
+                }
+                P2PMessage::Sync(SyncV2Message::Cancel { reason }) => return Err(reason),
+                message => return Err(format!("Expected blob content, got {message:?}")),
             }
         }
     }
-
     Ok(())
+}
+
+fn validate_blob_descriptor(descriptor: &BlobDescriptor) -> Result<(), String> {
+    if descriptor.content_hash.len() != 64
+        || !descriptor
+            .content_hash
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+        || descriptor.relative_paths.is_empty()
+    {
+        return Err("Peer advertised an invalid blob descriptor".to_string());
+    }
+    Ok(())
+}
+
+async fn receive_split(
+    stream: &mut SplitStream<Framed<TcpStream, P2PCodec>>,
+    stop: &mut broadcast::Receiver<()>,
+) -> Result<P2PMessage, String> {
+    tokio::select! {
+        _ = stop.recv() => Err("Sync cancelled".to_string()),
+        message = stream.next() => match message {
+            Some(Ok(message)) => Ok(message),
+            Some(Err(error)) => Err(error.to_string()),
+            None => Err("Peer disconnected during sync".to_string()),
+        }
+    }
+}
+
+fn local_hello(app: &AppHandle) -> Result<SyncHello, String> {
+    let conn = crate::storage_manager::db::open_db(app)?;
+    crate::sync::v2::ensure_current_database_seeded(
+        &conn,
+        crate::utils::now_millis()? as i64,
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(SyncHello {
+        app_version: app.package_info().version.to_string(),
+        sync_protocol_version: SYNC_V2_PROTOCOL_VERSION,
+        schema_fingerprint: cached_schema_fingerprint(&conn)
+            .map_err(|error| error.to_string())?,
+        device_id: get_or_create_device_id(&conn).map_err(|error| error.to_string())?,
+        session_id: Uuid::new_v4().to_string(),
+        limits: SyncLimits::default(),
+    })
+}
+
+async fn exchange(
+    sink: &mut SplitSink<Framed<TcpStream, P2PCodec>, P2PMessage>,
+    stream: &mut SplitStream<Framed<TcpStream, P2PCodec>>,
+    outgoing: P2PMessage,
+    stop: &mut broadcast::Receiver<()>,
+) -> Result<P2PMessage, String> {
+    let operation = async {
+        let (sent, received) = join(sink.send(outgoing), stream.next()).await;
+        sent.map_err(|error| error.to_string())?;
+        match received {
+            Some(Ok(message)) => Ok(message),
+            Some(Err(error)) => Err(error.to_string()),
+            None => Err("Peer disconnected during sync".to_string()),
+        }
+    };
+    tokio::select! {
+        _ = stop.recv() => Err("Sync cancelled".to_string()),
+        result = operation => result,
+    }
+}
+
+async fn receive_message(
+    framed: &mut Framed<TcpStream, P2PCodec>,
+) -> Result<P2PMessage, String> {
+    match framed.next().await {
+        Some(Ok(message)) => Ok(message),
+        Some(Err(error)) => Err(error.to_string()),
+        None => Err("Peer disconnected".to_string()),
+    }
+}
+
+fn validate_transport_version(
+    app: &AppHandle,
+    peer_name: &str,
+    peer_app_version: &str,
+    peer_protocol: u32,
+) -> Result<(), String> {
+    let local_version = app.package_info().version.to_string();
+    if peer_app_version == local_version && peer_protocol == SYNC_V2_PROTOCOL_VERSION {
+        return Ok(());
+    }
+    let peer = if peer_name.is_empty() {
+        "The other device"
+    } else {
+        peer_name
+    };
+    Err(format!(
+        "Sync requires exactly the same LettuceAI version on both devices. {peer} uses app {peer_app_version} with sync protocol {peer_protocol}; this device uses app {local_version} with sync protocol {SYNC_V2_PROTOCOL_VERSION}."
+    ))
+}
+
+fn encrypt_challenge(
+    cipher: &ChaCha20Poly1305,
+    challenge: &[u8; 16],
+) -> Result<Vec<u8>, String> {
+    let mut nonce_bytes = [0u8; 12];
+    thread_rng().fill_bytes(&mut nonce_bytes);
+    let nonce = Nonce::from(nonce_bytes);
+    let ciphertext = cipher
+        .encrypt(&nonce, challenge.as_ref())
+        .map_err(|error| error.to_string())?;
+    let mut payload = Vec::with_capacity(12 + ciphertext.len());
+    payload.extend_from_slice(&nonce_bytes);
+    payload.extend_from_slice(&ciphertext);
+    Ok(payload)
+}
+
+fn decrypt_challenge(
+    cipher: &ChaCha20Poly1305,
+    payload: &[u8],
+    label: &str,
+) -> Result<Vec<u8>, String> {
+    if payload.len() < 12 {
+        return Err(format!("{label} is too short"));
+    }
+    let mut nonce_bytes = [0u8; 12];
+    nonce_bytes.copy_from_slice(&payload[..12]);
+    cipher
+        .decrypt(&Nonce::from(nonce_bytes), &payload[12..])
+        .map_err(|_| format!("{label} could not be decrypted"))
 }
 
 pub async fn stop_sync(app: AppHandle) -> Result<(), String> {
     let state = app.state::<SyncManagerState>();
-    let mut tx_guard = state.shutdown_tx.lock().await;
-
-    if let Some(tx) = tx_guard.take() {
-        let _ = tx.send(());
+    if let Some(sender) = state.shutdown_tx.lock().await.take() {
+        let _ = sender.send(());
     }
-
-    drop(tx_guard);
     state.clear_pending().await;
     *state.pin.write().await = None;
+    *state.sharing_port.write().await = None;
     state.set_status(&app, SyncStatus::Idle).await;
     Ok(())
 }
 
-pub async fn approve_connection(app: AppHandle, ip: String, allow: bool) -> Result<(), String> {
+pub async fn approve_connection(
+    app: AppHandle,
+    ip: String,
+    allow: bool,
+) -> Result<(), String> {
     let state = app.state::<SyncManagerState>();
-    let mut map = state.pending_approvals.write().await;
-
-    if let Some(tx) = map.remove(&ip) {
-        let _ = tx.send(allow);
-    } else {
-        return Err(crate::utils::err_msg(
-            module_path!(),
-            line!(),
-            "No pending connection found for this IP",
-        ));
-    }
-
+    let sender = state
+        .pending_approvals
+        .write()
+        .await
+        .remove(&ip)
+        .ok_or_else(|| "No pending connection exists for this address".to_string())?;
+    let _ = sender.send(allow);
     Ok(())
 }
 
 pub async fn start_sync_session(app: AppHandle, ip: String) -> Result<(), String> {
     let state = app.state::<SyncManagerState>();
-    let mut map = state.pending_starts.write().await;
-
-    if let Some(tx) = map.remove(&ip) {
-        let _ = tx.send(());
-    } else {
-        return Err(crate::utils::err_msg(
-            module_path!(),
-            line!(),
-            "No pending sync session found for this IP",
-        ));
-    }
-
-    Ok(())
-}
-
-fn sync_status_text(domain: SyncDomain) -> &'static str {
-    match domain {
-        SyncDomain::Core => "Syncing Core Data...",
-        SyncDomain::Tts => "Syncing Voice Settings...",
-        SyncDomain::Lorebooks => "Syncing Lorebooks...",
-        SyncDomain::Characters => "Syncing Characters...",
-        SyncDomain::Groups => "Syncing Groups...",
-        SyncDomain::Sessions => "Syncing Sessions...",
-        SyncDomain::Messages => "Syncing Messages...",
-        SyncDomain::Assets => "Syncing Assets...",
-    }
-}
-
-fn resolve_asset_path(app: &AppHandle, relative_path: &str) -> Result<std::path::PathBuf, String> {
-    if relative_path.contains("..")
-        || relative_path.starts_with('/')
-        || relative_path.contains('\\')
-    {
-        return Err(crate::utils::err_msg(
-            module_path!(),
-            line!(),
-            format!("Invalid asset path: {}", relative_path),
-        ));
-    }
-
-    if !relative_path.starts_with("avatars/")
-        && !relative_path.starts_with("sessions/")
-        && !relative_path.starts_with("images/")
-        && !relative_path.starts_with("generated_images/")
-    {
-        return Err(crate::utils::err_msg(
-            module_path!(),
-            line!(),
-            format!("Unauthorized asset path: {}", relative_path),
-        ));
-    }
-
-    if relative_path.starts_with("generated_images/") {
-        Ok(app
-            .path()
-            .app_data_dir()
-            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
-            .join(relative_path))
-    } else {
-        Ok(crate::storage_manager::legacy::storage_root(app)?.join(relative_path))
-    }
-}
-
-async fn write_asset_path(
-    app: &AppHandle,
-    relative_path: &str,
-    content: &[u8],
-) -> Result<(), String> {
-    let full_path = resolve_asset_path(app, relative_path)?;
-
-    if let Some(parent) = full_path.parent() {
-        tokio::fs::create_dir_all(parent)
-            .await
-            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-    }
-    tokio::fs::write(&full_path, content)
+    let sender = state
+        .pending_starts
+        .write()
         .await
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))
-}
-
-fn remove_asset_path(app: &AppHandle, relative_path: &str) -> Result<(), String> {
-    let full_path = resolve_asset_path(app, relative_path)?;
-    if full_path.exists() {
-        std::fs::remove_file(&full_path)
-            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-    }
+        .remove(&ip)
+        .ok_or_else(|| "No pending sync session exists for this address".to_string())?;
+    let _ = sender.send(());
     Ok(())
-}
-
-fn estimate_asset_bytes(app: &AppHandle, changes: &[crate::sync::protocol::ChangeRecord]) -> u64 {
-    let mut total: u64 = 0;
-    for change in changes {
-        if change.op != ChangeOp::Upsert {
-            continue;
-        }
-        let Ok(asset) = bincode::deserialize::<sync_db::AssetRecord>(&change.payload) else {
-            continue;
-        };
-        let Ok(path) = resolve_asset_path(app, &asset.path) else {
-            continue;
-        };
-        if let Ok(meta) = std::fs::metadata(&path) {
-            total = total.saturating_add(meta.len());
-        }
-    }
-    total
-}
-
-async fn send_asset_change_contents(
-    app: &AppHandle,
-    framed: &mut Framed<TcpStream, P2PCodec>,
-    changes: &[crate::sync::protocol::ChangeRecord],
-    tracker: &mut SyncProgressTracker,
-    state: &SyncManagerState,
-    phase: &str,
-    peer_protocol_version: u32,
-    prepared_contents: &HashMap<String, Vec<u8>>,
-) -> Result<(), String> {
-    for change in changes {
-        if change.op != ChangeOp::Upsert {
-            continue;
-        }
-
-        let asset: sync_db::AssetRecord = bincode::deserialize(&change.payload)
-            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-        let content = prepared_contents
-            .get(&change.entity_id)
-            .cloned()
-            .ok_or_else(|| {
-                crate::utils::err_msg(
-                    module_path!(),
-                    line!(),
-                    format!("Prepared asset content missing for {}", change.entity_id),
-                )
-            })?;
-        let actual_hash = asset.content_hash.clone();
-        if peer_protocol_version >= ASSET_CHUNK_PROTOCOL {
-            let total_bytes = content.len() as u64;
-            framed
-                .send(P2PMessage::AssetContentStart {
-                    entity_id: change.entity_id.clone(),
-                    path: asset.path,
-                    content_hash: actual_hash,
-                    total_bytes,
-                })
-                .await
-                .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-
-            for chunk in content.chunks(ASSET_CHUNK_SIZE) {
-                framed
-                    .send(P2PMessage::AssetContentChunk {
-                        entity_id: change.entity_id.clone(),
-                        chunk: chunk.to_vec(),
-                    })
-                    .await
-                    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-                tracker.record_bytes(chunk.len() as u64);
-                state
-                    .set_status(
-                        app,
-                        tracker.syncing_status(phase.to_string(), Some(SyncDomain::Assets)),
-                    )
-                    .await;
-            }
-
-            framed
-                .send(P2PMessage::AssetContentComplete {
-                    entity_id: change.entity_id.clone(),
-                })
-                .await
-                .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-            tracker.record_items(SyncDomain::Assets, 1);
-            state
-                .set_status(
-                    app,
-                    tracker.syncing_status(phase.to_string(), Some(SyncDomain::Assets)),
-                )
-                .await;
-        } else {
-            framed
-                .send(P2PMessage::AssetContent {
-                    entity_id: change.entity_id.clone(),
-                    path: asset.path,
-                    content_hash: actual_hash,
-                    content,
-                })
-                .await
-                .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-            let file_bytes = asset.size_bytes;
-            tracker.record_bytes(file_bytes);
-            tracker.record_items(SyncDomain::Assets, 1);
-            state
-                .set_status(
-                    app,
-                    tracker.syncing_status(phase.to_string(), Some(SyncDomain::Assets)),
-                )
-                .await;
-        }
-    }
-
-    Ok(())
-}
-
-fn pending_batch_bytes_received(
-    pending_asset_batch: &mut Option<PendingAssetBatch>,
-    bytes: u64,
-) -> Result<(), String> {
-    let pending_batch = pending_asset_batch.as_mut().ok_or_else(|| {
-        crate::utils::err_msg(
-            module_path!(),
-            line!(),
-            "Received asset bytes without an active batch",
-        )
-    })?;
-    pending_batch.bytes_received = pending_batch.bytes_received.saturating_add(bytes);
-    Ok(())
-}
-
-fn prepare_asset_changes_for_transfer(
-    app: &AppHandle,
-    changes: &mut [crate::sync::protocol::ChangeRecord],
-) -> Result<HashMap<String, Vec<u8>>, String> {
-    let mut prepared = HashMap::new();
-
-    for change in changes.iter_mut() {
-        if change.op != ChangeOp::Upsert {
-            continue;
-        }
-
-        let mut asset: sync_db::AssetRecord = bincode::deserialize(&change.payload)
-            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-        let absolute_path = resolve_asset_path(app, &asset.path)?;
-        if !absolute_path.is_file() {
-            continue;
-        }
-
-        let content = std::fs::read(&absolute_path)
-            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-        let actual_hash = blake3::hash(&content).to_hex().to_string();
-        let actual_size = content.len() as u64;
-
-        if asset.content_hash != actual_hash || asset.size_bytes != actual_size {
-            asset.content_hash = actual_hash;
-            asset.size_bytes = actual_size;
-            change.payload = bincode::serialize(&asset)
-                .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-            change.payload_hash = blake3::hash(&change.payload).to_hex().to_string();
-        }
-
-        prepared.insert(change.entity_id.clone(), content);
-    }
-
-    Ok(prepared)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn matching_versions_are_accepted() {
-        assert!(version_mismatch_error(
-            "1.2.0",
-            "Laptop",
-            "1.2.0",
-            PROTOCOL_VERSION,
-        )
-        .is_none());
-    }
-
-    #[test]
-    fn mismatched_peer_is_rejected_with_actionable_device_name() {
-        let error = version_mismatch_error("1.2.0", "Laptop", "1.1.0", 11).unwrap();
-        assert!(error.contains("Laptop uses app 1.1.0"));
-        assert!(error.contains("exactly the same"));
-        assert!(error.contains("fully restart both"));
-    }
-
-    #[test]
-    fn newer_peer_is_rejected_as_a_version_mismatch() {
-        let error =
-            version_mismatch_error("1.2.0", "Desktop", "1.3.0", PROTOCOL_VERSION + 1).unwrap();
-        assert!(error.contains("Desktop uses app 1.3.0"));
-        assert!(error.contains("Update the mismatched device"));
-    }
 }

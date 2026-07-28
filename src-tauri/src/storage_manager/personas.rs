@@ -1,7 +1,7 @@
 use rusqlite::{params, OptionalExtension};
 use serde_json::{Map as JsonMap, Value as JsonValue};
 
-use super::db::{now_ms, open_db};
+use super::db::{now_ms, open_db, tracked_write, tracked_write_string};
 
 pub fn personas_list_typed<T>(app: &tauri::AppHandle) -> Result<Vec<T>, String>
 where
@@ -245,7 +245,7 @@ pub fn persona_upsert(app: tauri::AppHandle, persona_json: String) -> Result<Str
 }
 
 fn upsert_persona_value(app: &tauri::AppHandle, p: &JsonValue) -> Result<JsonValue, String> {
-    let mut conn = open_db(app)?;
+    let conn = open_db(app)?;
     let id = p
         .get("id")
         .and_then(|v| v.as_str())
@@ -289,21 +289,24 @@ fn upsert_persona_value(app: &tauri::AppHandle, p: &JsonValue) -> Result<JsonVal
         .unwrap_or(false) as i64;
     let now = now_ms() as i64;
 
-    let tx = conn
-        .transaction()
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-    let existing_created: Option<i64> = tx
-        .query_row(
-            "SELECT created_at FROM personas WHERE id = ?",
-            params![&id],
-            |r| r.get(0),
-        )
-        .optional()
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-    let created_at = existing_created.unwrap_or(now);
+    let lora_name = p
+        .get("loraName")
+        .and_then(|v| v.as_str())
+        .map(|value| value.to_string());
+    let lora_strength = p.get("loraStrength").and_then(|v| v.as_f64());
+    let created_at = tracked_write_string(&conn, |tx| {
+        let existing_created: Option<i64> = tx
+            .query_row(
+                "SELECT created_at FROM personas WHERE id = ?",
+                params![&id],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        let created_at = existing_created.unwrap_or(now);
 
-    tx.execute(
-        r#"INSERT INTO personas (id, title, description, nickname, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, design_description, design_reference_image_ids, active_lorebook_ids, is_default, created_at, updated_at)
+        tx.execute(
+            r#"INSERT INTO personas (id, title, description, nickname, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, design_description, design_reference_image_ids, active_lorebook_ids, is_default, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
               title=excluded.title,
@@ -333,29 +336,24 @@ fn upsert_persona_value(app: &tauri::AppHandle, p: &JsonValue) -> Result<JsonVal
             is_default,
             created_at,
             now
-        ],
-    ).map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-
-    let lora_name = p
-        .get("loraName")
-        .and_then(|v| v.as_str())
-        .map(|value| value.to_string());
-    let lora_strength = p.get("loraStrength").and_then(|v| v.as_f64());
-    tx.execute(
-        "UPDATE personas SET lora_name = ?, lora_strength = ? WHERE id = ?",
-        params![&lora_name, lora_strength, &id],
-    )
-    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-
-    if is_default != 0 {
-        tx.execute(
-            "UPDATE personas SET is_default = 0 WHERE id <> ?",
-            params![&id],
+            ],
         )
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-    }
-    tx.commit()
+        tx.execute(
+            "UPDATE personas SET lora_name = ?, lora_strength = ? WHERE id = ?",
+            params![&lora_name, lora_strength, &id],
+        )
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+
+        if is_default != 0 {
+            tx.execute(
+                "UPDATE personas SET is_default = 0 WHERE id <> ?",
+                params![&id],
+            )
+            .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+        }
+        Ok(created_at)
+    })?;
 
     let mut obj = JsonMap::new();
     obj.insert("id".into(), JsonValue::String(id));
@@ -405,8 +403,9 @@ fn upsert_persona_value(app: &tauri::AppHandle, p: &JsonValue) -> Result<JsonVal
 #[tauri::command]
 pub fn persona_delete(app: tauri::AppHandle, id: String) -> Result<(), String> {
     let conn = open_db(&app)?;
-    conn.execute("DELETE FROM personas WHERE id = ?", params![id])
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    tracked_write(&conn, |tx| {
+        tx.execute("DELETE FROM personas WHERE id = ?", params![id])
+    })?;
     Ok(())
 }
 

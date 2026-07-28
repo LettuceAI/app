@@ -7669,10 +7669,10 @@ export const trMessages: DeepPartialMessageTree<LocaleMessages> = {
   },
   sync: {
     modes: {
-      join: "Katıl",
-      joinDesc: "Ana bilgisayardan veri al",
-      host: "Ana bilgisayar",
-      hostDesc: "Bu cihazın verilerini gönder",
+      join: "Bağlan",
+      joinDesc: "Başka bir cihazın adresini gir",
+      host: "Paylaş",
+      hostDesc: "Başka bir cihaz için bağlantı oluştur",
     },
     sections: {
       mode: "Mod",
@@ -7697,7 +7697,7 @@ export const trMessages: DeepPartialMessageTree<LocaleMessages> = {
       startHosting: "Barındırmaya başla",
       startingServer: "Sunucu başlatılıyor...",
       stopHosting: "Barındırmayı durdur",
-      hostAgain: "Tekrar barındır",
+      hostAgain: "Başka Bir Cihazı Eşitle",
       done: "Tamam",
     },
     status: {
@@ -7708,14 +7708,27 @@ export const trMessages: DeepPartialMessageTree<LocaleMessages> = {
       syncing: "Senkronize ediliyor...",
       transferringData: "Veri aktarılıyor",
       syncInProgress: "Senkronizasyon devam ediyor",
+      bidirectional: "Her iki cihaz da gönderir ve alır",
       live: "Canlı",
       broadcasting: "Yayın yapılıyor",
       clientsLabel: "Bağlı",
       clientsUnit: "İstemciler",
     },
+    progress: {
+      stage: "{{total}} aşamadan {{current}}.",
+      stages: { verify: "Doğrula", compare: "Karşılaştır", data: "Veri", files: "Dosyalar" },
+      phases: {
+        verifyingDevices: "Her iki cihaz doğrulanıyor",
+        comparingChanges: "Veritabanı değişiklikleri karşılaştırılıyor",
+        exchangingChanges: "Veritabanı değişiklikleri aktarılıyor",
+        applyingChanges: "Alınan değişiklikler uygulanıyor",
+        comparingFiles: "Dosyalar karşılaştırılıyor",
+        exchangingFiles: "Dosyalar aktarılıyor",
+      },
+    },
     pinDescription: "Bu PIN'i bağlanan cihazla paylaş",
-    hostingDesc1: "Diğer cihazlar bu cihazdan bağlanıp veri senkronize edebilir.",
-    hostingDesc2: "Verilerin bağlı istemcilerle paylaşılacak.",
+    hostingDesc1: "Bu cihazı ağınızdaki başka bir cihaza açın.",
+    hostingDesc2: "Bağlandıktan sonra iki cihaz en son değişikliklerini karşılaştırıp aktarır.",
     setupSteps: {
       step1: "Uygulamayı başka bir cihazda aç",
       step2: "Ayarlar → Yerel senkronizasyon'a git",
@@ -7727,7 +7740,7 @@ export const trMessages: DeepPartialMessageTree<LocaleMessages> = {
       error: "Bağlantı hatası",
       outdatedClient: "Güncel olmayan istemci algılandı",
     },
-    disclaimer: "Senkronizasyon yerel ağın üzerinden çalışır. Her iki cihaz da aynı WiFi'de olmalıdır.",
+    disclaimer: "Her iki cihaz da yerel ağ üzerinden değişiklik gönderir ve alır. Aynı LettuceAI sürümünü kullanmaları gerekir.",
     modals: {
       connectionRequest: "Bağlantı isteği",
       requestMessage: "bu cihazla senkronize olmak istiyor.",
@@ -7758,6 +7771,8 @@ export const trMessages: DeepPartialMessageTree<LocaleMessages> = {
     panel: {
       items: "Öğeler",
       itemsSent: "Gönderilen öğeler",
+      sent: "Gönderildi",
+      received: "Alındı",
       transferred: "Aktarıldı",
       breakdown: "Detaylar",
     },

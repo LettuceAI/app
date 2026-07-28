@@ -6920,10 +6920,10 @@ export const idMessages: DeepPartialMessageTree<LocaleMessages> = {
   },
   sync: {
     modes: {
-      join: "Gabung",
-      joinDesc: "Terima data dari host",
-      host: "Host",
-      hostDesc: "Kirim data perangkat ini",
+      join: "Hubungkan",
+      joinDesc: "Masukkan alamat perangkat lain",
+      host: "Bagikan",
+      hostDesc: "Buat koneksi untuk perangkat lain",
     },
     sections: {
       mode: "Mode",
@@ -6948,7 +6948,7 @@ export const idMessages: DeepPartialMessageTree<LocaleMessages> = {
       startHosting: "Mulai Hosting",
       startingServer: "Memulai server...",
       stopHosting: "Hentikan Hosting",
-      hostAgain: "Host Lagi",
+      hostAgain: "Sinkronkan Perangkat Lain",
       done: "Selesai",
     },
     status: {
@@ -6959,14 +6959,27 @@ export const idMessages: DeepPartialMessageTree<LocaleMessages> = {
       syncing: "Menyinkronkan...",
       transferringData: "Mentransfer data",
       syncInProgress: "Sinkronisasi Berlangsung",
+      bidirectional: "Kedua perangkat mengirim dan menerima",
       live: "Live",
       broadcasting: "Menyiarkan",
       clientsLabel: "Terhubung",
       clientsUnit: "Klien",
     },
+    progress: {
+      stage: "Tahap {{current}} dari {{total}}",
+      stages: { verify: "Periksa", compare: "Bandingkan", data: "Data", files: "File" },
+      phases: {
+        verifyingDevices: "Memeriksa kedua perangkat",
+        comparingChanges: "Membandingkan perubahan basis data",
+        exchangingChanges: "Bertukar perubahan basis data",
+        applyingChanges: "Menerapkan perubahan yang diterima",
+        comparingFiles: "Membandingkan file",
+        exchangingFiles: "Bertukar file",
+      },
+    },
     pinDescription: "Bagikan PIN ini dengan perangkat yang menghubungkan",
-    hostingDesc1: "Perangkat lain dapat menghubungkan dan menyinkronkan data dari perangkat ini.",
-    hostingDesc2: "Data Anda akan dibagikan dengan klien yang terhubung.",
+    hostingDesc1: "Sediakan perangkat ini untuk perangkat lain di jaringan Anda.",
+    hostingDesc2: "Setelah terhubung, kedua perangkat membandingkan dan bertukar perubahan terbaru.",
     setupSteps: {
       step1: "Buka aplikasi di perangkat lain",
       step2: "Buka Pengaturan → Sinkronisasi Lokal",
@@ -6978,7 +6991,7 @@ export const idMessages: DeepPartialMessageTree<LocaleMessages> = {
       error: "Kesalahan Koneksi",
       outdatedClient: "Klien Usang Terdeteksi",
     },
-    disclaimer: "Sinkronisasi bekerja melalui jaringan lokal. Kedua perangkat harus pada WiFi yang sama.",
+    disclaimer: "Kedua perangkat mengirim dan menerima perubahan melalui jaringan lokal. Keduanya harus memakai versi LettuceAI yang sama.",
     modals: {
       connectionRequest: "Permintaan Koneksi",
       requestMessage: "ingin menyinkronkan dengan perangkat ini.",
@@ -7009,6 +7022,8 @@ export const idMessages: DeepPartialMessageTree<LocaleMessages> = {
     panel: {
       items: "Item",
       itemsSent: "Item terkirim",
+      sent: "Terkirim",
+      received: "Diterima",
       transferred: "Ditransfer",
       breakdown: "Rincian",
     },

@@ -7668,10 +7668,10 @@ export const filMessages: DeepPartialMessageTree<LocaleMessages> = {
   },
   sync: {
     modes: {
-      join: "Sumali",
-      joinDesc: "Tumanggap ng data mula sa host",
-      host: "Host",
-      hostDesc: "Ipadala ang data ng device na ito",
+      join: "Kumonekta",
+      joinDesc: "Ilagay ang address ng ibang device",
+      host: "Ibahagi",
+      hostDesc: "Gumawa ng koneksyon para sa ibang device",
     },
     sections: {
       mode: "Mode",
@@ -7696,7 +7696,7 @@ export const filMessages: DeepPartialMessageTree<LocaleMessages> = {
       startHosting: "Magsimulang Mag-host",
       startingServer: "Sinisimulan ang server...",
       stopHosting: "Ihinto ang Pag-host",
-      hostAgain: "Mag-host Muli",
+      hostAgain: "Mag-sync ng Ibang Device",
       done: "Tapos Na",
     },
     status: {
@@ -7707,14 +7707,27 @@ export const filMessages: DeepPartialMessageTree<LocaleMessages> = {
       syncing: "Sine-sync...",
       transferringData: "Inililipat ang data",
       syncInProgress: "Umuusad ang Pag-sync",
+      bidirectional: "Parehong nagpapadala at tumatanggap ang mga device",
       live: "Live",
       broadcasting: "Nagba-broadcast",
       clientsLabel: "Konektado",
       clientsUnit: "Mga Client",
     },
+    progress: {
+      stage: "Yugto {{current}} ng {{total}}",
+      stages: { verify: "Suriin", compare: "Ihambing", data: "Data", files: "Mga file" },
+      phases: {
+        verifyingDevices: "Sinusuri ang parehong device",
+        comparingChanges: "Inihahambing ang mga pagbabago sa database",
+        exchangingChanges: "Ipinagpapalit ang mga pagbabago sa database",
+        applyingChanges: "Inilalapat ang mga natanggap na pagbabago",
+        comparingFiles: "Inihahambing ang mga file",
+        exchangingFiles: "Ipinagpapalit ang mga file",
+      },
+    },
     pinDescription: "Ibahagi ang PIN na ito sa kumokonektang device",
-    hostingDesc1: "Ang ibang mga device ay maaaring kumonekta at mag-sync ng data mula sa device na ito.",
-    hostingDesc2: "Ang iyong data ay ibabahagi sa mga konektadong client.",
+    hostingDesc1: "Gawing available ang device na ito sa ibang device sa iyong network.",
+    hostingDesc2: "Kapag konektado, ihahambing at ipagpapalit ng dalawang device ang pinakabagong pagbabago.",
     setupSteps: {
       step1: "Buksan ang app sa ibang device",
       step2: "Pumunta sa Settings → Lokal na Sync",
@@ -7726,7 +7739,7 @@ export const filMessages: DeepPartialMessageTree<LocaleMessages> = {
       error: "Error sa Koneksyon",
       outdatedClient: "Nadetect ang Lumang Client",
     },
-    disclaimer: "Ang sync ay gumagana sa iyong lokal na network. Dapat magkaparehong WiFi ang dalawang device.",
+    disclaimer: "Parehong nagpapadala at tumatanggap ng pagbabago ang mga device sa lokal na network. Dapat pareho ang bersyon ng LettuceAI.",
     modals: {
       connectionRequest: "Kahilingan sa Koneksyon",
       requestMessage: "gusto mag-sync sa device na ito.",
@@ -7757,6 +7770,8 @@ export const filMessages: DeepPartialMessageTree<LocaleMessages> = {
     panel: {
       items: "Mga Item",
       itemsSent: "Mga item na naipadala",
+      sent: "Naipadala",
+      received: "Natanggap",
       transferred: "Nailipat na",
       breakdown: "Breakdown",
     },

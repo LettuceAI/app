@@ -7668,10 +7668,10 @@ export const nlMessages: DeepPartialMessageTree<LocaleMessages> = {
   },
   sync: {
     modes: {
-      join: "Deelnemen",
-      joinDesc: "Gegevens van host ontvangen",
-      host: "Hosten",
-      hostDesc: "Gegevens van dit apparaat verzenden",
+      join: "Verbinden",
+      joinDesc: "Voer het adres van een ander apparaat in",
+      host: "Delen",
+      hostDesc: "Maak een verbinding voor een ander apparaat",
     },
     sections: {
       mode: "Modus",
@@ -7696,7 +7696,7 @@ export const nlMessages: DeepPartialMessageTree<LocaleMessages> = {
       startHosting: "Begin met hosten",
       startingServer: "Server starten...",
       stopHosting: "Stop met hosten",
-      hostAgain: "Opnieuw hosten",
+      hostAgain: "Nog een apparaat synchroniseren",
       done: "Klaar",
     },
     status: {
@@ -7707,14 +7707,27 @@ export const nlMessages: DeepPartialMessageTree<LocaleMessages> = {
       syncing: "Synchroniseren...",
       transferringData: "Gegevens overdragen",
       syncInProgress: "Synchronisatie bezig",
+      bidirectional: "Beide apparaten verzenden en ontvangen",
       live: "Live",
       broadcasting: "Uitzenden",
       clientsLabel: "Verbonden",
       clientsUnit: "Apparaten",
     },
+    progress: {
+      stage: "Fase {{current}} van {{total}}",
+      stages: { verify: "Controleren", compare: "Vergelijken", data: "Gegevens", files: "Bestanden" },
+      phases: {
+        verifyingDevices: "Beide apparaten controleren",
+        comparingChanges: "Databasewijzigingen vergelijken",
+        exchangingChanges: "Databasewijzigingen uitwisselen",
+        applyingChanges: "Ontvangen wijzigingen toepassen",
+        comparingFiles: "Bestanden vergelijken",
+        exchangingFiles: "Bestanden uitwisselen",
+      },
+    },
     pinDescription: "Deel deze PIN met het verbindende apparaat",
-    hostingDesc1: "Andere apparaten kunnen verbinden en gegevens synchroniseren vanaf dit apparaat.",
-    hostingDesc2: "Je gegevens worden gedeeld met verbonden apparaten.",
+    hostingDesc1: "Maak dit apparaat beschikbaar voor een ander apparaat in je netwerk.",
+    hostingDesc2: "Na de verbinding vergelijken en delen beide apparaten hun nieuwste wijzigingen.",
     setupSteps: {
       step1: "Open de app op een ander apparaat",
       step2: "Ga naar Instellingen → Lokale synchronisatie",
@@ -7726,7 +7739,7 @@ export const nlMessages: DeepPartialMessageTree<LocaleMessages> = {
       error: "Verbindingsfout",
       outdatedClient: "Verouderde client gedetecteerd",
     },
-    disclaimer: "Synchronisatie werkt via je lokale netwerk. Beide apparaten moeten op dezelfde wifi zitten.",
+    disclaimer: "Beide apparaten verzenden en ontvangen wijzigingen via het lokale netwerk. Ze moeten dezelfde LettuceAI-versie gebruiken.",
     modals: {
       connectionRequest: "Verbindingsverzoek",
       requestMessage: "wil synchroniseren met dit apparaat.",
@@ -7757,6 +7770,8 @@ export const nlMessages: DeepPartialMessageTree<LocaleMessages> = {
     panel: {
       items: "Items",
       itemsSent: "Items verzonden",
+      sent: "Verzonden",
+      received: "Ontvangen",
       transferred: "Overgezet",
       breakdown: "Overzicht",
     },

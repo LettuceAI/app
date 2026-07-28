@@ -7668,10 +7668,10 @@ export const deMessages: DeepPartialMessageTree<LocaleMessages> = {
   },
   sync: {
     modes: {
-      join: "Beitreten",
-      joinDesc: "Daten vom Host empfangen",
-      host: "Hosten",
-      hostDesc: "Daten dieses Geräts senden",
+      join: "Verbinden",
+      joinDesc: "Adresse eines anderen Geräts eingeben",
+      host: "Freigeben",
+      hostDesc: "Verbindung für ein anderes Gerät erstellen",
     },
     sections: {
       mode: "Modus",
@@ -7696,7 +7696,7 @@ export const deMessages: DeepPartialMessageTree<LocaleMessages> = {
       startHosting: "Hosting starten",
       startingServer: "Server starten...",
       stopHosting: "Hosting stoppen",
-      hostAgain: "Erneut hosten",
+      hostAgain: "Weiteres Gerät synchronisieren",
       done: "Fertig",
     },
     status: {
@@ -7707,14 +7707,27 @@ export const deMessages: DeepPartialMessageTree<LocaleMessages> = {
       syncing: "Synchronisieren...",
       transferringData: "Daten übertragen",
       syncInProgress: "Synchronisierung läuft",
+      bidirectional: "Beide Geräte senden und empfangen",
       live: "Live",
       broadcasting: "Sendet",
       clientsLabel: "Verbunden",
       clientsUnit: "Clients",
     },
+    progress: {
+      stage: "Phase {{current}} von {{total}}",
+      stages: { verify: "Prüfen", compare: "Vergleichen", data: "Daten", files: "Dateien" },
+      phases: {
+        verifyingDevices: "Beide Geräte werden geprüft",
+        comparingChanges: "Datenbankänderungen werden verglichen",
+        exchangingChanges: "Datenbankänderungen werden übertragen",
+        applyingChanges: "Empfangene Änderungen werden angewendet",
+        comparingFiles: "Dateien werden verglichen",
+        exchangingFiles: "Dateien werden übertragen",
+      },
+    },
     pinDescription: "Teile diese PIN mit dem verbindenden Gerät",
-    hostingDesc1: "Andere Geräte können sich verbinden und Daten von diesem Gerät synchronisieren.",
-    hostingDesc2: "Deine Daten werden mit verbundenen Clients geteilt.",
+    hostingDesc1: "Dieses Gerät für ein anderes Gerät im Netzwerk verfügbar machen.",
+    hostingDesc2: "Nach der Verbindung vergleichen und übertragen beide Geräte ihre neuesten Änderungen.",
     setupSteps: {
       step1: "Öffne die App auf einem anderen Gerät",
       step2: "Gehe zu Einstellungen → Lokale Sync",
@@ -7726,7 +7739,7 @@ export const deMessages: DeepPartialMessageTree<LocaleMessages> = {
       error: "Verbindungsfehler",
       outdatedClient: "Veralteter Client erkannt",
     },
-    disclaimer: "Sync funktioniert über dein lokales Netzwerk. Beide Geräte müssen im selben WLAN sein.",
+    disclaimer: "Beide Geräte senden und empfangen Änderungen über das lokale Netzwerk. Sie müssen dieselbe LettuceAI-Version verwenden.",
     modals: {
       connectionRequest: "Verbindungsanfrage",
       requestMessage: "möchte mit diesem Gerät synchronisieren.",
@@ -7757,6 +7770,8 @@ export const deMessages: DeepPartialMessageTree<LocaleMessages> = {
     panel: {
       items: "Elemente",
       itemsSent: "Gesendete Elemente",
+      sent: "Gesendet",
+      received: "Empfangen",
       transferred: "Übertragen",
       breakdown: "Aufschlüsselung",
     },

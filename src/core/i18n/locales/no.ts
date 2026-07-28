@@ -7668,10 +7668,10 @@ export const noMessages: DeepPartialMessageTree<LocaleMessages> = {
   },
   sync: {
     modes: {
-      join: "Bli med",
-      joinDesc: "Motta data fra verten",
-      host: "Vert",
-      hostDesc: "Send data fra denne enheten",
+      join: "Koble til",
+      joinDesc: "Skriv inn adressen til en annen enhet",
+      host: "Del",
+      hostDesc: "Opprett en tilkobling for en annen enhet",
     },
     sections: {
       mode: "Modus",
@@ -7696,7 +7696,7 @@ export const noMessages: DeepPartialMessageTree<LocaleMessages> = {
       startHosting: "Start vertskap",
       startingServer: "Starter server...",
       stopHosting: "Stopp vertskap",
-      hostAgain: "Vær vert igjen",
+      hostAgain: "Synkroniser en annen enhet",
       done: "Ferdig",
     },
     status: {
@@ -7707,14 +7707,27 @@ export const noMessages: DeepPartialMessageTree<LocaleMessages> = {
       syncing: "Synkroniserer...",
       transferringData: "Overfører data",
       syncInProgress: "Synkronisering pågår",
+      bidirectional: "Begge enheter sender og mottar",
       live: "Aktiv",
       broadcasting: "Kringkaster",
       clientsLabel: "Tilkoblet",
       clientsUnit: "Klienter",
     },
+    progress: {
+      stage: "Trinn {{current}} av {{total}}",
+      stages: { verify: "Kontroller", compare: "Sammenlign", data: "Data", files: "Filer" },
+      phases: {
+        verifyingDevices: "Kontrollerer begge enhetene",
+        comparingChanges: "Sammenligner databaseendringer",
+        exchangingChanges: "Utveksler databaseendringer",
+        applyingChanges: "Bruker mottatte endringer",
+        comparingFiles: "Sammenligner filer",
+        exchangingFiles: "Utveksler filer",
+      },
+    },
     pinDescription: "Del denne PIN-koden med enheten som kobler til",
-    hostingDesc1: "Andre enheter kan koble til og synkronisere data fra denne enheten.",
-    hostingDesc2: "Dataene dine deles med tilkoblede klienter.",
+    hostingDesc1: "Gjør denne enheten tilgjengelig for en annen enhet på nettverket.",
+    hostingDesc2: "Når de er tilkoblet, sammenligner og utveksler begge enhetene de nyeste endringene.",
     setupSteps: {
       step1: "Åpne appen på en annen enhet",
       step2: "Gå til Innstillinger → Lokal synkronisering",
@@ -7726,7 +7739,7 @@ export const noMessages: DeepPartialMessageTree<LocaleMessages> = {
       error: "Tilkoblingsfeil",
       outdatedClient: "Utdatert klient oppdaget",
     },
-    disclaimer: "Synkronisering fungerer over ditt lokale nettverk. Begge enhetene må være på samme WiFi.",
+    disclaimer: "Begge enhetene sender og mottar endringer over lokalnettet. De må bruke samme LettuceAI-versjon.",
     modals: {
       connectionRequest: "Tilkoblingsforespørsel",
       requestMessage: "ønsker å synkronisere med denne enheten.",
@@ -7757,6 +7770,8 @@ export const noMessages: DeepPartialMessageTree<LocaleMessages> = {
     panel: {
       items: "Elementer",
       itemsSent: "Elementer sendt",
+      sent: "Sendt",
+      received: "Mottatt",
       transferred: "Overført",
       breakdown: "Fordeling",
     },

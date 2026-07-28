@@ -6920,10 +6920,10 @@ export const jaMessages: DeepPartialMessageTree<LocaleMessages> = {
   },
   sync: {
     modes: {
-      join: "参加",
-      joinDesc: "ホストからデータを受信",
-      host: "ホスト",
-      hostDesc: "このデバイスのデータを送信",
+      join: "接続",
+      joinDesc: "別のデバイスのアドレスを入力",
+      host: "共有",
+      hostDesc: "別のデバイス用の接続を作成",
     },
     sections: {
       mode: "モード",
@@ -6948,7 +6948,7 @@ export const jaMessages: DeepPartialMessageTree<LocaleMessages> = {
       startHosting: "ホスティングを開始",
       startingServer: "サーバーを起動中...",
       stopHosting: "ホスティングを停止",
-      hostAgain: "再度ホスト",
+      hostAgain: "別のデバイスを同期",
       done: "完了",
     },
     status: {
@@ -6959,14 +6959,27 @@ export const jaMessages: DeepPartialMessageTree<LocaleMessages> = {
       syncing: "同期中...",
       transferringData: "データを転送中",
       syncInProgress: "同期進行中",
+      bidirectional: "両方のデバイスが送受信します",
       live: "ライブ",
       broadcasting: "ブロードキャスト中",
       clientsLabel: "接続済み",
       clientsUnit: "クライアント",
     },
+    progress: {
+      stage: "ステージ {{current}} / {{total}}",
+      stages: { verify: "確認", compare: "比較", data: "データ", files: "ファイル" },
+      phases: {
+        verifyingDevices: "両方のデバイスを確認中",
+        comparingChanges: "データベースの変更を比較中",
+        exchangingChanges: "データベースの変更を交換中",
+        applyingChanges: "受信した変更を適用中",
+        comparingFiles: "ファイルを比較中",
+        exchangingFiles: "ファイルを交換中",
+      },
+    },
     pinDescription: "接続するデバイスとこのPINを共有してください",
-    hostingDesc1: "他のデバイスがこのデバイスに接続してデータを同期できます。",
-    hostingDesc2: "接続されたクライアントとデータが共有されます。",
+    hostingDesc1: "ネットワーク上の別のデバイスからこのデバイスに接続できるようにします。",
+    hostingDesc2: "接続後、両方のデバイスが最新の変更を比較して交換します。",
     setupSteps: {
       step1: "別のデバイスでアプリを開く",
       step2: "設定 → ローカル同期に移動",
@@ -6978,7 +6991,7 @@ export const jaMessages: DeepPartialMessageTree<LocaleMessages> = {
       error: "接続エラー",
       outdatedClient: "古いクライアントが検出されました",
     },
-    disclaimer: "同期はローカルネットワーク上で動作します。両方のデバイスが同じWiFiに接続している必要があります。",
+    disclaimer: "両方のデバイスがローカルネットワーク経由で変更を送受信します。同じバージョンのLettuceAIが必要です。",
     modals: {
       connectionRequest: "接続リクエスト",
       requestMessage: "がこのデバイスと同期しようとしています。",
@@ -7009,6 +7022,8 @@ export const jaMessages: DeepPartialMessageTree<LocaleMessages> = {
     panel: {
       items: "アイテム",
       itemsSent: "送信済みアイテム",
+      sent: "送信",
+      received: "受信",
       transferred: "転送済み",
       breakdown: "内訳",
     },

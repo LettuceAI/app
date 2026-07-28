@@ -49,6 +49,13 @@ pub struct RevisionPlan {
 pub struct BlobDescriptor {
     pub content_hash: String,
     pub size_bytes: u64,
+    pub relative_paths: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BlobRequestDescriptor {
+    pub content_hash: String,
+    pub offset: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -68,9 +75,8 @@ pub enum SyncV2Message {
     BlobInventory {
         blobs: Vec<BlobDescriptor>,
     },
-    BlobRequest {
-        content_hash: String,
-        offset: u64,
+    BlobRequests {
+        requests: Vec<BlobRequestDescriptor>,
     },
     BlobChunk {
         content_hash: String,

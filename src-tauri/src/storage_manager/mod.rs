@@ -1,4 +1,5 @@
 pub mod backup;
+pub(crate) mod asr_backup;
 pub mod characters;
 pub mod companion_scheduled_notes;
 pub mod companion_shared_memory;

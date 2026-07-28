@@ -7668,10 +7668,10 @@ export const ruMessages: DeepPartialMessageTree<LocaleMessages> = {
   },
   sync: {
     modes: {
-      join: "Подключиться",
-      joinDesc: "Получить данные с хоста",
-      host: "Хост",
-      hostDesc: "Отправить данные этого устройства",
+      join: "Подключить",
+      joinDesc: "Введите адрес другого устройства",
+      host: "Поделиться",
+      hostDesc: "Создайте подключение для другого устройства",
     },
     sections: {
       mode: "Режим",
@@ -7696,7 +7696,7 @@ export const ruMessages: DeepPartialMessageTree<LocaleMessages> = {
       startHosting: "Начать хостинг",
       startingServer: "Запуск сервера...",
       stopHosting: "Остановить хостинг",
-      hostAgain: "Запустить снова",
+      hostAgain: "Синхронизировать другое устройство",
       done: "Готово",
     },
     status: {
@@ -7707,14 +7707,27 @@ export const ruMessages: DeepPartialMessageTree<LocaleMessages> = {
       syncing: "Синхронизация...",
       transferringData: "Передача данных",
       syncInProgress: "Синхронизация в процессе",
+      bidirectional: "Оба устройства отправляют и получают",
       live: "Активно",
       broadcasting: "Трансляция",
       clientsLabel: "Подключено",
       clientsUnit: "Клиентов",
     },
+    progress: {
+      stage: "Этап {{current}} из {{total}}",
+      stages: { verify: "Проверка", compare: "Сравнение", data: "Данные", files: "Файлы" },
+      phases: {
+        verifyingDevices: "Проверка обоих устройств",
+        comparingChanges: "Сравнение изменений базы данных",
+        exchangingChanges: "Обмен изменениями базы данных",
+        applyingChanges: "Применение полученных изменений",
+        comparingFiles: "Сравнение файлов",
+        exchangingFiles: "Обмен файлами",
+      },
+    },
     pinDescription: "Поделитесь этим PIN-кодом с подключаемым устройством",
-    hostingDesc1: "Другие устройства могут подключаться и синхронизировать данные с этого устройства.",
-    hostingDesc2: "Ваши данные будут доступны подключённым клиентам.",
+    hostingDesc1: "Сделайте это устройство доступным другому устройству в вашей сети.",
+    hostingDesc2: "После подключения оба устройства сравнят и обменяются последними изменениями.",
     setupSteps: {
       step1: "Откройте приложение на другом устройстве",
       step2: "Перейдите в Настройки → Локальная синхронизация",
@@ -7726,7 +7739,7 @@ export const ruMessages: DeepPartialMessageTree<LocaleMessages> = {
       error: "Ошибка подключения",
       outdatedClient: "Обнаружен устаревший клиент",
     },
-    disclaimer: "Синхронизация работает через локальную сеть. Оба устройства должны быть в одной Wi-Fi сети.",
+    disclaimer: "Оба устройства отправляют и получают изменения по локальной сети. На них должна быть одинаковая версия LettuceAI.",
     modals: {
       connectionRequest: "Запрос на подключение",
       requestMessage: "хочет синхронизироваться с этим устройством.",
@@ -7757,6 +7770,8 @@ export const ruMessages: DeepPartialMessageTree<LocaleMessages> = {
     panel: {
       items: "Элементы",
       itemsSent: "Элементов отправлено",
+      sent: "Отправлено",
+      received: "Получено",
       transferred: "Передано",
       breakdown: "Детализация",
     },

@@ -3,8 +3,8 @@ macro_rules! invoke_handler {
         tauri::generate_handler![
             crate::api::api_request,
             crate::api::abort_request,
-            crate::sync::commands::start_driver,
-            crate::sync::commands::connect_as_passenger,
+            crate::sync::commands::share_sync_device,
+            crate::sync::commands::connect_sync_device,
             crate::sync::commands::stop_sync,
             crate::sync::commands::get_sync_status,
             crate::sync::commands::get_local_ip,

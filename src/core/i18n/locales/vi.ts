@@ -6920,10 +6920,10 @@ export const viMessages: DeepPartialMessageTree<LocaleMessages> = {
   },
   sync: {
     modes: {
-      join: "Tham gia",
-      joinDesc: "Nhận dữ liệu từ máy chủ",
-      host: "Lưu trữ",
-      hostDesc: "Gửi dữ liệu của thiết bị này",
+      join: "Kết nối",
+      joinDesc: "Nhập địa chỉ của thiết bị khác",
+      host: "Chia sẻ",
+      hostDesc: "Tạo kết nối cho thiết bị khác",
     },
     sections: {
       mode: "Chế độ",
@@ -6948,7 +6948,7 @@ export const viMessages: DeepPartialMessageTree<LocaleMessages> = {
       startHosting: "Bắt đầu lưu trữ",
       startingServer: "Đang khởi động máy chủ...",
       stopHosting: "Dừng lưu trữ",
-      hostAgain: "Lưu trữ lại",
+      hostAgain: "Đồng bộ thiết bị khác",
       done: "Xong",
     },
     status: {
@@ -6959,14 +6959,27 @@ export const viMessages: DeepPartialMessageTree<LocaleMessages> = {
       syncing: "Đang đồng bộ...",
       transferringData: "Đang chuyển dữ liệu",
       syncInProgress: "Đồng bộ đang tiến hành",
+      bidirectional: "Cả hai thiết bị đều gửi và nhận",
       live: "Trực tiếp",
       broadcasting: "Đang phát",
       clientsLabel: "Đã kết nối",
       clientsUnit: "Thiết bị",
     },
+    progress: {
+      stage: "Giai đoạn {{current}} / {{total}}",
+      stages: { verify: "Xác minh", compare: "So sánh", data: "Dữ liệu", files: "Tệp" },
+      phases: {
+        verifyingDevices: "Đang xác minh cả hai thiết bị",
+        comparingChanges: "Đang so sánh thay đổi cơ sở dữ liệu",
+        exchangingChanges: "Đang trao đổi thay đổi cơ sở dữ liệu",
+        applyingChanges: "Đang áp dụng các thay đổi đã nhận",
+        comparingFiles: "Đang so sánh tệp",
+        exchangingFiles: "Đang trao đổi tệp",
+      },
+    },
     pinDescription: "Chia sẻ mã PIN này với thiết bị kết nối",
-    hostingDesc1: "Các thiết bị khác có thể kết nối và đồng bộ dữ liệu từ thiết bị này.",
-    hostingDesc2: "Dữ liệu của bạn sẽ được chia sẻ với các thiết bị đã kết nối.",
+    hostingDesc1: "Cho phép một thiết bị khác trong mạng kết nối với thiết bị này.",
+    hostingDesc2: "Sau khi kết nối, cả hai thiết bị sẽ so sánh và trao đổi những thay đổi mới nhất.",
     setupSteps: {
       step1: "Mở ứng dụng trên thiết bị khác",
       step2: "Đi đến Cài đặt → Đồng bộ cục bộ",
@@ -6978,7 +6991,7 @@ export const viMessages: DeepPartialMessageTree<LocaleMessages> = {
       error: "Lỗi kết nối",
       outdatedClient: "Phát hiện thiết bị lỗi thời",
     },
-    disclaimer: "Đồng bộ hoạt động qua mạng cục bộ. Cả hai thiết bị phải cùng WiFi.",
+    disclaimer: "Cả hai thiết bị đều gửi và nhận thay đổi qua mạng cục bộ. Chúng phải dùng cùng phiên bản LettuceAI.",
     modals: {
       connectionRequest: "Yêu cầu kết nối",
       requestMessage: "muốn đồng bộ với thiết bị này.",
@@ -7009,6 +7022,8 @@ export const viMessages: DeepPartialMessageTree<LocaleMessages> = {
     panel: {
       items: "Mục",
       itemsSent: "Mục đã gửi",
+      sent: "Đã gửi",
+      received: "Đã nhận",
       transferred: "Đã chuyển",
       breakdown: "Chi tiết",
     },

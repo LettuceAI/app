@@ -1,7 +1,7 @@
 use rusqlite::{params, OptionalExtension};
 use serde_json::{Map as JsonMap, Value as JsonValue};
 
-use super::db::{now_ms, open_db};
+use super::db::{now_ms, open_db, tracked_write, tracked_write_string};
 use crate::utils::{log_error, log_info, log_warn};
 
 fn read_character(conn: &rusqlite::Connection, id: &str) -> Result<JsonValue, String> {
@@ -584,11 +584,12 @@ pub fn character_update_chat_appearance(
     let conn = open_db(&app)?;
     let now = now_ms() as i64;
 
-    conn.execute(
-        "UPDATE characters SET chat_appearance = ?, updated_at = ? WHERE id = ?",
-        params![chat_appearance_json, now, id],
-    )
-    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    tracked_write(&conn, |tx| {
+        tx.execute(
+            "UPDATE characters SET chat_appearance = ?, updated_at = ? WHERE id = ?",
+            params![chat_appearance_json, now, id],
+        )
+    })?;
 
     let refreshed = read_character(&conn, &id)?;
     serde_json::to_string(&refreshed)
@@ -596,7 +597,7 @@ pub fn character_update_chat_appearance(
 }
 
 fn upsert_character_value(app: &tauri::AppHandle, c: &JsonValue) -> Result<JsonValue, String> {
-    let mut conn = open_db(app)?;
+    let conn = open_db(app)?;
     let id = c
         .get("id")
         .and_then(|v| v.as_str())
@@ -775,9 +776,7 @@ fn upsert_character_value(app: &tauri::AppHandle, c: &JsonValue) -> Result<JsonV
     });
     let now = now_ms() as i64;
 
-    let tx = conn
-        .transaction()
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    tracked_write_string(&conn, |tx| {
     let existing_character: Option<(i64, Option<String>)> = tx
         .query_row(
             "SELECT created_at, active_lorebook_ids FROM characters WHERE id = ?",
@@ -1050,13 +1049,7 @@ fn upsert_character_value(app: &tauri::AppHandle, c: &JsonValue) -> Result<JsonV
     )
     .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 
-    tx.commit().map_err(|e| {
-        log_error(
-            app,
-            "character_upsert",
-            format!("Failed to commit transaction: {}", e),
-        );
-        e.to_string()
+    Ok(())
     })?;
 
     log_info(
@@ -1076,11 +1069,8 @@ pub fn character_delete(app: tauri::AppHandle, id: String) -> Result<(), String>
         "character_delete",
         format!("Deleting character {}", id),
     );
-    let mut conn = open_db(&app)?;
-    let tx = conn
-        .transaction()
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
-
+    let conn = open_db(&app)?;
+    tracked_write_string(&conn, |tx| {
     tx.execute(
         "DELETE FROM memory_embeddings
          WHERE session_kind = 'session'
@@ -1104,8 +1094,8 @@ pub fn character_delete(app: tauri::AppHandle, id: String) -> Result<(), String>
             );
             e.to_string()
         })?;
-    tx.commit()
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    Ok(())
+    })?;
 
     log_info(
         &app,

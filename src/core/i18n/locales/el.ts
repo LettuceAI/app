@@ -7669,9 +7669,9 @@ export const elMessages: DeepPartialMessageTree<LocaleMessages> = {
   sync: {
     modes: {
       join: "Σύνδεση",
-      joinDesc: "Λήψη δεδομένων από τον κεντρικό υπολογιστή",
-      host: "Φιλοξενία",
-      hostDesc: "Αποστολή δεδομένων αυτής της συσκευής",
+      joinDesc: "Εισαγάγετε τη διεύθυνση άλλης συσκευής",
+      host: "Κοινοποίηση",
+      hostDesc: "Δημιουργήστε σύνδεση για άλλη συσκευή",
     },
     sections: {
       mode: "Λειτουργία",
@@ -7696,7 +7696,7 @@ export const elMessages: DeepPartialMessageTree<LocaleMessages> = {
       startHosting: "Έναρξη Φιλοξενίας",
       startingServer: "Εκκίνηση διακομιστή...",
       stopHosting: "Διακοπή Φιλοξενίας",
-      hostAgain: "Φιλοξενία Ξανά",
+      hostAgain: "Συγχρονισμός άλλης συσκευής",
       done: "Τέλος",
     },
     status: {
@@ -7707,14 +7707,27 @@ export const elMessages: DeepPartialMessageTree<LocaleMessages> = {
       syncing: "Συγχρονισμός...",
       transferringData: "Μεταφορά δεδομένων",
       syncInProgress: "Συγχρονισμός σε Εξέλιξη",
+      bidirectional: "Και οι δύο συσκευές στέλνουν και λαμβάνουν",
       live: "Ζωντανό",
       broadcasting: "Μετάδοση",
       clientsLabel: "Συνδεδεμένοι",
       clientsUnit: "Πελάτες",
     },
+    progress: {
+      stage: "Στάδιο {{current}} από {{total}}",
+      stages: { verify: "Έλεγχος", compare: "Σύγκριση", data: "Δεδομένα", files: "Αρχεία" },
+      phases: {
+        verifyingDevices: "Έλεγχος και των δύο συσκευών",
+        comparingChanges: "Σύγκριση αλλαγών βάσης δεδομένων",
+        exchangingChanges: "Ανταλλαγή αλλαγών βάσης δεδομένων",
+        applyingChanges: "Εφαρμογή ληφθέντων αλλαγών",
+        comparingFiles: "Σύγκριση αρχείων",
+        exchangingFiles: "Ανταλλαγή αρχείων",
+      },
+    },
     pinDescription: "Μοιραστείτε αυτό το PIN με τη συσκευή που συνδέεται",
-    hostingDesc1: "Άλλες συσκευές μπορούν να συνδεθούν και να συγχρονίσουν δεδομένα από αυτή τη συσκευή.",
-    hostingDesc2: "Τα δεδομένα σας θα μοιραστούν με τους συνδεδεμένους πελάτες.",
+    hostingDesc1: "Κάντε αυτή τη συσκευή διαθέσιμη σε άλλη συσκευή του δικτύου σας.",
+    hostingDesc2: "Μετά τη σύνδεση, και οι δύο συσκευές συγκρίνουν και ανταλλάσσουν τις τελευταίες αλλαγές.",
     setupSteps: {
       step1: "Ανοίξτε την εφαρμογή σε άλλη συσκευή",
       step2: "Μεταβείτε στις Ρυθμίσεις → Τοπικός Συγχρονισμός",
@@ -7726,7 +7739,7 @@ export const elMessages: DeepPartialMessageTree<LocaleMessages> = {
       error: "Σφάλμα Σύνδεσης",
       outdatedClient: "Ανιχνεύτηκε Παλαιό Πρόγραμμα Πελάτη",
     },
-    disclaimer: "Ο συγχρονισμός λειτουργεί μέσω του τοπικού δικτύου σας. Και οι δύο συσκευές πρέπει να είναι στο ίδιο WiFi.",
+    disclaimer: "Και οι δύο συσκευές στέλνουν και λαμβάνουν αλλαγές μέσω του τοπικού δικτύου. Πρέπει να χρησιμοποιούν την ίδια έκδοση LettuceAI.",
     modals: {
       connectionRequest: "Αίτημα Σύνδεσης",
       requestMessage: "θέλει να συγχρονιστεί με αυτή τη συσκευή.",
@@ -7757,6 +7770,8 @@ export const elMessages: DeepPartialMessageTree<LocaleMessages> = {
     panel: {
       items: "Στοιχείο",
       itemsSent: "Στοιχείο αποστολής",
+      sent: "Απεστάλησαν",
+      received: "Ελήφθησαν",
       transferred: "Μεταφερθέντα",
       breakdown: "Ανάλυση",
     },

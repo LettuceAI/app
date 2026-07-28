@@ -6920,10 +6920,10 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
   },
   sync: {
     modes: {
-      join: "शामिल हों",
-      joinDesc: "होस्ट से डेटा प्राप्त करें",
-      host: "होस्ट",
-      hostDesc: "इस डिवाइस का डेटा भेजें",
+      join: "कनेक्ट करें",
+      joinDesc: "दूसरे डिवाइस का पता दर्ज करें",
+      host: "साझा करें",
+      hostDesc: "दूसरे डिवाइस के लिए कनेक्शन बनाएँ",
     },
     sections: {
       mode: "मोड",
@@ -6948,7 +6948,7 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
       startHosting: "होस्टिंग शुरू करें",
       startingServer: "सर्वर शुरू हो रहा है...",
       stopHosting: "होस्टिंग रोकें",
-      hostAgain: "फिर से होस्ट करें",
+      hostAgain: "दूसरा डिवाइस सिंक करें",
       done: "पूर्ण",
     },
     status: {
@@ -6959,14 +6959,27 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
       syncing: "सिंक हो रहा है...",
       transferringData: "डेटा स्थानांतरित हो रहा है",
       syncInProgress: "सिंक प्रगति में",
+      bidirectional: "दोनों डिवाइस भेजते और प्राप्त करते हैं",
       live: "लाइव",
       broadcasting: "प्रसारण",
       clientsLabel: "कनेक्टेड",
       clientsUnit: "क्लाइंट",
     },
+    progress: {
+      stage: "चरण {{current}} / {{total}}",
+      stages: { verify: "जाँच", compare: "तुलना", data: "डेटा", files: "फ़ाइलें" },
+      phases: {
+        verifyingDevices: "दोनों डिवाइस की जाँच हो रही है",
+        comparingChanges: "डेटाबेस बदलावों की तुलना हो रही है",
+        exchangingChanges: "डेटाबेस बदलाव भेजे जा रहे हैं",
+        applyingChanges: "प्राप्त बदलाव लागू हो रहे हैं",
+        comparingFiles: "फ़ाइलों की तुलना हो रही है",
+        exchangingFiles: "फ़ाइलें भेजी जा रही हैं",
+      },
+    },
     pinDescription: "कनेक्ट होने वाले डिवाइस के साथ यह PIN साझा करें",
-    hostingDesc1: "अन्य डिवाइस इस डिवाइस से कनेक्ट और डेटा सिंक कर सकते हैं।",
-    hostingDesc2: "आपका डेटा कनेक्टेड क्लाइंट्स के साथ साझा किया जाएगा।",
+    hostingDesc1: "इस डिवाइस को अपने नेटवर्क के दूसरे डिवाइस के लिए उपलब्ध करें।",
+    hostingDesc2: "कनेक्ट होने पर दोनों डिवाइस अपने नवीनतम बदलावों की तुलना और आदान-प्रदान करते हैं।",
     setupSteps: {
       step1: "दूसरे डिवाइस पर ऐप खोलें",
       step2: "सेटिंग्स → लोकल सिंक पर जाएँ",
@@ -6978,7 +6991,7 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
       error: "कनेक्शन त्रुटि",
       outdatedClient: "पुराना क्लाइंट पाया गया",
     },
-    disclaimer: "सिंक आपके स्थानीय नेटवर्क पर काम करता है। दोनों डिवाइस एक ही WiFi पर होने चाहिए।",
+    disclaimer: "दोनों डिवाइस स्थानीय नेटवर्क पर बदलाव भेजते और प्राप्त करते हैं। दोनों में LettuceAI का एक ही संस्करण होना चाहिए।",
     modals: {
       connectionRequest: "कनेक्शन अनुरोध",
       requestMessage: "इस डिवाइस के साथ सिंक करना चाहता है।",
@@ -7009,6 +7022,8 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
     panel: {
       items: "आइटम्स",
       itemsSent: "भेजे गए आइटम्स",
+      sent: "भेजे गए",
+      received: "प्राप्त",
       transferred: "ट्रांसफर किया गया",
       breakdown: "विवरण (Breakdown)",
     },

@@ -7667,10 +7667,10 @@ export const zhHansMessages: DeepPartialMessageTree<LocaleMessages> = {
   },
   sync: {
     modes: {
-      join: "加入",
-      joinDesc: "从主机接收数据",
-      host: "主机",
-      hostDesc: "发送此设备的数据",
+      join: "连接",
+      joinDesc: "输入另一台设备的地址",
+      host: "共享",
+      hostDesc: "为另一台设备创建连接",
     },
     sections: {
       mode: "模式",
@@ -7695,7 +7695,7 @@ export const zhHansMessages: DeepPartialMessageTree<LocaleMessages> = {
       startHosting: "开始托管",
       startingServer: "启动服务器中...",
       stopHosting: "停止托管",
-      hostAgain: "再次托管",
+      hostAgain: "同步另一台设备",
       done: "完成",
     },
     status: {
@@ -7706,14 +7706,27 @@ export const zhHansMessages: DeepPartialMessageTree<LocaleMessages> = {
       syncing: "同步中...",
       transferringData: "传输数据",
       syncInProgress: "同步进行中",
+      bidirectional: "两台设备都会发送和接收",
       live: "实时",
       broadcasting: "广播中",
       clientsLabel: "已连接",
       clientsUnit: "客户端",
     },
+    progress: {
+      stage: "第 {{current}} 阶段，共 {{total}} 阶段",
+      stages: { verify: "验证", compare: "比较", data: "数据", files: "文件" },
+      phases: {
+        verifyingDevices: "正在验证两台设备",
+        comparingChanges: "正在比较数据库更改",
+        exchangingChanges: "正在交换数据库更改",
+        applyingChanges: "正在应用收到的更改",
+        comparingFiles: "正在比较文件",
+        exchangingFiles: "正在交换文件",
+      },
+    },
     pinDescription: "与连接设备分享此 PIN",
-    hostingDesc1: "其他设备可以连接并从此设备同步数据。",
-    hostingDesc2: "您的数据将与已连接的客户端共享。",
+    hostingDesc1: "让网络中的另一台设备可以连接此设备。",
+    hostingDesc2: "连接后，两台设备会比较并交换各自的最新更改。",
     setupSteps: {
       step1: "在另一台设备上打开应用",
       step2: "前往设置 → 本地同步",
@@ -7725,7 +7738,7 @@ export const zhHansMessages: DeepPartialMessageTree<LocaleMessages> = {
       error: "连接错误",
       outdatedClient: "检测到过时的客户端",
     },
-    disclaimer: "同步通过您的局域网运行。两台设备必须在同一个 WiFi 上。",
+    disclaimer: "两台设备都会通过局域网发送和接收更改，并且必须使用相同版本的 LettuceAI。",
     modals: {
       connectionRequest: "连接请求",
       requestMessage: "想要与此设备同步。",
@@ -7756,6 +7769,8 @@ export const zhHansMessages: DeepPartialMessageTree<LocaleMessages> = {
     panel: {
       items: "项目",
       itemsSent: "已发送项目",
+      sent: "已发送",
+      received: "已接收",
       transferred: "已传输",
       breakdown: "明细",
     },

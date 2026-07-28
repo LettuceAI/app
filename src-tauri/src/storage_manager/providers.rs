@@ -1,7 +1,7 @@
 use rusqlite::{params, OptionalExtension};
 use serde_json::{Map as JsonMap, Value as JsonValue};
 
-use super::db::open_db;
+use super::db::{open_db, tracked_write};
 
 #[tauri::command]
 pub fn provider_upsert(app: tauri::AppHandle, credential_json: String) -> Result<String, String> {
@@ -39,7 +39,7 @@ pub fn provider_upsert(app: tauri::AppHandle, credential_json: String) -> Result
     let config = cred
         .get("config")
         .map(|v| serde_json::to_string(v).unwrap_or("null".into()));
-    conn.execute(
+    tracked_write(&conn, |tx| tx.execute(
         r#"INSERT INTO provider_credentials (id, provider_id, label, api_key, base_url, default_model, headers, config)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
@@ -51,7 +51,7 @@ pub fn provider_upsert(app: tauri::AppHandle, credential_json: String) -> Result
                 headers = excluded.headers,
                 config = excluded.config"#,
         params![id, provider_id, label, api_key, base_url, default_model, headers, config],
-    ).map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    ))?;
 
     let mut out = JsonMap::new();
     out.insert("id".into(), JsonValue::String(id));
@@ -94,8 +94,9 @@ pub fn provider_upsert(app: tauri::AppHandle, credential_json: String) -> Result
 #[tauri::command]
 pub fn provider_delete(app: tauri::AppHandle, id: String) -> Result<(), String> {
     let conn = open_db(&app)?;
-    conn.execute("DELETE FROM provider_credentials WHERE id = ?", params![id])
-        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    tracked_write(&conn, |tx| {
+        tx.execute("DELETE FROM provider_credentials WHERE id = ?", params![id])
+    })?;
     Ok(())
 }
 
