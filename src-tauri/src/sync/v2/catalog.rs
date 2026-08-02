@@ -21,6 +21,8 @@ const LOCAL_ONLY_TABLES: &[&str] = &[
     "deferred_pricing_refreshes",
 ];
 
+const SCHEMA_FINGERPRINT_ALGORITHM: &str = "2";
+
 pub fn is_syncable_table(table: &str) -> bool {
     !table.starts_with("sqlite_")
         && !table.starts_with("sync_")
@@ -91,8 +93,41 @@ pub fn schema_fingerprint(conn: &Connection) -> Result<String, CatalogError> {
     for table in tables {
         schema.push_str(&table.name);
         schema.push('\0');
-        schema.push_str(&normalize_sql(&table.create_sql));
-        schema.push('\0');
+        let escaped_name = table.name.replace('\'', "''");
+        let mut statement = conn.prepare(&format!(
+            "SELECT cid, name, type, \"notnull\", dflt_value, pk, hidden
+             FROM pragma_table_xinfo('{escaped_name}')
+             ORDER BY cid"
+        ))?;
+        let columns = statement.query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, i64>(3)?,
+                row.get::<_, Option<String>>(4)?,
+                row.get::<_, i64>(5)?,
+                row.get::<_, i64>(6)?,
+            ))
+        })?;
+        for column in columns {
+            let (cid, name, column_type, not_null, default_value, primary_key, hidden) =
+                column?;
+            schema.push_str(&cid.to_string());
+            schema.push('\0');
+            schema.push_str(&name);
+            schema.push('\0');
+            schema.push_str(&column_type.trim().to_ascii_uppercase());
+            schema.push('\0');
+            schema.push_str(&not_null.to_string());
+            schema.push('\0');
+            schema.push_str(default_value.as_deref().unwrap_or(""));
+            schema.push('\0');
+            schema.push_str(&primary_key.to_string());
+            schema.push('\0');
+            schema.push_str(&hidden.to_string());
+            schema.push('\0');
+        }
     }
     Ok(blake3::hash(schema.as_bytes()).to_hex().to_string())
 }
@@ -116,7 +151,17 @@ pub fn cached_schema_fingerprint(conn: &Connection) -> Result<String, CatalogErr
             |row| row.get::<_, String>(0),
         )
         .optional()?;
-    if cached_version == Some(schema_version) {
+    let cached_algorithm = conn
+        .query_row(
+            "SELECT value FROM sync_v2_local_state
+             WHERE key = 'schema_fingerprint_algorithm'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+    if cached_version == Some(schema_version)
+        && cached_algorithm.as_deref() == Some(SCHEMA_FINGERPRINT_ALGORITHM)
+    {
         if let Some(fingerprint) = cached_fingerprint {
             return Ok(fingerprint);
         }
@@ -135,11 +180,13 @@ pub fn cached_schema_fingerprint(conn: &Connection) -> Result<String, CatalogErr
          ON CONFLICT(key) DO UPDATE SET value = excluded.value",
         params![fingerprint],
     )?;
+    conn.execute(
+        "INSERT INTO sync_v2_local_state (key, value)
+         VALUES ('schema_fingerprint_algorithm', ?1)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        params![SCHEMA_FINGERPRINT_ALGORITHM],
+    )?;
     Ok(fingerprint)
-}
-
-fn normalize_sql(sql: &str) -> String {
-    sql.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 #[cfg(test)]
@@ -184,6 +231,57 @@ mod tests {
     }
 
     #[test]
+    fn fingerprint_ignores_equivalent_create_table_formatting() {
+        let compact = Connection::open_in_memory().unwrap();
+        compact
+            .execute_batch("CREATE TABLE chats (id TEXT PRIMARY KEY, title TEXT NOT NULL);")
+            .unwrap();
+        let formatted = Connection::open_in_memory().unwrap();
+        formatted
+            .execute_batch(
+                "CREATE TABLE chats (
+                   id TEXT PRIMARY KEY,
+                   title TEXT NOT NULL
+                 );",
+            )
+            .unwrap();
+
+        assert_eq!(
+            schema_fingerprint(&compact).unwrap(),
+            schema_fingerprint(&formatted).unwrap()
+        );
+    }
+
+    #[test]
+    fn fingerprint_preserves_positional_column_compatibility() {
+        let first = Connection::open_in_memory().unwrap();
+        first
+            .execute_batch(
+                "CREATE TABLE chats (
+                   id TEXT PRIMARY KEY,
+                   title TEXT NOT NULL,
+                   updated_at INTEGER NOT NULL
+                 );",
+            )
+            .unwrap();
+        let second = Connection::open_in_memory().unwrap();
+        second
+            .execute_batch(
+                "CREATE TABLE chats (
+                   id TEXT PRIMARY KEY,
+                   updated_at INTEGER NOT NULL,
+                   title TEXT NOT NULL
+                 );",
+            )
+            .unwrap();
+
+        assert_ne!(
+            schema_fingerprint(&first).unwrap(),
+            schema_fingerprint(&second).unwrap()
+        );
+    }
+
+    #[test]
     fn catalog_rejects_tables_without_primary_keys() {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch("CREATE TABLE broken (value TEXT);")
@@ -205,5 +303,40 @@ mod tests {
             .unwrap();
         let after = cached_schema_fingerprint(&conn).unwrap();
         assert_ne!(after, before);
+    }
+
+    #[test]
+    fn cached_fingerprint_recomputes_when_the_algorithm_changes() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE chats (id TEXT PRIMARY KEY);")
+            .unwrap();
+        create_schema(&conn).unwrap();
+        let schema_version = conn
+            .query_row("PRAGMA schema_version", [], |row| row.get::<_, i64>(0))
+            .unwrap();
+        conn.execute(
+            "INSERT INTO sync_v2_local_state (key, value) VALUES ('schema_version', ?1)",
+            [schema_version.to_string()],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO sync_v2_local_state (key, value)
+             VALUES ('schema_fingerprint', 'obsolete-fingerprint')",
+            [],
+        )
+        .unwrap();
+
+        let fingerprint = cached_schema_fingerprint(&conn).unwrap();
+        assert_ne!(fingerprint, "obsolete-fingerprint");
+        assert_eq!(
+            conn.query_row(
+                "SELECT value FROM sync_v2_local_state
+                 WHERE key = 'schema_fingerprint_algorithm'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .unwrap(),
+            "2"
+        );
     }
 }
