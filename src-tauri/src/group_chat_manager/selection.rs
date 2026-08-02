@@ -79,7 +79,12 @@ pub fn parse_mentions(message: &str, characters: &[CharacterInfo]) -> Option<Str
     // Try unquoted mentions: @CharacterName (single word)
     for word in message.split_whitespace() {
         if word.starts_with('@') && word.len() > 1 {
-            let mentioned = &word[1..];
+            let mentioned = word[1..].trim_end_matches([
+                ',', '.', '!', '?', ':', ';', ')', ']', '}',
+            ]);
+            if mentioned.is_empty() {
+                continue;
+            }
             let mentioned_lower = mentioned.to_lowercase();
 
             // Exact match first

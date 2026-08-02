@@ -45,4 +45,5 @@ pub enum ApplyOutcome {
 pub struct ApplyResult {
     pub outcome: ApplyOutcome,
     pub conflicts_created: usize,
+    pub branches_created: usize,
 }

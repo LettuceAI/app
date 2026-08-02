@@ -79,6 +79,18 @@ impl AppActiveUsageService {
             return;
         }
 
+        if crate::sync::manager::is_sync_database_active() {
+            crate::utils::log_info(
+                app,
+                "app_active_usage",
+                format!(
+                    "Deferring {}ms of active usage while local sync owns the database",
+                    pending
+                ),
+            );
+            return;
+        }
+
         match settings_increment_app_active_usage_ms(app, pending) {
             Ok(()) => {
                 if let Ok(mut state) = self.state.lock() {

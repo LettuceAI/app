@@ -10,6 +10,8 @@ macro_rules! invoke_handler {
             crate::sync::commands::get_local_ip,
             crate::sync::commands::approve_connection,
             crate::sync::commands::start_sync_session,
+            crate::sync::commands::list_sync_conflicts,
+            crate::sync::commands::resolve_sync_conflict,
             crate::models::verify_model_exists,
             crate::providers::verify_provider_api_key,
             crate::providers::get_provider_configs,

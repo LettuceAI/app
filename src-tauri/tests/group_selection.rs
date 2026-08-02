@@ -50,6 +50,7 @@ fn session(ids: &[&str], muted: &[&str]) -> GroupSession {
         memory_progress_step: None,
         speaker_selection_method: "llm".into(),
         memory_type: "manual".into(),
+        config_overrides: serde_json::json!({ "version": 1 }),
     }
 }
 
@@ -83,6 +84,7 @@ fn assistant_message(speaker: &str, turn: i32, content: &str) -> GroupMessage {
         reasoning: None,
         selection_reasoning: None,
         model_id: None,
+        gemini_content: None,
     }
 }
 

@@ -7,7 +7,7 @@ use crate::storage_manager::settings::{read_settings_typed, write_settings_typed
 use crate::utils::log_info;
 
 /// Current migration version
-pub const CURRENT_MIGRATION_VERSION: u32 = 85;
+pub const CURRENT_MIGRATION_VERSION: u32 = 87;
 
 pub fn run_migrations(app: &AppHandle) -> Result<(), String> {
     log_info(app, "migrations", "Starting migration check");
@@ -877,6 +877,26 @@ pub fn run_migrations(app: &AppHandle) -> Result<(), String> {
         );
         migrate_to_v85(app)?;
         version = 85;
+    }
+
+    if version < 86 {
+        log_info(
+            app,
+            "migrations",
+            "Running migration v85 -> v86: Add causal ancestry to direct-chat messages",
+        );
+        migrate_v85_to_v86(app)?;
+        version = 86;
+    }
+
+    if version < 87 {
+        log_info(
+            app,
+            "migrations",
+            "Running migration v86 -> v87: Rebuild sync journal after causal schema upgrade",
+        );
+        migrate_v86_to_v87(app)?;
+        version = 87;
     }
 
     // Update the stored version
@@ -4237,6 +4257,183 @@ fn migrate_to_v85(app: &AppHandle) -> Result<(), String> {
     migrate_sync_v2_schema(&conn)
 }
 
+fn migrate_v85_to_v86(app: &AppHandle) -> Result<(), String> {
+    let conn = crate::storage_manager::db::open_db(app)?;
+    migrate_v85_to_v86_conn(&conn)
+}
+
+pub(crate) fn run_preflight_migrations(
+    conn: &rusqlite::Connection,
+) -> Result<(), String> {
+    let version = conn
+        .query_row(
+            "SELECT migration_version FROM settings WHERE id = 1",
+            [],
+            |row| row.get::<_, u32>(0),
+        )
+        .unwrap_or(0);
+    if version < 86 {
+        migrate_v85_to_v86_conn(conn)?;
+    } else if version < 87 {
+        migrate_sync_v2_schema(conn)?;
+    }
+    Ok(())
+}
+
+fn migrate_v86_to_v87(app: &AppHandle) -> Result<(), String> {
+    let conn = crate::storage_manager::db::open_db(app)?;
+    migrate_sync_v2_schema(&conn)
+}
+
+pub(crate) fn migrate_v85_to_v86_conn(
+    conn: &rusqlite::Connection,
+) -> Result<(), String> {
+    let has_parent_message_id = conn
+        .query_row(
+            "SELECT EXISTS(
+               SELECT 1 FROM pragma_table_info('messages')
+               WHERE name = 'parent_message_id'
+             )",
+            [],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(|error| crate::utils::err_to_string(module_path!(), line!(), error))?;
+    if !has_parent_message_id {
+        conn.execute("ALTER TABLE messages ADD COLUMN parent_message_id TEXT", [])
+            .map_err(|error| crate::utils::err_to_string(module_path!(), line!(), error))?;
+    }
+    conn.execute_batch(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_messages_session_parent
+          ON messages(session_id, parent_message_id);
+        DROP TRIGGER IF EXISTS messages_assign_parent_after_insert;
+        CREATE TRIGGER IF NOT EXISTS messages_assign_parent_after_insert
+        AFTER INSERT ON messages
+        WHEN NEW.parent_message_id IS NULL
+          AND COALESCE((
+            SELECT value FROM sync_v2_local_state
+            WHERE key = 'applying_remote'
+          ), '0') != '1'
+        BEGIN
+          UPDATE messages
+          SET parent_message_id = (
+            SELECT previous.id
+            FROM messages AS previous
+            WHERE previous.session_id = NEW.session_id
+              AND previous.id != NEW.id
+            ORDER BY previous.rowid DESC
+            LIMIT 1
+          )
+          WHERE id = NEW.id;
+        END;
+        WITH ordered AS (
+          SELECT
+            id,
+            LAG(id) OVER (
+              PARTITION BY session_id
+              ORDER BY created_at ASC, id ASC
+            ) AS inferred_parent
+          FROM messages
+        )
+        UPDATE messages
+        SET parent_message_id = (
+          SELECT inferred_parent FROM ordered WHERE ordered.id = messages.id
+        )
+        WHERE parent_message_id IS NULL;
+        "#,
+    )
+    .map_err(|error| crate::utils::err_to_string(module_path!(), line!(), error))?;
+
+    for column in [
+        "parent_session_id",
+        "branched_from_message_id",
+        "root_session_id",
+    ] {
+        let exists = conn
+            .query_row(
+                "SELECT EXISTS(
+                   SELECT 1 FROM pragma_table_info('group_sessions')
+                   WHERE name = ?1
+                 )",
+                [column],
+                |row| row.get::<_, bool>(0),
+            )
+            .map_err(|error| crate::utils::err_to_string(module_path!(), line!(), error))?;
+        if !exists {
+            conn.execute(
+                &format!("ALTER TABLE group_sessions ADD COLUMN {column} TEXT"),
+                [],
+            )
+            .map_err(|error| crate::utils::err_to_string(module_path!(), line!(), error))?;
+        }
+    }
+    let has_group_parent_message_id = conn
+        .query_row(
+            "SELECT EXISTS(
+               SELECT 1 FROM pragma_table_info('group_messages')
+               WHERE name = 'parent_message_id'
+             )",
+            [],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(|error| crate::utils::err_to_string(module_path!(), line!(), error))?;
+    if !has_group_parent_message_id {
+        conn.execute(
+            "ALTER TABLE group_messages ADD COLUMN parent_message_id TEXT",
+            [],
+        )
+        .map_err(|error| crate::utils::err_to_string(module_path!(), line!(), error))?;
+    }
+    conn.execute_batch(
+        r#"
+        UPDATE group_sessions
+        SET root_session_id = id
+        WHERE root_session_id IS NULL;
+        CREATE INDEX IF NOT EXISTS idx_group_sessions_root_session
+          ON group_sessions(root_session_id);
+        CREATE INDEX IF NOT EXISTS idx_group_messages_session_parent
+          ON group_messages(session_id, parent_message_id);
+        DROP TRIGGER IF EXISTS group_messages_assign_parent_after_insert;
+        CREATE TRIGGER group_messages_assign_parent_after_insert
+        AFTER INSERT ON group_messages
+        WHEN NEW.parent_message_id IS NULL
+          AND COALESCE((
+            SELECT value FROM sync_v2_local_state
+            WHERE key = 'applying_remote'
+          ), '0') != '1'
+        BEGIN
+          UPDATE group_messages
+          SET parent_message_id = (
+            SELECT previous.id
+            FROM group_messages AS previous
+            WHERE previous.session_id = NEW.session_id
+              AND previous.id != NEW.id
+            ORDER BY previous.rowid DESC
+            LIMIT 1
+          )
+          WHERE id = NEW.id;
+        END;
+        WITH ordered AS (
+          SELECT
+            id,
+            LAG(id) OVER (
+              PARTITION BY session_id
+              ORDER BY created_at ASC, id ASC
+            ) AS inferred_parent
+          FROM group_messages
+        )
+        UPDATE group_messages
+        SET parent_message_id = (
+          SELECT inferred_parent FROM ordered WHERE ordered.id = group_messages.id
+        )
+        WHERE parent_message_id IS NULL;
+        "#,
+    )
+    .map_err(|error| crate::utils::err_to_string(module_path!(), line!(), error))?;
+
+    migrate_sync_v2_schema(conn)
+}
+
 fn migrate_sync_v2_schema(conn: &rusqlite::Connection) -> Result<(), String> {
     let tx = conn
         .unchecked_transaction()
@@ -4555,7 +4752,10 @@ fn migrate_v71_to_v72(app: &AppHandle) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{migrate_image_lora_metadata_columns, migrate_sync_v2_schema};
+    use super::{
+        migrate_image_lora_metadata_columns, migrate_sync_v2_schema,
+        run_preflight_migrations,
+    };
 
     #[test]
     fn repairs_the_partial_image_lora_schema() {
@@ -4651,5 +4851,160 @@ mod tests {
             .unwrap(),
             0
         );
+    }
+
+    #[test]
+    fn v85_preflight_migrates_existing_chat_tables_before_indexes() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE settings (
+               id INTEGER PRIMARY KEY,
+               migration_version INTEGER NOT NULL
+             );
+             INSERT INTO settings VALUES (1, 85);
+             CREATE TABLE sessions (id TEXT PRIMARY KEY);
+             CREATE TABLE messages (
+               id TEXT PRIMARY KEY,
+               session_id TEXT NOT NULL,
+               role TEXT NOT NULL,
+               content TEXT NOT NULL,
+               created_at INTEGER NOT NULL
+             );
+             CREATE TABLE group_sessions (
+               id TEXT PRIMARY KEY,
+               name TEXT NOT NULL,
+               created_at INTEGER NOT NULL,
+               updated_at INTEGER NOT NULL
+             );
+             CREATE TABLE group_messages (
+               id TEXT PRIMARY KEY,
+               session_id TEXT NOT NULL,
+               role TEXT NOT NULL,
+               content TEXT NOT NULL,
+               created_at INTEGER NOT NULL
+             );
+             INSERT INTO sessions VALUES ('chat');
+             INSERT INTO messages VALUES ('first', 'chat', 'user', 'one', 1);
+             INSERT INTO messages VALUES ('second', 'chat', 'assistant', 'two', 2);
+             INSERT INTO group_sessions VALUES ('group', 'Group', 1, 1);
+             INSERT INTO group_messages VALUES ('group-first', 'group', 'user', 'one', 1);
+             INSERT INTO group_messages VALUES ('group-second', 'group', 'assistant', 'two', 2);",
+        )
+        .unwrap();
+        crate::sync::v2::create_schema(&conn).unwrap();
+        let stale_revision =
+            crate::sync::v2::capture_transaction(&conn, "device-before-migration", 10, |tx| {
+                tx.execute(
+                    "UPDATE messages SET content = 'old schema revision' WHERE id = 'second'",
+                    [],
+                )
+            })
+            .unwrap()
+            .revision;
+        assert!(stale_revision.is_some());
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM sync_v2_changes", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .unwrap(),
+            1
+        );
+
+        run_preflight_migrations(&conn).unwrap();
+        run_preflight_migrations(&conn).unwrap();
+
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM sync_v2_changes", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .unwrap(),
+            0,
+            "schema migration must invalidate revisions captured under the old fingerprint"
+        );
+
+        for (table, column) in [
+            ("messages", "parent_message_id"),
+            ("group_messages", "parent_message_id"),
+            ("group_sessions", "parent_session_id"),
+            ("group_sessions", "branched_from_message_id"),
+            ("group_sessions", "root_session_id"),
+        ] {
+            let exists = conn
+                .query_row(
+                    &format!(
+                        "SELECT EXISTS(
+                           SELECT 1 FROM pragma_table_info('{table}')
+                           WHERE name = ?1
+                         )"
+                    ),
+                    [column],
+                    |row| row.get::<_, bool>(0),
+                )
+                .unwrap();
+            assert!(exists, "{table}.{column} should exist");
+        }
+        let parent: Option<String> = conn
+            .query_row(
+                "SELECT parent_message_id FROM messages WHERE id = 'second'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(parent.as_deref(), Some("first"));
+        conn.execute(
+            "INSERT INTO messages (
+               id, session_id, role, content, created_at, parent_message_id
+             ) VALUES ('third', 'chat', 'user', 'three', 3, NULL)",
+            [],
+        )
+        .unwrap();
+        let trigger_parent: Option<String> = conn
+            .query_row(
+                "SELECT parent_message_id FROM messages WHERE id = 'third'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(trigger_parent.as_deref(), Some("second"));
+    }
+
+    #[test]
+    fn v86_preflight_discards_revisions_with_the_old_schema_fingerprint() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE settings (
+               id INTEGER PRIMARY KEY,
+               migration_version INTEGER NOT NULL
+             );
+             INSERT INTO settings VALUES (1, 86);
+             CREATE TABLE notes (
+               id TEXT PRIMARY KEY,
+               content TEXT NOT NULL
+             );
+             INSERT INTO notes VALUES ('note', 'before');",
+        )
+        .unwrap();
+        crate::sync::v2::create_schema(&conn).unwrap();
+        let revision =
+            crate::sync::v2::capture_transaction(&conn, "device-old-schema", 10, |tx| {
+                tx.execute(
+                    "UPDATE notes SET content = 'stale revision' WHERE id = 'note'",
+                    [],
+                )
+            })
+            .unwrap()
+            .revision;
+        assert!(revision.is_some());
+
+        run_preflight_migrations(&conn).unwrap();
+
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM sync_v2_changes", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .unwrap(),
+            0
+        );
+        assert!(crate::sync::v2::load_frontier(&conn).unwrap().is_empty());
     }
 }

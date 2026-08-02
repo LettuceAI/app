@@ -174,6 +174,7 @@ fn create_lorebook_omits_internal_lorebook_id_from_entries() {
         always_active: false,
         keywords: vec!["north gate".into()],
         case_sensitive: false,
+        keyword_match_mode: Default::default(),
         content: "Guarded day and night.".into(),
         priority: 0,
         display_order: 0,

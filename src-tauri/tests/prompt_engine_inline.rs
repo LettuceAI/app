@@ -73,6 +73,9 @@ fn make_session() -> Session {
         id: "s1".into(),
         character_id: "c1".into(),
         title: "t".into(),
+        parent_session_id: None,
+        branched_from_message_id: None,
+        root_session_id: None,
         background_image_path: None,
         system_prompt: None,
         mode: "roleplay".into(),
@@ -131,6 +134,7 @@ fn renders_simple_placeholders() {
         &session,
         &settings,
         None,
+        None,
     );
     assert!(rendered.contains("Hello Alice and Bob."));
     assert!(rendered.contains("I am Alice. Partner: Bob."));
@@ -163,6 +167,7 @@ fn renders_simple_placeholders() {
         &session2,
         &settings,
         None,
+        None,
     );
     assert!(rendered2.contains("Var Alice"));
     assert!(!rendered2.contains("Starting Scene")); // No hardcoded formatting
@@ -184,6 +189,7 @@ fn renders_simple_placeholders() {
         attachments: vec![],
         reasoning: None,
         model_id: None,
+        gemini_content: None,
     });
     let rendered2_edited = render_with_context_internal(
         None,
@@ -192,6 +198,7 @@ fn renders_simple_placeholders() {
         persona.as_ref(),
         &session2_edited,
         &settings,
+        None,
         None,
     );
     assert_eq!(rendered2_edited, "Edited scene with Alice and Bob");
@@ -206,6 +213,7 @@ fn renders_simple_placeholders() {
         &session3,
         &settings,
         None,
+        None,
     );
     assert_eq!(rendered3, "Keep Alice focused on Bob.");
 
@@ -216,6 +224,7 @@ fn renders_simple_placeholders() {
         persona.as_ref(),
         &session,
         &settings,
+        None,
         None,
     );
     assert!(!rendered4.contains("{{date}}"));

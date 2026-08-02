@@ -22,6 +22,7 @@ fn entry(
         always_active,
         keywords: keywords.into_iter().map(String::from).collect(),
         case_sensitive: false,
+        keyword_match_mode: Default::default(),
         content: content.into(),
         priority: 0,
         display_order: 0,

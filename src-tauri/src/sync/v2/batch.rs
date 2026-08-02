@@ -19,6 +19,7 @@ pub struct BatchApplyResult {
     pub revisions_applied: usize,
     pub revisions_already_applied: usize,
     pub conflicts_created: usize,
+    pub branches_created: usize,
     pub already_committed: bool,
 }
 
@@ -54,6 +55,35 @@ pub enum BatchError {
         #[source]
         source: ApplyError,
     },
+}
+
+impl BatchError {
+    pub fn is_retryable_lock(&self) -> bool {
+        match self {
+            Self::Database(error) => sqlite_error_is_locked(error),
+            Self::Apply { source, .. } => match source {
+                ApplyError::Database(error) => sqlite_error_is_locked(error),
+                ApplyError::Catalog(super::catalog::CatalogError::Database(error)) => {
+                    sqlite_error_is_locked(error)
+                }
+                ApplyError::Store(super::store::StoreError::Database(error)) => {
+                    sqlite_error_is_locked(error)
+                }
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+}
+
+fn sqlite_error_is_locked(error: &rusqlite::Error) -> bool {
+    matches!(
+        error.sqlite_error_code(),
+        Some(
+            rusqlite::ErrorCode::DatabaseBusy
+                | rusqlite::ErrorCode::DatabaseLocked
+        )
+    )
 }
 
 pub fn revision_batch_hash(revisions: &[ChangeRevision]) -> Result<String, BatchError> {
@@ -165,6 +195,7 @@ pub fn apply_staged_batch(
             revisions_applied: 0,
             revisions_already_applied: 0,
             conflicts_created: 0,
+            branches_created: 0,
             already_committed: true,
         });
     }
@@ -186,6 +217,7 @@ pub fn apply_staged_batch(
         revisions_applied: 0,
         revisions_already_applied: 0,
         conflicts_created: 0,
+        branches_created: 0,
         already_committed: false,
     };
     let mut pending = revisions;
@@ -206,6 +238,7 @@ pub fn apply_staged_batch(
                     ApplyOutcome::Duplicate => result.revisions_already_applied += 1,
                 }
                 result.conflicts_created += applied.conflicts_created;
+                result.branches_created += applied.branches_created;
             }
             Err(source) => {
                 let error = source.to_string();

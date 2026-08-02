@@ -68,6 +68,7 @@ fn test_context(muted_character_ids: Vec<&str>) -> GroupChatContext {
             memory_status: "idle".to_string(),
             memory_error: None,
             speaker_selection_method: "heuristic".to_string(),
+            config_overrides: serde_json::json!({ "version": 1 }),
         },
         characters: test_characters(),
         participation_stats: vec![],
@@ -170,6 +171,7 @@ fn test_build_selection_prompt_truncates_utf8_safely() {
             reasoning: None,
             selection_reasoning: None,
             model_id: None,
+            gemini_content: None,
         },
     ];
 
@@ -207,6 +209,7 @@ fn test_round_robin_ignores_muted_participants() {
             reasoning: None,
             selection_reasoning: None,
             model_id: None,
+            gemini_content: None,
         },
     ];
     let result =
@@ -255,6 +258,7 @@ fn test_heuristic_does_not_treat_plain_name_as_forced_selection() {
             reasoning: None,
             selection_reasoning: None,
             model_id: None,
+            gemini_content: None,
         },
     ];
 

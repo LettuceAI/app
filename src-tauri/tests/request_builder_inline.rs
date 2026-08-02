@@ -214,12 +214,11 @@ fn strips_visible_system_message_metadata_for_translating_adapters_too() {
         .get("messages")
         .and_then(Value::as_array)
         .expect("request body should contain messages");
-    let system_message = messages[0]
-        .as_object()
-        .expect("system message should be an object");
-    assert_eq!(system_message.get("role"), Some(&json!("system")));
-    assert!(!system_message.contains_key("visible_in_chat"));
-    assert!(!system_message.contains_key("uiExpanded"));
+    assert!(messages.is_empty());
+    assert_eq!(built.body.get("system"), Some(&json!("Stay in character.")));
+    let serialized = built.body.to_string();
+    assert!(!serialized.contains("visible_in_chat"));
+    assert!(!serialized.contains("uiExpanded"));
 }
 
 #[test]

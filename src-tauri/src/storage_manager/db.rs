@@ -300,6 +300,10 @@ where
 }
 
 pub fn init_db(_app: &tauri::AppHandle, conn: &Connection) -> Result<(), String> {
+    init_db_connection(conn)
+}
+
+fn init_db_connection(conn: &Connection) -> Result<(), String> {
     conn.execute_batch(
         r#"
         CREATE TABLE IF NOT EXISTS meta (
@@ -747,6 +751,7 @@ pub fn init_db(_app: &tauri::AppHandle, conn: &Connection) -> Result<(), String>
           used_lorebook_entries TEXT NOT NULL DEFAULT '[]',
           attachments TEXT NOT NULL DEFAULT '[]',
           reasoning TEXT,
+          parent_message_id TEXT,
           FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
         );
 
@@ -980,6 +985,9 @@ pub fn init_db(_app: &tauri::AppHandle, conn: &Connection) -> Result<(), String>
           memory_progress_step INTEGER,
           speaker_selection_method TEXT NOT NULL DEFAULT 'llm',
           config_overrides TEXT NOT NULL DEFAULT '{"version":1}',
+          parent_session_id TEXT,
+          branched_from_message_id TEXT,
+          root_session_id TEXT,
           FOREIGN KEY(persona_id) REFERENCES personas(id) ON DELETE SET NULL,
           FOREIGN KEY(group_character_id) REFERENCES group_characters(id) ON DELETE SET NULL
         );
@@ -1020,6 +1028,7 @@ pub fn init_db(_app: &tauri::AppHandle, conn: &Connection) -> Result<(), String>
           model_id TEXT,
           gemini_content TEXT,
           usage_json TEXT,
+          parent_message_id TEXT,
           FOREIGN KEY(session_id) REFERENCES group_sessions(id) ON DELETE CASCADE
         );
 
@@ -1079,6 +1088,7 @@ pub fn init_db(_app: &tauri::AppHandle, conn: &Connection) -> Result<(), String>
 
     crate::sync::v2::create_schema(conn)
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    crate::migrations::run_preflight_migrations(conn)?;
 
     let _ = conn.execute(
         "ALTER TABLE llm_generation_metrics ADD COLUMN message_id TEXT",
@@ -2166,4 +2176,60 @@ pub fn db_checkpoint(app: tauri::AppHandle) -> Result<(), String> {
             )
         })?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::init_db_connection;
+
+    #[test]
+    fn startup_migrates_a_v85_database_before_building_causal_indexes() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        init_db_connection(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO settings (
+               id, app_state, migration_version, created_at, updated_at
+             ) VALUES (1, '{}', 85, 1, 1)
+             ON CONFLICT(id) DO UPDATE SET migration_version = 85",
+            [],
+        )
+        .unwrap();
+        conn.execute_batch(
+            "DROP TRIGGER IF EXISTS messages_assign_parent_after_insert;
+             DROP INDEX IF EXISTS idx_messages_session_parent;
+             ALTER TABLE messages DROP COLUMN parent_message_id;
+             DROP TRIGGER IF EXISTS group_messages_assign_parent_after_insert;
+             DROP INDEX IF EXISTS idx_group_messages_session_parent;
+             ALTER TABLE group_messages DROP COLUMN parent_message_id;
+             DROP INDEX IF EXISTS idx_group_sessions_root_session;
+             ALTER TABLE group_sessions DROP COLUMN parent_session_id;
+             ALTER TABLE group_sessions DROP COLUMN branched_from_message_id;
+             ALTER TABLE group_sessions DROP COLUMN root_session_id;",
+        )
+        .unwrap();
+
+        init_db_connection(&conn).unwrap();
+
+        for (table, column) in [
+            ("messages", "parent_message_id"),
+            ("group_messages", "parent_message_id"),
+            ("group_sessions", "parent_session_id"),
+            ("group_sessions", "branched_from_message_id"),
+            ("group_sessions", "root_session_id"),
+        ] {
+            let exists = conn
+                .query_row(
+                    &format!(
+                        "SELECT EXISTS(
+                           SELECT 1 FROM pragma_table_info('{table}')
+                           WHERE name = ?1
+                         )"
+                    ),
+                    [column],
+                    |row| row.get::<_, bool>(0),
+                )
+                .unwrap();
+            assert!(exists, "{table}.{column} should exist after startup");
+        }
+    }
 }

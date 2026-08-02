@@ -39,6 +39,8 @@ fn sample_context<'a>() -> PromptEntryConditionContext<'a> {
         vision_enabled: true,
         time_awareness_enabled: false,
         companion_mode_enabled: false,
+        is_local_image_generation_model: false,
+        is_scene_generation_local_image_model: false,
     }
 }
 

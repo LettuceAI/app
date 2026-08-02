@@ -35,6 +35,7 @@ import { useI18n } from "../../../core/i18n/context";
 import { storageBridge } from "../../../core/storage/files";
 import { MissingModelRequirementsSheet } from "../../components/MissingModelRequirementsSheet";
 import { SyncStageProgress } from "../../components/SyncStageProgress";
+import { SyncConflictInbox } from "../../components/SyncConflictInbox";
 import {
   buildModelRequirementsQueuePath,
   getPostSyncMissingModelRequirementsSettled,
@@ -84,6 +85,11 @@ type SyncingDetails = {
   items_received?: number | null;
   bytes_sent?: number | null;
   bytes_received?: number | null;
+  conflicts_detected?: number | null;
+  branches_created?: number | null;
+  database_wait_attempt?: number | null;
+  database_wait_total?: number | null;
+  database_wait_ms?: number | null;
 };
 
 type SyncStatus =
@@ -333,7 +339,14 @@ function SyncingPanel({
         </div>
       )}
 
-      {details?.phase && <SyncStageProgress phase={details.phase} />}
+      {details?.phase && (
+        <SyncStageProgress
+          phase={details.phase}
+          databaseWaitAttempt={details.database_wait_attempt}
+          databaseWaitTotal={details.database_wait_total}
+          databaseWaitMs={details.database_wait_ms}
+        />
+      )}
 
       {}
       {hasCounters && (
@@ -1243,6 +1256,8 @@ export function SyncPage() {
             </Card>
           </div>
         )}
+
+        <SyncConflictInbox refreshKey={status.status} disabled={isSyncing} />
 
         <p className="px-1 pt-2 text-[11px] text-fg/35">{t("sync.disclaimer")}</p>
       </section>

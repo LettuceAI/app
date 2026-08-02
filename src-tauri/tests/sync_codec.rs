@@ -13,6 +13,7 @@ use tokio_util::codec::{Decoder, Encoder};
 fn sample_handshake() -> P2PMessage {
     P2PMessage::Handshake {
         protocol_version: 1,
+        app_version: "1.2.0".into(),
         device_name: "test-device".into(),
         device_id: "dev-1234".into(),
         salt: [7u8; 16],
@@ -24,12 +25,14 @@ fn assert_matches_handshake(msg: &P2PMessage) {
     match msg {
         P2PMessage::Handshake {
             protocol_version,
+            app_version,
             device_name,
             device_id,
             salt,
             challenge,
         } => {
             assert_eq!(*protocol_version, 1);
+            assert_eq!(app_version, "1.2.0");
             assert_eq!(device_name, "test-device");
             assert_eq!(device_id, "dev-1234");
             assert_eq!(*salt, [7u8; 16]);

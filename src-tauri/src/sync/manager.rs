@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, Mutex, RwLock, Semaphore};
@@ -30,11 +31,97 @@ use crate::sync::v2::{
     apply_staged_batch, begin_blob_receive, build_outbound_batch,
     cached_schema_fingerprint, finish_blob_receive, get_or_create_device_id,
     load_frontier, plan_outbound, record_peer_acknowledgement,
-    revision_batch_hash, stage_revision_batch, write_blob_chunk, BlobReceiveState,
+    revision_batch_hash, stage_revision_batch, write_blob_chunk, BatchApplyResult,
+    BlobReceiveState, ChangeRevision,
 };
 use crate::utils::{log_error, log_info};
 
 const QUIESCENT_ACK: &str = "quiescent";
+const DATABASE_LOCK_RETRY_DELAYS_MS: &[u64] = &[100, 250, 500, 1_000, 2_000];
+static SYNC_DATABASE_USERS: AtomicUsize = AtomicUsize::new(0);
+
+struct SyncDatabaseActivityGuard;
+
+impl SyncDatabaseActivityGuard {
+    fn begin() -> Self {
+        SYNC_DATABASE_USERS.fetch_add(1, Ordering::AcqRel);
+        Self
+    }
+}
+
+impl Drop for SyncDatabaseActivityGuard {
+    fn drop(&mut self) {
+        SYNC_DATABASE_USERS.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+pub fn is_sync_database_active() -> bool {
+    SYNC_DATABASE_USERS.load(Ordering::Acquire) > 0
+}
+
+async fn stage_and_apply_batch_with_retry(
+    app: &AppHandle,
+    peer_device_id: &str,
+    batch_id: &str,
+    batch_hash: &str,
+    revisions: &[ChangeRevision],
+    now_ms: i64,
+    stop: &mut broadcast::Receiver<()>,
+    state: &SyncManagerState,
+    stats: &TransferStats,
+) -> Result<BatchApplyResult, String> {
+    let mut retry = 0usize;
+    loop {
+        let result = {
+            let conn = crate::storage_manager::db::open_db(app)?;
+            stage_revision_batch(
+                &conn,
+                peer_device_id,
+                batch_id,
+                batch_hash,
+                revisions,
+                now_ms,
+            )
+            .and_then(|_| apply_staged_batch(&conn, batch_id, now_ms))
+        };
+        match result {
+            Ok(result) => return Ok(result),
+            Err(error)
+                if error.is_retryable_lock()
+                    && retry < DATABASE_LOCK_RETRY_DELAYS_MS.len() =>
+            {
+                let delay_ms = DATABASE_LOCK_RETRY_DELAYS_MS[retry];
+                retry += 1;
+                log_info(
+                    app,
+                    "sync_v2_driver",
+                    format!(
+                        "Database busy while applying batch {batch_id}; retry {retry}/{} in {delay_ms}ms",
+                        DATABASE_LOCK_RETRY_DELAYS_MS.len()
+                    ),
+                );
+                state
+                    .set_status(
+                        app,
+                        stats.database_wait_status(
+                            retry as u64,
+                            DATABASE_LOCK_RETRY_DELAYS_MS.len() as u64,
+                            delay_ms,
+                        ),
+                    )
+                    .await;
+                tokio::select! {
+                    _ = tokio::time::sleep(std::time::Duration::from_millis(delay_ms)) => {}
+                    _ = stop.recv() => return Err("Sync cancelled".to_string()),
+                }
+                state
+                    .set_status(app, stats.status("Applying changes"))
+                    .await;
+            }
+            Err(error) => return Err(error.to_string()),
+        }
+    }
+}
 
 fn derive_key(pin: &str, salt: &[u8]) -> [u8; 32] {
     let mut hasher = blake3::Hasher::new_derive_key("lettuce_sync_v1");
@@ -71,6 +158,10 @@ pub enum SyncStatus {
         bytes_sent: Option<u64>,
         bytes_received: Option<u64>,
         conflicts_detected: Option<u64>,
+        branches_created: Option<u64>,
+        database_wait_attempt: Option<u64>,
+        database_wait_total: Option<u64>,
+        database_wait_ms: Option<u64>,
     },
     Error {
         message: String,
@@ -95,6 +186,7 @@ struct TransferStats {
     bytes_sent: u64,
     bytes_received: u64,
     conflicts_detected: u64,
+    branches_created: u64,
 }
 
 impl TransferStats {
@@ -120,7 +212,32 @@ impl TransferStats {
             bytes_sent: Some(self.bytes_sent),
             bytes_received: Some(self.bytes_received),
             conflicts_detected: Some(self.conflicts_detected),
+            branches_created: Some(self.branches_created),
+            database_wait_attempt: None,
+            database_wait_total: None,
+            database_wait_ms: None,
         }
+    }
+
+    fn database_wait_status(
+        &self,
+        attempt: u64,
+        total: u64,
+        delay_ms: u64,
+    ) -> SyncStatus {
+        let mut status = self.status("Waiting for local database");
+        if let SyncStatus::Syncing {
+            database_wait_attempt,
+            database_wait_total,
+            database_wait_ms,
+            ..
+        } = &mut status
+        {
+            *database_wait_attempt = Some(attempt);
+            *database_wait_total = Some(total);
+            *database_wait_ms = Some(delay_ms);
+        }
+        status
     }
 }
 
@@ -617,6 +734,7 @@ async fn run_v2_replication(
     authenticated_peer_device_id: &str,
     stop: &mut broadcast::Receiver<()>,
 ) -> Result<(), String> {
+    let _database_activity = SyncDatabaseActivityGuard::begin();
     let state = app.state::<SyncManagerState>();
     state
         .set_status(app, TransferStats::default().status("Verifying devices"))
@@ -724,20 +842,18 @@ async fn run_v2_replication(
             }) => {
                 state.set_status(app, stats.status("Applying changes")).await;
                 let now = crate::utils::now_millis()? as i64;
-                let result = {
-                    let conn = crate::storage_manager::db::open_db(app)?;
-                    stage_revision_batch(
-                        &conn,
-                        &peer_hello.device_id,
-                        &batch_id,
-                        &batch_hash,
-                        &revisions,
-                        now,
-                    )
-                    .map_err(|error| error.to_string())?;
-                    apply_staged_batch(&conn, &batch_id, now)
-                        .map_err(|error| error.to_string())?
-                };
+                let result = stage_and_apply_batch_with_retry(
+                    app,
+                    &peer_hello.device_id,
+                    &batch_id,
+                    &batch_hash,
+                    &revisions,
+                    now,
+                    stop,
+                    state.inner(),
+                    &stats,
+                )
+                .await?;
                 stats.items_received = stats
                     .items_received
                     .saturating_add(result.revisions_applied as u64);
@@ -750,6 +866,14 @@ async fn run_v2_replication(
                 stats.conflicts_detected = stats
                     .conflicts_detected
                     .saturating_add(result.conflicts_created as u64);
+                stats.branches_created = stats
+                    .branches_created
+                    .saturating_add(result.branches_created as u64);
+                if result.branches_created > 0 {
+                    state
+                        .set_status(app, stats.status("Separating chat branches"))
+                        .await;
+                }
                 (batch_id, false)
             }
             P2PMessage::Sync(SyncV2Message::Quiescent { .. }) => {

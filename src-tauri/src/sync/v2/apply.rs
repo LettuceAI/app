@@ -3,9 +3,12 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::sync::Arc;
 
-use rusqlite::session::{ConflictAction, ConflictType};
+use rusqlite::session::{invert_strm, ConflictAction, ConflictType};
 use rusqlite::types::Value;
-use rusqlite::{params, params_from_iter, Connection, OptionalExtension, Transaction};
+use rusqlite::{
+    params, params_from_iter, Connection, OptionalExtension, Transaction,
+    TransactionBehavior,
+};
 
 use super::catalog::{cached_schema_fingerprint, CatalogError};
 use super::changeset::{inspect_changeset, inspect_item, RowChange};
@@ -68,8 +71,11 @@ enum RowPolicy {
 struct PendingConflict {
     row: RowChange,
     current_change_id: String,
+    current_row: RowSnapshot,
+    incoming_row: Option<RowSnapshot>,
 }
 
+#[derive(Clone)]
 struct RowSnapshot {
     row: RowChange,
     columns: Vec<String>,
@@ -82,8 +88,10 @@ pub fn apply_remote_revision(
     now_ms: i64,
 ) -> Result<ApplyResult, ApplyError> {
     validate_revision(conn, revision)?;
+    let changes = inspect_changeset(&revision.changeset)?;
+    let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
 
-    if let Some(existing) = load_revision(conn, &revision.change_id)? {
+    if let Some(existing) = load_revision(&tx, &revision.change_id)? {
         if existing != *revision {
             return Err(ApplyError::DuplicateMismatch {
                 change_id: revision.change_id.clone(),
@@ -92,10 +100,11 @@ pub fn apply_remote_revision(
         return Ok(ApplyResult {
             outcome: ApplyOutcome::Duplicate,
             conflicts_created: 0,
+            branches_created: 0,
         });
     }
 
-    let frontier = load_frontier(conn)?;
+    let frontier = load_frontier(&tx)?;
     let available = frontier
         .get(&revision.origin_device_id)
         .copied()
@@ -121,8 +130,6 @@ pub fn apply_remote_revision(
         }
     }
 
-    let changes = inspect_changeset(&revision.changeset)?;
-    let tx = conn.unchecked_transaction()?;
     let mut policies = HashMap::new();
     let mut losing_snapshots = Vec::new();
     let mut pending_conflicts = Vec::new();
@@ -138,23 +145,50 @@ pub fn apply_remote_revision(
         };
 
         policies.insert(row_identity(&row), policy);
+        let current_snapshot = if policy == RowPolicy::Current || is_concurrent {
+            Some(load_row_snapshot(&tx, row.clone())?)
+        } else {
+            None
+        };
         if policy == RowPolicy::Current {
-            losing_snapshots.push(load_row_snapshot(&tx, row.clone())?);
+            losing_snapshots.push(
+                current_snapshot
+                    .as_ref()
+                    .expect("current policy always captures the current row")
+                    .clone(),
+            );
         } else {
             incoming_winners.push(row.clone());
         }
         if is_concurrent {
+            let (current_revision, _) =
+                current.expect("concurrent rows always have current provenance");
+            let current_row =
+                current_snapshot.expect("concurrent rows always capture the current row");
+            let incoming_row = materialize_incoming_snapshot(
+                &tx,
+                &row,
+                &current_row,
+                &current_revision,
+                revision,
+            )
+            .ok();
             pending_conflicts.push(PendingConflict {
                 row,
-                current_change_id: current
-                    .expect("concurrent rows always have current provenance")
-                    .0
-                    .change_id,
+                current_change_id: current_revision.change_id,
+                current_row,
+                incoming_row,
             });
         }
     }
 
     insert_revision(&tx, revision, now_ms)?;
+    tx.execute(
+        "INSERT INTO sync_v2_local_state (key, value)
+         VALUES ('applying_remote', '1')
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        [],
+    )?;
     apply_native_changeset(&tx, revision, policies)?;
     for snapshot in &losing_snapshots {
         restore_snapshot(&tx, snapshot)?;
@@ -163,6 +197,11 @@ pub fn apply_remote_revision(
     for row in &incoming_winners {
         set_row_version(&tx, row, revision)?;
     }
+    let branches_created = super::branches::materialize_message_forks(&tx)?;
+    tx.execute(
+        "DELETE FROM sync_v2_local_state WHERE key = 'applying_remote'",
+        [],
+    )?;
     let mut conflicts_created = 0;
     for conflict in pending_conflicts {
         conflicts_created += insert_conflict(&tx, revision, &conflict, now_ms)?;
@@ -178,6 +217,7 @@ pub fn apply_remote_revision(
     Ok(ApplyResult {
         outcome: ApplyOutcome::Applied,
         conflicts_created,
+        branches_created,
     })
 }
 
@@ -452,6 +492,107 @@ fn restore_snapshot(tx: &Transaction<'_>, snapshot: &RowSnapshot) -> Result<(), 
     Ok(())
 }
 
+fn materialize_incoming_snapshot(
+    tx: &Transaction<'_>,
+    row: &RowChange,
+    current_row: &RowSnapshot,
+    current_revision: &ChangeRevision,
+    incoming_revision: &ChangeRevision,
+) -> Result<RowSnapshot, rusqlite::Error> {
+    let create_sql = tx.query_row(
+        "SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = ?1",
+        params![row.table_name],
+        |result| result.get::<_, String>(0),
+    )?;
+    let scratch = Connection::open_in_memory()?;
+    scratch.execute_batch("PRAGMA foreign_keys = OFF;")?;
+    scratch.execute_batch(&create_sql)?;
+
+    if current_row.values.is_some() {
+        restore_snapshot_on_connection(&scratch, current_row)?;
+    } else {
+        let mut input = current_revision.changeset.as_slice();
+        let mut inverted = Vec::new();
+        invert_strm(&mut input, &mut inverted)?;
+        apply_snapshot_changeset(&scratch, &row.table_name, &inverted)?;
+    }
+    apply_snapshot_changeset(
+        &scratch,
+        &row.table_name,
+        &incoming_revision.changeset,
+    )?;
+    load_row_snapshot_from_connection(&scratch, row.clone())
+}
+
+fn apply_snapshot_changeset(
+    conn: &Connection,
+    table_name: &str,
+    changeset: &[u8],
+) -> Result<(), rusqlite::Error> {
+    let target = table_name.to_string();
+    let mut input = changeset;
+    conn.apply_strm(
+        &mut input,
+        Some(move |table: &str| table == target),
+        |conflict_type, item| match conflict_type {
+            ConflictType::SQLITE_CHANGESET_DATA | ConflictType::SQLITE_CHANGESET_CONFLICT => {
+                ConflictAction::SQLITE_CHANGESET_REPLACE
+            }
+            ConflictType::SQLITE_CHANGESET_NOTFOUND => match item.op() {
+                Ok(operation) if operation.code() == rusqlite::hooks::Action::SQLITE_DELETE => {
+                    ConflictAction::SQLITE_CHANGESET_OMIT
+                }
+                _ => ConflictAction::SQLITE_CHANGESET_ABORT,
+            },
+            _ => ConflictAction::SQLITE_CHANGESET_ABORT,
+        },
+    )
+}
+
+fn load_row_snapshot_from_connection(
+    conn: &Connection,
+    row: RowChange,
+) -> Result<RowSnapshot, rusqlite::Error> {
+    let (columns, primary_key_columns) = table_columns(conn, &row.table_name)?;
+    let selected_columns = columns
+        .iter()
+        .map(|column| quote_identifier(column))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let predicate = primary_key_columns
+        .iter()
+        .map(|column| format!("{} IS ?", quote_identifier(column)))
+        .collect::<Vec<_>>()
+        .join(" AND ");
+    let sql = format!(
+        "SELECT {selected_columns} FROM {} WHERE {predicate}",
+        quote_identifier(&row.table_name)
+    );
+    let values = conn
+        .query_row(&sql, params_from_iter(row.primary_key.iter()), |result| {
+            let mut values = Vec::with_capacity(columns.len());
+            for column in 0..columns.len() {
+                values.push(result.get_ref(column)?.into());
+            }
+            Ok(values)
+        })
+        .optional()?;
+    Ok(RowSnapshot {
+        row,
+        columns,
+        values,
+    })
+}
+
+fn restore_snapshot_on_connection(
+    conn: &Connection,
+    snapshot: &RowSnapshot,
+) -> Result<(), rusqlite::Error> {
+    let tx = conn.unchecked_transaction()?;
+    restore_snapshot(&tx, snapshot)?;
+    tx.commit()
+}
+
 fn table_columns(
     conn: &Connection,
     table_name: &str,
@@ -494,17 +635,35 @@ fn insert_conflict(
         revision_ids[1]
     );
     let conflict_id = blake3::hash(identity.as_bytes()).to_hex().to_string();
+    let local_row = super::conflicts::encode_row_snapshot(
+        &conflict.current_row.columns,
+        &conflict.current_row.row.primary_key,
+        conflict.current_row.values.as_deref(),
+    )?;
+    let incoming_row = conflict
+        .incoming_row
+        .as_ref()
+        .map(|snapshot| {
+            super::conflicts::encode_row_snapshot(
+                &snapshot.columns,
+                &snapshot.row.primary_key,
+                snapshot.values.as_deref(),
+            )
+        })
+        .transpose()?;
     tx.execute(
         "INSERT OR IGNORE INTO sync_v2_conflicts (
            conflict_id, table_name, primary_key, local_change_id,
-           incoming_change_id, operation, status, detected_at
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'unresolved', ?7)",
+           incoming_change_id, local_row, incoming_row, operation, status, detected_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'unresolved', ?9)",
         params![
             conflict_id,
             conflict.row.table_name,
             conflict.row.primary_key_bytes,
             conflict.current_change_id,
             incoming.change_id,
+            local_row,
+            incoming_row,
             conflict.row.operation.as_str(),
             now_ms,
         ],
@@ -521,6 +680,8 @@ fn quote_identifier(identifier: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use rusqlite::{params, Connection};
 
     use super::{apply_remote_revision, ApplyError};
@@ -530,16 +691,29 @@ mod tests {
 
     fn connection() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
+        initialize_connection(&conn);
+        conn
+    }
+
+    fn initialize_connection(conn: &Connection) {
         conn.execute_batch(
             "PRAGMA foreign_keys = ON;
              CREATE TABLE chats (
                id TEXT PRIMARY KEY,
                title TEXT NOT NULL
+             );
+             CREATE TABLE local_usage (
+               id INTEGER PRIMARY KEY,
+               elapsed_ms INTEGER NOT NULL
              );",
         )
         .unwrap();
-        create_schema(&conn).unwrap();
-        conn
+        conn.execute(
+            "INSERT INTO local_usage (id, elapsed_ms) VALUES (1, 0)",
+            [],
+        )
+        .unwrap();
+        create_schema(conn).unwrap();
     }
 
     fn title(conn: &Connection) -> Option<String> {
@@ -574,6 +748,71 @@ mod tests {
         let duplicate = apply_remote_revision(&target, &revision, 120).unwrap();
         assert_eq!(duplicate.outcome, ApplyOutcome::Duplicate);
         assert_eq!(title(&target).as_deref(), Some("Hello"));
+    }
+
+    #[test]
+    fn waits_for_a_concurrent_local_writer_before_reading_apply_state() {
+        let source = connection();
+        let revision = capture_transaction(&source, "device-a", 100, |tx| {
+            tx.execute(
+                "INSERT INTO chats (id, title) VALUES (?1, ?2)",
+                params!["chat-1", "Hello"],
+            )
+        })
+        .unwrap()
+        .revision
+        .unwrap();
+
+        let path = std::env::temp_dir().join(format!(
+            "lettuce-sync-v2-writer-collision-{}.db",
+            uuid::Uuid::new_v4()
+        ));
+        {
+            let setup = Connection::open(&path).unwrap();
+            setup.pragma_update(None, "journal_mode", "WAL").unwrap();
+            initialize_connection(&setup);
+        }
+
+        let blocker = Connection::open(&path).unwrap();
+        blocker.busy_timeout(Duration::from_secs(2)).unwrap();
+        let blocker_tx =
+            rusqlite::Transaction::new_unchecked(
+                &blocker,
+                rusqlite::TransactionBehavior::Immediate,
+            )
+            .unwrap();
+        blocker_tx
+            .execute(
+                "UPDATE local_usage SET elapsed_ms = elapsed_ms + 30000 WHERE id = 1",
+                [],
+            )
+            .unwrap();
+
+        let apply_path = path.clone();
+        let apply = std::thread::spawn(move || {
+            let target = Connection::open(apply_path).unwrap();
+            target.busy_timeout(Duration::from_secs(2)).unwrap();
+            apply_remote_revision(&target, &revision, 110)
+        });
+        std::thread::sleep(Duration::from_millis(100));
+        blocker_tx.commit().unwrap();
+
+        let applied = apply.join().unwrap().unwrap();
+        assert_eq!(applied.outcome, ApplyOutcome::Applied);
+        let target = Connection::open(&path).unwrap();
+        assert_eq!(title(&target).as_deref(), Some("Hello"));
+        assert_eq!(
+            target
+                .query_row(
+                    "SELECT elapsed_ms FROM local_usage WHERE id = 1",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            30_000
+        );
+        drop(target);
+        std::fs::remove_file(path).unwrap();
     }
 
     #[test]

@@ -49,17 +49,17 @@ fn verify_url_gemini_models_only() {
 }
 
 #[test]
-fn verify_url_zai_appends_llm() {
+fn verify_url_zai_appends_chat_completions() {
     assert_eq!(
         url("zai", "https://api.z.ai/api/coding/paas/v1"),
-        "https://api.z.ai/api/coding/paas/v1/llm"
+        "https://api.z.ai/api/coding/paas/v1/chat/completions"
     );
 }
 
 #[test]
-fn verify_url_zai_without_v1_suffix_inserts_it() {
+fn verify_url_zai_without_endpoint_appends_chat_completions() {
     let r = url("zai", "https://api.z.ai");
-    assert!(r.ends_with("/v1/llm"), "got: {r}");
+    assert!(r.ends_with("/chat/completions"), "got: {r}");
 }
 
 #[test]

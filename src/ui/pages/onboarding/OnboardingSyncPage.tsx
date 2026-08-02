@@ -48,6 +48,9 @@ type SyncingDetails = {
   bytes_done?: number | null;
   bytes_total?: number | null;
   domain_progress?: DomainProgress[];
+  database_wait_attempt?: number | null;
+  database_wait_total?: number | null;
+  database_wait_ms?: number | null;
 };
 
 type SyncStatus =
@@ -508,7 +511,13 @@ export function OnboardingSyncStep() {
                     )}
                   </div>
                   {syncingDetails?.phase && (
-                    <SyncStageProgress phase={syncingDetails.phase} surface="onboarding" />
+                    <SyncStageProgress
+                      phase={syncingDetails.phase}
+                      surface="onboarding"
+                      databaseWaitAttempt={syncingDetails.database_wait_attempt}
+                      databaseWaitTotal={syncingDetails.database_wait_total}
+                      databaseWaitMs={syncingDetails.database_wait_ms}
+                    />
                   )}
                 </>
               )}

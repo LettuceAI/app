@@ -120,6 +120,15 @@ fn encode_values(values: &[Value]) -> Vec<u8> {
     encoded
 }
 
+pub(crate) fn row_identity_hash(table_name: &str, primary_key: &[Value]) -> String {
+    let primary_key_bytes = encode_values(primary_key);
+    let mut identity = Vec::with_capacity(table_name.len() + primary_key_bytes.len() + 1);
+    identity.extend_from_slice(table_name.as_bytes());
+    identity.push(0);
+    identity.extend_from_slice(&primary_key_bytes);
+    blake3::hash(&identity).to_hex().to_string()
+}
+
 fn encode_bytes(output: &mut Vec<u8>, value: &[u8]) {
     output.extend_from_slice(&(value.len() as u64).to_le_bytes());
     output.extend_from_slice(value);
