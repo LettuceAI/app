@@ -20,6 +20,8 @@ import {
   Radio,
   ArrowUp,
   ArrowDown,
+  ArrowLeft,
+  ArrowRight,
 } from "lucide-react";
 import { type as osType } from "@tauri-apps/plugin-os";
 import {
@@ -229,24 +231,51 @@ function Card({ children, className }: { children: ReactNode; className?: string
   );
 }
 
+function TransferRail({ reverse = false }: { reverse?: boolean }) {
+  return (
+    <span className="relative h-[3px] min-w-0 flex-1 overflow-hidden rounded-full bg-fg/10">
+      <span
+        className={cn(
+          "absolute inset-y-0 left-0 w-1/3 rounded-full bg-gradient-to-r from-transparent via-info/80 to-transparent",
+          reverse
+            ? "animate-[indeterminate_1.8s_linear_infinite_reverse]"
+            : "animate-[indeterminate_1.8s_linear_infinite]",
+        )}
+      />
+    </span>
+  );
+}
+
 function BidirectionalLink() {
   const { t } = useI18n();
 
   return (
-    <div className="flex items-center gap-3 rounded-xl border border-info/20 bg-info/[0.06] px-4 py-3">
+    <div className="flex items-center justify-center gap-4 rounded-xl border border-info/20 bg-info/[0.06] px-4 py-3.5">
       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-fg/10 bg-fg/5 text-fg/70">
         <Monitor className="h-4 w-4" />
       </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center justify-center gap-2 text-info/80">
-          <ArrowUp className="h-3.5 w-3.5 rotate-90" />
-          <span className="h-px min-w-4 flex-1 bg-gradient-to-r from-info/20 via-info/70 to-info/20" />
-          <ArrowDown className="h-3.5 w-3.5 rotate-90" />
+
+      <div className="flex w-full max-w-[200px] flex-col items-center gap-2">
+        <div className="flex w-full items-center gap-1.5">
+          <TransferRail />
+          <ArrowRight className="h-3 w-3 shrink-0 text-info/70" />
         </div>
-        <p className="mt-1 text-center text-[10px] font-semibold uppercase tracking-[0.14em] text-info/70">
+        <p
+          className={cn(
+            typography.overline.size,
+            typography.overline.weight,
+            typography.overline.transform,
+            "text-center leading-tight tracking-[0.14em] text-info/70",
+          )}
+        >
           {t("sync.status.bidirectional")}
         </p>
+        <div className="flex w-full items-center gap-1.5">
+          <ArrowLeft className="h-3 w-3 shrink-0 text-info/70" />
+          <TransferRail reverse />
+        </div>
       </div>
+
       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-fg/10 bg-fg/5 text-fg/70">
         <Smartphone className="h-4 w-4" />
       </div>

@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
   AlertTriangle,
+  ArrowDownToLine,
   Check,
   ChevronDown,
   GitCompareArrows,
@@ -168,42 +169,51 @@ export function SyncConflictInbox({
 
   if (loading || conflicts.length === 0) {
     return error ? (
-      <div className="rounded-xl border border-danger/20 bg-danger/8 px-4 py-3 text-xs text-danger/80">
-        {t("characters.conflicts.loadError")}
+      <div className="flex items-center gap-3 rounded-xl border border-danger/25 bg-danger/8 p-3">
+        <AlertTriangle className="h-5 w-5 shrink-0 text-danger/90" />
+        <p className="min-w-0 flex-1 text-sm font-medium text-danger/90">
+          {t("characters.conflicts.loadError")}
+        </p>
       </div>
     ) : null;
   }
 
   return (
     <div>
-      <div className="mb-2.5 flex items-center justify-between gap-3 px-1">
+      <div className="mb-2.5 flex items-center justify-between gap-2 px-1">
         <div className="flex items-center gap-2">
-          <GitCompareArrows className="h-3 w-3 text-warning/75" />
+          <span className="text-fg/30">
+            <GitCompareArrows size={12} />
+          </span>
           <h2
             className={cn(
               typography.overline.size,
               typography.overline.weight,
               typography.overline.tracking,
               typography.overline.transform,
-              "text-fg/45",
+              "text-fg/40",
             )}
           >
             {t("characters.conflicts.title")}
           </h2>
         </div>
-        <span className="rounded-full border border-warning/20 bg-warning/10 px-2 py-0.5 font-mono text-[10px] font-semibold tabular-nums text-warning/85">
-          {conflicts.length}
-        </span>
+        <div className="flex items-center gap-1.5 rounded-full border border-warning/25 bg-warning/10 px-2 py-0.5">
+          <span className="font-mono text-[10px] font-bold tabular-nums text-warning/90">
+            {conflicts.length}
+          </span>
+        </div>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-warning/20 bg-warning/[0.035]">
-        <div className="flex items-start gap-3 border-b border-warning/10 px-4 py-3">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning/80" />
-          <div>
-            <p className="text-[12px] font-medium text-fg/85">
+      <div className="overflow-hidden rounded-xl border border-fg/10 bg-fg/5">
+        <div className="flex items-start gap-3 border-b border-fg/8 px-4 py-4">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-warning/30 bg-warning/10 text-warning/90">
+            <AlertTriangle className="h-4 w-4" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className={cn(typography.body.size, "font-medium text-fg")}>
               {t("characters.conflicts.reviewTitle")}
             </p>
-            <p className="mt-0.5 text-[11px] leading-relaxed text-fg/45">
+            <p className="mt-1 text-[11px] leading-relaxed text-fg/50">
               {disabled
                 ? t("characters.conflicts.waitForSync")
                 : t("characters.conflicts.reviewDescription")}
@@ -220,15 +230,27 @@ export function SyncConflictInbox({
 
             return (
               <details key={conflict.conflictId} className="group">
-                <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-3.5">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-warning/20 bg-warning/8 text-warning/80">
+                <summary
+                  className={cn(
+                    "flex cursor-pointer list-none items-center gap-3 px-4 py-3.5",
+                    interactive.transition.fast,
+                    "hover:bg-fg/[0.03]",
+                  )}
+                >
+                  <div
+                    className={cn(
+                      "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-fg/10 bg-fg/8 text-fg/60",
+                      interactive.transition.default,
+                      "group-open:border-warning/30 group-open:bg-warning/10 group-open:text-warning/90",
+                    )}
+                  >
                     <GitCompareArrows className="h-4 w-4" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-[12px] font-semibold text-fg/85">
+                    <p className="truncate text-[13px] font-semibold text-fg">
                       {conflict.entityName || t("common.labels.untitled")}
                     </p>
-                    <p className="mt-0.5 truncate text-[10px] text-fg/40">
+                    <p className="mt-0.5 truncate text-[11px] text-fg/45">
                       {entityLabel} ·{" "}
                       {t("characters.conflicts.fieldsDiffer", {
                         count: conflict.fields.length,
@@ -238,23 +260,39 @@ export function SyncConflictInbox({
                   <ChevronDown className="h-4 w-4 shrink-0 text-fg/30 transition-transform group-open:rotate-180" />
                 </summary>
 
-                <div className="border-t border-fg/8 px-4 py-4">
-                  <div className="mb-3 grid grid-cols-2 gap-2">
-                    <div className="rounded-lg border border-accent/15 bg-accent/[0.04] px-3 py-2">
-                      <p className="text-[9px] font-semibold uppercase tracking-wider text-accent/70">
+                <div className="border-t border-fg/8">
+                  <div className="grid grid-cols-2 divide-x divide-fg/8 border-b border-fg/8">
+                    <div className="bg-accent/5 px-4 py-3">
+                      <p
+                        className={cn(
+                          typography.overline.size,
+                          typography.overline.weight,
+                          typography.overline.tracking,
+                          typography.overline.transform,
+                          "text-accent/70",
+                        )}
+                      >
                         {t("characters.conflicts.currentVersion")}
                       </p>
-                      <p className="mt-1 font-mono text-[9px] text-fg/35">
+                      <p className="mt-1.5 truncate font-mono text-[11px] text-fg/45">
                         {t("characters.conflicts.device", {
                           id: shortDeviceId(conflict.currentDeviceId),
                         })}
                       </p>
                     </div>
-                    <div className="rounded-lg border border-info/15 bg-info/[0.04] px-3 py-2">
-                      <p className="text-[9px] font-semibold uppercase tracking-wider text-info/70">
+                    <div className="bg-info/5 px-4 py-3">
+                      <p
+                        className={cn(
+                          typography.overline.size,
+                          typography.overline.weight,
+                          typography.overline.tracking,
+                          typography.overline.transform,
+                          "text-info/70",
+                        )}
+                      >
                         {t("characters.conflicts.otherVersion")}
                       </p>
-                      <p className="mt-1 font-mono text-[9px] text-fg/35">
+                      <p className="mt-1.5 truncate font-mono text-[11px] text-fg/45">
                         {t("characters.conflicts.device", {
                           id: shortDeviceId(conflict.otherDeviceId),
                         })}
@@ -262,20 +300,28 @@ export function SyncConflictInbox({
                     </div>
                   </div>
 
-                  <div className="space-y-2">
+                  <div className="space-y-2.5 px-4 py-4">
                     {conflict.fields.map((field) => (
                       <div
                         key={field.key}
-                        className="overflow-hidden rounded-lg border border-fg/8"
+                        className="overflow-hidden rounded-xl border border-fg/10 bg-surface-el/30"
                       >
-                        <p className="border-b border-fg/8 bg-fg/[0.025] px-3 py-1.5 text-[9px] font-semibold uppercase tracking-wider text-fg/40">
+                        <p
+                          className={cn(
+                            typography.overline.size,
+                            typography.overline.weight,
+                            typography.overline.tracking,
+                            typography.overline.transform,
+                            "border-b border-fg/8 px-3 py-2 text-fg/40",
+                          )}
+                        >
                           {t(
                             FIELD_LABELS[field.key] ??
                               "characters.conflicts.fields.changedValue",
                           )}
                         </p>
                         <div className="grid grid-cols-2 divide-x divide-fg/8">
-                          <pre className="max-h-36 overflow-auto whitespace-pre-wrap break-words px-3 py-2.5 font-sans text-[10px] leading-relaxed text-fg/65">
+                          <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words bg-accent/[0.03] px-3 py-2.5 font-sans text-[11px] leading-relaxed text-fg/70">
                             {formatValue(
                               field.key,
                               field.current,
@@ -284,7 +330,7 @@ export function SyncConflictInbox({
                               t("common.labels.disabled"),
                             )}
                           </pre>
-                          <pre className="max-h-36 overflow-auto whitespace-pre-wrap break-words px-3 py-2.5 font-sans text-[10px] leading-relaxed text-fg/65">
+                          <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words bg-info/[0.03] px-3 py-2.5 font-sans text-[11px] leading-relaxed text-fg/70">
                             {formatValue(
                               field.key,
                               field.other,
@@ -296,36 +342,39 @@ export function SyncConflictInbox({
                         </div>
                       </div>
                     ))}
+
+                    <p className="px-1 pt-0.5 text-[11px] text-fg/35">
+                      {t("characters.conflicts.detected", {
+                        date: dateFormatter.format(new Date(conflict.detectedAt)),
+                      })}
+                    </p>
+
+                    {error && (
+                      <div className="flex items-center gap-2.5 rounded-xl border border-danger/25 bg-danger/8 px-3 py-2.5">
+                        <AlertTriangle className="h-4 w-4 shrink-0 text-danger/90" />
+                        <p className="min-w-0 flex-1 text-[11px] leading-relaxed text-danger/80">
+                          {t("characters.conflicts.resolveError")}
+                        </p>
+                      </div>
+                    )}
                   </div>
 
-                  <p className="mt-3 text-[9px] text-fg/30">
-                    {t("characters.conflicts.detected", {
-                      date: dateFormatter.format(new Date(conflict.detectedAt)),
-                    })}
-                  </p>
-
-                  {error && (
-                    <p className="mt-3 rounded-lg border border-danger/15 bg-danger/8 px-3 py-2 text-[10px] text-danger/80">
-                      {t("characters.conflicts.resolveError")}
-                    </p>
-                  )}
-
-                  <div className="mt-3 grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-2 divide-x divide-fg/8 border-t border-fg/8">
                     <button
                       type="button"
                       disabled={disabled || resolving !== null}
                       onClick={() => void resolve(conflict.conflictId, "current")}
                       className={cn(
-                        "flex items-center justify-center gap-2 rounded-lg border border-accent/30 bg-accent/10 px-3 py-2.5 text-[11px] font-semibold text-accent/90",
-                        interactive.transition.fast,
+                        "flex items-center justify-center gap-2 px-4 py-3.5 text-sm font-semibold text-accent/95",
+                        interactive.transition.default,
                         interactive.active.scale,
-                        "hover:border-accent/50 hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-40",
+                        "hover:bg-accent/12 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent",
                       )}
                     >
                       {isResolving ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        <Loader2 className="h-4 w-4 animate-spin" />
                       ) : (
-                        <Check className="h-3.5 w-3.5" />
+                        <Check className="h-4 w-4" />
                       )}
                       {t("characters.conflicts.keepCurrent")}
                     </button>
@@ -334,12 +383,13 @@ export function SyncConflictInbox({
                       disabled={disabled || resolving !== null}
                       onClick={() => void resolve(conflict.conflictId, "other")}
                       className={cn(
-                        "rounded-lg border border-fg/12 bg-fg/5 px-3 py-2.5 text-[11px] font-medium text-fg/70",
-                        interactive.transition.fast,
+                        "flex items-center justify-center gap-2 px-4 py-3.5 text-sm font-medium text-fg/70",
+                        interactive.transition.default,
                         interactive.active.scale,
-                        "hover:border-info/30 hover:bg-info/8 hover:text-info disabled:cursor-not-allowed disabled:opacity-40",
+                        "hover:bg-info/10 hover:text-info disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-fg/70",
                       )}
                     >
+                      <ArrowDownToLine className="h-4 w-4" />
                       {t("characters.conflicts.useOther")}
                     </button>
                   </div>
