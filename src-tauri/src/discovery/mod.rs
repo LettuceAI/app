@@ -1193,6 +1193,7 @@ pub async fn discovery_import_character(app: AppHandle, path: String) -> Result<
                         crate::storage_manager::lorebook::LorebookKeywordDetectionMode::RecentMessageWindow,
                     created_at: now,
                     updated_at: now,
+                    tags: Vec::new(),
                 };
 
                 if let Err(err) = upsert_lorebook(&conn, &lorebook_record) {

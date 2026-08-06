@@ -7,7 +7,7 @@ use crate::storage_manager::settings::{read_settings_typed, write_settings_typed
 use crate::utils::{log_info, log_warn};
 
 /// Current migration version
-pub const CURRENT_MIGRATION_VERSION: u32 = 95;
+pub const CURRENT_MIGRATION_VERSION: u32 = 96;
 
 pub fn run_migrations(app: &AppHandle) -> Result<(), String> {
     log_info(app, "migrations", "Starting migration check");
@@ -977,6 +977,16 @@ pub fn run_migrations(app: &AppHandle) -> Result<(), String> {
         );
         migrate_v94_to_v95(app)?;
         version = 95;
+    }
+
+    if version < 96 {
+        log_info(
+            app,
+            "migrations",
+            "Running migration v95 -> v96: Add tags column to personas and lorebooks",
+        );
+        migrate_v95_to_v96(app)?;
+        version = 96;
     }
 
     if version != CURRENT_MIGRATION_VERSION {
@@ -4267,6 +4277,37 @@ fn migrate_v74_to_v75(app: &AppHandle) -> Result<(), String> {
     let _ = conn.execute("ALTER TABLE characters ADD COLUMN lora_strength REAL", []);
     let _ = conn.execute("ALTER TABLE personas ADD COLUMN lora_name TEXT", []);
     let _ = conn.execute("ALTER TABLE personas ADD COLUMN lora_strength REAL", []);
+    Ok(())
+}
+
+/// Add a column only if missing; returns Err on a genuine ALTER failure so the
+/// migration aborts (version not advanced) and retries next launch instead of wedging.
+fn add_column_if_missing(
+    conn: &rusqlite::Connection,
+    table: &str,
+    column: &str,
+    decl: &str,
+) -> Result<(), String> {
+    let mut stmt = conn
+        .prepare(&format!("PRAGMA table_info({table})"))
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    let existing = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?
+        .collect::<Result<Vec<String>, _>>()
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    if existing.iter().any(|name| name == column) {
+        return Ok(());
+    }
+    conn.execute(&format!("ALTER TABLE {table} ADD COLUMN {column} {decl}"), [])
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    Ok(())
+}
+
+fn migrate_v95_to_v96(app: &AppHandle) -> Result<(), String> {
+    let conn = crate::storage_manager::db::open_db(app)?;
+    add_column_if_missing(&conn, "personas", "tags", "TEXT")?;
+    add_column_if_missing(&conn, "lorebooks", "tags", "TEXT")?;
     Ok(())
 }
 

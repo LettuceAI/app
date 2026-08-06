@@ -189,6 +189,8 @@ pub struct UscLorebookPayload {
     pub description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub keyword_detection_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
     pub entries: Vec<UscLorebookEntry>,
     pub created_at: i64,
     pub updated_at: i64,
@@ -503,6 +505,7 @@ pub fn create_lorebook_usc(lorebook: &Lorebook, entries: &[LorebookEntry]) -> Us
                     "latestUserMessage".to_string()
                 }
             }),
+            tags: lorebook.tags.clone(),
             entries: entries
                 .iter()
                 .map(|entry| UscLorebookEntry {

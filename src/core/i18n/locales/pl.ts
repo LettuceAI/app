@@ -3151,6 +3151,9 @@ export const plMessages: DeepPartialMessageTree<LocaleMessages> = {
       generateEntryAria: "Generuj wpis lorebooka",
       exportLorebookAria: "Eksportuj lorebook",
       regularExpression: "Użyj wyrażeń regularnych",
+      metadataTitle: "Edytuj lorebook",
+      tagsLabel: "Tagi",
+      tagsPlaceholder: "np. fantasy, sci-fi itp...",
     },
     templates: {
       characterNotFound: "Nie znaleziono postaci",
@@ -4670,6 +4673,9 @@ export const plMessages: DeepPartialMessageTree<LocaleMessages> = {
       setAsDefault: "Ustaw jako domyślną",
       defaultDescription: "Używaj tej persony we wszystkich nowych rozmowach",
       exportButton: "Eksportuj personę",
+      tagsLabel: "Tagi",
+      tagsPlaceholder: "np. fantasy, sci-fi itp...",
+      tagsHint: "Oddzielaj tagi przecinkami.",
     },
     designReferences: {
       title: "Design references",
@@ -6189,6 +6195,10 @@ export const plMessages: DeepPartialMessageTree<LocaleMessages> = {
         title: "Brak lorebooków",
         description: "Lorebooki tworzy się z poziomu ustawień postaci",
       },
+      noTagMatches: {
+        title: "Brak wyników",
+        description: "Żaden element nie pasuje do wybranych tagów.",
+      },
     },
     actions: {
       startChat: "Rozpocznij czat",
@@ -6308,6 +6318,14 @@ export const plMessages: DeepPartialMessageTree<LocaleMessages> = {
         editLorebook: "Edit lorebook",
         exportLorebook: "Export lorebook",
       },
+    },
+    sort: {
+      label: "Sortuj",
+      recent: "Ostatnie",
+      alphabetical: "A–Z",
+    },
+    tagFilter: {
+      clear: "Wyczyść tagi",
     },
   },
   onboarding: {

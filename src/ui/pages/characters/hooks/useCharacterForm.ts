@@ -22,6 +22,7 @@ import type {
 } from "../../../../core/storage/schemas";
 import { listPromptTemplates } from "../../../../core/prompts/service";
 import { processBackgroundImage } from "../../../../core/utils/image";
+import { parseCommaSeparated } from "../../../../core/utils/parseCommaSeparated";
 import { invalidateAvatarCache } from "../../../hooks/useAvatar";
 import {
   previewCharacterImportFile,
@@ -969,11 +970,6 @@ export function useCharacterForm(draftCharacter?: any) {
       dispatch({ type: "SET_SAVING", payload: true });
       dispatch({ type: "SET_ERROR", payload: null });
 
-      const parseCommaSeparated = (raw: string): string[] =>
-        raw
-          .split(",")
-          .map((item) => item.trim())
-          .filter((item) => item.length > 0);
       const tags = parseCommaSeparated(state.tagsText);
       let creatorNotesMultilingual: Record<string, string> | null | undefined = undefined;
       if (state.creatorNotesMultilingualText.trim()) {

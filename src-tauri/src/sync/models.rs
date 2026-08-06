@@ -57,6 +57,8 @@ pub struct Persona {
     pub is_default: i64,
     pub created_at: i64,
     pub updated_at: i64,
+    #[serde(default)]
+    pub tags: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -296,6 +298,8 @@ pub struct SyncLorebook {
     pub keyword_detection_mode: String,
     pub created_at: i64,
     pub updated_at: i64,
+    #[serde(default)]
+    pub tags: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

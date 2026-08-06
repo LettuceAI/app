@@ -3153,6 +3153,9 @@ export const frMessages: DeepPartialMessageTree<LocaleMessages> = {
       generateEntryAria: "Générer une entrée de lorebook",
       exportLorebookAria: "Exporter le lorebook",
       regularExpression: "Utiliser des expressions régulières",
+      metadataTitle: "Modifier l'encyclopédie",
+      tagsLabel: "Tags",
+      tagsPlaceholder: "p. ex. fantaisie, sci-fi, etc...",
     },
     templates: {
       characterNotFound: "Personnage introuvable",
@@ -5332,6 +5335,9 @@ export const frMessages: DeepPartialMessageTree<LocaleMessages> = {
       setAsDefault: "Définir comme par défaut",
       defaultDescription: "Utiliser ce persona pour toutes les nouvelles conversations",
       exportButton: "Exporter le persona",
+      tagsLabel: "Tags",
+      tagsPlaceholder: "p. ex. fantaisie, sci-fi, etc...",
+      tagsHint: "Séparez les tags par des virgules.",
     },
     designReferences: {
       title: "Références de design",
@@ -6851,6 +6857,10 @@ export const frMessages: DeepPartialMessageTree<LocaleMessages> = {
         title: "Pas encore d'encyclopédies",
         description: "Les encyclopédies sont créées dans les paramètres d'un personnage",
       },
+      noTagMatches: {
+        title: "Aucun résultat",
+        description: "Aucun élément ne correspond aux tags sélectionnés.",
+      },
     },
     actions: {
       startChat: "Démarrer la discussion",
@@ -6970,6 +6980,14 @@ export const frMessages: DeepPartialMessageTree<LocaleMessages> = {
         editLorebook: "Modifier le lorebook",
         exportLorebook: "Exporter le lorebook",
       },
+    },
+    sort: {
+      label: "Trier",
+      recent: "Récents",
+      alphabetical: "A–Z",
+    },
+    tagFilter: {
+      clear: "Effacer les tags",
     },
   },
   onboarding: {

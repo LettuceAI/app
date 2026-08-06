@@ -10,6 +10,7 @@ import {
 } from "../../../core/storage/personaTransfer";
 import { AvatarPicker } from "../../components/AvatarPicker";
 import { Switch } from "../../components/Switch";
+import { TagsInput } from "../../components/TagsInput";
 import { DesignReferenceEditor } from "../../components/DesignReferenceEditor";
 import { LoraSelector } from "../../components/LoraSelector";
 import { ActiveLorebooksSelector } from "../characters/components/ActiveLorebooksSelector";
@@ -42,6 +43,7 @@ export function EditPersonaPage() {
       loraName,
       loraStrength,
       activeLorebookIds,
+      tags,
     },
     setTitle,
     setDescription,
@@ -54,6 +56,7 @@ export function EditPersonaPage() {
     setDesignReferenceImageIds,
     setLora,
     setActiveLorebookIds,
+    setTags,
     handleSave,
     resetToInitial,
     canSave,
@@ -235,6 +238,14 @@ export function EditPersonaPage() {
                   {t("personas.edit.nicknameHint")}
                 </p>
               </div>
+
+              <TagsInput
+                value={tags}
+                onChange={setTags}
+                label={t("personas.edit.tagsLabel")}
+                placeholder={t("personas.edit.tagsPlaceholder")}
+                hint={t("personas.edit.tagsHint")}
+              />
 
               <div className={spacing.field}>
                 <div

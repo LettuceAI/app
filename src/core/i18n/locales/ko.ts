@@ -3151,6 +3151,9 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
       generateEntryAria: "로어북 항목 생성",
       exportLorebookAria: "로어북 내보내기",
       regularExpression: "정규 표현식 사용",
+      metadataTitle: "로어북 편집",
+      tagsLabel: "태그",
+      tagsPlaceholder: "예: 판타지, SF 등...",
     },
     templates: {
       characterNotFound: "캐릭터를 찾을 수 없습니다",
@@ -5329,6 +5332,9 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
       setAsDefault: "기본값으로 설정",
       defaultDescription: "모든 새 대화에 이 페르소나 사용",
       exportButton: "페르소나 내보내기",
+      tagsLabel: "태그",
+      tagsPlaceholder: "예: 판타지, SF 등...",
+      tagsHint: "태그는 쉼표로 구분하세요.",
     },
     designReferences: {
       title: "디자인 참고자료",
@@ -6848,6 +6854,10 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
         title: "아직 로어북이 없습니다",
         description: "로어북은 캐릭터 설정 내에서 만들 수 있습니다",
       },
+      noTagMatches: {
+        title: "일치 항목 없음",
+        description: "선택한 태그와 일치하는 항목이 없습니다.",
+      },
     },
     actions: {
       startChat: "채팅 시작",
@@ -6967,6 +6977,14 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
         editLorebook: "로어북 편집",
         exportLorebook: "로어북 내보내기",
       },
+    },
+    sort: {
+      label: "정렬",
+      recent: "최근",
+      alphabetical: "가나다순",
+    },
+    tagFilter: {
+      clear: "태그 지우기",
     },
   },
   onboarding: {

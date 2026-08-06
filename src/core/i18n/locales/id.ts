@@ -3151,6 +3151,9 @@ export const idMessages: DeepPartialMessageTree<LocaleMessages> = {
       generateEntryAria: "Hasilkan entri lorebook",
       exportLorebookAria: "Ekspor lorebook",
       regularExpression: "Gunakan ekspresi reguler",
+      metadataTitle: "Edit Lorebook",
+      tagsLabel: "Tag",
+      tagsPlaceholder: "mis. fantasi, sci-fi, dll...",
     },
     templates: {
       characterNotFound: "Karakter tidak ditemukan",
@@ -4581,6 +4584,9 @@ export const idMessages: DeepPartialMessageTree<LocaleMessages> = {
       setAsDefault: "Atur sebagai Bawaan",
       defaultDescription: "Gunakan persona ini untuk semua percakapan baru",
       exportButton: "Ekspor Persona",
+      tagsLabel: "Tag",
+      tagsPlaceholder: "mis. fantasi, sci-fi, dll...",
+      tagsHint: "Pisahkan tag dengan koma.",
     },
     designReferences: {
       title: "Referensi desain",
@@ -6100,6 +6106,10 @@ export const idMessages: DeepPartialMessageTree<LocaleMessages> = {
         title: "Belum ada lorebook",
         description: "Lorebook dibuat dari dalam pengaturan karakter",
       },
+      noTagMatches: {
+        title: "Tidak ada yang cocok",
+        description: "Tidak ada item yang cocok dengan tag yang dipilih.",
+      },
     },
     actions: {
       startChat: "Mulai Obrolan",
@@ -6219,6 +6229,14 @@ export const idMessages: DeepPartialMessageTree<LocaleMessages> = {
         editLorebook: "Edit lorebook",
         exportLorebook: "Ekspor lorebook",
       },
+    },
+    sort: {
+      label: "Urutkan",
+      recent: "Terbaru",
+      alphabetical: "A–Z",
+    },
+    tagFilter: {
+      clear: "Hapus tag",
     },
   },
   onboarding: {

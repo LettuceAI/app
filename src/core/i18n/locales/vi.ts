@@ -3151,6 +3151,9 @@ export const viMessages: DeepPartialMessageTree<LocaleMessages> = {
       generateEntryAria: "Tạo mục lorebook",
       exportLorebookAria: "Xuất lorebook",
       regularExpression: "Dùng biểu thức chính quy",
+      metadataTitle: "Chỉnh sửa sách lore",
+      tagsLabel: "Nhãn",
+      tagsPlaceholder: "vd. fantasy, sci-fi, v.v...",
     },
     templates: {
       characterNotFound: "Không tìm thấy nhân vật",
@@ -4581,6 +4584,9 @@ export const viMessages: DeepPartialMessageTree<LocaleMessages> = {
       setAsDefault: "Đặt làm mặc định",
       defaultDescription: "Sử dụng persona này cho tất cả cuộc trò chuyện mới",
       exportButton: "Xuất Persona",
+      tagsLabel: "Nhãn",
+      tagsPlaceholder: "vd. fantasy, sci-fi, v.v...",
+      tagsHint: "Phân tách các nhãn bằng dấu phẩy.",
     },
     designReferences: {
       title: "Design references",
@@ -6100,6 +6106,10 @@ export const viMessages: DeepPartialMessageTree<LocaleMessages> = {
         title: "Chưa có sách lore nào",
         description: "Sách lore được tạo từ trong cài đặt nhân vật",
       },
+      noTagMatches: {
+        title: "Không có kết quả",
+        description: "Không có mục nào khớp với các nhãn đã chọn.",
+      },
     },
     actions: {
       startChat: "Bắt đầu trò chuyện",
@@ -6219,6 +6229,14 @@ export const viMessages: DeepPartialMessageTree<LocaleMessages> = {
         editLorebook: "Edit lorebook",
         exportLorebook: "Export lorebook",
       },
+    },
+    sort: {
+      label: "Sắp xếp",
+      recent: "Gần đây",
+      alphabetical: "A–Z",
+    },
+    tagFilter: {
+      clear: "Xóa nhãn",
     },
   },
   onboarding: {

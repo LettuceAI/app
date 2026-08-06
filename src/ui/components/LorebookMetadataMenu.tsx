@@ -4,6 +4,7 @@ import type { Lorebook } from "../../core/storage/schemas";
 import { useI18n, type TranslationKey } from "../../core/i18n/context";
 import { BottomMenu } from "./BottomMenu";
 import { LorebookAvatar } from "./LorebookAvatar";
+import { TagsInput } from "./TagsInput";
 
 type LorebookMetadataMenuProps = {
   isOpen: boolean;
@@ -21,6 +22,8 @@ type LorebookMetadataMenuProps = {
   onChooseFromLibrary?: () => void;
   keywordDetectionMode: Lorebook["keywordDetectionMode"];
   onKeywordDetectionModeChange: (mode: Lorebook["keywordDetectionMode"]) => void;
+  tagsValue: string;
+  onTagsChange: (value: string) => void;
   onSave: () => void;
   saveDisabled: boolean;
 };
@@ -61,6 +64,8 @@ export function LorebookMetadataMenu({
   onChooseFromLibrary,
   keywordDetectionMode,
   onKeywordDetectionModeChange,
+  tagsValue,
+  onTagsChange,
   onSave,
   saveDisabled,
 }: LorebookMetadataMenuProps) {
@@ -151,6 +156,13 @@ export function LorebookMetadataMenu({
             className="hidden"
           />
         </div>
+
+        <TagsInput
+          value={tagsValue}
+          onChange={onTagsChange}
+          label={t("characters.lorebook.tagsLabel")}
+          placeholder={t("characters.lorebook.tagsPlaceholder")}
+        />
 
         <div className="space-y-2">
           <label className="text-[12px] font-medium uppercase tracking-wide text-fg/70">

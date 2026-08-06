@@ -3158,6 +3158,9 @@ export const deMessages: DeepPartialMessageTree<LocaleMessages> = {
       generateEntryAria: "Lorebook-Eintrag generieren",
       exportLorebookAria: "Lorebook exportieren",
       regularExpression: "Reguläre Ausdrücke verwenden",
+      metadataTitle: "Lorebook bearbeiten",
+      tagsLabel: "Tags",
+      tagsPlaceholder: "z. B. Fantasy, Sci-Fi usw. ...",
     },
     templates: {
       characterNotFound: "Charakter nicht gefunden",
@@ -5337,6 +5340,9 @@ export const deMessages: DeepPartialMessageTree<LocaleMessages> = {
       setAsDefault: "Als Standard festlegen",
       defaultDescription: "Diese Persona für alle neuen Unterhaltungen verwenden",
       exportButton: "Persona exportieren",
+      tagsLabel: "Tags",
+      tagsPlaceholder: "z. B. Fantasy, Sci-Fi usw. ...",
+      tagsHint: "Tags durch Kommas trennen.",
     },
     designReferences: {
       title: "Designreferenzen",
@@ -6856,6 +6862,10 @@ export const deMessages: DeepPartialMessageTree<LocaleMessages> = {
         title: "Noch keine Lorebooks",
         description: "Lorebooks werden in den Einstellungen eines Charakters erstellt",
       },
+      noTagMatches: {
+        title: "Keine Treffer",
+        description: "Keine Einträge stimmen mit den ausgewählten Tags überein.",
+      },
     },
     actions: {
       startChat: "Chat starten",
@@ -6975,6 +6985,14 @@ export const deMessages: DeepPartialMessageTree<LocaleMessages> = {
         editLorebook: "Lorebook bearbeiten",
         exportLorebook: "Lorebook exportieren",
       },
+    },
+    sort: {
+      label: "Sortieren",
+      recent: "Zuletzt",
+      alphabetical: "A–Z",
+    },
+    tagFilter: {
+      clear: "Tags löschen",
     },
   },
   onboarding: {

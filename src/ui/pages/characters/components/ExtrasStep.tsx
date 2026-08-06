@@ -1,8 +1,9 @@
 import { motion, AnimatePresence } from "framer-motion";
-import { User, PenTool, Tag, FileText, Globe, AlertCircle } from "lucide-react";
+import { User, PenTool, FileText, Globe, AlertCircle } from "lucide-react";
 import { radius, interactive, typography, spacing, shadows, cn } from "../../../design-tokens";
 import { useI18n } from "../../../../core/i18n/context";
 import { ActiveLorebooksSelector } from "./ActiveLorebooksSelector";
+import { TagsInput } from "../../../components/TagsInput";
 
 interface ExtrasStepProps {
   nickname: string;
@@ -139,47 +140,13 @@ export function ExtrasStep({
             )}
           </div>
         </div>
-        <div className={spacing.field}>
-          <label
-            className={cn(
-              typography.label.size,
-              typography.label.weight,
-              typography.label.tracking,
-              "uppercase text-fg/70",
-            )}
-          >
-            {t("characters.extras.tags")}
-          </label>
-          <div className="relative">
-            <input
-              value={tagsText}
-              onChange={(e) => onTagsTextChange(e.target.value)}
-              placeholder={t("characters.extras.tagsPlaceholder")}
-              className={cn(
-                "w-full border bg-surface-el/20 px-4 py-3.5 text-fg placeholder-fg/40 backdrop-blur-xl",
-                radius.md,
-                typography.body.size,
-                interactive.transition.default,
-                "focus:bg-surface-el/30 focus:outline-none",
-                tagsText.trim()
-                  ? "border-fg/20 focus:border-fg/40"
-                  : "border-fg/10 focus:border-fg/30",
-              )}
-            />
-            {tagsText.trim() && (
-              <motion.div
-                initial={{ scale: 0, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2"
-              >
-                <Tag className="h-3.5 w-3.5 text-fg/30" />
-              </motion.div>
-            )}
-          </div>
-          <p className={cn(typography.bodySmall.size, "text-fg/40")}>
-            {t("characters.extras.tagsDesc")}
-          </p>
-        </div>
+        <TagsInput
+          value={tagsText}
+          onChange={onTagsTextChange}
+          label={t("characters.extras.tags")}
+          placeholder={t("characters.extras.tagsPlaceholder")}
+          hint={t("characters.extras.tagsDesc")}
+        />
       </div>
 
       {/* Creator Notes */}

@@ -3151,6 +3151,9 @@ export const ruMessages: DeepPartialMessageTree<LocaleMessages> = {
       generateEntryAria: "Сгенерировать запись лорбука",
       exportLorebookAria: "Экспортировать лорбук",
       regularExpression: "Использовать регулярные выражения",
+      metadataTitle: "Редактировать лорбук",
+      tagsLabel: "Теги",
+      tagsPlaceholder: "напр. фэнтези, фантастика и т. д. ...",
     },
     templates: {
       characterNotFound: "Персонаж не найден",
@@ -5330,6 +5333,9 @@ export const ruMessages: DeepPartialMessageTree<LocaleMessages> = {
       setAsDefault: "Сделать по умолчанию",
       defaultDescription: "Использовать эту персону для всех новых разговоров",
       exportButton: "Экспорт персоны",
+      tagsLabel: "Теги",
+      tagsPlaceholder: "напр. фэнтези, фантастика и т. д. ...",
+      tagsHint: "Разделяйте теги запятыми.",
     },
     designReferences: {
       title: "Ссылки на дизайн",
@@ -6849,6 +6855,10 @@ export const ruMessages: DeepPartialMessageTree<LocaleMessages> = {
         title: "Лорбуков пока нет",
         description: "Лорбуки создаются в настройках персонажа",
       },
+      noTagMatches: {
+        title: "Ничего не найдено",
+        description: "Нет элементов, соответствующих выбранным тегам.",
+      },
     },
     actions: {
       startChat: "Начать чат",
@@ -6968,6 +6978,14 @@ export const ruMessages: DeepPartialMessageTree<LocaleMessages> = {
         editLorebook: "Редактировать книгу истории",
         exportLorebook: "Экспортировать книгу истории",
       },
+    },
+    sort: {
+      label: "Сортировка",
+      recent: "Недавние",
+      alphabetical: "А–Я",
+    },
+    tagFilter: {
+      clear: "Очистить теги",
     },
   },
   onboarding: {

@@ -439,7 +439,7 @@ fn export_prompt_templates(app: &tauri::AppHandle) -> Result<Vec<JsonValue>, Str
 fn export_personas(app: &tauri::AppHandle) -> Result<Vec<JsonValue>, String> {
     let conn = open_db(app)?;
     let mut stmt = conn
-        .prepare("SELECT id, title, description, nickname, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, design_description, design_reference_image_ids, lora_name, lora_strength, COALESCE(active_lorebook_ids, '[]'), is_default, created_at, updated_at FROM personas")
+        .prepare("SELECT id, title, description, nickname, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, design_description, design_reference_image_ids, lora_name, lora_strength, COALESCE(active_lorebook_ids, '[]'), is_default, created_at, updated_at, tags FROM personas")
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 
     let rows = stmt
@@ -461,6 +461,7 @@ fn export_personas(app: &tauri::AppHandle) -> Result<Vec<JsonValue>, String> {
                 "is_default": r.get::<_, i64>(13)? != 0,
                 "created_at": r.get::<_, i64>(14)?,
                 "updated_at": r.get::<_, i64>(15)?,
+                "tags": r.get::<_, Option<String>>(16)?,
             }))
         })
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
@@ -1137,7 +1138,7 @@ fn export_lorebooks(app: &tauri::AppHandle) -> Result<Vec<JsonValue>, String> {
     let conn = open_db(app)?;
 
     let mut stmt = conn
-        .prepare("SELECT id, name, avatar_path, keyword_detection_mode, created_at, updated_at FROM lorebooks")
+        .prepare("SELECT id, name, avatar_path, keyword_detection_mode, created_at, updated_at, tags FROM lorebooks")
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
 
     let lorebooks: Vec<(String, JsonValue)> = stmt
@@ -1150,6 +1151,7 @@ fn export_lorebooks(app: &tauri::AppHandle) -> Result<Vec<JsonValue>, String> {
                 "keyword_detection_mode": r.get::<_, String>(3)?,
                 "created_at": r.get::<_, i64>(4)?,
                 "updated_at": r.get::<_, i64>(5)?,
+                "tags": r.get::<_, Option<String>>(6)?,
             });
             Ok((id, json))
         })
@@ -2152,8 +2154,8 @@ fn import_personas(app: &tauri::AppHandle, data: &JsonValue) -> Result<(), Strin
     if let Some(arr) = data.as_array() {
         for item in arr {
             conn.execute(
-                "INSERT INTO personas (id, title, description, nickname, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, design_description, design_reference_image_ids, lora_name, lora_strength, active_lorebook_ids, is_default, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+                "INSERT INTO personas (id, title, description, nickname, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, design_description, design_reference_image_ids, lora_name, lora_strength, active_lorebook_ids, is_default, created_at, updated_at, tags)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
                 params![
                     item.get("id").and_then(|v| v.as_str()),
                     item.get("title").and_then(|v| v.as_str()),
@@ -2171,6 +2173,7 @@ fn import_personas(app: &tauri::AppHandle, data: &JsonValue) -> Result<(), Strin
                     item.get("is_default").and_then(|v| v.as_bool()).unwrap_or(false) as i64,
                     item.get("created_at").and_then(|v| v.as_i64()),
                     item.get("updated_at").and_then(|v| v.as_i64()),
+                    item.get("tags").and_then(|v| v.as_str()),
                 ],
             ).map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
         }
@@ -3148,8 +3151,8 @@ fn import_lorebooks(app: &tauri::AppHandle, data: &JsonValue) -> Result<(), Stri
             let lorebook_id = item.get("id").and_then(|v| v.as_str()).unwrap_or("");
 
             conn.execute(
-                "INSERT INTO lorebooks (id, name, avatar_path, keyword_detection_mode, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                "INSERT INTO lorebooks (id, name, avatar_path, keyword_detection_mode, created_at, updated_at, tags)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                 params![
                     lorebook_id,
                     item.get("name").and_then(|v| v.as_str()),
@@ -3159,6 +3162,7 @@ fn import_lorebooks(app: &tauri::AppHandle, data: &JsonValue) -> Result<(), Stri
                         .unwrap_or("recent_message_window"),
                     item.get("created_at").and_then(|v| v.as_i64()),
                     item.get("updated_at").and_then(|v| v.as_i64()),
+                    item.get("tags").and_then(|v| v.as_str()),
                 ],
             )
             .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;

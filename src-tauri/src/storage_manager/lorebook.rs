@@ -17,6 +17,8 @@ pub struct Lorebook {
     pub keyword_detection_mode: LorebookKeywordDetectionMode,
     pub created_at: i64,
     pub updated_at: i64,
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -69,6 +71,10 @@ impl LorebookKeywordDetectionMode {
 
 impl Lorebook {
     fn from_row(row: &Row) -> rusqlite::Result<Self> {
+        let tags_json: Option<String> = row.get(6)?;
+        let tags: Vec<String> = tags_json
+            .and_then(|value| serde_json::from_str(&value).ok())
+            .unwrap_or_default();
         Ok(Lorebook {
             id: row.get(0)?,
             name: row.get(1)?,
@@ -76,6 +82,7 @@ impl Lorebook {
             keyword_detection_mode: LorebookKeywordDetectionMode::from_db_value(row.get(3)?),
             created_at: row.get(4)?,
             updated_at: row.get(5)?,
+            tags,
         })
     }
 }
@@ -201,7 +208,7 @@ pub fn list_lorebooks(conn: &DbConnection) -> Result<Vec<Lorebook>, String> {
     let mut stmt = conn
         .prepare(
             r#"
-            SELECT id, name, avatar_path, keyword_detection_mode, created_at, updated_at
+            SELECT id, name, avatar_path, keyword_detection_mode, created_at, updated_at, tags
             FROM lorebooks
             ORDER BY updated_at DESC
             "#,
@@ -237,7 +244,7 @@ pub fn list_lorebooks(conn: &DbConnection) -> Result<Vec<Lorebook>, String> {
 
 pub fn get_lorebook(conn: &DbConnection, lorebook_id: &str) -> Result<Option<Lorebook>, String> {
     conn.query_row(
-        "SELECT id, name, avatar_path, keyword_detection_mode, created_at, updated_at FROM lorebooks WHERE id = ?1",
+        "SELECT id, name, avatar_path, keyword_detection_mode, created_at, updated_at, tags FROM lorebooks WHERE id = ?1",
         params![lorebook_id],
         Lorebook::from_row,
     )
@@ -272,12 +279,13 @@ pub fn upsert_lorebook(conn: &DbConnection, lorebook: &Lorebook) -> Result<Loreb
 
     if exists {
         conn.execute(
-            "UPDATE lorebooks SET name = ?2, avatar_path = ?3, keyword_detection_mode = ?4, updated_at = ?5 WHERE id = ?1",
+            "UPDATE lorebooks SET name = ?2, avatar_path = ?3, keyword_detection_mode = ?4, tags = ?5, updated_at = ?6 WHERE id = ?1",
             params![
                 lorebook.id,
                 lorebook.name,
                 lorebook.avatar_path,
                 lorebook.keyword_detection_mode.as_db_value(),
+                serde_json::to_string(&lorebook.tags).unwrap_or_else(|_| "[]".to_string()),
                 now
             ],
         )
@@ -290,14 +298,15 @@ pub fn upsert_lorebook(conn: &DbConnection, lorebook: &Lorebook) -> Result<Loreb
         })?;
     } else {
         conn.execute(
-            "INSERT INTO lorebooks (id, name, avatar_path, keyword_detection_mode, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO lorebooks (id, name, avatar_path, keyword_detection_mode, created_at, updated_at, tags) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 lorebook.id,
                 lorebook.name,
                 lorebook.avatar_path,
                 lorebook.keyword_detection_mode.as_db_value(),
                 lorebook.created_at,
-                now
+                now,
+                serde_json::to_string(&lorebook.tags).unwrap_or_else(|_| "[]".to_string())
             ],
         )
         .map_err(|e| {
@@ -1020,7 +1029,8 @@ pub fn lorebook_export(app: tauri::AppHandle, lorebook_id: String) -> Result<Str
                     "keywordDetectionMode": match lorebook.keyword_detection_mode {
                         LorebookKeywordDetectionMode::RecentMessageWindow => "recentMessageWindow",
                         LorebookKeywordDetectionMode::LatestUserMessage => "latestUserMessage",
-                    }
+                    },
+                    "tags": lorebook.tags,
                 }),
             );
             JsonValue::Object(extensions)
@@ -1080,6 +1090,18 @@ pub fn lorebook_import(app: tauri::AppHandle, import_json: String) -> Result<Str
             _ => LorebookKeywordDetectionMode::RecentMessageWindow,
         })
         .unwrap_or(LorebookKeywordDetectionMode::RecentMessageWindow);
+    let tags = parsed
+        .extensions
+        .get("lettuceai")
+        .and_then(|value| value.get("tags"))
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.as_str().map(|tag| tag.to_string()))
+                .collect::<Vec<String>>()
+        })
+        .unwrap_or_default();
     let lorebook = Lorebook {
         id: Uuid::new_v4().to_string(),
         name: parsed.name.trim().to_string(),
@@ -1087,6 +1109,7 @@ pub fn lorebook_import(app: tauri::AppHandle, import_json: String) -> Result<Str
         keyword_detection_mode,
         created_at: now,
         updated_at: now,
+        tags,
     };
 
     if lorebook.name.is_empty() {

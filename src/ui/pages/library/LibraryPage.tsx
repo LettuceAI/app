@@ -1,4 +1,4 @@
-import { useEffect, useState, memo, useRef } from "react";
+import { useEffect, useMemo, useState, memo, useRef } from "react";
 import { motion } from "framer-motion";
 import {
   listCharacters,
@@ -42,6 +42,9 @@ import {
   Paintbrush,
   Rocket,
   Settings,
+  ChevronsUpDown,
+  Tag,
+  X,
 } from "lucide-react";
 import {
   exportCharacterWithFormat,
@@ -54,6 +57,21 @@ import { importLorebook, readFileAsText } from "../../../core/storage/lorebookTr
 import { listen } from "@tauri-apps/api/event";
 import { useI18n } from "../../../core/i18n/context";
 import { isRenderableImageUrl } from "../../../core/utils/image";
+import {
+  type SortOption,
+  type EntityTab,
+  type Facet,
+  sortItems,
+  getItemName,
+  indexItems,
+  scopeByTab,
+  filterByName,
+  filterByTags,
+  deriveFacets,
+  isTagRowVisible,
+  tagControlsVisibility,
+  pruneSelectedTags,
+} from "./libraryPipeline";
 
 type FilterOption = "All" | "Characters" | "Personas" | "Lorebooks" | "Images" | "Audio";
 type LibraryItem = (Character | Persona | Lorebook) & {
@@ -78,10 +96,9 @@ function resolveLibraryFilter(search: string): FilterOption {
   return matched?.[0] ?? "All";
 }
 
-function getItemName(item: LibraryItem): string {
-  if (item.itemType === "character") return (item as Character).name;
-  if (item.itemType === "persona") return (item as Persona).title;
-  return (item as Lorebook).name;
+function resolveLibrarySort(search: string): SortOption {
+  const value = new URLSearchParams(search).get("sort");
+  return value === "alphabetical" ? "Alphabetical" : "Recent";
 }
 
 function getItemDisableGradient(item: LibraryItem): boolean | undefined {
@@ -97,6 +114,8 @@ export function LibraryPage() {
   const [loading, setLoading] = useState(() => !libraryPageCache);
   const [filter, setFilter] = useState<FilterOption>(() => resolveLibraryFilter(location.search));
   const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<SortOption>(() => resolveLibrarySort(location.search));
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const inlineHeader = useInlineHeader();
   const railSettings = useRailSettings();
   const [selectedItem, setSelectedItem] = useState<LibraryItem | null>(null);
@@ -131,6 +150,8 @@ export function LibraryPage() {
   useEffect(() => {
     const next = resolveLibraryFilter(location.search);
     setFilter((current) => (current === next ? current : next));
+    const nextSort = resolveLibrarySort(location.search);
+    setSort((current) => (current === nextSort ? current : nextSort));
   }, [location.search]);
 
   const loadData = async () => {
@@ -177,6 +198,7 @@ export function LibraryPage() {
           id: renameItem.id,
           name: renameName.trim(),
           avatarPath: renameItem.avatarPath,
+          tags: renameItem.tags,
         });
       }
       setRenameItem(null);
@@ -313,15 +335,52 @@ export function LibraryPage() {
     ...lorebooks.map((l) => ({ ...l, itemType: "lorebook" as const })),
   ];
 
-  const needle = query.trim().toLowerCase();
-  const filteredItems = allItems.filter((item) => {
-    if (needle && !getItemName(item).toLowerCase().includes(needle)) return false;
-    if (filter === "All") return true;
-    if (filter === "Characters") return item.itemType === "character";
-    if (filter === "Personas") return item.itemType === "persona";
-    if (filter === "Lorebooks") return item.itemType === "lorebook";
-    return false;
+  const entityTab: EntityTab =
+    filter === "Characters" || filter === "Personas" || filter === "Lorebooks" ? filter : "All";
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- allItems derives from these three arrays; depping it would rebuild every render
+  const indexed = useMemo(() => indexItems(allItems), [characters, personas, lorebooks]);
+  const scoped = useMemo(() => scopeByTab(indexed, entityTab), [indexed, entityTab]);
+  // Available keys come from the tab scope, not the search, so typing never prunes a selection.
+  const availableKeys = useMemo(
+    () => new Set(deriveFacets(scoped, scoped).map((f) => f.key)),
+    [scoped],
+  );
+  const searched = useMemo(() => filterByName(scoped, query), [scoped, query]);
+  const filtered = useMemo(
+    () => filterByTags(searched, isTagRowVisible(entityTab) ? selectedTags : []),
+    [searched, entityTab, selectedTags],
+  );
+  const facets = useMemo<Facet[]>(
+    () => deriveFacets(scoped, filtered, selectedTags),
+    [scoped, filtered, selectedTags],
+  );
+  const displayItems = useMemo(
+    () => sortItems(filtered.map((i) => i.item), sort),
+    [filtered, sort],
+  );
+  // Images/Audio delegate to their own panels — never show entity tag controls there.
+  const { chips: tagChipsVisible, clear: clearTagsVisible } = tagControlsVisibility({
+    scopeSupportsTags: filter !== "Images" && filter !== "Audio" && isTagRowVisible(entityTab),
+    facetCount: facets.length,
+    selectionCount: selectedTags.length,
   });
+
+  useEffect(() => {
+    setSelectedTags((current) => {
+      const pruned = pruneSelectedTags(current, availableKeys);
+      return pruned.length === current.length ? current : pruned;
+    });
+  }, [availableKeys]);
+
+  const setLibrarySort = (next: SortOption) => {
+    setSort(next);
+    const params = new URLSearchParams(location.search);
+    if (next === "Alphabetical") params.set("sort", "alphabetical");
+    else params.delete("sort");
+    const search = params.toString();
+    navigate({ pathname: "/library", search: search ? `?${search}` : "" }, { replace: true });
+  };
 
   const setLibraryFilter = (next: FilterOption) => {
     setFilter(next);
@@ -404,6 +463,55 @@ export function LibraryPage() {
           <div ref={setToolbarHost} className="mb-4 hidden min-w-0 lg:flex" />
         )}
 
+        {filter !== "Images" && filter !== "Audio" && (
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            {tagChipsVisible &&
+              facets.map((facet) => {
+                const active = selectedTags.includes(facet.key);
+                return (
+                  <button
+                    key={facet.key}
+                    type="button"
+                    onClick={() =>
+                      setSelectedTags((current) =>
+                        active ? current.filter((k) => k !== facet.key) : [...current, facet.key],
+                      )
+                    }
+                    className={cn(
+                      "flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition",
+                      active
+                        ? "border-accent/40 bg-accent/15 text-accent"
+                        : "border-fg/10 bg-surface-el/40 text-fg/60 hover:bg-fg/5 hover:text-fg",
+                    )}
+                  >
+                    <Tag className="h-3 w-3" />
+                    <span>{facet.display}</span>
+                    <span className="text-fg/40">{facet.count}</span>
+                  </button>
+                );
+              })}
+            {clearTagsVisible && (
+              <button
+                type="button"
+                onClick={() => setSelectedTags([])}
+                className="flex items-center gap-1 rounded-lg border border-fg/10 px-2.5 py-1.5 text-xs font-medium text-fg/50 transition hover:text-fg"
+              >
+                <X className="h-3 w-3" />
+                {t("library.tagFilter.clear")}
+              </button>
+            )}
+            <button
+              type="button"
+              aria-label={t("library.sort.label")}
+              onClick={() => setLibrarySort(sort === "Recent" ? "Alphabetical" : "Recent")}
+              className="ml-auto flex shrink-0 items-center gap-1.5 rounded-xl border border-fg/10 bg-surface-el/40 px-3 py-2 text-sm font-medium text-fg/70 transition hover:bg-fg/5 hover:text-fg"
+            >
+              <ChevronsUpDown className="h-3.5 w-3.5" />
+              <span>{sort === "Recent" ? t("library.sort.recent") : t("library.sort.alphabetical")}</span>
+            </button>
+          </div>
+        )}
+
         {filter === "Images" ? (
           <ImageLibraryPanel
             embedded
@@ -414,7 +522,24 @@ export function LibraryPage() {
           <AudioLibraryPanel />
         ) : loading ? (
           <LibraryGridSkeleton />
-        ) : filteredItems.length === 0 ? (
+        ) : clearTagsVisible && !query.trim() && displayItems.length === 0 ? (
+          <div className="flex flex-1 flex-col items-center justify-center px-6 py-20 text-center">
+            <h3 className={cn(typography.heading.size, typography.heading.weight, "mb-2 text-fg/80")}>
+              {t("library.emptyStates.noTagMatches.title")}
+            </h3>
+            <p className="mb-6 max-w-70 text-sm text-fg/50">
+              {t("library.emptyStates.noTagMatches.description")}
+            </p>
+            <button
+              type="button"
+              onClick={() => setSelectedTags([])}
+              className="flex items-center gap-2 rounded-xl border border-accent/40 bg-accent/20 px-5 py-2.5 text-sm font-medium text-accent/80 transition active:scale-95"
+            >
+              <X className="h-4 w-4" />
+              {t("library.tagFilter.clear")}
+            </button>
+          </div>
+        ) : displayItems.length === 0 ? (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -520,7 +645,7 @@ export function LibraryPage() {
           </motion.div>
         ) : (
           <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 pb-24">
-            {filteredItems.map((item) => (
+            {displayItems.map((item) => (
               <LibraryCard
                 key={`${item.itemType}-${item.id}`}
                 item={item}

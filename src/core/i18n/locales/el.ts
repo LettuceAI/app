@@ -3153,6 +3153,9 @@ export const elMessages: DeepPartialMessageTree<LocaleMessages> = {
       generateEntryAria: "Δημιουργία εγγραφής lorebook",
       exportLorebookAria: "Εξαγωγή lorebook",
       regularExpression: "Χρήση κανονικών εκφράσεων",
+      metadataTitle: "Επεξεργασία Βιβλίου Γνώσης",
+      tagsLabel: "Ετικέτες",
+      tagsPlaceholder: "π.χ. φαντασία, sci-fi κ.λπ. ...",
     },
     templates: {
       characterNotFound: "Ο χαρακτήρας δεν βρέθηκε",
@@ -5332,6 +5335,9 @@ export const elMessages: DeepPartialMessageTree<LocaleMessages> = {
       setAsDefault: "Ορισμός ως Προεπιλογή",
       defaultDescription: "Χρήση αυτής της περσόνας σε όλες τις νέες συνομιλίες",
       exportButton: "Εξαγωγή Περσόνας",
+      tagsLabel: "Ετικέτες",
+      tagsPlaceholder: "π.χ. φαντασία, sci-fi κ.λπ. ...",
+      tagsHint: "Διαχωρίστε τις ετικέτες με κόμματα.",
     },
     designReferences: {
       title: "Σχεδιαστικές αναφορές",
@@ -6851,6 +6857,10 @@ export const elMessages: DeepPartialMessageTree<LocaleMessages> = {
         title: "Δεν υπάρχουν βιβλία γνώσης ακόμα",
         description: "Τα βιβλία γνώσης δημιουργούνται μέσα από τις ρυθμίσεις ενός χαρακτήρα",
       },
+      noTagMatches: {
+        title: "Καμία αντιστοιχία",
+        description: "Κανένα στοιχείο δεν ταιριάζει με τις επιλεγμένες ετικέτες.",
+      },
     },
     actions: {
       startChat: "Έναρξη Συνομιλίας",
@@ -6970,6 +6980,14 @@ export const elMessages: DeepPartialMessageTree<LocaleMessages> = {
         editLorebook: "Επεξεργασία βιβλίου γνώσης",
         exportLorebook: "Εξαγωγή βιβλίου γνώσης",
       },
+    },
+    sort: {
+      label: "Ταξινόμηση",
+      recent: "Πρόσφατα",
+      alphabetical: "Α–Ω",
+    },
+    tagFilter: {
+      clear: "Καθαρισμός ετικετών",
     },
   },
   onboarding: {

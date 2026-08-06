@@ -3153,6 +3153,9 @@ export const esMessages: DeepPartialMessageTree<LocaleMessages> = {
       generateEntryAria: "Generar entrada de lorebook",
       exportLorebookAria: "Exportar lorebook",
       regularExpression: "Usar expresiones regulares",
+      metadataTitle: "Editar libro de lore",
+      tagsLabel: "Etiquetas",
+      tagsPlaceholder: "p. ej. fantasía, ciencia ficción, etc...",
     },
     templates: {
       characterNotFound: "Personaje no encontrado",
@@ -5332,6 +5335,9 @@ export const esMessages: DeepPartialMessageTree<LocaleMessages> = {
       setAsDefault: "Establecer como predeterminada",
       defaultDescription: "Usar esta persona para todas las conversaciones nuevas",
       exportButton: "Exportar persona",
+      tagsLabel: "Etiquetas",
+      tagsPlaceholder: "p. ej. fantasía, ciencia ficción, etc...",
+      tagsHint: "Separa las etiquetas con comas.",
     },
     designReferences: {
       title: "Referencias de diseño",
@@ -6851,6 +6857,10 @@ export const esMessages: DeepPartialMessageTree<LocaleMessages> = {
         title: "No hay libros de lore aún",
         description: "Los libros de lore se crean desde los ajustes de un personaje",
       },
+      noTagMatches: {
+        title: "Sin coincidencias",
+        description: "Ningún elemento coincide con las etiquetas seleccionadas.",
+      },
     },
     actions: {
       startChat: "Iniciar chat",
@@ -6970,6 +6980,14 @@ export const esMessages: DeepPartialMessageTree<LocaleMessages> = {
         editLorebook: "Editar lorebook",
         exportLorebook: "Exportar lorebook",
       },
+    },
+    sort: {
+      label: "Ordenar",
+      recent: "Reciente",
+      alphabetical: "A–Z",
+    },
+    tagFilter: {
+      clear: "Borrar etiquetas",
     },
   },
   onboarding: {
