@@ -1,0 +1,54 @@
+[package]
+name = "lettuce-app"
+description = "LettuceAI composition root and application workflows."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+lettuce-types.workspace = true
+lettuce-contracts.workspace = true
+lettuce-settings.workspace = true
+lettuce-secrets.workspace = true
+lettuce-jobs.workspace = true
+lettuce-platform.workspace = true
+lettuce-filesystem.workspace = true
+lettuce-network.workspace = true
+lettuce-downloads.workspace = true
+lettuce-observability.workspace = true
+lettuce-database.workspace = true
+lettuce-media.workspace = true
+lettuce-characters.workspace = true
+lettuce-personas.workspace = true
+lettuce-groups.workspace = true
+lettuce-conversations.workspace = true
+lettuce-memory.workspace = true
+lettuce-companions.workspace = true
+lettuce-lorebooks.workspace = true
+lettuce-prompts.workspace = true
+lettuce-safety.workspace = true
+lettuce-models.workspace = true
+lettuce-inference.workspace = true
+lettuce-tools.workspace = true
+lettuce-providers.workspace = true
+lettuce-local-llm.workspace = true
+lettuce-model-hub.workspace = true
+lettuce-embeddings.workspace = true
+lettuce-image-generation.workspace = true
+lettuce-sd-runtime.workspace = true
+lettuce-asr.workspace = true
+lettuce-tts.workspace = true
+lettuce-creation.workspace = true
+lettuce-discovery.workspace = true
+lettuce-transfer.workspace = true
+lettuce-backup.workspace = true
+lettuce-sync.workspace = true
+lettuce-usage.workspace = true
+lettuce-host-api.workspace = true

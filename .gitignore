@@ -1,56 +1,34 @@
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
+# Rust
+/target/
 
-node_modules
-dist
-dist-ssr
+# JavaScript
+node_modules/
+dist/
+coverage/
+*.log
 *.local
 
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
+# Local tooling and secrets
+.idea/
 .DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
-
-# Ignore flake.lock to not force a pin on a specific nixpkgs version
-flake.lock
-
-src-tauri/gen/android/keystore.properties
-target/rust-analyzer/flycheck0/stderr
-target/rust-analyzer/flycheck0/stdout
-STORAGE_MIGRATION_NOTES.md
-TOOL_SUPPORT.md
-usage-2025-12-06.csv
-.github/copilot-instructions.md
-src-tauri/gen/android/app/src/main/assets/feedback_sounds/fail.mp3
-src-tauri/gen/android/app/src/main/assets/feedback_sounds/send.mp3
-src-tauri/gen/android/app/src/main/assets/feedback_sounds/success.mp3
 .secrets
 .act/
 .tmp/
-src-tauri/onnxruntime-ios/
-src-tauri/gen/android/app/src/main/assets/onnxruntime/libonnxruntime.so
-docs/memory-cycle-workflow.svg
-docs/chatpkg-format.md
-docs/sync-current-flow.mmd
-docs/sync-current-flow.svg
-docs/sync-current-architecture.svg
-docs/sync-current-architecture.mmd
-docs/usc-format.md
-docs/sync-architecture-report.md
-docs/sync-current-system.md
-docs/sync-old-architecture.mmd
-docs/sync-old-architecture.svg
-src-tauri/target-check/
-docs/uec-2-character-fields.md
+.notes/
+
+# The legacy tree keeps its own historical ignore rules. Its existing local
+# build output may remain on developer machines but must never be committed.
+/old-code/src-tauri/target/
+/old-code/src-tauri/target-check/
+/old-code/src-tauri/onnxruntime-ios/
+/old-code/node_modules/
+/old-code/dist/
+/README.md
+/architecture/
+/docs/
+/frontend/*.md
+/apps/desktop/*.md
+/crates/*/PLAN.md
+/old-code/REFERENCE_ONLY.md
+/fixtures/legacy-import/*.md
+.secrets

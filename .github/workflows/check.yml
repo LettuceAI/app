@@ -1,0 +1,29 @@
+name: Check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy,rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: Check architecture
+        run: bash scripts/check-architecture.sh
+      - name: Check formatting
+        run: cargo fmt --all --check
+      - name: Check workspace
+        run: cargo check --workspace --all-targets
+      - name: Test workspace
+        run: cargo test --workspace
+      - name: Lint workspace
+        run: cargo clippy --workspace --all-targets -- -D warnings
