@@ -25,6 +25,57 @@ const MIGRATION_1: Migration = Migration {
     sql: include_str!("../migrations/0001_foundation.sql"),
 };
 
+const PROVIDER_CONFIG_FORMAT_VERSION: u32 = 1;
+const MODEL_PROFILE_CONFIG_FORMAT_VERSION: u32 = 1;
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct VersionedJson<T> {
+    format_version: u32,
+    value: T,
+}
+
+fn encode_versioned<T: serde::Serialize>(
+    value: &T,
+    format_version: u32,
+) -> Result<String, serde_json::Error> {
+    serde_json::to_string(&VersionedJson {
+        format_version,
+        value,
+    })
+}
+
+fn decode_versioned<T: serde::de::DeserializeOwned>(
+    payload: &str,
+    expected_format_version: u32,
+) -> Result<T, ()> {
+    let document = serde_json::from_str::<VersionedJson<T>>(payload).map_err(|_| ())?;
+    if document.format_version != expected_format_version {
+        return Err(());
+    }
+    Ok(document.value)
+}
+
+fn decode_provider_config(payload: &str) -> Result<ProviderConfig, ()> {
+    let value: serde_json::Value = decode_versioned(payload, PROVIDER_CONFIG_FORMAT_VERSION)?;
+    let config = serde_json::from_value::<ProviderConfig>(value.clone()).map_err(|_| ())?;
+    let allowed_fields = match config {
+        ProviderConfig::Standard => &["kind"][..],
+        ProviderConfig::Custom { .. } => {
+            &["kind", "chat_path", "models_path", "streaming", "auth"][..]
+        }
+    };
+    let object = value.as_object().ok_or(())?;
+    if object
+        .keys()
+        .all(|field| allowed_fields.contains(&field.as_str()))
+    {
+        Ok(config)
+    } else {
+        Err(())
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum DatabaseError {
     #[error("database operation failed")]
@@ -304,8 +355,7 @@ fn provider_from_row(row: &Row<'_>) -> rusqlite::Result<ProviderAccount> {
             .transpose()?,
         secret_headers: serde_json::from_str::<Vec<SecretHeader>>(&secret_headers)
             .map_err(|_| rusqlite::Error::InvalidQuery)?,
-        config: serde_json::from_str::<ProviderConfig>(&config)
-            .map_err(|_| rusqlite::Error::InvalidQuery)?,
+        config: decode_provider_config(&config).map_err(|_| rusqlite::Error::InvalidQuery)?,
         revision: to_revision(row.get(9)?)?,
         created_at: TimestampMillis::new(row.get(10)?),
         updated_at: TimestampMillis::new(row.get(11)?),
@@ -352,6 +402,23 @@ fn validate_profile(profile: &ModelProfile) -> Result<(), ModelRepositoryError> 
     Ok(())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DeleteFailurePoint {
+    None,
+    AfterProfilesDelete,
+    AfterProfileDelete,
+}
+
+fn fail_delete_at(
+    failure_point: DeleteFailurePoint,
+    checkpoint: DeleteFailurePoint,
+) -> Result<(), ModelRepositoryError> {
+    if failure_point == checkpoint {
+        return Err(ModelRepositoryError::Storage);
+    }
+    Ok(())
+}
+
 impl ProviderAccountRepository for Database {
     fn upsert(
         &self,
@@ -361,7 +428,7 @@ impl ProviderAccountRepository for Database {
         validate_account(&account)?;
         let headers = serde_json::to_string(&account.secret_headers)
             .map_err(|_| ModelRepositoryError::InvalidData)?;
-        let config = serde_json::to_string(&account.config)
+        let config = encode_versioned(&account.config, PROVIDER_CONFIG_FORMAT_VERSION)
             .map_err(|_| ModelRepositoryError::InvalidData)?;
         let connection = self
             .connection()
@@ -446,6 +513,16 @@ impl ProviderAccountRepository for Database {
     }
 
     fn delete_with_profiles(&self, id: ProviderAccountId) -> Result<(), ModelRepositoryError> {
+        self.delete_with_profiles_inner(id, DeleteFailurePoint::None)
+    }
+}
+
+impl Database {
+    fn delete_with_profiles_inner(
+        &self,
+        id: ProviderAccountId,
+        failure_point: DeleteFailurePoint,
+    ) -> Result<(), ModelRepositoryError> {
         let mut connection = self
             .connection()
             .map_err(|_| ModelRepositoryError::Storage)?;
@@ -476,6 +553,7 @@ impl ProviderAccountRepository for Database {
                 [id.to_string()],
             )
             .map_err(model_error)?;
+        fail_delete_at(failure_point, DeleteFailurePoint::AfterProfilesDelete)?;
         transaction
             .execute(
                 "DELETE FROM provider_accounts WHERE id=?1",
@@ -494,7 +572,8 @@ fn model_from_row(row: &Row<'_>) -> rusqlite::Result<ModelProfile> {
         external_model_id: row.get(2)?,
         display_name: row.get(3)?,
         kind: parse_model_kind(&row.get::<_, String>(4)?)?,
-        config: serde_json::from_str(&config).map_err(|_| rusqlite::Error::InvalidQuery)?,
+        config: decode_versioned(&config, MODEL_PROFILE_CONFIG_FORMAT_VERSION)
+            .map_err(|_| rusqlite::Error::InvalidQuery)?,
         revision: to_revision(row.get(6)?)?,
         created_at: TimestampMillis::new(row.get(7)?),
         updated_at: TimestampMillis::new(row.get(8)?),
@@ -508,7 +587,7 @@ impl ModelProfileRepository for Database {
         expected_revision: Option<Revision>,
     ) -> Result<ModelProfile, ModelRepositoryError> {
         validate_profile(&profile)?;
-        let config = serde_json::to_string(&profile.config)
+        let config = encode_versioned(&profile.config, MODEL_PROFILE_CONFIG_FORMAT_VERSION)
             .map_err(|_| ModelRepositoryError::InvalidData)?;
         let connection = self
             .connection()
@@ -554,6 +633,16 @@ impl ModelProfileRepository for Database {
     }
 
     fn delete_and_clear_default(&self, id: ModelProfileId) -> Result<(), ModelRepositoryError> {
+        self.delete_and_clear_default_inner(id, DeleteFailurePoint::None)
+    }
+}
+
+impl Database {
+    fn delete_and_clear_default_inner(
+        &self,
+        id: ModelProfileId,
+        failure_point: DeleteFailurePoint,
+    ) -> Result<(), ModelRepositoryError> {
         let mut connection = self
             .connection()
             .map_err(|_| ModelRepositoryError::Storage)?;
@@ -571,6 +660,7 @@ impl ModelProfileRepository for Database {
         if changed == 0 {
             return Err(ModelRepositoryError::NotFound);
         }
+        fail_delete_at(failure_point, DeleteFailurePoint::AfterProfileDelete)?;
         transaction.commit().map_err(model_error)
     }
 }
@@ -672,13 +762,14 @@ mod tests {
         ProviderProtocol, SecretHeader,
     };
     use lettuce_settings::{
-        GlobalSettingsStore, HeaderName, SecretOwnerId, SecretPurpose, SecretRef,
+        GlobalSettingsStore, GlobalSettingsStoreError, HeaderName, SecretOwnerId, SecretPurpose,
+        SecretRef,
     };
     use lettuce_types::{
         ContentHash, MediaBlobId, ModelProfileId, ProviderAccountId, Revision, TimestampMillis,
     };
 
-    use super::{Database, DatabaseError, Migration, apply_migrations};
+    use super::{Database, DatabaseError, DeleteFailurePoint, Migration, apply_migrations};
 
     fn provider() -> ProviderAccount {
         let id = ProviderAccountId::new();
@@ -824,6 +915,130 @@ mod tests {
     }
 
     #[test]
+    fn provider_and_profile_config_documents_are_versioned() {
+        let database = Database::open_in_memory().expect("open database");
+        let account =
+            ProviderAccountRepository::upsert(&database, provider(), None).expect("insert account");
+        let profile = ModelProfileRepository::upsert(&database, profile(account.id), None)
+            .expect("insert profile");
+        let connection = database.connection().expect("database lock");
+        let provider_config: String = connection
+            .query_row(
+                "SELECT config_json FROM provider_accounts WHERE id=?1",
+                [account.id.to_string()],
+                |row| row.get(0),
+            )
+            .expect("provider config");
+        let model_config: String = connection
+            .query_row(
+                "SELECT config_json FROM model_profiles WHERE id=?1",
+                [profile.id.to_string()],
+                |row| row.get(0),
+            )
+            .expect("model config");
+        let provider_document: serde_json::Value =
+            serde_json::from_str(&provider_config).expect("provider document");
+        let model_document: serde_json::Value =
+            serde_json::from_str(&model_config).expect("model document");
+        assert_eq!(
+            provider_document.get("format_version"),
+            Some(&serde_json::Value::from(1))
+        );
+        assert_eq!(
+            model_document.get("format_version"),
+            Some(&serde_json::Value::from(1))
+        );
+    }
+
+    #[test]
+    fn provider_config_corruption_is_rejected() {
+        let database = Database::open_in_memory().expect("open database");
+        let account =
+            ProviderAccountRepository::upsert(&database, provider(), None).expect("insert account");
+        let corrupt_payloads = [
+            r#"{"value":{"kind":"standard"}}"#,
+            r#"{"format_version":99,"value":{"kind":"standard"}}"#,
+            r#"{"format_version":1,"value":{"kind":"standard","extra":true}}"#,
+            r#"{"format_version":1,"value":{"kind":"standard"},"extra":true}"#,
+            "not json",
+        ];
+        for payload in corrupt_payloads {
+            let connection = database.connection().expect("database lock");
+            connection
+                .execute(
+                    "UPDATE provider_accounts SET config_json=?1 WHERE id=?2",
+                    rusqlite::params![payload, account.id.to_string()],
+                )
+                .expect("corrupt provider config");
+            drop(connection);
+            assert_eq!(
+                ProviderAccountRepository::get(&database, account.id),
+                Err(ModelRepositoryError::InvalidData)
+            );
+        }
+    }
+
+    #[test]
+    fn model_profile_config_corruption_is_rejected() {
+        let database = Database::open_in_memory().expect("open database");
+        let account =
+            ProviderAccountRepository::upsert(&database, provider(), None).expect("insert account");
+        let model = ModelProfileRepository::upsert(&database, profile(account.id), None)
+            .expect("insert profile");
+        let corrupt_payloads = [
+            r#"{"value":{"input_modalities":["text"],"output_modalities":["text"]}}"#,
+            r#"{"format_version":99,"value":{"input_modalities":["text"],"output_modalities":["text"]}}"#,
+            r#"{"format_version":1,"value":{"input_modalities":["text"],"output_modalities":["text"],"extra":true}}"#,
+            r#"{"format_version":1,"value":{"input_modalities":["text"],"output_modalities":["text"]},"extra":true}"#,
+            "not json",
+        ];
+        for payload in corrupt_payloads {
+            let connection = database.connection().expect("database lock");
+            connection
+                .execute(
+                    "UPDATE model_profiles SET config_json=?1 WHERE id=?2",
+                    rusqlite::params![payload, model.id.to_string()],
+                )
+                .expect("corrupt model config");
+            drop(connection);
+            assert_eq!(
+                ModelProfileRepository::get(&database, model.id),
+                Err(ModelRepositoryError::InvalidData)
+            );
+        }
+    }
+
+    #[test]
+    fn global_settings_corruption_is_rejected() {
+        let database = Database::open_in_memory().expect("open database");
+        let corrupt_documents = [
+            (
+                99_i64,
+                r#"{"pure_mode":"standard","analytics_enabled":true,"update_checks_enabled":true}"#,
+            ),
+            (
+                1,
+                r#"{"pure_mode":"standard","analytics_enabled":true,"update_checks_enabled":true,"extra":true}"#,
+            ),
+            (1, "not json"),
+        ];
+        for (format_version, payload) in corrupt_documents {
+            let connection = database.connection().expect("database lock");
+            connection
+                .execute(
+                    "UPDATE app_settings SET format_version=?1, payload_json=?2 WHERE id=1",
+                    rusqlite::params![format_version, payload],
+                )
+                .expect("corrupt global settings");
+            drop(connection);
+            assert_eq!(
+                GlobalSettingsStore::load(&database),
+                Err(GlobalSettingsStoreError::InvalidData)
+            );
+        }
+    }
+
+    #[test]
     fn missing_account_and_invalid_domain_values_are_distinct() {
         let database = Database::open_in_memory().expect("open database");
         let missing = ProviderAccountId::new();
@@ -878,6 +1093,74 @@ mod tests {
                 .default_model_profile_id,
             None
         );
+    }
+
+    #[test]
+    fn account_graph_delete_rolls_back_after_profile_delete_failure() {
+        let database = Database::open_in_memory().expect("open database");
+        let account =
+            ProviderAccountRepository::upsert(&database, provider(), None).expect("insert account");
+        let profile = ModelProfileRepository::upsert(&database, profile(account.id), None)
+            .expect("insert profile");
+        let settings = GlobalSettingsStore::load(&database).expect("load settings");
+        GlobalSettingsStore::save(
+            &database,
+            settings.settings,
+            Some(profile.id),
+            settings.revision,
+        )
+        .expect("select default");
+        let settings_before = GlobalSettingsStore::load(&database).expect("load settings");
+
+        assert_eq!(
+            database
+                .delete_with_profiles_inner(account.id, DeleteFailurePoint::AfterProfilesDelete,),
+            Err(ModelRepositoryError::Storage)
+        );
+        assert_eq!(
+            ProviderAccountRepository::get(&database, account.id),
+            Ok(Some(account))
+        );
+        assert_eq!(
+            ModelProfileRepository::get(&database, profile.id),
+            Ok(Some(profile))
+        );
+        assert_eq!(GlobalSettingsStore::load(&database), Ok(settings_before));
+    }
+
+    #[test]
+    fn profile_delete_rolls_back_after_profile_delete_failure() {
+        let database = Database::open_in_memory().expect("open database");
+        let account =
+            ProviderAccountRepository::upsert(&database, provider(), None).expect("insert account");
+        let profile = ModelProfileRepository::upsert(&database, profile(account.id), None)
+            .expect("insert profile");
+        let settings = GlobalSettingsStore::load(&database).expect("load settings");
+        GlobalSettingsStore::save(
+            &database,
+            settings.settings,
+            Some(profile.id),
+            settings.revision,
+        )
+        .expect("select default");
+        let settings_before = GlobalSettingsStore::load(&database).expect("load settings");
+
+        assert_eq!(
+            database.delete_and_clear_default_inner(
+                profile.id,
+                DeleteFailurePoint::AfterProfileDelete,
+            ),
+            Err(ModelRepositoryError::Storage)
+        );
+        assert_eq!(
+            ProviderAccountRepository::get(&database, account.id),
+            Ok(Some(account))
+        );
+        assert_eq!(
+            ModelProfileRepository::get(&database, profile.id),
+            Ok(Some(profile))
+        );
+        assert_eq!(GlobalSettingsStore::load(&database), Ok(settings_before));
     }
 
     #[test]

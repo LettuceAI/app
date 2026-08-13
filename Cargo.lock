@@ -311,6 +311,7 @@ dependencies = [
  "lettuce-settings",
  "lettuce-types",
  "rusqlite",
+ "serde",
  "serde_json",
  "thiserror",
  "uuid",
