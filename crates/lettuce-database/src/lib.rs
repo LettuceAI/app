@@ -3,6 +3,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 mod character_adapter;
+mod persona_adapter;
 
 use std::{path::Path, str::FromStr, sync::Mutex, time::Duration};
 
@@ -38,6 +39,11 @@ const MIGRATION_2: Migration = Migration {
 const MIGRATION_3: Migration = Migration {
     id: 3,
     sql: include_str!("../migrations/0003_characters.sql"),
+};
+
+const MIGRATION_4: Migration = Migration {
+    id: 4,
+    sql: include_str!("../migrations/0004_personas.sql"),
 };
 
 const PROVIDER_CONFIG_FORMAT_VERSION: u32 = 1;
@@ -115,7 +121,10 @@ impl Database {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, DatabaseError> {
         let mut connection = Connection::open(path)?;
         configure(&connection, true)?;
-        apply_migrations(&mut connection, &[MIGRATION_1, MIGRATION_2, MIGRATION_3])?;
+        apply_migrations(
+            &mut connection,
+            &[MIGRATION_1, MIGRATION_2, MIGRATION_3, MIGRATION_4],
+        )?;
         initialize_settings(&connection)?;
         Ok(Self {
             connection: Mutex::new(connection),
@@ -125,7 +134,10 @@ impl Database {
     pub fn open_in_memory() -> Result<Self, DatabaseError> {
         let mut connection = Connection::open_in_memory()?;
         configure(&connection, false)?;
-        apply_migrations(&mut connection, &[MIGRATION_1, MIGRATION_2, MIGRATION_3])?;
+        apply_migrations(
+            &mut connection,
+            &[MIGRATION_1, MIGRATION_2, MIGRATION_3, MIGRATION_4],
+        )?;
         initialize_settings(&connection)?;
         Ok(Self {
             connection: Mutex::new(connection),
@@ -1400,7 +1412,12 @@ mod tests {
         let mut connection = database.connection().expect("database lock");
         apply_migrations(
             &mut connection,
-            &[super::MIGRATION_1, super::MIGRATION_2, super::MIGRATION_3],
+            &[
+                super::MIGRATION_1,
+                super::MIGRATION_2,
+                super::MIGRATION_3,
+                super::MIGRATION_4,
+            ],
         )
         .expect("repeat migration");
         let count: u32 = connection
@@ -1408,7 +1425,7 @@ mod tests {
                 row.get(0)
             })
             .expect("migration count");
-        assert_eq!(count, 3);
+        assert_eq!(count, 4);
 
         let changed = Migration {
             id: 1,
@@ -1433,6 +1450,14 @@ mod tests {
         assert!(matches!(
             apply_migrations(&mut connection, &[changed]),
             Err(DatabaseError::MigrationChecksum { id: 3 })
+        ));
+        let changed = Migration {
+            id: 4,
+            sql: "SELECT 4;",
+        };
+        assert!(matches!(
+            apply_migrations(&mut connection, &[changed]),
+            Err(DatabaseError::MigrationChecksum { id: 4 })
         ));
     }
 
@@ -2273,7 +2298,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            3
+            4
         );
         drop(connection);
         drop(database);
@@ -2281,14 +2306,17 @@ mod tests {
     }
 
     #[test]
-    fn concurrent_open_upgrades_a_pre_m3_file_once() {
+    fn concurrent_open_upgrades_a_pre_m4_file_once() {
         let path =
             std::env::temp_dir().join(format!("lettuce-pre-m3-race-{}.db", MediaBlobId::new()));
         {
-            let mut connection = rusqlite::Connection::open(&path).expect("open pre-M3 file");
-            super::configure(&connection, true).expect("configure pre-M3 file");
-            apply_migrations(&mut connection, &[super::MIGRATION_1, super::MIGRATION_2])
-                .expect("create pre-M3 schema");
+            let mut connection = rusqlite::Connection::open(&path).expect("open pre-M4 file");
+            super::configure(&connection, true).expect("configure pre-M4 file");
+            apply_migrations(
+                &mut connection,
+                &[super::MIGRATION_1, super::MIGRATION_2, super::MIGRATION_3],
+            )
+            .expect("create pre-M4 schema");
         }
 
         let barrier = Arc::new(Barrier::new(3));
@@ -2315,7 +2343,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            3
+            4
         );
         drop(connection);
         drop(database);
@@ -2447,6 +2475,9 @@ mod tests {
                 "media_assets",
                 "media_blobs",
                 "model_profiles",
+                "persona_defaults",
+                "persona_media",
+                "personas",
                 "provider_accounts",
                 "scene_assets",
                 "scene_variants",

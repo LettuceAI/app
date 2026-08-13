@@ -61,5 +61,6 @@ tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 uuid = { version = "1", features = ["serde", "v4"] }
+unicode-normalization = "0.1"
 zeroize = "1"
 rusqlite = { version = "0.40.2", default-features = false, features = ["bundled", "backup"] }
