@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use lettuce_types::{AssetId, CharacterId};
 use serde::{Deserialize, Serialize};
 
@@ -64,6 +66,17 @@ impl ChatWidgetSlots {
             node.validate()?;
         }
         Ok(())
+    }
+
+    /// Returns logical asset references in stable ID order. Unresolved import
+    /// tokens are intentionally excluded because they are not asset IDs.
+    #[must_use]
+    pub fn referenced_asset_ids(&self) -> BTreeSet<AssetId> {
+        self.left
+            .iter()
+            .chain(self.right.iter())
+            .flat_map(WidgetNode::referenced_asset_ids)
+            .collect()
     }
 }
 
@@ -260,6 +273,25 @@ pub enum DividerStyle {
 }
 
 impl WidgetNode {
+    /// Returns this node's logical asset references and those of descendants.
+    #[must_use]
+    pub fn referenced_asset_ids(&self) -> BTreeSet<AssetId> {
+        let mut asset_ids = BTreeSet::new();
+        if let Self::Image {
+            source: WidgetImageSource::LogicalAsset { asset_id },
+            ..
+        } = self
+        {
+            asset_ids.insert(*asset_id);
+        }
+        if let Self::Box { children, .. } = self {
+            for child in children {
+                asset_ids.extend(child.referenced_asset_ids());
+            }
+        }
+        asset_ids
+    }
+
     pub fn validate(&self) -> Result<(), ValidationError> {
         self.validate_at_depth(0)
     }
@@ -730,6 +762,12 @@ impl Default for ChatAppearanceV1 {
 }
 
 impl ChatAppearanceV1 {
+    /// Returns nested chat-widget logical asset references in stable ID order.
+    #[must_use]
+    pub fn referenced_asset_ids(&self) -> BTreeSet<AssetId> {
+        self.chat_widget_slots.referenced_asset_ids()
+    }
+
     pub fn validate(&self) -> Result<(), ValidationError> {
         if self.format_version != 1 {
             return Err(ValidationError::UnsupportedVersion {
@@ -818,6 +856,13 @@ impl Default for CharacterPresentationV1 {
 }
 
 impl CharacterPresentationV1 {
+    /// Returns logical presentation asset references, excluding unresolved
+    /// legacy widget tokens.
+    #[must_use]
+    pub fn referenced_asset_ids(&self) -> BTreeSet<AssetId> {
+        self.chat_appearance.referenced_asset_ids()
+    }
+
     pub fn validate(&self) -> Result<(), ValidationError> {
         if self.format_version != 1 {
             return Err(ValidationError::UnsupportedVersion {
@@ -843,7 +888,11 @@ impl CharacterPresentationV1 {
 
 #[cfg(test)]
 mod tests {
-    use super::{CharacterPresentationV1, ChatAppearanceV1, Crop, WidgetNode};
+    use super::{
+        CharacterPresentationV1, ChatAppearanceV1, Crop, WidgetImageShape, WidgetImageSource,
+        WidgetNode,
+    };
+    use lettuce_types::AssetId;
 
     #[test]
     fn crop_rejects_non_positive_or_non_finite_scale() {
@@ -878,5 +927,66 @@ mod tests {
             children: Vec::new(),
         };
         assert!(node.validate().is_ok());
+    }
+
+    #[test]
+    fn referenced_asset_ids_are_recursive_unique_and_exclude_legacy_tokens() {
+        let first = AssetId::new();
+        let second = AssetId::new();
+        let image = |id: &str, source| WidgetNode::Image {
+            id: id.into(),
+            design: None,
+            title: None,
+            description: None,
+            source,
+            shape: Some(WidgetImageShape::Square),
+        };
+        let nested = WidgetNode::Box {
+            id: "box".into(),
+            design: None,
+            variant: None,
+            title: None,
+            description: None,
+            children: vec![
+                image("first", WidgetImageSource::LogicalAsset { asset_id: first }),
+                WidgetNode::Box {
+                    id: "inner".into(),
+                    design: None,
+                    variant: None,
+                    title: None,
+                    description: None,
+                    children: vec![
+                        image(
+                            "duplicate",
+                            WidgetImageSource::LogicalAsset { asset_id: first },
+                        ),
+                        image(
+                            "second",
+                            WidgetImageSource::LogicalAsset { asset_id: second },
+                        ),
+                        image(
+                            "legacy",
+                            WidgetImageSource::UnresolvedLegacy {
+                                token: "old-avatar".into(),
+                            },
+                        ),
+                    ],
+                },
+            ],
+        };
+        let mut appearance = ChatAppearanceV1::default();
+        appearance.chat_widget_slots.left = vec![nested];
+        appearance.chat_widget_slots.right = vec![image(
+            "right-duplicate",
+            WidgetImageSource::LogicalAsset { asset_id: second },
+        )];
+        let ids = CharacterPresentationV1 {
+            chat_appearance: appearance,
+            ..CharacterPresentationV1::default()
+        }
+        .referenced_asset_ids();
+        assert_eq!(ids.len(), 2);
+        assert!(ids.contains(&first));
+        assert!(ids.contains(&second));
     }
 }

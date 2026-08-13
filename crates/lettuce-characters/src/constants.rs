@@ -1,9 +1,26 @@
+use lettuce_types::{Revision, TimestampMillis};
+
 use crate::ValidationError;
 
 pub(crate) const MAX_NAME_SCALARS: usize = 256;
 pub(crate) const MAX_TEXT_BYTES: usize = 1024 * 1024;
 pub(crate) const MAX_TAGS_OR_SOURCES: usize = 256;
 pub(crate) const MAX_COLLECTION_ITEMS: usize = 10_000;
+
+pub(crate) fn validate_revision_timestamps(
+    field: &'static str,
+    revision: Revision,
+    created_at: TimestampMillis,
+    updated_at: TimestampMillis,
+) -> Result<(), ValidationError> {
+    if revision.get() == 0 {
+        return Err(ValidationError::ZeroRevision);
+    }
+    if created_at > updated_at {
+        return Err(ValidationError::InvalidTimestampOrder { field });
+    }
+    Ok(())
+}
 
 pub(crate) fn validate_non_blank(field: &'static str, value: &str) -> Result<(), ValidationError> {
     if value.trim().is_empty() {

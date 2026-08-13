@@ -394,6 +394,7 @@ dependencies = [
  "lettuce-settings",
  "lettuce-types",
  "serde",
+ "serde_json",
  "thiserror",
 ]
 

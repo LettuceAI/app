@@ -18,3 +18,9 @@ Custom header values are never serializable strings; each is a `SecretRef`.
 provider-label, sole-account, or first-account fallback. Repository ports are
 synchronous because the SQLite adapter is synchronous; application composition
 places calls on its database worker.
+
+Model deletion dependencies use typed `ModelDependencyReference` values (for
+example, `CharacterDefault`) and surface through `ModelRepositoryError::InUse`.
+The current foundation adapter has no character table yet, so existing app
+default clearing behavior remains unchanged; future character persistence can
+report its references without coupling this crate to the characters domain.

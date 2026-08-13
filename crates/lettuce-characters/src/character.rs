@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::constants::{
     MAX_COLLECTION_ITEMS, MAX_TAGS_OR_SOURCES, validate_collection, validate_name,
-    validate_non_blank, validate_scalar_limit, validate_text,
+    validate_non_blank, validate_revision_timestamps, validate_scalar_limit, validate_text,
 };
 use crate::presentation::CharacterPresentationV1;
 use crate::{InteractionMode, LifecycleStatus, MemoryPolicy, ValidationError};
@@ -221,6 +221,14 @@ impl CharacterMedia {
             });
         }
         let mut design_asset_ids = HashSet::new();
+        let mut all_asset_ids = HashSet::new();
+        for link in &self.links {
+            if !all_asset_ids.insert(link.asset_id) {
+                return Err(ValidationError::Duplicate {
+                    field: "character.media.asset_ids",
+                });
+            }
+        }
         if design
             .iter()
             .any(|link| !design_asset_ids.insert(link.asset_id))
@@ -282,6 +290,12 @@ impl Character {
     }
 
     pub fn validate(&self) -> Result<(), ValidationError> {
+        validate_revision_timestamps(
+            "character.timestamps",
+            self.revision,
+            self.created_at,
+            self.updated_at,
+        )?;
         self.profile.validate()?;
         self.provenance.validate()?;
         self.defaults.validate()?;
@@ -306,8 +320,9 @@ mod tests {
         Character, CharacterDefaults, CharacterMedia, CharacterMediaLink, CharacterMediaSlot,
         CharacterProfile, CharacterProvenance, ImageRecommendation,
     };
+    use crate::ValidationError;
     use crate::presentation::CharacterPresentationV1;
-    use lettuce_types::{AssetId, CharacterId, ModelArtifactId, TimestampMillis};
+    use lettuce_types::{AssetId, CharacterId, ModelArtifactId, Revision, TimestampMillis};
 
     fn profile() -> CharacterProfile {
         CharacterProfile {
@@ -375,5 +390,50 @@ mod tests {
             ],
         };
         assert!(media.validate().is_err());
+    }
+
+    #[test]
+    fn media_asset_ids_are_unique_across_all_slots() {
+        let asset_id = AssetId::new();
+        let media = CharacterMedia {
+            links: vec![
+                CharacterMediaLink {
+                    asset_id,
+                    slot: CharacterMediaSlot::AvatarOriginal,
+                    ordinal: 0,
+                },
+                CharacterMediaLink {
+                    asset_id,
+                    slot: CharacterMediaSlot::DesignReference,
+                    ordinal: 0,
+                },
+            ],
+        };
+        assert!(media.validate().is_err());
+    }
+
+    #[test]
+    fn authored_root_rejects_zero_revision_and_reversed_timestamps() {
+        let mut character = Character::new(
+            CharacterId::new(),
+            profile(),
+            CharacterProvenance::default(),
+            CharacterDefaults::default(),
+            CharacterPresentationV1::default(),
+            None,
+            CharacterMedia::default(),
+            TimestampMillis::new(10),
+        )
+        .expect("valid character");
+        character.revision = Revision::new(0);
+        assert_eq!(character.validate(), Err(ValidationError::ZeroRevision));
+        character.revision = Revision::INITIAL;
+        character.updated_at = TimestampMillis::new(9);
+        assert!(matches!(
+            character.validate(),
+            Err(ValidationError::InvalidTimestampOrder {
+                field: "character.timestamps"
+            })
+        ));
     }
 }

@@ -1,13 +1,15 @@
 use lettuce_types::{
-    CharacterId, ConversationStarterId, GroupId, LorebookId, Page, PageRequest, PersonaId,
-    PromptDocumentId, Revision, SceneId, SceneVariantId, StarterMessageId, TimestampMillis,
+    AssetId, CharacterId, ConversationStarterId, GroupId, LorebookId, ModelArtifactId,
+    ModelProfileId, Page, PageRequest, PersonaId, PromptDocumentId, Revision, SceneId,
+    SceneVariantId, StarterMessageId, TimestampMillis, VoiceProfileId,
 };
+use serde::{Deserialize, Serialize};
 
 use crate::{
     Character, CharacterDefaults, CharacterMedia, CharacterMediaLink, CharacterProfile,
     CharacterProvenance, ConversationStarter, GroupMember, GroupProfile, Persona, PersonaMedia,
-    PersonaMediaLink, RepositoryError, Scene, SceneAssetLink, SceneOwner, SceneVariant, Selection,
-    ValidationError,
+    PersonaMediaLink, RepositoryError, Scene, SceneAssetLink, SceneDocumentV1, SceneOwner,
+    SceneVariant, Selection, ValidationError,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -190,22 +192,194 @@ pub struct CharacterSearch {
     pub include_archived: bool,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SceneDraftUpdate {
+    pub content: SceneDocumentV1,
+    pub direction: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SceneVariantDraftUpdate {
+    pub content: SceneDocumentV1,
+    pub direction: Option<String>,
+}
+
+impl SceneVariantDraftUpdate {
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        self.content.validate()?;
+        if let Some(direction) = &self.direction {
+            crate::constants::validate_text("scene_variant.direction", direction)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ConversationStarterDraftUpdate {
+    pub name: String,
+    pub scene_id: Option<SceneId>,
+    pub prompt_id: Option<PromptDocumentId>,
+    pub lorebooks: Selection<Vec<LorebookId>>,
+}
+
+impl ConversationStarterDraftUpdate {
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        crate::constants::validate_name("starter.name", &self.name)?;
+        if let Selection::Explicit(lorebooks) = &self.lorebooks {
+            crate::constants::validate_collection(
+                "starter.lorebooks",
+                lorebooks,
+                crate::constants::MAX_COLLECTION_ITEMS,
+            )?;
+            crate::constants::validate_unique("starter.lorebook_ids", lorebooks.iter().copied())?;
+        }
+        Ok(())
+    }
+}
+
+impl SceneDraftUpdate {
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        self.content.validate()?;
+        if let Some(direction) = &self.direction {
+            crate::constants::validate_text("scene.direction", direction)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ProfileDuplicateRequest {
     pub source_character_id: CharacterId,
-    pub new_character: Character,
+    pub destination_character_id: CharacterId,
+    /// If present, overrides only the copied root character name. All other
+    /// destination data comes from the source graph loaded by the adapter.
+    pub destination_name: Option<String>,
+    /// Operation timestamp used for the newly duplicated destination graph;
+    /// the adapter applies it consistently to destination authored records.
     pub now: TimestampMillis,
+}
+
+impl ProfileDuplicateRequest {
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        if self.source_character_id == self.destination_character_id {
+            return Err(ValidationError::InvalidReference {
+                field: "duplicate.destination_character_id",
+            });
+        }
+        if let Some(name) = &self.destination_name {
+            crate::constants::validate_name("duplicate.destination_name", name)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IdRemap<T> {
+    pub source: T,
+    pub destination: T,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UnresolvedLegacyReference {
+    VoiceLocator,
+    ImageRecommendation,
+    WidgetImageToken,
+}
+
+/// Typed external references retained by a duplication. ID vectors are
+/// required to be sorted and unique; `asset_ids` covers character
+/// media, scene links, and logical assets referenced by presentation widgets.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct RetainedExternalReferences {
+    pub asset_ids: Vec<AssetId>,
+    pub prompt_document_ids: Vec<PromptDocumentId>,
+    pub lorebook_ids: Vec<LorebookId>,
+    pub model_profile_ids: Vec<ModelProfileId>,
+    pub voice_profile_ids: Vec<VoiceProfileId>,
+    pub model_artifact_ids: Vec<ModelArtifactId>,
+    pub unresolved_legacy_references: Vec<UnresolvedLegacyReference>,
+}
+
+impl RetainedExternalReferences {
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        fn sorted_unique<T: Ord>(values: &[T]) -> bool {
+            values.windows(2).all(|pair| pair[0] < pair[1])
+        }
+        if !sorted_unique(&self.asset_ids)
+            || !sorted_unique(&self.prompt_document_ids)
+            || !sorted_unique(&self.lorebook_ids)
+            || !sorted_unique(&self.model_profile_ids)
+            || !sorted_unique(&self.voice_profile_ids)
+            || !sorted_unique(&self.model_artifact_ids)
+        {
+            return Err(ValidationError::Invariant {
+                field: "duplicate.retained_external_references.order",
+            });
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProfileDuplicateResult {
     pub character_id: CharacterId,
-    pub remapped_scene_ids: Vec<SceneId>,
-    pub remapped_variant_ids: Vec<SceneVariantId>,
-    pub remapped_starter_ids: Vec<ConversationStarterId>,
-    pub shared_asset_ids: Vec<lettuce_types::AssetId>,
-    pub shared_prompt_ids: Vec<PromptDocumentId>,
-    pub shared_lorebook_ids: Vec<LorebookId>,
+    pub remapped_scene_ids: Vec<IdRemap<SceneId>>,
+    pub remapped_variant_ids: Vec<IdRemap<SceneVariantId>>,
+    pub remapped_scene_asset_link_ids: Vec<IdRemap<lettuce_types::SceneAssetLinkId>>,
+    pub remapped_starter_ids: Vec<IdRemap<ConversationStarterId>>,
+    pub remapped_starter_message_ids: Vec<IdRemap<StarterMessageId>>,
+    pub retained_external_references: RetainedExternalReferences,
+}
+
+impl ProfileDuplicateResult {
+    /// Validates that an adapter returned a complete, internally consistent
+    /// source-to-destination mapping for the requested destination root.
+    pub fn validate_for(&self, request: &ProfileDuplicateRequest) -> Result<(), ValidationError> {
+        request.validate()?;
+        if self.character_id != request.destination_character_id {
+            return Err(ValidationError::InvalidReference {
+                field: "duplicate.result.character_id",
+            });
+        }
+        self.retained_external_references.validate()?;
+
+        fn validate_remaps<T: Copy + Eq + std::hash::Hash>(
+            field: &'static str,
+            remaps: &[IdRemap<T>],
+        ) -> Result<(), ValidationError> {
+            let mut sources = std::collections::HashSet::new();
+            let mut destinations = std::collections::HashSet::new();
+            for remap in remaps {
+                if remap.source == remap.destination {
+                    return Err(ValidationError::InvalidReference { field });
+                }
+                if !sources.insert(remap.source) || !destinations.insert(remap.destination) {
+                    return Err(ValidationError::Duplicate { field });
+                }
+            }
+            Ok(())
+        }
+
+        validate_remaps("duplicate.result.scene_ids", &self.remapped_scene_ids)?;
+        validate_remaps("duplicate.result.variant_ids", &self.remapped_variant_ids)?;
+        validate_remaps(
+            "duplicate.result.scene_asset_link_ids",
+            &self.remapped_scene_asset_link_ids,
+        )?;
+        validate_remaps("duplicate.result.starter_ids", &self.remapped_starter_ids)?;
+        validate_remaps(
+            "duplicate.result.starter_message_ids",
+            &self.remapped_starter_message_ids,
+        )?;
+        Ok(())
+    }
 }
 
 pub trait CharacterRepository: Send + Sync {
@@ -302,6 +476,9 @@ pub trait CharacterRepository: Send + Sync {
 }
 
 pub trait SceneRepository: Send + Sync {
+    /// Every mutation uses the character root revision as its CAS token. A
+    /// successful child mutation increments that root exactly once; child
+    /// revisions are incremented only when their own data changes.
     fn add_scene(
         &self,
         character_id: CharacterId,
@@ -309,13 +486,21 @@ pub trait SceneRepository: Send + Sync {
         scene: Scene,
         now: TimestampMillis,
     ) -> Result<Scene, RepositoryError>;
+    /// Updates only scene draft scalars. IDs, ownership, ordinal, assets,
+    /// variants, and timestamps are adapter-owned and cannot be replaced by
+    /// this operation.
     fn update_scene(
         &self,
         character_id: CharacterId,
         expected_character_revision: Revision,
-        scene: Scene,
+        scene_id: SceneId,
+        draft: SceneDraftUpdate,
         now: TimestampMillis,
     ) -> Result<Scene, RepositoryError>;
+    /// Removes a scene only when no starter references it. A
+    /// `DependencyReference::StarterScene` must produce `HasDependencies`,
+    /// even when `replacement_default` is supplied; that replacement only
+    /// handles the character's default-scene pointer.
     fn remove_scene(
         &self,
         character_id: CharacterId,
@@ -343,7 +528,8 @@ pub trait SceneRepository: Send + Sync {
         &self,
         character_id: CharacterId,
         expected_character_revision: Revision,
-        variant: SceneVariant,
+        variant_id: SceneVariantId,
+        draft: SceneVariantDraftUpdate,
         now: TimestampMillis,
     ) -> Result<SceneVariant, RepositoryError>;
     fn remove_variant(
@@ -372,7 +558,10 @@ pub trait SceneRepository: Send + Sync {
         variant_id: Option<SceneVariantId>,
         now: TimestampMillis,
     ) -> Result<(), RepositoryError>;
-    fn change_scene_assets(
+    /// Replaces the complete asset list for a scene. The adapter must load
+    /// base and variant documents, apply this list, run
+    /// `validate_selected_variant`, and commit the operation atomically.
+    fn replace_scene_assets(
         &self,
         character_id: CharacterId,
         expected_character_revision: Revision,
@@ -383,6 +572,9 @@ pub trait SceneRepository: Send + Sync {
 }
 
 pub trait StarterRepository: Send + Sync {
+    /// Every starter/message mutation uses the character root revision as its
+    /// CAS token. A successful mutation increments that root exactly once;
+    /// starter revisions are adapter-incremented only when changed.
     fn add_starter(
         &self,
         character_id: CharacterId,
@@ -394,7 +586,8 @@ pub trait StarterRepository: Send + Sync {
         &self,
         character_id: CharacterId,
         expected_character_revision: Revision,
-        starter: ConversationStarter,
+        starter_id: ConversationStarterId,
+        draft: ConversationStarterDraftUpdate,
         now: TimestampMillis,
     ) -> Result<ConversationStarter, RepositoryError>;
     fn remove_starter(
@@ -680,14 +873,34 @@ pub trait GroupRepository: Send + Sync {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DependencyReference {
-    CharacterInGroup { group_id: GroupId },
-    CharacterDefaultScene { scene_id: SceneId },
-    CharacterDefaultStarter { starter_id: ConversationStarterId },
-    PersonaInGroup { group_id: GroupId },
-    GroupStartingScene { scene_id: SceneId },
-    Asset { asset_id: lettuce_types::AssetId },
-    Prompt { prompt_id: PromptDocumentId },
-    Lorebook { lorebook_id: LorebookId },
+    CharacterInGroup {
+        group_id: GroupId,
+    },
+    CharacterDefaultScene {
+        scene_id: SceneId,
+    },
+    CharacterDefaultStarter {
+        starter_id: ConversationStarterId,
+    },
+    StarterScene {
+        starter_id: ConversationStarterId,
+        scene_id: SceneId,
+    },
+    PersonaInGroup {
+        group_id: GroupId,
+    },
+    GroupStartingScene {
+        scene_id: SceneId,
+    },
+    Asset {
+        asset_id: lettuce_types::AssetId,
+    },
+    Prompt {
+        prompt_id: PromptDocumentId,
+    },
+    Lorebook {
+        lorebook_id: LorebookId,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -724,9 +937,14 @@ use CharacterMediaLink as _CharacterMediaLink;
 
 #[cfg(test)]
 mod tests {
-    use super::{CreateGroupPlan, GroupStartingScene};
+    use super::{
+        ConversationStarterDraftUpdate, CreateGroupPlan, GroupStartingScene, IdRemap,
+        ProfileDuplicateRequest, ProfileDuplicateResult, RetainedExternalReferences,
+        SceneDraftUpdate, SceneVariantDraftUpdate, UnresolvedLegacyReference,
+    };
     use crate::{
-        GroupMember, GroupProfile, Scene, SceneDocumentV1, SceneOwner, ScenePart, ValidationError,
+        GroupMember, GroupProfile, Scene, SceneDocumentV1, SceneOwner, ScenePart, Selection,
+        ValidationError,
     };
     use lettuce_types::{CharacterId, GroupId, SceneId, TimestampMillis};
 
@@ -801,5 +1019,126 @@ mod tests {
                 field: "group.starting_scene",
             })
         );
+    }
+
+    #[test]
+    fn scene_draft_update_is_scalar_only_and_validates_its_document() {
+        let update = SceneDraftUpdate {
+            content: SceneDocumentV1::new(vec![ScenePart::Text {
+                text: "Updated direction".into(),
+            }])
+            .expect("document"),
+            direction: Some("Enter carefully".into()),
+        };
+        assert!(update.validate().is_ok());
+        let encoded = serde_json::to_string(&update).expect("draft serializes");
+        assert!(serde_json::from_str::<SceneDraftUpdate>(&encoded).is_ok());
+    }
+
+    #[test]
+    fn duplicate_request_uses_only_root_override_and_typed_remaps() {
+        let request = ProfileDuplicateRequest {
+            source_character_id: CharacterId::new(),
+            destination_character_id: CharacterId::new(),
+            destination_name: Some("Copy".into()),
+            now: TimestampMillis::new(1),
+        };
+        assert!(request.validate().is_ok());
+        let same_root = ProfileDuplicateRequest {
+            destination_character_id: request.source_character_id,
+            ..request
+        };
+        assert!(same_root.validate().is_err());
+        let remap = IdRemap {
+            source: SceneId::new(),
+            destination: SceneId::new(),
+        };
+        let encoded = serde_json::to_string(&remap).expect("remap serializes");
+        assert!(serde_json::from_str::<IdRemap<SceneId>>(&encoded).is_ok());
+    }
+
+    #[test]
+    fn child_draft_updates_exclude_identity_and_validate_authored_fields() {
+        let variant = SceneVariantDraftUpdate {
+            content: SceneDocumentV1::new(Vec::new()).expect("document"),
+            direction: Some("Take the left path".into()),
+        };
+        assert!(variant.validate().is_ok());
+        let starter = ConversationStarterDraftUpdate {
+            name: "Opening".into(),
+            scene_id: Some(SceneId::new()),
+            prompt_id: None,
+            lorebooks: Selection::Explicit(Vec::new()),
+        };
+        assert!(starter.validate().is_ok());
+        let invalid = ConversationStarterDraftUpdate {
+            name: " ".into(),
+            ..starter
+        };
+        assert!(invalid.validate().is_err());
+    }
+
+    #[test]
+    fn retained_external_references_are_typed_sorted_and_complete() {
+        let mut references = RetainedExternalReferences {
+            unresolved_legacy_references: vec![UnresolvedLegacyReference::WidgetImageToken],
+            ..RetainedExternalReferences::default()
+        };
+        references.asset_ids = vec![lettuce_types::AssetId::new(), lettuce_types::AssetId::new()];
+        references.asset_ids.sort();
+        references.prompt_document_ids = vec![lettuce_types::PromptDocumentId::new()];
+        references.lorebook_ids = vec![lettuce_types::LorebookId::new()];
+        references.model_profile_ids = vec![lettuce_types::ModelProfileId::new()];
+        references.voice_profile_ids = vec![lettuce_types::VoiceProfileId::new()];
+        references.model_artifact_ids = vec![lettuce_types::ModelArtifactId::new()];
+        assert!(references.validate().is_ok());
+        references.asset_ids.push(references.asset_ids[0]);
+        assert!(references.validate().is_err());
+    }
+
+    #[test]
+    fn duplicate_result_validation_rejects_self_duplicate_and_mismatched_mappings() {
+        let request = ProfileDuplicateRequest {
+            source_character_id: CharacterId::new(),
+            destination_character_id: CharacterId::new(),
+            destination_name: None,
+            now: TimestampMillis::new(1),
+        };
+        let valid = || ProfileDuplicateResult {
+            character_id: request.destination_character_id,
+            remapped_scene_ids: Vec::new(),
+            remapped_variant_ids: Vec::new(),
+            remapped_scene_asset_link_ids: Vec::new(),
+            remapped_starter_ids: Vec::new(),
+            remapped_starter_message_ids: Vec::new(),
+            retained_external_references: RetainedExternalReferences::default(),
+        };
+        assert!(valid().validate_for(&request).is_ok());
+
+        let mut self_mapping = valid();
+        let id = SceneId::new();
+        self_mapping.remapped_scene_ids.push(IdRemap {
+            source: id,
+            destination: id,
+        });
+        assert!(self_mapping.validate_for(&request).is_err());
+
+        let mut duplicate_mapping = valid();
+        let source = SceneId::new();
+        duplicate_mapping.remapped_scene_ids = vec![
+            IdRemap {
+                source,
+                destination: SceneId::new(),
+            },
+            IdRemap {
+                source,
+                destination: SceneId::new(),
+            },
+        ];
+        assert!(duplicate_mapping.validate_for(&request).is_err());
+
+        let mut mismatched = valid();
+        mismatched.character_id = CharacterId::new();
+        assert!(mismatched.validate_for(&request).is_err());
     }
 }

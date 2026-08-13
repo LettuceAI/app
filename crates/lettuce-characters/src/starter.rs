@@ -5,7 +5,8 @@ use lettuce_types::{
 use serde::{Deserialize, Serialize};
 
 use crate::constants::{
-    MAX_COLLECTION_ITEMS, validate_collection, validate_name, validate_text, validate_unique,
+    MAX_COLLECTION_ITEMS, validate_collection, validate_name, validate_revision_timestamps,
+    validate_text, validate_unique,
 };
 use crate::{Selection, ValidationError};
 
@@ -73,6 +74,12 @@ impl ConversationStarter {
     }
 
     pub fn validate(&self) -> Result<(), ValidationError> {
+        validate_revision_timestamps(
+            "starter.timestamps",
+            self.revision,
+            self.created_at,
+            self.updated_at,
+        )?;
         validate_name("starter.name", &self.name)?;
         validate_collection("starter.messages", &self.messages, MAX_COLLECTION_ITEMS)?;
         validate_unique(
@@ -93,7 +100,7 @@ impl ConversationStarter {
 #[cfg(test)]
 mod tests {
     use super::{ConversationStarter, StarterMessage, StarterRole};
-    use crate::Selection;
+    use crate::{Selection, ValidationError};
     use lettuce_types::{
         CharacterId, ConversationStarterId, Revision, StarterMessageId, TimestampMillis,
     };
@@ -120,5 +127,30 @@ mod tests {
         assert!(starter.validate().is_ok());
         assert_ne!(starter.lorebooks, Selection::Inherit);
         assert_ne!(starter.lorebooks, Selection::Disabled);
+    }
+
+    #[test]
+    fn starter_rejects_zero_revision_and_reversed_timestamps() {
+        let mut starter = ConversationStarter {
+            id: ConversationStarterId::new(),
+            character_id: CharacterId::new(),
+            name: "Opening".into(),
+            ordinal: 0,
+            messages: Vec::new(),
+            scene_id: None,
+            prompt_id: None,
+            lorebooks: Selection::Inherit,
+            revision: Revision::INITIAL,
+            created_at: TimestampMillis::new(5),
+            updated_at: TimestampMillis::new(4),
+        };
+        assert!(matches!(
+            starter.validate(),
+            Err(ValidationError::InvalidTimestampOrder {
+                field: "starter.timestamps"
+            })
+        ));
+        starter.revision = Revision::new(0);
+        assert_eq!(starter.validate(), Err(ValidationError::ZeroRevision));
     }
 }

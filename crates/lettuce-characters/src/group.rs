@@ -5,7 +5,8 @@ use lettuce_types::{
 use serde::{Deserialize, Serialize};
 
 use crate::constants::{
-    MAX_COLLECTION_ITEMS, validate_collection, validate_contiguous, validate_name, validate_unique,
+    MAX_COLLECTION_ITEMS, validate_collection, validate_contiguous, validate_name,
+    validate_revision_timestamps, validate_unique,
 };
 use crate::presentation::ChatAppearanceV1;
 use crate::{
@@ -80,6 +81,12 @@ impl GroupProfile {
     }
 
     pub fn validate(&self) -> Result<(), ValidationError> {
+        validate_revision_timestamps(
+            "group.timestamps",
+            self.revision,
+            self.created_at,
+            self.updated_at,
+        )?;
         validate_name("group.name", &self.name)?;
         validate_collection("group.members", &self.members, MAX_COLLECTION_ITEMS)?;
         if self.members.len() < 2 {
@@ -124,6 +131,7 @@ mod tests {
     use super::{GroupMember, GroupProfile};
     use crate::{
         ChatAppearanceV1, ChatMode, LifecycleStatus, MemoryPolicy, Selection, SpeakerSelection,
+        ValidationError,
     };
     use lettuce_types::{CharacterId, GroupId, Revision, TimestampMillis};
 
@@ -171,5 +179,21 @@ mod tests {
                 .validate()
                 .is_ok()
         );
+    }
+
+    #[test]
+    fn group_rejects_zero_revision_and_reversed_timestamps() {
+        let mut value = group(vec![member(0, false), member(1, true)]);
+        value.created_at = TimestampMillis::new(5);
+        value.updated_at = TimestampMillis::new(4);
+        assert!(matches!(
+            value.validate(),
+            Err(ValidationError::InvalidTimestampOrder {
+                field: "group.timestamps"
+            })
+        ));
+        value.updated_at = TimestampMillis::new(5);
+        value.revision = Revision::new(0);
+        assert_eq!(value.validate(), Err(ValidationError::ZeroRevision));
     }
 }

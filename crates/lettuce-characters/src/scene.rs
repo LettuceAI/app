@@ -7,7 +7,8 @@ use lettuce_types::{
 use serde::{Deserialize, Serialize};
 
 use crate::constants::{
-    MAX_COLLECTION_ITEMS, validate_collection, validate_contiguous, validate_text,
+    MAX_COLLECTION_ITEMS, validate_collection, validate_contiguous, validate_revision_timestamps,
+    validate_text,
 };
 use crate::{LifecycleStatus, ValidationError};
 
@@ -144,6 +145,12 @@ impl Scene {
     }
 
     pub fn validate(&self) -> Result<(), ValidationError> {
+        validate_revision_timestamps(
+            "scene.timestamps",
+            self.revision,
+            self.created_at,
+            self.updated_at,
+        )?;
         self.content.validate()?;
         if let Some(direction) = &self.direction {
             validate_text("scene.direction", direction)?;
@@ -151,10 +158,16 @@ impl Scene {
         validate_collection("scene.assets", &self.assets, MAX_COLLECTION_ITEMS)?;
         let mut backgrounds = 0;
         let mut link_ids = HashSet::new();
+        let mut asset_ids = HashSet::new();
         let mut inline_ordinals = Vec::new();
         for link in &self.assets {
             link.validate()?;
             if !link_ids.insert(link.id) {
+                return Err(ValidationError::Duplicate {
+                    field: "scene.asset_ids",
+                });
+            }
+            if !asset_ids.insert(link.asset_id) {
                 return Err(ValidationError::Duplicate {
                     field: "scene.asset_ids",
                 });
@@ -262,6 +275,12 @@ pub struct SceneVariant {
 
 impl SceneVariant {
     pub fn validate(&self) -> Result<(), ValidationError> {
+        validate_revision_timestamps(
+            "scene_variant.timestamps",
+            self.revision,
+            self.created_at,
+            self.updated_at,
+        )?;
         self.content.validate()?;
         if let Some(direction) = &self.direction {
             validate_text("scene_variant.direction", direction)?;
@@ -275,9 +294,9 @@ mod tests {
     use super::{
         Scene, SceneAssetLink, SceneAssetSlot, SceneDocumentV1, SceneOwner, ScenePart, SceneVariant,
     };
-    use crate::LifecycleStatus;
+    use crate::{LifecycleStatus, ValidationError};
     use lettuce_types::{
-        AssetId, CharacterId, Revision, SceneAssetLinkId, SceneId, TimestampMillis,
+        AssetId, CharacterId, Revision, SceneAssetLinkId, SceneId, SceneVariantId, TimestampMillis,
     };
 
     #[test]
@@ -369,5 +388,78 @@ mod tests {
             ..variant
         };
         assert!(scene.validate_selected_variant(&[dangling]).is_err());
+    }
+
+    #[test]
+    fn scene_rejects_one_asset_in_background_and_inline_links() {
+        let asset_id = AssetId::new();
+        let scene = Scene {
+            id: SceneId::new(),
+            owner: SceneOwner::Character(CharacterId::new()),
+            status: LifecycleStatus::Active,
+            ordinal: 0,
+            content: SceneDocumentV1::new(Vec::new()).expect("document"),
+            direction: None,
+            selected_variant_id: None,
+            assets: vec![
+                SceneAssetLink {
+                    id: SceneAssetLinkId::new(),
+                    asset_id,
+                    slot: SceneAssetSlot::Background,
+                    ordinal: 0,
+                },
+                SceneAssetLink {
+                    id: SceneAssetLinkId::new(),
+                    asset_id,
+                    slot: SceneAssetSlot::Inline,
+                    ordinal: 0,
+                },
+            ],
+            revision: Revision::INITIAL,
+            created_at: TimestampMillis::new(0),
+            updated_at: TimestampMillis::new(0),
+        };
+        assert!(scene.validate().is_err());
+    }
+
+    #[test]
+    fn scene_and_variant_validate_revision_timestamp_invariants() {
+        let mut scene = Scene::new(
+            SceneId::new(),
+            SceneOwner::Character(CharacterId::new()),
+            0,
+            SceneDocumentV1::new(Vec::new()).expect("document"),
+            TimestampMillis::new(5),
+        )
+        .expect("scene");
+        scene.updated_at = TimestampMillis::new(4);
+        assert!(matches!(
+            scene.validate(),
+            Err(ValidationError::InvalidTimestampOrder {
+                field: "scene.timestamps"
+            })
+        ));
+        scene.updated_at = TimestampMillis::new(5);
+        scene.revision = Revision::new(0);
+        assert_eq!(scene.validate(), Err(ValidationError::ZeroRevision));
+
+        let mut variant = SceneVariant {
+            id: SceneVariantId::new(),
+            scene_id: scene.id,
+            ordinal: 0,
+            content: SceneDocumentV1::new(Vec::new()).expect("document"),
+            direction: None,
+            revision: Revision::INITIAL,
+            created_at: TimestampMillis::new(3),
+            updated_at: TimestampMillis::new(2),
+        };
+        assert!(matches!(
+            variant.validate(),
+            Err(ValidationError::InvalidTimestampOrder {
+                field: "scene_variant.timestamps"
+            })
+        ));
+        variant.revision = Revision::new(0);
+        assert_eq!(variant.validate(), Err(ValidationError::ZeroRevision));
     }
 }

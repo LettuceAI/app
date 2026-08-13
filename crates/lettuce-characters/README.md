@@ -46,6 +46,24 @@ IDs, selected-variant ownership, scene asset/document agreement, starter
 selection semantics, the persona media/card invariants, and the reusable-group
 minimum of two members with at least one active member.
 
+Every authored aggregate with a revision and timestamps rejects revision zero
+and `created_at > updated_at`. Character/persona media and scene association
+lists reject reuse of one logical `AssetId` across slots. Presentation exposes
+deterministic recursive logical-asset references; unresolved legacy widget
+tokens are excluded.
+
+Scene draft updates carry only scalar draft fields. Asset replacement is a
+complete base-and-variant association operation, and scene/starter mutations
+use the character root revision as their authoritative CAS token. Removing a
+scene rejects starter dependencies even when a replacement default scene is
+provided. Profile duplication requests identify a source and destination root;
+the source graph supplies all child data and the result reports typed ID
+remaps while reporting all retained media, scene, widget, prompt, lorebook,
+model, voice, and artifact references. `LifecycleStatus` controls library
+visibility; archived scenes remain authored records and may remain selectable
+according to the owning aggregate's existing policy. Persistence does not
+invent reference exclusion rules.
+
 Persistence, migrations, media ingestion/GC, transfer compatibility envelopes,
 prompt rendering, lorebook matching, conversations, and Tauri commands remain
 outside this crate.

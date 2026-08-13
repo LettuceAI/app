@@ -2,6 +2,8 @@ use lettuce_types::Revision;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ValidationError {
+    #[error("revision must be at least one")]
+    ZeroRevision,
     #[error("{field} must not be blank")]
     Blank { field: &'static str },
     #[error("{field} exceeds the {max}-scalar limit")]
@@ -24,6 +26,8 @@ pub enum ValidationError {
     UnsupportedVersion { field: &'static str, version: u32 },
     #[error("{field} violates an aggregate invariant")]
     Invariant { field: &'static str },
+    #[error("{field} must not be later than updated_at")]
+    InvalidTimestampOrder { field: &'static str },
     #[error("revision overflow")]
     RevisionOverflow,
 }

@@ -5,7 +5,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::character::ImageRecommendation;
 use crate::constants::{
-    MAX_COLLECTION_ITEMS, validate_collection, validate_contiguous, validate_name, validate_text,
+    MAX_COLLECTION_ITEMS, validate_collection, validate_contiguous, validate_name,
+    validate_revision_timestamps, validate_text,
 };
 use crate::presentation::Crop;
 use crate::{LifecycleStatus, ValidationError};
@@ -48,6 +49,14 @@ impl PersonaMedia {
             });
         }
         let mut reference_asset_ids = HashSet::new();
+        let mut all_asset_ids = HashSet::new();
+        for link in &self.links {
+            if !all_asset_ids.insert(link.asset_id) {
+                return Err(ValidationError::Duplicate {
+                    field: "persona.media.asset_ids",
+                });
+            }
+        }
         if self
             .links
             .iter()
@@ -106,6 +115,12 @@ impl Persona {
     }
 
     pub fn validate(&self) -> Result<(), ValidationError> {
+        validate_revision_timestamps(
+            "persona.timestamps",
+            self.revision,
+            self.created_at,
+            self.updated_at,
+        )?;
         validate_name("persona.title", &self.title)?;
         if self.description.trim().is_empty() {
             return Err(ValidationError::Blank {
@@ -138,7 +153,7 @@ impl Persona {
 #[cfg(test)]
 mod tests {
     use super::{Persona, PersonaMediaLink, PersonaMediaSlot};
-    use crate::{LifecycleStatus, PersonaMedia};
+    use crate::{LifecycleStatus, PersonaMedia, ValidationError};
     use lettuce_types::{AssetId, PersonaId, Revision, TimestampMillis};
 
     #[test]
@@ -178,5 +193,51 @@ mod tests {
             ],
         };
         assert!(media.validate().is_err());
+    }
+
+    #[test]
+    fn media_asset_ids_are_unique_across_avatar_and_design_slots() {
+        let asset_id = AssetId::new();
+        let media = PersonaMedia {
+            links: vec![
+                PersonaMediaLink {
+                    asset_id,
+                    slot: PersonaMediaSlot::Avatar,
+                    ordinal: 0,
+                },
+                PersonaMediaLink {
+                    asset_id,
+                    slot: PersonaMediaSlot::DesignReference,
+                    ordinal: 0,
+                },
+            ],
+        };
+        assert!(media.validate().is_err());
+    }
+
+    #[test]
+    fn authored_persona_rejects_reversed_timestamps() {
+        let mut persona = Persona {
+            id: PersonaId::new(),
+            status: LifecycleStatus::Active,
+            title: "Writer".into(),
+            description: "A writer".into(),
+            nickname: None,
+            design_description: None,
+            avatar_crop: None,
+            image_recommendation: None,
+            media: PersonaMedia::default(),
+            revision: Revision::INITIAL,
+            created_at: TimestampMillis::new(5),
+            updated_at: TimestampMillis::new(4),
+        };
+        assert!(matches!(
+            persona.validate(),
+            Err(ValidationError::InvalidTimestampOrder {
+                field: "persona.timestamps"
+            })
+        ));
+        persona.revision = Revision::new(0);
+        assert_eq!(persona.validate(), Err(ValidationError::ZeroRevision));
     }
 }

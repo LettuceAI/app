@@ -3,7 +3,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 use lettuce_settings::{HeaderName, SecretRef};
-use lettuce_types::{ModelProfileId, ProviderAccountId, Revision, TimestampMillis};
+use lettuce_types::{CharacterId, ModelProfileId, ProviderAccountId, Revision, TimestampMillis};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -101,6 +101,20 @@ pub struct ModelProfile {
     pub updated_at: TimestampMillis,
 }
 
+/// A typed owner that prevents deleting a model profile still referenced by
+/// authored aggregates. This vocabulary deliberately lives in the model
+/// domain so storage adapters need not depend on the characters crate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    tag = "kind",
+    content = "id",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
+pub enum ModelDependencyReference {
+    CharacterDefault { character_id: CharacterId },
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ModelRepositoryError {
     #[error("record was not found")]
@@ -111,6 +125,8 @@ pub enum ModelRepositoryError {
     AlreadyExists,
     #[error("provider account is still used by model profiles")]
     AccountInUse(Vec<ModelProfileId>),
+    #[error("model profile is still in use")]
+    InUse(Vec<ModelDependencyReference>),
     #[error("provider account does not exist")]
     AccountMissing,
     #[error("stored model data are invalid")]
@@ -141,4 +157,30 @@ pub trait ModelProfileRepository: Send + Sync {
     fn get(&self, id: ModelProfileId) -> Result<Option<ModelProfile>, ModelRepositoryError>;
     /// Deletes a profile and clears the global default in the same transaction.
     fn delete_and_clear_default(&self, id: ModelProfileId) -> Result<(), ModelRepositoryError>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ModelDependencyReference, ModelRepositoryError};
+    use lettuce_types::CharacterId;
+
+    #[test]
+    fn model_dependencies_are_typed_and_closed() {
+        let reference = ModelDependencyReference::CharacterDefault {
+            character_id: CharacterId::new(),
+        };
+        let encoded = serde_json::to_string(&reference).expect("dependency serializes");
+        assert_eq!(
+            serde_json::from_str::<ModelDependencyReference>(&encoded).expect("dependency decodes"),
+            reference
+        );
+        assert!(serde_json::from_str::<ModelDependencyReference>(
+            r#"{"kind":"character_default","id":"00000000-0000-0000-0000-000000000000","extra":true}"#
+        )
+        .is_err());
+        assert_eq!(
+            ModelRepositoryError::InUse(vec![reference]).to_string(),
+            "model profile is still in use"
+        );
+    }
 }
