@@ -2,6 +2,8 @@
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
+mod character_adapter;
+
 use std::{path::Path, str::FromStr, sync::Mutex, time::Duration};
 
 use lettuce_media::{
@@ -9,8 +11,9 @@ use lettuce_media::{
     MediaBlob, MediaBlobRepository, MediaBlobRepositoryError, MediaKind, RetentionClass,
 };
 use lettuce_models::{
-    ModelKind, ModelProfile, ModelProfileRepository, ModelRepositoryError, ProviderAccount,
-    ProviderAccountRepository, ProviderConfig, ProviderProtocol, SecretHeader,
+    ModelDependencyReference, ModelKind, ModelProfile, ModelProfileRepository,
+    ModelRepositoryError, ProviderAccount, ProviderAccountRepository, ProviderConfig,
+    ProviderProtocol, SecretHeader,
 };
 use lettuce_settings::{
     GLOBAL_SETTINGS_FORMAT_VERSION, GlobalSettings, GlobalSettingsStore, GlobalSettingsStoreError,
@@ -30,6 +33,11 @@ const MIGRATION_1: Migration = Migration {
 const MIGRATION_2: Migration = Migration {
     id: 2,
     sql: include_str!("../migrations/0002_media_assets.sql"),
+};
+
+const MIGRATION_3: Migration = Migration {
+    id: 3,
+    sql: include_str!("../migrations/0003_characters.sql"),
 };
 
 const PROVIDER_CONFIG_FORMAT_VERSION: u32 = 1;
@@ -107,7 +115,7 @@ impl Database {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, DatabaseError> {
         let mut connection = Connection::open(path)?;
         configure(&connection, true)?;
-        apply_migrations(&mut connection, &[MIGRATION_1, MIGRATION_2])?;
+        apply_migrations(&mut connection, &[MIGRATION_1, MIGRATION_2, MIGRATION_3])?;
         initialize_settings(&connection)?;
         Ok(Self {
             connection: Mutex::new(connection),
@@ -117,7 +125,7 @@ impl Database {
     pub fn open_in_memory() -> Result<Self, DatabaseError> {
         let mut connection = Connection::open_in_memory()?;
         configure(&connection, false)?;
-        apply_migrations(&mut connection, &[MIGRATION_1, MIGRATION_2])?;
+        apply_migrations(&mut connection, &[MIGRATION_1, MIGRATION_2, MIGRATION_3])?;
         initialize_settings(&connection)?;
         Ok(Self {
             connection: Mutex::new(connection),
@@ -158,14 +166,15 @@ fn apply_migrations(
     connection: &mut Connection,
     migrations: &[Migration],
 ) -> Result<(), DatabaseError> {
-    connection.execute_batch(
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    transaction.execute_batch(
         "CREATE TABLE IF NOT EXISTS schema_migrations (\
          id INTEGER PRIMARY KEY, checksum TEXT NOT NULL, applied_at INTEGER NOT NULL\
          ) STRICT;",
     )?;
     for migration in migrations {
         let checksum = migration_checksum(migration.sql);
-        let existing = connection
+        let existing = transaction
             .query_row(
                 "SELECT checksum FROM schema_migrations WHERE id = ?1",
                 [migration.id],
@@ -178,14 +187,13 @@ fn apply_migrations(
             }
             continue;
         }
-        let transaction = connection.transaction()?;
         transaction.execute_batch(migration.sql)?;
         transaction.execute(
             "INSERT INTO schema_migrations (id, checksum, applied_at) VALUES (?1, ?2, ?3)",
             params![migration.id, checksum, now()?.get()],
         )?;
-        transaction.commit()?;
     }
+    transaction.commit()?;
     Ok(())
 }
 
@@ -533,7 +541,31 @@ impl Database {
         let mut connection = self
             .connection()
             .map_err(|_| ModelRepositoryError::Storage)?;
-        let transaction = connection.transaction().map_err(model_error)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(model_error)?;
+        let dependencies = transaction
+            .prepare(
+                "SELECT characters.id FROM characters \
+                 JOIN model_profiles ON model_profiles.id=characters.model_profile_id \
+                 WHERE model_profiles.provider_account_id=?1 ORDER BY characters.id",
+            )
+            .and_then(|mut statement| {
+                statement
+                    .query_map([id.to_string()], |row| {
+                        Ok(ModelDependencyReference::CharacterDefault {
+                            character_id: row
+                                .get::<_, String>(0)?
+                                .parse()
+                                .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                        })
+                    })?
+                    .collect::<rusqlite::Result<Vec<_>>>()
+            })
+            .map_err(model_error)?;
+        if !dependencies.is_empty() {
+            return Err(ModelRepositoryError::InUse(dependencies));
+        }
         let exists = transaction
             .query_row(
                 "SELECT 1 FROM provider_accounts WHERE id=?1",
@@ -653,7 +685,27 @@ impl Database {
         let mut connection = self
             .connection()
             .map_err(|_| ModelRepositoryError::Storage)?;
-        let transaction = connection.transaction().map_err(model_error)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(model_error)?;
+        let dependencies = transaction
+            .prepare("SELECT id FROM characters WHERE model_profile_id=?1 ORDER BY id")
+            .and_then(|mut statement| {
+                statement
+                    .query_map([id.to_string()], |row| {
+                        Ok(ModelDependencyReference::CharacterDefault {
+                            character_id: row
+                                .get::<_, String>(0)?
+                                .parse()
+                                .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                        })
+                    })?
+                    .collect::<rusqlite::Result<Vec<_>>>()
+            })
+            .map_err(model_error)?;
+        if !dependencies.is_empty() {
+            return Err(ModelRepositoryError::InUse(dependencies));
+        }
         transaction
             .execute(
                 "UPDATE app_settings SET default_model_profile_id=NULL, revision=revision+1, \
@@ -1346,14 +1398,17 @@ mod tests {
     fn migration_is_idempotent_and_checksum_protected() {
         let database = Database::open_in_memory().expect("open database");
         let mut connection = database.connection().expect("database lock");
-        apply_migrations(&mut connection, &[super::MIGRATION_1, super::MIGRATION_2])
-            .expect("repeat migration");
+        apply_migrations(
+            &mut connection,
+            &[super::MIGRATION_1, super::MIGRATION_2, super::MIGRATION_3],
+        )
+        .expect("repeat migration");
         let count: u32 = connection
             .query_row("SELECT count(*) FROM schema_migrations", [], |row| {
                 row.get(0)
             })
             .expect("migration count");
-        assert_eq!(count, 2);
+        assert_eq!(count, 3);
 
         let changed = Migration {
             id: 1,
@@ -1370,6 +1425,14 @@ mod tests {
         assert!(matches!(
             apply_migrations(&mut connection, &[changed]),
             Err(DatabaseError::MigrationChecksum { id: 2 })
+        ));
+        let changed = Migration {
+            id: 3,
+            sql: "SELECT 3;",
+        };
+        assert!(matches!(
+            apply_migrations(&mut connection, &[changed]),
+            Err(DatabaseError::MigrationChecksum { id: 3 })
         ));
     }
 
@@ -2210,7 +2273,49 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            2
+            3
+        );
+        drop(connection);
+        drop(database);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn concurrent_open_upgrades_a_pre_m3_file_once() {
+        let path =
+            std::env::temp_dir().join(format!("lettuce-pre-m3-race-{}.db", MediaBlobId::new()));
+        {
+            let mut connection = rusqlite::Connection::open(&path).expect("open pre-M3 file");
+            super::configure(&connection, true).expect("configure pre-M3 file");
+            apply_migrations(&mut connection, &[super::MIGRATION_1, super::MIGRATION_2])
+                .expect("create pre-M3 schema");
+        }
+
+        let barrier = Arc::new(Barrier::new(3));
+        let first_barrier = Arc::clone(&barrier);
+        let first_path = path.clone();
+        let first = thread::spawn(move || {
+            first_barrier.wait();
+            Database::open(first_path)
+        });
+        let second_barrier = Arc::clone(&barrier);
+        let second_path = path.clone();
+        let second = thread::spawn(move || {
+            second_barrier.wait();
+            Database::open(second_path)
+        });
+        barrier.wait();
+
+        assert!(first.join().expect("first upgrade thread").is_ok());
+        assert!(second.join().expect("second upgrade thread").is_ok());
+        let database = Database::open(&path).expect("reopen upgraded file");
+        let connection = database.connection().expect("database lock");
+        assert_eq!(
+            connection
+                .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
+                    .get::<_, i64>(0))
+                .expect("migration count"),
+            3
         );
         drop(connection);
         drop(database);
@@ -2335,11 +2440,19 @@ mod tests {
             tables,
             vec![
                 "app_settings",
+                "character_media",
+                "character_presentation_asset_refs",
+                "characters",
+                "conversation_starters",
                 "media_assets",
                 "media_blobs",
                 "model_profiles",
                 "provider_accounts",
-                "schema_migrations"
+                "scene_assets",
+                "scene_variants",
+                "scenes",
+                "schema_migrations",
+                "starter_messages",
             ]
         );
     }

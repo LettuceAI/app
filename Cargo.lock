@@ -313,6 +313,7 @@ dependencies = [
 name = "lettuce-database"
 version = "0.1.0"
 dependencies = [
+ "lettuce-characters",
  "lettuce-media",
  "lettuce-models",
  "lettuce-settings",
