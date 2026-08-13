@@ -8,6 +8,10 @@
 
 #[cfg(test)]
 mod tests {
+    use lettuce_context::{
+        DetectionPolicy, LorebookBehaviorVersion, LorebookMetadataDraft, LorebookRepository,
+        PromptBehaviorVersion, PromptMetadataDraft, PromptPurpose, PromptRepository,
+    };
     use lettuce_database::Database;
     use lettuce_media::{
         AssetKind, AssetOrigin, AssetProvenanceV1, BlobState, MediaAsset, MediaAssetRepository,
@@ -130,6 +134,60 @@ mod tests {
                 .expect("get asset")
                 .map(|value| value.id),
             Some(asset.id)
+        );
+    }
+
+    fn assert_context_ports<
+        T: PromptRepository
+            + lettuce_context::PromptBootstrapPort
+            + lettuce_context::PromptDependencyReader
+            + LorebookRepository
+            + lettuce_context::LorebookDependencyReader
+            + lettuce_context::CharacterLorebookBindingRepository
+            + lettuce_context::PersonaLorebookBindingRepository
+            + lettuce_context::GroupLorebookBindingRepository,
+    >() {
+    }
+
+    #[test]
+    fn database_composes_context_ports_through_domain_traits() {
+        assert_context_ports::<Database>();
+        let database = Database::open_in_memory().expect("open database");
+        let prompt = PromptRepository::create_user_draft(
+            &database,
+            PromptMetadataDraft {
+                name: "Context smoke".into(),
+                purpose: PromptPurpose::DirectChat,
+                condense: false,
+                behavior_version: PromptBehaviorVersion::LegacyV1,
+            },
+            vec![],
+            lettuce_types::TimestampMillis::new(1),
+        );
+        let prompt = prompt.expect("create context prompt");
+        assert_eq!(
+            PromptRepository::get(&database, prompt.id)
+                .expect("get context prompt")
+                .map(|value| value.id),
+            Some(prompt.id)
+        );
+        let lorebook = LorebookRepository::create(
+            &database,
+            LorebookMetadataDraft {
+                name: "Context smoke".into(),
+                detection_policy: DetectionPolicy::RecentMessageWindow,
+                icon_asset_id: None,
+                behavior_version: LorebookBehaviorVersion::LegacyV1,
+            },
+            vec![],
+            lettuce_types::TimestampMillis::new(1),
+        );
+        let lorebook = lorebook.expect("create context lorebook");
+        assert_eq!(
+            LorebookRepository::get(&database, lorebook.book.id)
+                .expect("get context lorebook")
+                .map(|value| value.book.id),
+            Some(lorebook.book.id)
         );
     }
 }

@@ -4,7 +4,9 @@
 
 mod character_adapter;
 mod group_adapter;
+mod lorebook_adapter;
 mod persona_adapter;
+mod prompt_adapter;
 
 use std::{path::Path, str::FromStr, sync::Mutex, time::Duration};
 
@@ -50,6 +52,11 @@ const MIGRATION_4: Migration = Migration {
 const MIGRATION_5: Migration = Migration {
     id: 5,
     sql: include_str!("../migrations/0005_groups.sql"),
+};
+
+const MIGRATION_6: Migration = Migration {
+    id: 6,
+    sql: include_str!("../migrations/0006_context.sql"),
 };
 
 const PROVIDER_CONFIG_FORMAT_VERSION: u32 = 1;
@@ -135,6 +142,7 @@ impl Database {
                 MIGRATION_3,
                 MIGRATION_4,
                 MIGRATION_5,
+                MIGRATION_6,
             ],
         )?;
         initialize_settings(&connection)?;
@@ -154,6 +162,7 @@ impl Database {
                 MIGRATION_3,
                 MIGRATION_4,
                 MIGRATION_5,
+                MIGRATION_6,
             ],
         )?;
         initialize_settings(&connection)?;
@@ -1533,7 +1542,7 @@ mod tests {
                 row.get(0)
             })
             .expect("migration count");
-        assert_eq!(count, 5);
+        assert_eq!(count, 6);
 
         let changed = Migration {
             id: 1,
@@ -2468,7 +2477,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            5
+            6
         );
         drop(connection);
         drop(database);
@@ -2518,7 +2527,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            5
+            6
         );
         drop(connection);
         drop(database);
@@ -2550,7 +2559,7 @@ mod tests {
                 row.get(0)
             })
             .expect("migration count");
-        assert_eq!(migration_count, 5);
+        assert_eq!(migration_count, 6);
         for table in [
             "groups",
             "group_members",
@@ -2568,6 +2577,116 @@ mod tests {
                 .expect("table lookup");
             assert_eq!(present, 1, "missing table {table}");
         }
+        drop(connection);
+        drop(database);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn m5_file_upgrades_to_m6_context_schema_exactly_once_and_checksums() {
+        let path =
+            std::env::temp_dir().join(format!("lettuce-m5-context-{}.db", MediaBlobId::new()));
+        {
+            let mut connection = rusqlite::Connection::open(&path).expect("open m5 file");
+            super::configure(&connection, true).expect("configure m5 file");
+            apply_migrations(
+                &mut connection,
+                &[
+                    super::MIGRATION_1,
+                    super::MIGRATION_2,
+                    super::MIGRATION_3,
+                    super::MIGRATION_4,
+                    super::MIGRATION_5,
+                ],
+            )
+            .expect("apply m1-m5");
+        }
+        let database = Database::open(&path).expect("upgrade m5 file");
+        let connection = database.connection().expect("database lock");
+        let count: i64 = connection
+            .query_row("SELECT count(*) FROM schema_migrations", [], |row| {
+                row.get(0)
+            })
+            .expect("migration count");
+        assert_eq!(count, 6);
+        for table in [
+            "prompt_documents",
+            "prompt_entries",
+            "lorebooks",
+            "lorebook_entries",
+            "character_lorebook_bindings",
+            "persona_lorebook_bindings",
+            "group_lorebook_bindings",
+        ] {
+            let present: i64 = connection
+                .query_row(
+                    "SELECT count(*) FROM sqlite_schema WHERE type='table' AND name=?1",
+                    [table],
+                    |row| row.get(0),
+                )
+                .expect("table lookup");
+            assert_eq!(present, 1, "missing table {table}");
+        }
+        drop(connection);
+        drop(database);
+        let reopened = Database::open(&path).expect("reopen m6 file");
+        let connection = reopened.connection().expect("database lock");
+        assert_eq!(
+            connection
+                .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
+                    .get::<_, i64>(0))
+                .expect("migration count"),
+            6
+        );
+        drop(connection);
+        drop(reopened);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn concurrent_open_upgrades_a_pre_m6_file_once() {
+        let path =
+            std::env::temp_dir().join(format!("lettuce-pre-m6-race-{}.db", MediaBlobId::new()));
+        {
+            let mut connection = rusqlite::Connection::open(&path).expect("open pre-M6 file");
+            super::configure(&connection, true).expect("configure pre-M6 file");
+            apply_migrations(
+                &mut connection,
+                &[
+                    super::MIGRATION_1,
+                    super::MIGRATION_2,
+                    super::MIGRATION_3,
+                    super::MIGRATION_4,
+                    super::MIGRATION_5,
+                ],
+            )
+            .expect("create pre-M6 schema");
+        }
+        let barrier = Arc::new(Barrier::new(3));
+        let first_barrier = Arc::clone(&barrier);
+        let first_path = path.clone();
+        let first = thread::spawn(move || {
+            first_barrier.wait();
+            Database::open(first_path)
+        });
+        let second_barrier = Arc::clone(&barrier);
+        let second_path = path.clone();
+        let second = thread::spawn(move || {
+            second_barrier.wait();
+            Database::open(second_path)
+        });
+        barrier.wait();
+        assert!(first.join().expect("first upgrade").is_ok());
+        assert!(second.join().expect("second upgrade").is_ok());
+        let database = Database::open(&path).expect("reopen upgraded file");
+        let connection = database.connection().expect("database lock");
+        assert_eq!(
+            connection
+                .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
+                    .get::<_, i64>(0))
+                .expect("migration count"),
+            6
+        );
         drop(connection);
         drop(database);
         let _ = std::fs::remove_file(path);
@@ -2691,22 +2810,29 @@ mod tests {
             tables,
             vec![
                 "app_settings",
+                "character_lorebook_bindings",
                 "character_media",
                 "character_presentation_asset_refs",
                 "characters",
                 "conversation_starters",
+                "group_lorebook_bindings",
                 "group_members",
                 "group_presentation_asset_refs",
                 "group_scene_assets",
                 "group_scene_variants",
                 "group_starting_scenes",
                 "groups",
+                "lorebook_entries",
+                "lorebooks",
                 "media_assets",
                 "media_blobs",
                 "model_profiles",
                 "persona_defaults",
+                "persona_lorebook_bindings",
                 "persona_media",
                 "personas",
+                "prompt_documents",
+                "prompt_entries",
                 "provider_accounts",
                 "scene_assets",
                 "scene_variants",

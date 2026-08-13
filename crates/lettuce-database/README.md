@@ -16,9 +16,19 @@ blobs. Migration 2 adds the logical media-asset catalog, retaining the blob
 catalog as the physical metadata boundary. Later feature tables arrive with
 their owning vertical slices.
 
-Migration 5 adds reusable group profiles, ordered members, typed image
-associations, and the optional complete group-owned starting scene graph. Group
-sessions and conversation history remain outside this slice.
+Migration 3 adds authored character graphs and starter-owned content. Migration
+4 adds personas and their media/default associations. Migration 5 adds
+reusable group profiles, ordered members, typed image associations, and the
+optional complete group-owned starting scene graph. Migration 6 adds the
+provider-neutral prompt/lorebook documents, ordered entries, and typed
+character/persona/group lorebook bindings. Prompt/lorebook JSON is strictly
+versioned and aggregate revisions use CAS; bindings follow the latest
+lorebook revision while archived references remain readable.
+
+Sessions, conversation assembly/resolution, starter-link normalization,
+import/export, hard purge, sync/backup, FTS, and legacy text-column retrofits
+remain outside this slice. Existing prompt/lorebook text columns are not
+silently migrated or overwritten.
 
 `Database` owns a serialized `rusqlite` connection, enables foreign keys and a
 bounded busy timeout, and uses WAL for persistent files. Repository traits stay
