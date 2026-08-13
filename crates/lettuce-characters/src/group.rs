@@ -61,9 +61,9 @@ impl GroupProfile {
             id,
             status: LifecycleStatus::Active,
             name,
-            chat_mode: ChatMode::Roleplay,
+            chat_mode: ChatMode::Conversation,
             persona: Selection::Inherit,
-            speaker_selection: SpeakerSelection::RoundRobin,
+            speaker_selection: SpeakerSelection::Llm,
             memory_policy: MemoryPolicy::Manual,
             disable_character_lorebooks: false,
             group_conversation_prompt_id: None,
@@ -179,6 +179,34 @@ mod tests {
                 .validate()
                 .is_ok()
         );
+    }
+
+    #[test]
+    fn new_groups_use_legacy_conversation_and_llm_defaults() {
+        let first = CharacterId::new();
+        let second = CharacterId::new();
+        let group = GroupProfile::new(
+            GroupId::new(),
+            "Cast".into(),
+            vec![
+                GroupMember {
+                    character_id: first,
+                    ordinal: 0,
+                    muted: false,
+                    model_profile_override: None,
+                },
+                GroupMember {
+                    character_id: second,
+                    ordinal: 1,
+                    muted: false,
+                    model_profile_override: None,
+                },
+            ],
+            TimestampMillis::new(1),
+        )
+        .expect("group");
+        assert_eq!(group.chat_mode, ChatMode::Conversation);
+        assert_eq!(group.speaker_selection, SpeakerSelection::Llm);
     }
 
     #[test]

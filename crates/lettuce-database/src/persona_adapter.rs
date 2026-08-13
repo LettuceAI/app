@@ -1136,6 +1136,26 @@ impl PersonaDependencyReader for Database {
         } else {
             Vec::new()
         };
+        let mut references = references;
+        let mut group_stmt = tx
+            .prepare(
+                "SELECT id FROM groups WHERE persona_selection_kind='explicit' AND persona_id=?1 ORDER BY id",
+            )
+            .map_err(db_error)?;
+        for row in group_stmt
+            .query_map([id.to_string()], |row| {
+                Ok(DependencyReference::PersonaInGroup {
+                    group_id: row
+                        .get::<_, String>(0)?
+                        .parse()
+                        .map_err(|_| invalid("persona.group"))?,
+                })
+            })
+            .map_err(db_error)?
+        {
+            references.push(row.map_err(db_error)?);
+        }
+        drop(group_stmt);
         let report = DependencyReport { references };
         tx.commit().map_err(db_error)?;
         Ok(report)

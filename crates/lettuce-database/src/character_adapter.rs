@@ -1473,6 +1473,20 @@ impl CharacterDependencyReader for Database {
                 });
             }
         }
+        let mut group_stmt = tx
+            .prepare("SELECT group_id FROM group_members WHERE character_id=?1 ORDER BY group_id")
+            .map_err(db_error)?;
+        for row in group_stmt
+            .query_map([id.to_string()], |row| {
+                Ok(DependencyReference::CharacterInGroup {
+                    group_id: row.get::<_, String>(0)?.parse().map_err(|_| invalid())?,
+                })
+            })
+            .map_err(db_error)?
+        {
+            references.push(row.map_err(db_error)?);
+        }
+        drop(group_stmt);
         references.extend(
             collect_asset_ids(&details)
                 .into_iter()

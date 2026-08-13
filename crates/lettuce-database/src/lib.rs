@@ -3,6 +3,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 mod character_adapter;
+mod group_adapter;
 mod persona_adapter;
 
 use std::{path::Path, str::FromStr, sync::Mutex, time::Duration};
@@ -44,6 +45,11 @@ const MIGRATION_3: Migration = Migration {
 const MIGRATION_4: Migration = Migration {
     id: 4,
     sql: include_str!("../migrations/0004_personas.sql"),
+};
+
+const MIGRATION_5: Migration = Migration {
+    id: 5,
+    sql: include_str!("../migrations/0005_groups.sql"),
 };
 
 const PROVIDER_CONFIG_FORMAT_VERSION: u32 = 1;
@@ -123,7 +129,13 @@ impl Database {
         configure(&connection, true)?;
         apply_migrations(
             &mut connection,
-            &[MIGRATION_1, MIGRATION_2, MIGRATION_3, MIGRATION_4],
+            &[
+                MIGRATION_1,
+                MIGRATION_2,
+                MIGRATION_3,
+                MIGRATION_4,
+                MIGRATION_5,
+            ],
         )?;
         initialize_settings(&connection)?;
         Ok(Self {
@@ -136,7 +148,13 @@ impl Database {
         configure(&connection, false)?;
         apply_migrations(
             &mut connection,
-            &[MIGRATION_1, MIGRATION_2, MIGRATION_3, MIGRATION_4],
+            &[
+                MIGRATION_1,
+                MIGRATION_2,
+                MIGRATION_3,
+                MIGRATION_4,
+                MIGRATION_5,
+            ],
         )?;
         initialize_settings(&connection)?;
         Ok(Self {
@@ -407,6 +425,18 @@ fn model_error(error: rusqlite::Error) -> ModelRepositoryError {
     }
 }
 
+fn model_dependency_sort_key(value: &ModelDependencyReference) -> (u8, String, String) {
+    match value {
+        ModelDependencyReference::CharacterDefault { character_id } => {
+            (0, character_id.to_string(), String::new())
+        }
+        ModelDependencyReference::GroupMemberOverride {
+            group_id,
+            character_id,
+        } => (1, group_id.to_string(), character_id.to_string()),
+    }
+}
+
 fn validate_account(account: &ProviderAccount) -> Result<(), ModelRepositoryError> {
     if account.provider_kind.trim().is_empty()
         || account.label.trim().is_empty()
@@ -575,6 +605,31 @@ impl Database {
                     .collect::<rusqlite::Result<Vec<_>>>()
             })
             .map_err(model_error)?;
+        let mut dependencies = dependencies;
+        let group_dependencies = transaction
+            .prepare(
+                "SELECT group_id,character_id FROM group_members WHERE model_profile_override_id IN \
+                 (SELECT id FROM model_profiles WHERE provider_account_id=?1) ORDER BY group_id,character_id",
+            )
+            .and_then(|mut statement| {
+                statement
+                    .query_map([id.to_string()], |row| {
+                        Ok(ModelDependencyReference::GroupMemberOverride {
+                            group_id: row
+                                .get::<_, String>(0)?
+                                .parse()
+                                .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                            character_id: row
+                                .get::<_, String>(1)?
+                                .parse()
+                                .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                        })
+                    })?
+                    .collect::<rusqlite::Result<Vec<_>>>()
+            })
+            .map_err(model_error)?;
+        dependencies.extend(group_dependencies);
+        dependencies.sort_by_key(model_dependency_sort_key);
         if !dependencies.is_empty() {
             return Err(ModelRepositoryError::InUse(dependencies));
         }
@@ -715,6 +770,30 @@ impl Database {
                     .collect::<rusqlite::Result<Vec<_>>>()
             })
             .map_err(model_error)?;
+        let mut dependencies = dependencies;
+        let group_dependencies = transaction
+            .prepare(
+                "SELECT group_id,character_id FROM group_members WHERE model_profile_override_id=?1 ORDER BY group_id,character_id",
+            )
+            .and_then(|mut statement| {
+                statement
+                    .query_map([id.to_string()], |row| {
+                        Ok(ModelDependencyReference::GroupMemberOverride {
+                            group_id: row
+                                .get::<_, String>(0)?
+                                .parse()
+                                .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                            character_id: row
+                                .get::<_, String>(1)?
+                                .parse()
+                                .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                        })
+                    })?
+                    .collect::<rusqlite::Result<Vec<_>>>()
+            })
+            .map_err(model_error)?;
+        dependencies.extend(group_dependencies);
+        dependencies.sort_by_key(model_dependency_sort_key);
         if !dependencies.is_empty() {
             return Err(ModelRepositoryError::InUse(dependencies));
         }
@@ -1306,17 +1385,17 @@ mod tests {
         MediaAssetRepositoryError, MediaBlob, MediaBlobRepository, MediaKind, RetentionClass,
     };
     use lettuce_models::{
-        CustomAuth, Modality, ModelKind, ModelProfile, ModelProfileConfig, ModelProfileRepository,
-        ModelRepositoryError, ProviderAccount, ProviderAccountRepository, ProviderConfig,
-        ProviderProtocol, SecretHeader,
+        CustomAuth, Modality, ModelDependencyReference, ModelKind, ModelProfile,
+        ModelProfileConfig, ModelProfileRepository, ModelRepositoryError, ProviderAccount,
+        ProviderAccountRepository, ProviderConfig, ProviderProtocol, SecretHeader,
     };
     use lettuce_settings::{
         GlobalSettingsStore, GlobalSettingsStoreError, HeaderName, SecretOwnerId, SecretPurpose,
         SecretRef,
     };
     use lettuce_types::{
-        AssetId, ContentHash, MediaBlobId, ModelProfileId, PageLimit, PageRequest,
-        ProviderAccountId, Revision, TimestampMillis,
+        AssetId, CharacterId, ContentHash, GroupId, MediaBlobId, ModelProfileId, PageLimit,
+        PageRequest, ProviderAccountId, Revision, TimestampMillis,
     };
 
     use super::{
@@ -1406,6 +1485,34 @@ mod tests {
         .expect("valid media asset")
     }
 
+    fn insert_group_model_reference(
+        database: &Database,
+        model_profile_id: ModelProfileId,
+    ) -> (GroupId, CharacterId) {
+        let group_id = GroupId::new();
+        let character_id = CharacterId::new();
+        let connection = database.connection().expect("database lock");
+        connection
+            .execute(
+                "INSERT INTO characters (id,status,name,normalized_name,profile_json,provenance_json,defaults_json,interaction_mode,memory_policy,voice_autoplay,presentation_json,revision,created_at,updated_at) VALUES (?1,'active','Member','member','{}','{}','{}','roleplay','manual',0,'{}',1,1,1)",
+                [character_id.to_string()],
+            )
+            .expect("group character fixture");
+        connection
+            .execute(
+                "INSERT INTO groups (id,status,name,normalized_name,chat_mode,persona_selection_kind,speaker_selection,memory_policy,disable_character_lorebooks,presentation_json,background_blob_kind,revision,created_at,updated_at) VALUES (?1,'active','Cast','cast','conversation','inherit','llm','manual',0,'{}','image',1,1,1)",
+                [group_id.to_string()],
+            )
+            .expect("group fixture");
+        connection
+            .execute(
+                "INSERT INTO group_members (group_id,character_id,ordinal,muted,model_profile_override_id) VALUES (?1,?2,0,0,?3)",
+                rusqlite::params![group_id.to_string(), character_id.to_string(), model_profile_id.to_string()],
+            )
+            .expect("group model reference");
+        (group_id, character_id)
+    }
+
     #[test]
     fn migration_is_idempotent_and_checksum_protected() {
         let database = Database::open_in_memory().expect("open database");
@@ -1417,6 +1524,7 @@ mod tests {
                 super::MIGRATION_2,
                 super::MIGRATION_3,
                 super::MIGRATION_4,
+                super::MIGRATION_5,
             ],
         )
         .expect("repeat migration");
@@ -1425,7 +1533,7 @@ mod tests {
                 row.get(0)
             })
             .expect("migration count");
-        assert_eq!(count, 4);
+        assert_eq!(count, 5);
 
         let changed = Migration {
             id: 1,
@@ -1459,6 +1567,14 @@ mod tests {
             apply_migrations(&mut connection, &[changed]),
             Err(DatabaseError::MigrationChecksum { id: 4 })
         ));
+        let changed = Migration {
+            id: 5,
+            sql: "SELECT 5;",
+        };
+        assert!(matches!(
+            apply_migrations(&mut connection, &[changed]),
+            Err(DatabaseError::MigrationChecksum { id: 5 })
+        ));
     }
 
     #[test]
@@ -1491,6 +1607,60 @@ mod tests {
             None
         );
         ProviderAccountRepository::delete(&database, account.id).expect("delete unused account");
+    }
+
+    #[test]
+    fn model_deletion_reports_sorted_group_member_overrides_on_both_paths() {
+        let database = Database::open_in_memory().expect("open database");
+        let account =
+            ProviderAccountRepository::upsert(&database, provider(), None).expect("account");
+        let first = ModelProfileRepository::upsert(&database, profile(account.id), None)
+            .expect("first profile");
+        let mut second_input = profile(account.id);
+        second_input.id = ModelProfileId::new();
+        let second =
+            ModelProfileRepository::upsert(&database, second_input, None).expect("second profile");
+        let first_dependency = insert_group_model_reference(&database, first.id);
+        let second_dependency = insert_group_model_reference(&database, second.id);
+
+        assert_eq!(
+            ModelProfileRepository::delete_and_clear_default(&database, first.id),
+            Err(ModelRepositoryError::InUse(vec![
+                ModelDependencyReference::GroupMemberOverride {
+                    group_id: first_dependency.0,
+                    character_id: first_dependency.1,
+                }
+            ]))
+        );
+        let mut expected = vec![
+            ModelDependencyReference::GroupMemberOverride {
+                group_id: first_dependency.0,
+                character_id: first_dependency.1,
+            },
+            ModelDependencyReference::GroupMemberOverride {
+                group_id: second_dependency.0,
+                character_id: second_dependency.1,
+            },
+        ];
+        expected.sort_by_key(super::model_dependency_sort_key);
+        assert_eq!(
+            ProviderAccountRepository::delete_with_profiles(&database, account.id),
+            Err(ModelRepositoryError::InUse(expected))
+        );
+
+        let connection = database.connection().expect("database lock");
+        connection
+            .execute(
+                "DELETE FROM group_members WHERE group_id IN (?1,?2)",
+                rusqlite::params![
+                    first_dependency.0.to_string(),
+                    second_dependency.0.to_string()
+                ],
+            )
+            .expect("remove group dependencies");
+        drop(connection);
+        ProviderAccountRepository::delete_with_profiles(&database, account.id)
+            .expect("delete account graph after detach");
     }
 
     #[test]
@@ -2298,7 +2468,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            4
+            5
         );
         drop(connection);
         drop(database);
@@ -2306,17 +2476,22 @@ mod tests {
     }
 
     #[test]
-    fn concurrent_open_upgrades_a_pre_m4_file_once() {
+    fn concurrent_open_upgrades_a_pre_m5_file_once() {
         let path =
-            std::env::temp_dir().join(format!("lettuce-pre-m3-race-{}.db", MediaBlobId::new()));
+            std::env::temp_dir().join(format!("lettuce-pre-m5-race-{}.db", MediaBlobId::new()));
         {
-            let mut connection = rusqlite::Connection::open(&path).expect("open pre-M4 file");
-            super::configure(&connection, true).expect("configure pre-M4 file");
+            let mut connection = rusqlite::Connection::open(&path).expect("open pre-M5 file");
+            super::configure(&connection, true).expect("configure pre-M5 file");
             apply_migrations(
                 &mut connection,
-                &[super::MIGRATION_1, super::MIGRATION_2, super::MIGRATION_3],
+                &[
+                    super::MIGRATION_1,
+                    super::MIGRATION_2,
+                    super::MIGRATION_3,
+                    super::MIGRATION_4,
+                ],
             )
-            .expect("create pre-M4 schema");
+            .expect("create pre-M5 schema");
         }
 
         let barrier = Arc::new(Barrier::new(3));
@@ -2343,8 +2518,56 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            4
+            5
         );
+        drop(connection);
+        drop(database);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn m4_file_upgrades_to_m5_group_schema_exactly_once() {
+        let path =
+            std::env::temp_dir().join(format!("lettuce-m4-upgrade-{}.db", MediaBlobId::new()));
+        {
+            let mut connection = rusqlite::Connection::open(&path).expect("open m4 file");
+            super::configure(&connection, true).expect("configure m4 file");
+            apply_migrations(
+                &mut connection,
+                &[
+                    super::MIGRATION_1,
+                    super::MIGRATION_2,
+                    super::MIGRATION_3,
+                    super::MIGRATION_4,
+                ],
+            )
+            .expect("apply m1-m4");
+        }
+        let database = Database::open(&path).expect("upgrade m4 file");
+        let connection = database.connection().expect("database lock");
+        let migration_count: i64 = connection
+            .query_row("SELECT count(*) FROM schema_migrations", [], |row| {
+                row.get(0)
+            })
+            .expect("migration count");
+        assert_eq!(migration_count, 5);
+        for table in [
+            "groups",
+            "group_members",
+            "group_presentation_asset_refs",
+            "group_starting_scenes",
+            "group_scene_variants",
+            "group_scene_assets",
+        ] {
+            let present: i64 = connection
+                .query_row(
+                    "SELECT count(*) FROM sqlite_schema WHERE type='table' AND name=?1",
+                    [table],
+                    |row| row.get(0),
+                )
+                .expect("table lookup");
+            assert_eq!(present, 1, "missing table {table}");
+        }
         drop(connection);
         drop(database);
         let _ = std::fs::remove_file(path);
@@ -2472,6 +2695,12 @@ mod tests {
                 "character_presentation_asset_refs",
                 "characters",
                 "conversation_starters",
+                "group_members",
+                "group_presentation_asset_refs",
+                "group_scene_assets",
+                "group_scene_variants",
+                "group_starting_scenes",
+                "groups",
                 "media_assets",
                 "media_blobs",
                 "model_profiles",
@@ -2486,5 +2715,122 @@ mod tests {
                 "starter_messages",
             ]
         );
+    }
+
+    #[test]
+    fn group_schema_enforces_composite_graph_and_image_foreign_keys() {
+        let database = Database::open_in_memory().expect("open database");
+        let audio_blob =
+            MediaBlobRepository::register(&database, media_blob('b', MediaKind::Audio))
+                .expect("register audio blob");
+        let audio_asset_id = AssetId::new();
+        MediaAssetRepository::create(
+            &database,
+            media_asset(audio_asset_id, audio_blob.id, AssetKind::OtherAudio),
+        )
+        .expect("create audio asset");
+
+        let group_one = lettuce_types::GroupId::new().to_string();
+        let group_two = lettuce_types::GroupId::new().to_string();
+        let scene_one = lettuce_types::SceneId::new().to_string();
+        let scene_two = lettuce_types::SceneId::new().to_string();
+        let variant_two = lettuce_types::SceneVariantId::new().to_string();
+        let mut connection = database.connection().expect("database lock");
+        for group_id in [&group_one, &group_two] {
+            connection
+                .execute(
+                    "INSERT INTO groups (id,status,name,normalized_name,chat_mode,persona_selection_kind,speaker_selection,memory_policy,disable_character_lorebooks,presentation_json,background_blob_kind,revision,created_at,updated_at) VALUES (?1,'active','Cast','cast','conversation','inherit','llm','manual',0,'{}','image',1,1,1)",
+                    [group_id],
+                )
+                .expect("insert group fixture");
+        }
+        for (group_id, scene_id) in [(&group_one, &scene_one), (&group_two, &scene_two)] {
+            connection
+                .execute(
+                    "INSERT INTO group_starting_scenes (group_id,id,status,ordinal,content_json,revision,created_at,updated_at) VALUES (?1,?2,'active',0,'{}',1,1,1)",
+                    rusqlite::params![group_id, scene_id],
+                )
+                .expect("insert scene fixture");
+        }
+        let image_blob = MediaBlobId::new().to_string();
+        let image_asset = AssetId::new().to_string();
+        connection
+            .execute(
+                "INSERT INTO media_blobs (id,content_hash,kind,mime_type,byte_size,width,height,validation_version,state,created_at,updated_at) VALUES (?1,?2,'image','image/png',1,1,1,1,'ready',1,1)",
+                rusqlite::params![image_blob, "a".repeat(64)],
+            )
+            .expect("insert image blob");
+        connection
+            .execute(
+                "INSERT INTO media_assets (id,blob_id,blob_kind,kind,origin,retention,provenance_json,revision,created_at,updated_at) VALUES (?1,?2,'image','illustration','upload','library','{}',1,1,1)",
+                rusqlite::params![image_asset, image_blob],
+            )
+            .expect("insert image asset");
+        connection
+            .execute(
+                "INSERT INTO group_presentation_asset_refs (group_id,asset_id,blob_kind) VALUES (?1,?2,'image')",
+                rusqlite::params![group_one, image_asset],
+            )
+            .expect("insert image reference");
+        assert!(
+            connection
+                .execute(
+                    "DELETE FROM media_assets WHERE id=?1",
+                    [image_asset.as_str()],
+                )
+                .is_err()
+        );
+
+        assert!(connection
+            .execute(
+                "INSERT INTO group_scene_variants (group_id,id,scene_id,ordinal,content_json,revision,created_at,updated_at) VALUES (?1,?2,?3,0,'{}',1,1,1)",
+                rusqlite::params![group_one, lettuce_types::SceneVariantId::new().to_string(), scene_two],
+            )
+            .is_err());
+        connection
+            .execute(
+                "INSERT INTO group_scene_variants (group_id,id,scene_id,ordinal,content_json,revision,created_at,updated_at) VALUES (?1,?2,?3,0,'{}',1,1,1)",
+                rusqlite::params![group_two, variant_two, scene_two],
+            )
+            .expect("insert valid variant fixture");
+        assert!(connection
+            .execute(
+                "INSERT INTO group_presentation_asset_refs (group_id,asset_id,blob_kind) VALUES (?1,?2,'image')",
+                rusqlite::params![group_one, audio_asset_id.to_string()],
+            )
+            .is_err());
+        assert!(connection
+            .execute(
+                "INSERT INTO group_scene_assets (group_id,scene_id,id,asset_id,blob_kind,slot,ordinal) VALUES (?1,?2,?3,?4,'image','inline',0)",
+                rusqlite::params![
+                    group_one,
+                    scene_one,
+                    lettuce_types::SceneAssetLinkId::new().to_string(),
+                    audio_asset_id.to_string(),
+                ],
+            )
+            .is_err());
+
+        let selected = connection
+            .transaction()
+            .expect("start selected-variant transaction");
+        selected
+            .execute(
+                "UPDATE group_starting_scenes SET selected_variant_id=?1 WHERE group_id=?2 AND id=?3",
+                rusqlite::params![variant_two, group_one, scene_one],
+            )
+            .expect("write cross-group selected variant");
+        assert!(selected.commit().is_err());
+
+        let starting = connection
+            .transaction()
+            .expect("start starting-scene transaction");
+        starting
+            .execute(
+                "UPDATE groups SET starting_scene_id=?1 WHERE id=?2",
+                rusqlite::params![scene_two, group_one],
+            )
+            .expect("write cross-group starting scene");
+        assert!(starting.commit().is_err());
     }
 }

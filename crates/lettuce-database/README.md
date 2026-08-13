@@ -16,6 +16,10 @@ blobs. Migration 2 adds the logical media-asset catalog, retaining the blob
 catalog as the physical metadata boundary. Later feature tables arrive with
 their owning vertical slices.
 
+Migration 5 adds reusable group profiles, ordered members, typed image
+associations, and the optional complete group-owned starting scene graph. Group
+sessions and conversation history remain outside this slice.
+
 `Database` owns a serialized `rusqlite` connection, enables foreign keys and a
 bounded busy timeout, and uses WAL for persistent files. Repository traits stay
 in their domain crates; this crate contains their SQLite implementations. The

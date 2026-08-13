@@ -961,6 +961,16 @@ pub enum DependencyReference {
     PersonaInGroup {
         group_id: GroupId,
     },
+    GroupMemberCharacter {
+        character_id: CharacterId,
+    },
+    GroupPersona {
+        persona_id: PersonaId,
+    },
+    GroupMemberModel {
+        character_id: CharacterId,
+        model_profile_id: ModelProfileId,
+    },
     PersonaDefault,
     GroupStartingScene {
         scene_id: SceneId,

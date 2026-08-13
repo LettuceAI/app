@@ -47,6 +47,8 @@ pub enum RepositoryError {
     MissingDefaultRevision,
     #[error("the record is archived")]
     Archived,
+    #[error("the record is already active")]
+    AlreadyActive,
     #[error("the operation has dependent records")]
     HasDependencies,
     #[error("the proposed record is invalid: {0}")]
