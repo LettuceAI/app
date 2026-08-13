@@ -40,6 +40,8 @@ check_dependency_owner sea-orm lettuce-database
 check_dependency_owner tauri lettuce-app
 check_dependency_owner reqwest lettuce-network
 check_dependency_owner keyring lettuce-settings
+check_dependency_owner cap-std lettuce-platform
+check_dependency_owner cap-primitives lettuce-platform
 
 cargo metadata --manifest-path "$repo_root/Cargo.toml" --no-deps --format-version 1 >/dev/null
 echo "architecture checks passed"

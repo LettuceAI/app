@@ -14,4 +14,7 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+cap-primitives.workspace = true
+cap-std.workspace = true
 lettuce-types.workspace = true
+uuid.workspace = true
