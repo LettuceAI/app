@@ -13,8 +13,11 @@ mod repository;
 pub use asset::{
     ASSET_PROVENANCE_FORMAT_VERSION, AssetKind, AssetOrigin, AssetProvenanceError,
     AssetProvenanceV1, AssetReference, AssetReferenceReader, AssetReferenceReaderError,
-    AssetRetainer, AssetRetentionReader, AssetState, MediaAsset, MediaAssetMutationError,
+    AssetRetainer, AssetRetentionReader, MediaAsset, MediaAssetMutationError,
     MediaAssetValidationError, RetentionClass,
 };
-pub use blob::{BlobState, MediaBlob, MediaBlobRepository, MediaBlobRepositoryError, MediaKind};
+pub use blob::{
+    BlobState, MediaBlob, MediaBlobRepository, MediaBlobRepositoryError, MediaBlobValidationError,
+    MediaKind,
+};
 pub use repository::{MediaAssetRepository, MediaAssetRepositoryError};

@@ -9,7 +9,10 @@
 #[cfg(test)]
 mod tests {
     use lettuce_database::Database;
-    use lettuce_media::{BlobState, MediaBlob, MediaBlobRepository, MediaKind};
+    use lettuce_media::{
+        AssetKind, AssetOrigin, AssetProvenanceV1, BlobState, MediaAsset, MediaAssetRepository,
+        MediaBlob, MediaBlobRepository, MediaKind, RetentionClass,
+    };
     use lettuce_models::{
         Modality, ModelKind, ModelProfile, ModelProfileConfig, ModelProfileRepository,
         ProviderAccount, ProviderAccountRepository, ProviderConfig, ProviderProtocol,
@@ -84,6 +87,19 @@ mod tests {
             updated_at: TimestampMillis::new(3),
         };
         let blob = MediaBlobRepository::register(&database, blob).expect("register blob");
+        let asset = MediaAsset::new(
+            lettuce_types::AssetId::new(),
+            blob.id,
+            AssetKind::Illustration,
+            AssetOrigin::Upload,
+            RetentionClass::Library,
+            AssetProvenanceV1::default(),
+            Revision::INITIAL,
+            TimestampMillis::new(4),
+            TimestampMillis::new(4),
+        )
+        .expect("valid asset");
+        let asset = MediaAssetRepository::create(&database, asset).expect("create asset");
 
         assert_eq!(
             GlobalSettingsStore::load(&database)
@@ -108,6 +124,12 @@ mod tests {
                 .expect("get blob")
                 .map(|value| value.id),
             Some(blob.id)
+        );
+        assert_eq!(
+            MediaAssetRepository::get(&database, asset.id)
+                .expect("get asset")
+                .map(|value| value.id),
+            Some(asset.id)
         );
     }
 }

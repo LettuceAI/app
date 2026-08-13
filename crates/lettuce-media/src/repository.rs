@@ -2,7 +2,7 @@
 
 use lettuce_types::{AssetId, Page, PageRequest, Revision, TimestampMillis};
 
-use crate::{AssetState, MediaAsset, RetentionClass};
+use crate::{MediaAsset, RetentionClass};
 
 /// Errors exposed by a logical asset adapter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -36,16 +36,6 @@ pub trait MediaAssetRepository: Send + Sync {
         id: AssetId,
         expected_revision: Revision,
         retention: RetentionClass,
-        updated_at: TimestampMillis,
-    ) -> Result<MediaAsset, MediaAssetRepositoryError>;
-
-    /// Marks an asset missing or corrupt, using the supplied revision as a CAS
-    /// token. Adapters must reject every other state for this operation.
-    fn mark_missing_or_corrupt(
-        &self,
-        id: AssetId,
-        expected_revision: Revision,
-        state: AssetState,
         updated_at: TimestampMillis,
     ) -> Result<MediaAsset, MediaAssetRepositoryError>;
 

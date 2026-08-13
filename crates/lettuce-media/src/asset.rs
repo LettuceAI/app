@@ -87,20 +87,6 @@ impl RetentionClass {
     }
 }
 
-/// Logical lifecycle state. Physical deletion is intentionally not exposed
-/// by the repository port.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AssetState {
-    Staged,
-    Ready,
-    Quarantined,
-    Missing,
-    Corrupt,
-    TrashPending,
-    Deleted,
-}
-
 /// Versioned, deliberately redacted provenance. It excludes bytes, native
 /// paths, credentials, prompts and provider request bodies by construction.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -157,7 +143,6 @@ pub struct MediaAsset {
     pub kind: AssetKind,
     pub origin: AssetOrigin,
     pub retention: RetentionClass,
-    pub state: AssetState,
     pub provenance: AssetProvenanceV1,
     pub revision: Revision,
     pub created_at: TimestampMillis,
@@ -173,7 +158,6 @@ impl MediaAsset {
         kind: AssetKind,
         origin: AssetOrigin,
         retention: RetentionClass,
-        state: AssetState,
         provenance: AssetProvenanceV1,
         revision: Revision,
         created_at: TimestampMillis,
@@ -185,7 +169,6 @@ impl MediaAsset {
             kind,
             origin,
             retention,
-            state,
             provenance,
             revision,
             created_at,
@@ -203,15 +186,13 @@ impl MediaAsset {
         kind: AssetKind,
         origin: AssetOrigin,
         retention: RetentionClass,
-        state: AssetState,
         provenance: AssetProvenanceV1,
         revision: Revision,
         created_at: TimestampMillis,
         updated_at: TimestampMillis,
     ) -> Result<Self, MediaAssetValidationError> {
         Self::new(
-            id, blob_id, kind, origin, retention, state, provenance, revision, created_at,
-            updated_at,
+            id, blob_id, kind, origin, retention, provenance, revision, created_at, updated_at,
         )
     }
 
@@ -259,27 +240,6 @@ impl MediaAsset {
         self.require_revision(expected_revision)?;
         let next_revision = self.next_revision()?;
         self.retention = retention;
-        self.revision = next_revision;
-        self.updated_at = updated_at;
-        Ok(())
-    }
-
-    /// Marks an asset as missing or corrupt using an optimistic-concurrency
-    /// token. Other lifecycle states require a separate named operation.
-    pub fn mark_missing_or_corrupt(
-        &mut self,
-        expected_revision: Revision,
-        state: AssetState,
-        updated_at: TimestampMillis,
-    ) -> Result<(), MediaAssetMutationError> {
-        self.validate()
-            .map_err(MediaAssetMutationError::InvalidAsset)?;
-        self.require_revision(expected_revision)?;
-        if !matches!(state, AssetState::Missing | AssetState::Corrupt) {
-            return Err(MediaAssetMutationError::InvalidIntegrityState(state));
-        }
-        let next_revision = self.next_revision()?;
-        self.state = state;
         self.revision = next_revision;
         self.updated_at = updated_at;
         Ok(())
@@ -338,8 +298,6 @@ pub enum MediaAssetMutationError {
     RevisionOverflow,
     #[error("media asset is invalid: {0}")]
     InvalidAsset(#[source] MediaAssetValidationError),
-    #[error("integrity marking only accepts missing or corrupt, not {0:?}")]
-    InvalidIntegrityState(AssetState),
 }
 
 impl From<MediaAssetValidationError> for MediaAssetMutationError {
@@ -485,7 +443,6 @@ mod tests {
             kind,
             AssetOrigin::Upload,
             retention,
-            AssetState::Ready,
             provenance,
             Revision::INITIAL,
             TimestampMillis::new(10),
@@ -513,7 +470,6 @@ mod tests {
             AssetKind::AvatarOriginal,
             AssetOrigin::Upload,
             RetentionClass::Library,
-            AssetState::Ready,
             AssetProvenanceV1 {
                 source_label: Some("avatar".to_owned()),
                 ..AssetProvenanceV1::default()
@@ -531,7 +487,6 @@ mod tests {
             RetentionClass::Temporary {
                 expires_at: TimestampMillis::new(100),
             },
-            AssetState::Ready,
             AssetProvenanceV1 {
                 producing_job_id: Some(JobId::new()),
                 ..AssetProvenanceV1::default()
@@ -556,7 +511,6 @@ mod tests {
             AssetKind::OtherImage,
             AssetOrigin::Import,
             RetentionClass::Persistent,
-            AssetState::Ready,
             AssetProvenanceV1::default(),
             Revision::new(0),
             TimestampMillis::new(1),
@@ -588,7 +542,7 @@ mod tests {
     }
 
     #[test]
-    fn retention_and_integrity_mutations_are_revision_checked_and_increment_once() {
+    fn retention_mutation_is_revision_checked_and_increments_once() {
         let mut image = asset(
             AssetKind::Illustration,
             RetentionClass::Library,
@@ -613,27 +567,6 @@ mod tests {
             ),
             Err(MediaAssetMutationError::StaleRevision { .. })
         ));
-
-        image
-            .mark_missing_or_corrupt(
-                Revision::new(2),
-                AssetState::Corrupt,
-                TimestampMillis::new(22),
-            )
-            .expect("matching integrity revision");
-        assert_eq!(image.state, AssetState::Corrupt);
-        assert_eq!(image.revision, Revision::new(3));
-        assert!(matches!(
-            image.mark_missing_or_corrupt(
-                Revision::new(3),
-                AssetState::Deleted,
-                TimestampMillis::new(23)
-            ),
-            Err(MediaAssetMutationError::InvalidIntegrityState(
-                AssetState::Deleted
-            ))
-        ));
-        assert_eq!(image.revision, Revision::new(3));
     }
 
     #[test]

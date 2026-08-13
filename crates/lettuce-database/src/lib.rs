@@ -5,7 +5,8 @@
 use std::{path::Path, str::FromStr, sync::Mutex, time::Duration};
 
 use lettuce_media::{
-    BlobState, MediaBlob, MediaBlobRepository, MediaBlobRepositoryError, MediaKind,
+    AssetKind, AssetOrigin, BlobState, MediaAsset, MediaAssetRepository, MediaAssetRepositoryError,
+    MediaBlob, MediaBlobRepository, MediaBlobRepositoryError, MediaKind, RetentionClass,
 };
 use lettuce_models::{
     ModelKind, ModelProfile, ModelProfileRepository, ModelRepositoryError, ProviderAccount,
@@ -16,13 +17,19 @@ use lettuce_settings::{
     SecretRef, StoredGlobalSettings,
 };
 use lettuce_types::{
-    ContentHash, MediaBlobId, ModelProfileId, ProviderAccountId, Revision, TimestampMillis,
+    AssetId, ContentHash, MediaBlobId, ModelProfileId, Page, PageRequest, ProviderAccountId,
+    Revision, TimestampMillis,
 };
-use rusqlite::{Connection, OptionalExtension, Row, params};
+use rusqlite::{Connection, OptionalExtension, Row, TransactionBehavior, params};
 
 const MIGRATION_1: Migration = Migration {
     id: 1,
     sql: include_str!("../migrations/0001_foundation.sql"),
+};
+
+const MIGRATION_2: Migration = Migration {
+    id: 2,
+    sql: include_str!("../migrations/0002_media_assets.sql"),
 };
 
 const PROVIDER_CONFIG_FORMAT_VERSION: u32 = 1;
@@ -100,7 +107,7 @@ impl Database {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, DatabaseError> {
         let mut connection = Connection::open(path)?;
         configure(&connection, true)?;
-        apply_migrations(&mut connection, &[MIGRATION_1])?;
+        apply_migrations(&mut connection, &[MIGRATION_1, MIGRATION_2])?;
         initialize_settings(&connection)?;
         Ok(Self {
             connection: Mutex::new(connection),
@@ -110,7 +117,7 @@ impl Database {
     pub fn open_in_memory() -> Result<Self, DatabaseError> {
         let mut connection = Connection::open_in_memory()?;
         configure(&connection, false)?;
-        apply_migrations(&mut connection, &[MIGRATION_1])?;
+        apply_migrations(&mut connection, &[MIGRATION_1, MIGRATION_2])?;
         initialize_settings(&connection)?;
         Ok(Self {
             connection: Mutex::new(connection),
@@ -680,6 +687,9 @@ fn blob_state_name(value: BlobState) -> &'static str {
         BlobState::Missing => "missing",
     }
 }
+
+const MEDIA_BLOB_COLUMNS: &str = "id, content_hash, kind, mime_type, byte_size, width, height, duration_ms, validation_version, state, created_at, updated_at";
+
 fn media_from_row(row: &Row<'_>) -> rusqlite::Result<MediaBlob> {
     let kind = match row.get::<_, String>(2)?.as_str() {
         "image" => MediaKind::Image,
@@ -694,7 +704,7 @@ fn media_from_row(row: &Row<'_>) -> rusqlite::Result<MediaBlob> {
         "missing" => BlobState::Missing,
         _ => return Err(rusqlite::Error::InvalidQuery),
     };
-    Ok(MediaBlob {
+    let blob = MediaBlob {
         id: parse_id(row.get(0)?)?,
         content_hash: row
             .get::<_, String>(1)?
@@ -718,11 +728,14 @@ fn media_from_row(row: &Row<'_>) -> rusqlite::Result<MediaBlob> {
             .map(u64::try_from)
             .transpose()
             .map_err(|_| rusqlite::Error::InvalidQuery)?,
-        validation_version: row.get(8)?,
+        validation_version: u32::try_from(row.get::<_, i64>(8)?)
+            .map_err(|_| rusqlite::Error::InvalidQuery)?,
         state,
         created_at: TimestampMillis::new(row.get(10)?),
         updated_at: TimestampMillis::new(row.get(11)?),
-    })
+    };
+    blob.validate().map_err(|_| rusqlite::Error::InvalidQuery)?;
+    Ok(blob)
 }
 fn media_error(error: rusqlite::Error) -> MediaBlobRepositoryError {
     match error {
@@ -733,29 +746,501 @@ fn media_error(error: rusqlite::Error) -> MediaBlobRepositoryError {
 
 impl MediaBlobRepository for Database {
     fn register(&self, blob: MediaBlob) -> Result<MediaBlob, MediaBlobRepositoryError> {
-        let connection = self
+        blob.validate()
+            .map_err(|_| MediaBlobRepositoryError::InvalidData)?;
+        let mut connection = self
             .connection()
             .map_err(|_| MediaBlobRepositoryError::Storage)?;
-        connection.execute("INSERT INTO media_blobs (id, content_hash, kind, mime_type, byte_size, width, height, duration_ms, validation_version, state, created_at, updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12) ON CONFLICT(content_hash) DO NOTHING",
-            params![blob.id.to_string(), blob.content_hash.as_str(), media_kind_name(blob.kind), blob.mime_type, to_i64(blob.byte_size).map_err(media_error)?, blob.width, blob.height,
-                blob.duration_ms.map(to_i64).transpose().map_err(media_error)?, blob.validation_version, blob_state_name(blob.state), blob.created_at.get(), blob.updated_at.get()]).map_err(media_error)?;
-        let stored = connection.query_row("SELECT id, content_hash, kind, mime_type, byte_size, width, height, duration_ms, validation_version, state, created_at, updated_at FROM media_blobs WHERE content_hash=?1", [blob.content_hash.as_str()], media_from_row).map_err(media_error)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(media_error)?;
+        let by_id = transaction
+            .query_row(
+                &format!("SELECT {MEDIA_BLOB_COLUMNS} FROM media_blobs WHERE id=?1"),
+                [blob.id.to_string()],
+                media_from_row,
+            )
+            .optional()
+            .map_err(media_error)?;
+        let by_hash = transaction
+            .query_row(
+                &format!("SELECT {MEDIA_BLOB_COLUMNS} FROM media_blobs WHERE content_hash=?1"),
+                [blob.content_hash.as_str()],
+                media_from_row,
+            )
+            .optional()
+            .map_err(media_error)?;
+
+        if let Some(existing) = by_hash {
+            if existing.content_hash != blob.content_hash
+                || existing.kind != blob.kind
+                || existing.mime_type != blob.mime_type
+                || existing.byte_size != blob.byte_size
+                || existing.width != blob.width
+                || existing.height != blob.height
+                || existing.duration_ms != blob.duration_ms
+                || existing.validation_version != blob.validation_version
+            {
+                return Err(MediaBlobRepositoryError::InvalidData);
+            }
+            if let Some(existing_by_id) = by_id {
+                if existing_by_id.content_hash != existing.content_hash {
+                    return Err(MediaBlobRepositoryError::InvalidData);
+                }
+            }
+            return Ok(existing);
+        }
+
+        if by_id.is_some() {
+            return Err(MediaBlobRepositoryError::InvalidData);
+        }
+
+        transaction
+            .execute(
+                "INSERT INTO media_blobs (id, content_hash, kind, mime_type, byte_size, width, height, duration_ms, validation_version, state, created_at, updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
+                params![
+                    blob.id.to_string(),
+                    blob.content_hash.as_str(),
+                    media_kind_name(blob.kind),
+                    blob.mime_type,
+                    to_i64(blob.byte_size).map_err(media_error)?,
+                    blob.width.map(i64::from),
+                    blob.height.map(i64::from),
+                    blob.duration_ms
+                        .map(to_i64)
+                        .transpose()
+                        .map_err(media_error)?,
+                    i64::from(blob.validation_version),
+                    blob_state_name(blob.state),
+                    blob.created_at.get(),
+                    blob.updated_at.get()
+                ],
+            )
+            .map_err(media_error)?;
+        let stored = transaction
+            .query_row(
+                &format!("SELECT {MEDIA_BLOB_COLUMNS} FROM media_blobs WHERE id=?1"),
+                [blob.id.to_string()],
+                media_from_row,
+            )
+            .map_err(media_error)?;
+        transaction.commit().map_err(media_error)?;
         Ok(stored)
     }
     fn get(&self, id: MediaBlobId) -> Result<Option<MediaBlob>, MediaBlobRepositoryError> {
-        self.connection().map_err(|_| MediaBlobRepositoryError::Storage)?.query_row("SELECT id, content_hash, kind, mime_type, byte_size, width, height, duration_ms, validation_version, state, created_at, updated_at FROM media_blobs WHERE id=?1", [id.to_string()], media_from_row).optional().map_err(media_error)
+        self.connection()
+            .map_err(|_| MediaBlobRepositoryError::Storage)?
+            .query_row(
+                &format!("SELECT {MEDIA_BLOB_COLUMNS} FROM media_blobs WHERE id=?1"),
+                [id.to_string()],
+                media_from_row,
+            )
+            .optional()
+            .map_err(media_error)
     }
     fn find_by_hash(
         &self,
         hash: &ContentHash,
     ) -> Result<Option<MediaBlob>, MediaBlobRepositoryError> {
-        self.connection().map_err(|_| MediaBlobRepositoryError::Storage)?.query_row("SELECT id, content_hash, kind, mime_type, byte_size, width, height, duration_ms, validation_version, state, created_at, updated_at FROM media_blobs WHERE content_hash=?1", [hash.as_str()], media_from_row).optional().map_err(media_error)
+        self.connection()
+            .map_err(|_| MediaBlobRepositoryError::Storage)?
+            .query_row(
+                &format!("SELECT {MEDIA_BLOB_COLUMNS} FROM media_blobs WHERE content_hash=?1"),
+                [hash.as_str()],
+                media_from_row,
+            )
+            .optional()
+            .map_err(media_error)
+    }
+}
+
+const MEDIA_ASSET_COLUMNS: &str = "id, blob_id, blob_kind, kind, origin, retention, expires_at, provenance_json, revision, created_at, updated_at";
+const ASSET_CURSOR_FORMAT_VERSION: u32 = 1;
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LibraryCursor {
+    format_version: u32,
+    updated_at: i64,
+    id: String,
+}
+
+fn asset_kind_name(value: AssetKind) -> &'static str {
+    match value {
+        AssetKind::AvatarOriginal => "avatar_original",
+        AssetKind::BackgroundImage => "background_image",
+        AssetKind::Illustration => "illustration",
+        AssetKind::LorebookIcon => "lorebook_icon",
+        AssetKind::MessageImage => "message_image",
+        AssetKind::MessageAudio => "message_audio",
+        AssetKind::GeneratedImage => "generated_image",
+        AssetKind::SynthesizedSpeech => "synthesized_speech",
+        AssetKind::OtherImage => "other_image",
+        AssetKind::OtherAudio => "other_audio",
+    }
+}
+
+fn asset_kind_from_name(value: &str) -> Option<AssetKind> {
+    Some(match value {
+        "avatar_original" => AssetKind::AvatarOriginal,
+        "background_image" => AssetKind::BackgroundImage,
+        "illustration" => AssetKind::Illustration,
+        "lorebook_icon" => AssetKind::LorebookIcon,
+        "message_image" => AssetKind::MessageImage,
+        "message_audio" => AssetKind::MessageAudio,
+        "generated_image" => AssetKind::GeneratedImage,
+        "synthesized_speech" => AssetKind::SynthesizedSpeech,
+        "other_image" => AssetKind::OtherImage,
+        "other_audio" => AssetKind::OtherAudio,
+        _ => return None,
+    })
+}
+
+fn asset_origin_name(value: AssetOrigin) -> &'static str {
+    match value {
+        AssetOrigin::Upload => "upload",
+        AssetOrigin::Import => "import",
+        AssetOrigin::RemoteFetch => "remote_fetch",
+        AssetOrigin::Generated => "generated",
+        AssetOrigin::Synthesized => "synthesized",
+        AssetOrigin::Legacy => "legacy",
+    }
+}
+
+fn asset_origin_from_name(value: &str) -> Option<AssetOrigin> {
+    Some(match value {
+        "upload" => AssetOrigin::Upload,
+        "import" => AssetOrigin::Import,
+        "remote_fetch" => AssetOrigin::RemoteFetch,
+        "generated" => AssetOrigin::Generated,
+        "synthesized" => AssetOrigin::Synthesized,
+        "legacy" => AssetOrigin::Legacy,
+        _ => return None,
+    })
+}
+
+fn retention_values(value: RetentionClass) -> (&'static str, Option<i64>) {
+    match value {
+        RetentionClass::Persistent => ("persistent", None),
+        RetentionClass::Library => ("library", None),
+        RetentionClass::Temporary { expires_at } => ("temporary", Some(expires_at.get())),
+    }
+}
+
+fn retention_from_values(name: &str, expires_at: Option<i64>) -> Option<RetentionClass> {
+    match (name, expires_at) {
+        ("persistent", None) => Some(RetentionClass::Persistent),
+        ("library", None) => Some(RetentionClass::Library),
+        ("temporary", Some(expires_at)) => Some(RetentionClass::Temporary {
+            expires_at: TimestampMillis::new(expires_at),
+        }),
+        _ => None,
+    }
+}
+
+fn asset_from_row(row: &Row<'_>) -> rusqlite::Result<MediaAsset> {
+    let blob_kind = match row.get::<_, String>(2)?.as_str() {
+        "image" => MediaKind::Image,
+        "audio" => MediaKind::Audio,
+        _ => return Err(rusqlite::Error::InvalidQuery),
+    };
+    let kind = asset_kind_from_name(row.get::<_, String>(3)?.as_str())
+        .ok_or(rusqlite::Error::InvalidQuery)?;
+    let origin = asset_origin_from_name(row.get::<_, String>(4)?.as_str())
+        .ok_or(rusqlite::Error::InvalidQuery)?;
+    let retention = retention_from_values(
+        row.get::<_, String>(5)?.as_str(),
+        row.get::<_, Option<i64>>(6)?,
+    )
+    .ok_or(rusqlite::Error::InvalidQuery)?;
+    let provenance = serde_json::from_str(row.get::<_, String>(7)?.as_str())
+        .map_err(|_| rusqlite::Error::InvalidQuery)?;
+    let asset = MediaAsset::new(
+        parse_id(row.get(0)?)?,
+        parse_id(row.get(1)?)?,
+        kind,
+        origin,
+        retention,
+        provenance,
+        to_revision(row.get(8)?)?,
+        TimestampMillis::new(row.get(9)?),
+        TimestampMillis::new(row.get(10)?),
+    )
+    .map_err(|_| rusqlite::Error::InvalidQuery)?;
+    asset
+        .validate_for_blob_kind(blob_kind)
+        .map_err(|_| rusqlite::Error::InvalidQuery)?;
+    Ok(asset)
+}
+
+fn asset_error(error: rusqlite::Error) -> MediaAssetRepositoryError {
+    match error {
+        rusqlite::Error::InvalidQuery => MediaAssetRepositoryError::InvalidData,
+        _ => MediaAssetRepositoryError::Storage,
+    }
+}
+
+fn hex_encode(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut encoded = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+        encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    encoded
+}
+
+fn hex_decode(value: &str) -> Result<Vec<u8>, ()> {
+    if value.is_empty() || value.len() % 2 != 0 {
+        return Err(());
+    }
+    value
+        .as_bytes()
+        .chunks_exact(2)
+        .map(|pair| {
+            let high = (pair[0] as char).to_digit(16).ok_or(())?;
+            let low = (pair[1] as char).to_digit(16).ok_or(())?;
+            Ok(((high << 4) | low) as u8)
+        })
+        .collect()
+}
+
+fn encode_library_cursor(asset: &MediaAsset) -> Result<String, MediaAssetRepositoryError> {
+    let cursor = LibraryCursor {
+        format_version: ASSET_CURSOR_FORMAT_VERSION,
+        updated_at: asset.updated_at.get(),
+        id: asset.id.to_string(),
+    };
+    serde_json::to_vec(&cursor)
+        .map(|value| hex_encode(&value))
+        .map_err(|_| MediaAssetRepositoryError::InvalidData)
+}
+
+fn decode_library_cursor(
+    value: Option<&str>,
+) -> Result<Option<(i64, AssetId)>, MediaAssetRepositoryError> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let bytes = hex_decode(value).map_err(|_| MediaAssetRepositoryError::InvalidData)?;
+    let cursor: LibraryCursor =
+        serde_json::from_slice(&bytes).map_err(|_| MediaAssetRepositoryError::InvalidData)?;
+    if cursor.format_version != ASSET_CURSOR_FORMAT_VERSION {
+        return Err(MediaAssetRepositoryError::InvalidData);
+    }
+    let id = cursor
+        .id
+        .parse()
+        .map_err(|_| MediaAssetRepositoryError::InvalidData)?;
+    Ok(Some((cursor.updated_at, id)))
+}
+
+fn load_asset_with_blob(
+    connection: &Connection,
+    id: AssetId,
+) -> Result<Option<MediaAsset>, rusqlite::Error> {
+    let asset = connection
+        .query_row(
+            &format!("SELECT {MEDIA_ASSET_COLUMNS} FROM media_assets WHERE id=?1"),
+            [id.to_string()],
+            asset_from_row,
+        )
+        .optional()?;
+    let Some(asset) = asset else {
+        return Ok(None);
+    };
+    let blob = connection
+        .query_row(
+            &format!("SELECT {MEDIA_BLOB_COLUMNS} FROM media_blobs WHERE id=?1"),
+            [asset.blob_id.to_string()],
+            media_from_row,
+        )
+        .optional()?
+        .ok_or(rusqlite::Error::InvalidQuery)?;
+    if blob.kind != asset.kind.blob_kind() {
+        return Err(rusqlite::Error::InvalidQuery);
+    }
+    Ok(Some(asset))
+}
+
+impl MediaAssetRepository for Database {
+    fn create(&self, asset: MediaAsset) -> Result<MediaAsset, MediaAssetRepositoryError> {
+        asset
+            .validate()
+            .map_err(|_| MediaAssetRepositoryError::InvalidData)?;
+        let (retention, expires_at) = retention_values(asset.retention);
+        let provenance = serde_json::to_string(&asset.provenance)
+            .map_err(|_| MediaAssetRepositoryError::InvalidData)?;
+        let mut connection = self
+            .connection()
+            .map_err(|_| MediaAssetRepositoryError::Storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(asset_error)?;
+        let blob = transaction
+            .query_row(
+                &format!("SELECT {MEDIA_BLOB_COLUMNS} FROM media_blobs WHERE id=?1"),
+                [asset.blob_id.to_string()],
+                media_from_row,
+            )
+            .optional()
+            .map_err(asset_error)?;
+        let Some(blob) = blob else {
+            return Err(MediaAssetRepositoryError::BlobMissing);
+        };
+        if blob.kind != asset.kind.blob_kind() {
+            return Err(MediaAssetRepositoryError::InvalidData);
+        }
+        if load_asset_with_blob(&transaction, asset.id)
+            .map_err(asset_error)?
+            .is_some()
+        {
+            return Err(MediaAssetRepositoryError::AlreadyExists);
+        }
+        transaction
+            .execute(
+                "INSERT INTO media_assets (id, blob_id, blob_kind, kind, origin, retention, expires_at, provenance_json, revision, created_at, updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+                params![
+                    asset.id.to_string(),
+                    asset.blob_id.to_string(),
+                    media_kind_name(asset.kind.blob_kind()),
+                    asset_kind_name(asset.kind),
+                    asset_origin_name(asset.origin),
+                    retention,
+                    expires_at,
+                    provenance,
+                    to_i64(asset.revision.get()).map_err(asset_error)?,
+                    asset.created_at.get(),
+                    asset.updated_at.get(),
+                ],
+            )
+            .map_err(asset_error)?;
+        let stored = load_asset_with_blob(&transaction, asset.id)
+            .map_err(asset_error)?
+            .ok_or(MediaAssetRepositoryError::InvalidData)?;
+        transaction.commit().map_err(asset_error)?;
+        Ok(stored)
+    }
+
+    fn get(&self, id: AssetId) -> Result<Option<MediaAsset>, MediaAssetRepositoryError> {
+        self.connection()
+            .map_err(|_| MediaAssetRepositoryError::Storage)
+            .and_then(|connection| load_asset_with_blob(&connection, id).map_err(asset_error))
+    }
+
+    fn update_retention(
+        &self,
+        id: AssetId,
+        expected_revision: Revision,
+        retention_value: RetentionClass,
+        updated_at: TimestampMillis,
+    ) -> Result<MediaAsset, MediaAssetRepositoryError> {
+        let (retention, expires_at) = retention_values(retention_value);
+        let mut connection = self
+            .connection()
+            .map_err(|_| MediaAssetRepositoryError::Storage)?;
+        let transaction = connection.transaction().map_err(asset_error)?;
+        let current = load_asset_with_blob(&transaction, id)
+            .map_err(asset_error)?
+            .ok_or(MediaAssetRepositoryError::NotFound)?;
+        if current.revision != expected_revision {
+            return Err(MediaAssetRepositoryError::StaleRevision);
+        }
+        let next_revision = current
+            .next_revision()
+            .map_err(|_| MediaAssetRepositoryError::InvalidData)?;
+        let changed = transaction
+            .execute(
+                "UPDATE media_assets SET retention=?2, expires_at=?3, revision=?4, updated_at=?5 WHERE id=?1 AND revision=?6",
+                params![
+                    id.to_string(),
+                    retention,
+                    expires_at,
+                    to_i64(next_revision.get()).map_err(asset_error)?,
+                    updated_at.get(),
+                    to_i64(expected_revision.get()).map_err(asset_error)?,
+                ],
+            )
+            .map_err(asset_error)?;
+        if changed != 1 {
+            return Err(MediaAssetRepositoryError::StaleRevision);
+        }
+        let stored = load_asset_with_blob(&transaction, id)
+            .map_err(asset_error)?
+            .ok_or(MediaAssetRepositoryError::InvalidData)?;
+        transaction.commit().map_err(asset_error)?;
+        Ok(stored)
+    }
+
+    fn list_library(
+        &self,
+        request: PageRequest,
+    ) -> Result<Page<MediaAsset>, MediaAssetRepositoryError> {
+        let cursor = decode_library_cursor(request.cursor.as_deref())?;
+        let limit = usize::from(request.limit.get()).max(1);
+        let connection = self
+            .connection()
+            .map_err(|_| MediaAssetRepositoryError::Storage)?;
+        let mut ids = Vec::with_capacity(limit + 1);
+        let mut statement = connection
+            .prepare(
+                "SELECT id FROM media_assets WHERE retention='library' AND (?1 IS NULL OR updated_at < ?1 OR (updated_at = ?1 AND id > ?2)) ORDER BY updated_at DESC, id ASC LIMIT ?3",
+            )
+            .map_err(asset_error)?;
+        let (cursor_time, cursor_id) = cursor
+            .map(|(time, id)| (Some(time), Some(id.to_string())))
+            .unwrap_or((None, None));
+        let rows = statement
+            .query_map(
+                params![
+                    cursor_time,
+                    cursor_id,
+                    i64::try_from(limit + 1).unwrap_or(i64::MAX)
+                ],
+                |row| row.get::<_, String>(0),
+            )
+            .map_err(asset_error)?;
+        for row in rows {
+            ids.push(
+                row.map_err(asset_error)?
+                    .parse()
+                    .map_err(|_| MediaAssetRepositoryError::InvalidData)?,
+            );
+        }
+        drop(statement);
+
+        let has_more = ids.len() > limit;
+        if has_more {
+            ids.truncate(limit);
+        }
+        let mut items = Vec::with_capacity(ids.len());
+        for id in ids {
+            let asset = load_asset_with_blob(&connection, id)
+                .map_err(asset_error)?
+                .ok_or(MediaAssetRepositoryError::InvalidData)?;
+            if asset.retention != RetentionClass::Library {
+                return Err(MediaAssetRepositoryError::InvalidData);
+            }
+            items.push(asset);
+        }
+        let next_cursor = if has_more {
+            items.last().map(encode_library_cursor).transpose()?
+        } else {
+            None
+        };
+        Ok(Page { items, next_cursor })
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use lettuce_media::{BlobState, MediaBlob, MediaBlobRepository, MediaKind};
+    use std::sync::{Arc, Barrier};
+    use std::thread;
+
+    use lettuce_media::{
+        AssetKind, AssetOrigin, AssetProvenanceV1, BlobState, MediaAsset, MediaAssetRepository,
+        MediaAssetRepositoryError, MediaBlob, MediaBlobRepository, MediaKind, RetentionClass,
+    };
     use lettuce_models::{
         CustomAuth, Modality, ModelKind, ModelProfile, ModelProfileConfig, ModelProfileRepository,
         ModelRepositoryError, ProviderAccount, ProviderAccountRepository, ProviderConfig,
@@ -766,10 +1251,13 @@ mod tests {
         SecretRef,
     };
     use lettuce_types::{
-        ContentHash, MediaBlobId, ModelProfileId, ProviderAccountId, Revision, TimestampMillis,
+        AssetId, ContentHash, MediaBlobId, ModelProfileId, PageLimit, PageRequest,
+        ProviderAccountId, Revision, TimestampMillis,
     };
 
-    use super::{Database, DatabaseError, DeleteFailurePoint, Migration, apply_migrations};
+    use super::{
+        Database, DatabaseError, DeleteFailurePoint, Migration, apply_migrations, hex_encode,
+    };
 
     fn provider() -> ProviderAccount {
         let id = ProviderAccountId::new();
@@ -817,17 +1305,55 @@ mod tests {
         }
     }
 
+    fn media_blob(hash_byte: char, kind: MediaKind) -> MediaBlob {
+        MediaBlob {
+            id: MediaBlobId::new(),
+            content_hash: ContentHash::parse(hash_byte.to_string().repeat(64)).expect("hash"),
+            kind,
+            mime_type: match kind {
+                MediaKind::Image => "image/webp",
+                MediaKind::Audio => "audio/mpeg",
+                MediaKind::Video => "video/mp4",
+            }
+            .into(),
+            byte_size: 42,
+            width: None,
+            height: None,
+            duration_ms: None,
+            validation_version: 1,
+            state: BlobState::Ready,
+            created_at: TimestampMillis::new(10),
+            updated_at: TimestampMillis::new(10),
+        }
+    }
+
+    fn media_asset(id: AssetId, blob_id: MediaBlobId, kind: AssetKind) -> MediaAsset {
+        MediaAsset::new(
+            id,
+            blob_id,
+            kind,
+            AssetOrigin::Upload,
+            RetentionClass::Library,
+            AssetProvenanceV1::default(),
+            Revision::INITIAL,
+            TimestampMillis::new(20),
+            TimestampMillis::new(20),
+        )
+        .expect("valid media asset")
+    }
+
     #[test]
     fn migration_is_idempotent_and_checksum_protected() {
         let database = Database::open_in_memory().expect("open database");
         let mut connection = database.connection().expect("database lock");
-        apply_migrations(&mut connection, &[super::MIGRATION_1]).expect("repeat migration");
+        apply_migrations(&mut connection, &[super::MIGRATION_1, super::MIGRATION_2])
+            .expect("repeat migration");
         let count: u32 = connection
             .query_row("SELECT count(*) FROM schema_migrations", [], |row| {
                 row.get(0)
             })
             .expect("migration count");
-        assert_eq!(count, 1);
+        assert_eq!(count, 2);
 
         let changed = Migration {
             id: 1,
@@ -836,6 +1362,14 @@ mod tests {
         assert!(matches!(
             apply_migrations(&mut connection, &[changed]),
             Err(DatabaseError::MigrationChecksum { id: 1 })
+        ));
+        let changed = Migration {
+            id: 2,
+            sql: "SELECT 2;",
+        };
+        assert!(matches!(
+            apply_migrations(&mut connection, &[changed]),
+            Err(DatabaseError::MigrationChecksum { id: 2 })
         ));
     }
 
@@ -1185,9 +1719,15 @@ mod tests {
             MediaBlobRepository::register(&database, first.clone()).expect("register first");
         let mut duplicate = first;
         duplicate.id = MediaBlobId::new();
+        duplicate.state = BlobState::Missing;
+        duplicate.created_at = TimestampMillis::new(31);
+        duplicate.updated_at = TimestampMillis::new(32);
         let deduplicated =
             MediaBlobRepository::register(&database, duplicate).expect("register duplicate");
         assert_eq!(deduplicated.id, stored.id);
+        assert_eq!(deduplicated.state, stored.state);
+        assert_eq!(deduplicated.created_at, stored.created_at);
+        assert_eq!(deduplicated.updated_at, stored.updated_at);
         assert_eq!(
             MediaBlobRepository::find_by_hash(&database, &hash)
                 .expect("find blob")
@@ -1209,11 +1749,574 @@ mod tests {
             created_at: TimestampMillis::new(31),
             updated_at: TimestampMillis::new(31),
         };
-        assert!(MediaBlobRepository::register(&database, collision).is_err());
+        assert_eq!(
+            MediaBlobRepository::register(&database, collision),
+            Err(lettuce_media::MediaBlobRepositoryError::InvalidData)
+        );
     }
 
     #[test]
-    fn database_enables_foreign_keys_and_has_only_five_foundation_tables() {
+    fn media_blob_registration_rejects_invalid_metadata_and_each_immutable_conflict() {
+        let database = Database::open_in_memory().expect("open database");
+        let invalids = [
+            {
+                let mut blob = media_blob('a', MediaKind::Image);
+                blob.mime_type = "  ".into();
+                blob
+            },
+            {
+                let mut blob = media_blob('b', MediaKind::Image);
+                blob.mime_type = "image/\u{01}".into();
+                blob
+            },
+            {
+                let mut blob = media_blob('c', MediaKind::Image);
+                blob.validation_version = 0;
+                blob
+            },
+            {
+                let mut blob = media_blob('d', MediaKind::Image);
+                blob.byte_size = u64::MAX;
+                blob
+            },
+            {
+                let mut blob = media_blob('e', MediaKind::Image);
+                blob.width = Some(10);
+                blob
+            },
+        ];
+        for blob in invalids {
+            assert_eq!(
+                MediaBlobRepository::register(&database, blob),
+                Err(lettuce_media::MediaBlobRepositoryError::InvalidData)
+            );
+        }
+
+        let first = MediaBlobRepository::register(&database, media_blob('f', MediaKind::Image))
+            .expect("register immutable blob");
+        let mut conflicts = Vec::new();
+        let mut kind = first.clone();
+        kind.id = MediaBlobId::new();
+        kind.kind = MediaKind::Audio;
+        conflicts.push(kind);
+        let mut mime = first.clone();
+        mime.id = MediaBlobId::new();
+        mime.mime_type = "image/png".into();
+        conflicts.push(mime);
+        let mut size = first.clone();
+        size.id = MediaBlobId::new();
+        size.byte_size += 1;
+        conflicts.push(size);
+        let mut width = first.clone();
+        width.id = MediaBlobId::new();
+        width.width = Some(2);
+        width.height = Some(2);
+        conflicts.push(width);
+        let mut duration = first.clone();
+        duration.id = MediaBlobId::new();
+        duration.duration_ms = Some(2);
+        conflicts.push(duration);
+        let mut version = first.clone();
+        version.id = MediaBlobId::new();
+        version.validation_version = 2;
+        conflicts.push(version);
+        for conflict in conflicts {
+            assert_eq!(
+                MediaBlobRepository::register(&database, conflict),
+                Err(lettuce_media::MediaBlobRepositoryError::InvalidData)
+            );
+        }
+
+        let mut same_id_different_hash = first.clone();
+        same_id_different_hash.content_hash = ContentHash::parse("0".repeat(64)).expect("hash");
+        assert_eq!(
+            MediaBlobRepository::register(&database, same_id_different_hash),
+            Err(lettuce_media::MediaBlobRepositoryError::InvalidData)
+        );
+    }
+
+    #[test]
+    fn media_assets_round_trip_share_blobs_and_distinguish_create_errors() {
+        let database = Database::open_in_memory().expect("open database");
+        let blob = MediaBlobRepository::register(&database, media_blob('1', MediaKind::Image))
+            .expect("register blob");
+        let first = media_asset(AssetId::new(), blob.id, AssetKind::Illustration);
+        let second = media_asset(AssetId::new(), blob.id, AssetKind::AvatarOriginal);
+        assert_eq!(
+            MediaAssetRepository::create(&database, first.clone()).expect("create first"),
+            first
+        );
+        assert_eq!(
+            MediaAssetRepository::create(&database, second.clone()).expect("create second"),
+            second
+        );
+        assert_eq!(
+            MediaAssetRepository::get(&database, first.id),
+            Ok(Some(first.clone()))
+        );
+        assert_eq!(
+            MediaAssetRepository::get(&database, second.id),
+            Ok(Some(second.clone()))
+        );
+        assert_eq!(
+            MediaAssetRepository::create(&database, first),
+            Err(MediaAssetRepositoryError::AlreadyExists)
+        );
+
+        let missing = media_asset(AssetId::new(), MediaBlobId::new(), AssetKind::Illustration);
+        assert_eq!(
+            MediaAssetRepository::create(&database, missing),
+            Err(MediaAssetRepositoryError::BlobMissing)
+        );
+        let wrong_kind = media_asset(AssetId::new(), blob.id, AssetKind::MessageAudio);
+        assert_eq!(
+            MediaAssetRepository::create(&database, wrong_kind),
+            Err(MediaAssetRepositoryError::InvalidData)
+        );
+    }
+
+    #[test]
+    fn media_asset_retention_cas_and_expiry_representation_are_atomic() {
+        let database = Database::open_in_memory().expect("open database");
+        let blob = MediaBlobRepository::register(&database, media_blob('2', MediaKind::Image))
+            .expect("register blob");
+        let asset = MediaAssetRepository::create(
+            &database,
+            media_asset(AssetId::new(), blob.id, AssetKind::Illustration),
+        )
+        .expect("create asset");
+        let temporary = MediaAssetRepository::update_retention(
+            &database,
+            asset.id,
+            asset.revision,
+            RetentionClass::Temporary {
+                expires_at: TimestampMillis::new(42),
+            },
+            TimestampMillis::new(30),
+        )
+        .expect("temporary update");
+        assert_eq!(temporary.revision, Revision::new(2));
+        assert_eq!(
+            temporary.retention.expires_at(),
+            Some(TimestampMillis::new(42))
+        );
+        assert_eq!(temporary.updated_at, TimestampMillis::new(30));
+        let persistent = MediaAssetRepository::update_retention(
+            &database,
+            asset.id,
+            temporary.revision,
+            RetentionClass::Persistent,
+            TimestampMillis::new(31),
+        )
+        .expect("persistent update");
+        assert_eq!(persistent.revision, Revision::new(3));
+        assert_eq!(persistent.retention.expires_at(), None);
+        assert_eq!(
+            MediaAssetRepository::update_retention(
+                &database,
+                asset.id,
+                temporary.revision,
+                RetentionClass::Library,
+                TimestampMillis::new(32),
+            ),
+            Err(MediaAssetRepositoryError::StaleRevision)
+        );
+        assert_eq!(
+            MediaAssetRepository::update_retention(
+                &database,
+                AssetId::new(),
+                Revision::INITIAL,
+                RetentionClass::Library,
+                TimestampMillis::new(32),
+            ),
+            Err(MediaAssetRepositoryError::NotFound)
+        );
+    }
+
+    #[test]
+    fn failed_m2_write_rolls_back_without_changing_asset_revision() {
+        let database = Database::open_in_memory().expect("open database");
+        let blob = MediaBlobRepository::register(&database, media_blob('6', MediaKind::Image))
+            .expect("register blob");
+        let asset = MediaAssetRepository::create(
+            &database,
+            media_asset(AssetId::new(), blob.id, AssetKind::Illustration),
+        )
+        .expect("create asset");
+        {
+            let connection = database.connection().expect("database lock");
+            connection
+                .execute_batch(
+                    "CREATE TRIGGER fail_asset_retention BEFORE UPDATE OF retention ON media_assets WHEN NEW.retention = 'temporary' BEGIN SELECT RAISE(ABORT, 'test rollback'); END;",
+                )
+                .expect("install failure trigger");
+        }
+        assert_eq!(
+            MediaAssetRepository::update_retention(
+                &database,
+                asset.id,
+                asset.revision,
+                RetentionClass::Temporary {
+                    expires_at: TimestampMillis::new(99),
+                },
+                TimestampMillis::new(40),
+            ),
+            Err(MediaAssetRepositoryError::Storage)
+        );
+        assert_eq!(
+            MediaAssetRepository::get(&database, asset.id),
+            Ok(Some(asset))
+        );
+    }
+
+    #[test]
+    fn library_keyset_pagination_is_deterministic_and_cursor_is_strict() {
+        let database = Database::open_in_memory().expect("open database");
+        let blob = MediaBlobRepository::register(&database, media_blob('3', MediaKind::Image))
+            .expect("register blob");
+        let mut ids = (0..5).map(|_| AssetId::new()).collect::<Vec<_>>();
+        ids.sort();
+        for id in ids.iter().copied() {
+            let mut asset = media_asset(id, blob.id, AssetKind::Illustration);
+            asset.updated_at = TimestampMillis::new(100);
+            MediaAssetRepository::create(&database, asset).expect("create library asset");
+        }
+
+        let first = MediaAssetRepository::list_library(
+            &database,
+            PageRequest {
+                cursor: None,
+                limit: PageLimit::new(2),
+            },
+        )
+        .expect("first page");
+        assert_eq!(
+            first.items.iter().map(|asset| asset.id).collect::<Vec<_>>(),
+            ids[..2].to_vec()
+        );
+        let second = MediaAssetRepository::list_library(
+            &database,
+            PageRequest {
+                cursor: first.next_cursor.clone(),
+                limit: PageLimit::new(2),
+            },
+        )
+        .expect("second page");
+        assert_eq!(
+            second
+                .items
+                .iter()
+                .map(|asset| asset.id)
+                .collect::<Vec<_>>(),
+            ids[2..4].to_vec()
+        );
+        let third = MediaAssetRepository::list_library(
+            &database,
+            PageRequest {
+                cursor: second.next_cursor,
+                limit: PageLimit::new(2),
+            },
+        )
+        .expect("third page");
+        assert_eq!(
+            third.items.iter().map(|asset| asset.id).collect::<Vec<_>>(),
+            ids[4..].to_vec()
+        );
+        assert!(third.next_cursor.is_none());
+
+        for document in [
+            serde_json::json!({"format_version": 1, "updated_at": 100, "id": "bad"}),
+            serde_json::json!({"format_version": 2, "updated_at": 100, "id": ids[0].to_string()}),
+            serde_json::json!({"format_version": 1, "updated_at": 100, "id": ids[0].to_string(), "extra": true}),
+        ] {
+            let cursor = hex_encode(&serde_json::to_vec(&document).expect("cursor json"));
+            assert_eq!(
+                MediaAssetRepository::list_library(
+                    &database,
+                    PageRequest {
+                        cursor: Some(cursor),
+                        limit: PageLimit::new(2),
+                    },
+                ),
+                Err(MediaAssetRepositoryError::InvalidData)
+            );
+        }
+    }
+
+    #[test]
+    fn asset_provenance_corruption_is_rejected_strictly() {
+        let database = Database::open_in_memory().expect("open database");
+        let blob = MediaBlobRepository::register(&database, media_blob('4', MediaKind::Image))
+            .expect("register blob");
+        let asset = MediaAssetRepository::create(
+            &database,
+            media_asset(AssetId::new(), blob.id, AssetKind::Illustration),
+        )
+        .expect("create asset");
+        for payload in [
+            "not json".to_owned(),
+            r#"{"format_version":2}"#.to_owned(),
+            r#"{"format_version":1,"source_label":null,"source_uri_redacted":null,"producing_job_id":null,"model_profile_id":null,"imported_format":null,"extra":true}"#.to_owned(),
+        ] {
+            let connection = database.connection().expect("database lock");
+            connection
+                .execute(
+                    "UPDATE media_assets SET provenance_json=?1 WHERE id=?2",
+                    rusqlite::params![payload, asset.id.to_string()],
+                )
+                .expect("corrupt provenance");
+            drop(connection);
+            assert_eq!(
+                MediaAssetRepository::get(&database, asset.id),
+                Err(MediaAssetRepositoryError::InvalidData)
+            );
+        }
+    }
+
+    #[test]
+    fn media_asset_sql_checks_and_integrity_constraints_hold() {
+        let database = Database::open_in_memory().expect("open database");
+        let blob = MediaBlobRepository::register(&database, media_blob('5', MediaKind::Image))
+            .expect("register blob");
+        let connection = database.connection().expect("database lock");
+        let insert = |blob_id: &str,
+                      blob_kind: &str,
+                      kind: &str,
+                      retention: &str,
+                      expires_at: Option<i64>| {
+            connection.execute(
+                "INSERT INTO media_assets (id, blob_id, blob_kind, kind, origin, retention, expires_at, provenance_json, revision, created_at, updated_at) VALUES (?1,?2,?3,?4,'upload',?5,?6,?7,1,1,1)",
+                rusqlite::params![
+                    AssetId::new().to_string(), blob_id, blob_kind, kind, retention, expires_at,
+                    serde_json::to_string(&AssetProvenanceV1::default()).expect("provenance")
+                ],
+            )
+        };
+        assert!(
+            insert(
+                &blob.id.to_string(),
+                "audio",
+                "illustration",
+                "library",
+                None
+            )
+            .is_err()
+        );
+        assert!(
+            insert(
+                &blob.id.to_string(),
+                "audio",
+                "message_audio",
+                "library",
+                None
+            )
+            .is_err()
+        );
+        assert!(
+            insert(
+                &blob.id.to_string(),
+                "image",
+                "message_audio",
+                "library",
+                None
+            )
+            .is_err()
+        );
+        assert!(
+            insert(
+                &MediaBlobId::new().to_string(),
+                "image",
+                "illustration",
+                "library",
+                None
+            )
+            .is_err()
+        );
+        assert!(
+            insert(
+                &blob.id.to_string(),
+                "image",
+                "illustration",
+                "temporary",
+                None
+            )
+            .is_err()
+        );
+        assert!(
+            insert(
+                &blob.id.to_string(),
+                "image",
+                "illustration",
+                "library",
+                Some(1)
+            )
+            .is_err()
+        );
+        insert(
+            &blob.id.to_string(),
+            "image",
+            "illustration",
+            "library",
+            None,
+        )
+        .expect("insert valid asset");
+        assert!(matches!(
+            connection.execute("DELETE FROM media_blobs WHERE id=?1", [blob.id.to_string()]),
+            Err(rusqlite::Error::SqliteFailure(_, _))
+        ));
+        let foreign_key_violations: i64 = connection
+            .query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |row| {
+                row.get(0)
+            })
+            .expect("foreign key check");
+        let integrity: String = connection
+            .query_row("PRAGMA integrity_check", [], |row| row.get(0))
+            .expect("integrity check");
+        assert_eq!(foreign_key_violations, 0);
+        assert_eq!(integrity, "ok");
+    }
+
+    #[test]
+    fn existing_m1_file_is_upgraded_to_m2_without_losing_legacy_blob_metadata() {
+        let path = std::env::temp_dir().join(format!("lettuce-m1-{}.db", MediaBlobId::new()));
+        {
+            let mut connection = rusqlite::Connection::open(&path).expect("open m1 file");
+            super::configure(&connection, false).expect("configure m1 file");
+            apply_migrations(&mut connection, &[super::MIGRATION_1]).expect("apply m1");
+            connection
+                .execute(
+                    "INSERT INTO media_blobs (id, content_hash, kind, mime_type, byte_size, width, height, duration_ms, validation_version, state, created_at, updated_at) VALUES (?1,?2,'image','image/webm; codecs=opus',10,NULL,NULL,17,1,'ready',1,2)",
+                    rusqlite::params![
+                        MediaBlobId::new().to_string(),
+                        "9".repeat(64)
+                    ],
+                )
+                .expect("insert legacy blob");
+        }
+        let database = Database::open(&path).expect("upgrade m1 file");
+        let blob = MediaBlobRepository::find_by_hash(
+            &database,
+            &ContentHash::parse("9".repeat(64)).expect("hash"),
+        )
+        .expect("read upgraded blob")
+        .expect("legacy blob exists");
+        assert_eq!(blob.width, None);
+        assert_eq!(blob.height, None);
+        assert_eq!(blob.duration_ms, Some(17));
+        assert_eq!(blob.mime_type, "image/webm; codecs=opus");
+        let connection = database.connection().expect("database lock");
+        assert_eq!(
+            connection
+                .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
+                    .get::<_, i64>(0))
+                .expect("migration count"),
+            2
+        );
+        drop(connection);
+        drop(database);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn separate_database_handles_race_safe_blob_registration_and_asset_creation() {
+        let path = std::env::temp_dir().join(format!("lettuce-race-{}.db", MediaBlobId::new()));
+        let setup = Database::open(&path).expect("open race database");
+        let blob = media_blob('a', MediaKind::Image);
+        let asset_id = AssetId::new();
+        drop(setup);
+
+        let first = Database::open(&path).expect("open first handle");
+        let second = Database::open(&path).expect("open second handle");
+        let barrier = Arc::new(Barrier::new(2));
+        let first_barrier = Arc::clone(&barrier);
+        let first_blob = blob.clone();
+        let first_thread = thread::spawn(move || {
+            first_barrier.wait();
+            MediaBlobRepository::register(&first, first_blob)
+        });
+        let second_barrier = Arc::clone(&barrier);
+        let second_thread = thread::spawn(move || {
+            second_barrier.wait();
+            MediaBlobRepository::register(&second, blob)
+        });
+        let first_blob = first_thread.join().expect("first registration thread");
+        let second_blob = second_thread.join().expect("second registration thread");
+        let first_blob = first_blob.expect("first registration");
+        let second_blob = second_blob.expect("second registration");
+        assert_eq!(first_blob.id, second_blob.id);
+
+        let conflict_path = path.clone();
+        let first = Database::open(&conflict_path).expect("open conflict first handle");
+        let second = Database::open(&conflict_path).expect("open conflict second handle");
+        let barrier = Arc::new(Barrier::new(2));
+        let conflicting_first = media_blob('b', MediaKind::Image);
+        let mut conflicting_second = conflicting_first.clone();
+        conflicting_second.id = MediaBlobId::new();
+        conflicting_second.mime_type = "image/png".into();
+        let first_barrier = Arc::clone(&barrier);
+        let first_thread = thread::spawn(move || {
+            first_barrier.wait();
+            MediaBlobRepository::register(&first, conflicting_first)
+        });
+        let second_barrier = Arc::clone(&barrier);
+        let second_thread = thread::spawn(move || {
+            second_barrier.wait();
+            MediaBlobRepository::register(&second, conflicting_second)
+        });
+        let conflict_outcomes = [
+            first_thread.join().expect("first conflict thread"),
+            second_thread.join().expect("second conflict thread"),
+        ];
+        assert_eq!(
+            conflict_outcomes
+                .iter()
+                .filter(|result| result.is_ok())
+                .count(),
+            1
+        );
+        assert_eq!(
+            conflict_outcomes
+                .iter()
+                .filter(|result| {
+                    **result == Err(lettuce_media::MediaBlobRepositoryError::InvalidData)
+                })
+                .count(),
+            1
+        );
+
+        let first = Database::open(&path).expect("reopen first handle");
+        let second = Database::open(&path).expect("reopen second handle");
+        let barrier = Arc::new(Barrier::new(2));
+        let first_barrier = Arc::clone(&barrier);
+        let first_asset = media_asset(asset_id, first_blob.id, AssetKind::Illustration);
+        let second_asset = first_asset.clone();
+        let first_thread = thread::spawn(move || {
+            first_barrier.wait();
+            MediaAssetRepository::create(&first, first_asset)
+        });
+        let second_barrier = Arc::clone(&barrier);
+        let second_thread = thread::spawn(move || {
+            second_barrier.wait();
+            MediaAssetRepository::create(&second, second_asset)
+        });
+        let outcomes = [
+            first_thread.join().expect("first asset thread"),
+            second_thread.join().expect("second asset thread"),
+        ];
+        assert_eq!(outcomes.iter().filter(|result| result.is_ok()).count(), 1);
+        assert_eq!(
+            outcomes
+                .iter()
+                .filter(|result| { **result == Err(MediaAssetRepositoryError::AlreadyExists) })
+                .count(),
+            1
+        );
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn database_enables_foreign_keys_and_has_expected_tables() {
         let database = Database::open_in_memory().expect("open database");
         let connection = database.connection().expect("database lock");
         let foreign_keys: u8 = connection
@@ -1232,6 +2335,7 @@ mod tests {
             tables,
             vec![
                 "app_settings",
+                "media_assets",
                 "media_blobs",
                 "model_profiles",
                 "provider_accounts",
