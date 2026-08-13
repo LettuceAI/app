@@ -59,6 +59,11 @@ const MIGRATION_6: Migration = Migration {
     sql: include_str!("../migrations/0006_context.sql"),
 };
 
+const MIGRATION_7: Migration = Migration {
+    id: 7,
+    sql: include_str!("../migrations/0007_builtin_prompt_entries.sql"),
+};
+
 const PROVIDER_CONFIG_FORMAT_VERSION: u32 = 1;
 const MODEL_PROFILE_CONFIG_FORMAT_VERSION: u32 = 1;
 
@@ -143,6 +148,7 @@ impl Database {
                 MIGRATION_4,
                 MIGRATION_5,
                 MIGRATION_6,
+                MIGRATION_7,
             ],
         )?;
         initialize_settings(&connection)?;
@@ -163,6 +169,7 @@ impl Database {
                 MIGRATION_4,
                 MIGRATION_5,
                 MIGRATION_6,
+                MIGRATION_7,
             ],
         )?;
         initialize_settings(&connection)?;
@@ -1542,7 +1549,7 @@ mod tests {
                 row.get(0)
             })
             .expect("migration count");
-        assert_eq!(count, 6);
+        assert_eq!(count, 7);
 
         let changed = Migration {
             id: 1,
@@ -2477,7 +2484,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            6
+            7
         );
         drop(connection);
         drop(database);
@@ -2527,7 +2534,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            6
+            7
         );
         drop(connection);
         drop(database);
@@ -2559,7 +2566,7 @@ mod tests {
                 row.get(0)
             })
             .expect("migration count");
-        assert_eq!(migration_count, 6);
+        assert_eq!(migration_count, 7);
         for table in [
             "groups",
             "group_members",
@@ -2608,7 +2615,7 @@ mod tests {
                 row.get(0)
             })
             .expect("migration count");
-        assert_eq!(count, 6);
+        assert_eq!(count, 7);
         for table in [
             "prompt_documents",
             "prompt_entries",
@@ -2636,7 +2643,70 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            6
+            7
+        );
+        drop(connection);
+        drop(reopened);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn m6_file_upgrades_to_m7_builtin_entry_identity_schema_exactly_once() {
+        let path = std::env::temp_dir().join(format!(
+            "lettuce-m6-entry-identity-{}.db",
+            MediaBlobId::new()
+        ));
+        {
+            let mut connection = rusqlite::Connection::open(&path).expect("open m6 file");
+            super::configure(&connection, true).expect("configure m6 file");
+            apply_migrations(
+                &mut connection,
+                &[
+                    super::MIGRATION_1,
+                    super::MIGRATION_2,
+                    super::MIGRATION_3,
+                    super::MIGRATION_4,
+                    super::MIGRATION_5,
+                    super::MIGRATION_6,
+                ],
+            )
+            .expect("apply m1-m6");
+        }
+        let database = Database::open(&path).expect("upgrade m6 file");
+        let connection = database.connection().expect("database lock");
+        assert_eq!(
+            connection
+                .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
+                    .get::<_, i64>(0))
+                .expect("migration count"),
+            7
+        );
+        let column: i64 = connection
+            .query_row(
+                "SELECT count(*) FROM pragma_table_info('prompt_entries') WHERE name='built_in_entry_key'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("entry key column");
+        assert_eq!(column, 1);
+        let index: i64 = connection
+            .query_row(
+                "SELECT count(*) FROM sqlite_schema WHERE type='index' AND name='prompt_entries_built_in_key_idx'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("entry key index");
+        assert_eq!(index, 1);
+        drop(connection);
+        drop(database);
+        let reopened = Database::open(&path).expect("reopen m7 file");
+        let connection = reopened.connection().expect("database lock");
+        assert_eq!(
+            connection
+                .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
+                    .get::<_, i64>(0))
+                .expect("migration count"),
+            7
         );
         drop(connection);
         drop(reopened);
@@ -2685,7 +2755,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            6
+            7
         );
         drop(connection);
         drop(database);

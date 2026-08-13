@@ -203,6 +203,10 @@ pub enum PromptEntryCondition {
 #[serde(deny_unknown_fields)]
 pub struct PromptEntry {
     pub id: PromptEntryId,
+    /// Stable identity for a catalog-owned built-in entry. User-authored
+    /// entries are always `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub built_in_entry_key: Option<String>,
     pub name: String,
     pub role: PromptEntryRole,
     pub content: String,
@@ -221,6 +225,7 @@ impl Default for PromptEntry {
     fn default() -> Self {
         Self {
             id: PromptEntryId::new(),
+            built_in_entry_key: None,
             name: String::new(),
             role: PromptEntryRole::System,
             content: String::new(),
@@ -241,6 +246,10 @@ impl Default for PromptEntry {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PromptEntryDraft {
+    /// Set only by built-in seed definitions. Normal repository mutations must
+    /// leave this unset; adapters retain an existing built-in key on update.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub built_in_entry_key: Option<String>,
     pub name: String,
     pub role: PromptEntryRole,
     pub content: String,
@@ -258,6 +267,7 @@ impl PromptEntryDraft {
     pub fn validate(&self) -> Result<(), PromptValidationError> {
         PromptEntry {
             id: PromptEntryId::new(),
+            built_in_entry_key: self.built_in_entry_key.clone(),
             name: self.name.clone(),
             role: self.role,
             content: self.content.clone(),
@@ -277,6 +287,7 @@ impl PromptEntryDraft {
 impl From<PromptEntry> for PromptEntryDraft {
     fn from(entry: PromptEntry) -> Self {
         Self {
+            built_in_entry_key: entry.built_in_entry_key,
             name: entry.name,
             role: entry.role,
             content: entry.content,
@@ -328,13 +339,23 @@ pub enum PromptEntryMutation {
 impl PromptEntryMutation {
     pub fn validate(&self) -> Result<(), PromptValidationError> {
         match self {
-            Self::Add { draft, .. } | Self::Update { draft, .. } => draft.validate(),
+            Self::Add { draft, .. } => {
+                draft.validate()?;
+                if draft.built_in_entry_key.is_some() {
+                    return Err(PromptValidationError::BuiltInEntryKeyNotAllowed);
+                }
+                Ok(())
+            }
+            Self::Update { draft, .. } => draft.validate(),
             Self::Replace { drafts } => {
                 if drafts.len() > MAX_PROMPT_ENTRIES {
                     return Err(PromptValidationError::TooManyEntries);
                 }
                 for draft in drafts {
                     draft.validate()?;
+                    if draft.built_in_entry_key.is_some() {
+                        return Err(PromptValidationError::BuiltInEntryKeyNotAllowed);
+                    }
                 }
                 Ok(())
             }
@@ -416,6 +437,14 @@ pub enum PromptValidationError {
     ConditionValueTooLarge,
     #[error("built-in prompt provenance requires a non-blank key")]
     InvalidBuiltInKey,
+    #[error("built-in prompt entry key is invalid")]
+    InvalidBuiltInEntryKey,
+    #[error("built-in prompt entry key cannot be supplied by a normal mutation")]
+    BuiltInEntryKeyNotAllowed,
+    #[error("prompt contains duplicate built-in entry key {0}")]
+    DuplicateBuiltInEntryKey(String),
+    #[error("built-in entry keys are only valid on built-in prompts")]
+    BuiltInEntryKeyOnNonBuiltInPrompt,
     #[error("derived prompt provenance requires a source different from the document")]
     InvalidDerivedSource,
     #[error("prompt revision must be at least one")]
@@ -457,6 +486,14 @@ pub(crate) fn validate_prose(
     } else {
         Ok(())
     }
+}
+
+fn validate_entry_key(value: &str) -> Result<(), PromptValidationError> {
+    if value != value.trim() {
+        return Err(PromptValidationError::InvalidBuiltInEntryKey);
+    }
+    validate_label(value, "built-in entry key")
+        .map_err(|_| PromptValidationError::InvalidBuiltInEntryKey)
 }
 
 impl PromptEntryCondition {
@@ -517,6 +554,9 @@ impl PromptEntry {
     pub fn validate(&self) -> Result<(), PromptValidationError> {
         validate_label(&self.name, "entry name")?;
         validate_prose(&self.content, "entry content")?;
+        if let Some(key) = &self.built_in_entry_key {
+            validate_entry_key(key)?;
+        }
         if self.injection_position == PromptEntryPosition::Interval
             && self.interval_turns.unwrap_or_default() == 0
         {
@@ -542,9 +582,15 @@ impl PromptDocument {
             return Err(PromptValidationError::TooManyEntries);
         }
         let mut ids = std::collections::HashSet::with_capacity(self.entries.len());
+        let mut built_in_keys = std::collections::HashSet::with_capacity(self.entries.len());
         for entry in &self.entries {
             if !ids.insert(entry.id) {
                 return Err(PromptValidationError::DuplicateEntry(entry.id));
+            }
+            if let Some(key) = &entry.built_in_entry_key {
+                if !built_in_keys.insert(key.clone()) {
+                    return Err(PromptValidationError::DuplicateBuiltInEntryKey(key.clone()));
+                }
             }
             entry.validate()?;
         }
@@ -558,6 +604,9 @@ impl PromptDocument {
                 if *seed_version == 0 {
                     return Err(PromptValidationError::ZeroSeedVersion);
                 }
+            }
+            _ if !built_in_keys.is_empty() => {
+                return Err(PromptValidationError::BuiltInEntryKeyOnNonBuiltInPrompt);
             }
             PromptProvenance::Derived { source } if *source == self.id => {
                 return Err(PromptValidationError::InvalidDerivedSource);
@@ -832,6 +881,7 @@ pub enum PromptVariable {
     ReferenceImages,
     CharacterLoraKeywords,
     PersonaLoraKeywords,
+    ImageModelInstructions,
 }
 
 impl PromptVariable {
@@ -912,6 +962,7 @@ impl PromptVariable {
             Self::ReferenceImages => "{{image[references]}}",
             Self::CharacterLoraKeywords => "{{lora_keywords[character]}}",
             Self::PersonaLoraKeywords => "{{lora_keywords[persona]}}",
+            Self::ImageModelInstructions => "{{image_model_instructions}}",
         }
     }
 
@@ -991,6 +1042,7 @@ impl PromptVariable {
         Self::ReferenceImages,
         Self::CharacterLoraKeywords,
         Self::PersonaLoraKeywords,
+        Self::ImageModelInstructions,
     ];
 
     /// Mirrors the legacy prompt editor's allowed-variable contract.
@@ -1018,9 +1070,15 @@ impl PromptVariable {
         }
         match purpose {
             Purpose::DirectChat | Purpose::CompanionChat => {
-                matches!(self, Variable::CompanionState | Variable::ScheduledNotes)
+                matches!(
+                    self,
+                    Variable::CompanionState
+                        | Variable::ScheduledNotes
+                        | Variable::CharacterLoraKeywords
+                        | Variable::PersonaLoraKeywords
+                )
             }
-            Purpose::GroupChatRoleplay => false,
+            Purpose::GroupChatRoleplay => matches!(self, Variable::GroupCharacters),
             Purpose::GroupChatConversational => matches!(self, Variable::GroupCharacters),
             Purpose::DynamicMemorySummarizer => {
                 matches!(self, Variable::PreviousSummary | Variable::Character)
@@ -1101,6 +1159,7 @@ impl PromptVariable {
                     | Variable::SceneRequest
                     | Variable::CharacterLoraKeywords
                     | Variable::PersonaLoraKeywords
+                    | Variable::ImageModelInstructions
             ),
             Purpose::DesignReferenceWriter => matches!(
                 self,
@@ -1138,8 +1197,12 @@ impl PromptVariable {
 }
 
 impl PromptRenderValues {
-    fn render(&self, source: &str) -> String {
-        let mut rendered = source.to_string();
+    fn render(&self, source: &str) -> Result<String, PromptRenderError> {
+        let current_draft = self
+            .purpose_values
+            .get(&PromptVariable::CurrentDraft)
+            .map_or("", String::as_str);
+        let mut rendered = render_legacy_conditionals(source, !current_draft.is_empty())?;
         let replacements = [
             ("{{char.name}}", self.character_name.as_str()),
             ("{{char.desc}}", self.character_description.as_str()),
@@ -1176,8 +1239,67 @@ impl PromptRenderValues {
                 self.purpose_values.get(variable).map_or("", String::as_str),
             );
         }
-        rendered
+        Ok(rendered)
     }
+}
+
+fn render_legacy_conditionals(
+    source: &str,
+    current_draft_present: bool,
+) -> Result<String, PromptRenderError> {
+    const OPEN: &str = "{{#if ";
+    const ELSE: &str = "{{else}}";
+    const CLOSE: &str = "{{/if}}";
+    let mut output = String::with_capacity(source.len());
+    let mut cursor = 0;
+    while let Some(relative) = source[cursor..].find(OPEN) {
+        let start = cursor + relative;
+        output.push_str(&source[cursor..start]);
+        let condition_start = start + OPEN.len();
+        let Some(condition_end) = source[condition_start..].find("}}") else {
+            return Err(PromptRenderError::MalformedConditional);
+        };
+        let condition_end = condition_start + condition_end;
+        if source[condition_start..condition_end].trim() != "current_draft" {
+            return Err(PromptRenderError::UnknownConditional);
+        }
+        let body_start = condition_end + 2;
+        let Some(close_relative) = source[body_start..].find(CLOSE) else {
+            return Err(PromptRenderError::MalformedConditional);
+        };
+        let close_start = body_start + close_relative;
+        let body = &source[body_start..close_start];
+        if body.contains(OPEN) || body.contains(CLOSE) {
+            return Err(PromptRenderError::NestedConditional);
+        }
+        let (if_body, else_body) = if let Some(else_relative) = body.find(ELSE) {
+            let else_end = else_relative + ELSE.len();
+            if body[else_end..].contains(ELSE) {
+                return Err(PromptRenderError::MalformedConditional);
+            }
+            (&body[..else_relative], &body[else_end..])
+        } else {
+            (body, "")
+        };
+        output.push_str(if current_draft_present {
+            if_body
+        } else {
+            else_body
+        });
+        if output.len() > MAX_AUTHORED_BYTES {
+            return Err(PromptRenderError::RenderValuesTooLarge);
+        }
+        cursor = close_start + CLOSE.len();
+    }
+    let tail = &source[cursor..];
+    if tail.contains(ELSE) || tail.contains(CLOSE) {
+        return Err(PromptRenderError::MalformedConditional);
+    }
+    output.push_str(tail);
+    if output.len() > MAX_AUTHORED_BYTES {
+        return Err(PromptRenderError::RenderValuesTooLarge);
+    }
+    Ok(output)
 }
 
 fn validate_render_values(
@@ -1266,6 +1388,12 @@ pub enum PromptRenderError {
     RenderValueTooLarge { variable: PromptVariable },
     #[error("prompt render values exceed the 8 MiB limit")]
     RenderValuesTooLarge,
+    #[error("malformed legacy conditional block")]
+    MalformedConditional,
+    #[error("unknown legacy conditional directive")]
+    UnknownConditional,
+    #[error("nested legacy conditional blocks are not supported")]
+    NestedConditional,
 }
 
 pub fn render_prompt(
@@ -1285,7 +1413,7 @@ pub fn render_prompt(
         if !entry_selected(document.behavior_version, entry, context) {
             continue;
         }
-        let message = render_entry(entry, &context.values);
+        let message = render_entry(entry, &context.values)?;
         // A placeholder-only entry can become empty for a purpose that does
         // not provide its value. Payload entries still carry an operation
         // (for example an image slot), so retain them even with blank text.
@@ -1329,14 +1457,17 @@ fn entry_selected(
             .is_none_or(|condition| matches_condition(condition, &context.conditions))
 }
 
-fn render_entry(entry: &PromptEntry, values: &PromptRenderValues) -> RenderedPromptMessage {
-    RenderedPromptMessage {
+fn render_entry(
+    entry: &PromptEntry,
+    values: &PromptRenderValues,
+) -> Result<RenderedPromptMessage, PromptRenderError> {
+    Ok(RenderedPromptMessage {
         entry_id: entry.id,
         role: entry.role,
-        content: values.render(&entry.content),
+        content: values.render(&entry.content)?,
         depth: entry.depth,
         payload: entry.payload.clone(),
-    }
+    })
 }
 
 pub fn explain_prompt(
@@ -1437,6 +1568,8 @@ pub struct PromptMutationResult {
 #[serde(deny_unknown_fields)]
 pub struct BuiltInPromptSeed {
     pub key: String,
+    #[serde(default)]
+    pub aliases: Vec<String>,
     pub seed_version: u32,
     pub metadata: PromptMetadataDraft,
     pub entries: Vec<PromptEntryDraft>,
@@ -1447,6 +1580,14 @@ pub struct BuiltInPromptSeed {
 impl BuiltInPromptSeed {
     pub fn validate(&self) -> Result<(), PromptValidationError> {
         validate_label(&self.key, "built-in prompt key")?;
+        let mut prompt_keys = std::collections::HashSet::new();
+        prompt_keys.insert(self.key.trim().to_owned());
+        for alias in &self.aliases {
+            validate_label(alias, "built-in prompt alias")?;
+            if !prompt_keys.insert(alias.trim().to_owned()) {
+                return Err(PromptValidationError::InvalidBuiltInKey);
+            }
+        }
         self.metadata.validate()?;
         if self.seed_version == 0 {
             return Err(PromptValidationError::ZeroSeedVersion);
@@ -1454,8 +1595,18 @@ impl BuiltInPromptSeed {
         if self.entries.len() > MAX_PROMPT_ENTRIES {
             return Err(PromptValidationError::TooManyEntries);
         }
+        let mut entry_keys = std::collections::HashSet::with_capacity(self.entries.len());
         for entry in &self.entries {
             entry.validate()?;
+            let Some(key) = entry.built_in_entry_key.as_deref() else {
+                return Err(PromptValidationError::InvalidBuiltInEntryKey);
+            };
+            validate_entry_key(key)?;
+            if !entry_keys.insert(key) {
+                return Err(PromptValidationError::DuplicateBuiltInEntryKey(
+                    key.to_owned(),
+                ));
+            }
         }
         Ok(())
     }
@@ -1463,6 +1614,7 @@ impl BuiltInPromptSeed {
     pub fn computed_seed_digest(&self) -> Result<ContentHash, PromptValidationError> {
         let bytes = serde_json::to_vec(&CanonicalBuiltInSeed {
             key: self.key.trim(),
+            aliases: &self.aliases,
             seed_version: self.seed_version,
             metadata: &self.metadata,
             required: self.required,
@@ -1493,6 +1645,7 @@ impl BuiltInPromptSeed {
 #[derive(Serialize)]
 struct CanonicalBuiltInSeed<'a> {
     key: &'a str,
+    aliases: &'a [String],
     seed_version: u32,
     metadata: &'a PromptMetadataDraft,
     required: bool,
@@ -1521,10 +1674,15 @@ impl BuiltInReconcileRequest {
     pub fn validate(&self) -> Result<(), PromptBootstrapError> {
         let mut keys = std::collections::HashSet::with_capacity(self.seeds.len());
         for seed in &self.seeds {
+            seed.validate()?;
             if !keys.insert(seed.key.trim().to_owned()) {
                 return Err(PromptBootstrapError::DuplicateKey);
             }
-            seed.validate()?;
+            for alias in &seed.aliases {
+                if !keys.insert(alias.trim().to_owned()) {
+                    return Err(PromptBootstrapError::AliasCollision);
+                }
+            }
         }
         Ok(())
     }
@@ -1536,6 +1694,12 @@ pub enum PromptBootstrapError {
     Invalid(#[from] PromptValidationError),
     #[error("built-in prompt keys must be unique")]
     DuplicateKey,
+    #[error("built-in prompt key or alias collides globally")]
+    AliasCollision,
+    #[error("stored built-in prompt matches multiple canonical keys or aliases")]
+    AliasConflict,
+    #[error("stored built-in prompt identity is invalid")]
+    InvalidStoredBuiltIn,
     #[error("protected built-in prompt cannot be edited")]
     Protected,
     #[error("required built-in prompt cannot be archived")]
@@ -1848,7 +2012,7 @@ mod tests {
     }
 
     #[test]
-    fn purpose_values_reject_nonempty_disallowed_variables_and_allow_scene_loras() {
+    fn purpose_values_enforce_closed_vocabulary_per_prompt_purpose() {
         let entry = PromptEntry {
             id: PromptEntryId::new(),
             name: "purpose".into(),
@@ -1874,17 +2038,85 @@ mod tests {
                 .content,
             "mara-voss"
         );
-        let disallowed = document(entry);
+        let mut direct = document(entry.clone());
+        direct.purpose = PromptPurpose::DirectChat;
+        assert_eq!(
+            render_prompt(
+                &direct,
+                &PromptRenderContext {
+                    conditions: PromptConditionContext::default(),
+                    values,
+                },
+            )
+            .expect("direct lora variable is allowed")
+            .relative[0]
+                .content,
+            "mara-voss"
+        );
+        let mut group = document(entry.clone());
+        group.purpose = PromptPurpose::GroupChatRoleplay;
+        let mut group_values = PromptRenderValues::default();
+        group_values
+            .purpose_values
+            .insert(PromptVariable::GroupCharacters, "cast".into());
+        group.entries[0].content = "{{group_characters}}".into();
+        assert_eq!(
+            render_prompt(
+                &group,
+                &PromptRenderContext {
+                    conditions: PromptConditionContext::default(),
+                    values: group_values,
+                },
+            )
+            .expect("group characters variable is allowed")
+            .relative[0]
+                .content,
+            "cast"
+        );
+        let mut scene = document(entry);
+        scene.purpose = PromptPurpose::ScenePromptWriter;
+        scene.entries[0].content = "{{image_model_instructions}}".into();
+        let mut image_values = PromptRenderValues::default();
+        image_values.purpose_values.insert(
+            PromptVariable::ImageModelInstructions,
+            "instructions".into(),
+        );
+        assert_eq!(
+            render_prompt(
+                &scene,
+                &PromptRenderContext {
+                    conditions: PromptConditionContext::default(),
+                    values: image_values,
+                },
+            )
+            .expect("image instructions variable is allowed")
+            .relative[0]
+                .content,
+            "instructions"
+        );
+        let disallowed = {
+            let mut value = document(PromptEntry {
+                name: "purpose".into(),
+                content: "{{group_characters}}".into(),
+                ..PromptEntry::default()
+            });
+            value.purpose = PromptPurpose::DirectChat;
+            value
+        };
+        let mut disallowed_values = PromptRenderValues::default();
+        disallowed_values
+            .purpose_values
+            .insert(PromptVariable::GroupCharacters, "cast".into());
         assert!(matches!(
             render_prompt(
                 &disallowed,
                 &PromptRenderContext {
                     conditions: PromptConditionContext::default(),
-                    values,
+                    values: disallowed_values,
                 },
             ),
             Err(PromptRenderError::DisallowedPurposeVariable {
-                variable: PromptVariable::CharacterLoraKeywords,
+                variable: PromptVariable::GroupCharacters,
                 purpose: PromptPurpose::DirectChat,
             })
         ));
@@ -1956,6 +2188,7 @@ mod tests {
         assert!(metadata.validate().is_err());
 
         let draft = PromptEntryDraft {
+            built_in_entry_key: None,
             name: "entry".into(),
             role: PromptEntryRole::System,
             content: "hello".into(),
@@ -2042,6 +2275,7 @@ mod tests {
     fn built_in_reconcile_requires_unique_stable_keys() {
         let seed = BuiltInPromptSeed {
             key: "app.direct".into(),
+            aliases: Vec::new(),
             seed_version: 1,
             metadata: PromptMetadataDraft {
                 name: "Direct".into(),
@@ -2066,7 +2300,7 @@ mod tests {
             seed.computed_seed_digest()
                 .expect("canonical digest")
                 .as_str(),
-            "237dc93dae66036b71b2545cc946cc8d4345b1ec8daa2565f6bd8e298bd1bbf3"
+            "375b8eb61de0135e0d8b9d71360d9be818507c69e94823e692f71b144c88654e"
         );
         let mut changed = seed.clone();
         changed.metadata.name = "Direct changed".into();
@@ -2078,6 +2312,199 @@ mod tests {
             seed.provenance(),
             Ok(PromptProvenance::BuiltIn { .. })
         ));
+    }
+
+    #[test]
+    fn legacy_conditionals_render_both_branches_and_reject_controls() {
+        let make = |content: &str, current_draft: &str| {
+            let entry = PromptEntry {
+                name: "conditional".into(),
+                content: content.into(),
+                ..PromptEntry::default()
+            };
+            let mut document = document(entry.clone());
+            document.purpose = PromptPurpose::ReplyHelperRoleplay;
+            let mut values = PromptRenderValues::default();
+            values
+                .purpose_values
+                .insert(PromptVariable::CurrentDraft, current_draft.into());
+            render_prompt(
+                &document,
+                &PromptRenderContext {
+                    conditions: PromptConditionContext::default(),
+                    values,
+                },
+            )
+        };
+        assert_eq!(
+            make("{{#if current_draft}}yes{{else}}no{{/if}}", "draft")
+                .expect("true branch")
+                .relative[0]
+                .content,
+            "yes"
+        );
+        assert_eq!(
+            make("{{#if current_draft}}yes{{else}}no{{/if}}", "")
+                .expect("false branch")
+                .relative[0]
+                .content,
+            "no"
+        );
+        for malformed in [
+            "{{#if current_draft}}nested {{#if current_draft}}x{{/if}}{{/if}}",
+            "{{#if unknown}}x{{/if}}",
+            "{{#if current_draft}}x",
+            "{{else}}x",
+            "{{/if}}x",
+        ] {
+            assert!(matches!(
+                make(malformed, "draft"),
+                Err(PromptRenderError::NestedConditional)
+                    | Err(PromptRenderError::UnknownConditional)
+                    | Err(PromptRenderError::MalformedConditional)
+            ));
+        }
+    }
+
+    #[test]
+    fn built_in_seed_entry_keys_are_required_bounded_unique_and_digested() {
+        let mut first = PromptEntryDraft {
+            built_in_entry_key: None,
+            name: "first".into(),
+            role: PromptEntryRole::System,
+            content: "one".into(),
+            enabled: true,
+            injection_position: PromptEntryPosition::Relative,
+            depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: false,
+            conditions: None,
+            payload: None,
+        };
+        let seed = BuiltInPromptSeed {
+            key: "app.direct".into(),
+            aliases: Vec::new(),
+            seed_version: 1,
+            metadata: PromptMetadataDraft {
+                name: "Direct".into(),
+                purpose: PromptPurpose::DirectChat,
+                condense: false,
+                behavior_version: PromptBehaviorVersion::LegacyV1,
+            },
+            entries: vec![first.clone()],
+            required: true,
+            protected: true,
+        };
+        assert_eq!(
+            seed.validate(),
+            Err(PromptValidationError::InvalidBuiltInEntryKey)
+        );
+        first.built_in_entry_key = Some("entry.first".into());
+        let mut keyed = seed.clone();
+        keyed.entries = vec![first.clone()];
+        assert_eq!(keyed.validate(), Ok(()));
+        let digest = keyed.computed_seed_digest().expect("seed digest");
+        first.built_in_entry_key = Some("entry.second".into());
+        keyed.entries = vec![first];
+        assert_ne!(
+            digest,
+            keyed.computed_seed_digest().expect("changed digest")
+        );
+        keyed.entries.push(keyed.entries[0].clone());
+        assert!(matches!(
+            keyed.validate(),
+            Err(PromptValidationError::DuplicateBuiltInEntryKey(_))
+        ));
+        let mut too_long = seed;
+        too_long.entries = vec![PromptEntryDraft {
+            built_in_entry_key: Some("x".repeat(MAX_LABEL_BYTES + 1)),
+            ..keyed.entries[0].clone()
+        }];
+        assert_eq!(
+            too_long.validate(),
+            Err(PromptValidationError::InvalidBuiltInEntryKey)
+        );
+    }
+
+    #[test]
+    fn prompt_rejects_duplicate_stable_entry_keys() {
+        let first = PromptEntry {
+            name: "first".into(),
+            content: "one".into(),
+            built_in_entry_key: Some("same".into()),
+            ..PromptEntry::default()
+        };
+        let mut second = first.clone();
+        second.id = PromptEntryId::new();
+        let mut prompt = document(first);
+        prompt.entries.push(second);
+        assert!(matches!(
+            prompt.validate(),
+            Err(PromptValidationError::DuplicateBuiltInEntryKey(key)) if key == "same"
+        ));
+    }
+
+    #[test]
+    fn stable_entry_keys_are_restricted_to_consistent_built_in_documents() {
+        let keyed = PromptEntry {
+            name: "keyed".into(),
+            content: "one".into(),
+            built_in_entry_key: Some("keyed".into()),
+            ..PromptEntry::default()
+        };
+        let mut user = document(keyed.clone());
+        assert_eq!(
+            user.validate(),
+            Err(PromptValidationError::BuiltInEntryKeyOnNonBuiltInPrompt)
+        );
+        user.provenance = PromptProvenance::BuiltIn {
+            key: "catalog".into(),
+            seed_version: 1,
+            seed_digest: ContentHash::parse("a".repeat(64)).expect("hash"),
+            authored_digest: ContentHash::parse("a".repeat(64)).expect("hash"),
+            required: false,
+            protected: false,
+        };
+        user.entries.push(PromptEntry {
+            name: "legacy".into(),
+            content: "two".into(),
+            ..PromptEntry::default()
+        });
+        assert_eq!(user.validate(), Ok(()));
+    }
+
+    #[test]
+    fn ordinary_entry_mutations_cannot_forge_catalog_keys() {
+        let draft = PromptEntryDraft {
+            built_in_entry_key: Some("catalog.entry".into()),
+            name: "entry".into(),
+            role: PromptEntryRole::System,
+            content: "one".into(),
+            enabled: true,
+            injection_position: PromptEntryPosition::Relative,
+            depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: false,
+            conditions: None,
+            payload: None,
+        };
+        assert_eq!(
+            PromptEntryMutation::Add {
+                draft: draft.clone(),
+                target: PromptEntryInsertionTarget::Append,
+            }
+            .validate(),
+            Err(PromptValidationError::BuiltInEntryKeyNotAllowed)
+        );
+        assert_eq!(
+            PromptEntryMutation::Replace {
+                drafts: vec![draft]
+            }
+            .validate(),
+            Err(PromptValidationError::BuiltInEntryKeyNotAllowed)
+        );
     }
 
     #[test]

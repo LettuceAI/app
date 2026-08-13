@@ -40,3 +40,7 @@ lettuce-creation.workspace = true
 lettuce-transfer.workspace = true
 lettuce-sync.workspace = true
 lettuce-usage.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+blake3.workspace = true

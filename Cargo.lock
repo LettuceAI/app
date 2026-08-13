@@ -271,6 +271,7 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 name = "lettuce-app"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "lettuce-characters",
  "lettuce-companions",
  "lettuce-context",
@@ -297,6 +298,9 @@ dependencies = [
  "lettuce-transfer",
  "lettuce-types",
  "lettuce-usage",
+ "serde",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]

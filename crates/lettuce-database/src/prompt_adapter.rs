@@ -271,27 +271,28 @@ fn cursor_decode(
 fn read_entry(row: &Row<'_>) -> rusqlite::Result<PromptEntry> {
     Ok(PromptEntry {
         id: parse_id(row.get(0)?)?,
-        name: row.get(1)?,
-        role: role_from_name(&row.get::<_, String>(2)?)?,
-        content: row.get(3)?,
-        enabled: row.get(4)?,
-        injection_position: position_from_name(&row.get::<_, String>(5)?)?,
-        depth: row.get::<_, i64>(6)?.try_into().map_err(|_| invalid())?,
+        built_in_entry_key: row.get(1)?,
+        name: row.get(2)?,
+        role: role_from_name(&row.get::<_, String>(3)?)?,
+        content: row.get(4)?,
+        enabled: row.get(5)?,
+        injection_position: position_from_name(&row.get::<_, String>(6)?)?,
+        depth: row.get::<_, i64>(7)?.try_into().map_err(|_| invalid())?,
         conditional_min_messages: row
-            .get::<_, Option<i64>>(7)?
-            .map(|value| value.try_into().map_err(|_| invalid()))
-            .transpose()?,
-        interval_turns: row
             .get::<_, Option<i64>>(8)?
             .map(|value| value.try_into().map_err(|_| invalid()))
             .transpose()?,
-        system_prompt: row.get(9)?,
+        interval_turns: row
+            .get::<_, Option<i64>>(9)?
+            .map(|value| value.try_into().map_err(|_| invalid()))
+            .transpose()?,
+        system_prompt: row.get(10)?,
         conditions: row
-            .get::<_, Option<String>>(10)?
+            .get::<_, Option<String>>(11)?
             .map(|value| decode(&value))
             .transpose()?,
         payload: row
-            .get::<_, Option<String>>(11)?
+            .get::<_, Option<String>>(12)?
             .map(|value| decode(&value))
             .transpose()?,
     })
@@ -333,17 +334,17 @@ fn load_document(
         )
         .optional()? else { return Ok(None) };
     let mut statement = connection.prepare(
-        "SELECT id,name,role,content,enabled,injection_position,depth,conditional_min_messages,interval_turns,system_prompt,conditions_json,payload_json,ordinal,revision,created_at,updated_at FROM prompt_entries WHERE prompt_id=?1 ORDER BY ordinal ASC,id ASC",
+            "SELECT id,built_in_entry_key,name,role,content,enabled,injection_position,depth,conditional_min_messages,interval_turns,system_prompt,conditions_json,payload_json,ordinal,revision,created_at,updated_at FROM prompt_entries WHERE prompt_id=?1 ORDER BY ordinal ASC,id ASC",
     )?;
     let mut entries = Vec::new();
     for (expected_ordinal, row) in statement
         .query_map([id.to_string()], |row| {
             Ok((
                 read_entry(row)?,
-                row.get::<_, i64>(12)?,
-                revision(row.get(13)?)?,
-                TimestampMillis::new(row.get(14)?),
+                row.get::<_, i64>(13)?,
+                revision(row.get(14)?)?,
                 TimestampMillis::new(row.get(15)?),
+                TimestampMillis::new(row.get(16)?),
             ))
         })?
         .enumerate()
@@ -387,9 +388,15 @@ fn validate_entries(entries: &[PromptEntryDraft]) -> Result<(), PromptRepository
             PromptValidationError::TooManyEntries,
         ));
     }
-    entries
-        .iter()
-        .try_for_each(|entry| entry.validate().map_err(PromptRepositoryError::Invalid))
+    for entry in entries {
+        entry.validate().map_err(PromptRepositoryError::Invalid)?;
+        if entry.built_in_entry_key.is_some() {
+            return Err(PromptRepositoryError::Invalid(
+                PromptValidationError::BuiltInEntryKeyNotAllowed,
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn entry_params(
@@ -405,6 +412,7 @@ fn entry_params(
     Ok(vec![
         Box::new(entry.id.to_string()),
         Box::new(prompt_id.to_string()),
+        Box::new(entry.built_in_entry_key.clone()),
         Box::new(entry.name.clone()),
         Box::new(role_name(entry.role)),
         Box::new(entry.content.clone()),
@@ -437,7 +445,7 @@ fn insert_entry(
 ) -> Result<(), PromptRepositoryError> {
     let values = entry_params(entry, prompt_id, ordinal, revision, created_at, updated_at)?;
     tx.execute(
-        "INSERT INTO prompt_entries(id,prompt_id,name,role,content,enabled,injection_position,depth,conditional_min_messages,interval_turns,system_prompt,conditions_json,payload_json,ordinal,revision,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)",
+        "INSERT INTO prompt_entries(id,prompt_id,built_in_entry_key,name,role,content,enabled,injection_position,depth,conditional_min_messages,interval_turns,system_prompt,conditions_json,payload_json,ordinal,revision,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)",
         rusqlite::params_from_iter(values.iter().map(|value| value.as_ref() as &dyn rusqlite::ToSql)),
     )
     .map_err(storage)?;
@@ -468,6 +476,96 @@ fn metadata_document(
         .validate()
         .map_err(PromptRepositoryError::Invalid)?;
     Ok(document)
+}
+
+fn entry_from_draft(draft: PromptEntryDraft, id: PromptEntryId) -> PromptEntry {
+    PromptEntry {
+        id,
+        built_in_entry_key: draft.built_in_entry_key,
+        name: draft.name,
+        role: draft.role,
+        content: draft.content,
+        enabled: draft.enabled,
+        injection_position: draft.injection_position,
+        depth: draft.depth,
+        conditional_min_messages: draft.conditional_min_messages,
+        interval_turns: draft.interval_turns,
+        system_prompt: draft.system_prompt,
+        conditions: draft.conditions,
+        payload: draft.payload,
+    }
+}
+
+fn authored_entry_equal(entry: &PromptEntry, draft: &PromptEntryDraft) -> bool {
+    entry.name == draft.name
+        && entry.role == draft.role
+        && entry.content == draft.content
+        && entry.enabled == draft.enabled
+        && entry.injection_position == draft.injection_position
+        && entry.depth == draft.depth
+        && entry.conditional_min_messages == draft.conditional_min_messages
+        && entry.interval_turns == draft.interval_turns
+        && entry.system_prompt == draft.system_prompt
+        && entry.conditions == draft.conditions
+        && entry.payload == draft.payload
+}
+
+fn legacy_seed_is_unedited(
+    current: &PromptDocument,
+    seed: &BuiltInPromptSeed,
+    current_seed: &lettuce_types::ContentHash,
+    current_authored: &lettuce_types::ContentHash,
+) -> bool {
+    current_seed == current_authored
+        && current.entries.len() == seed.entries.len()
+        && current
+            .entries
+            .iter()
+            .zip(&seed.entries)
+            .all(|(entry, _)| entry.built_in_entry_key.is_none())
+}
+
+fn reconcile_entries(
+    current: &PromptDocument,
+    seed: &BuiltInPromptSeed,
+    legacy_ordinal_match: bool,
+) -> (Vec<PromptEntry>, HashSet<PromptEntryId>, bool) {
+    let by_key = current
+        .entries
+        .iter()
+        .filter_map(|entry| entry.built_in_entry_key.as_deref().map(|key| (key, entry)))
+        .collect::<HashMap<_, _>>();
+    let mut touched = HashSet::new();
+    let mut changed = current.entries.len() != seed.entries.len();
+    let entries = seed
+        .entries
+        .iter()
+        .enumerate()
+        .map(|(ordinal, draft)| {
+            let matched = by_key
+                .get(draft.built_in_entry_key.as_deref().expect("validated seed"))
+                .copied()
+                .or_else(|| {
+                    legacy_ordinal_match
+                        .then(|| current.entries.get(ordinal))
+                        .flatten()
+                });
+            if let Some(current_entry) = matched {
+                if !authored_entry_equal(current_entry, draft)
+                    || current_entry.built_in_entry_key != draft.built_in_entry_key
+                    || current.entries.get(ordinal).map(|entry| entry.id) != Some(current_entry.id)
+                {
+                    touched.insert(current_entry.id);
+                    changed = true;
+                }
+                entry_from_draft(draft.clone(), current_entry.id)
+            } else {
+                changed = true;
+                entry_from_draft(draft.clone(), PromptEntryId::new())
+            }
+        })
+        .collect();
+    (entries, touched, changed)
 }
 
 fn insert_root(
@@ -622,6 +720,7 @@ fn authored_digest(
 ) -> Result<lettuce_types::ContentHash, PromptRepositoryError> {
     let seed = BuiltInPromptSeed {
         key: key.to_owned(),
+        aliases: Vec::new(),
         seed_version,
         metadata: PromptMetadataDraft {
             name: document.name.clone(),
@@ -676,20 +775,12 @@ fn mutate_entries_in_memory(
     let mut touched = HashSet::new();
     match mutation {
         PromptEntryMutation::Add { draft, target } => {
-            let entry = PromptEntry {
-                id: PromptEntryId::new(),
-                name: draft.name,
-                role: draft.role,
-                content: draft.content,
-                enabled: draft.enabled,
-                injection_position: draft.injection_position,
-                depth: draft.depth,
-                conditional_min_messages: draft.conditional_min_messages,
-                interval_turns: draft.interval_turns,
-                system_prompt: draft.system_prompt,
-                conditions: draft.conditions,
-                payload: draft.payload,
-            };
+            if draft.built_in_entry_key.is_some() {
+                return Err(PromptRepositoryError::Invalid(
+                    PromptValidationError::BuiltInEntryKeyNotAllowed,
+                ));
+            }
+            let entry = entry_from_draft(draft, PromptEntryId::new());
             let index = match target {
                 PromptEntryInsertionTarget::Append => document.entries.len(),
                 PromptEntryInsertionTarget::At(index) if index <= document.entries.len() => index,
@@ -708,8 +799,17 @@ fn mutate_entries_in_memory(
                 .iter_mut()
                 .find(|entry| entry.id == entry_id)
                 .ok_or(PromptRepositoryError::EntryNotFound)?;
+            if draft.built_in_entry_key.is_some()
+                && draft.built_in_entry_key != entry.built_in_entry_key
+            {
+                return Err(PromptRepositoryError::Invalid(
+                    PromptValidationError::BuiltInEntryKeyNotAllowed,
+                ));
+            }
+            let built_in_entry_key = entry.built_in_entry_key.clone();
             *entry = PromptEntry {
                 id: entry_id,
+                built_in_entry_key,
                 name: draft.name,
                 role: draft.role,
                 content: draft.content,
@@ -733,22 +833,17 @@ fn mutate_entries_in_memory(
             document.entries.remove(index);
         }
         PromptEntryMutation::Replace { drafts } => {
+            if drafts
+                .iter()
+                .any(|draft| draft.built_in_entry_key.is_some())
+            {
+                return Err(PromptRepositoryError::Invalid(
+                    PromptValidationError::BuiltInEntryKeyNotAllowed,
+                ));
+            }
             document.entries = drafts
                 .into_iter()
-                .map(|draft| PromptEntry {
-                    id: PromptEntryId::new(),
-                    name: draft.name,
-                    role: draft.role,
-                    content: draft.content,
-                    enabled: draft.enabled,
-                    injection_position: draft.injection_position,
-                    depth: draft.depth,
-                    conditional_min_messages: draft.conditional_min_messages,
-                    interval_turns: draft.interval_turns,
-                    system_prompt: draft.system_prompt,
-                    conditions: draft.conditions,
-                    payload: draft.payload,
-                })
+                .map(|draft| entry_from_draft(draft, PromptEntryId::new()))
                 .collect();
         }
         PromptEntryMutation::Reorder {
@@ -811,20 +906,7 @@ impl PromptRepository for Database {
         validate_entries(&entries)?;
         let entries = entries
             .into_iter()
-            .map(|draft| PromptEntry {
-                id: PromptEntryId::new(),
-                name: draft.name,
-                role: draft.role,
-                content: draft.content,
-                enabled: draft.enabled,
-                injection_position: draft.injection_position,
-                depth: draft.depth,
-                conditional_min_messages: draft.conditional_min_messages,
-                interval_turns: draft.interval_turns,
-                system_prompt: draft.system_prompt,
-                conditions: draft.conditions,
-                payload: draft.payload,
-            })
+            .map(|draft| entry_from_draft(draft, PromptEntryId::new()))
             .collect();
         let document = metadata_document(
             PromptDocumentId::new(),
@@ -1072,14 +1154,30 @@ impl PromptBootstrapPort for Database {
         for seed in seeds {
             let key = seed.key.trim().to_owned();
             let seed_digest = seed.computed_seed_digest()?;
-            let existing_id: Option<String> = tx
-                .query_row(
-                    "SELECT id FROM prompt_documents WHERE built_in_key=?1",
-                    [&key],
-                    |row| row.get(0),
+            let candidate_keys = std::iter::once(key.clone())
+                .chain(seed.aliases.iter().map(|alias| alias.trim().to_owned()))
+                .collect::<HashSet<_>>();
+            let mut matching_ids = Vec::new();
+            let mut statement = tx
+                .prepare(
+                    "SELECT id,built_in_key FROM prompt_documents WHERE provenance_kind='built_in'",
                 )
-                .optional()
                 .map_err(bootstrap_storage)?;
+            for row in statement
+                .query_map([], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })
+                .map_err(bootstrap_storage)?
+            {
+                let (id, stored_key) = row.map_err(bootstrap_storage)?;
+                if candidate_keys.contains(&stored_key) {
+                    matching_ids.push(id);
+                }
+            }
+            if matching_ids.len() > 1 {
+                return Err(PromptBootstrapError::AliasConflict);
+            }
+            let existing_id = matching_ids.pop();
             let Some(existing_id) = existing_id else {
                 let id = PromptDocumentId::new();
                 let metadata = seed.metadata.clone();
@@ -1087,20 +1185,7 @@ impl PromptBootstrapPort for Database {
                     .entries
                     .iter()
                     .cloned()
-                    .map(|draft| PromptEntry {
-                        id: PromptEntryId::new(),
-                        name: draft.name,
-                        role: draft.role,
-                        content: draft.content,
-                        enabled: draft.enabled,
-                        injection_position: draft.injection_position,
-                        depth: draft.depth,
-                        conditional_min_messages: draft.conditional_min_messages,
-                        interval_turns: draft.interval_turns,
-                        system_prompt: draft.system_prompt,
-                        conditions: draft.conditions,
-                        payload: draft.payload,
-                    })
+                    .map(|draft| entry_from_draft(draft, PromptEntryId::new()))
                     .collect();
                 let provenance = seed.provenance()?;
                 let document = metadata_document(id, metadata, entries, provenance, now)
@@ -1118,19 +1203,47 @@ impl PromptBootstrapPort for Database {
             let id: PromptDocumentId = existing_id
                 .parse()
                 .map_err(|_| PromptBootstrapError::Failure("invalid built-in id".into()))?;
-            let current = load_required(&tx, id)
+            let mut current = load_required(&tx, id)
                 .map_err(|error| PromptBootstrapError::Failure(error.to_string()))?;
-            let PromptProvenance::BuiltIn {
-                seed_digest: current_seed,
-                authored_digest: current_authored,
-                ..
-            } = &current.provenance
-            else {
-                return Err(PromptBootstrapError::Failure(
-                    "built-in key points to non-built-in prompt".into(),
-                ));
+            let (current_seed, current_authored) = match &current.provenance {
+                PromptProvenance::BuiltIn {
+                    seed_digest,
+                    authored_digest,
+                    ..
+                } => (seed_digest.clone(), authored_digest.clone()),
+                _ => {
+                    return Err(PromptBootstrapError::InvalidStoredBuiltIn);
+                }
             };
-            let edited = current_authored != current_seed;
+            let mut canonical_provenance = seed.provenance()?;
+            let alias_only = match &current.provenance {
+                PromptProvenance::BuiltIn {
+                    key: current_key, ..
+                } => current_key != &key,
+                _ => false,
+            };
+            if alias_only || current_authored != current_seed {
+                if let PromptProvenance::BuiltIn {
+                    authored_digest, ..
+                } = &mut canonical_provenance
+                {
+                    *authored_digest = current_authored.clone();
+                }
+            }
+            if current.provenance != canonical_provenance {
+                let (kind, canonical_key, source) = provenance_kind(&canonical_provenance);
+                let payload = encode(&canonical_provenance)
+                    .map_err(|error| PromptBootstrapError::Failure(error.to_string()))?;
+                tx.execute(
+                    "UPDATE prompt_documents SET provenance_kind=?2,built_in_key=?3,derived_source_id=?4,provenance_json=?5 WHERE id=?1",
+                    params![id.to_string(), kind, canonical_key, source, payload],
+                )
+                .map_err(bootstrap_storage)?;
+                current.provenance = canonical_provenance.clone();
+            }
+            let legacy_unedited =
+                legacy_seed_is_unedited(&current, &seed, &current_seed, &current_authored);
+            let edited = current_authored != current_seed && !legacy_unedited;
             if edited && request.mode == BuiltInReconcileMode::RefreshUnedited {
                 outcomes.push(BuiltInReconcileOutcome {
                     key,
@@ -1139,8 +1252,7 @@ impl PromptBootstrapPort for Database {
                 });
                 continue;
             }
-            if !edited && current_seed == &seed_digest && current.status == LifecycleStatus::Active
-            {
+            if !edited && current_seed == seed_digest && current.status == LifecycleStatus::Active {
                 outcomes.push(BuiltInReconcileOutcome {
                     key,
                     action: BuiltInReconcileAction::RefreshedUnedited,
@@ -1153,35 +1265,34 @@ impl PromptBootstrapPort for Database {
             } else {
                 BuiltInReconcileAction::RefreshedUnedited
             };
-            let entries = seed
-                .entries
-                .iter()
-                .cloned()
-                .map(|draft| PromptEntry {
-                    id: PromptEntryId::new(),
-                    name: draft.name,
-                    role: draft.role,
-                    content: draft.content,
-                    enabled: draft.enabled,
-                    injection_position: draft.injection_position,
-                    depth: draft.depth,
-                    conditional_min_messages: draft.conditional_min_messages,
-                    interval_turns: draft.interval_turns,
-                    system_prompt: draft.system_prompt,
-                    conditions: draft.conditions,
-                    payload: draft.payload,
-                })
-                .collect();
+            let legacy_ordinal_match = legacy_unedited;
+            let (entries, touched, entries_changed) =
+                reconcile_entries(&current, &seed, legacy_ordinal_match);
+            let metadata_changed = current.name != seed.metadata.name
+                || current.purpose != seed.metadata.purpose
+                || current.condense != seed.metadata.condense
+                || current.behavior_version != seed.metadata.behavior_version;
+            let root_changed =
+                metadata_changed || entries_changed || current.status != LifecycleStatus::Active;
             let mut document =
                 metadata_document(id, seed.metadata.clone(), entries, seed.provenance()?, now)
                     .map_err(|error| PromptBootstrapError::Failure(error.to_string()))?;
-            document.revision = next_revision(current.revision)
-                .map_err(|error| PromptBootstrapError::Failure(error.to_string()))?;
+            document.revision = if root_changed {
+                next_revision(current.revision)
+                    .map_err(|error| PromptBootstrapError::Failure(error.to_string()))?
+            } else {
+                current.revision
+            };
             document.created_at = current.created_at;
             document.status = LifecycleStatus::Active;
+            document.updated_at = if root_changed {
+                now
+            } else {
+                current.updated_at
+            };
             update_root(&tx, &document, current.revision)
                 .map_err(|error| PromptBootstrapError::Failure(error.to_string()))?;
-            replace_entries(&tx, &document, now, &HashSet::new())
+            replace_entries(&tx, &document, now, &touched)
                 .map_err(|error| PromptBootstrapError::Failure(error.to_string()))?;
             outcomes.push(BuiltInReconcileOutcome {
                 key,
@@ -1332,6 +1443,7 @@ mod tests {
 
     fn draft(name: &str) -> PromptEntryDraft {
         PromptEntryDraft {
+            built_in_entry_key: None,
             name: name.into(),
             role: PromptEntryRole::System,
             content: format!("content {name}"),
@@ -1435,11 +1547,14 @@ mod tests {
     #[test]
     fn built_in_reconcile_preserves_and_resets_edits() {
         let database = Database::open_in_memory().expect("database");
+        let mut seed_entry = draft("one");
+        seed_entry.built_in_entry_key = Some("one".into());
         let seed = BuiltInPromptSeed {
             key: "core".into(),
+            aliases: Vec::new(),
             seed_version: 1,
             metadata: metadata("Core"),
-            entries: vec![draft("one")],
+            entries: vec![seed_entry],
             required: true,
             protected: false,
         };
@@ -1476,6 +1591,205 @@ mod tests {
             .expect("reset");
         assert_eq!(reset[0].action, BuiltInReconcileAction::ResetEdited);
         assert_eq!(reset[0].document.name, "Core");
+        assert_eq!(
+            reset[0].document.entries[0].id,
+            created[0].document.entries[0].id
+        );
+    }
+
+    #[test]
+    fn built_in_reconcile_matches_entry_keys_across_catalog_changes() {
+        let database = Database::open_in_memory().expect("database");
+        let mut first = draft("first");
+        first.built_in_entry_key = Some("first".into());
+        let mut second = draft("second");
+        second.built_in_entry_key = Some("second".into());
+        let seed = BuiltInPromptSeed {
+            key: "catalog".into(),
+            aliases: Vec::new(),
+            seed_version: 1,
+            metadata: metadata("Catalog"),
+            entries: vec![first.clone(), second.clone()],
+            required: true,
+            protected: false,
+        };
+        let created = database
+            .reconcile_built_ins(
+                BuiltInReconcileRequest {
+                    seeds: vec![seed.clone()],
+                    mode: BuiltInReconcileMode::RefreshUnedited,
+                },
+                TimestampMillis::new(10),
+            )
+            .expect("initial reconcile")[0]
+            .document
+            .clone();
+        let first_id = created.entries[0].id;
+        let second_id = created.entries[1].id;
+
+        let mut third = draft("third");
+        third.built_in_entry_key = Some("third".into());
+        let mut changed_second = second.clone();
+        changed_second.content = "changed second".into();
+        let changed_seed = BuiltInPromptSeed {
+            seed_version: 2,
+            entries: vec![changed_second, first.clone(), third],
+            ..seed
+        };
+        let refreshed = database
+            .reconcile_built_ins(
+                BuiltInReconcileRequest {
+                    seeds: vec![changed_seed.clone()],
+                    mode: BuiltInReconcileMode::RefreshUnedited,
+                },
+                TimestampMillis::new(20),
+            )
+            .expect("changed reconcile")[0]
+            .document
+            .clone();
+        assert_eq!(refreshed.entries[0].id, second_id);
+        assert_eq!(refreshed.entries[1].id, first_id);
+        assert_eq!(
+            refreshed.entries[2].built_in_entry_key.as_deref(),
+            Some("third")
+        );
+        let connection = database.connection().expect("database lock");
+        let entry_times = |key: &str| {
+            connection
+                .query_row(
+                    "SELECT revision,created_at,updated_at FROM prompt_entries WHERE prompt_id=?1 AND built_in_entry_key=?2",
+                    rusqlite::params![refreshed.id.to_string(), key],
+                    |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?, row.get::<_, i64>(2)?)),
+                )
+                .expect("entry metadata")
+        };
+        assert_eq!(entry_times("second"), (2, 10, 20));
+        assert_eq!(entry_times("first"), (2, 10, 20));
+        assert_eq!(entry_times("third"), (1, 20, 20));
+        drop(connection);
+
+        let mut edited = draft("edited");
+        edited.built_in_entry_key = None;
+        let edited = database
+            .mutate_entries(
+                refreshed.id,
+                refreshed.revision,
+                PromptEntryMutation::Update {
+                    entry_id: refreshed.entries[1].id,
+                    draft: edited,
+                },
+                TimestampMillis::new(30),
+            )
+            .expect("edit entry")
+            .document;
+        assert_eq!(
+            edited.entries[1].built_in_entry_key.as_deref(),
+            Some("first")
+        );
+        let reset = database
+            .reconcile_built_ins(
+                BuiltInReconcileRequest {
+                    seeds: vec![changed_seed],
+                    mode: BuiltInReconcileMode::ResetToSeed,
+                },
+                TimestampMillis::new(40),
+            )
+            .expect("reset edited entry")[0]
+            .document
+            .clone();
+        assert_eq!(reset.entries[0].id, second_id);
+        assert_eq!(reset.entries[1].id, first_id);
+        assert_eq!(reset.entries[1].content, "content first");
+        let connection = database.connection().expect("database lock");
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT revision,created_at,updated_at FROM prompt_entries WHERE prompt_id=?1 AND built_in_entry_key='first'",
+                    [reset.id.to_string()],
+                    |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?, row.get::<_, i64>(2)?)),
+                )
+                .expect("reset entry metadata"),
+            (4, 10, 40)
+        );
+    }
+
+    #[test]
+    fn legacy_unkeyed_entries_are_ordinal_matched_and_key_assignment_is_touched() {
+        let database = Database::open_in_memory().expect("database");
+        let mut first = draft("first");
+        first.built_in_entry_key = Some("first".into());
+        let mut second = draft("second");
+        second.built_in_entry_key = Some("second".into());
+        let seed = BuiltInPromptSeed {
+            key: "legacy-catalog".into(),
+            aliases: Vec::new(),
+            seed_version: 1,
+            metadata: metadata("Legacy catalog"),
+            entries: vec![first, second],
+            required: true,
+            protected: false,
+        };
+        let created = database
+            .reconcile_built_ins(
+                BuiltInReconcileRequest {
+                    seeds: vec![seed.clone()],
+                    mode: BuiltInReconcileMode::RefreshUnedited,
+                },
+                TimestampMillis::new(10),
+            )
+            .expect("create")[0]
+            .document
+            .clone();
+        let ids = created
+            .entries
+            .iter()
+            .map(|entry| entry.id)
+            .collect::<Vec<_>>();
+        let connection = database.connection().expect("database lock");
+        connection
+            .pragma_update(None, "ignore_check_constraints", true)
+            .expect("ignore checks");
+        connection
+            .execute(
+                "UPDATE prompt_entries SET built_in_entry_key=NULL WHERE prompt_id=?1",
+                [created.id.to_string()],
+            )
+            .expect("erase legacy keys");
+        connection
+            .pragma_update(None, "ignore_check_constraints", false)
+            .expect("restore checks");
+        drop(connection);
+
+        let upgraded_seed = BuiltInPromptSeed {
+            seed_version: 2,
+            ..seed
+        };
+        let upgraded = database
+            .reconcile_built_ins(
+                BuiltInReconcileRequest {
+                    seeds: vec![upgraded_seed],
+                    mode: BuiltInReconcileMode::RefreshUnedited,
+                },
+                TimestampMillis::new(20),
+            )
+            .expect("upgrade")[0]
+            .document
+            .clone();
+        assert_eq!(upgraded.entries[0].id, ids[0]);
+        assert_eq!(upgraded.entries[1].id, ids[1]);
+        let connection = database.connection().expect("database lock");
+        let metadata = connection
+            .prepare(
+                "SELECT revision,created_at,updated_at FROM prompt_entries WHERE prompt_id=?1 ORDER BY ordinal",
+            )
+            .expect("entry metadata")
+            .query_map([created.id.to_string()], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?, row.get::<_, i64>(2)?))
+            })
+            .expect("entry rows")
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .expect("metadata rows");
+        assert_eq!(metadata, vec![(2, 10, 20), (2, 10, 20)]);
     }
 
     #[test]
@@ -1664,11 +1978,14 @@ mod tests {
     #[test]
     fn protected_and_required_built_ins_follow_lifecycle_policy() {
         let database = Database::open_in_memory().expect("database");
+        let mut seed_entry = draft("entry");
+        seed_entry.built_in_entry_key = Some("entry".into());
         let seed = BuiltInPromptSeed {
             key: "protected".into(),
+            aliases: Vec::new(),
             seed_version: 1,
             metadata: metadata("Protected"),
-            entries: vec![draft("entry")],
+            entries: vec![seed_entry],
             required: true,
             protected: true,
         };
@@ -1740,6 +2057,50 @@ mod tests {
                 [document.id.to_string()],
             )
             .expect("corrupt row");
+        assert!(matches!(
+            database.get(document.id),
+            Err(PromptRepositoryError::Failure(_))
+        ));
+    }
+
+    #[test]
+    fn corrupt_builtin_entry_key_is_rejected_on_read() {
+        let database = Database::open_in_memory().expect("database");
+        let mut entry = draft("entry");
+        entry.built_in_entry_key = Some("stable.entry".into());
+        let document = database
+            .reconcile_built_ins(
+                BuiltInReconcileRequest {
+                    seeds: vec![BuiltInPromptSeed {
+                        key: "corruptible".into(),
+                        aliases: Vec::new(),
+                        seed_version: 1,
+                        metadata: metadata("Corruptible"),
+                        entries: vec![entry],
+                        required: false,
+                        protected: false,
+                    }],
+                    mode: BuiltInReconcileMode::RefreshUnedited,
+                },
+                TimestampMillis::new(1),
+            )
+            .expect("seed")[0]
+            .document
+            .clone();
+        let connection = database.connection().expect("database lock");
+        connection
+            .pragma_update(None, "ignore_check_constraints", true)
+            .expect("ignore checks");
+        connection
+            .execute(
+                "UPDATE prompt_entries SET built_in_entry_key=' ' WHERE prompt_id=?1",
+                [document.id.to_string()],
+            )
+            .expect("corrupt key");
+        connection
+            .pragma_update(None, "ignore_check_constraints", false)
+            .expect("restore checks");
+        drop(connection);
         assert!(matches!(
             database.get(document.id),
             Err(PromptRepositoryError::Failure(_))

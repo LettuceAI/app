@@ -6,6 +6,12 @@
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
+mod built_in_prompts;
+mod composition;
+
+pub use built_in_prompts::*;
+pub use composition::*;
+
 #[cfg(test)]
 mod tests {
     use lettuce_context::{

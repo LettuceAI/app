@@ -24,6 +24,10 @@ provider-neutral prompt/lorebook documents, ordered entries, and typed
 character/persona/group lorebook bindings. Prompt/lorebook JSON is strictly
 versioned and aggregate revisions use CAS; bindings follow the latest
 lorebook revision while archived references remain readable.
+Migration 7 adds nullable stable keys for built-in prompt entries, with a
+partial per-prompt uniqueness index and strict nonblank/bounded storage checks.
+Built-in reconciliation matches keyed entries so IDs and entry history survive
+catalog refreshes, while ordinary user drafts cannot forge catalog keys.
 
 Sessions, conversation assembly/resolution, starter-link normalization,
 import/export, hard purge, sync/backup, FTS, and legacy text-column retrofits

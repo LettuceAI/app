@@ -16,16 +16,19 @@ list ports.
 revision for the next CAS.
 
 Mutation inputs are authored drafts. Prompt metadata drafts contain only name,
-purpose, condensation, and behavior version. Prompt entry drafts contain only
-entry content; add allocates identity and order, update/remove/reorder require
-an existing typed ID, and replace supplies the complete ordered draft set.
+purpose, condensation, and behavior version. Prompt entry drafts contain entry
+content plus an optional catalog-only stable key; normal repository mutations
+must leave that key unset, while update/reorder preserve an existing built-in
+key. Add allocates identity and order, update/remove/reorder require an existing
+typed ID, and replace supplies the complete ordered draft set.
 Lorebook entry create uses `Append` or an explicit insertion index, while
 update/remove/reorder target an existing entry. Successful prompt mutations
 return the complete document with one root revision bump.
 
 Built-in prompts use a separate seed/reconcile port. Seeds have stable unique
-keys, explicit purposes, non-zero versions, and a typed digest of the closed
-metadata-plus-entry seed input. `PromptProvenance::BuiltIn` persists that
+prompt keys and stable unique nonblank bounded keys for every entry, explicit
+purposes, non-zero versions, and a typed digest of the closed metadata-plus-
+entry seed input. `PromptProvenance::BuiltIn` persists that
 baseline digest, the current authored digest, and required/protected policy;
 reconciliation returns per-key actions for created, refreshed, preserved, or
 reset documents. Identity, revisions, and timestamps remain adapter-owned.
