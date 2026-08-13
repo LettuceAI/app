@@ -7,7 +7,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     Character, CharacterDefaults, CharacterMedia, CharacterMediaLink, CharacterProfile,
-    CharacterProvenance, ConversationStarter, GroupMember, GroupProfile, Persona, PersonaMedia,
+    CharacterProvenance, ConversationStarter, GroupMember, GroupProfile, Persona,
+    PersonaDefaultSnapshot, PersonaDefaultState, PersonaDraftUpdate, PersonaMedia,
     PersonaMediaLink, RepositoryError, Scene, SceneAssetLink, SceneDocumentV1, SceneOwner,
     SceneVariant, Selection, ValidationError,
 };
@@ -190,6 +191,64 @@ impl GroupDetails {
 pub struct CharacterSearch {
     pub text: String,
     pub include_archived: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PersonaSearch {
+    pub text: String,
+    pub include_archived: bool,
+}
+
+/// CAS arguments for archiving a persona. If the persona is the current
+/// default, `expected_default_revision` is required so the adapter can clear
+/// the singleton and archive the persona atomically.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PersonaArchiveRequest {
+    pub persona_id: PersonaId,
+    pub expected_persona_revision: Revision,
+    pub expected_default_revision: Option<Revision>,
+    pub now: TimestampMillis,
+}
+
+/// The archived persona and the post-operation default singleton state from
+/// the same atomic write.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PersonaArchiveResult {
+    pub persona: Persona,
+    pub default: PersonaDefaultState,
+}
+
+impl PersonaArchiveResult {
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        self.persona.validate()?;
+        if self.persona.status != crate::LifecycleStatus::Archived {
+            return Err(ValidationError::InvalidValue {
+                field: "persona.archive.persona.status",
+            });
+        }
+        self.default.validate()?;
+        if self.default.persona_id == Some(self.persona.id) {
+            return Err(ValidationError::InvalidReference {
+                field: "persona.archive.default.persona_id",
+            });
+        }
+        Ok(())
+    }
+}
+
+impl PersonaArchiveRequest {
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        if self.expected_persona_revision.get() == 0
+            || self
+                .expected_default_revision
+                .is_some_and(|revision| revision.get() == 0)
+        {
+            return Err(ValidationError::ZeroRevision);
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -676,18 +735,23 @@ pub trait StarterRepository: Send + Sync {
 pub trait PersonaRepository: Send + Sync {
     fn create(&self, persona: Persona) -> Result<Persona, RepositoryError>;
     fn get(&self, id: PersonaId) -> Result<Option<Persona>, RepositoryError>;
-    fn get_default(&self) -> Result<Option<Persona>, RepositoryError>;
+    /// Resolves the singleton and selected persona in one read snapshot.
+    fn get_default_snapshot(&self) -> Result<PersonaDefaultSnapshot, RepositoryError>;
     fn list(
         &self,
         request: PageRequest,
         include_archived: bool,
     ) -> Result<Page<Persona>, RepositoryError>;
-    fn search(&self, text: &str, page: PageRequest) -> Result<Page<Persona>, RepositoryError>;
+    fn search(
+        &self,
+        request: PersonaSearch,
+        page: PageRequest,
+    ) -> Result<Page<Persona>, RepositoryError>;
     fn revise(
         &self,
         id: PersonaId,
         expected_revision: Revision,
-        persona: Persona,
+        draft: PersonaDraftUpdate,
         now: TimestampMillis,
     ) -> Result<Persona, RepositoryError>;
     fn update_media(
@@ -721,24 +785,32 @@ pub trait PersonaRepository: Send + Sync {
         target_ordinal: u32,
         now: TimestampMillis,
     ) -> Result<Persona, RepositoryError>;
+    /// Changes only the revisioned default singleton; the selected persona's
+    /// authored revision is not bumped.
     fn set_default(
         &self,
         id: PersonaId,
-        expected_revision: Revision,
+        expected_default_revision: Revision,
         now: TimestampMillis,
-    ) -> Result<Persona, RepositoryError>;
+    ) -> Result<PersonaDefaultState, RepositoryError>;
+    /// Clears only the revisioned default singleton; persona revisions are
+    /// unaffected.
     fn clear_default(
         &self,
-        id: PersonaId,
-        expected_revision: Revision,
+        expected_default_revision: Revision,
         now: TimestampMillis,
-    ) -> Result<Persona, RepositoryError>;
+    ) -> Result<PersonaDefaultState, RepositoryError>;
+    /// Archives with a persona CAS and, when the target is the current
+    /// default, a required singleton CAS. Adapters must clear that singleton
+    /// and bump its revision in the same atomic operation as the archive;
+    /// archiving a non-default persona must not mutate default state. A
+    /// missing token for a current default returns
+    /// `RepositoryError::MissingDefaultRevision`. The result includes the
+    /// post-operation default state, avoiding a second read.
     fn archive(
         &self,
-        id: PersonaId,
-        expected_revision: Revision,
-        now: TimestampMillis,
-    ) -> Result<Persona, RepositoryError>;
+        request: PersonaArchiveRequest,
+    ) -> Result<PersonaArchiveResult, RepositoryError>;
     fn restore(
         &self,
         id: PersonaId,
@@ -889,6 +961,7 @@ pub enum DependencyReference {
     PersonaInGroup {
         group_id: GroupId,
     },
+    PersonaDefault,
     GroupStartingScene {
         scene_id: SceneId,
     },
@@ -938,13 +1011,14 @@ use CharacterMediaLink as _CharacterMediaLink;
 #[cfg(test)]
 mod tests {
     use super::{
-        ConversationStarterDraftUpdate, CreateGroupPlan, GroupStartingScene, IdRemap,
+        ConversationStarterDraftUpdate, CreateGroupPlan, DependencyReference, GroupStartingScene,
+        IdRemap, PersonaArchiveRequest, PersonaArchiveResult, PersonaSearch,
         ProfileDuplicateRequest, ProfileDuplicateResult, RetainedExternalReferences,
         SceneDraftUpdate, SceneVariantDraftUpdate, UnresolvedLegacyReference,
     };
     use crate::{
-        GroupMember, GroupProfile, Scene, SceneDocumentV1, SceneOwner, ScenePart, Selection,
-        ValidationError,
+        GroupMember, GroupProfile, LifecycleStatus, Persona, Scene, SceneDocumentV1, SceneOwner,
+        ScenePart, Selection, ValidationError,
     };
     use lettuce_types::{CharacterId, GroupId, SceneId, TimestampMillis};
 
@@ -1140,5 +1214,119 @@ mod tests {
         let mut mismatched = valid();
         mismatched.character_id = CharacterId::new();
         assert!(mismatched.validate_for(&request).is_err());
+    }
+
+    #[test]
+    fn persona_search_carries_text_and_archive_filter_together() {
+        let request = PersonaSearch {
+            text: "writer".into(),
+            include_archived: true,
+        };
+        assert_eq!(request.text, "writer");
+        assert!(request.include_archived);
+        let active_only = PersonaSearch {
+            include_archived: false,
+            ..request
+        };
+        assert!(!active_only.include_archived);
+        assert_eq!(active_only.text, "writer");
+    }
+
+    #[test]
+    fn persona_archive_request_validates_both_cas_tokens() {
+        let request = PersonaArchiveRequest {
+            persona_id: lettuce_types::PersonaId::new(),
+            expected_persona_revision: lettuce_types::Revision::INITIAL,
+            expected_default_revision: Some(lettuce_types::Revision::INITIAL),
+            now: TimestampMillis::new(42),
+        };
+        request.validate().expect("archive request should validate");
+        let encoded = serde_json::to_string(&request).expect("request serializes");
+        assert_eq!(
+            serde_json::from_str::<PersonaArchiveRequest>(&encoded).expect("request decodes"),
+            request
+        );
+        assert_eq!(
+            PersonaArchiveRequest {
+                expected_persona_revision: lettuce_types::Revision::new(0),
+                ..request
+            }
+            .validate(),
+            Err(ValidationError::ZeroRevision)
+        );
+        assert_eq!(
+            PersonaArchiveRequest {
+                expected_default_revision: Some(lettuce_types::Revision::new(0)),
+                ..request
+            }
+            .validate(),
+            Err(ValidationError::ZeroRevision)
+        );
+        assert_eq!(
+            crate::RepositoryError::MissingDefaultRevision.to_string(),
+            "the expected default revision is required when archiving the current default persona"
+        );
+    }
+
+    #[test]
+    fn persona_archive_result_contains_post_clear_default_state() {
+        let mut persona = Persona::new(
+            lettuce_types::PersonaId::new(),
+            "Writer".into(),
+            "A writer".into(),
+            TimestampMillis::new(5),
+        )
+        .expect("persona should validate");
+        persona.status = LifecycleStatus::Archived;
+        let result = PersonaArchiveResult {
+            persona,
+            default: crate::PersonaDefaultState {
+                persona_id: None,
+                revision: lettuce_types::Revision::new(2),
+                created_at: TimestampMillis::new(5),
+                updated_at: TimestampMillis::new(42),
+            },
+        };
+        result.validate().expect("archive result should validate");
+        let encoded = serde_json::to_string(&result).expect("result serializes");
+        assert_eq!(
+            serde_json::from_str::<PersonaArchiveResult>(&encoded).expect("result decodes"),
+            result
+        );
+        assert!(serde_json::from_str::<PersonaArchiveResult>(
+            &format!(
+                r#"{{"persona":{},"default":{{"persona_id":null,"revision":2,"created_at":5,"updated_at":42}},"extra":true}}"#,
+                serde_json::to_string(&result.persona).expect("persona serializes")
+            )
+        )
+        .is_err());
+        let invalid = PersonaArchiveResult {
+            default: crate::PersonaDefaultState {
+                persona_id: Some(result.persona.id),
+                ..result.default.clone()
+            },
+            ..result
+        };
+        assert!(matches!(
+            invalid.validate(),
+            Err(ValidationError::InvalidReference {
+                field: "persona.archive.default.persona_id"
+            })
+        ));
+    }
+
+    #[test]
+    fn persona_dependency_report_has_a_closed_default_variant() {
+        let report = super::DependencyReport {
+            references: vec![DependencyReference::PersonaDefault],
+        };
+        assert_eq!(report.references, vec![DependencyReference::PersonaDefault]);
+        assert!(
+            !report
+                .references
+                .contains(&DependencyReference::PersonaInGroup {
+                    group_id: GroupId::new(),
+                })
+        );
     }
 }

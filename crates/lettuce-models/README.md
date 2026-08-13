@@ -19,8 +19,12 @@ provider-label, sole-account, or first-account fallback. Repository ports are
 synchronous because the SQLite adapter is synchronous; application composition
 places calls on its database worker.
 
-Model deletion dependencies use typed `ModelDependencyReference` values (for
-example, `CharacterDefault`) and surface through `ModelRepositoryError::InUse`.
-The current foundation adapter has no character table yet, so existing app
-default clearing behavior remains unchanged; future character persistence can
-report its references without coupling this crate to the characters domain.
+Model deletion dependencies use closed, typed `ModelDependencyReference`
+values (for example, `CharacterDefault` and `GroupMemberOverride`) and surface
+through `ModelRepositoryError::InUse`. A group-member override identifies both
+the owning group and the character whose override retains the model profile.
+Future adapters must report `GroupMemberOverride` references in both direct
+model-profile deletion and provider-account-with-profiles deletion before
+removing the referenced profile or account. The current character/group
+persistence slice is not yet responsible for the group SQL; it must add those
+typed references when that slice is implemented.

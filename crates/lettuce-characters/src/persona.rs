@@ -72,6 +72,64 @@ impl PersonaMedia {
     }
 }
 
+/// Mutable authored fields accepted by a persona revision.
+///
+/// Identity, lifecycle, media associations, and revision metadata are owned by
+/// the repository and therefore cannot be supplied by a caller-owned update.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PersonaDraftUpdate {
+    pub title: String,
+    pub description: String,
+    pub nickname: Option<String>,
+    pub design_description: Option<String>,
+    pub avatar_crop: Option<Crop>,
+    pub image_recommendation: Option<ImageRecommendation>,
+}
+
+impl PersonaDraftUpdate {
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        validate_authored_fields(
+            &self.title,
+            &self.description,
+            self.nickname.as_ref(),
+            self.design_description.as_ref(),
+            self.avatar_crop,
+            self.image_recommendation.as_ref(),
+        )
+    }
+}
+
+fn validate_authored_fields(
+    title: &str,
+    description: &str,
+    nickname: Option<&String>,
+    design_description: Option<&String>,
+    avatar_crop: Option<Crop>,
+    image_recommendation: Option<&ImageRecommendation>,
+) -> Result<(), ValidationError> {
+    validate_name("persona.title", title)?;
+    if description.trim().is_empty() {
+        return Err(ValidationError::Blank {
+            field: "persona.description",
+        });
+    }
+    validate_text("persona.description", description)?;
+    if let Some(nickname) = nickname {
+        validate_text("persona.nickname", nickname)?;
+    }
+    if let Some(description) = design_description {
+        validate_text("persona.design_description", description)?;
+    }
+    if let Some(crop) = avatar_crop {
+        crop.validate()?;
+    }
+    if let Some(recommendation) = image_recommendation {
+        recommendation.validate()?;
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Persona {
@@ -87,6 +145,63 @@ pub struct Persona {
     pub revision: Revision,
     pub created_at: TimestampMillis,
     pub updated_at: TimestampMillis,
+}
+
+/// The revisioned singleton that records the application's default persona.
+/// It is separate from a persona's authored revision so changing the default
+/// does not mutate the selected persona.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PersonaDefaultState {
+    pub persona_id: Option<PersonaId>,
+    pub revision: Revision,
+    pub created_at: TimestampMillis,
+    pub updated_at: TimestampMillis,
+}
+
+impl PersonaDefaultState {
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        validate_revision_timestamps(
+            "persona.default.timestamps",
+            self.revision,
+            self.created_at,
+            self.updated_at,
+        )
+    }
+}
+
+/// A consistent read of the default singleton and its selected persona.
+/// Adapters must materialize both values from one read snapshot.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PersonaDefaultSnapshot {
+    pub state: PersonaDefaultState,
+    pub persona: Option<Persona>,
+}
+
+impl PersonaDefaultSnapshot {
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        self.state.validate()?;
+        match (self.state.persona_id, &self.persona) {
+            (None, None) => Ok(()),
+            (Some(expected_id), Some(persona)) => {
+                if expected_id != persona.id {
+                    return Err(ValidationError::InvalidReference {
+                        field: "persona.default.persona_id",
+                    });
+                }
+                if persona.status != LifecycleStatus::Active {
+                    return Err(ValidationError::InvalidValue {
+                        field: "persona.default.persona.status",
+                    });
+                }
+                persona.validate()
+            }
+            _ => Err(ValidationError::InvalidReference {
+                field: "persona.default.persona",
+            }),
+        }
+    }
 }
 
 impl Persona {
@@ -121,25 +236,14 @@ impl Persona {
             self.created_at,
             self.updated_at,
         )?;
-        validate_name("persona.title", &self.title)?;
-        if self.description.trim().is_empty() {
-            return Err(ValidationError::Blank {
-                field: "persona.description",
-            });
-        }
-        validate_text("persona.description", &self.description)?;
-        if let Some(nickname) = &self.nickname {
-            validate_text("persona.nickname", nickname)?;
-        }
-        if let Some(description) = &self.design_description {
-            validate_text("persona.design_description", description)?;
-        }
-        if let Some(crop) = self.avatar_crop {
-            crop.validate()?;
-        }
-        if let Some(recommendation) = &self.image_recommendation {
-            recommendation.validate()?;
-        }
+        validate_authored_fields(
+            &self.title,
+            &self.description,
+            self.nickname.as_ref(),
+            self.design_description.as_ref(),
+            self.avatar_crop,
+            self.image_recommendation.as_ref(),
+        )?;
         self.media.validate()
     }
 
@@ -152,7 +256,10 @@ impl Persona {
 
 #[cfg(test)]
 mod tests {
-    use super::{Persona, PersonaMediaLink, PersonaMediaSlot};
+    use super::{
+        Persona, PersonaDefaultSnapshot, PersonaDefaultState, PersonaDraftUpdate, PersonaMediaLink,
+        PersonaMediaSlot,
+    };
     use crate::{LifecycleStatus, PersonaMedia, ValidationError};
     use lettuce_types::{AssetId, PersonaId, Revision, TimestampMillis};
 
@@ -239,5 +346,184 @@ mod tests {
         ));
         persona.revision = Revision::new(0);
         assert_eq!(persona.validate(), Err(ValidationError::ZeroRevision));
+    }
+
+    #[test]
+    fn persona_draft_round_trips_and_excludes_repository_fields() {
+        let draft = PersonaDraftUpdate {
+            title: "Writer".into(),
+            description: "A writer".into(),
+            nickname: Some("W".into()),
+            design_description: Some("Ink-stained".into()),
+            avatar_crop: None,
+            image_recommendation: None,
+        };
+        draft.validate().expect("draft should validate");
+        let encoded = serde_json::to_string(&draft).expect("draft serializes");
+        assert_eq!(
+            serde_json::from_str::<PersonaDraftUpdate>(&encoded).expect("draft decodes"),
+            draft
+        );
+        for field in [
+            "id",
+            "status",
+            "media",
+            "revision",
+            "created_at",
+            "updated_at",
+        ] {
+            let value = format!(
+                r#"{{"title":"Writer","description":"A writer","nickname":null,"design_description":null,"avatar_crop":null,"image_recommendation":null,"{field}":null}}"#
+            );
+            assert!(
+                serde_json::from_str::<PersonaDraftUpdate>(&value).is_err(),
+                "draft unexpectedly accepted repository field {field}"
+            );
+        }
+    }
+
+    #[test]
+    fn persona_draft_uses_authored_persona_validation() {
+        let draft = PersonaDraftUpdate {
+            title: " ".into(),
+            description: "A writer".into(),
+            nickname: None,
+            design_description: None,
+            avatar_crop: None,
+            image_recommendation: None,
+        };
+        assert_eq!(
+            draft.validate(),
+            Err(ValidationError::Blank {
+                field: "persona.title"
+            })
+        );
+        let draft = PersonaDraftUpdate {
+            title: "Writer".into(),
+            description: " ".into(),
+            nickname: None,
+            design_description: None,
+            avatar_crop: None,
+            image_recommendation: None,
+        };
+        assert_eq!(
+            draft.validate(),
+            Err(ValidationError::Blank {
+                field: "persona.description"
+            })
+        );
+    }
+
+    #[test]
+    fn default_state_validates_revision_and_timestamp_order() {
+        let mut state = PersonaDefaultState {
+            persona_id: Some(PersonaId::new()),
+            revision: Revision::INITIAL,
+            created_at: TimestampMillis::new(5),
+            updated_at: TimestampMillis::new(5),
+        };
+        state.validate().expect("default state should validate");
+        let encoded = serde_json::to_string(&state).expect("default state serializes");
+        assert_eq!(
+            serde_json::from_str::<PersonaDefaultState>(&encoded).expect("default state decodes"),
+            state
+        );
+        assert!(
+            serde_json::from_str::<PersonaDefaultState>(
+                r#"{"persona_id":null,"revision":1,"created_at":5,"updated_at":5,"extra":true}"#
+            )
+            .is_err()
+        );
+        state.updated_at = TimestampMillis::new(4);
+        assert!(matches!(
+            state.validate(),
+            Err(ValidationError::InvalidTimestampOrder {
+                field: "persona.default.timestamps"
+            })
+        ));
+        state.updated_at = TimestampMillis::new(5);
+        state.revision = Revision::new(0);
+        assert_eq!(state.validate(), Err(ValidationError::ZeroRevision));
+    }
+
+    #[test]
+    fn default_snapshot_requires_matching_active_persona_or_no_persona() {
+        let persona = Persona::new(
+            PersonaId::new(),
+            "Writer".into(),
+            "A writer".into(),
+            TimestampMillis::new(5),
+        )
+        .expect("persona should validate");
+        let state = PersonaDefaultState {
+            persona_id: Some(persona.id),
+            revision: Revision::INITIAL,
+            created_at: TimestampMillis::new(5),
+            updated_at: TimestampMillis::new(5),
+        };
+        let snapshot = PersonaDefaultSnapshot {
+            state: state.clone(),
+            persona: Some(persona.clone()),
+        };
+        snapshot.validate().expect("matching active snapshot");
+        let encoded = serde_json::to_string(&snapshot).expect("snapshot serializes");
+        assert_eq!(
+            serde_json::from_str::<PersonaDefaultSnapshot>(&encoded).expect("snapshot decodes"),
+            snapshot
+        );
+        assert!(serde_json::from_str::<PersonaDefaultSnapshot>(
+            r#"{"state":{"persona_id":null,"revision":1,"created_at":5,"updated_at":5},"persona":null,"extra":true}"#
+        )
+        .is_err());
+        PersonaDefaultSnapshot {
+            state: PersonaDefaultState {
+                persona_id: None,
+                ..state.clone()
+            },
+            persona: None,
+        }
+        .validate()
+        .expect("empty default snapshot");
+
+        let mismatched = PersonaDefaultSnapshot {
+            state: PersonaDefaultState {
+                persona_id: Some(PersonaId::new()),
+                ..state.clone()
+            },
+            persona: Some(persona.clone()),
+        };
+        assert!(matches!(
+            mismatched.validate(),
+            Err(ValidationError::InvalidReference {
+                field: "persona.default.persona_id"
+            })
+        ));
+        let missing = PersonaDefaultSnapshot {
+            state,
+            persona: None,
+        };
+        assert!(matches!(
+            missing.validate(),
+            Err(ValidationError::InvalidReference {
+                field: "persona.default.persona"
+            })
+        ));
+        let mut archived = persona;
+        archived.status = LifecycleStatus::Archived;
+        let archived_snapshot = PersonaDefaultSnapshot {
+            state: PersonaDefaultState {
+                persona_id: Some(archived.id),
+                revision: Revision::INITIAL,
+                created_at: TimestampMillis::new(5),
+                updated_at: TimestampMillis::new(5),
+            },
+            persona: Some(archived),
+        };
+        assert!(matches!(
+            archived_snapshot.validate(),
+            Err(ValidationError::InvalidValue {
+                field: "persona.default.persona.status"
+            })
+        ));
     }
 }

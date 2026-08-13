@@ -3,7 +3,9 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 use lettuce_settings::{HeaderName, SecretRef};
-use lettuce_types::{CharacterId, ModelProfileId, ProviderAccountId, Revision, TimestampMillis};
+use lettuce_types::{
+    CharacterId, GroupId, ModelProfileId, ProviderAccountId, Revision, TimestampMillis,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -112,7 +114,13 @@ pub struct ModelProfile {
     deny_unknown_fields
 )]
 pub enum ModelDependencyReference {
-    CharacterDefault { character_id: CharacterId },
+    CharacterDefault {
+        character_id: CharacterId,
+    },
+    GroupMemberOverride {
+        group_id: GroupId,
+        character_id: CharacterId,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -182,5 +190,19 @@ mod tests {
             ModelRepositoryError::InUse(vec![reference]).to_string(),
             "model profile is still in use"
         );
+
+        let group_override = ModelDependencyReference::GroupMemberOverride {
+            group_id: lettuce_types::GroupId::new(),
+            character_id: CharacterId::new(),
+        };
+        let encoded = serde_json::to_string(&group_override).expect("dependency serializes");
+        assert_eq!(
+            serde_json::from_str::<ModelDependencyReference>(&encoded).expect("dependency decodes"),
+            group_override
+        );
+        assert!(serde_json::from_str::<ModelDependencyReference>(
+            r#"{"kind":"group_member_override","id":{"group_id":"00000000-0000-0000-0000-000000000000","character_id":"00000000-0000-0000-0000-000000000000","extra":true}}"#
+        )
+        .is_err());
     }
 }

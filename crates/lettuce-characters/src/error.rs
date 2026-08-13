@@ -43,6 +43,8 @@ pub enum RepositoryError {
         expected: Revision,
         actual: Revision,
     },
+    #[error("the expected default revision is required when archiving the current default persona")]
+    MissingDefaultRevision,
     #[error("the record is archived")]
     Archived,
     #[error("the operation has dependent records")]

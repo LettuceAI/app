@@ -64,6 +64,17 @@ visibility; archived scenes remain authored records and may remain selectable
 according to the owning aggregate's existing policy. Persistence does not
 invent reference exclusion rules.
 
+Persona authored edits use the closed `PersonaDraftUpdate` shape, so identity,
+lifecycle, media associations, and revision metadata remain repository-owned.
+`PersonaSearch` carries `include_archived` explicitly so callers can choose
+library visibility consistently with listing.
+The default persona is a separate revisioned `PersonaDefaultState`; reads use a
+single `PersonaDefaultSnapshot` and changing it does not bump the persona
+revision. Archiving carries both persona and optional default CAS tokens and
+returns a `PersonaArchiveResult`, allowing an adapter to clear a current
+default atomically while exposing the new singleton revision without another
+read.
+
 Persistence, migrations, media ingestion/GC, transfer compatibility envelopes,
 prompt rendering, lorebook matching, conversations, and Tauri commands remain
 outside this crate.
