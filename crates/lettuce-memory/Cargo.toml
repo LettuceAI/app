@@ -1,5 +1,6 @@
 [package]
 name = "lettuce-memory"
+readme = "README.md"
 description = "Durable memories, extraction, retrieval, and consolidation."
 version.workspace = true
 edition.workspace = true

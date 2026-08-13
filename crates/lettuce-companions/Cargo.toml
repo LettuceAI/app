@@ -1,5 +1,6 @@
 [package]
 name = "lettuce-companions"
+readme = "README.md"
 description = "Relationship state, growth policy, and scheduled effects."
 version.workspace = true
 edition.workspace = true

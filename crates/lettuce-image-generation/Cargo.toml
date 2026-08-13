@@ -1,6 +1,7 @@
 [package]
 name = "lettuce-image-generation"
-description = "Capability-aware image generation workflows."
+readme = "README.md"
+description = "Remote and local image generation, Stable Diffusion, LoRAs, and upscale."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

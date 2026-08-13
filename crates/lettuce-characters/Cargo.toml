@@ -1,6 +1,7 @@
 [package]
 name = "lettuce-characters"
-description = "Versioned character identities and authored behavior."
+readme = "README.md"
+description = "Versioned characters, personas, groups, scenes, and starters."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

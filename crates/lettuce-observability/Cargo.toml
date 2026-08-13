@@ -1,5 +1,6 @@
 [package]
 name = "lettuce-observability"
+readme = "README.md"
 description = "Tracing, redaction, diagnostics, and support bundles."
 version.workspace = true
 edition.workspace = true
@@ -14,3 +15,7 @@ workspace = true
 
 [dependencies]
 lettuce-types.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-appender.workspace = true
+tracing-subscriber.workspace = true

@@ -1,5 +1,6 @@
 [package]
 name = "lettuce-embeddings"
+readme = "README.md"
 description = "Embedding and auxiliary analysis runtimes."
 version.workspace = true
 edition.workspace = true

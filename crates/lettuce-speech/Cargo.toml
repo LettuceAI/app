@@ -1,0 +1,17 @@
+[package]
+name = "lettuce-speech"
+readme = "README.md"
+description = "Speech recognition, synthesis, voices, corrections, and runtimes."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+lettuce-types.workspace = true

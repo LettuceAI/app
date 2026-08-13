@@ -22,44 +22,32 @@ todo = "warn"
 unwrap_used = "warn"
 
 [workspace.dependencies]
+async-trait = "0.1"
 lettuce-app = { path = "crates/lettuce-app" }
-lettuce-asr = { path = "crates/lettuce-asr" }
-lettuce-backup = { path = "crates/lettuce-backup" }
 lettuce-characters = { path = "crates/lettuce-characters" }
 lettuce-companions = { path = "crates/lettuce-companions" }
 lettuce-contracts = { path = "crates/lettuce-contracts" }
+lettuce-context = { path = "crates/lettuce-context" }
 lettuce-conversations = { path = "crates/lettuce-conversations" }
 lettuce-creation = { path = "crates/lettuce-creation" }
 lettuce-database = { path = "crates/lettuce-database" }
-lettuce-discovery = { path = "crates/lettuce-discovery" }
-lettuce-downloads = { path = "crates/lettuce-downloads" }
 lettuce-embeddings = { path = "crates/lettuce-embeddings" }
-lettuce-filesystem = { path = "crates/lettuce-filesystem" }
-lettuce-groups = { path = "crates/lettuce-groups" }
-lettuce-host-api = { path = "crates/lettuce-host-api" }
 lettuce-image-generation = { path = "crates/lettuce-image-generation" }
 lettuce-inference = { path = "crates/lettuce-inference" }
 lettuce-jobs = { path = "crates/lettuce-jobs" }
 lettuce-local-llm = { path = "crates/lettuce-local-llm" }
-lettuce-lorebooks = { path = "crates/lettuce-lorebooks" }
 lettuce-media = { path = "crates/lettuce-media" }
 lettuce-memory = { path = "crates/lettuce-memory" }
 lettuce-model-hub = { path = "crates/lettuce-model-hub" }
 lettuce-models = { path = "crates/lettuce-models" }
 lettuce-network = { path = "crates/lettuce-network" }
 lettuce-observability = { path = "crates/lettuce-observability" }
-lettuce-personas = { path = "crates/lettuce-personas" }
 lettuce-platform = { path = "crates/lettuce-platform" }
-lettuce-prompts = { path = "crates/lettuce-prompts" }
 lettuce-providers = { path = "crates/lettuce-providers" }
-lettuce-safety = { path = "crates/lettuce-safety" }
-lettuce-sd-runtime = { path = "crates/lettuce-sd-runtime" }
-lettuce-secrets = { path = "crates/lettuce-secrets" }
 lettuce-settings = { path = "crates/lettuce-settings" }
+lettuce-speech = { path = "crates/lettuce-speech" }
 lettuce-sync = { path = "crates/lettuce-sync" }
-lettuce-tools = { path = "crates/lettuce-tools" }
 lettuce-transfer = { path = "crates/lettuce-transfer" }
-lettuce-tts = { path = "crates/lettuce-tts" }
 lettuce-types = { path = "crates/lettuce-types" }
 lettuce-usage = { path = "crates/lettuce-usage" }
 
@@ -67,4 +55,6 @@ serde = { version = "1", features = ["derive"] }
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
 tracing = "0.1"
+tracing-appender = "0.2"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 uuid = { version = "1", features = ["serde", "v4"] }

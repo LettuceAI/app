@@ -1,4 +1,4 @@
-//! LettuceAI composition root and application workflows.
+//! LettuceAI composition root, desktop boundary, and optional host API.
 //!
 //! The intended ownership, boundaries, migration path, and acceptance gates are
 //! specified in the crate PLAN.md. This crate starts behavior-empty so the

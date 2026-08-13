@@ -1,6 +1,7 @@
 [package]
 name = "lettuce-inference"
-description = "Provider-neutral generation and streaming orchestration."
+readme = "README.md"
+description = "Provider-neutral generation, tools, safety, streaming, and cancellation."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

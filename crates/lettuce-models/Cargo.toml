@@ -1,5 +1,6 @@
 [package]
 name = "lettuce-models"
+readme = "README.md"
 description = "Provider connections, model profiles, and capabilities."
 version.workspace = true
 edition.workspace = true

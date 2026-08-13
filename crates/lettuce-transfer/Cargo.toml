@@ -1,6 +1,7 @@
 [package]
 name = "lettuce-transfer"
-description = "Canonical import and export formats."
+readme = "README.md"
+description = "Canonical transfer, compatibility formats, backup, and restore."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

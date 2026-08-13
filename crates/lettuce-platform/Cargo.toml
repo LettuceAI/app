@@ -1,6 +1,7 @@
 [package]
 name = "lettuce-platform"
-description = "Operating-system capabilities and application lifecycle ports."
+readme = "README.md"
+description = "Platform lifecycle, managed paths, filesystem capabilities, and updates."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

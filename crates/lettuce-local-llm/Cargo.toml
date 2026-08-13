@@ -1,5 +1,6 @@
 [package]
 name = "lettuce-local-llm"
+readme = "README.md"
 description = "Local llama.cpp and Ollama runtime adapters."
 version.workspace = true
 edition.workspace = true

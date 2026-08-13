@@ -1,4 +1,4 @@
-//! Canonical import and export formats.
+//! Canonical transfer, compatibility formats, backup, and restore.
 //!
 //! The intended ownership, boundaries, migration path, and acceptance gates are
 //! specified in the crate PLAN.md. This crate starts behavior-empty so the

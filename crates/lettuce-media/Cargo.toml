@@ -1,5 +1,6 @@
 [package]
 name = "lettuce-media"
+readme = "README.md"
 description = "Content-addressed user media and derivative lifecycle."
 version.workspace = true
 edition.workspace = true

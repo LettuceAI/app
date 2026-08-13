@@ -1,5 +1,6 @@
 [package]
 name = "lettuce-jobs"
+readme = "README.md"
 description = "Durable jobs, progress, cancellation, and recovery."
 version.workspace = true
 edition.workspace = true

@@ -1,5 +1,6 @@
 [package]
 name = "lettuce-database"
+readme = "README.md"
 description = "SQLite schema and domain repository adapters."
 version.workspace = true
 edition.workspace = true

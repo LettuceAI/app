@@ -1,5 +1,6 @@
 [package]
 name = "lettuce-usage"
+readme = "README.md"
 description = "Usage ledger, pricing snapshots, and cost calculation."
 version.workspace = true
 edition.workspace = true

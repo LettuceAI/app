@@ -1,5 +1,6 @@
 [package]
 name = "lettuce-contracts"
+readme = "README.md"
 description = "Versioned IPC contracts and generated frontend boundary."
 version.workspace = true
 edition.workspace = true

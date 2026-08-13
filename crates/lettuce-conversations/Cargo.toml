@@ -1,5 +1,6 @@
 [package]
 name = "lettuce-conversations"
+readme = "README.md"
 description = "Unified direct and group conversation history."
 version.workspace = true
 edition.workspace = true
@@ -13,4 +14,6 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+async-trait.workspace = true
 lettuce-types.workspace = true
+serde.workspace = true

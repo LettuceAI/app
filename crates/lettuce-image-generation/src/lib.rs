@@ -1,4 +1,4 @@
-//! Capability-aware image generation workflows.
+//! Remote and local image generation, Stable Diffusion, LoRAs, and upscale.
 //!
 //! The intended ownership, boundaries, migration path, and acceptance gates are
 //! specified in the crate PLAN.md. This crate starts behavior-empty so the

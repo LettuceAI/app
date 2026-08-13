@@ -1,5 +1,6 @@
 [package]
 name = "lettuce-providers"
+readme = "README.md"
 description = "Remote AI provider adapters."
 version.workspace = true
 edition.workspace = true

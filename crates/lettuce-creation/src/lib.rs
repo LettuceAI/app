@@ -1,4 +1,4 @@
-//! AI-assisted character and lorebook authoring.
+//! AI-assisted authoring, discovery, and import preparation.
 //!
 //! The intended ownership, boundaries, migration path, and acceptance gates are
 //! specified in the crate PLAN.md. This crate starts behavior-empty so the

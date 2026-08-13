@@ -1,6 +1,7 @@
 [package]
 name = "lettuce-model-hub"
-description = "Model discovery, compatibility, and installations."
+readme = "README.md"
+description = "Model discovery, verified downloads, compatibility, and installation."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -1,5 +1,6 @@
 [package]
 name = "lettuce-network"
+readme = "README.md"
 description = "Central HTTP transport, safety, retry, and privacy policy."
 version.workspace = true
 edition.workspace = true

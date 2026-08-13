@@ -1,7 +1,6 @@
-//! Versioned character identities and authored behavior.
+//! Versioned characters, personas, reusable groups, scenes, and starters.
 //!
-//! The intended ownership, boundaries, migration path, and acceptance gates are
-//! specified in the crate PLAN.md. This crate starts behavior-empty so the
-//! legacy monolith cannot leak in through premature compatibility APIs.
+//! Each authored aggregate remains an independent internal module and
+//! lifecycle. Conversation history and concrete persistence stay outside.
 
 #![deny(unsafe_op_in_unsafe_fn)]

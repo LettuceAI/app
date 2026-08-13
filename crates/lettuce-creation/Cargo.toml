@@ -1,6 +1,7 @@
 [package]
 name = "lettuce-creation"
-description = "AI-assisted character and lorebook authoring."
+readme = "README.md"
+description = "AI-assisted authoring, discovery, and import preparation."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

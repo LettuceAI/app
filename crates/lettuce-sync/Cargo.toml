@@ -1,5 +1,6 @@
 [package]
 name = "lettuce-sync"
+readme = "README.md"
 description = "Domain changeset replication and conflict handling."
 version.workspace = true
 edition.workspace = true

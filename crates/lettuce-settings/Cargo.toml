@@ -1,6 +1,7 @@
 [package]
 name = "lettuce-settings"
-description = "Typed configuration, defaults, validation, and effective values."
+readme = "README.md"
+description = "Typed settings, effective values, and secure secret references."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

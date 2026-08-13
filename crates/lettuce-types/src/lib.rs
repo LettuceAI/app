@@ -1,7 +1,15 @@
-//! Shared IDs, time, pagination, hashes, revisions, and stable errors.
-//!
-//! The intended ownership, boundaries, migration path, and acceptance gates are
-//! specified in the crate PLAN.md. This crate starts behavior-empty so the
-//! legacy monolith cannot leak in through premature compatibility APIs.
+//! Stable vocabulary shared by every LettuceAI crate.
 
-#![deny(unsafe_op_in_unsafe_fn)]
+mod error;
+mod hash;
+mod id;
+mod paging;
+mod revision;
+mod time;
+
+pub use error::{AppError, ErrorCode};
+pub use hash::{ContentHash, ParseContentHashError};
+pub use id::*;
+pub use paging::{Page, PageLimit, PageRequest};
+pub use revision::{Revision, RevisionOverflow};
+pub use time::{TimeError, TimestampMillis};

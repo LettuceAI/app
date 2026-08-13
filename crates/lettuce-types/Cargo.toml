@@ -1,5 +1,6 @@
 [package]
 name = "lettuce-types"
+readme = "README.md"
 description = "Shared IDs, time, pagination, hashes, revisions, and stable errors."
 version.workspace = true
 edition.workspace = true
@@ -11,3 +12,8 @@ publish.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
