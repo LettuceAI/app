@@ -14,6 +14,7 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+blake3.workspace = true
 lettuce-types.workspace = true
 regex = "1"
 serde.workspace = true

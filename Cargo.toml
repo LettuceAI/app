@@ -23,6 +23,7 @@ unwrap_used = "warn"
 
 [workspace.dependencies]
 async-trait = "0.1"
+blake3 = "1"
 cap-primitives = "3.4"
 cap-std = "3.4"
 lettuce-app = { path = "crates/lettuce-app" }

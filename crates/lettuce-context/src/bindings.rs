@@ -16,6 +16,25 @@ pub struct LorebookBinding {
     pub updated_at: TimestampMillis,
 }
 
+/// A create command contains only authored relationship data. The adapter
+/// allocates the binding revision/ordinal/timestamps and follows the latest
+/// lorebook revision; conversation snapshots may pin a resolved revision
+/// later. Archived books remain referenced here but are excluded by activation
+/// resolution.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LorebookBindingCreate {
+    pub lorebook_id: LorebookId,
+    pub target: BindingInsertionTarget,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub enum BindingInsertionTarget {
+    Append,
+    At(usize),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum BindingValidationError {
     #[error("binding list contains duplicate lorebook ids")]
@@ -26,6 +45,8 @@ pub enum BindingValidationError {
     InvalidTarget,
     #[error("binding revision must be at least one")]
     ZeroRevision,
+    #[error("binding created_at must not be later than updated_at")]
+    InvalidTimestampOrder,
 }
 
 pub fn validate_bindings(bindings: &[LorebookBinding]) -> Result<(), BindingValidationError> {
@@ -33,6 +54,9 @@ pub fn validate_bindings(bindings: &[LorebookBinding]) -> Result<(), BindingVali
     for (ordinal, binding) in bindings.iter().enumerate() {
         if binding.revision.get() == 0 {
             return Err(BindingValidationError::ZeroRevision);
+        }
+        if binding.created_at > binding.updated_at {
+            return Err(BindingValidationError::InvalidTimestampOrder);
         }
         if !ids.insert(binding.lorebook_id) {
             return Err(BindingValidationError::DuplicateLorebook);
@@ -73,7 +97,7 @@ pub trait CharacterLorebookBindingRepository: Send + Sync {
         &self,
         character_id: CharacterId,
         expected_character_revision: Revision,
-        binding: LorebookBinding,
+        binding: LorebookBindingCreate,
         now: TimestampMillis,
     ) -> Result<BindingMutationResult, BindingRepositoryError>;
     fn unbind_character_lorebook(
@@ -110,7 +134,7 @@ pub trait PersonaLorebookBindingRepository: Send + Sync {
         &self,
         persona_id: PersonaId,
         expected_persona_revision: Revision,
-        binding: LorebookBinding,
+        binding: LorebookBindingCreate,
         now: TimestampMillis,
     ) -> Result<BindingMutationResult, BindingRepositoryError>;
     fn unbind_persona_lorebook(
@@ -147,7 +171,7 @@ pub trait GroupLorebookBindingRepository: Send + Sync {
         &self,
         group_id: GroupId,
         expected_group_revision: Revision,
-        binding: LorebookBinding,
+        binding: LorebookBindingCreate,
         now: TimestampMillis,
     ) -> Result<BindingMutationResult, BindingRepositoryError>;
     fn unbind_group_lorebook(
@@ -220,5 +244,24 @@ mod tests {
             validate_bindings(&[value]),
             Err(BindingValidationError::ZeroRevision)
         );
+    }
+
+    #[test]
+    fn binding_rejects_reversed_timestamps_and_create_has_no_adapter_fields() {
+        let mut value = binding(0);
+        value.created_at = TimestampMillis::new(2);
+        value.updated_at = TimestampMillis::new(1);
+        assert_eq!(
+            validate_bindings(&[value]),
+            Err(BindingValidationError::InvalidTimestampOrder)
+        );
+
+        let create = LorebookBindingCreate {
+            lorebook_id: LorebookId::new(),
+            target: BindingInsertionTarget::Append,
+        };
+        let mut encoded = serde_json::to_value(&create).expect("binding create value");
+        encoded["ordinal"] = serde_json::json!(0);
+        assert!(serde_json::from_value::<LorebookBindingCreate>(encoded).is_err());
     }
 }

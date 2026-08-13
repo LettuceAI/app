@@ -3,12 +3,16 @@
 
 use std::cmp::Ordering;
 
-use lettuce_types::{AssetId, LorebookEntryId, LorebookId, Revision, TimestampMillis};
+use lettuce_types::{
+    AssetId, CharacterId, ConversationStarterId, GroupId, LorebookEntryId, LorebookId, Page,
+    PageRequest, PersonaId, Revision, TimestampMillis,
+};
 use regex::RegexBuilder;
 use serde::{Deserialize, Serialize};
 
 use crate::prompt::{
-    LifecycleStatus, MAX_AUTHORED_BYTES, MAX_LABEL_BYTES, validate_label, validate_prose,
+    LifecycleFilter, LifecycleStatus, MAX_AUTHORED_BYTES, MAX_LABEL_BYTES, validate_label,
+    validate_prose,
 };
 
 /// The legacy runtime always inspected this many recent messages.
@@ -16,6 +20,9 @@ pub const LEGACY_RECENT_MESSAGE_LIMIT: usize = 10;
 pub const MAX_LOREBOOK_ENTRIES: usize = 512;
 pub const MAX_KEYWORDS_PER_ENTRY: usize = 128;
 pub const MAX_REGEX_KEYWORDS_PER_BOOK: usize = 64;
+pub const MAX_LOREBOOK_SOURCES: usize = 128;
+pub const MAX_ACTIVE_LOREBOOK_ENTRIES: usize = MAX_LOREBOOK_ENTRIES;
+pub const MAX_ACTIVE_LOREBOOK_CONTENT_BYTES: usize = 4 * 1024 * 1024;
 pub const MAX_MATCH_CONTEXT_BYTES: usize = 1024 * 1024;
 const REGEX_SIZE_LIMIT: usize = 256 * 1024;
 const REGEX_DFA_SIZE_LIMIT: usize = 256 * 1024;
@@ -77,6 +84,118 @@ pub struct LorebookEntry {
     pub updated_at: TimestampMillis,
 }
 
+/// Adapter-owned fields (identity, parent, ordinal, revision, and timestamps)
+/// are intentionally absent from authored lorebook entry drafts.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LorebookEntryDraft {
+    pub title: String,
+    pub enabled: bool,
+    pub always_active: bool,
+    pub keywords: Vec<String>,
+    pub case_sensitive: bool,
+    pub match_mode: KeywordMatchMode,
+    pub content: String,
+    pub priority: i32,
+}
+
+impl LorebookEntryDraft {
+    pub fn validate(&self) -> Result<(), LorebookValidationError> {
+        validate_entry_fields(
+            &self.title,
+            &self.keywords,
+            self.match_mode,
+            self.case_sensitive,
+            &self.content,
+        )
+    }
+}
+
+impl From<LorebookEntry> for LorebookEntryDraft {
+    fn from(entry: LorebookEntry) -> Self {
+        Self {
+            title: entry.title,
+            enabled: entry.enabled,
+            always_active: entry.always_active,
+            keywords: entry.keywords,
+            case_sensitive: entry.case_sensitive,
+            match_mode: entry.match_mode,
+            content: entry.content,
+            priority: entry.priority,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LorebookMetadataDraft {
+    pub name: String,
+    pub detection_policy: DetectionPolicy,
+    pub icon_asset_id: Option<AssetId>,
+    pub behavior_version: LorebookBehaviorVersion,
+}
+
+impl LorebookMetadataDraft {
+    pub fn validate(&self) -> Result<(), LorebookValidationError> {
+        validate_label(&self.name, "lorebook name")?;
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LorebookDetails {
+    pub book: Lorebook,
+    pub entries: Vec<LorebookEntry>,
+}
+
+impl LorebookDetails {
+    pub fn validate(&self) -> Result<(), LorebookValidationError> {
+        self.book.validate()?;
+        validate_entries(self.book.id, &self.entries)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub enum LorebookEntryInsertionTarget {
+    Append,
+    At(usize),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
+pub enum LorebookEntryMutation {
+    Add {
+        draft: LorebookEntryDraft,
+        target: LorebookEntryInsertionTarget,
+    },
+    Update {
+        entry_id: LorebookEntryId,
+        draft: LorebookEntryDraft,
+    },
+    Remove {
+        entry_id: LorebookEntryId,
+    },
+    Replace {
+        drafts: Vec<LorebookEntryDraft>,
+    },
+    Reorder {
+        entry_id: LorebookEntryId,
+        target_index: usize,
+    },
+}
+
+impl LorebookEntryMutation {
+    pub fn validate(&self) -> Result<(), LorebookValidationError> {
+        match self {
+            Self::Add { draft, .. } | Self::Update { draft, .. } => draft.validate(),
+            Self::Replace { drafts } => validate_entry_drafts(drafts),
+            Self::Remove { .. } | Self::Reorder { .. } => Ok(()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum LorebookValidationError {
     #[error("{0}")]
@@ -99,8 +218,12 @@ pub enum LorebookValidationError {
     DuplicateEntry,
     #[error("lorebook entries must have contiguous zero-based ordinals")]
     InvalidOrdering,
+    #[error("lorebook entry insertion target is outside the list")]
+    InvalidTarget,
     #[error("lorebook revision must be at least one")]
     ZeroRevision,
+    #[error("lorebook created_at must not be later than updated_at")]
+    InvalidTimestampOrder,
     #[error("lorebook match context exceeds the 1 MiB limit")]
     MatchContextTooLarge,
 }
@@ -111,34 +234,88 @@ impl Lorebook {
         if self.revision.get() == 0 {
             return Err(LorebookValidationError::ZeroRevision);
         }
+        if self.created_at > self.updated_at {
+            return Err(LorebookValidationError::InvalidTimestampOrder);
+        }
         Ok(())
     }
 }
 
 impl LorebookEntry {
     pub fn validate(&self) -> Result<(), LorebookValidationError> {
-        validate_label(&self.title, "lorebook entry title")?;
-        validate_prose(&self.content, "lorebook entry content")?;
         if self.revision.get() == 0 {
             return Err(LorebookValidationError::ZeroRevision);
         }
-        if self.keywords.len() > MAX_KEYWORDS_PER_ENTRY {
-            return Err(LorebookValidationError::TooManyKeywords);
+        if self.created_at > self.updated_at {
+            return Err(LorebookValidationError::InvalidTimestampOrder);
         }
-        if self
-            .keywords
-            .iter()
-            .any(|keyword| keyword.len() > MAX_LABEL_BYTES)
-        {
-            return Err(LorebookValidationError::KeywordTooLarge);
+        validate_entry_fields(
+            &self.title,
+            &self.keywords,
+            self.match_mode,
+            self.case_sensitive,
+            &self.content,
+        )
+    }
+}
+
+fn validate_entry_fields(
+    title: &str,
+    keywords: &[String],
+    match_mode: KeywordMatchMode,
+    case_sensitive: bool,
+    content: &str,
+) -> Result<(), LorebookValidationError> {
+    validate_label(title, "lorebook entry title")?;
+    validate_prose(content, "lorebook entry content")?;
+    if keywords.len() > MAX_KEYWORDS_PER_ENTRY {
+        return Err(LorebookValidationError::TooManyKeywords);
+    }
+    if keywords
+        .iter()
+        .any(|keyword| keyword.len() > MAX_LABEL_BYTES)
+    {
+        return Err(LorebookValidationError::KeywordTooLarge);
+    }
+    if match_mode == KeywordMatchMode::Regex {
+        for keyword in keywords {
+            compile_regex(keyword, case_sensitive)?;
         }
-        if self.match_mode == KeywordMatchMode::Regex {
-            for keyword in &self.keywords {
-                compile_regex(keyword, self.case_sensitive)?;
+    }
+    Ok(())
+}
+
+fn validate_entry_drafts(drafts: &[LorebookEntryDraft]) -> Result<(), LorebookValidationError> {
+    if drafts.len() > MAX_LOREBOOK_ENTRIES {
+        return Err(LorebookValidationError::TooManyEntries);
+    }
+    let mut authored_bytes = 0_usize;
+    let mut regex_keywords = 0_usize;
+    for draft in drafts {
+        draft.validate()?;
+        authored_bytes = authored_bytes
+            .checked_add(draft.title.len())
+            .and_then(|value| value.checked_add(draft.content.len()))
+            .and_then(|value| {
+                draft
+                    .keywords
+                    .iter()
+                    .try_fold(value, |total, keyword| total.checked_add(keyword.len()))
+            })
+            .ok_or(LorebookValidationError::AuthoredPayloadTooLarge)?;
+        if authored_bytes > MAX_AUTHORED_BYTES {
+            return Err(LorebookValidationError::AuthoredPayloadTooLarge);
+        }
+        if draft.match_mode == KeywordMatchMode::Regex {
+            regex_keywords = regex_keywords
+                .checked_add(draft.keywords.len())
+                .ok_or(LorebookValidationError::TooManyRegexKeywords)?;
+            if regex_keywords > MAX_REGEX_KEYWORDS_PER_BOOK {
+                return Err(LorebookValidationError::TooManyRegexKeywords);
             }
         }
-        Ok(())
     }
+    Ok(())
 }
 
 pub fn validate_entries(
@@ -508,67 +685,288 @@ pub struct LorebookPreview {
     pub content: String,
 }
 
+/// Provenance is typed here instead of referring to character/group crates;
+/// this keeps context independent while still identifying every source.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
+pub enum LorebookSourceProvenance {
+    Character {
+        id: CharacterId,
+    },
+    Persona {
+        id: PersonaId,
+    },
+    Group {
+        id: GroupId,
+    },
+    Starter {
+        character_id: CharacterId,
+        starter_id: ConversationStarterId,
+    },
+}
+
+/// Sources must already be in the caller's binding/source order. The resolver
+/// preserves that order only as the final tie-break after legacy ordinal and
+/// creation-time ordering. `details: None` is an unresolved ID, not an error.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LorebookActivationSource {
+    pub provenance: LorebookSourceProvenance,
+    pub lorebook_id: LorebookId,
+    pub details: Option<LorebookDetails>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedLorebookSource {
+    pub provenance: LorebookSourceProvenance,
+    pub lorebook_id: LorebookId,
+    pub book_revision: Revision,
+    pub source_order: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LorebookSourceSkipReason {
+    Missing,
+    Archived,
+    Duplicate,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkippedLorebookSource {
+    pub provenance: LorebookSourceProvenance,
+    pub lorebook_id: LorebookId,
+    pub reason: LorebookSourceSkipReason,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedLorebookEntry {
+    pub entry: LorebookEntry,
+    pub source: ResolvedLorebookSource,
+    pub matched_keywords: Vec<String>,
+    pub always_active: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MultiLorebookActivation {
+    pub entries: Vec<ResolvedLorebookEntry>,
+    pub sources: Vec<ResolvedLorebookSource>,
+    pub skipped: Vec<SkippedLorebookSource>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum MultiLorebookActivationError {
+    #[error("too many lorebook sources")]
+    TooManySources,
+    #[error("too many active lorebook entries")]
+    TooManyActiveEntries,
+    #[error("active lorebook content exceeds the 4 MiB bound")]
+    ActiveContentTooLarge,
+    #[error("lorebook validation failed: {0}")]
+    Invalid(#[from] LorebookValidationError),
+}
+
+/// Activates an ordered set of books without knowing anything about an
+/// inference engine or conversation. Missing and archived books are reported
+/// as skipped sources. Duplicate book IDs keep the first source deterministically.
+/// LegacyV1 ordering is global: entry ordinal, creation time, then source order;
+/// priority is metadata and never participates in this function.
+pub fn resolve_lorebook_activation(
+    sources: &[LorebookActivationSource],
+    recent_messages: &[String],
+    latest_user_message: Option<&str>,
+) -> Result<MultiLorebookActivation, MultiLorebookActivationError> {
+    if sources.len() > MAX_LOREBOOK_SOURCES {
+        return Err(MultiLorebookActivationError::TooManySources);
+    }
+    let matcher = LorebookMatcher::new();
+    let mut seen_books = std::collections::HashSet::with_capacity(sources.len());
+    let mut resolved_sources = Vec::new();
+    let mut skipped = Vec::new();
+    let mut active_entries = Vec::new();
+
+    for (source_order, source) in sources.iter().enumerate() {
+        if !seen_books.insert(source.lorebook_id) {
+            skipped.push(SkippedLorebookSource {
+                provenance: source.provenance,
+                lorebook_id: source.lorebook_id,
+                reason: LorebookSourceSkipReason::Duplicate,
+            });
+            continue;
+        }
+        let Some(details) = source.details.as_ref() else {
+            skipped.push(SkippedLorebookSource {
+                provenance: source.provenance,
+                lorebook_id: source.lorebook_id,
+                reason: LorebookSourceSkipReason::Missing,
+            });
+            continue;
+        };
+        if details.book.id != source.lorebook_id {
+            return Err(MultiLorebookActivationError::Invalid(
+                LorebookValidationError::WrongBook,
+            ));
+        }
+        if details.book.status == LifecycleStatus::Archived {
+            skipped.push(SkippedLorebookSource {
+                provenance: source.provenance,
+                lorebook_id: source.lorebook_id,
+                reason: LorebookSourceSkipReason::Archived,
+            });
+            continue;
+        }
+        details.validate()?;
+        let resolved = ResolvedLorebookSource {
+            provenance: source.provenance,
+            lorebook_id: source.lorebook_id,
+            book_revision: details.book.revision,
+            source_order,
+        };
+        let activation = matcher.activate(
+            &details.book,
+            &details.entries,
+            recent_messages,
+            latest_user_message,
+        )?;
+        for matched in activation.matches {
+            if active_entries.len() >= MAX_ACTIVE_LOREBOOK_ENTRIES {
+                return Err(MultiLorebookActivationError::TooManyActiveEntries);
+            }
+            let active_content_bytes = active_entries
+                .iter()
+                .map(
+                    |(_, _, _, item): &(u32, TimestampMillis, usize, ResolvedLorebookEntry)| {
+                        item.entry.content.len()
+                    },
+                )
+                .sum::<usize>();
+            if active_content_bytes.saturating_add(matched.entry.content.len())
+                > MAX_ACTIVE_LOREBOOK_CONTENT_BYTES
+            {
+                return Err(MultiLorebookActivationError::ActiveContentTooLarge);
+            }
+            active_entries.push((
+                matched.entry.ordinal,
+                matched.entry.created_at,
+                source_order,
+                ResolvedLorebookEntry {
+                    entry: matched.entry,
+                    source: resolved.clone(),
+                    matched_keywords: matched.matched_keywords,
+                    always_active: matched.always_active,
+                },
+            ));
+        }
+        resolved_sources.push(resolved);
+    }
+
+    active_entries.sort_by(|left, right| {
+        left.0
+            .cmp(&right.0)
+            .then_with(|| left.1.cmp(&right.1))
+            .then_with(|| left.2.cmp(&right.2))
+    });
+    Ok(MultiLorebookActivation {
+        entries: active_entries
+            .into_iter()
+            .map(|(_, _, _, entry)| entry)
+            .collect(),
+        sources: resolved_sources,
+        skipped,
+    })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LorebookMutationResult {
+    pub details: LorebookDetails,
+    /// Explicitly repeated so callers can feed it to their next CAS even when
+    /// they do not retain the nested book snapshot.
+    pub book_revision: Revision,
+}
+
+/// A bounded lorebook library query. Adapters filter by status first, then use
+/// the opaque keyset cursor and deterministic `updated_at DESC, id ASC` order.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LorebookLibraryQuery {
+    pub page: PageRequest,
+    pub status: LifecycleFilter,
+}
+
+impl Default for LorebookLibraryQuery {
+    fn default() -> Self {
+        Self {
+            page: PageRequest::default(),
+            status: LifecycleFilter::Active,
+        }
+    }
+}
+
 pub trait LorebookRepository: Send + Sync {
     fn create(
         &self,
-        book: Lorebook,
+        metadata: LorebookMetadataDraft,
+        entries: Vec<LorebookEntryDraft>,
         now: TimestampMillis,
-    ) -> Result<Lorebook, LorebookRepositoryError>;
-    fn get(&self, id: LorebookId) -> Result<Option<Lorebook>, LorebookRepositoryError>;
-    fn list(&self) -> Result<Vec<Lorebook>, LorebookRepositoryError>;
-    fn replace_entry_set(
+    ) -> Result<LorebookDetails, LorebookRepositoryError>;
+    fn get(&self, id: LorebookId) -> Result<Option<LorebookDetails>, LorebookRepositoryError>;
+    fn page(&self, query: LorebookLibraryQuery) -> Result<Page<Lorebook>, LorebookRepositoryError>;
+    fn revise_metadata(
+        &self,
+        id: LorebookId,
+        expected_revision: Revision,
+        metadata: LorebookMetadataDraft,
+        now: TimestampMillis,
+    ) -> Result<LorebookMutationResult, LorebookRepositoryError>;
+    fn mutate_entries(
         &self,
         book: LorebookId,
         expected_revision: Revision,
-        entries: Vec<LorebookEntry>,
+        mutation: LorebookEntryMutation,
         now: TimestampMillis,
-    ) -> Result<Lorebook, LorebookRepositoryError>;
+    ) -> Result<LorebookMutationResult, LorebookRepositoryError>;
+    /// Returns the complete post-archive aggregate and new book CAS revision.
     fn archive(
         &self,
         id: LorebookId,
         expected_revision: Revision,
         now: TimestampMillis,
-    ) -> Result<(), LorebookRepositoryError>;
+    ) -> Result<LorebookMutationResult, LorebookRepositoryError>;
     fn restore(
         &self,
         id: LorebookId,
         expected_revision: Revision,
         now: TimestampMillis,
-    ) -> Result<(), LorebookRepositoryError>;
+    ) -> Result<LorebookMutationResult, LorebookRepositoryError>;
 }
 
-/// Entry lifecycle is separate from book lifecycle so entry mutations can
-/// carry the book revision CAS and never masquerade as a whole-book upsert.
-pub trait LorebookEntryRepository: Send + Sync {
-    fn create_entry(
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
+pub enum LorebookReference {
+    Character {
+        id: CharacterId,
+    },
+    Persona {
+        id: PersonaId,
+    },
+    Group {
+        id: GroupId,
+    },
+    Starter {
+        character_id: CharacterId,
+        starter_id: ConversationStarterId,
+    },
+}
+
+pub trait LorebookDependencyReader: Send + Sync {
+    fn references_to(
         &self,
-        book: LorebookId,
-        expected_book_revision: Revision,
-        entry: LorebookEntry,
-        now: TimestampMillis,
-    ) -> Result<LorebookEntry, LorebookRepositoryError>;
-    fn update_entry(
-        &self,
-        book: LorebookId,
-        expected_book_revision: Revision,
-        entry: LorebookEntry,
-        now: TimestampMillis,
-    ) -> Result<LorebookEntry, LorebookRepositoryError>;
-    fn remove_entry(
-        &self,
-        book: LorebookId,
-        expected_book_revision: Revision,
-        entry: LorebookEntryId,
-        now: TimestampMillis,
-    ) -> Result<(), LorebookRepositoryError>;
-    fn reorder_entry(
-        &self,
-        book: LorebookId,
-        expected_book_revision: Revision,
-        entry: LorebookEntryId,
-        target_ordinal: usize,
-        now: TimestampMillis,
-    ) -> Result<Vec<LorebookEntry>, LorebookRepositoryError>;
+        lorebook_id: LorebookId,
+    ) -> Result<Vec<LorebookReference>, LorebookDependencyError>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum LorebookDependencyError {
+    #[error("lorebook dependency failure: {0}")]
+    Failure(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -579,6 +977,8 @@ pub enum LorebookRepositoryError {
     Conflict,
     #[error("lorebook not found")]
     NotFound,
+    #[error("lorebook entry was not found")]
+    EntryNotFound,
     #[error("lorebook repository failure: {0}")]
     Failure(String),
 }
@@ -644,7 +1044,7 @@ mod tests {
             ordinal,
             revision: Revision::INITIAL,
             created_at: TimestampMillis::new(i64::from(ordinal)),
-            updated_at: TimestampMillis::UNIX_EPOCH,
+            updated_at: TimestampMillis::new(i64::from(ordinal)),
         }
     }
 
@@ -763,5 +1163,204 @@ mod tests {
             ),
             Err(LorebookValidationError::MatchContextTooLarge)
         ));
+    }
+
+    #[test]
+    fn lorebook_and_entry_reject_reversed_timestamps() {
+        let mut value = book(DetectionPolicy::LatestUserMessage);
+        value.created_at = TimestampMillis::new(2);
+        value.updated_at = TimestampMillis::new(1);
+        assert_eq!(
+            value.validate(),
+            Err(LorebookValidationError::InvalidTimestampOrder)
+        );
+        let valid_book = book(DetectionPolicy::LatestUserMessage);
+        let mut value = entry(&valid_book, 0, "needle");
+        value.created_at = TimestampMillis::new(2);
+        value.updated_at = TimestampMillis::new(1);
+        assert_eq!(
+            value.validate(),
+            Err(LorebookValidationError::InvalidTimestampOrder)
+        );
+    }
+
+    #[test]
+    fn entry_drafts_are_closed_and_replace_preserves_limits() {
+        let book = book(DetectionPolicy::LatestUserMessage);
+        let authored = LorebookEntryDraft::from(entry(&book, 0, "needle"));
+        let mut value = serde_json::to_value(&authored).expect("draft value");
+        value["id"] = serde_json::json!(LorebookEntryId::new());
+        assert!(serde_json::from_value::<LorebookEntryDraft>(value).is_err());
+        let provenance = LorebookSourceProvenance::Starter {
+            character_id: CharacterId::new(),
+            starter_id: ConversationStarterId::new(),
+        };
+        let mut encoded = serde_json::to_value(provenance).expect("provenance value");
+        encoded["extra"] = serde_json::json!(true);
+        assert!(serde_json::from_value::<LorebookSourceProvenance>(encoded).is_err());
+        assert!(
+            LorebookEntryMutation::Replace {
+                drafts: vec![authored.clone()]
+            }
+            .validate()
+            .is_ok()
+        );
+        assert_eq!(
+            LorebookEntryMutation::Replace {
+                drafts: vec![authored; MAX_LOREBOOK_ENTRIES + 1]
+            }
+            .validate(),
+            Err(LorebookValidationError::TooManyEntries)
+        );
+    }
+
+    #[test]
+    fn multi_book_resolution_skips_archived_missing_and_duplicates() {
+        let first = book(DetectionPolicy::LatestUserMessage);
+        let second = book(DetectionPolicy::LatestUserMessage);
+        let mut archived = book(DetectionPolicy::LatestUserMessage);
+        archived.status = LifecycleStatus::Archived;
+        let first_entry = entry(&first, 0, "needle");
+        let mut second_entry = entry(&second, 0, "needle");
+        second_entry.created_at = TimestampMillis::new(-1);
+        let sources = vec![
+            LorebookActivationSource {
+                provenance: LorebookSourceProvenance::Character {
+                    id: CharacterId::new(),
+                },
+                lorebook_id: first.id,
+                details: Some(LorebookDetails {
+                    book: first.clone(),
+                    entries: vec![first_entry],
+                }),
+            },
+            LorebookActivationSource {
+                provenance: LorebookSourceProvenance::Group { id: GroupId::new() },
+                lorebook_id: second.id,
+                details: Some(LorebookDetails {
+                    book: second.clone(),
+                    entries: vec![second_entry],
+                }),
+            },
+            LorebookActivationSource {
+                provenance: LorebookSourceProvenance::Persona {
+                    id: PersonaId::new(),
+                },
+                lorebook_id: archived.id,
+                details: Some(LorebookDetails {
+                    book: archived,
+                    entries: vec![],
+                }),
+            },
+            LorebookActivationSource {
+                provenance: LorebookSourceProvenance::Starter {
+                    character_id: CharacterId::new(),
+                    starter_id: ConversationStarterId::new(),
+                },
+                lorebook_id: LorebookId::new(),
+                details: None,
+            },
+            LorebookActivationSource {
+                provenance: LorebookSourceProvenance::Group { id: GroupId::new() },
+                lorebook_id: first.id,
+                details: None,
+            },
+        ];
+        let resolved = resolve_lorebook_activation(&sources, &[], Some("needle"))
+            .expect("all supplied active books are valid");
+        assert_eq!(resolved.sources.len(), 2);
+        assert_eq!(resolved.entries.len(), 2);
+        assert_eq!(resolved.entries[0].source.source_order, 1);
+        assert_eq!(resolved.entries[1].source.source_order, 0);
+        assert_eq!(resolved.entries[0].source.book_revision, second.revision);
+        assert_eq!(
+            resolved
+                .skipped
+                .iter()
+                .map(|item| item.reason)
+                .collect::<Vec<_>>(),
+            vec![
+                LorebookSourceSkipReason::Archived,
+                LorebookSourceSkipReason::Missing,
+                LorebookSourceSkipReason::Duplicate
+            ]
+        );
+    }
+
+    #[test]
+    fn multi_book_resolution_enforces_active_entry_bound() {
+        let first_book = book(DetectionPolicy::LatestUserMessage);
+        let entries = (0..MAX_LOREBOOK_ENTRIES)
+            .map(|ordinal| entry(&first_book, ordinal as u32, "needle"))
+            .collect::<Vec<_>>();
+        let details = LorebookDetails {
+            book: first_book.clone(),
+            entries,
+        };
+        let second = book(DetectionPolicy::LatestUserMessage);
+        let second_details = LorebookDetails {
+            book: second.clone(),
+            entries: (0..MAX_LOREBOOK_ENTRIES)
+                .map(|ordinal| entry(&second, ordinal as u32, "needle"))
+                .collect(),
+        };
+        assert_eq!(
+            resolve_lorebook_activation(
+                &[
+                    LorebookActivationSource {
+                        provenance: LorebookSourceProvenance::Character {
+                            id: CharacterId::new()
+                        },
+                        lorebook_id: first_book.id,
+                        details: Some(details),
+                    },
+                    LorebookActivationSource {
+                        provenance: LorebookSourceProvenance::Group { id: GroupId::new() },
+                        lorebook_id: second.id,
+                        details: Some(second_details),
+                    }
+                ],
+                &[],
+                Some("needle"),
+            ),
+            Err(MultiLorebookActivationError::TooManyActiveEntries)
+        );
+    }
+
+    #[test]
+    fn multi_book_resolution_enforces_active_content_bound() {
+        let value = "x".repeat(crate::MAX_PROSE_BYTES);
+        let make_book = || book(DetectionPolicy::LatestUserMessage);
+        let mut sources = Vec::new();
+        for _ in 0..5 {
+            let current = make_book();
+            let mut current_entry = entry(&current, 0, "");
+            current_entry.always_active = true;
+            current_entry.content = value.clone();
+            sources.push(LorebookActivationSource {
+                provenance: LorebookSourceProvenance::Character {
+                    id: CharacterId::new(),
+                },
+                lorebook_id: current.id,
+                details: Some(LorebookDetails {
+                    book: current,
+                    entries: vec![current_entry],
+                }),
+            });
+        }
+        assert_eq!(
+            resolve_lorebook_activation(&sources, &[], None),
+            Err(MultiLorebookActivationError::ActiveContentTooLarge)
+        );
+    }
+
+    #[test]
+    fn lorebook_library_query_is_bounded_and_closed() {
+        let query = LorebookLibraryQuery::default();
+        assert_eq!(query.status, LifecycleFilter::Active);
+        assert_eq!(query.page.limit.get(), 50);
+        let mut encoded = serde_json::to_value(&query).expect("query value");
+        encoded["listAll"] = serde_json::json!(true);
+        assert!(serde_json::from_value::<LorebookLibraryQuery>(encoded).is_err());
     }
 }

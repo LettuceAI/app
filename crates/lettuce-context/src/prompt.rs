@@ -1,6 +1,9 @@
 //! Structured prompt programs and their pure renderer.
 
-use lettuce_types::{PromptDocumentId, PromptEntryId, Revision, TimestampMillis};
+use lettuce_types::{
+    CharacterId, ContentHash, ConversationStarterId, GroupId, Page, PageRequest, PromptDocumentId,
+    PromptEntryId, Revision, TimestampMillis,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -22,6 +25,28 @@ pub enum LifecycleStatus {
     #[default]
     Active,
     Archived,
+}
+
+/// Restricts a library page to one lifecycle state. `All` means both states;
+/// adapters must still apply the filter before taking the page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum LifecycleFilter {
+    #[default]
+    All,
+    Active,
+    Archived,
+}
+
+impl LifecycleFilter {
+    #[must_use]
+    pub const fn matches(self, status: LifecycleStatus) -> bool {
+        match self {
+            Self::All => true,
+            Self::Active => matches!(status, LifecycleStatus::Active),
+            Self::Archived => matches!(status, LifecycleStatus::Archived),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -64,9 +89,18 @@ pub enum PromptPurpose {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
 pub enum PromptProvenance {
-    BuiltIn { key: String, seed_version: u32 },
+    BuiltIn {
+        key: String,
+        seed_version: u32,
+        seed_digest: ContentHash,
+        authored_digest: ContentHash,
+        required: bool,
+        protected: bool,
+    },
     User,
-    Derived { source: PromptDocumentId },
+    Derived {
+        source: PromptDocumentId,
+    },
     Imported,
 }
 
@@ -202,6 +236,113 @@ impl Default for PromptEntry {
     }
 }
 
+/// Authored entry data. Identity, parent ownership, ordinal, revision, and
+/// timestamps are assigned by the context adapter.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PromptEntryDraft {
+    pub name: String,
+    pub role: PromptEntryRole,
+    pub content: String,
+    pub enabled: bool,
+    pub injection_position: PromptEntryPosition,
+    pub depth: u32,
+    pub conditional_min_messages: Option<u32>,
+    pub interval_turns: Option<u32>,
+    pub system_prompt: bool,
+    pub conditions: Option<PromptEntryCondition>,
+    pub payload: Option<PromptEntryPayload>,
+}
+
+impl PromptEntryDraft {
+    pub fn validate(&self) -> Result<(), PromptValidationError> {
+        PromptEntry {
+            id: PromptEntryId::new(),
+            name: self.name.clone(),
+            role: self.role,
+            content: self.content.clone(),
+            enabled: self.enabled,
+            injection_position: self.injection_position,
+            depth: self.depth,
+            conditional_min_messages: self.conditional_min_messages,
+            interval_turns: self.interval_turns,
+            system_prompt: self.system_prompt,
+            conditions: self.conditions.clone(),
+            payload: self.payload.clone(),
+        }
+        .validate()
+    }
+}
+
+impl From<PromptEntry> for PromptEntryDraft {
+    fn from(entry: PromptEntry) -> Self {
+        Self {
+            name: entry.name,
+            role: entry.role,
+            content: entry.content,
+            enabled: entry.enabled,
+            injection_position: entry.injection_position,
+            depth: entry.depth,
+            conditional_min_messages: entry.conditional_min_messages,
+            interval_turns: entry.interval_turns,
+            system_prompt: entry.system_prompt,
+            conditions: entry.conditions,
+            payload: entry.payload,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub enum PromptEntryInsertionTarget {
+    Append,
+    At(usize),
+}
+
+/// Entry mutations are deliberately explicit. Add allocates a fresh typed ID;
+/// update/remove/reorder require an existing ID; replace replaces the complete
+/// ordered set and allocates identities for its drafts.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
+pub enum PromptEntryMutation {
+    Add {
+        draft: PromptEntryDraft,
+        target: PromptEntryInsertionTarget,
+    },
+    Update {
+        entry_id: PromptEntryId,
+        draft: PromptEntryDraft,
+    },
+    Remove {
+        entry_id: PromptEntryId,
+    },
+    Replace {
+        drafts: Vec<PromptEntryDraft>,
+    },
+    Reorder {
+        entry_id: PromptEntryId,
+        target_index: usize,
+    },
+}
+
+impl PromptEntryMutation {
+    pub fn validate(&self) -> Result<(), PromptValidationError> {
+        match self {
+            Self::Add { draft, .. } | Self::Update { draft, .. } => draft.validate(),
+            Self::Replace { drafts } => {
+                if drafts.len() > MAX_PROMPT_ENTRIES {
+                    return Err(PromptValidationError::TooManyEntries);
+                }
+                for draft in drafts {
+                    draft.validate()?;
+                }
+                Ok(())
+            }
+            Self::Remove { .. } | Self::Reorder { .. } => Ok(()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PromptDocument {
@@ -212,12 +353,36 @@ pub struct PromptDocument {
     /// The structured entries are the sole operational authority. Legacy text
     /// is converted by transfer adapters and is not a second live field.
     pub entries: Vec<PromptEntry>,
+    /// Consumer-specific condensation is performed by later conversation
+    /// assembly. The generic renderer preserves this flag but never condenses.
     pub condense: bool,
     pub behavior_version: PromptBehaviorVersion,
     pub provenance: PromptProvenance,
     pub revision: Revision,
     pub created_at: TimestampMillis,
     pub updated_at: TimestampMillis,
+}
+
+/// Adapter-owned fields are intentionally absent. A repository validates this
+/// draft, allocates the document and entry identities, and stamps provenance,
+/// ordering, revision, and timestamps.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PromptMetadataDraft {
+    pub name: String,
+    pub purpose: PromptPurpose,
+    pub condense: bool,
+    pub behavior_version: PromptBehaviorVersion,
+}
+
+impl PromptMetadataDraft {
+    pub fn validate(&self) -> Result<(), PromptValidationError> {
+        validate_label(&self.name, "prompt name")?;
+        if self.purpose == PromptPurpose::Undefined {
+            return Err(PromptValidationError::UndefinedPurpose);
+        }
+        Ok(())
+    }
 }
 
 /// Name used by context assembly plans for the structured operational form.
@@ -257,6 +422,12 @@ pub enum PromptValidationError {
     ZeroRevision,
     #[error("prompt condition match context exceeds the 1 MiB limit")]
     MatchContextTooLarge,
+    #[error("prompt purpose must be explicit")]
+    UndefinedPurpose,
+    #[error("prompt created_at must not be later than updated_at")]
+    InvalidTimestampOrder,
+    #[error("built-in prompt seed version must be non-zero")]
+    ZeroSeedVersion,
     #[error("prompt could not be serialized for validation")]
     Serialization,
 }
@@ -364,6 +535,9 @@ impl PromptDocument {
         if self.revision.get() == 0 {
             return Err(PromptValidationError::ZeroRevision);
         }
+        if self.created_at > self.updated_at {
+            return Err(PromptValidationError::InvalidTimestampOrder);
+        }
         if self.entries.len() > MAX_PROMPT_ENTRIES {
             return Err(PromptValidationError::TooManyEntries);
         }
@@ -375,8 +549,15 @@ impl PromptDocument {
             entry.validate()?;
         }
         match &self.provenance {
-            PromptProvenance::BuiltIn { key, .. } if key.trim().is_empty() => {
-                return Err(PromptValidationError::InvalidBuiltInKey);
+            PromptProvenance::BuiltIn {
+                key, seed_version, ..
+            } => {
+                if key.trim().is_empty() {
+                    return Err(PromptValidationError::InvalidBuiltInKey);
+                }
+                if *seed_version == 0 {
+                    return Err(PromptValidationError::ZeroSeedVersion);
+                }
             }
             PromptProvenance::Derived { source } if *source == self.id => {
                 return Err(PromptValidationError::InvalidDerivedSource);
@@ -1105,6 +1286,12 @@ pub fn render_prompt(
             continue;
         }
         let message = render_entry(entry, &context.values);
+        // A placeholder-only entry can become empty for a purpose that does
+        // not provide its value. Payload entries still carry an operation
+        // (for example an image slot), so retain them even with blank text.
+        if message.content.trim().is_empty() && message.payload.is_none() {
+            continue;
+        }
         match entry.injection_position {
             PromptEntryPosition::Relative => rendered.relative.push(message),
             PromptEntryPosition::InChat => rendered.in_chat.push(message),
@@ -1218,75 +1405,297 @@ pub fn preview_prompt(
     })
 }
 
+/// A bounded prompt library query. Cursors are opaque adapter-owned keyset
+/// tokens from `PageRequest`; adapters must filter first and then order by
+/// `updated_at DESC, id ASC` before applying the limit.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PromptLibraryQuery {
+    pub page: PageRequest,
+    pub status: LifecycleFilter,
+    pub purpose: Option<PromptPurpose>,
+}
+
+impl Default for PromptLibraryQuery {
+    fn default() -> Self {
+        Self {
+            page: PageRequest::default(),
+            status: LifecycleFilter::Active,
+            purpose: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PromptMutationResult {
+    /// The complete post-mutation document. Its revision is the one CAS token
+    /// to use for the next mutation.
+    pub document: PromptDocument,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BuiltInPromptSeed {
+    pub key: String,
+    pub seed_version: u32,
+    pub metadata: PromptMetadataDraft,
+    pub entries: Vec<PromptEntryDraft>,
+    pub required: bool,
+    pub protected: bool,
+}
+
+impl BuiltInPromptSeed {
+    pub fn validate(&self) -> Result<(), PromptValidationError> {
+        validate_label(&self.key, "built-in prompt key")?;
+        self.metadata.validate()?;
+        if self.seed_version == 0 {
+            return Err(PromptValidationError::ZeroSeedVersion);
+        }
+        if self.entries.len() > MAX_PROMPT_ENTRIES {
+            return Err(PromptValidationError::TooManyEntries);
+        }
+        for entry in &self.entries {
+            entry.validate()?;
+        }
+        Ok(())
+    }
+
+    pub fn computed_seed_digest(&self) -> Result<ContentHash, PromptValidationError> {
+        let bytes = serde_json::to_vec(&CanonicalBuiltInSeed {
+            key: self.key.trim(),
+            seed_version: self.seed_version,
+            metadata: &self.metadata,
+            required: self.required,
+            protected: self.protected,
+            entries: &self.entries,
+        })
+        .map_err(|_| PromptValidationError::Serialization)?;
+        Ok(
+            ContentHash::parse(blake3::hash(&bytes).to_hex().to_string())
+                .expect("blake3 always produces a 64-character hexadecimal digest"),
+        )
+    }
+
+    pub fn provenance(&self) -> Result<PromptProvenance, PromptValidationError> {
+        self.validate()?;
+        let digest = self.computed_seed_digest()?;
+        Ok(PromptProvenance::BuiltIn {
+            key: self.key.trim().to_owned(),
+            seed_version: self.seed_version,
+            seed_digest: digest.clone(),
+            authored_digest: digest,
+            required: self.required,
+            protected: self.protected,
+        })
+    }
+}
+
+#[derive(Serialize)]
+struct CanonicalBuiltInSeed<'a> {
+    key: &'a str,
+    seed_version: u32,
+    metadata: &'a PromptMetadataDraft,
+    required: bool,
+    protected: bool,
+    entries: &'a [PromptEntryDraft],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum BuiltInReconcileMode {
+    /// Update a seed only when its existing document is still unedited.
+    #[default]
+    RefreshUnedited,
+    /// Replace an existing built-in with the seed even when it was edited.
+    ResetToSeed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BuiltInReconcileRequest {
+    pub seeds: Vec<BuiltInPromptSeed>,
+    pub mode: BuiltInReconcileMode,
+}
+
+impl BuiltInReconcileRequest {
+    pub fn validate(&self) -> Result<(), PromptBootstrapError> {
+        let mut keys = std::collections::HashSet::with_capacity(self.seeds.len());
+        for seed in &self.seeds {
+            if !keys.insert(seed.key.trim().to_owned()) {
+                return Err(PromptBootstrapError::DuplicateKey);
+            }
+            seed.validate()?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum PromptBootstrapError {
+    #[error("prompt bootstrap validation failed: {0}")]
+    Invalid(#[from] PromptValidationError),
+    #[error("built-in prompt keys must be unique")]
+    DuplicateKey,
+    #[error("protected built-in prompt cannot be edited")]
+    Protected,
+    #[error("required built-in prompt cannot be archived")]
+    Required,
+    #[error("prompt bootstrap failure: {0}")]
+    Failure(String),
+}
+
+/// Bootstrap is separate from the user-facing repository so seed/reconcile
+/// policy cannot leak into normal prompt CRUD. It has no database or ORM types.
+pub trait PromptBootstrapPort: Send + Sync {
+    fn reconcile_built_ins(
+        &self,
+        request: BuiltInReconcileRequest,
+        now: TimestampMillis,
+    ) -> Result<Vec<BuiltInReconcileOutcome>, PromptBootstrapError>;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum BuiltInReconcileAction {
+    Created,
+    RefreshedUnedited,
+    PreservedEdited,
+    ResetEdited,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BuiltInReconcileOutcome {
+    pub key: String,
+    pub action: BuiltInReconcileAction,
+    pub document: PromptDocument,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PromptReferenceOwner {
+    Character(CharacterId),
+    Group(GroupId),
+    Starter {
+        character_id: CharacterId,
+        starter_id: ConversationStarterId,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PromptReference {
+    pub owner: PromptReferenceOwner,
+    pub purpose: PromptPurpose,
+    pub prompt_id: PromptDocumentId,
+}
+
+/// Reads the current typed references held by character/group/starter
+/// aggregates. IDs keep this contract independent of those crates.
+pub trait PromptDependencyReader: Send + Sync {
+    fn references_to(
+        &self,
+        prompt_id: PromptDocumentId,
+    ) -> Result<Vec<PromptReference>, PromptDependencyError>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum PromptDependencyError {
+    #[error("prompt dependency target was not found")]
+    NotFound,
+    #[error("prompt dependency failure: {0}")]
+    Failure(String),
+}
+
 pub trait PromptRepository: Send + Sync {
     fn create_user_draft(
         &self,
-        document: PromptDocument,
-        now: TimestampMillis,
-    ) -> Result<PromptDocument, PromptRepositoryError>;
-    fn derive_built_in(
-        &self,
-        source: PromptDocumentId,
-        derived: PromptDocument,
+        metadata: PromptMetadataDraft,
+        entries: Vec<PromptEntryDraft>,
         now: TimestampMillis,
     ) -> Result<PromptDocument, PromptRepositoryError>;
     fn get(&self, id: PromptDocumentId) -> Result<Option<PromptDocument>, PromptRepositoryError>;
-    fn list_by_purpose(
+    fn page(
         &self,
-        purpose: PromptPurpose,
-    ) -> Result<Vec<PromptDocument>, PromptRepositoryError>;
-    fn replace_entry_set(
-        &self,
-        id: PromptDocumentId,
-        expected_revision: Revision,
-        entries: Vec<PromptEntry>,
-        now: TimestampMillis,
-    ) -> Result<PromptDocument, PromptRepositoryError>;
-    fn patch_entry(
+        query: PromptLibraryQuery,
+    ) -> Result<Page<PromptDocument>, PromptRepositoryError>;
+    fn revise_metadata(
         &self,
         id: PromptDocumentId,
         expected_revision: Revision,
-        entry: PromptEntry,
+        metadata: PromptMetadataDraft,
         now: TimestampMillis,
-    ) -> Result<PromptDocument, PromptRepositoryError>;
-    fn reorder_entry(
+    ) -> Result<PromptMutationResult, PromptRepositoryError>;
+    fn mutate_entries(
         &self,
         id: PromptDocumentId,
         expected_revision: Revision,
-        entry: PromptEntryId,
-        target_index: usize,
+        mutation: PromptEntryMutation,
         now: TimestampMillis,
-    ) -> Result<PromptDocument, PromptRepositoryError>;
-    fn validate(&self, document: &PromptDocument) -> Result<(), PromptRepositoryError>;
+    ) -> Result<PromptMutationResult, PromptRepositoryError>;
+    /// Protected built-ins reject archive with `Protected`; required built-ins
+    /// reject archive with `Required`. Protected content/name/condense edits
+    /// remain allowed, while purpose/provenance identity edits are protected.
     fn archive(
         &self,
         id: PromptDocumentId,
         expected_revision: Revision,
         now: TimestampMillis,
-    ) -> Result<(), PromptRepositoryError>;
+    ) -> Result<PromptMutationResult, PromptRepositoryError>;
     fn restore(
         &self,
         id: PromptDocumentId,
         expected_revision: Revision,
         now: TimestampMillis,
-    ) -> Result<(), PromptRepositoryError>;
-    fn resolve_compatible(
+    ) -> Result<PromptMutationResult, PromptRepositoryError>;
+    /// Looks up exactly the requested ID and purpose. This method never
+    /// chooses a fallback or app/session precedence; conversation assembly
+    /// owns that policy later.
+    fn lookup_exact(
         &self,
+        id: PromptDocumentId,
         purpose: PromptPurpose,
-        context: &PromptRenderContext,
-    ) -> Result<PromptResolution, PromptRepositoryError>;
+    ) -> Result<PromptLookupResult, PromptRepositoryError>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PromptResolution {
-    pub selected: Option<PromptDocument>,
-    pub rejected: Vec<PromptRejection>,
+pub enum PromptLookupResult {
+    Missing,
+    /// The ID exists but is not eligible for activation. The document is
+    /// returned so callers can distinguish archive from an absent reference.
+    Archived {
+        document: PromptDocument,
+    },
+    /// The ID exists and is active, but its stored purpose is not the exact
+    /// requested purpose. No fallback or nearest-purpose match is implied.
+    PurposeMismatch {
+        document: PromptDocument,
+        requested: PromptPurpose,
+        actual: PromptPurpose,
+    },
+    Available {
+        document: PromptDocument,
+    },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PromptRejection {
-    pub document_id: PromptDocumentId,
-    pub reason: String,
+/// Classifies one exact-ID lookup without applying any fallback policy.
+pub fn classify_prompt_lookup(
+    document: Option<PromptDocument>,
+    requested: PromptPurpose,
+) -> PromptLookupResult {
+    let Some(document) = document else {
+        return PromptLookupResult::Missing;
+    };
+    if document.status == LifecycleStatus::Archived {
+        return PromptLookupResult::Archived { document };
+    }
+    if document.purpose != requested {
+        return PromptLookupResult::PurposeMismatch {
+            actual: document.purpose,
+            document,
+            requested,
+        };
+    }
+    PromptLookupResult::Available { document }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -1297,6 +1706,12 @@ pub enum PromptRepositoryError {
     Conflict,
     #[error("prompt not found")]
     NotFound,
+    #[error("prompt entry was not found")]
+    EntryNotFound,
+    #[error("protected built-in prompt cannot be edited")]
+    Protected,
+    #[error("required built-in prompt cannot be archived")]
+    Required,
     #[error("prompt repository failure: {0}")]
     Failure(String),
 }
@@ -1499,5 +1914,182 @@ mod tests {
                 PromptValidationError::MatchContextTooLarge
             ))
         ));
+    }
+
+    #[test]
+    fn prompt_rejects_reversed_timestamps_and_condense_stays_at_assembly_boundary() {
+        let entry = PromptEntry {
+            name: "test".into(),
+            content: "hello".into(),
+            ..PromptEntry::default()
+        };
+        let mut invalid = document(entry.clone());
+        invalid.created_at = TimestampMillis::new(2);
+        invalid.updated_at = TimestampMillis::new(1);
+        assert_eq!(
+            invalid.validate(),
+            Err(PromptValidationError::InvalidTimestampOrder)
+        );
+        let mut condensing = document(entry);
+        condensing.condense = true;
+        assert_eq!(
+            render_prompt(&condensing, &PromptRenderContext::default())
+                .expect("renderer preserves entries")
+                .relative
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn metadata_policy_and_entry_drafts_exclude_adapter_fields() {
+        let metadata = PromptMetadataDraft {
+            name: "draft".into(),
+            purpose: PromptPurpose::Undefined,
+            condense: false,
+            behavior_version: PromptBehaviorVersion::LegacyV1,
+        };
+        assert_eq!(
+            metadata.validate(),
+            Err(PromptValidationError::UndefinedPurpose)
+        );
+        assert!(metadata.validate().is_err());
+
+        let draft = PromptEntryDraft {
+            name: "entry".into(),
+            role: PromptEntryRole::System,
+            content: "hello".into(),
+            enabled: true,
+            injection_position: PromptEntryPosition::Relative,
+            depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: false,
+            conditions: None,
+            payload: None,
+        };
+        let raw = serde_json::to_string(&draft).expect("draft serializes");
+        assert!(!raw.contains("id"));
+        let mut value = serde_json::to_value(&draft).expect("draft value");
+        value["id"] = serde_json::json!(PromptEntryId::new());
+        assert!(serde_json::from_value::<PromptEntryDraft>(value).is_err());
+        assert!(
+            PromptEntryMutation::Add {
+                draft,
+                target: PromptEntryInsertionTarget::Append,
+            }
+            .validate()
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn renderer_skips_blank_text_but_keeps_payload_entries() {
+        let blank = PromptEntry {
+            id: PromptEntryId::new(),
+            name: "blank".into(),
+            content: "{{rules}}".into(),
+            ..PromptEntry::default()
+        };
+        let payload = PromptEntry {
+            id: PromptEntryId::new(),
+            name: "image".into(),
+            content: "{{rules}}".into(),
+            payload: Some(PromptEntryPayload::ImageSlot {
+                slot: PromptEntryImageSlot::Character,
+            }),
+            ..PromptEntry::default()
+        };
+        let mut prompt = document(blank);
+        prompt.entries.push(payload.clone());
+        let rendered = render_prompt(&prompt, &PromptRenderContext::default())
+            .expect("blank entries are valid");
+        assert_eq!(rendered.relative.len(), 1);
+        assert_eq!(rendered.relative[0].entry_id, payload.id);
+        assert!(rendered.relative[0].content.trim().is_empty());
+    }
+
+    #[test]
+    fn exact_prompt_lookup_classifies_every_state_without_fallback() {
+        let entry = PromptEntry {
+            name: "entry".into(),
+            content: "hello".into(),
+            ..PromptEntry::default()
+        };
+        assert_eq!(
+            classify_prompt_lookup(None, PromptPurpose::DirectChat),
+            PromptLookupResult::Missing
+        );
+        let mut archived = document(entry.clone());
+        archived.status = LifecycleStatus::Archived;
+        assert!(matches!(
+            classify_prompt_lookup(Some(archived), PromptPurpose::DirectChat),
+            PromptLookupResult::Archived { .. }
+        ));
+        let mismatched = document(entry.clone());
+        assert!(matches!(
+            classify_prompt_lookup(Some(mismatched), PromptPurpose::GroupChatRoleplay),
+            PromptLookupResult::PurposeMismatch { .. }
+        ));
+        let available = document(entry);
+        assert!(matches!(
+            classify_prompt_lookup(Some(available), PromptPurpose::DirectChat),
+            PromptLookupResult::Available { .. }
+        ));
+    }
+
+    #[test]
+    fn built_in_reconcile_requires_unique_stable_keys() {
+        let seed = BuiltInPromptSeed {
+            key: "app.direct".into(),
+            seed_version: 1,
+            metadata: PromptMetadataDraft {
+                name: "Direct".into(),
+                purpose: PromptPurpose::DirectChat,
+                condense: false,
+                behavior_version: PromptBehaviorVersion::LegacyV1,
+            },
+            entries: vec![],
+            required: true,
+            protected: true,
+        };
+        let request = BuiltInReconcileRequest {
+            seeds: vec![seed.clone(), seed.clone()],
+            mode: BuiltInReconcileMode::RefreshUnedited,
+        };
+        assert_eq!(request.validate(), Err(PromptBootstrapError::DuplicateKey));
+        let mut encoded = serde_json::to_value(&request).expect("reconcile value");
+        encoded["extra"] = serde_json::json!(true);
+        assert!(serde_json::from_value::<BuiltInReconcileRequest>(encoded).is_err());
+        assert_eq!(seed.validate(), Ok(()));
+        assert_eq!(
+            seed.computed_seed_digest()
+                .expect("canonical digest")
+                .as_str(),
+            "237dc93dae66036b71b2545cc946cc8d4345b1ec8daa2565f6bd8e298bd1bbf3"
+        );
+        let mut changed = seed.clone();
+        changed.metadata.name = "Direct changed".into();
+        assert_ne!(
+            seed.computed_seed_digest().expect("digest"),
+            changed.computed_seed_digest().expect("changed digest")
+        );
+        assert!(matches!(
+            seed.provenance(),
+            Ok(PromptProvenance::BuiltIn { .. })
+        ));
+    }
+
+    #[test]
+    fn prompt_library_query_is_bounded_and_uses_updated_order_contract() {
+        let query = PromptLibraryQuery::default();
+        assert_eq!(query.status, LifecycleFilter::Active);
+        assert_eq!(query.page.limit.get(), 50);
+        let encoded = serde_json::to_string(&query).expect("query serializes");
+        assert!(encoded.contains("page"));
+        assert!(encoded.contains("status"));
+        // The adapter contract deliberately documents updated_at DESC, id ASC;
+        // no created-order or unbounded list field exists on this DTO.
+        assert!(!encoded.contains("createdOrder"));
     }
 }
