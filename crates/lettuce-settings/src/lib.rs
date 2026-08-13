@@ -6,7 +6,13 @@
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
+mod global;
 mod secrets;
+
+pub use global::{
+    GLOBAL_SETTINGS_FORMAT_VERSION, GlobalSettings, GlobalSettingsStore, GlobalSettingsStoreError,
+    PureMode, StoredGlobalSettings,
+};
 
 pub use secrets::{
     HeaderName, HeaderNameError, InMemorySecretStore, SecretAvailability, SecretBackendError,

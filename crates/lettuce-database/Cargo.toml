@@ -14,4 +14,11 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+lettuce-media.workspace = true
+lettuce-models.workspace = true
+lettuce-settings.workspace = true
 lettuce-types.workspace = true
+rusqlite.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+uuid.workspace = true

@@ -80,6 +80,7 @@ define_id!(OperationId);
 define_id!(ParticipantId);
 define_id!(PersonaId);
 define_id!(PersonaVersionId);
+define_id!(ProviderAccountId);
 define_id!(RequestId);
 define_id!(ToolExecutionId);
 

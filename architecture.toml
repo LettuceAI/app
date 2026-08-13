@@ -1,5 +1,5 @@
 schema = 1
-crate_count = 40
+crate_count = 27
 composition_root = "lettuce-app"
 shared_root = "lettuce-types"
 legacy_root = "old-code"
@@ -9,48 +9,35 @@ foundation = [
   "lettuce-types",
   "lettuce-contracts",
   "lettuce-settings",
-  "lettuce-secrets",
   "lettuce-jobs",
   "lettuce-platform",
-  "lettuce-filesystem",
   "lettuce-network",
-  "lettuce-downloads",
   "lettuce-observability",
   "lettuce-database",
   "lettuce-media",
 ]
 domains = [
   "lettuce-characters",
-  "lettuce-personas",
-  "lettuce-groups",
   "lettuce-conversations",
   "lettuce-memory",
   "lettuce-companions",
-  "lettuce-lorebooks",
-  "lettuce-prompts",
-  "lettuce-safety",
+  "lettuce-context",
 ]
 ai_runtime = [
   "lettuce-models",
   "lettuce-inference",
-  "lettuce-tools",
   "lettuce-providers",
   "lettuce-local-llm",
   "lettuce-model-hub",
   "lettuce-embeddings",
   "lettuce-image-generation",
-  "lettuce-sd-runtime",
-  "lettuce-asr",
-  "lettuce-tts",
+  "lettuce-speech",
   "lettuce-creation",
 ]
 workflows = [
-  "lettuce-discovery",
   "lettuce-transfer",
-  "lettuce-backup",
   "lettuce-sync",
   "lettuce-usage",
-  "lettuce-host-api",
 ]
 composition = ["lettuce-app"]
 
@@ -60,4 +47,6 @@ sqlx = ["lettuce-database"]
 sea-orm = ["lettuce-database"]
 tauri = ["lettuce-app"]
 reqwest = ["lettuce-network"]
-keyring = ["lettuce-secrets"]
+keyring = ["lettuce-settings"]
+cap-std = ["lettuce-platform"]
+cap-primitives = ["lettuce-platform"]

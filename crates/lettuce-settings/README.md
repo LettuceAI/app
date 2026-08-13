@@ -33,7 +33,13 @@ with an observed generation, while live entries validate purpose and reject a
 stale observed generation.
 
 This slice does not implement encryption, Android Keystore, desktop keyrings,
-native secret entry, IPC, database persistence, ordinary settings sections, or
-portable backup/sync vaults. Those belong to platform/application and
-transfer/sync work once a real authenticated format exists; no placeholder vault
-or ciphertext API is exposed here.
+native secret entry, IPC, the broad legacy settings vocabulary, or portable
+backup/sync vaults. Those belong to their feature/application and transfer/sync
+work once real contracts exist; no placeholder vault or ciphertext API is
+exposed here.
+
+The database foundation adds a small closed `GlobalSettings` document and a
+synchronous persistence port. It currently holds global safety/telemetry/update
+preferences only; frontend appearance is deliberately excluded.
+The selected model is a separate typed ID with optimistic revision checks, not
+an arbitrary setting key.

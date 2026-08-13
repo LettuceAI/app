@@ -16,6 +16,7 @@ workspace = true
 [dependencies]
 async-trait.workspace = true
 serde.workspace = true
+lettuce-types.workspace = true
 thiserror.workspace = true
 uuid.workspace = true
 zeroize.workspace = true

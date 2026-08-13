@@ -54,6 +54,7 @@ lettuce-types = { path = "crates/lettuce-types" }
 lettuce-usage = { path = "crates/lettuce-usage" }
 
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
 tracing = "0.1"
@@ -61,3 +62,4 @@ tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 uuid = { version = "1", features = ["serde", "v4"] }
 zeroize = "1"
+rusqlite = { version = "0.40.2", default-features = false, features = ["bundled", "backup"] }
