@@ -5,3 +5,11 @@
 //! legacy monolith cannot leak in through premature compatibility APIs.
 
 #![deny(unsafe_op_in_unsafe_fn)]
+
+mod secrets;
+
+pub use secrets::{
+    HeaderName, HeaderNameError, InMemorySecretStore, SecretAvailability, SecretBackendError,
+    SecretOwnerId, SecretPurpose, SecretRecord, SecretRef, SecretState, SecretStatus, SecretStore,
+    SecretStoreError, SecretValue, SecretValueError,
+};
