@@ -1,6 +1,15 @@
-//! Prompt programs, lorebooks, matching, binding, and context assembly.
+//! Provider-neutral prompt programs, lorebooks, matching, and typed bindings.
 //!
-//! Prompt and lorebook behavior remain separate internal modules with one
-//! public context boundary. Provider execution and persistence stay outside.
+//! This crate is deliberately pure: the renderer and matcher accept complete
+//! snapshots, and repository traits describe synchronous lifecycle operations
+//! without exposing a database, settings store, or transaction handle.
 
 #![deny(unsafe_op_in_unsafe_fn)]
+
+mod bindings;
+mod lorebook;
+mod prompt;
+
+pub use bindings::*;
+pub use lorebook::*;
+pub use prompt::*;

@@ -64,8 +64,6 @@ macro_rules! define_id {
 
 define_id!(AssetId);
 define_id!(CharacterId);
-define_id!(CharacterRuleId);
-define_id!(CharacterVersionId);
 define_id!(ConversationId);
 define_id!(ConversationStarterId);
 define_id!(GenerationCandidateId);
@@ -83,7 +81,6 @@ define_id!(ModelArtifactId);
 define_id!(OperationId);
 define_id!(ParticipantId);
 define_id!(PersonaId);
-define_id!(PersonaVersionId);
 define_id!(PromptDocumentId);
 define_id!(PromptEntryId);
 define_id!(ProviderAccountId);
