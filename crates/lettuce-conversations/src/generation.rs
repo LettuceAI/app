@@ -14,6 +14,18 @@ use crate::validation::{
 
 pub use lettuce_jobs::IdempotencyKey;
 
+/// Derives the stable, attempt-scoped scheduler key used when starting a
+/// generation job.  Including both IDs prevents retry/recovery attempts from
+/// coalescing with their parent attempt.
+#[must_use]
+pub fn attempt_job_idempotency_key(
+    turn_id: GenerationTurnId,
+    attempt_id: GenerationAttemptId,
+) -> IdempotencyKey {
+    IdempotencyKey::new(format!("generation.{turn_id}.{attempt_id}"))
+        .expect("generated attempt job key is valid")
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GenerationOperation {
@@ -194,6 +206,9 @@ pub struct GenerationAttempt {
     pub ordinal: u16,
     pub parent_attempt_id: Option<GenerationAttemptId>,
     pub status: GenerationAttemptStatus,
+    /// A unique key for this attempt's job.  Retries and recovery children
+    /// must never reuse the parent attempt's key.
+    pub job_idempotency_key: IdempotencyKey,
     pub job_id: Option<JobId>,
     pub started_at: Option<TimestampMillis>,
     pub finished_at: Option<TimestampMillis>,
@@ -206,6 +221,7 @@ pub struct GenerationAttempt {
 #[serde(rename_all = "snake_case")]
 pub enum GenerationAttemptStatus {
     Created,
+    Preparing,
     Running,
     Succeeded,
     Failed,
@@ -215,6 +231,11 @@ pub enum GenerationAttemptStatus {
 
 impl GenerationAttempt {
     pub fn validate(&self) -> Result<(), ValidationError> {
+        if self.job_idempotency_key.as_str().is_empty() {
+            return Err(ValidationError::Blank {
+                field: "generation_attempt.job_idempotency_key",
+            });
+        }
         if self.ordinal == 0 && self.parent_attempt_id.is_some() {
             return Err(ValidationError::InvalidReference {
                 field: "generation_attempt.parent",
@@ -235,7 +256,7 @@ impl GenerationAttempt {
             self.candidate_ids.iter().copied(),
         )?;
         match self.status {
-            GenerationAttemptStatus::Created
+            GenerationAttemptStatus::Created | GenerationAttemptStatus::Preparing
                 if self.started_at.is_some() || self.finished_at.is_some() =>
             {
                 return Err(ValidationError::Invariant {
@@ -334,6 +355,11 @@ impl GenerationAttempt {
                 field: "generation_recovery.fresh_attempt",
             });
         }
+        if self.job_idempotency_key == previous_attempt.job_idempotency_key {
+            return Err(ValidationError::Duplicate {
+                field: "generation_recovery.job_idempotency_key",
+            });
+        }
         if !turn
             .attempts
             .iter()
@@ -361,7 +387,6 @@ pub struct GenerationTurn {
     pub operation: GenerationOperation,
     pub input: GenerationInput,
     pub idempotency_key: IdempotencyKey,
-    pub job_id: Option<JobId>,
     pub correlation_id: Option<RequestId>,
     pub status: GenerationTurnStatus,
     pub selected_speaker: Option<SelectedSpeakerDecision>,
@@ -420,10 +445,21 @@ impl GenerationTurn {
             "generation_turn.attempt_ids",
             self.attempts.iter().map(|attempt| attempt.id),
         )?;
+        validate_unique(
+            "generation_turn.job_idempotency_keys",
+            self.attempts
+                .iter()
+                .map(|attempt| attempt.job_idempotency_key.clone()),
+        )?;
         for (ordinal, attempt) in self.attempts.iter().enumerate() {
             if attempt.ordinal as usize != ordinal || attempt.turn_id != self.id {
                 return Err(ValidationError::Invariant {
                     field: "generation_turn.attempt_ordinals",
+                });
+            }
+            if attempt.job_idempotency_key != attempt_job_idempotency_key(self.id, attempt.id) {
+                return Err(ValidationError::Invariant {
+                    field: "generation_turn.attempt_job_idempotency_key",
                 });
             }
             let expected_parent = ordinal
@@ -567,6 +603,10 @@ impl GenerationCheckpointEnvelope {
                     field: "generation_checkpoint.sequence",
                 });
             }
+        } else if self.sequence != 1 {
+            return Err(ValidationError::Invariant {
+                field: "generation_checkpoint.first_sequence",
+            });
         }
         Ok(())
     }

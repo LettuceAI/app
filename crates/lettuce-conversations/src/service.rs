@@ -1,16 +1,28 @@
 use lettuce_types::{ConversationId, TimestampMillis};
 
 use crate::commands::{ConversationMutation, CreateConversationPlan};
-use crate::error::ConversationServiceError;
+use crate::error::{ConversationRepositoryError, ConversationServiceError};
 use crate::model::ConversationAggregate;
 use crate::ports::{
     ArchiveConversationResult, BeginGeneration, ConversationQuery, ConversationRepository,
     ConversationSummary, CreateConversationResult, EditMessageResult, ForkBranchResult,
-    GenerationCancellation, GenerationFailureResult, GenerationFinalizationResult,
-    GenerationRecoveryResult, KeysetPage, MutationCommit, ParticipantPolicyResult,
-    RestoreConversationResult, SelectBranchResult, SettingsResult, TimelinePage,
-    TombstoneMessageResult,
+    GenerationFailureResult, GenerationFinalizationResult, GenerationRecoveryResult, KeysetPage,
+    MutationCommit, ParticipantPolicyResult, RestoreConversationResult, SelectBranchResult,
+    SettingsResult, TimelinePage, TombstoneMessageResult,
 };
+
+fn verify_snapshot_references<R: ConversationRepository>(
+    repository: &R,
+    kind: &crate::model::ConversationKind,
+) -> Result<(), ConversationServiceError> {
+    for reference in crate::conversation_snapshot_references(kind) {
+        repository
+            .artifact_store()
+            .verify_snapshot(reference)
+            .map_err(ConversationRepositoryError::ArtifactReference)?;
+    }
+    Ok(())
+}
 
 /// Thin application-facing façade.  It validates command contracts and
 /// delegates atomic mutations to the repository; provider execution belongs
@@ -39,6 +51,7 @@ impl<R: ConversationRepository> ConversationManager<R> {
         now: TimestampMillis,
     ) -> Result<CreateConversationResult, ConversationServiceError> {
         plan.validate()?;
+        verify_snapshot_references(&self.repository, &plan.kind)?;
         self.repository.create(plan, now).map_err(Into::into)
     }
 
@@ -109,10 +122,32 @@ impl<R: ConversationRepository> ConversationManager<R> {
         &self,
         command: &crate::commands::CancelGeneration,
         now: TimestampMillis,
-    ) -> Result<MutationCommit<GenerationCancellation>, ConversationServiceError> {
+    ) -> Result<crate::ports::RequestCancellationResult, ConversationServiceError> {
         ConversationMutation::Cancel(command.clone()).validate()?;
         self.repository
-            .cancel_generation(command, now)
+            .request_cancellation(command, now)
+            .map_err(Into::into)
+    }
+
+    pub fn settle_cancellation(
+        &self,
+        command: &crate::commands::SettleCancellation,
+        now: TimestampMillis,
+    ) -> Result<crate::ports::SettleCancellationResult, ConversationServiceError> {
+        command.validate()?;
+        self.repository
+            .settle_cancellation(command, now)
+            .map_err(Into::into)
+    }
+
+    pub fn attach_attempt_job(
+        &self,
+        command: &crate::commands::AttachAttemptJob,
+        now: TimestampMillis,
+    ) -> Result<crate::ports::AttachAttemptJobResult, ConversationServiceError> {
+        command.validate()?;
+        self.repository
+            .attach_attempt_job(command, now)
             .map_err(Into::into)
     }
 
@@ -128,6 +163,12 @@ impl<R: ConversationRepository> ConversationManager<R> {
         usage_event_id: lettuce_types::UsageEventId,
         now: TimestampMillis,
     ) -> Result<GenerationFinalizationResult, ConversationServiceError> {
+        if let Some(replay) = &draft.replay {
+            self.repository
+                .artifact_store()
+                .verify_replay(replay)
+                .map_err(ConversationRepositoryError::ArtifactReference)?;
+        }
         self.repository
             .finalize_generation(
                 turn_id,
@@ -151,6 +192,7 @@ impl<R: ConversationRepository> ConversationManager<R> {
         expected_turn_revision: lettuce_types::Revision,
         operation: &crate::commands::OperationToken,
         failure: crate::generation::GenerationFailureCode,
+        usage_event_id: lettuce_types::UsageEventId,
         now: TimestampMillis,
     ) -> Result<GenerationFailureResult, ConversationServiceError> {
         self.repository
@@ -161,6 +203,7 @@ impl<R: ConversationRepository> ConversationManager<R> {
                 expected_turn_revision,
                 operation,
                 failure,
+                usage_event_id,
                 now,
             )
             .map_err(Into::into)

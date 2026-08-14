@@ -319,6 +319,55 @@ pub struct CancelGeneration {
     pub operation: OperationToken,
 }
 
+/// The first half of cancellation.  This mutation only records the user's
+/// intent and makes success finalization impossible.  The job is cancelled
+/// outside the repository before [`SettleCancellation`] is committed.
+pub type RequestCancellation = CancelGeneration;
+
+/// The second half of cancellation, committed after the runtime job has been
+/// asked to stop and usage has been recorded.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SettleCancellation {
+    pub conversation_id: ConversationId,
+    pub turn_id: GenerationTurnId,
+    pub attempt_id: GenerationAttemptId,
+    pub expected_revision: Revision,
+    pub expected_turn_revision: Revision,
+    pub operation: OperationToken,
+    pub usage_event_id: lettuce_types::UsageEventId,
+}
+
+impl SettleCancellation {
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        if self.expected_revision.get() == 0 || self.expected_turn_revision.get() == 0 {
+            return Err(ValidationError::ZeroRevision);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AttachAttemptJob {
+    pub conversation_id: ConversationId,
+    pub turn_id: GenerationTurnId,
+    pub attempt_id: GenerationAttemptId,
+    pub expected_revision: Revision,
+    pub expected_turn_revision: Revision,
+    pub operation: OperationToken,
+    pub job_id: lettuce_types::JobId,
+}
+
+impl AttachAttemptJob {
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        if self.expected_revision.get() == 0 || self.expected_turn_revision.get() == 0 {
+            return Err(ValidationError::ZeroRevision);
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ChooseCandidate {

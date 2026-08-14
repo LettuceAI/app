@@ -39,10 +39,16 @@ pub enum ConversationRepositoryError {
     },
     #[error("the conversation mutation conflicts with current state")]
     Conflict,
+    #[error("the target generation attempt already has a job")]
+    JobAlreadyAttached,
+    #[error("the job is already owned by another generation attempt")]
+    JobInUse,
     #[error("the conversation has a dependent record")]
     Dependency,
     #[error("the conversation operation is invalid")]
     Invalid(#[from] ValidationError),
+    #[error("a conversation artifact reference could not be verified")]
+    ArtifactReference(#[source] crate::ArtifactError),
     #[error("the conversation operation is unsupported")]
     Unsupported,
     #[error("conversation storage is unavailable")]

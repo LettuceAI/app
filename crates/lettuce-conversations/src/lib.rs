@@ -5,6 +5,7 @@
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
+mod artifact;
 mod commands;
 mod content;
 mod error;
@@ -15,6 +16,7 @@ mod service;
 mod snapshot;
 mod validation;
 
+pub use artifact::*;
 pub use commands::*;
 pub use content::*;
 pub use error::*;
@@ -26,12 +28,112 @@ pub use snapshot::*;
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Mutex;
+
     use super::*;
     use lettuce_types::{
         CharacterId, ContentHash, ConversationBranchId, ConversationId, ConversationParticipantId,
         GenerationAttemptId, GenerationTurnId, MessageCandidateId, MessageId, MessageRevisionId,
         ReplayArtifactId, Revision, SnapshotArtifactId, TimestampMillis, UsageEventId,
     };
+
+    #[derive(Default)]
+    struct MemoryArtifactStore {
+        snapshots: Mutex<Vec<ProtectedSnapshotRef>>,
+        replays: Mutex<Vec<ReplayArtifactRef>>,
+    }
+
+    impl ConversationArtifactStore for MemoryArtifactStore {
+        fn put_snapshot(
+            &self,
+            draft: SnapshotArtifactDraft,
+        ) -> Result<ProtectedSnapshotRef, ArtifactError> {
+            draft.validate()?;
+            let reference = draft.reference();
+            let mut snapshots = self.snapshots.lock().expect("test lock");
+            if let Some(existing) = snapshots
+                .iter()
+                .find(|existing| existing.artifact_id == reference.artifact_id)
+            {
+                if existing.digest != reference.digest {
+                    return Err(ArtifactError::ImmutableConflict);
+                }
+                return Ok(existing.clone());
+            }
+            snapshots.push(reference.clone());
+            Ok(reference)
+        }
+
+        fn verify_snapshot(&self, reference: &ProtectedSnapshotRef) -> Result<(), ArtifactError> {
+            if self
+                .snapshots
+                .lock()
+                .expect("test lock")
+                .iter()
+                .any(|stored| stored == reference)
+            {
+                Ok(())
+            } else {
+                Err(ArtifactError::NotFound)
+            }
+        }
+
+        fn cleanup_orphan_snapshot(
+            &self,
+            artifact_id: SnapshotArtifactId,
+        ) -> Result<(), ArtifactError> {
+            self.snapshots
+                .lock()
+                .expect("test lock")
+                .retain(|stored| stored.artifact_id != artifact_id);
+            Ok(())
+        }
+
+        fn put_replay(
+            &self,
+            draft: ReplayArtifactDraft,
+        ) -> Result<ReplayArtifactRef, ArtifactError> {
+            draft.validate()?;
+            let reference = draft.reference();
+            let mut replays = self.replays.lock().expect("test lock");
+            if let Some(existing) = replays
+                .iter()
+                .find(|existing| existing.artifact_id == reference.artifact_id)
+            {
+                if existing.digest != reference.digest {
+                    return Err(ArtifactError::ImmutableConflict);
+                }
+                return Ok(existing.clone());
+            }
+            replays.push(reference.clone());
+            Ok(reference)
+        }
+
+        fn verify_replay(&self, reference: &ReplayArtifactRef) -> Result<(), ArtifactError> {
+            if self
+                .replays
+                .lock()
+                .expect("test lock")
+                .iter()
+                .any(|stored| stored == reference)
+            {
+                Ok(())
+            } else {
+                Err(ArtifactError::NotFound)
+            }
+        }
+
+        fn cleanup_orphan_replay(
+            &self,
+            artifact_id: ReplayArtifactId,
+        ) -> Result<(), ArtifactError> {
+            self.replays
+                .lock()
+                .expect("test lock")
+                .retain(|stored| stored.artifact_id != artifact_id);
+            Ok(())
+        }
+    }
 
     fn snapshot_ref(source: SnapshotSource) -> ProtectedSnapshotRef {
         ProtectedSnapshotRef {
@@ -157,6 +259,151 @@ mod tests {
     }
 
     #[test]
+    fn checkpoint_sequence_must_start_at_one() {
+        let event = GenerationCheckpointEnvelope {
+            turn_id: GenerationTurnId::new(),
+            attempt_id: GenerationAttemptId::new(),
+            job_id: None,
+            correlation_id: None,
+            sequence: 2,
+            event: GenerationCheckpointEvent::Completed,
+        };
+        assert!(event.validate_after(None).is_err());
+        let first = GenerationCheckpointEnvelope {
+            sequence: 1,
+            ..event
+        };
+        assert!(first.validate_after(None).is_ok());
+    }
+
+    #[test]
+    fn protected_artifact_bytes_are_bounded_and_redacted() {
+        let secret = b"provider payload that must never be logged".to_vec();
+        let bytes = ProtectedArtifactBytes::new(secret.clone()).expect("payload");
+        let debug = format!("{bytes:?}");
+        assert!(!debug.contains("provider payload"));
+        assert_eq!(bytes.len(), secret.len());
+        assert_eq!(bytes.digest().as_str().len(), 64);
+        assert!(matches!(
+            ProtectedArtifactBytes::new(vec![0; 16 * 1024 * 1024 + 1]),
+            Err(ArtifactError::TooLarge { .. })
+        ));
+    }
+
+    #[test]
+    fn trusted_transfer_descriptors_contain_metadata_only() {
+        let descriptor = TrustedArtifactDescriptor::Replay(ReplayArtifactRef {
+            artifact_id: ReplayArtifactId::new(),
+            digest: ContentHash::parse("ab".repeat(32)).expect("digest"),
+            schema_version: 1,
+            byte_size: 32,
+            retention: ReplayRetention::Conversation,
+            codec: ReplayCodec::Json,
+        });
+        let debug = format!("{descriptor:?}");
+        assert!(!debug.contains("payload"));
+        assert!(!debug.contains("bytes"));
+    }
+
+    #[test]
+    fn job_attachment_conflicts_are_typed_and_distinct() {
+        let mut index = JobOwnershipIndex::default();
+        let target = AttemptJobOwner {
+            conversation_id: ConversationId::new(),
+            turn_id: GenerationTurnId::new(),
+            attempt_id: GenerationAttemptId::new(),
+        };
+        let other = AttemptJobOwner {
+            conversation_id: ConversationId::new(),
+            turn_id: GenerationTurnId::new(),
+            attempt_id: GenerationAttemptId::new(),
+        };
+        let job_id = lettuce_types::JobId::new();
+        assert!(index.attach(target, None, job_id).is_ok());
+        assert_eq!(
+            index.attach(target, Some(job_id), lettuce_types::JobId::new()),
+            Err(ConversationRepositoryError::JobAlreadyAttached)
+        );
+        assert_eq!(
+            index.attach(other, None, job_id),
+            Err(ConversationRepositoryError::JobInUse)
+        );
+    }
+
+    #[test]
+    fn artifact_draft_rejects_digest_mismatch() {
+        let source_id = CharacterId::new();
+        let draft = SnapshotArtifactDraft {
+            source: SnapshotSource::Character(source_id),
+            source_revision: Revision::INITIAL,
+            artifact_id: SnapshotArtifactId::new(),
+            digest: ContentHash::parse("ab".repeat(32)).expect("digest"),
+            schema_version: 1,
+            byte_size: 7,
+            codec: ArtifactCodec::Json,
+            retention: ArtifactRetention::Conversation,
+            bytes: ProtectedArtifactBytes::new(b"payload".to_vec()).expect("payload"),
+        };
+        assert!(matches!(
+            draft.validate(),
+            Err(ArtifactError::DigestMismatch)
+        ));
+        let bytes = ProtectedArtifactBytes::new(b"payload".to_vec()).expect("payload");
+        let sized = SnapshotArtifactDraft {
+            source: SnapshotSource::Character(source_id),
+            source_revision: Revision::INITIAL,
+            artifact_id: SnapshotArtifactId::new(),
+            digest: bytes.digest(),
+            schema_version: 1,
+            byte_size: 1,
+            codec: ArtifactCodec::Json,
+            retention: ArtifactRetention::Conversation,
+            bytes,
+        };
+        assert!(matches!(sized.validate(), Err(ArtifactError::SizeMismatch)));
+    }
+
+    #[test]
+    fn artifact_store_deduplicates_identical_identity_and_rejects_rewrite() {
+        let store = MemoryArtifactStore::default();
+        let source_id = CharacterId::new();
+        let artifact_id = SnapshotArtifactId::new();
+        let make_draft = |payload: &[u8]| {
+            let bytes = ProtectedArtifactBytes::new(payload.to_vec()).expect("payload");
+            SnapshotArtifactDraft {
+                source: SnapshotSource::Character(source_id),
+                source_revision: Revision::INITIAL,
+                artifact_id,
+                digest: bytes.digest(),
+                schema_version: 1,
+                byte_size: bytes.len() as u64,
+                codec: ArtifactCodec::Json,
+                retention: ArtifactRetention::Conversation,
+                bytes,
+            }
+        };
+        let first = store.put_snapshot(make_draft(b"first")).expect("insert");
+        let same = store.put_snapshot(make_draft(b"first")).expect("dedupe");
+        assert_eq!(first, same);
+        let replacement = make_draft(b"second");
+        assert!(matches!(
+            store.put_snapshot(replacement),
+            Err(ArtifactError::ImmutableConflict)
+        ));
+        assert!(store.verify_snapshot(&first).is_ok());
+        let mut orphan_draft = make_draft(b"orphan");
+        orphan_draft.artifact_id = SnapshotArtifactId::new();
+        let orphan = store.put_snapshot(orphan_draft).expect("orphan insert");
+        store
+            .cleanup_orphan_snapshot(orphan.artifact_id)
+            .expect("orphan cleanup");
+        assert!(matches!(
+            store.verify_snapshot(&orphan),
+            Err(ArtifactError::NotFound)
+        ));
+    }
+
+    #[test]
     fn checkpoint_event_is_safe_reference_only() {
         let event = GenerationCheckpointEvent::UsageRecorded {
             usage_event_id: UsageEventId::new(),
@@ -218,6 +465,132 @@ mod tests {
             !GenerationTurnStatus::CancellationRequested
                 .can_transition_to(GenerationTurnStatus::Finalizing)
         );
+    }
+
+    #[test]
+    fn usage_provenance_is_required_only_when_counters_are_known() {
+        let base = UsageRecord {
+            turn_id: GenerationTurnId::new(),
+            attempt_id: GenerationAttemptId::new(),
+            outcome: UsageOutcome::Succeeded,
+            usage: UsageCounters::Known(InferenceUsage {
+                input_tokens: 1,
+                output_tokens: 1,
+            }),
+            model_profile_id: None,
+            model_revision: None,
+            provider_account_id: None,
+            provider_account_revision: None,
+            recorded_at: TimestampMillis::UNIX_EPOCH,
+        };
+        assert!(base.validate().is_err());
+        let known = UsageRecord {
+            model_profile_id: Some(lettuce_types::ModelProfileId::new()),
+            model_revision: Some(Revision::INITIAL),
+            provider_account_id: Some(lettuce_types::ProviderAccountId::new()),
+            provider_account_revision: Some(Revision::INITIAL),
+            ..base.clone()
+        };
+        assert!(known.validate().is_ok());
+        let unavailable = UsageRecord {
+            usage: UsageCounters::Unavailable(UsageUnavailableReason::ProviderOmitted),
+            ..base
+        };
+        assert!(unavailable.validate().is_ok());
+        let partial = UsageRecord {
+            model_profile_id: Some(lettuce_types::ModelProfileId::new()),
+            ..unavailable
+        };
+        assert!(partial.validate().is_err());
+    }
+
+    #[test]
+    fn terminal_attempt_requires_usage_event() {
+        let mut attempt = interrupted_attempt(GenerationTurnId::new());
+        attempt.usage_event_id = None;
+        assert!(attempt.validate().is_err());
+    }
+
+    #[test]
+    fn attempt_keys_are_unique_and_recovery_cannot_reuse_them() {
+        let previous = interrupted_attempt(GenerationTurnId::new());
+        let turn = interrupted_turn(previous.clone());
+        let mut child = previous.clone();
+        child.id = GenerationAttemptId::new();
+        child.ordinal = 1;
+        child.parent_attempt_id = Some(previous.id);
+        assert!(child.validate_against(&previous, &turn).is_err());
+        let mut duplicate_turn = turn.clone();
+        duplicate_turn.attempts.push(child);
+        assert!(duplicate_turn.validate(false).is_err());
+    }
+
+    #[test]
+    fn attempt_key_is_bound_to_its_turn_and_attempt_identity() {
+        let original_turn_id = GenerationTurnId::new();
+        let mut attempt = interrupted_attempt(original_turn_id);
+        let mut turn = interrupted_turn(attempt.clone());
+        turn.id = GenerationTurnId::new();
+        attempt.turn_id = turn.id;
+        turn.attempts = vec![attempt];
+        assert!(turn.validate(false).is_err());
+    }
+
+    #[test]
+    fn cancellation_settlement_carries_usage_and_operation_cas() {
+        let request = RequestCancellation {
+            conversation_id: ConversationId::new(),
+            turn_id: GenerationTurnId::new(),
+            attempt_id: GenerationAttemptId::new(),
+            expected_revision: Revision::INITIAL,
+            expected_turn_revision: Revision::INITIAL,
+            operation: OperationToken {
+                key: lettuce_jobs::IdempotencyKey::new("cancel-request").expect("key"),
+                request_digest: ContentHash::parse("ab".repeat(32)).expect("digest"),
+            },
+        };
+        assert!(ConversationMutation::Cancel(request).validate().is_ok());
+        let settle = SettleCancellation {
+            conversation_id: ConversationId::new(),
+            turn_id: GenerationTurnId::new(),
+            attempt_id: GenerationAttemptId::new(),
+            expected_revision: Revision::INITIAL,
+            expected_turn_revision: Revision::INITIAL,
+            operation: OperationToken {
+                key: lettuce_jobs::IdempotencyKey::new("cancel-settle").expect("key"),
+                request_digest: ContentHash::parse("cd".repeat(32)).expect("digest"),
+            },
+            usage_event_id: UsageEventId::new(),
+        };
+        assert!(settle.validate().is_ok());
+    }
+
+    #[test]
+    fn finalized_outbox_event_contains_terminal_refs() {
+        let conversation_id = ConversationId::new();
+        let event = ConversationOutboxEvent::TurnFinalized {
+            conversation_id,
+            branch_id: ConversationBranchId::new(),
+            turn_id: GenerationTurnId::new(),
+            attempt_id: GenerationAttemptId::new(),
+            message_id: MessageId::new(),
+            candidate_id: MessageCandidateId::new(),
+            revision_id: Some(MessageRevisionId::new()),
+            effective_time: TimestampMillis::UNIX_EPOCH,
+            usage_event_id: UsageEventId::new(),
+            used_memory_revision_ids: vec![lettuce_types::MemoryRevisionId::new()],
+        };
+        let record = ConversationOutboxRecord {
+            format_version: 1,
+            id: lettuce_types::OutboxEventId::new(),
+            conversation_id,
+            conversation_revision: Revision::INITIAL,
+            sequence: 1,
+            operation_record_id: lettuce_types::OperationRecordId::new(),
+            at: TimestampMillis::UNIX_EPOCH,
+            event,
+        };
+        assert!(record.validate().is_ok());
     }
 
     #[test]
@@ -343,7 +716,29 @@ mod tests {
             at: TimestampMillis::UNIX_EPOCH,
             event: ConversationOutboxEvent::TurnFailed {
                 conversation_id: ConversationId::new(),
+                branch_id: ConversationBranchId::new(),
                 turn_id: GenerationTurnId::new(),
+                attempt_id: GenerationAttemptId::new(),
+                usage_event_id: UsageEventId::new(),
+                used_memory_revision_ids: Vec::new(),
+                at: TimestampMillis::UNIX_EPOCH,
+            },
+        };
+        assert!(record.validate().is_err());
+    }
+
+    #[test]
+    fn outbox_rejects_event_conversation_header_mismatch() {
+        let record = ConversationOutboxRecord {
+            format_version: 1,
+            id: lettuce_types::OutboxEventId::new(),
+            conversation_id: ConversationId::new(),
+            conversation_revision: Revision::INITIAL,
+            sequence: 1,
+            operation_record_id: lettuce_types::OperationRecordId::new(),
+            at: TimestampMillis::UNIX_EPOCH,
+            event: ConversationOutboxEvent::ConversationTombstoned {
+                conversation_id: ConversationId::new(),
                 at: TimestampMillis::UNIX_EPOCH,
             },
         };
@@ -909,12 +1304,14 @@ mod tests {
     }
 
     fn interrupted_attempt(turn_id: GenerationTurnId) -> GenerationAttempt {
+        let id = GenerationAttemptId::new();
         GenerationAttempt {
-            id: GenerationAttemptId::new(),
+            id,
             turn_id,
             ordinal: 0,
             parent_attempt_id: None,
             status: GenerationAttemptStatus::Interrupted,
+            job_idempotency_key: attempt_job_idempotency_key(turn_id, id),
             job_id: Some(lettuce_types::JobId::new()),
             started_at: Some(TimestampMillis::new(1)),
             finished_at: Some(TimestampMillis::new(2)),
@@ -934,7 +1331,6 @@ mod tests {
                 head_message_id: MessageId::new(),
             },
             idempotency_key: lettuce_jobs::IdempotencyKey::new("recovery-test").expect("key"),
-            job_id: attempt.job_id,
             correlation_id: None,
             status: GenerationTurnStatus::Interrupted,
             selected_speaker: None,
@@ -956,12 +1352,14 @@ mod tests {
     fn recovery_requires_a_new_created_child_attempt() {
         let previous = interrupted_attempt(GenerationTurnId::new());
         let turn = interrupted_turn(previous.clone());
+        let child_id = GenerationAttemptId::new();
         let child = GenerationAttempt {
-            id: GenerationAttemptId::new(),
+            id: child_id,
             turn_id: turn.id,
             ordinal: 1,
             parent_attempt_id: Some(previous.id),
             status: GenerationAttemptStatus::Created,
+            job_idempotency_key: attempt_job_idempotency_key(turn.id, child_id),
             job_id: None,
             started_at: None,
             finished_at: None,

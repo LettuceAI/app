@@ -344,11 +344,13 @@ name = "lettuce-conversations"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "blake3",
  "lettuce-jobs",
  "lettuce-media",
  "lettuce-types",
  "serde",
  "thiserror",
+ "zeroize",
 ]
 
 [[package]]

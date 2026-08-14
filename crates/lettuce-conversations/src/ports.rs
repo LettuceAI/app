@@ -7,9 +7,9 @@ use lettuce_types::{
 };
 
 use crate::commands::{
-    ArchiveConversation, ChooseCandidate, ContinueConversation, CreateConversationPlan,
-    EditMessage, ForkBranch, RegenerateCandidate, RestoreConversation, RetryGeneration,
-    SelectBranch, SendConversation, TombstoneMessage,
+    ArchiveConversation, AttachAttemptJob, ChooseCandidate, ContinueConversation,
+    CreateConversationPlan, EditMessage, ForkBranch, RegenerateCandidate, RestoreConversation,
+    RetryGeneration, SelectBranch, SendConversation, SettleCancellation, TombstoneMessage,
 };
 use crate::content::{Message, MessageCandidate, MessagePart, MessageRevision, ReplayArtifactRef};
 use crate::error::ConversationRepositoryError;
@@ -310,20 +310,27 @@ pub struct GenerationFinalization {
     pub candidate: MessageCandidate,
     pub revision: Option<MessageRevision>,
     pub asset_reference_deltas: Vec<AssetReferenceDelta>,
+    pub usage_event_id: UsageEventId,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GenerationFailure {
     pub turn: GenerationTurn,
     pub failure: crate::generation::GenerationFailureCode,
+    pub usage_event_id: UsageEventId,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GenerationCancellation {
     pub turn: GenerationTurn,
+    pub attempt_id: GenerationAttemptId,
+    pub usage_event_id: UsageEventId,
 }
 
-pub type CancelGenerationResult = MutationCommit<GenerationCancellation>;
+pub type RequestCancellationResult = MutationCommit<GenerationTurn>;
+pub type SettleCancellationResult = MutationCommit<GenerationCancellation>;
+pub type CancelGenerationResult = SettleCancellationResult;
+pub type AttachAttemptJobResult = MutationCommit<GenerationAttempt>;
 pub type ChooseCandidateResult = MutationCommit<Message>;
 pub type ArchiveConversationResult = MutationCommit<Conversation>;
 pub type RestoreConversationResult = MutationCommit<Conversation>;
@@ -429,13 +436,36 @@ pub enum ConversationOutboxEvent {
         branch_id: ConversationBranchId,
         turn_id: GenerationTurnId,
         attempt_id: GenerationAttemptId,
-        candidate_id: Option<MessageCandidateId>,
+        message_id: MessageId,
+        candidate_id: MessageCandidateId,
         revision_id: Option<MessageRevisionId>,
-        at: TimestampMillis,
+        effective_time: TimestampMillis,
+        usage_event_id: UsageEventId,
+        used_memory_revision_ids: Vec<lettuce_types::MemoryRevisionId>,
     },
     TurnFailed {
         conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
         turn_id: GenerationTurnId,
+        attempt_id: GenerationAttemptId,
+        usage_event_id: UsageEventId,
+        used_memory_revision_ids: Vec<lettuce_types::MemoryRevisionId>,
+        at: TimestampMillis,
+    },
+    TurnCancellationRequested {
+        conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
+        turn_id: GenerationTurnId,
+        attempt_id: GenerationAttemptId,
+        at: TimestampMillis,
+    },
+    TurnCancelled {
+        conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
+        turn_id: GenerationTurnId,
+        attempt_id: GenerationAttemptId,
+        usage_event_id: UsageEventId,
+        used_memory_revision_ids: Vec<lettuce_types::MemoryRevisionId>,
         at: TimestampMillis,
     },
     BranchForked {
@@ -481,6 +511,43 @@ impl ConversationOutboxRecord {
                 field: "outbox.sequence_revision",
             });
         }
+        let event_conversation_id = match &self.event {
+            ConversationOutboxEvent::MessageCommitted {
+                conversation_id, ..
+            }
+            | ConversationOutboxEvent::MessageRevised {
+                conversation_id, ..
+            }
+            | ConversationOutboxEvent::MessageTombstoned {
+                conversation_id, ..
+            }
+            | ConversationOutboxEvent::TurnFinalized {
+                conversation_id, ..
+            }
+            | ConversationOutboxEvent::TurnFailed {
+                conversation_id, ..
+            }
+            | ConversationOutboxEvent::TurnCancellationRequested {
+                conversation_id, ..
+            }
+            | ConversationOutboxEvent::TurnCancelled {
+                conversation_id, ..
+            }
+            | ConversationOutboxEvent::BranchForked {
+                conversation_id, ..
+            }
+            | ConversationOutboxEvent::ConversationTombstoned {
+                conversation_id, ..
+            }
+            | ConversationOutboxEvent::AssetReferencesChanged {
+                conversation_id, ..
+            } => *conversation_id,
+        };
+        if event_conversation_id != self.conversation_id {
+            return Err(crate::ValidationError::InvalidReference {
+                field: "outbox.conversation_id",
+            });
+        }
         if let ConversationOutboxEvent::MessageTombstoned {
             affected_message_ids,
             affected_revision_ids,
@@ -498,6 +565,27 @@ impl ConversationOutboxRecord {
                 });
             }
         }
+        let used_memory_revision_ids = match &self.event {
+            ConversationOutboxEvent::TurnFinalized {
+                used_memory_revision_ids,
+                ..
+            }
+            | ConversationOutboxEvent::TurnFailed {
+                used_memory_revision_ids,
+                ..
+            }
+            | ConversationOutboxEvent::TurnCancelled {
+                used_memory_revision_ids,
+                ..
+            } => used_memory_revision_ids,
+            _ => return Ok(()),
+        };
+        if used_memory_revision_ids.len() > crate::validation::MAX_MEMORY_REVISIONS {
+            return Err(crate::ValidationError::TooMany {
+                field: "outbox.used_memory_revision_ids",
+                max: crate::validation::MAX_MEMORY_REVISIONS,
+            });
+        }
         Ok(())
     }
 }
@@ -509,6 +597,7 @@ pub enum OperationKind {
     Continue,
     Regenerate,
     Retry,
+    Checkpoint,
     Cancel,
     Finalize,
     Fail,
@@ -522,6 +611,7 @@ pub enum OperationKind {
     Restore,
     ParticipantPolicy,
     Settings,
+    AttachJob,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -541,6 +631,39 @@ pub struct OperationRecord {
     pub operation: crate::commands::OperationToken,
     pub result: OperationResultRef,
     pub created_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct AttemptJobOwner {
+    pub conversation_id: ConversationId,
+    pub turn_id: GenerationTurnId,
+    pub attempt_id: GenerationAttemptId,
+}
+
+/// Deterministic reference index for the repository-wide attach invariant.
+/// SQLite adapters enforce the same rule with a partial unique index on
+/// `generation_attempts(job_id)` inside the attach transaction.
+#[derive(Debug, Default)]
+pub struct JobOwnershipIndex {
+    owners: std::collections::HashMap<JobId, AttemptJobOwner>,
+}
+
+impl JobOwnershipIndex {
+    pub fn attach(
+        &mut self,
+        target: AttemptJobOwner,
+        current_job_id: Option<JobId>,
+        requested_job_id: JobId,
+    ) -> Result<(), ConversationRepositoryError> {
+        if current_job_id.is_some() {
+            return Err(ConversationRepositoryError::JobAlreadyAttached);
+        }
+        if self.owners.contains_key(&requested_job_id) {
+            return Err(ConversationRepositoryError::JobInUse);
+        }
+        self.owners.insert(requested_job_id, target);
+        Ok(())
+    }
 }
 
 impl OperationRecord {
@@ -568,6 +691,13 @@ impl OperationRecord {
 /// begin/finalize operation is one transaction in an adapter, while
 /// network/provider work occurs outside it.  Read methods return plain values.
 pub trait ConversationRepository: Send + Sync {
+    /// The repository's same-database artifact verifier. Mutating adapters
+    /// must use this verifier before staging `create`/`finalize` rows and
+    /// before committing them with their operation/outbox records.
+    fn artifact_store(&self) -> &dyn crate::ConversationArtifactStore;
+    /// Before staging this mutation, verify every launch snapshot reference
+    /// through [`Self::artifact_store`]. The verification and aggregate,
+    /// operation, and outbox inserts belong to one database transaction.
     fn create(
         &self,
         plan: &CreateConversationPlan,
@@ -645,10 +775,14 @@ pub trait ConversationRepository: Send + Sync {
         &self,
         turn_id: GenerationTurnId,
         expected_turn_revision: lettuce_types::Revision,
+        operation: &crate::commands::OperationToken,
         event: GenerationCheckpointEnvelope,
         now: TimestampMillis,
     ) -> Result<AppendCheckpointResult, ConversationRepositoryError>;
     #[allow(clippy::too_many_arguments)]
+    /// Before staging this mutation, verify the exact replay reference in the
+    /// draft through [`Self::artifact_store`]. A failed pre-staging write must
+    /// use the store's orphan-cleanup contract.
     fn finalize_generation(
         &self,
         turn_id: GenerationTurnId,
@@ -669,13 +803,30 @@ pub trait ConversationRepository: Send + Sync {
         expected_turn_revision: lettuce_types::Revision,
         operation: &crate::commands::OperationToken,
         failure: crate::generation::GenerationFailureCode,
+        usage_event_id: UsageEventId,
         now: TimestampMillis,
     ) -> Result<GenerationFailureResult, ConversationRepositoryError>;
-    fn cancel_generation(
+    fn request_cancellation(
         &self,
         command: &crate::commands::CancelGeneration,
         now: TimestampMillis,
-    ) -> Result<CancelGenerationResult, ConversationRepositoryError>;
+    ) -> Result<RequestCancellationResult, ConversationRepositoryError>;
+    fn settle_cancellation(
+        &self,
+        command: &SettleCancellation,
+        now: TimestampMillis,
+    ) -> Result<SettleCancellationResult, ConversationRepositoryError>;
+    /// Atomically attaches a job only when the target attempt is still
+    /// unattached and in a pre-run state. The uniqueness check is repository
+    /// wide: a non-null `JobId` may belong to exactly one attempt across all
+    /// conversations. Adapters report [`ConversationRepositoryError::JobAlreadyAttached`]
+    /// for a populated target and `JobInUse` when another attempt owns it.
+    /// M8 must enforce this with a partial unique index on `job_id`.
+    fn attach_attempt_job(
+        &self,
+        command: &AttachAttemptJob,
+        now: TimestampMillis,
+    ) -> Result<AttachAttemptJobResult, ConversationRepositoryError>;
     fn recover_generation(
         &self,
         turn_id: GenerationTurnId,
@@ -1017,11 +1168,44 @@ pub struct UsageRecord {
     pub attempt_id: GenerationAttemptId,
     pub outcome: UsageOutcome,
     pub usage: UsageCounters,
-    pub model_profile_id: lettuce_types::ModelProfileId,
-    pub model_revision: lettuce_types::Revision,
-    pub provider_account_id: lettuce_types::ProviderAccountId,
-    pub provider_account_revision: lettuce_types::Revision,
+    pub model_profile_id: Option<lettuce_types::ModelProfileId>,
+    pub model_revision: Option<lettuce_types::Revision>,
+    pub provider_account_id: Option<lettuce_types::ProviderAccountId>,
+    pub provider_account_revision: Option<lettuce_types::Revision>,
     pub recorded_at: TimestampMillis,
+}
+
+impl UsageRecord {
+    pub fn validate(&self) -> Result<(), crate::ValidationError> {
+        let model_pair_complete = self.model_profile_id.is_some() == self.model_revision.is_some();
+        let provider_pair_complete =
+            self.provider_account_id.is_some() == self.provider_account_revision.is_some();
+        if !model_pair_complete || !provider_pair_complete {
+            return Err(crate::ValidationError::InvalidReference {
+                field: "usage_record.provenance_pair",
+            });
+        }
+        match &self.usage {
+            UsageCounters::Known(_) => {
+                if self.model_profile_id.is_none() || self.provider_account_id.is_none() {
+                    return Err(crate::ValidationError::InvalidReference {
+                        field: "usage_record.known_provenance",
+                    });
+                }
+            }
+            UsageCounters::Unavailable(_) => {}
+        }
+        if self
+            .model_revision
+            .is_some_and(|revision| revision.get() == 0)
+            || self
+                .provider_account_revision
+                .is_some_and(|revision| revision.get() == 0)
+        {
+            return Err(crate::ValidationError::ZeroRevision);
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1112,14 +1296,16 @@ pub trait UsagePort: Send + Sync {
 
 #[async_trait]
 pub trait JobPort: Send + Sync {
-    async fn start(
-        &self,
-        turn_id: GenerationTurnId,
-        attempt_id: GenerationAttemptId,
-        idempotency_key: &IdempotencyKey,
-    ) -> Result<JobId, PortError>;
+    async fn start(&self, spec: AttemptJobSpec) -> Result<JobId, PortError>;
     async fn cancel(&self, job_id: JobId) -> Result<(), PortError>;
     async fn emit(&self, event: GenerationCheckpointEnvelope) -> Result<(), PortError>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AttemptJobSpec {
+    pub turn_id: GenerationTurnId,
+    pub attempt_id: GenerationAttemptId,
+    pub idempotency_key: IdempotencyKey,
 }
 
 #[async_trait]

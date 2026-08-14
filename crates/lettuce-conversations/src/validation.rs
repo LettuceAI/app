@@ -11,6 +11,7 @@ pub(crate) const MAX_PARTICIPANTS: usize = 256;
 pub(crate) const MAX_BRANCHES: usize = 10_000;
 pub(crate) const MAX_ATTEMPTS: usize = 128;
 pub(crate) const MAX_LOREBOOKS: usize = 128;
+pub(crate) const MAX_MEMORY_REVISIONS: usize = 256;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
