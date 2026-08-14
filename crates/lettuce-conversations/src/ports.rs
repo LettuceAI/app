@@ -1,0 +1,1151 @@
+use async_trait::async_trait;
+use lettuce_media::AssetRetainer;
+use lettuce_types::{
+    ContentHash, ConversationBranchId, ConversationId, ConversationParticipantId,
+    GenerationAttemptId, GenerationTurnId, JobId, MessageCandidateId, MessageId, MessageRevisionId,
+    OperationRecordId, Page, PageRequest, TimestampMillis, UsageEventId,
+};
+
+use crate::commands::{
+    ArchiveConversation, ChooseCandidate, ContinueConversation, CreateConversationPlan,
+    EditMessage, ForkBranch, RegenerateCandidate, RestoreConversation, RetryGeneration,
+    SelectBranch, SendConversation, TombstoneMessage,
+};
+use crate::content::{Message, MessageCandidate, MessagePart, MessageRevision, ReplayArtifactRef};
+use crate::error::ConversationRepositoryError;
+use crate::generation::{
+    GenerationAttempt, GenerationCheckpointEnvelope, GenerationCheckpointEvent,
+    GenerationOperation, GenerationTurn, IdempotencyKey,
+};
+use crate::model::{Conversation, ConversationAggregate, ConversationBranch};
+use crate::snapshot::{GroupConversationDetails, ModelSelectionSnapshot};
+
+/// A bounded keyset result.  Implementations must never fetch more than the
+/// caller's `PageRequest.limit` and should return an opaque continuation token.
+pub type KeysetPage<T> = Page<T>;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConversationSummary {
+    pub id: ConversationId,
+    pub title: String,
+    pub lifecycle: crate::model::ConversationLifecycle,
+    pub kind: ConversationKindTag,
+    pub revision: lettuce_types::Revision,
+    pub updated_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConversationKindTag {
+    Direct,
+    Group,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ConversationQuery {
+    pub lifecycle: Option<crate::model::ConversationLifecycle>,
+    pub page: PageRequest,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TimelineItem {
+    pub message: Message,
+    pub active_revision: Option<MessageRevision>,
+    pub active_candidate: Option<MessageCandidate>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TimelinePage {
+    pub conversation_id: ConversationId,
+    pub selected_branch_id: ConversationBranchId,
+    /// The complete root-to-selected branch path. Persisted branch records
+    /// prove this is an ancestor chain rather than a sibling ID list.
+    pub branch_path: Vec<ConversationBranch>,
+    pub items: Vec<TimelineItem>,
+    pub boundary_parent_id: Option<MessageId>,
+    pub next_cursor: Option<String>,
+}
+
+impl TimelinePage {
+    pub fn validate_page(&self) -> Result<(), crate::ValidationError> {
+        if self.branch_path.is_empty()
+            || self.branch_path.len() > crate::validation::MAX_BRANCHES
+            || self.branch_path.last().map(|branch| branch.id) != Some(self.selected_branch_id)
+        {
+            return Err(crate::ValidationError::InvalidReference {
+                field: "timeline_page.branch_path",
+            });
+        }
+        let mut path_ids = std::collections::HashSet::new();
+        for (index, branch) in self.branch_path.iter().enumerate() {
+            branch.validate()?;
+            if branch.conversation_id != self.conversation_id || !path_ids.insert(branch.id) {
+                return Err(crate::ValidationError::InvalidReference {
+                    field: "timeline_page.branch_path_identity",
+                });
+            }
+            if index == 0 {
+                if branch.parent_branch_id.is_some() || branch.fork_message_id.is_some() {
+                    return Err(crate::ValidationError::InvalidReference {
+                        field: "timeline_page.branch_path_root",
+                    });
+                }
+            } else if branch.parent_branch_id != Some(self.branch_path[index - 1].id)
+                || branch.fork_message_id.is_none()
+            {
+                return Err(crate::ValidationError::InvalidReference {
+                    field: "timeline_page.branch_path_ancestry",
+                });
+            }
+        }
+        if self
+            .branch_path
+            .last()
+            .is_some_and(|branch| branch.status != crate::model::BranchStatus::Active)
+        {
+            return Err(crate::ValidationError::Invariant {
+                field: "timeline_page.selected_branch_active",
+            });
+        }
+        if self.items.len() > crate::validation::MAX_PARTS * 32 {
+            return Err(crate::ValidationError::TooMany {
+                field: "timeline_page.items",
+                max: crate::validation::MAX_PARTS * 32,
+            });
+        }
+        for item in &self.items {
+            item.message.validate()?;
+            if item.message.conversation_id != self.conversation_id
+                || !path_ids.contains(&item.message.branch_id)
+            {
+                return Err(crate::ValidationError::InvalidReference {
+                    field: "timeline_page.item_provenance",
+                });
+            }
+            validate_timeline_item_render(item)?;
+        }
+        for window in self.items.windows(2) {
+            let adjacent = window[1].message.parent_message_id == Some(window[0].message.id)
+                || window[0].message.parent_message_id == Some(window[1].message.id);
+            if !adjacent {
+                return Err(crate::ValidationError::InvalidReference {
+                    field: "timeline_page.adjacency",
+                });
+            }
+            if window[0].message.branch_id != window[1].message.branch_id {
+                let (parent_item, child_item) =
+                    if window[1].message.parent_message_id == Some(window[0].message.id) {
+                        (&window[0], &window[1])
+                    } else {
+                        (&window[1], &window[0])
+                    };
+                let child = self
+                    .branch_path
+                    .iter()
+                    .find(|branch| branch.id == child_item.message.branch_id)
+                    .ok_or(crate::ValidationError::InvalidReference {
+                        field: "timeline_page.item_branch",
+                    })?;
+                if child.parent_branch_id != Some(parent_item.message.branch_id)
+                    || child.fork_message_id != Some(parent_item.message.id)
+                {
+                    return Err(crate::ValidationError::InvalidReference {
+                        field: "timeline_page.branch_transition",
+                    });
+                }
+            }
+        }
+        if let Some(boundary_parent_id) = self.boundary_parent_id {
+            if self
+                .items
+                .iter()
+                .any(|item| item.message.id == boundary_parent_id)
+            {
+                return Err(crate::ValidationError::Invariant {
+                    field: "timeline_page.boundary_inside_page",
+                });
+            }
+            if let Some(first) = self.items.first() {
+                let ascending = self.items.get(1).is_none_or(|second| {
+                    second.message.parent_message_id == Some(first.message.id)
+                });
+                let boundary_item = if ascending {
+                    self.items.first()
+                } else {
+                    self.items.last()
+                };
+                if boundary_item.and_then(|item| item.message.parent_message_id)
+                    != Some(boundary_parent_id)
+                {
+                    return Err(crate::ValidationError::InvalidReference {
+                        field: "timeline_page.boundary_parent",
+                    });
+                }
+                if let Some(first) = self.items.first()
+                    && first.message.branch_id != self.branch_path[0].id
+                    && first.message.parent_message_id == Some(boundary_parent_id)
+                {
+                    let child = self
+                        .branch_path
+                        .iter()
+                        .find(|branch| branch.id == first.message.branch_id)
+                        .ok_or(crate::ValidationError::InvalidReference {
+                            field: "timeline_page.boundary_branch",
+                        })?;
+                    if child.fork_message_id != Some(boundary_parent_id) {
+                        return Err(crate::ValidationError::InvalidReference {
+                            field: "timeline_page.boundary_fork",
+                        });
+                    }
+                }
+            }
+        }
+        if let Some(cursor) = &self.next_cursor {
+            if cursor.trim().is_empty() || cursor.len() > 4096 {
+                return Err(crate::ValidationError::InvalidValue {
+                    field: "timeline_page.cursor",
+                });
+            }
+        }
+        Ok(())
+    }
+}
+
+fn validate_timeline_item_render(item: &TimelineItem) -> Result<(), crate::ValidationError> {
+    match item.message.active_render_source {
+        crate::content::MessageRenderSource::Revision(id) => {
+            let revision =
+                item.active_revision
+                    .as_ref()
+                    .ok_or(crate::ValidationError::InvalidReference {
+                        field: "timeline_page.render_revision",
+                    })?;
+            if revision.id != id || revision.message_id != item.message.id {
+                return Err(crate::ValidationError::InvalidReference {
+                    field: "timeline_page.render_revision",
+                });
+            }
+            if item.active_candidate.is_some() {
+                return Err(crate::ValidationError::Invariant {
+                    field: "timeline_page.render_source_exclusive",
+                });
+            }
+            revision.validate()
+        }
+        crate::content::MessageRenderSource::Candidate(id) => {
+            let candidate =
+                item.active_candidate
+                    .as_ref()
+                    .ok_or(crate::ValidationError::InvalidReference {
+                        field: "timeline_page.render_candidate",
+                    })?;
+            if candidate.id != id || candidate.message_id != item.message.id {
+                return Err(crate::ValidationError::InvalidReference {
+                    field: "timeline_page.render_candidate",
+                });
+            }
+            if item.active_revision.is_some() {
+                return Err(crate::ValidationError::Invariant {
+                    field: "timeline_page.render_source_exclusive",
+                });
+            }
+            candidate.validate()
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BeginGeneration {
+    pub conversation: Conversation,
+    pub turn: GenerationTurn,
+    pub attempt: GenerationAttempt,
+    pub target: GenerationTarget,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GenerationTarget {
+    NewAssistant {
+        message_id: MessageId,
+        parent_message_id: Option<MessageId>,
+    },
+    ExistingCandidate {
+        message_id: MessageId,
+        prior_candidate_id: MessageCandidateId,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FinalizationDraft {
+    pub parts: Vec<MessagePart>,
+    pub ordinal: u16,
+    pub model: ModelSelectionSnapshot,
+    pub replay: Option<ReplayArtifactRef>,
+    pub outcome: GenerationCheckpointEvent,
+}
+
+/// Atomic mutation result: state, idempotency record, and durable outbox
+/// records are committed together by a repository adapter.
+///
+/// A repository implementation must insert the aggregate change, the
+/// [`OperationRecord`], and every returned outbox row in one database
+/// transaction.  Callers must never observe one without the other.  Reads
+/// intentionally return their value directly because they do not create an
+/// operation or an outbox event.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MutationCommit<T> {
+    pub value: T,
+    pub operation: OperationRecord,
+    pub outbox: Vec<ConversationOutboxRecord>,
+}
+
+pub type CreateConversationResult = MutationCommit<ConversationAggregate>;
+pub type SendConversationResult = MutationCommit<BeginGeneration>;
+pub type ContinueConversationResult = MutationCommit<BeginGeneration>;
+pub type RegenerateCandidateResult = MutationCommit<BeginGeneration>;
+pub type RetryGenerationResult = MutationCommit<BeginGeneration>;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GenerationFinalization {
+    pub turn: GenerationTurn,
+    pub assistant_message: Message,
+    pub candidate: MessageCandidate,
+    pub revision: Option<MessageRevision>,
+    pub asset_reference_deltas: Vec<AssetReferenceDelta>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GenerationFailure {
+    pub turn: GenerationTurn,
+    pub failure: crate::generation::GenerationFailureCode,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GenerationCancellation {
+    pub turn: GenerationTurn,
+}
+
+pub type CancelGenerationResult = MutationCommit<GenerationCancellation>;
+pub type ChooseCandidateResult = MutationCommit<Message>;
+pub type ArchiveConversationResult = MutationCommit<Conversation>;
+pub type RestoreConversationResult = MutationCommit<Conversation>;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GenerationRecovery {
+    pub turn: GenerationTurn,
+    pub attempt: GenerationAttempt,
+}
+
+impl GenerationRecovery {
+    /// Recovery creates a new child attempt. It does not resume the
+    /// interrupted attempt in place.
+    pub fn validate_against(
+        &self,
+        previous_attempt: &GenerationAttempt,
+        turn: &GenerationTurn,
+    ) -> Result<(), crate::ValidationError> {
+        if self.turn.id != turn.id || self.turn.id != previous_attempt.turn_id {
+            return Err(crate::ValidationError::InvalidReference {
+                field: "generation_recovery.turn",
+            });
+        }
+        self.attempt.validate_against(previous_attempt, turn)
+    }
+}
+
+pub type AppendCheckpointResult = MutationCommit<GenerationTurn>;
+pub type GenerationFinalizationResult = MutationCommit<GenerationFinalization>;
+pub type GenerationFailureResult = MutationCommit<GenerationFailure>;
+pub type GenerationRecoveryResult = MutationCommit<GenerationRecovery>;
+pub type EditMessageResult = MutationCommit<EditResult>;
+pub type ForkBranchResult = MutationCommit<BranchResult>;
+pub type SelectBranchResult = MutationCommit<Conversation>;
+pub type TombstoneMessageResult = MutationCommit<TombstoneResult>;
+pub type ParticipantPolicyResult = MutationCommit<Conversation>;
+pub type SettingsResult = MutationCommit<Conversation>;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EditResult {
+    pub message: Message,
+    pub revision: MessageRevision,
+    pub asset_reference_deltas: Vec<AssetReferenceDelta>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BranchResult {
+    pub branch: ConversationBranch,
+    pub conversation: Conversation,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TombstoneResult {
+    pub conversation: Conversation,
+    pub message: Message,
+    pub descendant_count: u32,
+    pub asset_reference_deltas: Vec<AssetReferenceDelta>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AssetReferenceDelta {
+    pub asset_id: lettuce_types::AssetId,
+    pub retainer: AssetRetainer,
+    pub state: AssetReferenceState,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AssetReferenceState {
+    Active,
+    Historical,
+    Released,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConversationOutboxEvent {
+    MessageCommitted {
+        conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
+        message_id: MessageId,
+        revision_id: Option<MessageRevisionId>,
+        candidate_id: Option<MessageCandidateId>,
+        at: TimestampMillis,
+    },
+    MessageRevised {
+        conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
+        message_id: MessageId,
+        revision_id: MessageRevisionId,
+        at: TimestampMillis,
+    },
+    MessageTombstoned {
+        conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
+        message_id: MessageId,
+        descendants: crate::commands::DescendantPolicy,
+        affected_message_ids: Vec<MessageId>,
+        affected_revision_ids: Vec<MessageRevisionId>,
+        asset_reference_deltas: Vec<AssetReferenceDelta>,
+        at: TimestampMillis,
+    },
+    TurnFinalized {
+        conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
+        turn_id: GenerationTurnId,
+        attempt_id: GenerationAttemptId,
+        candidate_id: Option<MessageCandidateId>,
+        revision_id: Option<MessageRevisionId>,
+        at: TimestampMillis,
+    },
+    TurnFailed {
+        conversation_id: ConversationId,
+        turn_id: GenerationTurnId,
+        at: TimestampMillis,
+    },
+    BranchForked {
+        conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
+        at: TimestampMillis,
+    },
+    ConversationTombstoned {
+        conversation_id: ConversationId,
+        at: TimestampMillis,
+    },
+    AssetReferencesChanged {
+        conversation_id: ConversationId,
+        message_revision_id: Option<MessageRevisionId>,
+        candidate_id: Option<MessageCandidateId>,
+        changes: Vec<AssetReferenceDelta>,
+        at: TimestampMillis,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConversationOutboxRecord {
+    pub format_version: u32,
+    pub id: lettuce_types::OutboxEventId,
+    pub conversation_id: ConversationId,
+    pub conversation_revision: lettuce_types::Revision,
+    pub sequence: u64,
+    pub operation_record_id: OperationRecordId,
+    pub at: TimestampMillis,
+    pub event: ConversationOutboxEvent,
+}
+
+impl ConversationOutboxRecord {
+    pub fn validate(&self) -> Result<(), crate::ValidationError> {
+        if self.format_version != 1 {
+            return Err(crate::ValidationError::UnsupportedVersion {
+                field: "outbox.format_version",
+                version: self.format_version,
+            });
+        }
+        if self.sequence == 0 || self.conversation_revision.get() == 0 {
+            return Err(crate::ValidationError::InvalidValue {
+                field: "outbox.sequence_revision",
+            });
+        }
+        if let ConversationOutboxEvent::MessageTombstoned {
+            affected_message_ids,
+            affected_revision_ids,
+            asset_reference_deltas,
+            ..
+        } = &self.event
+        {
+            if affected_message_ids.len() > crate::validation::MAX_PARTS * 32
+                || affected_revision_ids.len() > crate::validation::MAX_PARTS * 32
+                || asset_reference_deltas.len() > crate::validation::MAX_PARTS * 32
+            {
+                return Err(crate::ValidationError::TooMany {
+                    field: "outbox.tombstone.refs",
+                    max: crate::validation::MAX_PARTS * 32,
+                });
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OperationKind {
+    Create,
+    Send,
+    Continue,
+    Regenerate,
+    Retry,
+    Cancel,
+    Finalize,
+    Fail,
+    Recover,
+    ChooseCandidate,
+    Edit,
+    Fork,
+    SelectBranch,
+    Tombstone,
+    Archive,
+    Restore,
+    ParticipantPolicy,
+    Settings,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OperationResultRef {
+    Conversation(ConversationId),
+    Turn(GenerationTurnId),
+    Message(MessageId),
+    Candidate(MessageCandidateId),
+    Branch(ConversationBranchId),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OperationRecord {
+    pub id: OperationRecordId,
+    pub conversation_id: ConversationId,
+    pub kind: OperationKind,
+    pub operation: crate::commands::OperationToken,
+    pub result: OperationResultRef,
+    pub created_at: TimestampMillis,
+}
+
+impl OperationRecord {
+    pub fn replay_or_conflict(
+        &self,
+        conversation_id: ConversationId,
+        kind: OperationKind,
+        token: &crate::commands::OperationToken,
+    ) -> Result<Option<OperationResultRef>, ConversationRepositoryError> {
+        if self.conversation_id == conversation_id
+            && self.kind == kind
+            && self.operation.key == token.key
+            && self.operation.request_digest == token.request_digest
+        {
+            Ok(Some(self.result.clone()))
+        } else {
+            Err(ConversationRepositoryError::Conflict)
+        }
+    }
+}
+
+/// Synchronous persistence boundary.  Every mutating method returns a
+/// [`MutationCommit`], and its aggregate change, operation record, and outbox
+/// records must be inserted atomically in one transaction.  Each
+/// begin/finalize operation is one transaction in an adapter, while
+/// network/provider work occurs outside it.  Read methods return plain values.
+pub trait ConversationRepository: Send + Sync {
+    fn create(
+        &self,
+        plan: &CreateConversationPlan,
+        now: TimestampMillis,
+    ) -> Result<CreateConversationResult, ConversationRepositoryError>;
+    fn get(&self, id: ConversationId)
+    -> Result<ConversationAggregate, ConversationRepositoryError>;
+    fn page(
+        &self,
+        query: &ConversationQuery,
+    ) -> Result<KeysetPage<ConversationSummary>, ConversationRepositoryError>;
+    fn timeline_page(
+        &self,
+        conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
+        page: &PageRequest,
+    ) -> Result<TimelinePage, ConversationRepositoryError>;
+    fn get_message_revision(
+        &self,
+        id: MessageRevisionId,
+    ) -> Result<MessageRevision, ConversationRepositoryError>;
+    fn page_message_revisions(
+        &self,
+        message_id: MessageId,
+        page: &PageRequest,
+    ) -> Result<KeysetPage<MessageRevision>, ConversationRepositoryError>;
+    fn get_candidate(
+        &self,
+        id: MessageCandidateId,
+    ) -> Result<MessageCandidate, ConversationRepositoryError>;
+    fn page_candidates(
+        &self,
+        message_id: MessageId,
+        page: &PageRequest,
+    ) -> Result<KeysetPage<MessageCandidate>, ConversationRepositoryError>;
+    fn get_turn(&self, id: GenerationTurnId)
+    -> Result<GenerationTurn, ConversationRepositoryError>;
+    fn page_turns(
+        &self,
+        conversation_id: ConversationId,
+        page: &PageRequest,
+    ) -> Result<KeysetPage<GenerationTurn>, ConversationRepositoryError>;
+    fn operation_record(
+        &self,
+        conversation_id: ConversationId,
+        kind: OperationKind,
+        token: &crate::commands::OperationToken,
+    ) -> Result<Option<OperationRecord>, ConversationRepositoryError>;
+    fn page_outbox(
+        &self,
+        conversation_id: ConversationId,
+        page: &PageRequest,
+    ) -> Result<KeysetPage<ConversationOutboxRecord>, ConversationRepositoryError>;
+    fn begin_send(
+        &self,
+        command: &SendConversation,
+        now: TimestampMillis,
+    ) -> Result<SendConversationResult, ConversationRepositoryError>;
+    fn begin_continue(
+        &self,
+        command: &ContinueConversation,
+        now: TimestampMillis,
+    ) -> Result<ContinueConversationResult, ConversationRepositoryError>;
+    fn begin_regenerate(
+        &self,
+        command: &RegenerateCandidate,
+        now: TimestampMillis,
+    ) -> Result<RegenerateCandidateResult, ConversationRepositoryError>;
+    fn begin_retry(
+        &self,
+        command: &RetryGeneration,
+        now: TimestampMillis,
+    ) -> Result<RetryGenerationResult, ConversationRepositoryError>;
+    fn append_event(
+        &self,
+        turn_id: GenerationTurnId,
+        expected_turn_revision: lettuce_types::Revision,
+        event: GenerationCheckpointEnvelope,
+        now: TimestampMillis,
+    ) -> Result<AppendCheckpointResult, ConversationRepositoryError>;
+    #[allow(clippy::too_many_arguments)]
+    fn finalize_generation(
+        &self,
+        turn_id: GenerationTurnId,
+        attempt_id: GenerationAttemptId,
+        expected_conversation_revision: lettuce_types::Revision,
+        expected_turn_revision: lettuce_types::Revision,
+        operation: &crate::commands::OperationToken,
+        draft: FinalizationDraft,
+        usage_event_id: UsageEventId,
+        now: TimestampMillis,
+    ) -> Result<GenerationFinalizationResult, ConversationRepositoryError>;
+    #[allow(clippy::too_many_arguments)]
+    fn fail_generation(
+        &self,
+        turn_id: GenerationTurnId,
+        attempt_id: GenerationAttemptId,
+        expected_conversation_revision: lettuce_types::Revision,
+        expected_turn_revision: lettuce_types::Revision,
+        operation: &crate::commands::OperationToken,
+        failure: crate::generation::GenerationFailureCode,
+        now: TimestampMillis,
+    ) -> Result<GenerationFailureResult, ConversationRepositoryError>;
+    fn cancel_generation(
+        &self,
+        command: &crate::commands::CancelGeneration,
+        now: TimestampMillis,
+    ) -> Result<CancelGenerationResult, ConversationRepositoryError>;
+    fn recover_generation(
+        &self,
+        turn_id: GenerationTurnId,
+        attempt_id: GenerationAttemptId,
+        expected_conversation_revision: lettuce_types::Revision,
+        expected_turn_revision: lettuce_types::Revision,
+        operation: &crate::commands::OperationToken,
+        now: TimestampMillis,
+    ) -> Result<GenerationRecoveryResult, ConversationRepositoryError>;
+
+    fn choose_candidate(
+        &self,
+        command: &ChooseCandidate,
+        now: TimestampMillis,
+    ) -> Result<ChooseCandidateResult, ConversationRepositoryError>;
+    fn fork_branch(
+        &self,
+        command: &ForkBranch,
+        now: TimestampMillis,
+    ) -> Result<ForkBranchResult, ConversationRepositoryError>;
+    fn select_branch(
+        &self,
+        command: &SelectBranch,
+        now: TimestampMillis,
+    ) -> Result<SelectBranchResult, ConversationRepositoryError>;
+    fn edit_message(
+        &self,
+        command: &EditMessage,
+        now: TimestampMillis,
+    ) -> Result<EditMessageResult, ConversationRepositoryError>;
+    fn tombstone_message(
+        &self,
+        command: &TombstoneMessage,
+        now: TimestampMillis,
+    ) -> Result<TombstoneMessageResult, ConversationRepositoryError>;
+    fn archive(
+        &self,
+        command: &ArchiveConversation,
+        now: TimestampMillis,
+    ) -> Result<ArchiveConversationResult, ConversationRepositoryError>;
+    fn restore(
+        &self,
+        command: &RestoreConversation,
+        now: TimestampMillis,
+    ) -> Result<RestoreConversationResult, ConversationRepositoryError>;
+    fn update_participant_policy(
+        &self,
+        command: &crate::commands::UpdateParticipantPolicy,
+        now: TimestampMillis,
+    ) -> Result<ParticipantPolicyResult, ConversationRepositoryError>;
+    fn update_settings(
+        &self,
+        command: &crate::commands::UpdateConversationSettings,
+        now: TimestampMillis,
+    ) -> Result<SettingsResult, ConversationRepositoryError>;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LaunchResolveRequest {
+    pub conversation_id: ConversationId,
+    pub operation: GenerationOperation,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LaunchResolution {
+    pub conversation: Conversation,
+    pub group: Option<GroupConversationDetails>,
+    pub model: Option<ModelSelectionSnapshot>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContextRequest {
+    pub conversation_id: ConversationId,
+    pub branch_id: ConversationBranchId,
+    pub source_message_id: Option<MessageId>,
+    pub operation: GenerationOperation,
+    pub policy: ContextPolicy,
+    pub selected_speaker: Option<crate::generation::SelectedSpeakerDecision>,
+    pub capabilities: CapabilitySet,
+    pub safety: SafetyContext,
+    pub timeline: Vec<TimelineItem>,
+}
+
+impl ContextRequest {
+    pub fn validate(&self) -> Result<(), crate::ValidationError> {
+        if self.timeline.len() > 512 {
+            return Err(crate::ValidationError::TooMany {
+                field: "context_request.timeline",
+                max: 512,
+            });
+        }
+        if self.policy == ContextPolicy::Direct && self.selected_speaker.is_some() {
+            return Err(crate::ValidationError::InvalidReference {
+                field: "context_request.direct_speaker",
+            });
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContextPolicy {
+    Direct,
+    Group,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CapabilitySet {
+    pub vision: bool,
+    pub tools: bool,
+    pub audio: bool,
+    pub text_input: bool,
+    pub text_output: bool,
+    pub streaming: bool,
+    pub reasoning: bool,
+    pub prompt_cache: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SafetyContext {
+    Standard,
+    Restricted,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProviderNeutralMessage {
+    pub role: crate::content::MessageRole,
+    pub parts: Vec<MessagePart>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProviderNeutralContext {
+    pub messages: Vec<ProviderNeutralMessage>,
+    pub attributions: ContextAttributions,
+    pub budget: ContextBudgetReport,
+}
+
+impl ProviderNeutralContext {
+    pub fn validate(&self) -> Result<(), crate::ValidationError> {
+        if self.messages.len() > 512 {
+            return Err(crate::ValidationError::TooMany {
+                field: "provider_context.messages",
+                max: 512,
+            });
+        }
+        if self.attributions.lorebooks.len() > crate::validation::MAX_LOREBOOKS {
+            return Err(crate::ValidationError::TooMany {
+                field: "provider_context.lorebooks",
+                max: crate::validation::MAX_LOREBOOKS,
+            });
+        }
+        for message in &self.messages {
+            if message.parts.len() > crate::validation::MAX_PARTS {
+                return Err(crate::ValidationError::TooMany {
+                    field: "provider_context.parts",
+                    max: crate::validation::MAX_PARTS,
+                });
+            }
+            for part in &message.parts {
+                part.validate()?;
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ContextAttributions {
+    pub prompt: Option<crate::generation::PromptAttribution>,
+    pub lorebooks: Vec<crate::generation::LorebookAttribution>,
+    pub memory: Option<crate::generation::MemoryAttribution>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ContextBudgetReport {
+    pub selected_messages: u32,
+    pub estimated_input_tokens: u32,
+    pub truncated: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpeakerPolicyRequest {
+    pub conversation_id: ConversationId,
+    pub branch_id: ConversationBranchId,
+    pub operation: GenerationOperation,
+    pub forced_speaker: Option<ConversationParticipantId>,
+    pub mention_source: Option<ConversationParticipantId>,
+    pub participants: Vec<SpeakerParticipantState>,
+    pub prior_speaker: Option<ConversationParticipantId>,
+    pub timeline: Vec<TimelineItem>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SpeakerParticipantState {
+    pub id: ConversationParticipantId,
+    pub eligible: bool,
+    pub muted: bool,
+    pub speak_count: u32,
+    pub last_spoke_turn: Option<GenerationTurnId>,
+    pub last_spoke_at: Option<TimestampMillis>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelResolveRequest {
+    pub conversation_id: ConversationId,
+    pub operation: GenerationOperation,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InferenceRequest {
+    pub turn_id: GenerationTurnId,
+    pub attempt_id: GenerationAttemptId,
+    pub operation: GenerationOperation,
+    pub profile: ResolvedInferenceProfile,
+    pub context: ProviderNeutralContext,
+    pub cancellation: Option<JobId>,
+    pub stream_sink: Option<lettuce_types::RequestId>,
+    pub media_grants: Vec<lettuce_types::AssetId>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedInferenceProfile {
+    pub model: ModelSelectionSnapshot,
+    pub model_profile_id: lettuce_types::ModelProfileId,
+    pub model_revision: lettuce_types::Revision,
+    pub provider_account_id: lettuce_types::ProviderAccountId,
+    pub provider_account_revision: lettuce_types::Revision,
+    pub capabilities: CapabilitySet,
+    pub numeric_settings: ResolvedNumericSettings,
+    pub tool_policy: ToolPolicy,
+    pub reasoning_policy: ReasoningPolicy,
+    pub output_policy: OutputPolicy,
+    pub safety_policy: SafetyContext,
+    pub correlation_id: Option<lettuce_types::RequestId>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ResolvedNumericSettings {
+    pub max_output_tokens: u32,
+    pub temperature_milli: u32,
+    pub top_p_milli: u32,
+    pub top_k: u32,
+    pub frequency_penalty_milli: i32,
+    pub presence_penalty_milli: i32,
+    pub repetition_penalty_milli: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolPolicy {
+    Disabled,
+    Allowed,
+    Required,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReasoningPolicy {
+    Disabled,
+    SummaryOnly,
+    Enabled,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputPolicy {
+    Plain,
+    Structured,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InferenceCandidate {
+    pub ordinal: u16,
+    pub parts: Vec<MessagePart>,
+    pub provider_replay: Option<ReplayArtifactRef>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InferenceUsage {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InferenceOutcome {
+    pub candidates: Vec<InferenceCandidate>,
+    pub usage: Option<InferenceUsage>,
+    pub finish_reason: FinishReason,
+    pub provider_request_ref: Option<ContentHash>,
+    pub warning_codes: Vec<InferenceWarningCode>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FinishReason {
+    Stop,
+    Length,
+    Cancelled,
+    Error,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InferenceWarningCode {
+    Truncated,
+    SafetyTransformed,
+    ProviderDegraded,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MediaRequest {
+    pub turn_id: GenerationTurnId,
+    pub asset_ids: Vec<lettuce_types::AssetId>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MemoryRequest {
+    pub conversation_id: ConversationId,
+    pub branch_id: ConversationBranchId,
+    pub source_message_id: Option<MessageId>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MemoryResult {
+    pub revision_id: Option<lettuce_types::MemoryRevisionId>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompanionRequest {
+    pub conversation_id: ConversationId,
+    pub turn_id: GenerationTurnId,
+    pub message_revision_id: MessageRevisionId,
+    pub effective_time: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompanionEffectProposal {
+    pub effect_id: lettuce_types::CompanionEffectId,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UsageRecord {
+    pub turn_id: GenerationTurnId,
+    pub attempt_id: GenerationAttemptId,
+    pub outcome: UsageOutcome,
+    pub usage: UsageCounters,
+    pub model_profile_id: lettuce_types::ModelProfileId,
+    pub model_revision: lettuce_types::Revision,
+    pub provider_account_id: lettuce_types::ProviderAccountId,
+    pub provider_account_revision: lettuce_types::Revision,
+    pub recorded_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UsageCounters {
+    Known(InferenceUsage),
+    Unavailable(UsageUnavailableReason),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UsageUnavailableReason {
+    NotAdmitted,
+    CancelledBeforeResponse,
+    ProviderOmitted,
+    TransportFailed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UsageOutcome {
+    Succeeded,
+    Failed,
+    Cancelled,
+    Interrupted,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum PortError {
+    #[error("conversation dependency is unavailable")]
+    Unavailable,
+    #[error("conversation dependency rejected the operation")]
+    Rejected,
+    #[error("conversation dependency returned no result")]
+    Empty,
+}
+
+#[async_trait]
+pub trait LaunchResolver: Send + Sync {
+    async fn resolve(&self, request: LaunchResolveRequest) -> Result<LaunchResolution, PortError>;
+}
+
+#[async_trait]
+pub trait ContextAssembler: Send + Sync {
+    async fn assemble(&self, request: ContextRequest) -> Result<ProviderNeutralContext, PortError>;
+}
+
+#[async_trait]
+pub trait SpeakerPolicy: Send + Sync {
+    async fn choose(
+        &self,
+        request: SpeakerPolicyRequest,
+    ) -> Result<crate::generation::SelectedSpeakerDecision, PortError>;
+}
+
+#[async_trait]
+pub trait ModelResolver: Send + Sync {
+    async fn resolve(
+        &self,
+        request: ModelResolveRequest,
+    ) -> Result<ResolvedInferenceProfile, PortError>;
+}
+
+#[async_trait]
+pub trait InferencePort: Send + Sync {
+    async fn run(&self, request: InferenceRequest) -> Result<InferenceOutcome, PortError>;
+}
+
+#[async_trait]
+pub trait MediaPort: Send + Sync {
+    async fn validate_assets(&self, request: MediaRequest) -> Result<(), PortError>;
+}
+
+#[async_trait]
+pub trait MemoryPort: Send + Sync {
+    async fn resolve(&self, request: MemoryRequest) -> Result<MemoryResult, PortError>;
+}
+
+#[async_trait]
+pub trait CompanionPort: Send + Sync {
+    async fn propose(
+        &self,
+        request: CompanionRequest,
+    ) -> Result<Vec<CompanionEffectProposal>, PortError>;
+}
+
+#[async_trait]
+pub trait UsagePort: Send + Sync {
+    async fn record(&self, record: UsageRecord) -> Result<UsageEventId, PortError>;
+}
+
+#[async_trait]
+pub trait JobPort: Send + Sync {
+    async fn start(
+        &self,
+        turn_id: GenerationTurnId,
+        attempt_id: GenerationAttemptId,
+        idempotency_key: &IdempotencyKey,
+    ) -> Result<JobId, PortError>;
+    async fn cancel(&self, job_id: JobId) -> Result<(), PortError>;
+    async fn emit(&self, event: GenerationCheckpointEnvelope) -> Result<(), PortError>;
+}
+
+#[async_trait]
+pub trait Clock: Send + Sync {
+    async fn now(&self) -> Result<TimestampMillis, PortError>;
+}
+
+#[async_trait]
+pub trait ConversationApplication: Send + Sync {
+    async fn send(&self, command: SendConversation) -> Result<SendConversationResult, PortError>;
+    async fn continue_generation(
+        &self,
+        command: ContinueConversation,
+    ) -> Result<ContinueConversationResult, PortError>;
+    async fn regenerate(
+        &self,
+        command: RegenerateCandidate,
+    ) -> Result<RegenerateCandidateResult, PortError>;
+    async fn retry(&self, command: RetryGeneration) -> Result<RetryGenerationResult, PortError>;
+    async fn cancel(
+        &self,
+        command: crate::commands::CancelGeneration,
+    ) -> Result<CancelGenerationResult, PortError>;
+    async fn get_operation(
+        &self,
+        conversation_id: ConversationId,
+        operation_id: OperationRecordId,
+    ) -> Result<OperationRecord, PortError>;
+}

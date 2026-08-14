@@ -16,4 +16,7 @@ workspace = true
 [dependencies]
 async-trait.workspace = true
 lettuce-types.workspace = true
+lettuce-jobs.workspace = true
+lettuce-media.workspace = true
 serde.workspace = true
+thiserror.workspace = true

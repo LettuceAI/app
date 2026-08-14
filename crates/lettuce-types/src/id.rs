@@ -65,21 +65,28 @@ macro_rules! define_id {
 define_id!(AssetId);
 define_id!(CharacterId);
 define_id!(ConversationId);
+define_id!(ConversationBranchId);
+define_id!(ConversationParticipantId);
 define_id!(ConversationStarterId);
 define_id!(GenerationCandidateId);
+define_id!(MessageCandidateId);
 define_id!(GenerationTurnId);
+define_id!(GenerationAttemptId);
 define_id!(GroupId);
 define_id!(JobId);
 define_id!(LorebookId);
 define_id!(LorebookEntryId);
 define_id!(MediaBlobId);
 define_id!(MemoryId);
+define_id!(MemoryRevisionId);
 define_id!(MessageId);
 define_id!(MessageRevisionId);
 define_id!(ModelProfileId);
 define_id!(ModelArtifactId);
 define_id!(OperationId);
 define_id!(ParticipantId);
+define_id!(UsageEventId);
+define_id!(CompanionEffectId);
 define_id!(PersonaId);
 define_id!(PromptDocumentId);
 define_id!(PromptEntryId);
@@ -91,6 +98,10 @@ define_id!(SceneVariantId);
 define_id!(StarterMessageId);
 define_id!(ToolExecutionId);
 define_id!(VoiceProfileId);
+define_id!(ReplayArtifactId);
+define_id!(SnapshotArtifactId);
+define_id!(OperationRecordId);
+define_id!(OutboxEventId);
 
 #[cfg(test)]
 mod tests {

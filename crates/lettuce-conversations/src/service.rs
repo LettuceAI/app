@@ -1,0 +1,319 @@
+use lettuce_types::{ConversationId, TimestampMillis};
+
+use crate::commands::{ConversationMutation, CreateConversationPlan};
+use crate::error::ConversationServiceError;
+use crate::model::ConversationAggregate;
+use crate::ports::{
+    ArchiveConversationResult, BeginGeneration, ConversationQuery, ConversationRepository,
+    ConversationSummary, CreateConversationResult, EditMessageResult, ForkBranchResult,
+    GenerationCancellation, GenerationFailureResult, GenerationFinalizationResult,
+    GenerationRecoveryResult, KeysetPage, MutationCommit, ParticipantPolicyResult,
+    RestoreConversationResult, SelectBranchResult, SettingsResult, TimelinePage,
+    TombstoneMessageResult,
+};
+
+/// Thin application-facing façade.  It validates command contracts and
+/// delegates atomic mutations to the repository; provider execution belongs
+/// to an application workflow that supplies the async ports.
+#[derive(Debug)]
+pub struct ConversationManager<R> {
+    repository: R,
+}
+
+impl<R> ConversationManager<R> {
+    #[must_use]
+    pub const fn new(repository: R) -> Self {
+        Self { repository }
+    }
+
+    #[must_use]
+    pub const fn repository(&self) -> &R {
+        &self.repository
+    }
+}
+
+impl<R: ConversationRepository> ConversationManager<R> {
+    pub fn create(
+        &self,
+        plan: &CreateConversationPlan,
+        now: TimestampMillis,
+    ) -> Result<CreateConversationResult, ConversationServiceError> {
+        plan.validate()?;
+        self.repository.create(plan, now).map_err(Into::into)
+    }
+
+    pub fn get(
+        &self,
+        id: ConversationId,
+    ) -> Result<ConversationAggregate, ConversationServiceError> {
+        self.repository.get(id).map_err(Into::into)
+    }
+
+    pub fn page(
+        &self,
+        query: &ConversationQuery,
+    ) -> Result<KeysetPage<ConversationSummary>, ConversationServiceError> {
+        self.repository.page(query).map_err(Into::into)
+    }
+
+    pub fn validate_mutation(
+        &self,
+        mutation: &ConversationMutation,
+    ) -> Result<(), ConversationServiceError> {
+        mutation.validate().map_err(Into::into)
+    }
+
+    pub fn begin_send(
+        &self,
+        command: &crate::commands::SendConversation,
+        now: TimestampMillis,
+    ) -> Result<MutationCommit<BeginGeneration>, ConversationServiceError> {
+        ConversationMutation::Send(command.clone()).validate()?;
+        self.repository.begin_send(command, now).map_err(Into::into)
+    }
+
+    pub fn begin_continue(
+        &self,
+        command: &crate::commands::ContinueConversation,
+        now: TimestampMillis,
+    ) -> Result<MutationCommit<BeginGeneration>, ConversationServiceError> {
+        ConversationMutation::Continue(command.clone()).validate()?;
+        self.repository
+            .begin_continue(command, now)
+            .map_err(Into::into)
+    }
+
+    pub fn begin_regenerate(
+        &self,
+        command: &crate::commands::RegenerateCandidate,
+        now: TimestampMillis,
+    ) -> Result<MutationCommit<BeginGeneration>, ConversationServiceError> {
+        ConversationMutation::Regenerate(command.clone()).validate()?;
+        self.repository
+            .begin_regenerate(command, now)
+            .map_err(Into::into)
+    }
+
+    pub fn begin_retry(
+        &self,
+        command: &crate::commands::RetryGeneration,
+        now: TimestampMillis,
+    ) -> Result<MutationCommit<BeginGeneration>, ConversationServiceError> {
+        ConversationMutation::Retry(command.clone()).validate()?;
+        self.repository
+            .begin_retry(command, now)
+            .map_err(Into::into)
+    }
+
+    pub fn cancel(
+        &self,
+        command: &crate::commands::CancelGeneration,
+        now: TimestampMillis,
+    ) -> Result<MutationCommit<GenerationCancellation>, ConversationServiceError> {
+        ConversationMutation::Cancel(command.clone()).validate()?;
+        self.repository
+            .cancel_generation(command, now)
+            .map_err(Into::into)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn finalize_generation(
+        &self,
+        turn_id: lettuce_types::GenerationTurnId,
+        attempt_id: lettuce_types::GenerationAttemptId,
+        expected_conversation_revision: lettuce_types::Revision,
+        expected_turn_revision: lettuce_types::Revision,
+        operation: &crate::commands::OperationToken,
+        draft: crate::ports::FinalizationDraft,
+        usage_event_id: lettuce_types::UsageEventId,
+        now: TimestampMillis,
+    ) -> Result<GenerationFinalizationResult, ConversationServiceError> {
+        self.repository
+            .finalize_generation(
+                turn_id,
+                attempt_id,
+                expected_conversation_revision,
+                expected_turn_revision,
+                operation,
+                draft,
+                usage_event_id,
+                now,
+            )
+            .map_err(Into::into)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn fail_generation(
+        &self,
+        turn_id: lettuce_types::GenerationTurnId,
+        attempt_id: lettuce_types::GenerationAttemptId,
+        expected_conversation_revision: lettuce_types::Revision,
+        expected_turn_revision: lettuce_types::Revision,
+        operation: &crate::commands::OperationToken,
+        failure: crate::generation::GenerationFailureCode,
+        now: TimestampMillis,
+    ) -> Result<GenerationFailureResult, ConversationServiceError> {
+        self.repository
+            .fail_generation(
+                turn_id,
+                attempt_id,
+                expected_conversation_revision,
+                expected_turn_revision,
+                operation,
+                failure,
+                now,
+            )
+            .map_err(Into::into)
+    }
+
+    pub fn recover_generation(
+        &self,
+        turn_id: lettuce_types::GenerationTurnId,
+        attempt_id: lettuce_types::GenerationAttemptId,
+        expected_conversation_revision: lettuce_types::Revision,
+        expected_turn_revision: lettuce_types::Revision,
+        operation: &crate::commands::OperationToken,
+        now: TimestampMillis,
+    ) -> Result<GenerationRecoveryResult, ConversationServiceError> {
+        self.repository
+            .recover_generation(
+                turn_id,
+                attempt_id,
+                expected_conversation_revision,
+                expected_turn_revision,
+                operation,
+                now,
+            )
+            .map_err(Into::into)
+    }
+
+    pub fn choose_candidate(
+        &self,
+        command: &crate::commands::ChooseCandidate,
+        now: TimestampMillis,
+    ) -> Result<MutationCommit<crate::content::Message>, ConversationServiceError> {
+        ConversationMutation::Choose(command.clone()).validate()?;
+        self.repository
+            .choose_candidate(command, now)
+            .map_err(Into::into)
+    }
+
+    pub fn edit_message(
+        &self,
+        command: &crate::commands::EditMessage,
+        now: TimestampMillis,
+    ) -> Result<EditMessageResult, ConversationServiceError> {
+        ConversationMutation::Edit(command.clone()).validate()?;
+        self.repository
+            .edit_message(command, now)
+            .map_err(Into::into)
+    }
+
+    pub fn fork_branch(
+        &self,
+        command: &crate::commands::ForkBranch,
+        now: TimestampMillis,
+    ) -> Result<ForkBranchResult, ConversationServiceError> {
+        ConversationMutation::Fork(command.clone()).validate()?;
+        self.repository
+            .fork_branch(command, now)
+            .map_err(Into::into)
+    }
+
+    pub fn select_branch(
+        &self,
+        command: &crate::commands::SelectBranch,
+        now: TimestampMillis,
+    ) -> Result<SelectBranchResult, ConversationServiceError> {
+        ConversationMutation::SelectBranch(command.clone()).validate()?;
+        self.repository
+            .select_branch(command, now)
+            .map_err(Into::into)
+    }
+
+    pub fn tombstone_message(
+        &self,
+        command: &crate::commands::TombstoneMessage,
+        now: TimestampMillis,
+    ) -> Result<TombstoneMessageResult, ConversationServiceError> {
+        ConversationMutation::Tombstone(command.clone()).validate()?;
+        self.repository
+            .tombstone_message(command, now)
+            .map_err(Into::into)
+    }
+
+    pub fn archive(
+        &self,
+        command: &crate::commands::ArchiveConversation,
+        now: TimestampMillis,
+    ) -> Result<ArchiveConversationResult, ConversationServiceError> {
+        ConversationMutation::Archive(command.clone()).validate()?;
+        self.repository.archive(command, now).map_err(Into::into)
+    }
+
+    pub fn restore(
+        &self,
+        command: &crate::commands::RestoreConversation,
+        now: TimestampMillis,
+    ) -> Result<RestoreConversationResult, ConversationServiceError> {
+        ConversationMutation::Restore(command.clone()).validate()?;
+        self.repository.restore(command, now).map_err(Into::into)
+    }
+
+    pub fn timeline_page(
+        &self,
+        conversation_id: lettuce_types::ConversationId,
+        branch_id: lettuce_types::ConversationBranchId,
+        page: &lettuce_types::PageRequest,
+    ) -> Result<TimelinePage, ConversationServiceError> {
+        let page = self
+            .repository
+            .timeline_page(conversation_id, branch_id, page)
+            .map_err(ConversationServiceError::from)?;
+        if page.conversation_id != conversation_id || page.selected_branch_id != branch_id {
+            return Err(ConversationServiceError::Invalid(
+                crate::ValidationError::InvalidReference {
+                    field: "timeline_page.request_provenance",
+                },
+            ));
+        }
+        page.validate_page()?;
+        Ok(page)
+    }
+
+    pub fn update_participant_policy(
+        &self,
+        command: &crate::commands::UpdateParticipantPolicy,
+        now: TimestampMillis,
+    ) -> Result<ParticipantPolicyResult, ConversationServiceError> {
+        ConversationMutation::ParticipantPolicy(command.clone()).validate()?;
+        self.repository
+            .update_participant_policy(command, now)
+            .map_err(Into::into)
+    }
+
+    pub fn update_settings(
+        &self,
+        command: &crate::commands::UpdateConversationSettings,
+        now: TimestampMillis,
+    ) -> Result<SettingsResult, ConversationServiceError> {
+        ConversationMutation::Settings(command.clone()).validate()?;
+        self.repository
+            .update_settings(command, now)
+            .map_err(Into::into)
+    }
+
+    pub fn get_candidate(
+        &self,
+        id: lettuce_types::MessageCandidateId,
+    ) -> Result<crate::content::MessageCandidate, ConversationServiceError> {
+        self.repository.get_candidate(id).map_err(Into::into)
+    }
+
+    pub fn get_turn(
+        &self,
+        id: lettuce_types::GenerationTurnId,
+    ) -> Result<crate::generation::GenerationTurn, ConversationServiceError> {
+        self.repository.get_turn(id).map_err(Into::into)
+    }
+}

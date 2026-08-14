@@ -2,8 +2,8 @@
 
 use lettuce_types::{
     AssetId, CharacterId, ConversationId, GroupId, JobId, LorebookEntryId, LorebookId, MediaBlobId,
-    MessageId, ModelProfileId, PersonaId, PromptDocumentId, Revision, SceneAssetLinkId, SceneId,
-    SceneVariantId, TimestampMillis,
+    MessageCandidateId, MessageId, MessageRevisionId, ModelProfileId, PersonaId, PromptDocumentId,
+    Revision, SceneAssetLinkId, SceneId, SceneVariantId, TimestampMillis,
 };
 use serde::{Deserialize, Serialize};
 
@@ -391,6 +391,8 @@ pub enum AssetRetainer {
     SceneAssetLink(SceneAssetLinkId),
     Conversation(ConversationId),
     Message(MessageId),
+    MessageRevision(MessageRevisionId),
+    MessageCandidate(MessageCandidateId),
     PromptDocument(PromptDocumentId),
     Lorebook(LorebookId),
     LorebookEntry(LorebookEntryId),
