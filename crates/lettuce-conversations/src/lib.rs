@@ -221,6 +221,58 @@ mod tests {
     }
 
     #[test]
+    fn generation_turn_persists_and_validates_its_target_contract() {
+        let conversation_id = ConversationId::new();
+        let branch_id = ConversationBranchId::new();
+        let user_message_id = MessageId::new();
+        let turn = GenerationTurn {
+            id: GenerationTurnId::new(),
+            conversation_id,
+            branch_id,
+            operation: GenerationOperation::Send,
+            input: GenerationInput::UserMessage {
+                message_id: user_message_id,
+            },
+            target: GenerationTarget::NewAssistant {
+                message_id: MessageId::new(),
+                parent_message_id: Some(user_message_id),
+            },
+            swap_roles: false,
+            retry_of_turn_id: None,
+            idempotency_key: lettuce_jobs::IdempotencyKey::new("turn-contract").expect("key"),
+            correlation_id: None,
+            status: GenerationTurnStatus::Created,
+            selected_speaker: None,
+            guidance: None,
+            requested_model_override: None,
+            forced_speaker: None,
+            resolved_model: None,
+            prompt: None,
+            lorebooks: Vec::new(),
+            memory: None,
+            candidate_ids: Vec::new(),
+            selected_candidate_id: None,
+            attempts: Vec::new(),
+            failure: None,
+            revision: Revision::INITIAL,
+            created_at: TimestampMillis::UNIX_EPOCH,
+            updated_at: TimestampMillis::UNIX_EPOCH,
+        };
+        turn.validate(false).expect("valid send target");
+        let encoded = serde_json::to_value(turn.target).expect("target serialization");
+        assert_eq!(encoded["kind"], "new_assistant");
+        let mut mismatched = turn.clone();
+        mismatched.target = GenerationTarget::ExistingCandidate {
+            message_id: MessageId::new(),
+            prior_candidate_id: MessageCandidateId::new(),
+        };
+        assert!(mismatched.validate(false).is_err());
+        mismatched = turn.clone();
+        mismatched.retry_of_turn_id = Some(mismatched.id);
+        assert!(mismatched.validate(false).is_err());
+    }
+
+    #[test]
     fn snapshot_provenance_distinguishes_explicit_and_resolved() {
         assert!(!SnapshotSelection::<u32>::Inherited(1).is_explicit());
         assert!(SnapshotSelection::<u32>::Inherited(1).is_resolved());
@@ -1156,7 +1208,7 @@ mod tests {
                 lorebooks: SnapshotSelection::Explicit(Vec::new()),
                 model: SnapshotSelection::Disabled,
             },
-            participant_policy: GroupParticipantPolicyDocument {
+            initial_participant_policy: GroupParticipantPolicyDocument {
                 members: vec![
                     GroupParticipantPolicySnapshot {
                         participant_id: first_participant,
@@ -1246,7 +1298,7 @@ mod tests {
     }
 
     #[test]
-    fn group_policy_values_must_match_hydrated_participants() {
+    fn group_current_participant_policy_can_change_after_launch() {
         let conversation_id = ConversationId::new();
         let branch_id = ConversationBranchId::new();
         let user_id = ConversationParticipantId::new();
@@ -1297,10 +1349,107 @@ mod tests {
             updated_at: TimestampMillis::UNIX_EPOCH,
         };
         assert!(conversation.validate().is_ok());
-        if let ConversationKind::Group(details) = &mut conversation.kind {
-            details.participant_policy.members[0].enabled = false;
-        }
-        assert!(conversation.validate().is_err());
+        conversation.participants[1].enabled = false;
+        assert!(conversation.validate().is_ok());
+    }
+
+    #[test]
+    fn regenerate_target_requires_current_conversation_and_candidate() {
+        let conversation_id = ConversationId::new();
+        let branch_id = ConversationBranchId::new();
+        let message_id = MessageId::new();
+        let candidate_id = MessageCandidateId::new();
+        let participant_id = ConversationParticipantId::new();
+        let command = RegenerateCandidate {
+            conversation_id,
+            branch_id,
+            message_id,
+            turn_id: GenerationTurnId::new(),
+            expected_revision: Revision::INITIAL,
+            expected_turn_revision: Revision::INITIAL,
+            operation: OperationToken {
+                key: lettuce_jobs::IdempotencyKey::new("regenerate-context").expect("key"),
+                request_digest: ContentHash::parse("ab".repeat(32)).expect("digest"),
+            },
+            active_candidate_id: candidate_id,
+            guidance: None,
+            model_override: None,
+            forced_speaker: None,
+            swap_roles: false,
+        };
+        let message = |conversation_id, source| Message {
+            id: message_id,
+            conversation_id,
+            branch_id,
+            parent_message_id: None,
+            author_participant_id: Some(participant_id),
+            role: MessageRole::Assistant,
+            logical_time: TimestampMillis::UNIX_EPOCH,
+            effective_time: TimestampMillis::UNIX_EPOCH,
+            visibility: MessageVisibility::Visible,
+            pinned: false,
+            scene_edited: false,
+            active_render_source: source,
+            revision: Revision::INITIAL,
+            created_at: TimestampMillis::UNIX_EPOCH,
+            updated_at: TimestampMillis::UNIX_EPOCH,
+        };
+        let participants = vec![ConversationParticipant {
+            id: participant_id,
+            role: ParticipantRole::Character,
+            ordinal: 0,
+            enabled: true,
+            muted: false,
+            source: ParticipantSource::Character(CharacterId::new()),
+            display_name: "Character".into(),
+            authored_description: None,
+            model_selection: SnapshotSelection::Disabled,
+            revision: Revision::INITIAL,
+            created_at: TimestampMillis::UNIX_EPOCH,
+            updated_at: TimestampMillis::UNIX_EPOCH,
+        }];
+        assert!(
+            command
+                .validate_target_context(
+                    &message(
+                        ConversationId::new(),
+                        MessageRenderSource::Candidate(candidate_id)
+                    ),
+                    branch_id,
+                    Some(message_id),
+                    &participants,
+                    false,
+                )
+                .is_err()
+        );
+        assert!(
+            command
+                .validate_target_context(
+                    &message(
+                        conversation_id,
+                        MessageRenderSource::Revision(MessageRevisionId::new()),
+                    ),
+                    branch_id,
+                    Some(message_id),
+                    &participants,
+                    false,
+                )
+                .is_err()
+        );
+        assert!(
+            command
+                .validate_target_context(
+                    &message(
+                        conversation_id,
+                        MessageRenderSource::Candidate(candidate_id)
+                    ),
+                    branch_id,
+                    Some(message_id),
+                    &participants,
+                    false,
+                )
+                .is_ok()
+        );
     }
 
     fn interrupted_attempt(turn_id: GenerationTurnId) -> GenerationAttempt {
@@ -1322,18 +1471,26 @@ mod tests {
     }
 
     fn interrupted_turn(attempt: GenerationAttempt) -> GenerationTurn {
+        let head_message_id = MessageId::new();
         GenerationTurn {
             id: attempt.turn_id,
             conversation_id: ConversationId::new(),
             branch_id: ConversationBranchId::new(),
-            operation: GenerationOperation::Send,
-            input: GenerationInput::ExistingHead {
-                head_message_id: MessageId::new(),
+            operation: GenerationOperation::Continue,
+            input: GenerationInput::ExistingHead { head_message_id },
+            target: GenerationTarget::NewAssistant {
+                message_id: MessageId::new(),
+                parent_message_id: Some(head_message_id),
             },
+            swap_roles: false,
+            retry_of_turn_id: None,
             idempotency_key: lettuce_jobs::IdempotencyKey::new("recovery-test").expect("key"),
             correlation_id: None,
             status: GenerationTurnStatus::Interrupted,
             selected_speaker: None,
+            guidance: None,
+            requested_model_override: None,
+            forced_speaker: None,
             resolved_model: None,
             prompt: None,
             lorebooks: Vec::new(),
@@ -1392,10 +1549,6 @@ mod tests {
             memory: PatchValue::Keep,
             model_override: PatchValue::Keep,
             voice: PatchValue::Keep,
-            author_note_provenance: PatchValue::Keep,
-            memory_provenance: PatchValue::Keep,
-            model_provenance: PatchValue::Keep,
-            voice_provenance: PatchValue::Keep,
         };
         let command = UpdateConversationSettings {
             conversation_id: ConversationId::new(),
@@ -1419,6 +1572,37 @@ mod tests {
             SettingsCasRequirement::Exact(Revision::INITIAL)
         );
         assert_eq!(patch.author_note, PatchValue::Keep);
+
+        let created = patch
+            .apply(None, None)
+            .expect("materialize absent settings");
+        assert_eq!(created.revision, Revision::INITIAL);
+        assert_eq!(
+            created.author_note_provenance,
+            SettingProvenance::LaunchInherited
+        );
+        let existing = CurrentConversationSettings {
+            revision: Revision::INITIAL,
+            author_note: None,
+            author_note_provenance: SettingProvenance::Disabled,
+            memory: None,
+            memory_provenance: SettingProvenance::Disabled,
+            model_override: None,
+            model_provenance: SettingProvenance::Disabled,
+            voice: None,
+            voice_provenance: SettingProvenance::Disabled,
+        };
+        let preserved = patch
+            .apply(Some(&existing), Some(Revision::INITIAL))
+            .expect("preserve existing settings");
+        assert_eq!(preserved.revision, Revision::new(2));
+        assert_eq!(
+            preserved.author_note_provenance,
+            SettingProvenance::Disabled
+        );
+        let mut blank = patch.clone();
+        blank.author_note = PatchValue::Set(String::new());
+        assert!(blank.apply(None, None).is_err());
     }
 
     #[test]

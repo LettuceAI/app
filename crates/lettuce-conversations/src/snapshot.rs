@@ -623,7 +623,8 @@ pub struct GroupParticipantPolicyDocument {
 pub struct GroupConversationDetails {
     pub format_version: u32,
     pub group: GroupLaunchSnapshot,
-    pub participant_policy: GroupParticipantPolicyDocument,
+    #[serde(rename = "participant_policy")]
+    pub initial_participant_policy: GroupParticipantPolicyDocument,
 }
 
 impl GroupConversationDetails {
@@ -635,7 +636,7 @@ impl GroupConversationDetails {
             });
         }
         self.group.validate()?;
-        self.participant_policy.validate()
+        self.initial_participant_policy.validate()
     }
 }
 

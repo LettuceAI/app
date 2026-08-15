@@ -34,6 +34,27 @@ pub enum GenerationOperation {
     Regenerate,
 }
 
+/// The durable output target of a generation turn.  This belongs to the turn
+/// itself because retries and recovery must be able to reconstruct the exact
+/// message/candidate identity without consulting a command envelope.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
+pub enum GenerationTarget {
+    NewAssistant {
+        message_id: MessageId,
+        parent_message_id: Option<MessageId>,
+    },
+    ExistingCandidate {
+        message_id: MessageId,
+        prior_candidate_id: MessageCandidateId,
+    },
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(
     tag = "kind",
@@ -386,10 +407,18 @@ pub struct GenerationTurn {
     pub branch_id: ConversationBranchId,
     pub operation: GenerationOperation,
     pub input: GenerationInput,
+    pub target: GenerationTarget,
+    pub swap_roles: bool,
+    /// A retry is a new turn, linked to the terminal turn it replaces.  A
+    /// normal send/continue/regenerate turn has no source turn.
+    pub retry_of_turn_id: Option<GenerationTurnId>,
     pub idempotency_key: IdempotencyKey,
     pub correlation_id: Option<RequestId>,
     pub status: GenerationTurnStatus,
     pub selected_speaker: Option<SelectedSpeakerDecision>,
+    pub guidance: Option<String>,
+    pub requested_model_override: Option<ModelSelectionSnapshot>,
+    pub forced_speaker: Option<ConversationParticipantId>,
     pub resolved_model: Option<ModelSelectionSnapshot>,
     pub prompt: Option<PromptAttribution>,
     pub lorebooks: Vec<LorebookAttribution>,
@@ -441,6 +470,76 @@ impl GenerationTurn {
             "generation_turn.candidate_ids",
             self.candidate_ids.iter().copied(),
         )?;
+        if is_group && self.swap_roles {
+            return Err(ValidationError::InvalidReference {
+                field: "generation_turn.swap_roles",
+            });
+        }
+        if matches!(self.operation, GenerationOperation::Continue)
+            && (self.guidance.is_some() || self.requested_model_override.is_some())
+        {
+            return Err(ValidationError::InvalidReference {
+                field: "generation_turn.continue_request_overrides",
+            });
+        }
+        if self.retry_of_turn_id == Some(self.id) {
+            return Err(ValidationError::InvalidReference {
+                field: "generation_turn.retry_of_turn_id",
+            });
+        }
+        let target_is_coherent = match (&self.operation, &self.input, &self.target) {
+            (
+                GenerationOperation::Send,
+                GenerationInput::UserMessage {
+                    message_id: user_message_id,
+                },
+                GenerationTarget::NewAssistant {
+                    message_id,
+                    parent_message_id: Some(parent_message_id),
+                },
+            ) => message_id != user_message_id && parent_message_id == user_message_id,
+            (
+                GenerationOperation::Continue,
+                GenerationInput::ExistingHead { head_message_id },
+                GenerationTarget::NewAssistant {
+                    message_id,
+                    parent_message_id: Some(parent_message_id),
+                },
+            ) => message_id != head_message_id && parent_message_id == head_message_id,
+            (
+                GenerationOperation::Regenerate,
+                GenerationInput::ExistingCandidate {
+                    message_id,
+                    candidate_id,
+                },
+                GenerationTarget::ExistingCandidate {
+                    message_id: target_message_id,
+                    prior_candidate_id,
+                },
+            ) => message_id == target_message_id && candidate_id == prior_candidate_id,
+            _ => false,
+        };
+        if !target_is_coherent {
+            return Err(ValidationError::InvalidReference {
+                field: "generation_turn.operation_input_target",
+            });
+        }
+        if !is_group && (self.selected_speaker.is_some() || self.forced_speaker.is_some()) {
+            return Err(ValidationError::InvalidReference {
+                field: "generation_turn.direct_speaker",
+            });
+        }
+        if let Some(guidance) = &self.guidance {
+            validate_text(
+                "generation_turn.guidance",
+                guidance,
+                MAX_REASONING_BYTES,
+                false,
+            )?;
+        }
+        if let Some(model) = &self.requested_model_override {
+            model.validate_snapshot("generation_turn.requested_model_override")?;
+        }
         validate_unique(
             "generation_turn.attempt_ids",
             self.attempts.iter().map(|attempt| attempt.id),
@@ -471,11 +570,6 @@ impl GenerationTurn {
                     field: "generation_turn.attempt_parent",
                 });
             }
-        }
-        if !is_group && self.selected_speaker.is_some() {
-            return Err(ValidationError::InvalidReference {
-                field: "generation_turn.direct_speaker",
-            });
         }
         if let Some(model) = &self.resolved_model {
             model.validate_snapshot("generation_turn.model")?;
@@ -542,6 +636,76 @@ impl GenerationTurn {
                 }
             }
             _ => {}
+        }
+        Ok(())
+    }
+
+    /// Validates a newly-created retry against its terminal source turn.
+    /// Retrying never reopens or appends to the source turn.
+    pub fn validate_retry_against(
+        &self,
+        source: &GenerationTurn,
+        is_group: bool,
+    ) -> Result<(), ValidationError> {
+        self.validate(is_group)?;
+        source.validate(is_group)?;
+        if self.id == source.id
+            || self.retry_of_turn_id != Some(source.id)
+            || self.conversation_id != source.conversation_id
+            || self.branch_id != source.branch_id
+            || self.operation != source.operation
+            || self.input != source.input
+            || self.target != source.target
+            || self.guidance != source.guidance
+            || self.requested_model_override != source.requested_model_override
+            || self.forced_speaker != source.forced_speaker
+            || self.swap_roles != source.swap_roles
+            || !matches!(
+                source.status,
+                GenerationTurnStatus::Failed | GenerationTurnStatus::Cancelled
+            )
+        {
+            return Err(ValidationError::InvalidReference {
+                field: "generation_turn.retry_source",
+            });
+        }
+        Ok(())
+    }
+
+    pub fn validate_speakers_against_participants(
+        &self,
+        participants: &[crate::model::ConversationParticipant],
+    ) -> Result<(), ValidationError> {
+        for participant_id in self.forced_speaker.into_iter().chain(
+            self.selected_speaker
+                .iter()
+                .map(|speaker| speaker.participant_id),
+        ) {
+            if !participants.iter().any(|participant| {
+                participant.id == participant_id
+                    && participant.role == crate::model::ParticipantRole::Character
+            }) {
+                return Err(ValidationError::InvalidReference {
+                    field: "generation_turn.speaker_character",
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// Group regeneration must retain the target author unless an explicit
+    /// forced speaker is supplied; repository code can call this before
+    /// materializing the selected-speaker decision.
+    pub fn validate_regeneration_speaker(
+        &self,
+        target_author: Option<ConversationParticipantId>,
+        selected_speaker: Option<ConversationParticipantId>,
+    ) -> Result<(), ValidationError> {
+        let expected = self.forced_speaker.or(target_author);
+        if selected_speaker != expected {
+            return Err(ValidationError::InvalidReference {
+                field: "generation_turn.regenerate_speaker",
+            });
         }
         Ok(())
     }

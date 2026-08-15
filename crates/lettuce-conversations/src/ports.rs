@@ -13,6 +13,8 @@ use crate::commands::{
 };
 use crate::content::{Message, MessageCandidate, MessagePart, MessageRevision, ReplayArtifactRef};
 use crate::error::ConversationRepositoryError;
+#[allow(unused_imports)]
+pub use crate::generation::GenerationTarget;
 use crate::generation::{
     GenerationAttempt, GenerationCheckpointEnvelope, GenerationCheckpointEvent,
     GenerationOperation, GenerationTurn, IdempotencyKey,
@@ -258,19 +260,6 @@ pub struct BeginGeneration {
     pub conversation: Conversation,
     pub turn: GenerationTurn,
     pub attempt: GenerationAttempt,
-    pub target: GenerationTarget,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GenerationTarget {
-    NewAssistant {
-        message_id: MessageId,
-        parent_message_id: Option<MessageId>,
-    },
-    ExistingCandidate {
-        message_id: MessageId,
-        prior_candidate_id: MessageCandidateId,
-    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -388,6 +377,51 @@ pub struct TombstoneResult {
     pub message: Message,
     pub descendant_count: u32,
     pub asset_reference_deltas: Vec<AssetReferenceDelta>,
+    /// The preservation branch selected atomically by a `Fork` tombstone.
+    /// Other descendant policies must leave this absent.
+    pub forked_branch: Option<ConversationBranch>,
+}
+
+impl TombstoneResult {
+    pub fn validate_for_policy(
+        &self,
+        policy: crate::commands::DescendantPolicy,
+    ) -> Result<(), crate::ValidationError> {
+        self.conversation.validate()?;
+        self.message.validate()?;
+        if self.message.conversation_id != self.conversation.id {
+            return Err(crate::ValidationError::InvalidReference {
+                field: "tombstone.message_conversation",
+            });
+        }
+        match (policy, &self.forked_branch) {
+            (crate::commands::DescendantPolicy::Fork, Some(branch)) => {
+                branch.validate()?;
+                if branch.conversation_id != self.conversation.id
+                    || self.conversation.active_branch_id != branch.id
+                    || branch.status != crate::model::BranchStatus::Active
+                    || branch.parent_branch_id != Some(self.message.branch_id)
+                    || branch.fork_message_id != Some(self.message.id)
+                {
+                    return Err(crate::ValidationError::InvalidReference {
+                        field: "tombstone.forked_branch",
+                    });
+                }
+            }
+            (crate::commands::DescendantPolicy::Fork, None) => {
+                return Err(crate::ValidationError::InvalidReference {
+                    field: "tombstone.forked_branch",
+                });
+            }
+            (_, Some(_)) => {
+                return Err(crate::ValidationError::InvalidReference {
+                    field: "tombstone.forked_branch",
+                });
+            }
+            (_, None) => {}
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

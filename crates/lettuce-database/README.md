@@ -38,6 +38,15 @@ rows store references and the artifact store verifies immutable metadata and
 payload digests before reads or trusted transfer. The database currently exposes
 an internal normalized create/read slice while the complete conversation
 repository mutation port is still being implemented.
+Migration 9 adds the runtime contract for generation turns. M8 turns remain
+readable as legacy rows (`contract_version = 8`); new writers must opt into
+`contract_version = 9` and persist a typed target, retry source, provider
+request overrides, and forced-speaker identity. Runtime triggers enforce
+target/input coherence, retry terminal-source ownership, group speaker
+ownership, settings provenance/value pairing, and branch/message topology.
+Global ID indexes support recovery lookups without weakening conversation-local
+composite ownership. Outbox consumer leases, usage ledgers, and memory join
+tables are intentionally outside this migration.
 Possession of `Database` is a trusted application-composition capability: ordinary
 conversation repositories and DTOs expose artifact references only and cannot
 export protected bytes. Trusted transfer remains a separate composition-only

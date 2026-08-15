@@ -71,6 +71,11 @@ const MIGRATION_8: Migration = Migration {
     sql: include_str!("../migrations/0008_conversations.sql"),
 };
 
+const MIGRATION_9: Migration = Migration {
+    id: 9,
+    sql: include_str!("../migrations/0009_conversation_runtime_contract.sql"),
+};
+
 const PROVIDER_CONFIG_FORMAT_VERSION: u32 = 1;
 const MODEL_PROFILE_CONFIG_FORMAT_VERSION: u32 = 1;
 
@@ -157,6 +162,7 @@ impl Database {
                 MIGRATION_6,
                 MIGRATION_7,
                 MIGRATION_8,
+                MIGRATION_9,
             ],
         )?;
         initialize_settings(&connection)?;
@@ -179,6 +185,7 @@ impl Database {
                 MIGRATION_6,
                 MIGRATION_7,
                 MIGRATION_8,
+                MIGRATION_9,
             ],
         )?;
         initialize_settings(&connection)?;
@@ -1422,6 +1429,7 @@ mod tests {
         AssetId, CharacterId, ContentHash, GroupId, MediaBlobId, ModelProfileId, PageLimit,
         PageRequest, ProviderAccountId, Revision, TimestampMillis,
     };
+    use rusqlite::{TransactionBehavior, params};
 
     use super::{
         Database, DatabaseError, DeleteFailurePoint, Migration, apply_migrations, hex_encode,
@@ -1558,7 +1566,7 @@ mod tests {
                 row.get(0)
             })
             .expect("migration count");
-        assert_eq!(count, 8);
+        assert_eq!(count, 9);
 
         let changed = Migration {
             id: 1,
@@ -1629,7 +1637,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            8
+            9
         );
         let conversation_tables: i64 = connection
             .query_row(
@@ -1662,6 +1670,170 @@ mod tests {
             .expect("repair checksum");
         drop(repaired);
         Database::open(&path).expect("reopen repaired m8 file");
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn m8_file_upgrades_to_m9_runtime_contract_and_checksums() {
+        let path = std::env::temp_dir().join(format!("lettuce-m8-m9-{}.db", MediaBlobId::new()));
+        {
+            let mut connection = rusqlite::Connection::open(&path).expect("open m8 file");
+            super::configure(&connection, true).expect("configure m8 file");
+            super::apply_migrations(
+                &mut connection,
+                &[
+                    super::MIGRATION_1,
+                    super::MIGRATION_2,
+                    super::MIGRATION_3,
+                    super::MIGRATION_4,
+                    super::MIGRATION_5,
+                    super::MIGRATION_6,
+                    super::MIGRATION_7,
+                    super::MIGRATION_8,
+                ],
+            )
+            .expect("apply m1-m8");
+            let transaction = connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .expect("M8 fixture transaction");
+            for (conversation_id, branch_id, author_note, author_provenance) in [
+                (
+                    "m8-settings-launch",
+                    "m8-branch-launch",
+                    None,
+                    "launch_inherited",
+                ),
+                (
+                    "m8-settings-blank",
+                    "m8-branch-blank",
+                    Some("   "),
+                    "launch_inherited",
+                ),
+            ] {
+                transaction
+                    .execute(
+                        "INSERT INTO conversations (id, kind, lifecycle, title, active_branch_id, kind_json, revision, created_at, updated_at) VALUES (?1, 'direct', 'active', 'M8 settings', ?2, '{\"format_version\":1,\"value\":null}', 1, 0, 0)",
+                        params![conversation_id, branch_id],
+                    )
+                    .expect("M8 settings conversation");
+                transaction
+                    .execute(
+                        "INSERT INTO conversation_branches (conversation_id, id, status, revision, created_at, updated_at) VALUES (?1, ?2, 'active', 1, 0, 0)",
+                        params![conversation_id, branch_id],
+                    )
+                    .expect("M8 settings branch");
+                if conversation_id == "m8-settings-launch" {
+                    transaction
+                        .execute(
+                            "INSERT INTO conversation_participants (conversation_id, id, role, ordinal, source_kind, enabled, muted, display_name, model_selection_json, revision, created_at, updated_at) VALUES (?1, 'm8-user-participant', 'user', 0, 'user', 1, 0, 'M8 User', '{\"format_version\":1,\"value\":null}', 1, 0, 0)",
+                            params![conversation_id],
+                        )
+                        .expect("M8 user participant");
+                    transaction
+                        .execute(
+                            "INSERT INTO conversation_message_revisions (conversation_id, id, message_id, branch_id, sequence, parts_json, authored_at) VALUES (?1, 'm8-user-revision', 'm8-user-message', ?2, 1, '{\"format_version\":1,\"value\":null}', 0)",
+                            params![conversation_id, branch_id],
+                        )
+                        .expect("M8 user revision");
+                    transaction
+                        .execute(
+                            "INSERT INTO conversation_messages (conversation_id, id, branch_id, author_participant_id, role, timeline_ordinal, logical_time, effective_time, visibility, pinned, scene_edited, active_revision_id, revision, created_at, updated_at) VALUES (?1, 'm8-user-message', ?2, 'm8-user-participant', 'user', 1, 0, 0, 'visible', 0, 0, 'm8-user-revision', 1, 0, 0)",
+                            params![conversation_id, branch_id],
+                        )
+                        .expect("M8 user message");
+                    transaction
+                        .execute(
+                            "INSERT INTO conversation_turns (conversation_id, id, branch_id, operation, input_kind, user_message_id, idempotency_key, status, revision, created_at, updated_at) VALUES (?1, 'm8-turn', ?2, 'send', 'user_message', 'm8-user-message', 'm8-turn-key', 'created', 1, 0, 0)",
+                            params![conversation_id, branch_id],
+                        )
+                        .expect("M8 generation turn");
+                }
+                transaction
+                    .execute(
+                        "INSERT INTO conversation_settings (conversation_id, revision, author_note, author_note_provenance, memory_provenance, model_provenance, voice_provenance, created_at, updated_at) VALUES (?1, 1, ?2, ?3, 'launch_inherited', 'current_override', 'disabled', 0, 0)",
+                        params![conversation_id, author_note, author_provenance],
+                    )
+                    .expect("M8 settings row");
+            }
+            transaction.commit().expect("M8 settings fixture commit");
+        }
+        let database = Database::open(&path).expect("upgrade m8 file");
+        let connection = database.connection().expect("database lock");
+        assert_eq!(
+            connection
+                .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
+                    .get::<_, i64>(0))
+                .expect("migration count"),
+            9
+        );
+        for column in [
+            "target_kind",
+            "target_message_id",
+            "target_parent_message_id",
+            "target_prior_candidate_id",
+            "retry_of_turn_id",
+            "guidance",
+            "requested_model_override_json",
+            "forced_speaker_participant_id",
+            "swap_roles",
+            "contract_version",
+        ] {
+            let present: i64 = connection
+                .query_row(
+                    "SELECT count(*) FROM pragma_table_info('conversation_turns') WHERE name = ?1",
+                    [column],
+                    |row| row.get(0),
+                )
+                .expect("column lookup");
+            assert_eq!(present, 1, "missing M9 column {column}");
+        }
+        let launch: (Option<String>, String, String, String) = connection
+            .query_row(
+                "SELECT author_note, author_note_provenance, memory_provenance, model_provenance FROM conversation_settings WHERE conversation_id = 'm8-settings-launch'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .expect("read canonical launch settings");
+        assert_eq!(
+            launch,
+            (
+                None,
+                "launch_inherited".into(),
+                "launch_inherited".into(),
+                "disabled".into()
+            )
+        );
+        let blank: (Option<String>, String) = connection
+            .query_row(
+                "SELECT author_note, author_note_provenance FROM conversation_settings WHERE conversation_id = 'm8-settings-blank'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read canonical blank settings");
+        assert_eq!(blank, (None, "disabled".into()));
+        let legacy_turn: (String, i64) = connection
+            .query_row(
+                "SELECT status, contract_version FROM conversation_turns WHERE conversation_id = 'm8-settings-launch' AND id = 'm8-turn'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read upgraded legacy turn");
+        assert_eq!(legacy_turn, ("created".into(), 8));
+        drop(connection);
+        drop(database);
+        Database::open(&path).expect("second reopen after M8 to M9 upgrade");
+        let tampered = rusqlite::Connection::open(&path).expect("reopen database");
+        tampered
+            .execute(
+                "UPDATE schema_migrations SET checksum = 'tampered' WHERE id = 9",
+                [],
+            )
+            .expect("tamper checksum");
+        drop(tampered);
+        assert!(matches!(
+            Database::open(&path),
+            Err(DatabaseError::MigrationChecksum { id: 9 })
+        ));
         let _ = std::fs::remove_file(path);
     }
 
@@ -2556,7 +2728,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            8
+            9
         );
         drop(connection);
         drop(database);
@@ -2606,7 +2778,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            8
+            9
         );
         drop(connection);
         drop(database);
@@ -2638,7 +2810,7 @@ mod tests {
                 row.get(0)
             })
             .expect("migration count");
-        assert_eq!(migration_count, 8);
+        assert_eq!(migration_count, 9);
         for table in [
             "groups",
             "group_members",
@@ -2687,7 +2859,7 @@ mod tests {
                 row.get(0)
             })
             .expect("migration count");
-        assert_eq!(count, 8);
+        assert_eq!(count, 9);
         for table in [
             "prompt_documents",
             "prompt_entries",
@@ -2715,7 +2887,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            8
+            9
         );
         drop(connection);
         drop(reopened);
@@ -2751,7 +2923,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            8
+            9
         );
         let column: i64 = connection
             .query_row(
@@ -2778,7 +2950,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            8
+            9
         );
         drop(connection);
         drop(reopened);
@@ -2827,7 +2999,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            8
+            9
         );
         drop(connection);
         drop(database);

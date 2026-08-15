@@ -122,29 +122,45 @@ impl CurrentConversationSettings {
                 field: "conversation_settings.author_note",
             });
         }
-        if self.author_note_provenance == crate::commands::SettingProvenance::Disabled
-            && self.author_note.is_some()
+        if (!matches!(
+            self.author_note_provenance,
+            crate::commands::SettingProvenance::CurrentOverride
+        )) && self.author_note.is_some()
+            || (self.author_note_provenance == crate::commands::SettingProvenance::CurrentOverride
+                && self.author_note.is_none())
         {
             return Err(ValidationError::InvalidReference {
                 field: "conversation_settings.author_note_provenance",
             });
         }
-        if self.memory_provenance == crate::commands::SettingProvenance::Disabled
-            && self.memory.is_some()
+        if (!matches!(
+            self.memory_provenance,
+            crate::commands::SettingProvenance::CurrentOverride
+        )) && self.memory.is_some()
+            || (self.memory_provenance == crate::commands::SettingProvenance::CurrentOverride
+                && self.memory.is_none())
         {
             return Err(ValidationError::InvalidReference {
                 field: "conversation_settings.memory_provenance",
             });
         }
-        if self.model_provenance == crate::commands::SettingProvenance::Disabled
-            && self.model_override.is_some()
+        if (!matches!(
+            self.model_provenance,
+            crate::commands::SettingProvenance::CurrentOverride
+        )) && self.model_override.is_some()
+            || (self.model_provenance == crate::commands::SettingProvenance::CurrentOverride
+                && self.model_override.is_none())
         {
             return Err(ValidationError::InvalidReference {
                 field: "conversation_settings.model_provenance",
             });
         }
-        if self.voice_provenance == crate::commands::SettingProvenance::Disabled
-            && self.voice.is_some()
+        if (!matches!(
+            self.voice_provenance,
+            crate::commands::SettingProvenance::CurrentOverride
+        )) && self.voice.is_some()
+            || (self.voice_provenance == crate::commands::SettingProvenance::CurrentOverride
+                && self.voice.is_none())
         {
             return Err(ValidationError::InvalidReference {
                 field: "conversation_settings.voice_provenance",
@@ -340,12 +356,7 @@ impl Conversation {
                     || details.group.members.iter().any(|member| {
                         characters
                             .get(&member.character.source_id)
-                            .is_none_or(|participant| {
-                                participant.ordinal != member.ordinal + 1
-                                    || participant.enabled != member.enabled
-                                    || participant.muted != member.muted
-                                    || participant.model_selection != member.model_override
-                            })
+                            .is_none_or(|participant| participant.ordinal != member.ordinal + 1)
                     })
                 {
                     return Err(ValidationError::InvalidReference {
@@ -353,7 +364,7 @@ impl Conversation {
                     });
                 }
                 let policy_ids: std::collections::HashSet<_> = details
-                    .participant_policy
+                    .initial_participant_policy
                     .members
                     .iter()
                     .map(|member| member.participant_id)
@@ -367,20 +378,6 @@ impl Conversation {
                 if policy_ids != character_ids {
                     return Err(ValidationError::InvalidReference {
                         field: "conversation.group.policy_ids",
-                    });
-                }
-                if details.participant_policy.members.iter().any(|policy| {
-                    self.participants
-                        .iter()
-                        .find(|participant| participant.id == policy.participant_id)
-                        .is_none_or(|participant| {
-                            participant.enabled != policy.enabled
-                                || participant.muted != policy.muted
-                                || participant.model_selection != policy.model_override
-                        })
-                }) {
-                    return Err(ValidationError::InvalidReference {
-                        field: "conversation.group.policy_values",
                     });
                 }
             }
@@ -431,9 +428,9 @@ impl ConversationBranch {
                 field: "branch.parent_self",
             });
         }
-        if self.parent_branch_id.is_none() && self.fork_message_id.is_some() {
+        if self.parent_branch_id.is_some() != self.fork_message_id.is_some() {
             return Err(ValidationError::InvalidReference {
-                field: "branch.root_fork_message",
+                field: "branch.parent_fork_pair",
             });
         }
         Ok(())
@@ -854,7 +851,7 @@ impl GroupConversationDetails {
             .iter()
             .filter(|participant| participant.role == ParticipantRole::Character)
             .count();
-        if self.participant_policy.members.len() != character_count {
+        if self.initial_participant_policy.members.len() != character_count {
             return Err(ValidationError::InvalidReference {
                 field: "conversation.group.participant_policy.members",
             });

@@ -746,12 +746,13 @@ mod tests {
             .expect("child head");
         transaction
             .execute(
-                "INSERT INTO conversation_turns (conversation_id, id, branch_id, operation, input_kind, user_message_id, idempotency_key, status, revision, created_at, updated_at) VALUES (?1, ?2, ?3, 'send', 'user_message', ?4, 'source-turn', 'created', 1, 0, 0)",
+                "INSERT INTO conversation_turns (conversation_id, id, branch_id, operation, input_kind, candidate_message_id, candidate_id, idempotency_key, status, target_kind, target_message_id, target_prior_candidate_id, contract_version, revision, created_at, updated_at) VALUES (?1, ?2, ?3, 'regenerate', 'existing_candidate', ?4, ?5, 'source-turn', 'created', 'existing_candidate', ?4, ?5, 9, 1, 0, 0)",
                 params![
                     graph.conversation_id.to_string(),
                     graph.source_turn_id.to_string(),
                     graph.root_branch_id.to_string(),
-                    graph.user_message_id.to_string(),
+                    graph.root_head_message_id.to_string(),
+                    graph.source_candidate_id.to_string(),
                 ],
             )
             .expect("source turn");
@@ -1048,7 +1049,7 @@ mod tests {
                       candidate_id: Option<MessageCandidateId>,
                       key: &str| {
             connection.execute(
-                "INSERT INTO conversation_turns (conversation_id, id, branch_id, operation, input_kind, user_message_id, head_message_id, candidate_message_id, candidate_id, idempotency_key, status, revision, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'created', 1, 0, 0)",
+                "INSERT INTO conversation_turns (conversation_id, id, branch_id, operation, input_kind, user_message_id, head_message_id, candidate_message_id, candidate_id, idempotency_key, status, target_kind, target_message_id, target_parent_message_id, target_prior_candidate_id, contract_version, revision, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'created', CASE WHEN ?4 = 'regenerate' THEN 'existing_candidate' ELSE 'new_assistant' END, CASE WHEN ?4 = 'regenerate' THEN ?8 ELSE 'target-' || ?2 END, coalesce(?6, ?7), CASE WHEN ?4 = 'regenerate' THEN ?9 ELSE NULL END, 9, 1, 0, 0)",
                 params![
                     graph.conversation_id.to_string(), id, branch_id.to_string(), operation,
                     input_kind, user_message_id.map(|value| value.to_string()),
@@ -1130,6 +1131,103 @@ mod tests {
             .is_err()
         );
         insert(
+            "valid-regenerate",
+            graph.root_branch_id,
+            "regenerate",
+            "existing_candidate",
+            None,
+            None,
+            Some(graph.root_head_message_id),
+            Some(graph.source_candidate_id),
+            "valid-regenerate-key",
+        )
+        .expect("existing candidate target is valid");
+        connection
+            .execute(
+                "INSERT INTO generation_attempts (conversation_id, turn_id, id, ordinal, status, job_idempotency_key) VALUES (?1, 'valid-regenerate', 'valid-regenerate-attempt', 0, 'created', 'generation.valid-regenerate.valid-regenerate-attempt')",
+                [graph.conversation_id.to_string()],
+            )
+            .expect("regenerate attempt");
+        connection
+            .execute(
+                "INSERT INTO conversation_message_candidates (conversation_id, id, message_id, branch_id, turn_id, attempt_id, ordinal, parts_json, model_json, created_at) VALUES (?1, 'valid-regenerate-candidate', ?2, ?3, 'valid-regenerate', 'valid-regenerate-attempt', 1, '{\"format_version\":1,\"value\":null}', '{\"format_version\":1,\"value\":null}', 0)",
+                params![
+                    graph.conversation_id.to_string(),
+                    graph.root_head_message_id.to_string(),
+                    graph.root_branch_id.to_string(),
+                ],
+            )
+            .expect("regenerate candidate target is valid");
+        connection
+            .execute(
+                "UPDATE conversation_turns SET status = 'preparing' WHERE conversation_id = ?1 AND id = ?2",
+                params![graph.conversation_id.to_string(), graph.source_turn_id.to_string()],
+            )
+            .expect("retry source preparing");
+        connection
+            .execute(
+                "UPDATE conversation_turns SET status = 'context_prepared' WHERE conversation_id = ?1 AND id = ?2",
+                params![graph.conversation_id.to_string(), graph.source_turn_id.to_string()],
+            )
+            .expect("retry source context prepared");
+        connection
+            .execute(
+                "UPDATE conversation_turns SET status = 'running' WHERE conversation_id = ?1 AND id = ?2",
+                params![graph.conversation_id.to_string(), graph.source_turn_id.to_string()],
+            )
+            .expect("retry source running");
+        connection
+            .execute(
+                "UPDATE conversation_turns SET status = 'finalizing' WHERE conversation_id = ?1 AND id = ?2",
+                params![graph.conversation_id.to_string(), graph.source_turn_id.to_string()],
+            )
+            .expect("retry source finalizing");
+        connection
+            .execute(
+                "INSERT INTO conversation_usage_refs (conversation_id, turn_id, attempt_id, usage_event_id, outcome, created_at) VALUES (?1, ?2, ?3, 'retry-usage', 'failed', 0)",
+                params![
+                    graph.conversation_id.to_string(),
+                    graph.source_turn_id.to_string(),
+                    graph.source_attempt_id.to_string(),
+                ],
+            )
+            .expect("retry usage ref");
+        connection
+            .execute(
+                "UPDATE generation_attempts SET status = 'failed', usage_event_id = 'retry-usage', usage_outcome = 'failed', failure = 'internal', started_at = 1, finished_at = 1 WHERE conversation_id = ?1 AND turn_id = ?2",
+                params![graph.conversation_id.to_string(), graph.source_turn_id.to_string()],
+            )
+            .expect("settle retry source attempt");
+        connection
+            .execute(
+                "UPDATE conversation_turns SET status = 'failed', failure = 'internal' WHERE conversation_id = ?1 AND id = ?2",
+                params![graph.conversation_id.to_string(), graph.source_turn_id.to_string()],
+            )
+            .expect("terminal retry source");
+        connection
+            .execute(
+                "INSERT INTO conversation_turns (conversation_id, id, branch_id, operation, input_kind, candidate_message_id, candidate_id, idempotency_key, status, target_kind, target_message_id, target_prior_candidate_id, retry_of_turn_id, contract_version, revision, created_at, updated_at) VALUES (?1, 'retry-child', ?2, 'regenerate', 'existing_candidate', ?3, ?4, 'retry-child-key', 'created', 'existing_candidate', ?3, ?4, ?5, 9, 1, 0, 0)",
+                params![
+                    graph.conversation_id.to_string(),
+                    graph.root_branch_id.to_string(),
+                    graph.root_head_message_id.to_string(),
+                    graph.source_candidate_id.to_string(),
+                    graph.source_turn_id.to_string(),
+                ],
+            )
+            .expect("matching retry child");
+        assert!(
+            connection
+                .execute(
+                    "DELETE FROM conversation_turns WHERE conversation_id = ?1 AND id = ?2",
+                    params![
+                        graph.conversation_id.to_string(),
+                        graph.source_turn_id.to_string()
+                    ],
+                )
+                .is_err()
+        );
+        insert(
             "valid-continue",
             graph.child_branch_id,
             "continue",
@@ -1143,7 +1241,7 @@ mod tests {
         .expect("current branch head is valid");
         assert!(connection
             .execute(
-                "INSERT INTO conversation_turns (conversation_id, id, branch_id, operation, input_kind, user_message_id, idempotency_key, status, prompt_revision, revision, created_at, updated_at) VALUES (?1, 'prompt-pair', ?2, 'send', 'user_message', ?3, 'prompt-pair-key', 'created', 1, 1, 0, 0)",
+                "INSERT INTO conversation_turns (conversation_id, id, branch_id, operation, input_kind, user_message_id, idempotency_key, status, target_kind, target_message_id, target_parent_message_id, contract_version, prompt_revision, revision, created_at, updated_at) VALUES (?1, 'prompt-pair', ?2, 'send', 'user_message', ?3, 'prompt-pair-key', 'created', 'new_assistant', 'prompt-target', ?3, 9, 1, 1, 0, 0)",
                 params![
                     graph.conversation_id.to_string(),
                     graph.root_branch_id.to_string(),
@@ -1153,7 +1251,7 @@ mod tests {
             .is_err());
         assert!(connection
             .execute(
-                "INSERT INTO conversation_turns (conversation_id, id, branch_id, operation, input_kind, user_message_id, idempotency_key, status, selected_speaker_participant_id, selected_speaker_details_json, revision, created_at, updated_at) VALUES (?1, 'direct-speaker', ?2, 'send', 'user_message', ?3, 'direct-speaker-key', 'created', 'missing-speaker', '{\"format_version\":1}', 1, 0, 0)",
+                "INSERT INTO conversation_turns (conversation_id, id, branch_id, operation, input_kind, user_message_id, idempotency_key, status, target_kind, target_message_id, target_parent_message_id, selected_speaker_participant_id, selected_speaker_details_json, contract_version, revision, created_at, updated_at) VALUES (?1, 'direct-speaker', ?2, 'send', 'user_message', ?3, 'direct-speaker-key', 'created', 'new_assistant', 'speaker-target', ?3, 'missing-speaker', '{\"format_version\":1}', 9, 1, 0, 0)",
                 params![
                     graph.conversation_id.to_string(),
                     graph.root_branch_id.to_string(),
@@ -1170,7 +1268,7 @@ mod tests {
         let connection = database.connection().expect("connection");
         assert!(connection
             .execute(
-                "INSERT INTO conversation_turns (conversation_id, id, branch_id, operation, input_kind, user_message_id, idempotency_key, status, failure, revision, created_at, updated_at) VALUES (?1, 'terminal-insert', ?2, 'send', 'user_message', ?3, 'terminal-insert-key', 'failed', 'internal', 1, 0, 0)",
+                "INSERT INTO conversation_turns (conversation_id, id, branch_id, operation, input_kind, user_message_id, idempotency_key, status, target_kind, target_message_id, target_parent_message_id, failure, contract_version, revision, created_at, updated_at) VALUES (?1, 'terminal-insert', ?2, 'send', 'user_message', ?3, 'terminal-insert-key', 'failed', 'new_assistant', 'terminal-target', ?3, 'internal', 9, 1, 0, 0)",
                 params![
                     graph.conversation_id.to_string(),
                     graph.root_branch_id.to_string(),
@@ -1180,7 +1278,7 @@ mod tests {
             .is_err());
         connection
             .execute(
-                "INSERT INTO conversation_turns (conversation_id, id, branch_id, operation, input_kind, user_message_id, idempotency_key, status, revision, created_at, updated_at) VALUES (?1, 'terminal-update', ?2, 'send', 'user_message', ?3, 'terminal-update-key', 'created', 1, 0, 0)",
+                "INSERT INTO conversation_turns (conversation_id, id, branch_id, operation, input_kind, user_message_id, idempotency_key, status, target_kind, target_message_id, target_parent_message_id, contract_version, revision, created_at, updated_at) VALUES (?1, 'terminal-update', ?2, 'send', 'user_message', ?3, 'terminal-update-key', 'created', 'new_assistant', 'terminal-update-target', ?3, 9, 1, 0, 0)",
                 params![
                     graph.conversation_id.to_string(),
                     graph.root_branch_id.to_string(),
@@ -1308,7 +1406,7 @@ mod tests {
                     lorebooks: SnapshotSelection::Explicit(Vec::new()),
                     model: SnapshotSelection::Explicit(model.clone()),
                 },
-                participant_policy: GroupParticipantPolicyDocument {
+                initial_participant_policy: GroupParticipantPolicyDocument {
                     members: vec![
                         GroupParticipantPolicySnapshot {
                             participant_id,
@@ -1470,6 +1568,13 @@ mod tests {
         for trigger in [
             "generation_attempt_parent_ordinal",
             "generation_checkpoint_contiguous",
+            "conversation_turn_m9_insert_contract",
+            "conversation_turn_m9_update_contract",
+            "conversation_settings_provenance_insert",
+            "conversation_settings_provenance_update",
+            "conversation_branch_head_same_branch_insert",
+            "conversation_branch_fork_message_parent_insert",
+            "conversation_message_parent_topology_insert",
         ] {
             let present: i64 = connection
                 .query_row(
@@ -1479,6 +1584,20 @@ mod tests {
                 )
                 .expect("trigger lookup");
             assert_eq!(present, 1, "missing trigger {trigger}");
+        }
+        for index in [
+            "conversation_turns_id_idx",
+            "conversation_message_revisions_id_idx",
+            "conversation_message_candidates_id_idx",
+        ] {
+            let present: i64 = connection
+                .query_row(
+                    "SELECT count(*) FROM sqlite_schema WHERE type = 'index' AND name = ?1",
+                    [index],
+                    |row| row.get(0),
+                )
+                .expect("index lookup");
+            assert_eq!(present, 1, "missing index {index}");
         }
         let fk_count: i64 = connection
             .query_row(
@@ -1521,6 +1640,18 @@ mod tests {
             .is_err());
         assert!(connection
             .execute(
+                "INSERT INTO conversation_settings (conversation_id, revision, author_note_provenance, memory_provenance, model_provenance, voice_provenance, created_at, updated_at) VALUES (?1, 1, 'current_override', 'launch_inherited', 'launch_inherited', 'launch_inherited', 0, 0)",
+                [conversation_id.to_string()],
+            )
+            .is_err());
+        assert!(connection
+            .execute(
+                "INSERT INTO conversation_settings (conversation_id, revision, author_note, author_note_provenance, memory_provenance, model_provenance, voice_provenance, created_at, updated_at) VALUES (?1, 1, 'forged', 'launch_inherited', 'launch_inherited', 'launch_inherited', 'launch_inherited', 0, 0)",
+                [conversation_id.to_string()],
+            )
+            .is_err());
+        assert!(connection
+            .execute(
                 "INSERT INTO conversation_snapshot_refs (conversation_id, artifact_id) VALUES (?1, 'missing')",
                 [conversation_id.to_string()],
             )
@@ -1547,7 +1678,62 @@ mod tests {
             )
             .expect("raw message");
         graph_transaction.commit().expect("raw graph commit");
+        let other_transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .expect("other message transaction");
+        other_transaction
+            .execute(
+                "INSERT INTO conversation_message_revisions (conversation_id, id, message_id, branch_id, sequence, parts_json, authored_at) VALUES (?1, 'other-revision', 'other-message', ?2, 1, '{\"format_version\":1,\"value\":null}', 0)",
+                params![conversation_id.to_string(), branch_id.to_string()],
+            )
+            .expect("raw other revision");
+        other_transaction
+            .execute(
+                "INSERT INTO conversation_messages (conversation_id, id, branch_id, role, timeline_ordinal, logical_time, effective_time, visibility, pinned, scene_edited, active_revision_id, revision, created_at, updated_at) VALUES (?1, 'other-message', ?2, 'system', 2, 0, 0, 'visible', 0, 0, 'other-revision', 1, 0, 0)",
+                params![conversation_id.to_string(), branch_id.to_string()],
+            )
+            .expect("raw other message");
+        other_transaction.commit().expect("other message commit");
         let fresh_branch_id = ConversationBranchId::new();
+        let child_branch_id = ConversationBranchId::new();
+        connection
+            .execute(
+                "INSERT INTO conversation_branches (conversation_id, id, parent_branch_id, fork_message_id, status, revision, created_at, updated_at) VALUES (?1, ?2, ?3, 'message', 'active', 1, 0, 0)",
+                params![
+                    conversation_id.to_string(),
+                    child_branch_id.to_string(),
+                    branch_id.to_string()
+                ],
+            )
+            .expect("raw child branch");
+        assert!(connection
+            .execute(
+                "UPDATE conversation_branches SET head_message_id = 'message' WHERE conversation_id = ?1 AND id = ?2",
+                params![conversation_id.to_string(), child_branch_id.to_string()],
+            )
+            .is_err());
+        assert!(connection
+            .execute(
+                "UPDATE conversation_branches SET parent_branch_id = 'missing-parent' WHERE conversation_id = ?1 AND id = ?2",
+                params![conversation_id.to_string(), child_branch_id.to_string()],
+            )
+            .is_err());
+        let bad_child_transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .expect("bad child transaction");
+        bad_child_transaction
+            .execute(
+                "INSERT INTO conversation_message_revisions (conversation_id, id, message_id, branch_id, sequence, parts_json, authored_at) VALUES (?1, 'bad-child-revision', 'bad-child-message', ?2, 1, '{\"format_version\":1,\"value\":null}', 0)",
+                params![conversation_id.to_string(), child_branch_id.to_string()],
+            )
+            .expect("bad child revision");
+        assert!(bad_child_transaction
+            .execute(
+                "INSERT INTO conversation_messages (conversation_id, id, branch_id, parent_message_id, role, timeline_ordinal, logical_time, effective_time, visibility, pinned, scene_edited, active_revision_id, revision, created_at, updated_at) VALUES (?1, 'bad-child-message', ?2, 'other-message', 'system', 3, 0, 0, 'visible', 0, 0, 'bad-child-revision', 1, 0, 0)",
+                params![conversation_id.to_string(), child_branch_id.to_string()],
+            )
+            .is_err());
+        assert!(bad_child_transaction.rollback().is_ok());
         let self_parent_error = connection
             .execute(
                 "INSERT INTO conversation_branches (conversation_id, id, parent_branch_id, fork_message_id, status, revision, created_at, updated_at) VALUES (?1, ?2, ?2, 'message', 'active', 1, 0, 0)",
@@ -1561,10 +1747,150 @@ mod tests {
         );
         connection
             .execute(
-                "INSERT INTO conversation_turns (conversation_id, id, branch_id, operation, input_kind, user_message_id, idempotency_key, status, revision, created_at, updated_at) VALUES (?1, 'turn', ?2, 'send', 'user_message', 'message', 'turn-key', 'created', 1, 0, 0)",
+                "INSERT INTO conversation_turns (conversation_id, id, branch_id, operation, input_kind, user_message_id, idempotency_key, status, target_kind, target_message_id, target_parent_message_id, contract_version, revision, created_at, updated_at) VALUES (?1, 'turn', ?2, 'send', 'user_message', 'message', 'turn-key', 'created', 'new_assistant', 'turn-target', 'message', 9, 1, 0, 0)",
                 params![conversation_id.to_string(), branch_id.to_string()],
             )
             .expect("raw turn");
+        connection
+            .execute(
+                "INSERT INTO conversation_turns (conversation_id, id, branch_id, operation, input_kind, user_message_id, idempotency_key, status, target_kind, target_message_id, target_parent_message_id, contract_version, revision, created_at, updated_at) VALUES (?1, 'm9-turn', ?2, 'send', 'user_message', 'message', 'm9-turn-key', 'created', 'new_assistant', 'new-assistant', 'message', 9, 1, 0, 0)",
+                params![conversation_id.to_string(), branch_id.to_string()],
+            )
+            .expect("valid M9 target turn");
+        connection
+            .execute(
+                "INSERT INTO conversation_participants (conversation_id, id, role, ordinal, source_kind, source_id, enabled, muted, display_name, model_selection_json, revision, created_at, updated_at) VALUES (?1, 'character-participant', 'character', 1, 'character', 'character-source', 1, 0, 'Character', '{\"format_version\":1,\"value\":null}', 1, 0, 0)",
+                [conversation_id.to_string()],
+            )
+            .expect("raw character participant");
+        let target_message_transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .expect("target message transaction");
+        for (message_id, revision_id) in [
+            ("new-assistant", "new-assistant-revision"),
+            ("wrong-assistant", "wrong-assistant-revision"),
+        ] {
+            target_message_transaction
+                .execute(
+                    "INSERT INTO conversation_message_revisions (conversation_id, id, message_id, branch_id, sequence, parts_json, authored_at) VALUES (?1, ?2, ?3, ?4, 1, '{\"format_version\":1,\"value\":null}', 0)",
+                    params![conversation_id.to_string(), revision_id, message_id, branch_id.to_string()],
+                )
+                .expect("target revision");
+            target_message_transaction
+                .execute(
+                    "INSERT INTO conversation_messages (conversation_id, id, branch_id, parent_message_id, author_participant_id, role, timeline_ordinal, logical_time, effective_time, visibility, pinned, scene_edited, active_revision_id, revision, created_at, updated_at) VALUES (?1, ?2, ?3, 'message', 'character-participant', 'assistant', ?4, 0, 0, 'visible', 0, 0, ?5, 1, 0, 0)",
+                    params![conversation_id.to_string(), message_id, branch_id.to_string(), if message_id == "new-assistant" { 5 } else { 6 }, revision_id],
+                )
+                .expect("target message");
+        }
+        target_message_transaction
+            .execute(
+                "INSERT INTO generation_attempts (conversation_id, turn_id, id, ordinal, status, job_idempotency_key) VALUES (?1, 'm9-turn', 'm9-attempt', 0, 'created', 'generation.m9-turn.m9-attempt')",
+                [conversation_id.to_string()],
+            )
+            .expect("M9 attempt");
+        target_message_transaction
+            .commit()
+            .expect("target message commit");
+        assert!(connection
+            .execute(
+                "INSERT INTO conversation_message_candidates (conversation_id, id, message_id, branch_id, turn_id, attempt_id, ordinal, parts_json, model_json, created_at) VALUES (?1, 'wrong-candidate', 'wrong-assistant', ?2, 'm9-turn', 'm9-attempt', 0, '{\"format_version\":1,\"value\":null}', '{\"format_version\":1,\"value\":null}', 0)",
+                params![conversation_id.to_string(), branch_id.to_string()],
+            )
+            .is_err());
+        connection
+            .execute(
+                "INSERT INTO conversation_message_candidates (conversation_id, id, message_id, branch_id, turn_id, attempt_id, ordinal, parts_json, model_json, created_at) VALUES (?1, 'valid-candidate', 'new-assistant', ?2, 'm9-turn', 'm9-attempt', 0, '{\"format_version\":1,\"value\":null}', '{\"format_version\":1,\"value\":null}', 0)",
+                params![conversation_id.to_string(), branch_id.to_string()],
+            )
+            .expect("valid M9 candidate target");
+        assert!(connection
+            .execute(
+                "INSERT INTO conversation_turns (conversation_id, id, branch_id, operation, input_kind, user_message_id, idempotency_key, status, contract_version, revision, created_at, updated_at) VALUES (?1, 'missing-target', ?2, 'send', 'user_message', 'message', 'missing-target-key', 'created', 9, 1, 0, 0)",
+                params![conversation_id.to_string(), branch_id.to_string()],
+            )
+            .is_err());
+        assert!(connection
+            .execute(
+                "INSERT INTO conversation_turns (conversation_id, id, branch_id, operation, input_kind, user_message_id, idempotency_key, status, revision, created_at, updated_at) VALUES (?1, 'legacy-new', ?2, 'send', 'user_message', 'message', 'legacy-new-key', 'created', 1, 0, 0)",
+                params![conversation_id.to_string(), branch_id.to_string()],
+            )
+            .is_err());
+        assert!(connection
+            .execute(
+                "INSERT INTO conversation_turns (conversation_id, id, branch_id, operation, input_kind, user_message_id, idempotency_key, status, target_kind, target_message_id, target_parent_message_id, forced_speaker_participant_id, contract_version, revision, created_at, updated_at) VALUES (?1, 'direct-speaker', ?2, 'send', 'user_message', 'message', 'direct-speaker-key', 'created', 'new_assistant', 'new-assistant-2', 'message', 'user-participant', 9, 1, 0, 0)",
+                params![conversation_id.to_string(), branch_id.to_string()],
+            )
+            .is_err());
+        assert!(connection
+            .execute(
+                "INSERT INTO conversation_turns (conversation_id, id, branch_id, operation, input_kind, user_message_id, idempotency_key, status, target_kind, target_message_id, target_parent_message_id, retry_of_turn_id, contract_version, revision, created_at, updated_at) VALUES (?1, 'bad-retry', ?2, 'send', 'user_message', 'message', 'bad-retry-key', 'created', 'new_assistant', 'new-assistant-3', 'message', 'turn', 9, 1, 0, 0)",
+                params![conversation_id.to_string(), branch_id.to_string()],
+            )
+            .is_err());
+        assert!(connection
+            .execute(
+                "INSERT INTO conversation_turns (conversation_id, id, branch_id, operation, input_kind, user_message_id, idempotency_key, status, target_kind, target_message_id, target_parent_message_id, guidance, contract_version, revision, created_at, updated_at) VALUES (?1, 'blank-guidance', ?2, 'send', 'user_message', 'message', 'blank-guidance-key', 'created', 'new_assistant', 'new-assistant-4', 'message', ' ', 9, 1, 0, 0)",
+                params![conversation_id.to_string(), branch_id.to_string()],
+            )
+            .is_err());
+        for statement in [
+            "UPDATE conversation_turns SET target_message_id = 'coherent-new-target' WHERE conversation_id = ?1 AND id = 'turn'",
+            "UPDATE conversation_turns SET guidance = 'coherent guidance' WHERE conversation_id = ?1 AND id = 'turn'",
+            "UPDATE conversation_turns SET requested_model_override_json = '{\"format_version\":1,\"value\":null}' WHERE conversation_id = ?1 AND id = 'turn'",
+            "UPDATE conversation_turns SET forced_speaker_participant_id = 'character-participant' WHERE conversation_id = ?1 AND id = 'turn'",
+            "UPDATE conversation_turns SET retry_of_turn_id = 'turn' WHERE conversation_id = ?1 AND id = 'turn'",
+            "UPDATE conversation_turns SET swap_roles = 1 WHERE conversation_id = ?1 AND id = 'turn'",
+            "UPDATE conversation_turns SET contract_version = 8 WHERE conversation_id = ?1 AND id = 'turn'",
+        ] {
+            assert!(
+                connection
+                    .execute(statement, [conversation_id.to_string()])
+                    .is_err()
+            );
+        }
+        connection
+            .execute(
+                "UPDATE conversations SET kind = 'group', kind_json = '{\"format_version\":1,\"value\":null}' WHERE id = ?1",
+                [conversation_id.to_string()],
+            )
+            .expect("group speaker fixture");
+        connection
+            .execute(
+                "INSERT INTO conversation_participants (conversation_id, id, role, ordinal, source_kind, source_id, enabled, muted, display_name, model_selection_json, revision, created_at, updated_at) VALUES (?1, 'wrong-group-character', 'character', 2, 'character', 'wrong-source', 1, 0, 'Wrong', '{\"format_version\":1,\"value\":null}', 1, 0, 0)",
+                [conversation_id.to_string()],
+            )
+            .expect("wrong group character");
+        let target_author: String = connection
+            .query_row(
+                "SELECT author_participant_id FROM conversation_messages WHERE conversation_id = ?1 AND id = ?2",
+                params![conversation_id.to_string(), "new-assistant"],
+                |row| row.get(0),
+            )
+            .expect("group target author");
+        connection
+            .execute(
+                "INSERT INTO conversation_turns (conversation_id, id, branch_id, operation, input_kind, candidate_message_id, candidate_id, idempotency_key, status, target_kind, target_message_id, target_prior_candidate_id, contract_version, revision, created_at, updated_at) VALUES (?1, 'group-regenerate', ?2, 'regenerate', 'existing_candidate', ?3, ?4, 'group-regenerate-key', 'created', 'existing_candidate', ?3, ?4, 9, 1, 0, 0)",
+                params![
+                    conversation_id.to_string(),
+                    branch_id.to_string(),
+                    "new-assistant",
+                    "valid-candidate",
+                ],
+            )
+            .expect("group regenerate may resolve speaker later");
+        connection
+            .execute(
+                "UPDATE conversation_turns SET selected_speaker_participant_id = ?1, selected_speaker_details_json = '{\"format_version\":1}' WHERE conversation_id = ?2 AND id = 'group-regenerate'",
+                params![target_author, conversation_id.to_string()],
+            )
+            .expect("group regenerate target author speaker");
+        assert!(connection
+            .execute(
+                "UPDATE conversation_turns SET selected_speaker_participant_id = 'wrong-group-character', selected_speaker_details_json = '{\"format_version\":1}' WHERE conversation_id = ?1 AND id = 'group-regenerate'",
+                [conversation_id.to_string()],
+            )
+            .is_err());
         assert!(connection
             .execute(
                 "INSERT INTO generation_attempts (conversation_id, turn_id, id, ordinal, status, job_idempotency_key) VALUES (?1, 'turn', 'attempt', 0, 'created', 'wrong')",
@@ -1588,7 +1914,7 @@ mod tests {
             .expect("message transaction");
         message_transaction
             .execute(
-                "INSERT INTO conversation_messages (conversation_id, id, branch_id, role, timeline_ordinal, logical_time, effective_time, visibility, pinned, scene_edited, active_revision_id, revision, created_at, updated_at) VALUES (?1, 'corrupt-message', ?2, 'system', 2, 0, 0, 'visible', 0, 0, 'missing-revision', 1, 0, 0)",
+                "INSERT INTO conversation_messages (conversation_id, id, branch_id, role, timeline_ordinal, logical_time, effective_time, visibility, pinned, scene_edited, active_revision_id, revision, created_at, updated_at) VALUES (?1, 'corrupt-message', ?2, 'system', 4, 0, 0, 'visible', 0, 0, 'missing-revision', 1, 0, 0)",
                 params![conversation_id.to_string(), branch_id.to_string()],
             )
             .expect("raw message");

@@ -5,7 +5,7 @@ use lettuce_types::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::content::{MessagePart, MessageRole, MessageVisibility};
+use crate::content::{Message, MessagePart, MessageRenderSource, MessageRole, MessageVisibility};
 use crate::error::ValidationError;
 use crate::generation::{GenerationOperation, IdempotencyKey};
 use crate::model::{ConversationKind, ParticipantRole, ParticipantSource};
@@ -177,7 +177,7 @@ impl CreateConversationPlan {
                         });
                     }
                     let policy_ids: std::collections::HashSet<_> = details
-                        .participant_policy
+                        .initial_participant_policy
                         .members
                         .iter()
                         .map(|member| member.participant_id)
@@ -193,16 +193,21 @@ impl CreateConversationPlan {
                             field: "conversation_plan.group.policy_ids",
                         });
                     }
-                    if details.participant_policy.members.iter().any(|policy| {
-                        self.participants
-                            .iter()
-                            .find(|participant| participant.id == policy.participant_id)
-                            .is_none_or(|participant| {
-                                participant.enabled != policy.enabled
-                                    || participant.muted != policy.muted
-                                    || participant.model_selection != policy.model_override
-                            })
-                    }) {
+                    if details
+                        .initial_participant_policy
+                        .members
+                        .iter()
+                        .any(|policy| {
+                            self.participants
+                                .iter()
+                                .find(|participant| participant.id == policy.participant_id)
+                                .is_none_or(|participant| {
+                                    participant.enabled != policy.enabled
+                                        || participant.muted != policy.muted
+                                        || participant.model_selection != policy.model_override
+                                })
+                        })
+                    {
                         return Err(ValidationError::InvalidReference {
                             field: "conversation_plan.group.policy_values",
                         });
@@ -258,6 +263,7 @@ pub struct SendConversation {
     pub expected_revision: Revision,
     pub operation: OperationToken,
     pub message: MessageDraft,
+    pub swap_roles: bool,
 }
 
 impl SendConversation {
@@ -278,6 +284,7 @@ pub struct ContinueConversation {
     pub branch_id: ConversationBranchId,
     pub expected_revision: Revision,
     pub forced_speaker: Option<ConversationParticipantId>,
+    pub swap_roles: bool,
     pub operation: OperationToken,
 }
 
@@ -295,6 +302,7 @@ pub struct RegenerateCandidate {
     pub guidance: Option<String>,
     pub model_override: Option<ModelSelectionSnapshot>,
     pub forced_speaker: Option<ConversationParticipantId>,
+    pub swap_roles: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -472,6 +480,90 @@ pub struct UpdateParticipantPolicy {
     pub model_override: Option<crate::snapshot::SnapshotSelection<ModelSelectionSnapshot>>,
 }
 
+impl UpdateParticipantPolicy {
+    pub fn validate_against_participants(
+        &self,
+        participants: &[crate::model::ConversationParticipant],
+    ) -> Result<(), ValidationError> {
+        let participant = participants
+            .iter()
+            .find(|participant| participant.id == self.participant_id)
+            .ok_or(ValidationError::InvalidReference {
+                field: "participant_policy.participant_id",
+            })?;
+        if participant.role != ParticipantRole::Character {
+            return Err(ValidationError::InvalidReference {
+                field: "participant_policy.character",
+            });
+        }
+        Ok(())
+    }
+}
+
+impl RegenerateCandidate {
+    pub fn validate_target_context(
+        &self,
+        message: &Message,
+        active_branch_id: ConversationBranchId,
+        active_head_message_id: Option<MessageId>,
+        participants: &[crate::model::ConversationParticipant],
+        is_group: bool,
+    ) -> Result<(), ValidationError> {
+        if message.id != self.message_id
+            || message.conversation_id != self.conversation_id
+            || message.branch_id != self.branch_id
+            || message.branch_id != active_branch_id
+            || message.role != MessageRole::Assistant
+            || message.active_render_source
+                != MessageRenderSource::Candidate(self.active_candidate_id)
+            || (!is_group && active_head_message_id != Some(message.id))
+        {
+            return Err(ValidationError::InvalidReference {
+                field: "regenerate.target_message",
+            });
+        }
+        if let Some(forced) = self.forced_speaker {
+            let participant = participants
+                .iter()
+                .find(|participant| participant.id == forced)
+                .ok_or(ValidationError::InvalidReference {
+                    field: "regenerate.forced_speaker",
+                })?;
+            if participant.role != ParticipantRole::Character {
+                return Err(ValidationError::InvalidReference {
+                    field: "regenerate.forced_speaker",
+                });
+            }
+        } else if !participants.iter().any(|participant| {
+            Some(participant.id) == message.author_participant_id
+                && participant.role == ParticipantRole::Character
+        }) {
+            return Err(ValidationError::InvalidReference {
+                field: "regenerate.target_author",
+            });
+        }
+        Ok(())
+    }
+
+    pub fn validate_selected_speaker(
+        &self,
+        target_author: Option<ConversationParticipantId>,
+        selected_speaker: Option<ConversationParticipantId>,
+        is_group: bool,
+    ) -> Result<(), ValidationError> {
+        if !is_group {
+            return Ok(());
+        }
+        let expected = self.forced_speaker.or(target_author);
+        if selected_speaker != expected {
+            return Err(ValidationError::InvalidReference {
+                field: "regenerate.selected_speaker",
+            });
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub enum PatchValue<T> {
@@ -487,10 +579,6 @@ pub struct CurrentConversationSettingsPatch {
     pub memory: PatchValue<crate::snapshot::MemorySettingsSnapshot>,
     pub model_override: PatchValue<ModelSelectionSnapshot>,
     pub voice: PatchValue<crate::snapshot::VoiceSettingsSnapshot>,
-    pub author_note_provenance: PatchValue<SettingProvenance>,
-    pub memory_provenance: PatchValue<SettingProvenance>,
-    pub model_provenance: PatchValue<SettingProvenance>,
-    pub voice_provenance: PatchValue<SettingProvenance>,
 }
 
 impl CurrentConversationSettingsPatch {
@@ -500,7 +588,7 @@ impl CurrentConversationSettingsPatch {
                 "conversation_settings.author_note",
                 note,
                 crate::validation::MAX_AUTHORED_TEXT_BYTES,
-                true,
+                false,
             )?;
         }
         if let PatchValue::Set(memory) = &self.memory {
@@ -513,6 +601,110 @@ impl CurrentConversationSettingsPatch {
             voice.validate()?;
         }
         Ok(())
+    }
+
+    /// Materializes the repository-owned settings state and applies the
+    /// command's optimistic-concurrency requirement.  Callers can only
+    /// choose Keep/Set/Clear; provenance is derived here and cannot be forged.
+    pub fn apply(
+        &self,
+        current: Option<&crate::model::CurrentConversationSettings>,
+        expected_revision: Option<Revision>,
+    ) -> Result<crate::model::CurrentConversationSettings, ValidationError> {
+        self.validate()?;
+        if let Some(expected) = expected_revision {
+            if expected.get() == 0 {
+                return Err(ValidationError::ZeroRevision);
+            }
+            if current.is_none_or(|settings| settings.revision != expected) {
+                return Err(ValidationError::InvalidReference {
+                    field: "conversation_settings.expected_revision",
+                });
+            }
+        } else if current.is_some() {
+            return Err(ValidationError::InvalidReference {
+                field: "conversation_settings.create_only",
+            });
+        }
+        let revision = match current {
+            Some(settings) => {
+                settings
+                    .revision
+                    .next()
+                    .map_err(|_| ValidationError::OutOfBounds {
+                        field: "conversation_settings.revision",
+                    })?
+            }
+            None => Revision::INITIAL,
+        };
+        fn apply_value<T: Clone>(
+            patch: &PatchValue<T>,
+            current_value: Option<&T>,
+            current_provenance: SettingProvenance,
+            has_current: bool,
+        ) -> (Option<T>, SettingProvenance) {
+            match patch {
+                PatchValue::Keep => (
+                    current_value.cloned(),
+                    if has_current {
+                        current_provenance
+                    } else {
+                        SettingProvenance::LaunchInherited
+                    },
+                ),
+                PatchValue::Set(value) => (Some(value.clone()), SettingProvenance::CurrentOverride),
+                PatchValue::Clear => (None, SettingProvenance::Disabled),
+            }
+        }
+        let empty = crate::model::CurrentConversationSettings {
+            revision,
+            author_note: None,
+            author_note_provenance: SettingProvenance::LaunchInherited,
+            memory: None,
+            memory_provenance: SettingProvenance::LaunchInherited,
+            model_override: None,
+            model_provenance: SettingProvenance::LaunchInherited,
+            voice: None,
+            voice_provenance: SettingProvenance::LaunchInherited,
+        };
+        let base = current.unwrap_or(&empty);
+        let (author_note, author_note_provenance) = apply_value(
+            &self.author_note,
+            base.author_note.as_ref(),
+            base.author_note_provenance,
+            current.is_some(),
+        );
+        let (memory, memory_provenance) = apply_value(
+            &self.memory,
+            base.memory.as_ref(),
+            base.memory_provenance,
+            current.is_some(),
+        );
+        let (model_override, model_provenance) = apply_value(
+            &self.model_override,
+            base.model_override.as_ref(),
+            base.model_provenance,
+            current.is_some(),
+        );
+        let (voice, voice_provenance) = apply_value(
+            &self.voice,
+            base.voice.as_ref(),
+            base.voice_provenance,
+            current.is_some(),
+        );
+        let result = crate::model::CurrentConversationSettings {
+            revision,
+            author_note,
+            author_note_provenance,
+            memory,
+            memory_provenance,
+            model_override,
+            model_provenance,
+            voice,
+            voice_provenance,
+        };
+        result.validate()?;
+        Ok(result)
     }
 }
 
@@ -597,7 +789,7 @@ impl ConversationMutation {
                         "regenerate.guidance",
                         guidance,
                         crate::validation::MAX_REASONING_BYTES,
-                        true,
+                        false,
                     )?;
                 }
                 if let Some(model) = &command.model_override {

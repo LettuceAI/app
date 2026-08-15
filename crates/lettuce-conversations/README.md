@@ -67,3 +67,7 @@ Inherited selections contain their fully resolved value, while mutable current
 settings remain separate from immutable launch history. Branch history uses
 parent links, depth/order and bounded validators; operation records bind CAS
 mutations to request digests and idempotency keys.
+
+Launch snapshots stay frozen for the conversation lifetime. Current participant
+policy and settings are explicit mutable state; this contract does not derive
+live values from cross-conversation sources.

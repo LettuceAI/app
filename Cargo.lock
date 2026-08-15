@@ -349,6 +349,7 @@ dependencies = [
  "lettuce-media",
  "lettuce-types",
  "serde",
+ "serde_json",
  "thiserror",
  "zeroize",
 ]

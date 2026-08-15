@@ -280,9 +280,9 @@ impl<R: ConversationRepository> ConversationManager<R> {
         now: TimestampMillis,
     ) -> Result<TombstoneMessageResult, ConversationServiceError> {
         ConversationMutation::Tombstone(command.clone()).validate()?;
-        self.repository
-            .tombstone_message(command, now)
-            .map_err(Into::into)
+        let result = self.repository.tombstone_message(command, now)?;
+        result.value.validate_for_policy(command.descendants)?;
+        Ok(result)
     }
 
     pub fn archive(
