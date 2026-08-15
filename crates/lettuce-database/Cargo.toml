@@ -14,7 +14,10 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+blake3.workspace = true
 lettuce-context.workspace = true
+lettuce-conversations.workspace = true
+lettuce-jobs.workspace = true
 lettuce-characters.workspace = true
 lettuce-media.workspace = true
 lettuce-models.workspace = true
@@ -26,3 +29,4 @@ serde_json.workspace = true
 thiserror.workspace = true
 unicode-normalization.workspace = true
 uuid.workspace = true
+zeroize.workspace = true

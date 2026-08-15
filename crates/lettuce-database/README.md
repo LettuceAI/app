@@ -28,6 +28,25 @@ Migration 7 adds nullable stable keys for built-in prompt entries, with a
 partial per-prompt uniqueness index and strict nonblank/bounded storage checks.
 Built-in reconciliation matches keyed entries so IDs and entry history survive
 catalog refreshes, while ordinary user drafts cannot forge catalog keys.
+Migration 8 adds the normalized conversation ownership graph: participants and
+settings, durable branches/messages/turns, revisions/candidates, typed media
+associations, generation attempts/checkpoints, operation/outbox records, and
+usage references. Durable history is restrict-owned and composite foreign keys
+keep every child scoped to its conversation and turn. Snapshot and provider
+replay bytes are held in separate private artifact tables; ordinary conversation
+rows store references and the artifact store verifies immutable metadata and
+payload digests before reads or trusted transfer. The database currently exposes
+an internal normalized create/read slice while the complete conversation
+repository mutation port is still being implemented.
+Possession of `Database` is a trusted application-composition capability: ordinary
+conversation repositories and DTOs expose artifact references only and cannot
+export protected bytes. Trusted transfer remains a separate composition-only
+capability.
+The versioned operation `result_json` and outbox `event_json` envelopes are the
+canonical payloads; scalar columns are routing/index projections. The future
+full repository must validate projection equality on every write and hydrate.
+Usage rows are references owned by the external `UsagePort`, not copied usage
+records.
 
 Sessions, conversation assembly/resolution, starter-link normalization,
 import/export, hard purge, sync/backup, FTS, and legacy text-column retrofits

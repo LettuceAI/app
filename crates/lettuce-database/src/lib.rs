@@ -3,6 +3,8 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 mod character_adapter;
+mod conversation_artifact_adapter;
+mod conversation_vertical_slice;
 mod group_adapter;
 mod lorebook_adapter;
 mod persona_adapter;
@@ -62,6 +64,11 @@ const MIGRATION_6: Migration = Migration {
 const MIGRATION_7: Migration = Migration {
     id: 7,
     sql: include_str!("../migrations/0007_builtin_prompt_entries.sql"),
+};
+
+const MIGRATION_8: Migration = Migration {
+    id: 8,
+    sql: include_str!("../migrations/0008_conversations.sql"),
 };
 
 const PROVIDER_CONFIG_FORMAT_VERSION: u32 = 1;
@@ -149,6 +156,7 @@ impl Database {
                 MIGRATION_5,
                 MIGRATION_6,
                 MIGRATION_7,
+                MIGRATION_8,
             ],
         )?;
         initialize_settings(&connection)?;
@@ -170,6 +178,7 @@ impl Database {
                 MIGRATION_5,
                 MIGRATION_6,
                 MIGRATION_7,
+                MIGRATION_8,
             ],
         )?;
         initialize_settings(&connection)?;
@@ -1549,7 +1558,7 @@ mod tests {
                 row.get(0)
             })
             .expect("migration count");
-        assert_eq!(count, 7);
+        assert_eq!(count, 8);
 
         let changed = Migration {
             id: 1,
@@ -1591,6 +1600,69 @@ mod tests {
             apply_migrations(&mut connection, &[changed]),
             Err(DatabaseError::MigrationChecksum { id: 5 })
         ));
+    }
+
+    #[test]
+    fn m7_file_upgrades_to_m8_and_rejects_checksum_tampering() {
+        let path = std::env::temp_dir().join(format!("lettuce-m7-m8-{}.db", MediaBlobId::new()));
+        {
+            let mut connection = rusqlite::Connection::open(&path).expect("open m7 file");
+            super::configure(&connection, true).expect("configure m7 file");
+            super::apply_migrations(
+                &mut connection,
+                &[
+                    super::MIGRATION_1,
+                    super::MIGRATION_2,
+                    super::MIGRATION_3,
+                    super::MIGRATION_4,
+                    super::MIGRATION_5,
+                    super::MIGRATION_6,
+                    super::MIGRATION_7,
+                ],
+            )
+            .expect("apply m1-m7");
+        }
+        let database = Database::open(&path).expect("upgrade m7 file");
+        let connection = database.connection().expect("database lock");
+        assert_eq!(
+            connection
+                .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
+                    .get::<_, i64>(0))
+                .expect("migration count"),
+            8
+        );
+        let conversation_tables: i64 = connection
+            .query_row(
+                "SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name IN ('conversations', 'conversation_snapshot_artifacts', 'generation_attempts')",
+                [],
+                |row| row.get(0),
+            )
+            .expect("conversation tables");
+        assert_eq!(conversation_tables, 3);
+        drop(connection);
+        drop(database);
+        let tampered = rusqlite::Connection::open(&path).expect("reopen database");
+        tampered
+            .execute(
+                "UPDATE schema_migrations SET checksum = 'tampered' WHERE id = 8",
+                [],
+            )
+            .expect("tamper checksum");
+        drop(tampered);
+        assert!(matches!(
+            Database::open(&path),
+            Err(DatabaseError::MigrationChecksum { id: 8 })
+        ));
+        let repaired = rusqlite::Connection::open(&path).expect("reopen tampered database");
+        repaired
+            .execute(
+                "UPDATE schema_migrations SET checksum = ?1 WHERE id = 8",
+                [super::migration_checksum(super::MIGRATION_8.sql)],
+            )
+            .expect("repair checksum");
+        drop(repaired);
+        Database::open(&path).expect("reopen repaired m8 file");
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]
@@ -2484,7 +2556,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            7
+            8
         );
         drop(connection);
         drop(database);
@@ -2534,7 +2606,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            7
+            8
         );
         drop(connection);
         drop(database);
@@ -2566,7 +2638,7 @@ mod tests {
                 row.get(0)
             })
             .expect("migration count");
-        assert_eq!(migration_count, 7);
+        assert_eq!(migration_count, 8);
         for table in [
             "groups",
             "group_members",
@@ -2615,7 +2687,7 @@ mod tests {
                 row.get(0)
             })
             .expect("migration count");
-        assert_eq!(count, 7);
+        assert_eq!(count, 8);
         for table in [
             "prompt_documents",
             "prompt_entries",
@@ -2643,7 +2715,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            7
+            8
         );
         drop(connection);
         drop(reopened);
@@ -2679,7 +2751,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            7
+            8
         );
         let column: i64 = connection
             .query_row(
@@ -2706,7 +2778,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            7
+            8
         );
         drop(connection);
         drop(reopened);
@@ -2755,7 +2827,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            7
+            8
         );
         drop(connection);
         drop(database);
@@ -2880,11 +2952,28 @@ mod tests {
             tables,
             vec![
                 "app_settings",
+                "candidate_media_refs",
                 "character_lorebook_bindings",
                 "character_media",
                 "character_presentation_asset_refs",
                 "characters",
+                "conversation_branches",
+                "conversation_message_candidates",
+                "conversation_message_revisions",
+                "conversation_messages",
+                "conversation_operations",
+                "conversation_outbox",
+                "conversation_participants",
+                "conversation_replay_artifacts",
+                "conversation_settings",
+                "conversation_snapshot_artifacts",
+                "conversation_snapshot_refs",
                 "conversation_starters",
+                "conversation_turns",
+                "conversation_usage_refs",
+                "conversations",
+                "generation_attempts",
+                "generation_checkpoints",
                 "group_lorebook_bindings",
                 "group_members",
                 "group_presentation_asset_refs",
@@ -2904,11 +2993,13 @@ mod tests {
                 "prompt_documents",
                 "prompt_entries",
                 "provider_accounts",
+                "revision_media_refs",
                 "scene_assets",
                 "scene_variants",
                 "scenes",
                 "schema_migrations",
                 "starter_messages",
+                "turn_lorebooks",
             ]
         );
     }

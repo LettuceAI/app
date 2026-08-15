@@ -364,8 +364,11 @@ dependencies = [
 name = "lettuce-database"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "lettuce-characters",
  "lettuce-context",
+ "lettuce-conversations",
+ "lettuce-jobs",
  "lettuce-media",
  "lettuce-models",
  "lettuce-settings",
@@ -376,6 +379,7 @@ dependencies = [
  "thiserror",
  "unicode-normalization",
  "uuid",
+ "zeroize",
 ]
 
 [[package]]
