@@ -68,6 +68,22 @@ settings remain separate from immutable launch history. Branch history uses
 parent links, depth/order and bounded validators; operation records bind CAS
 mutations to request digests and idempotency keys.
 
+Conversation creation also carries a bounded, versioned initial timeline. It
+materializes the selected scene and direct-chat starter messages as ordinary
+immutable message revisions with stable IDs, while retaining normalized source
+attribution to the selected protected scene or starter snapshot. `Scene` is a
+distinct authorless message role: request assembly must not silently convert it
+to a provider `system`, `user`, or `assistant` message. Scene content is supplied
+to prompting through the scene-context path instead.
+
+An origin row proves which immutable launch snapshot was selected; it does not
+decrypt that snapshot or independently prove that arbitrary text came from it.
+The application composition layer must therefore build `CreateConversationPlan`
+through the conversation launch planner from the same validated authored
+scene/starter graph used to create the protected artifacts. IPC callers do not
+construct initial timelines, and the database creator only persists and
+revalidates a prepared plan atomically.
+
 Launch snapshots stay frozen for the conversation lifetime. Current participant
 policy and settings are explicit mutable state; this contract does not derive
 live values from cross-conversation sources.

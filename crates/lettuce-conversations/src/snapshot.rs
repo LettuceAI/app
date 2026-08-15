@@ -210,14 +210,6 @@ impl ValidateSnapshot for SceneLaunchSnapshot {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SnapshotMessageRole {
-    User,
-    Assistant,
-    System,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StarterLaunchSnapshot {
@@ -269,7 +261,8 @@ impl PromptLaunchSnapshot {
 #[serde(rename_all = "snake_case")]
 pub enum PromptPurposeSnapshot {
     Direct,
-    Group,
+    GroupConversational,
+    GroupRoleplay,
     Other,
 }
 
@@ -463,6 +456,15 @@ impl DirectConversationDetails {
         self.scene.validate("direct.scene")?;
         self.starter.validate("direct.starter")?;
         self.prompt.validate("direct.prompt")?;
+        if let SnapshotSelection::Inherited(prompt) | SnapshotSelection::Explicit(prompt) =
+            &self.prompt
+        {
+            if prompt.purpose != PromptPurposeSnapshot::Direct {
+                return Err(ValidationError::InvalidReference {
+                    field: "direct.prompt.purpose",
+                });
+            }
+        }
         self.model.validate("direct.model")?;
         self.memory.validate("direct.memory")?;
         self.voice.validate("direct.voice")?;
@@ -636,6 +638,19 @@ impl GroupConversationDetails {
             });
         }
         self.group.validate()?;
+        if let SnapshotSelection::Inherited(prompt) | SnapshotSelection::Explicit(prompt) =
+            &self.group.prompt
+        {
+            let expected = match self.group.chat_mode {
+                GroupChatModeSnapshot::Conversation => PromptPurposeSnapshot::GroupConversational,
+                GroupChatModeSnapshot::Roleplay => PromptPurposeSnapshot::GroupRoleplay,
+            };
+            if prompt.purpose != expected {
+                return Err(ValidationError::InvalidReference {
+                    field: "group.prompt.purpose",
+                });
+            }
+        }
         self.initial_participant_policy.validate()
     }
 }

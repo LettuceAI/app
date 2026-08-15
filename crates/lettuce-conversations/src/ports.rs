@@ -54,6 +54,7 @@ pub struct TimelineItem {
     pub message: Message,
     pub active_revision: Option<MessageRevision>,
     pub active_candidate: Option<MessageCandidate>,
+    pub initial_origin: Option<crate::commands::InitialMessageOrigin>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -449,6 +450,13 @@ pub enum AssetReferenceState {
     deny_unknown_fields
 )]
 pub enum ConversationOutboxEvent {
+    ConversationCreated {
+        conversation_id: ConversationId,
+        root_branch_id: ConversationBranchId,
+        head_message_id: Option<MessageId>,
+        initial_message_count: u16,
+        at: TimestampMillis,
+    },
     MessageCommitted {
         conversation_id: ConversationId,
         branch_id: ConversationBranchId,
@@ -555,7 +563,10 @@ impl ConversationOutboxRecord {
             });
         }
         let event_conversation_id = match &self.event {
-            ConversationOutboxEvent::MessageCommitted {
+            ConversationOutboxEvent::ConversationCreated {
+                conversation_id, ..
+            }
+            | ConversationOutboxEvent::MessageCommitted {
                 conversation_id, ..
             }
             | ConversationOutboxEvent::MessageRevised {
@@ -590,6 +601,20 @@ impl ConversationOutboxRecord {
             return Err(crate::ValidationError::InvalidReference {
                 field: "outbox.conversation_id",
             });
+        }
+        if let ConversationOutboxEvent::ConversationCreated {
+            head_message_id,
+            initial_message_count,
+            ..
+        } = &self.event
+        {
+            if *initial_message_count > 512
+                || (*initial_message_count == 0) != head_message_id.is_none()
+            {
+                return Err(crate::ValidationError::InvalidValue {
+                    field: "outbox.conversation_created.initial_timeline",
+                });
+            }
         }
         if let ConversationOutboxEvent::MessageTombstoned {
             affected_message_ids,
@@ -791,7 +816,7 @@ pub trait ConversationReader: Send + Sync {
     ) -> Result<KeysetPage<ConversationOutboxRecord>, ConversationRepositoryError>;
 }
 
-pub trait ConversationRepository: ConversationReader {
+pub trait ConversationCreator: ConversationReader {
     /// The repository's same-database artifact verifier. Mutating adapters
     /// must use this verifier before staging `create`/`finalize` rows and
     /// before committing them with their operation/outbox records.
@@ -804,6 +829,9 @@ pub trait ConversationRepository: ConversationReader {
         plan: &CreateConversationPlan,
         now: TimestampMillis,
     ) -> Result<CreateConversationResult, ConversationRepositoryError>;
+}
+
+pub trait ConversationRepository: ConversationCreator {
     fn begin_send(
         &self,
         command: &SendConversation,

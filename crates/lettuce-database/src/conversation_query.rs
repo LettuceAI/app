@@ -7,13 +7,14 @@
 use std::{collections::HashSet, str::FromStr};
 
 use lettuce_conversations::{
-    ConversationAggregate, ConversationBranch, ConversationKindTag, ConversationLifecycle,
-    ConversationOutboxEvent, ConversationOutboxRecord, ConversationQuery, ConversationReader,
-    ConversationRepositoryError, ConversationSummary, GenerationAttempt, GenerationAttemptStatus,
-    GenerationFailureCode, GenerationInput, GenerationOperation, GenerationTarget, GenerationTurn,
-    GenerationTurnStatus, KeysetPage, LorebookAttribution, MemoryAttribution, Message,
-    MessageCandidate, MessagePart, MessageRenderSource, MessageRevision, MessageRole,
-    MessageVisibility, OperationKind, OperationRecord, OperationResultRef, PromptAttribution,
+    ConversationAggregate, ConversationBranch, ConversationKind, ConversationKindTag,
+    ConversationLifecycle, ConversationOutboxEvent, ConversationOutboxRecord, ConversationQuery,
+    ConversationReader, ConversationRepositoryError, ConversationSummary, GenerationAttempt,
+    GenerationAttemptStatus, GenerationFailureCode, GenerationInput, GenerationOperation,
+    GenerationTarget, GenerationTurn, GenerationTurnStatus, InitialMessageOrigin, KeysetPage,
+    LorebookAttribution, MemoryAttribution, Message, MessageCandidate, MessagePart,
+    MessageRenderSource, MessageRevision, MessageRole, MessageVisibility, OperationKind,
+    OperationRecord, OperationResultRef, PromptAttribution, ProtectedSnapshotRef,
     ReplayArtifactRef, ReplayCodec, ReplayRetention, SelectedSpeakerDecision,
     SpeakerDecisionMethod, SpeakerDecisionReference, SpeakerFallback, TimelineItem, TimelinePage,
 };
@@ -209,6 +210,7 @@ fn message_role(value: &str) -> Result<MessageRole, ConversationRepositoryError>
         "user" => Ok(MessageRole::User),
         "assistant" => Ok(MessageRole::Assistant),
         "system" => Ok(MessageRole::System),
+        "scene" => Ok(MessageRole::Scene),
         _ => Err(ConversationRepositoryError::Storage),
     }
 }
@@ -320,12 +322,96 @@ fn verify_media_projection(
     Ok(())
 }
 
+fn has_terminal_root(chain: &[(String, Option<String>, i64)]) -> bool {
+    chain
+        .last()
+        .is_some_and(|(_, parent_message_id, _)| parent_message_id.is_none())
+}
+
 fn validate_outbox_event_exact(
     transaction: &Transaction<'_>,
     record: &ConversationOutboxRecord,
 ) -> Result<(), ConversationRepositoryError> {
     let conversation_id = record.conversation_id;
     match &record.event {
+        ConversationOutboxEvent::ConversationCreated {
+            root_branch_id,
+            head_message_id,
+            initial_message_count,
+            ..
+        } => {
+            require_exists(
+                transaction,
+                "SELECT EXISTS(SELECT 1 FROM conversation_branches WHERE conversation_id = ?1 AND id = ?2 AND parent_branch_id IS NULL)",
+                params![conversation_id.to_string(), root_branch_id.to_string()],
+            )?;
+            if *initial_message_count == 0 {
+                let origins: i64 = transaction
+                    .query_row(
+                        "SELECT count(*) FROM conversation_initial_message_origins WHERE conversation_id = ?1",
+                        [conversation_id.to_string()],
+                        |row| row.get(0),
+                    )
+                    .map_err(slice::db)?;
+                if origins != 0 {
+                    return Err(ConversationRepositoryError::Storage);
+                }
+                return Ok(());
+            }
+            let head = head_message_id
+                .as_ref()
+                .ok_or(ConversationRepositoryError::Storage)?;
+            let chain: Vec<(String, Option<String>, i64)> = transaction
+                .prepare(
+                    "WITH RECURSIVE chain(id, parent_message_id, depth) AS (
+                         SELECT id, parent_message_id, 1 FROM conversation_messages
+                         WHERE conversation_id = ?1 AND branch_id = ?2 AND id = ?3
+                         UNION ALL
+                         SELECT message.id, message.parent_message_id, chain.depth + 1
+                         FROM conversation_messages AS message
+                         JOIN chain ON chain.parent_message_id = message.id
+                         WHERE message.conversation_id = ?1 AND message.branch_id = ?2 AND chain.depth < 513
+                     )
+                     SELECT id, parent_message_id, depth FROM chain ORDER BY depth",
+                )
+                .map_err(slice::db)?
+                .query_map(
+                    params![conversation_id.to_string(), root_branch_id.to_string(), head.to_string()],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                )
+                .map_err(slice::db)?
+                .collect::<rusqlite::Result<_>>()
+                .map_err(slice::db)?;
+            let total_origins: i64 = transaction
+                .query_row(
+                    "SELECT count(*) FROM conversation_initial_message_origins WHERE conversation_id = ?1",
+                    [conversation_id.to_string()],
+                    |row| row.get(0),
+                )
+                .map_err(slice::db)?;
+            if chain.len() != usize::from(*initial_message_count)
+                || total_origins != i64::from(*initial_message_count)
+                || !has_terminal_root(&chain)
+            {
+                return Err(ConversationRepositoryError::Storage);
+            }
+            for (index, (message_id, parent_message_id, _depth)) in chain.iter().enumerate() {
+                let message_id: MessageId = slice::parse_id(message_id.clone())?;
+                let origin = hydrate_initial_origin(transaction, conversation_id, message_id)?
+                    .ok_or(ConversationRepositoryError::Storage)?;
+                validate_initial_origin_message(
+                    transaction,
+                    conversation_id,
+                    message_id,
+                    Some(&origin),
+                )?;
+                if matches!(origin, InitialMessageOrigin::SelectedScene { .. })
+                    && (index + 1 != chain.len() || parent_message_id.is_some())
+                {
+                    return Err(ConversationRepositoryError::Storage);
+                }
+            }
+        }
         ConversationOutboxEvent::MessageCommitted {
             branch_id,
             message_id,
@@ -745,14 +831,216 @@ fn message_row(
     {
         return Err(ConversationRepositoryError::Storage);
     }
+    let initial_origin = hydrate_initial_origin(transaction, conversation_id, id)?;
+    if message.role == MessageRole::Scene && initial_origin.is_none() {
+        return Err(ConversationRepositoryError::Storage);
+    }
+    validate_initial_origin_message(transaction, conversation_id, id, initial_origin.as_ref())?;
     Ok((
         TimelineItem {
             message,
             active_revision,
             active_candidate,
+            initial_origin,
         },
         row.get(11).map_err(slice::db)?,
     ))
+}
+
+fn validate_initial_origin_message(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    message_id: MessageId,
+    origin: Option<&InitialMessageOrigin>,
+) -> Result<(), ConversationRepositoryError> {
+    let Some(origin) = origin else { return Ok(()) };
+    let (role, author, revision_id): (String, Option<String>, String) = transaction
+        .query_row(
+            "SELECT role, author_participant_id, active_revision_id FROM conversation_messages WHERE conversation_id = ?1 AND id = ?2",
+            params![conversation_id.to_string(), message_id.to_string()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .map_err(slice::db)?;
+    let parts_json: String = transaction
+        .query_row(
+            "SELECT parts_json FROM conversation_message_revisions WHERE conversation_id = ?1 AND id = ?2 AND message_id = ?3",
+            params![conversation_id.to_string(), revision_id, message_id.to_string()],
+            |row| row.get(0),
+        )
+        .map_err(slice::db)?;
+    let parts: Vec<MessagePart> = slice::decode(&parts_json)?;
+    for part in &parts {
+        part.validate()
+            .map_err(|_| ConversationRepositoryError::Storage)?;
+    }
+    match origin {
+        InitialMessageOrigin::SelectedScene { .. } => {
+            if role != "scene"
+                || author.is_some()
+                || !parts.iter().any(
+                    |part| matches!(part, MessagePart::Text { text } if !text.trim().is_empty()),
+                )
+            {
+                return Err(ConversationRepositoryError::Storage);
+            }
+        }
+        InitialMessageOrigin::StarterMessage { .. } => {
+            let Some(author) = author else {
+                return Err(ConversationRepositoryError::Storage);
+            };
+            let expected_role = match role.as_str() {
+                "user" => "user",
+                "assistant" => "character",
+                _ => return Err(ConversationRepositoryError::Storage),
+            };
+            let participant_role: String = transaction
+                .query_row(
+                    "SELECT role FROM conversation_participants WHERE conversation_id = ?1 AND id = ?2",
+                    params![conversation_id.to_string(), author],
+                    |row| row.get(0),
+                )
+                .map_err(slice::db)?;
+            if participant_role != expected_role {
+                return Err(ConversationRepositoryError::Storage);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn hydrate_initial_origin(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    message_id: MessageId,
+) -> Result<Option<InitialMessageOrigin>, ConversationRepositoryError> {
+    let row = transaction
+        .query_row(
+            "SELECT origin.source_kind, origin.starter_message_id, artifact.artifact_id, artifact.source_kind, artifact.source_id, artifact.source_revision, artifact.digest, artifact.schema_version, artifact.byte_size FROM conversation_initial_message_origins AS origin JOIN conversation_snapshot_artifacts AS artifact ON artifact.artifact_id = origin.snapshot_artifact_id AND artifact.source_kind = origin.source_kind WHERE origin.conversation_id = ?1 AND origin.message_id = ?2",
+            params![conversation_id.to_string(), message_id.to_string()],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, i64>(5)?,
+                    row.get::<_, String>(6)?,
+                    row.get::<_, i64>(7)?,
+                    row.get::<_, i64>(8)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(slice::db)?;
+    let Some((
+        kind,
+        starter_message_id,
+        artifact_id,
+        artifact_kind,
+        source_id,
+        source_revision,
+        digest,
+        schema_version,
+        byte_size,
+    )) = row
+    else {
+        return Ok(None);
+    };
+    if kind != artifact_kind {
+        return Err(ConversationRepositoryError::Storage);
+    }
+    let source_revision = slice::rev(source_revision)?;
+    let source = match kind.as_str() {
+        "scene" => lettuce_conversations::SnapshotSource::Scene(parse(source_id)?),
+        "starter" => lettuce_conversations::SnapshotSource::Starter(parse(source_id)?),
+        _ => return Err(ConversationRepositoryError::Storage),
+    };
+    let reference = ProtectedSnapshotRef {
+        source,
+        source_revision,
+        artifact_id: parse(artifact_id)?,
+        digest: digest
+            .parse()
+            .map_err(|_| ConversationRepositoryError::Storage)?,
+        schema_version: u32::try_from(schema_version)
+            .map_err(|_| ConversationRepositoryError::Storage)?,
+        byte_size: u64::try_from(byte_size).map_err(|_| ConversationRepositoryError::Storage)?,
+    };
+    reference
+        .validate()
+        .map_err(|_| ConversationRepositoryError::Storage)?;
+    let origin = match kind.as_str() {
+        "scene" if starter_message_id.is_none() => InitialMessageOrigin::SelectedScene {
+            snapshot_ref: reference,
+        },
+        "starter" if let Some(starter_message_id) = starter_message_id => {
+            InitialMessageOrigin::StarterMessage {
+                snapshot_ref: reference,
+                starter_message_id: parse(starter_message_id)?,
+            }
+        }
+        _ => return Err(ConversationRepositoryError::Storage),
+    };
+
+    // The normalized origin row is only an index into the immutable artifact
+    // tables.  It must also agree with the launch snapshot stored on the
+    // conversation; otherwise a corrupt row could make an unrelated scene or
+    // starter appear to be part of the initial timeline.
+    let kind_json: String = transaction
+        .query_row(
+            "SELECT kind_json FROM conversations WHERE id = ?1",
+            [conversation_id.to_string()],
+            |row| row.get(0),
+        )
+        .map_err(slice::db)?;
+    let conversation_kind: ConversationKind = slice::decode(&kind_json)?;
+    let selected_ref = match &conversation_kind {
+        ConversationKind::Direct(details) => match &origin {
+            InitialMessageOrigin::SelectedScene { .. } => match &details.scene {
+                lettuce_conversations::SnapshotSelection::Inherited(value)
+                | lettuce_conversations::SnapshotSelection::Explicit(value) => {
+                    Some((&value.snapshot_ref, false))
+                }
+                lettuce_conversations::SnapshotSelection::Disabled => None,
+            },
+            InitialMessageOrigin::StarterMessage { .. } => match &details.starter {
+                lettuce_conversations::SnapshotSelection::Inherited(value)
+                | lettuce_conversations::SnapshotSelection::Explicit(value) => {
+                    Some((&value.snapshot_ref, false))
+                }
+                lettuce_conversations::SnapshotSelection::Disabled => None,
+            },
+        },
+        ConversationKind::Group(details) => match &origin {
+            InitialMessageOrigin::SelectedScene { .. }
+                if matches!(
+                    details.group.chat_mode,
+                    lettuce_conversations::GroupChatModeSnapshot::Roleplay
+                ) =>
+            {
+                match &details.group.scene {
+                    lettuce_conversations::SnapshotSelection::Inherited(value)
+                    | lettuce_conversations::SnapshotSelection::Explicit(value) => {
+                        Some((&value.snapshot_ref, false))
+                    }
+                    lettuce_conversations::SnapshotSelection::Disabled => None,
+                }
+            }
+            _ => None,
+        },
+    };
+    let Some((selected_ref, _)) = selected_ref else {
+        return Err(ConversationRepositoryError::Storage);
+    };
+    let origin_ref = match &origin {
+        InitialMessageOrigin::SelectedScene { snapshot_ref }
+        | InitialMessageOrigin::StarterMessage { snapshot_ref, .. } => snapshot_ref,
+    };
+    if origin_ref != selected_ref {
+        return Err(ConversationRepositoryError::Storage);
+    }
+    Ok(Some(origin))
 }
 
 fn branch_path(
@@ -1370,7 +1658,8 @@ fn validate_outbox_event_timestamp(
     record: &ConversationOutboxRecord,
 ) -> Result<(), ConversationRepositoryError> {
     let event_at = match &record.event {
-        ConversationOutboxEvent::MessageCommitted { at, .. }
+        ConversationOutboxEvent::ConversationCreated { at, .. }
+        | ConversationOutboxEvent::MessageCommitted { at, .. }
         | ConversationOutboxEvent::MessageRevised { at, .. }
         | ConversationOutboxEvent::MessageTombstoned { at, .. }
         | ConversationOutboxEvent::TurnFailed { at, .. }
@@ -1394,6 +1683,28 @@ fn validate_outbox_event(
 ) -> Result<(), ConversationRepositoryError> {
     let conversation_id = record.conversation_id;
     match &record.event {
+        ConversationOutboxEvent::ConversationCreated {
+            root_branch_id,
+            head_message_id,
+            ..
+        } => {
+            owned_ref(
+                transaction,
+                "conversation_branches",
+                "id",
+                conversation_id,
+                root_branch_id,
+            )?;
+            if let Some(message_id) = head_message_id {
+                owned_ref(
+                    transaction,
+                    "conversation_messages",
+                    "id",
+                    conversation_id,
+                    message_id,
+                )?;
+            }
+        }
         ConversationOutboxEvent::MessageCommitted {
             branch_id,
             message_id,
@@ -2244,17 +2555,19 @@ mod tests {
     use lettuce_conversations::{
         ArtifactCodec, ArtifactRetention, CharacterLaunchSnapshot, ConversationArtifactStore,
         ConversationKind, ConversationOutboxEvent, ConversationParticipantDraft,
-        DirectConversationDetails, MediaAssetRole, MessagePart, OperationToken, ParticipantRole,
-        ParticipantSource, ProtectedArtifactBytes, ProtectedSnapshotRef, ReplayArtifactDraft,
-        SnapshotArtifactDraft, SnapshotSelection, SnapshotSource,
+        DirectConversationDetails, MediaAssetRole, MessagePart, MessageRole, OperationToken,
+        ParticipantRole, ParticipantSource, ProtectedArtifactBytes, ProtectedSnapshotRef,
+        ReplayArtifactDraft, SceneLaunchSnapshot, SnapshotArtifactDraft, SnapshotSelection,
+        SnapshotSource, StarterLaunchSnapshot,
     };
     use lettuce_media::{
         AssetKind, AssetOrigin, AssetProvenanceV1, BlobState, MediaAsset, MediaAssetRepository,
         MediaBlob, MediaBlobRepository, MediaKind, RetentionClass,
     };
     use lettuce_types::{
-        AssetId, CharacterId, ContentHash, MediaBlobId, OperationRecordId, OutboxEventId, Revision,
-        SnapshotArtifactId,
+        AssetId, CharacterId, ContentHash, ConversationParticipantId, ConversationStarterId,
+        MediaBlobId, MessageId, MessageRevisionId, OperationRecordId, OutboxEventId, Revision,
+        SceneId, SnapshotArtifactId, StarterMessageId,
     };
 
     fn create_fixture(database: &Database, title: &str) -> ConversationId {
@@ -2328,6 +2641,10 @@ mod tests {
                     model_selection: SnapshotSelection::Disabled,
                 },
             ],
+            initial_timeline: lettuce_conversations::InitialTimelineDraft {
+                format_version: 1,
+                entries: Vec::new(),
+            },
             operation: OperationToken {
                 key: lettuce_jobs::IdempotencyKey::new(format!("create-{}", conversation_id))
                     .expect("key"),
@@ -2338,6 +2655,168 @@ mod tests {
             .create_conversation_record(&plan, TimestampMillis::UNIX_EPOCH)
             .expect("create");
         conversation_id
+    }
+
+    fn put_launch_snapshot(
+        database: &Database,
+        source: SnapshotSource,
+        label: &str,
+    ) -> ProtectedSnapshotRef {
+        let bytes = ProtectedArtifactBytes::new(label.as_bytes().to_vec()).expect("snapshot bytes");
+        let reference = ProtectedSnapshotRef {
+            source,
+            source_revision: Revision::INITIAL,
+            artifact_id: SnapshotArtifactId::new(),
+            digest: bytes.digest(),
+            schema_version: 1,
+            byte_size: bytes.len() as u64,
+        };
+        database
+            .put_snapshot(SnapshotArtifactDraft {
+                source: reference.source,
+                source_revision: reference.source_revision,
+                artifact_id: reference.artifact_id,
+                digest: reference.digest.clone(),
+                schema_version: reference.schema_version,
+                byte_size: reference.byte_size,
+                codec: ArtifactCodec::Json,
+                retention: ArtifactRetention::Conversation,
+                bytes,
+            })
+            .expect("launch snapshot");
+        reference
+    }
+
+    fn install_direct_launch_selection(
+        database: &Database,
+        conversation_id: ConversationId,
+        scene: Option<&ProtectedSnapshotRef>,
+        starter: Option<&ProtectedSnapshotRef>,
+    ) {
+        let mut kind = database
+            .get_conversation_record(conversation_id)
+            .expect("aggregate")
+            .conversation
+            .kind;
+        let ConversationKind::Direct(details) = &mut kind else {
+            panic!("direct fixture");
+        };
+        details.scene = scene
+            .map(|reference| {
+                let SnapshotSource::Scene(source_id) = reference.source else {
+                    panic!("scene source");
+                };
+                SnapshotSelection::Explicit(SceneLaunchSnapshot {
+                    snapshot_ref: reference.clone(),
+                    source_id,
+                    source_revision: reference.source_revision,
+                    title: "Scene".into(),
+                })
+            })
+            .unwrap_or(SnapshotSelection::Disabled);
+        details.starter = starter
+            .map(|reference| {
+                let SnapshotSource::Starter(source_id) = reference.source else {
+                    panic!("starter source");
+                };
+                SnapshotSelection::Explicit(StarterLaunchSnapshot {
+                    snapshot_ref: reference.clone(),
+                    source_id,
+                    source_revision: reference.source_revision,
+                    title: "Starter".into(),
+                })
+            })
+            .unwrap_or(SnapshotSelection::Disabled);
+        let kind_json = slice::encode(&kind).expect("kind json");
+        let connection = database.connection().expect("connection");
+        connection
+            .execute(
+                "UPDATE conversations SET kind_json = ?1 WHERE id = ?2",
+                params![kind_json, conversation_id.to_string()],
+            )
+            .expect("selected launch snapshots");
+        for reference in [scene, starter].into_iter().flatten() {
+            connection
+                .execute(
+                    "INSERT INTO conversation_snapshot_refs (conversation_id, artifact_id) VALUES (?1, ?2)",
+                    params![conversation_id.to_string(), reference.artifact_id.to_string()],
+                )
+                .expect("snapshot reference");
+        }
+    }
+
+    struct TimelineMessageSpec {
+        branch_id: lettuce_types::ConversationBranchId,
+        role: MessageRole,
+        author: Option<ConversationParticipantId>,
+        parent: Option<MessageId>,
+        ordinal: i64,
+        text: &'static str,
+    }
+
+    fn insert_timeline_message(
+        database: &Database,
+        conversation_id: ConversationId,
+        spec: TimelineMessageSpec,
+    ) -> (MessageId, MessageRevisionId) {
+        let message_id = MessageId::new();
+        let revision_id = MessageRevisionId::new();
+        let role = match spec.role {
+            MessageRole::User => "user",
+            MessageRole::Assistant => "assistant",
+            MessageRole::System => "system",
+            MessageRole::Scene => "scene",
+        };
+        let parts = slice::encode(&vec![MessagePart::Text {
+            text: spec.text.to_owned(),
+        }])
+        .expect("message parts");
+        let mut connection = database.connection().expect("connection");
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .expect("message transaction");
+        transaction
+            .execute(
+                "INSERT INTO conversation_message_revisions (conversation_id, id, message_id, branch_id, sequence, parts_json, authored_at) VALUES (?1, ?2, ?3, ?4, 1, ?5, 0)",
+                params![conversation_id.to_string(), revision_id.to_string(), message_id.to_string(), spec.branch_id.to_string(), parts],
+            )
+            .expect("message revision");
+        transaction
+            .execute(
+                "INSERT INTO conversation_messages (conversation_id, id, branch_id, parent_message_id, role, author_participant_id, timeline_ordinal, logical_time, effective_time, visibility, pinned, scene_edited, active_revision_id, revision, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, 0, 'visible', 0, 0, ?8, 1, 0, 0)",
+                params![conversation_id.to_string(), message_id.to_string(), spec.branch_id.to_string(), spec.parent.map(|id| id.to_string()), role, spec.author.map(|id| id.to_string()), spec.ordinal, revision_id.to_string()],
+            )
+            .expect("message");
+        transaction
+            .execute(
+                "UPDATE conversation_branches SET head_message_id = ?1 WHERE conversation_id = ?2 AND id = ?3",
+                params![message_id.to_string(), conversation_id.to_string(), spec.branch_id.to_string()],
+            )
+            .expect("branch head");
+        transaction.commit().expect("message commit");
+        (message_id, revision_id)
+    }
+
+    fn insert_initial_origin(
+        database: &Database,
+        conversation_id: ConversationId,
+        message_id: MessageId,
+        reference: &ProtectedSnapshotRef,
+        starter_message_id: Option<StarterMessageId>,
+    ) {
+        let source_kind = match reference.source {
+            SnapshotSource::Scene(_) => "scene",
+            SnapshotSource::Starter(_) => "starter",
+            _ => panic!("initial origin source"),
+        };
+        database
+            .connection()
+            .expect("connection")
+            .execute(
+                "INSERT INTO conversation_initial_message_origins (conversation_id, message_id, snapshot_artifact_id, source_kind, starter_message_id) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![conversation_id.to_string(), message_id.to_string(), reference.artifact_id.to_string(), source_kind, starter_message_id.map(|id| id.to_string())],
+            )
+            .expect("initial origin");
     }
 
     fn create_content_fixture(
@@ -2454,6 +2933,525 @@ mod tests {
             source_turn_id,
             current_turn_id,
         )
+    }
+
+    #[test]
+    fn conversation_created_validation_is_historical_not_active_head_bound() {
+        let database = Database::open_in_memory().expect("database");
+        let conversation_id = create_fixture(&database, "historical-created");
+        let aggregate = database
+            .get_conversation_record(conversation_id)
+            .expect("aggregate");
+        let root_branch_id = aggregate.conversation.active_branch_id;
+        let record = ConversationOutboxRecord {
+            format_version: 1,
+            id: OutboxEventId::new(),
+            conversation_id,
+            conversation_revision: Revision::INITIAL,
+            sequence: 1,
+            operation_record_id: OperationRecordId::new(),
+            at: TimestampMillis::UNIX_EPOCH,
+            event: ConversationOutboxEvent::ConversationCreated {
+                conversation_id,
+                root_branch_id,
+                head_message_id: None,
+                initial_message_count: 0,
+                at: TimestampMillis::UNIX_EPOCH,
+            },
+        };
+        let mut connection = database.connection().expect("connection");
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Deferred)
+            .expect("transaction");
+        validate_outbox_event_exact(&transaction, &record).expect("historical root");
+        drop(transaction);
+    }
+
+    #[test]
+    fn conversation_created_validation_keeps_the_historical_initial_chain() {
+        let database = Database::open_in_memory().expect("database");
+        let conversation_id = create_fixture(&database, "historical-initial-chain");
+        let scene_ref = put_launch_snapshot(
+            &database,
+            SnapshotSource::Scene(SceneId::new()),
+            "scene snapshot",
+        );
+        let starter_ref = put_launch_snapshot(
+            &database,
+            SnapshotSource::Starter(ConversationStarterId::new()),
+            "starter snapshot",
+        );
+        install_direct_launch_selection(
+            &database,
+            conversation_id,
+            Some(&scene_ref),
+            Some(&starter_ref),
+        );
+        let aggregate = database
+            .get_conversation_record(conversation_id)
+            .expect("aggregate");
+        let root_branch_id = aggregate.conversation.active_branch_id;
+        let user = aggregate
+            .conversation
+            .participants
+            .iter()
+            .find(|participant| participant.role == ParticipantRole::User)
+            .expect("user")
+            .id;
+        let character = aggregate
+            .conversation
+            .participants
+            .iter()
+            .find(|participant| participant.role == ParticipantRole::Character)
+            .expect("character")
+            .id;
+        let (scene, _) = insert_timeline_message(
+            &database,
+            conversation_id,
+            TimelineMessageSpec {
+                branch_id: root_branch_id,
+                role: MessageRole::Scene,
+                author: None,
+                parent: None,
+                ordinal: 1,
+                text: "scene",
+            },
+        );
+        insert_initial_origin(&database, conversation_id, scene, &scene_ref, None);
+        let (starter, _) = insert_timeline_message(
+            &database,
+            conversation_id,
+            TimelineMessageSpec {
+                branch_id: root_branch_id,
+                role: MessageRole::User,
+                author: Some(user),
+                parent: Some(scene),
+                ordinal: 2,
+                text: "starter",
+            },
+        );
+        insert_initial_origin(
+            &database,
+            conversation_id,
+            starter,
+            &starter_ref,
+            Some(StarterMessageId::new()),
+        );
+
+        let record = ConversationOutboxRecord {
+            format_version: 1,
+            id: OutboxEventId::new(),
+            conversation_id,
+            conversation_revision: Revision::INITIAL,
+            sequence: 1,
+            operation_record_id: OperationRecordId::new(),
+            at: TimestampMillis::UNIX_EPOCH,
+            event: ConversationOutboxEvent::ConversationCreated {
+                conversation_id,
+                root_branch_id,
+                head_message_id: Some(starter),
+                initial_message_count: 2,
+                at: TimestampMillis::UNIX_EPOCH,
+            },
+        };
+        let validate = |database: &Database| {
+            let mut connection = database.connection().expect("connection");
+            let transaction = connection
+                .transaction_with_behavior(TransactionBehavior::Deferred)
+                .expect("transaction");
+            validate_outbox_event_exact(&transaction, &record).expect("historical event");
+            transaction.commit().expect("validation commit");
+        };
+        validate(&database);
+
+        // Model a corrupt historical row with the scene in the middle of the
+        // chain. The normal topology triggers reject this write; the exact
+        // creation-event validator must still reject the raw state.
+        database
+            .connection()
+            .expect("connection")
+            .execute_batch(
+                "DROP TRIGGER IF EXISTS conversation_message_identity_immutable;
+                 DROP TRIGGER IF EXISTS conversation_message_parent_topology_update;",
+            )
+            .expect("disable topology guards");
+        database
+            .connection()
+            .expect("connection")
+            .execute(
+                "UPDATE conversation_messages SET parent_message_id = ?1 WHERE conversation_id = ?2 AND id = ?3",
+                params![starter.to_string(), conversation_id.to_string(), scene.to_string()],
+            )
+            .expect("scene child");
+        database
+            .connection()
+            .expect("connection")
+            .execute(
+                "UPDATE conversation_branches SET head_message_id = ?1 WHERE conversation_id = ?2 AND id = ?3",
+                params![scene.to_string(), conversation_id.to_string(), root_branch_id.to_string()],
+            )
+            .expect("corrupt head");
+        let corrupt_record = ConversationOutboxRecord {
+            event: ConversationOutboxEvent::ConversationCreated {
+                conversation_id,
+                root_branch_id,
+                head_message_id: Some(scene),
+                initial_message_count: 2,
+                at: TimestampMillis::UNIX_EPOCH,
+            },
+            ..record.clone()
+        };
+        let mut connection = database.connection().expect("connection");
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Deferred)
+            .expect("transaction");
+        assert_eq!(
+            validate_outbox_event_exact(&transaction, &corrupt_record),
+            Err(ConversationRepositoryError::Storage)
+        );
+        transaction.rollback().expect("validation rollback");
+        drop(connection);
+        database
+            .connection()
+            .expect("connection")
+            .execute(
+                "UPDATE conversation_messages SET parent_message_id = NULL WHERE conversation_id = ?1 AND id = ?2",
+                params![conversation_id.to_string(), scene.to_string()],
+            )
+            .expect("restore scene root");
+        database
+            .connection()
+            .expect("connection")
+            .execute(
+                "UPDATE conversation_branches SET head_message_id = ?1 WHERE conversation_id = ?2 AND id = ?3",
+                params![starter.to_string(), conversation_id.to_string(), root_branch_id.to_string()],
+            )
+            .expect("restore head");
+
+        // A later root append changes the current root head but must not
+        // invalidate the old creation event's recorded head and count.
+        insert_timeline_message(
+            &database,
+            conversation_id,
+            TimelineMessageSpec {
+                branch_id: root_branch_id,
+                role: MessageRole::Assistant,
+                author: Some(character),
+                parent: Some(starter),
+                ordinal: 3,
+                text: "later root message",
+            },
+        );
+        validate(&database);
+
+        // Selecting a child branch also must not change the historical root
+        // chain represented by ConversationCreated.
+        let child_branch_id = lettuce_types::ConversationBranchId::new();
+        let connection = database.connection().expect("connection");
+        connection
+            .execute(
+                "INSERT INTO conversation_branches (conversation_id, id, parent_branch_id, fork_message_id, status, revision, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, 'active', 1, 0, 0)",
+                params![conversation_id.to_string(), child_branch_id.to_string(), root_branch_id.to_string(), starter.to_string()],
+            )
+            .expect("child branch");
+        drop(connection);
+        insert_timeline_message(
+            &database,
+            conversation_id,
+            TimelineMessageSpec {
+                branch_id: child_branch_id,
+                role: MessageRole::Assistant,
+                author: Some(character),
+                parent: Some(starter),
+                ordinal: 4,
+                text: "child message",
+            },
+        );
+        database
+            .connection()
+            .expect("connection")
+            .execute(
+                "UPDATE conversations SET active_branch_id = ?1 WHERE id = ?2",
+                params![child_branch_id.to_string(), conversation_id.to_string()],
+            )
+            .expect("select child branch");
+        validate(&database);
+
+        // The normal topology triggers make this impossible through the
+        // write path. Simulate a legacy/corrupt file by removing only those
+        // guards and forming a two-message cycle; the bounded recursive query
+        // must fail closed instead of hanging or accepting a partial chain.
+        database
+            .connection()
+            .expect("connection")
+            .execute_batch(
+                "DROP TRIGGER IF EXISTS conversation_message_identity_immutable;
+                 DROP TRIGGER IF EXISTS conversation_message_parent_topology_update;",
+            )
+            .expect("disable topology guards");
+        database
+            .connection()
+            .expect("connection")
+            .execute(
+                "UPDATE conversation_messages SET parent_message_id = ?1 WHERE conversation_id = ?2 AND id = ?3",
+                params![starter.to_string(), conversation_id.to_string(), scene.to_string()],
+            )
+            .expect("cycle first edge");
+        database
+            .connection()
+            .expect("connection")
+            .execute(
+                "UPDATE conversation_messages SET parent_message_id = ?1 WHERE conversation_id = ?2 AND id = ?3",
+                params![scene.to_string(), conversation_id.to_string(), starter.to_string()],
+            )
+            .expect("cycle second edge");
+        let mut connection = database.connection().expect("connection");
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Deferred)
+            .expect("transaction");
+        assert_eq!(
+            validate_outbox_event_exact(&transaction, &record),
+            Err(ConversationRepositoryError::Storage)
+        );
+    }
+
+    #[test]
+    fn created_chain_terminal_root_check_handles_the_512_row_boundary() {
+        let mut cyclic_chain = Vec::with_capacity(512);
+        for index in 0..512 {
+            cyclic_chain.push((
+                format!("message-{index}"),
+                Some(format!("message-{}", (index + 1) % 512)),
+                i64::from(index + 1),
+            ));
+        }
+        assert!(!super::has_terminal_root(&cyclic_chain));
+
+        cyclic_chain[511].1 = None;
+        assert!(super::has_terminal_root(&cyclic_chain));
+    }
+
+    fn assert_timeline_is_storage_corruption(
+        database: &Database,
+        conversation_id: ConversationId,
+        branch_id: lettuce_types::ConversationBranchId,
+    ) {
+        assert_eq!(
+            ConversationReader::timeline_page(
+                database,
+                conversation_id,
+                branch_id,
+                &PageRequest::default(),
+            ),
+            Err(ConversationRepositoryError::Storage)
+        );
+    }
+
+    #[test]
+    fn timeline_hydration_rejects_corrupt_initial_origin_shapes() {
+        // A scene message is always an initial message and therefore must
+        // carry exactly one selected-scene origin.
+        let database = Database::open_in_memory().expect("database");
+        let conversation_id = create_fixture(&database, "scene-without-origin");
+        let scene_ref =
+            put_launch_snapshot(&database, SnapshotSource::Scene(SceneId::new()), "scene");
+        install_direct_launch_selection(&database, conversation_id, Some(&scene_ref), None);
+        let branch_id = database
+            .get_conversation_record(conversation_id)
+            .expect("aggregate")
+            .conversation
+            .active_branch_id;
+        insert_timeline_message(
+            &database,
+            conversation_id,
+            TimelineMessageSpec {
+                branch_id,
+                role: MessageRole::Scene,
+                author: None,
+                parent: None,
+                ordinal: 1,
+                text: "scene",
+            },
+        );
+        assert_timeline_is_storage_corruption(&database, conversation_id, branch_id);
+
+        // A selected-scene origin cannot be attached to an ordinary chat
+        // message, even when SQLite's role/author constraints accept it.
+        let database = Database::open_in_memory().expect("database");
+        let conversation_id = create_fixture(&database, "scene-origin-on-user");
+        let scene_ref =
+            put_launch_snapshot(&database, SnapshotSource::Scene(SceneId::new()), "scene");
+        install_direct_launch_selection(&database, conversation_id, Some(&scene_ref), None);
+        let aggregate = database
+            .get_conversation_record(conversation_id)
+            .expect("aggregate");
+        let branch_id = aggregate.conversation.active_branch_id;
+        let user = aggregate
+            .conversation
+            .participants
+            .iter()
+            .find(|participant| participant.role == ParticipantRole::User)
+            .expect("user")
+            .id;
+        let (message_id, _) = insert_timeline_message(
+            &database,
+            conversation_id,
+            TimelineMessageSpec {
+                branch_id,
+                role: MessageRole::User,
+                author: Some(user),
+                parent: None,
+                ordinal: 1,
+                text: "not a scene",
+            },
+        );
+        insert_initial_origin(&database, conversation_id, message_id, &scene_ref, None);
+        assert_timeline_is_storage_corruption(&database, conversation_id, branch_id);
+    }
+
+    #[test]
+    fn timeline_hydration_rejects_corrupt_starter_origin_ownership_and_selection() {
+        // Starter origins are never valid on scene or system messages.
+        for role in [MessageRole::Scene, MessageRole::System] {
+            let database = Database::open_in_memory().expect("database");
+            let conversation_id = create_fixture(&database, "starter-origin-non-chat");
+            let starter_ref = put_launch_snapshot(
+                &database,
+                SnapshotSource::Starter(ConversationStarterId::new()),
+                "starter",
+            );
+            install_direct_launch_selection(&database, conversation_id, None, Some(&starter_ref));
+            let branch_id = database
+                .get_conversation_record(conversation_id)
+                .expect("aggregate")
+                .conversation
+                .active_branch_id;
+            let (message_id, _) = insert_timeline_message(
+                &database,
+                conversation_id,
+                TimelineMessageSpec {
+                    branch_id,
+                    role,
+                    author: None,
+                    parent: None,
+                    ordinal: 1,
+                    text: "not a starter chat message",
+                },
+            );
+            insert_initial_origin(
+                &database,
+                conversation_id,
+                message_id,
+                &starter_ref,
+                Some(StarterMessageId::new()),
+            );
+            assert_timeline_is_storage_corruption(&database, conversation_id, branch_id);
+        }
+
+        // Bypass the author-role trigger to model a corrupt legacy row where
+        // a user-role starter was assigned to a character participant.
+        let database = Database::open_in_memory().expect("database");
+        let conversation_id = create_fixture(&database, "starter-origin-wrong-author");
+        let starter_ref = put_launch_snapshot(
+            &database,
+            SnapshotSource::Starter(ConversationStarterId::new()),
+            "starter",
+        );
+        install_direct_launch_selection(&database, conversation_id, None, Some(&starter_ref));
+        let aggregate = database
+            .get_conversation_record(conversation_id)
+            .expect("aggregate");
+        let branch_id = aggregate.conversation.active_branch_id;
+        let user = aggregate
+            .conversation
+            .participants
+            .iter()
+            .find(|participant| participant.role == ParticipantRole::User)
+            .expect("user")
+            .id;
+        let character = aggregate
+            .conversation
+            .participants
+            .iter()
+            .find(|participant| participant.role == ParticipantRole::Character)
+            .expect("character")
+            .id;
+        let (message_id, _) = insert_timeline_message(
+            &database,
+            conversation_id,
+            TimelineMessageSpec {
+                branch_id,
+                role: MessageRole::User,
+                author: Some(user),
+                parent: None,
+                ordinal: 1,
+                text: "wrong author",
+            },
+        );
+        insert_initial_origin(
+            &database,
+            conversation_id,
+            message_id,
+            &starter_ref,
+            Some(StarterMessageId::new()),
+        );
+        database
+            .connection()
+            .expect("connection")
+            .execute_batch("DROP TRIGGER conversation_message_author_role_update;")
+            .expect("disable author guard");
+        database
+            .connection()
+            .expect("connection")
+            .execute(
+                "UPDATE conversation_messages SET author_participant_id = ?1 WHERE conversation_id = ?2 AND id = ?3",
+                params![character.to_string(), conversation_id.to_string(), message_id.to_string()],
+            )
+            .expect("wrong author");
+        assert_timeline_is_storage_corruption(&database, conversation_id, branch_id);
+
+        // The origin artifact must equal the selected launch snapshot, not
+        // merely have the same source kind.
+        let database = Database::open_in_memory().expect("database");
+        let conversation_id = create_fixture(&database, "origin-selection-mismatch");
+        let selected_scene = put_launch_snapshot(
+            &database,
+            SnapshotSource::Scene(SceneId::new()),
+            "selected scene",
+        );
+        let foreign_scene = put_launch_snapshot(
+            &database,
+            SnapshotSource::Scene(SceneId::new()),
+            "foreign scene",
+        );
+        install_direct_launch_selection(&database, conversation_id, Some(&selected_scene), None);
+        let branch_id = database
+            .get_conversation_record(conversation_id)
+            .expect("aggregate")
+            .conversation
+            .active_branch_id;
+        database
+            .connection()
+            .expect("connection")
+            .execute(
+                "INSERT INTO conversation_snapshot_refs (conversation_id, artifact_id) VALUES (?1, ?2)",
+                params![conversation_id.to_string(), foreign_scene.artifact_id.to_string()],
+            )
+            .expect("foreign snapshot reference");
+        let (message_id, _) = insert_timeline_message(
+            &database,
+            conversation_id,
+            TimelineMessageSpec {
+                branch_id,
+                role: MessageRole::Scene,
+                author: None,
+                parent: None,
+                ordinal: 1,
+                text: "foreign scene",
+            },
+        );
+        insert_initial_origin(&database, conversation_id, message_id, &foreign_scene, None);
+        assert_timeline_is_storage_corruption(&database, conversation_id, branch_id);
     }
 
     #[test]

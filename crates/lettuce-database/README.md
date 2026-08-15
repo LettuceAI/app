@@ -38,6 +38,11 @@ rows store references and the artifact store verifies immutable metadata and
 payload digests before reads or trusted transfer. The database currently exposes
 an internal normalized create/read slice while the complete conversation
 repository mutation port is still being implemented.
+Initial scene and starter messages use normalized source rows tied to both the
+conversation message and its selected snapshot artifact. Those rows are durable
+attribution, not a license for storage to interpret protected artifact bytes;
+the application launch planner materializes the validated authored content
+before the eventual atomic creator writes it.
 Migration 8 is the final normalized conversation schema. Generation turns
 persist a typed target, retry source, provider request overrides, and
 forced-speaker identity directly; there is no legacy runtime-contract column

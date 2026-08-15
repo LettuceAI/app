@@ -665,6 +665,7 @@ impl ConversationHistory {
                 (MessageRole::Assistant, Some(participant))
                     if participant.role == ParticipantRole::Character => {}
                 (MessageRole::System, None) => {}
+                (MessageRole::Scene, None) => {}
                 _ => {
                     return Err(ValidationError::InvalidReference {
                         field: "conversation_history.author_role",

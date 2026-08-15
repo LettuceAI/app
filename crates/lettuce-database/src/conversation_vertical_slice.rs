@@ -842,6 +842,10 @@ mod tests {
                     model_selection: SnapshotSelection::Disabled,
                 },
             ],
+            initial_timeline: lettuce_conversations::InitialTimelineDraft {
+                format_version: 1,
+                entries: Vec::new(),
+            },
             operation: OperationToken {
                 key: lettuce_jobs::IdempotencyKey::new("coherent-chat").expect("key"),
                 request_digest: ContentHash::parse("ef".repeat(32)).expect("digest"),
@@ -929,6 +933,10 @@ mod tests {
                     model_selection: SnapshotSelection::Disabled,
                 },
             ],
+            initial_timeline: lettuce_conversations::InitialTimelineDraft {
+                format_version: 1,
+                entries: Vec::new(),
+            },
             operation: OperationToken {
                 key: lettuce_jobs::IdempotencyKey::new("create-chat").expect("key"),
                 request_digest: ContentHash::parse("ab".repeat(32)).expect("digest"),
@@ -1461,6 +1469,10 @@ mod tests {
                     model_selection: SnapshotSelection::Disabled,
                 },
             ],
+            initial_timeline: lettuce_conversations::InitialTimelineDraft {
+                format_version: 1,
+                entries: Vec::new(),
+            },
             operation: OperationToken {
                 key: lettuce_jobs::IdempotencyKey::new("create-group").expect("key"),
                 request_digest: ContentHash::parse("cd".repeat(32)).expect("digest"),
@@ -1605,6 +1617,25 @@ mod tests {
             )
             .expect("message fks");
         assert!(fk_count >= 5);
+        let origin_sql: String = connection
+            .query_row(
+                "SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = 'conversation_initial_message_origins'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("initial origin schema");
+        assert!(origin_sql.contains("source_kind IN ('scene', 'starter')"));
+        assert!(origin_sql.contains("starter_message_id IS NULL"));
+        assert!(origin_sql.contains("conversation_snapshot_artifacts"));
+        assert!(origin_sql.contains("conversation_snapshot_refs"));
+        let origin_fks: i64 = connection
+            .query_row(
+                "SELECT count(*) FROM pragma_foreign_key_list('conversation_initial_message_origins')",
+                [],
+                |row| row.get(0),
+            )
+            .expect("initial origin fks");
+        assert!(origin_fks >= 3);
 
         let conversation_id = ConversationId::new();
         let branch_id = ConversationBranchId::new();

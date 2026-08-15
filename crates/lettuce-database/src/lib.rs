@@ -3225,6 +3225,7 @@ mod tests {
                 "character_presentation_asset_refs",
                 "characters",
                 "conversation_branches",
+                "conversation_initial_message_origins",
                 "conversation_message_candidates",
                 "conversation_message_revisions",
                 "conversation_messages",

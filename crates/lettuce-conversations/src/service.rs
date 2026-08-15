@@ -5,15 +5,15 @@ use crate::error::{ConversationRepositoryError, ConversationServiceError};
 use crate::generation::GenerationTurn;
 use crate::model::ConversationAggregate;
 use crate::ports::{
-    ArchiveConversationResult, BeginGeneration, ConversationOutboxRecord, ConversationQuery,
-    ConversationReader, ConversationRepository, ConversationSummary, CreateConversationResult,
-    EditMessageResult, ForkBranchResult, GenerationFailureResult, GenerationFinalizationResult,
-    GenerationRecoveryResult, KeysetPage, MutationCommit, OperationKind, ParticipantPolicyResult,
-    RestoreConversationResult, SelectBranchResult, SettingsResult, TimelinePage,
-    TombstoneMessageResult,
+    ArchiveConversationResult, BeginGeneration, ConversationCreator, ConversationOutboxRecord,
+    ConversationQuery, ConversationReader, ConversationRepository, ConversationSummary,
+    CreateConversationResult, EditMessageResult, ForkBranchResult, GenerationFailureResult,
+    GenerationFinalizationResult, GenerationRecoveryResult, KeysetPage, MutationCommit,
+    OperationKind, ParticipantPolicyResult, RestoreConversationResult, SelectBranchResult,
+    SettingsResult, TimelinePage, TombstoneMessageResult,
 };
 
-fn verify_snapshot_references<R: ConversationRepository>(
+fn verify_snapshot_references<R: ConversationCreator>(
     repository: &R,
     kind: &crate::model::ConversationKind,
 ) -> Result<(), ConversationServiceError> {
@@ -155,7 +155,7 @@ impl<R: ConversationReader> ConversationManager<R> {
     }
 }
 
-impl<R: ConversationRepository> ConversationManager<R> {
+impl<R: ConversationCreator> ConversationManager<R> {
     pub fn create(
         &self,
         plan: &CreateConversationPlan,
@@ -165,7 +165,9 @@ impl<R: ConversationRepository> ConversationManager<R> {
         verify_snapshot_references(&self.repository, &plan.kind)?;
         self.repository.create(plan, now).map_err(Into::into)
     }
+}
 
+impl<R: ConversationRepository> ConversationManager<R> {
     pub fn validate_mutation(
         &self,
         mutation: &ConversationMutation,

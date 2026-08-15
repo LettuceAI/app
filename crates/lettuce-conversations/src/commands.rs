@@ -1,7 +1,7 @@
 use lettuce_types::{
     ContentHash, ConversationBranchId, ConversationId, ConversationParticipantId,
-    GenerationAttemptId, GenerationTurnId, MessageCandidateId, MessageId, Revision,
-    TimestampMillis,
+    GenerationAttemptId, GenerationTurnId, MessageCandidateId, MessageId, MessageRevisionId,
+    Revision, StarterMessageId, TimestampMillis,
 };
 use serde::{Deserialize, Serialize};
 
@@ -9,7 +9,7 @@ use crate::content::{Message, MessagePart, MessageRenderSource, MessageRole, Mes
 use crate::error::ValidationError;
 use crate::generation::{GenerationOperation, IdempotencyKey};
 use crate::model::{ConversationKind, ParticipantRole, ParticipantSource};
-use crate::snapshot::{ModelSelectionSnapshot, ValidateSnapshot};
+use crate::snapshot::{ModelSelectionSnapshot, ProtectedSnapshotRef, ValidateSnapshot};
 use crate::validation::{MAX_PARTS, validate_collection, validate_text};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -74,7 +74,129 @@ pub struct CreateConversationPlan {
     pub title: String,
     pub kind: ConversationKind,
     pub participants: Vec<ConversationParticipantDraft>,
+    pub initial_timeline: InitialTimelineDraft,
     pub operation: OperationToken,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+/// The ordered, authored launch messages. The future application-level
+/// `ConversationLaunchPlanner` materializes these from selected scene/starter
+/// snapshots and creates their artifact bytes before calling the creator; the
+/// database never needs to read snapshot payload bytes.
+pub struct InitialTimelineDraft {
+    pub format_version: u32,
+    pub entries: Vec<InitialMessageDraft>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct InitialMessageDraft {
+    pub message_id: MessageId,
+    pub revision_id: MessageRevisionId,
+    pub origin: InitialMessageOrigin,
+    pub role: MessageRole,
+    pub author_participant_id: Option<ConversationParticipantId>,
+    pub parts: Vec<MessagePart>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
+pub enum InitialMessageOrigin {
+    SelectedScene {
+        snapshot_ref: ProtectedSnapshotRef,
+    },
+    StarterMessage {
+        snapshot_ref: ProtectedSnapshotRef,
+        starter_message_id: StarterMessageId,
+    },
+}
+
+impl InitialTimelineDraft {
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        if self.format_version != 1 {
+            return Err(ValidationError::UnsupportedVersion {
+                field: "initial_timeline",
+                version: self.format_version,
+            });
+        }
+        validate_collection("initial_timeline.entries", &self.entries, 512)?;
+        let mut messages = std::collections::HashSet::new();
+        let mut revisions = std::collections::HashSet::new();
+        let mut starters = std::collections::HashSet::new();
+        let mut scenes = 0usize;
+        for (index, entry) in self.entries.iter().enumerate() {
+            if !messages.insert(entry.message_id) || !revisions.insert(entry.revision_id) {
+                return Err(ValidationError::Invariant {
+                    field: "initial_timeline.identity",
+                });
+            }
+            match &entry.origin {
+                InitialMessageOrigin::SelectedScene { snapshot_ref } => {
+                    if !matches!(
+                        snapshot_ref.source,
+                        crate::snapshot::SnapshotSource::Scene(_)
+                    ) {
+                        return Err(ValidationError::InvalidReference {
+                            field: "initial_timeline.scene_source",
+                        });
+                    }
+                    scenes += 1;
+                    if index != 0 {
+                        return Err(ValidationError::InvalidReference {
+                            field: "initial_timeline.scene_first",
+                        });
+                    }
+                    if scenes > 1
+                        || entry.role != MessageRole::Scene
+                        || entry.author_participant_id.is_some()
+                    {
+                        return Err(ValidationError::InvalidReference {
+                            field: "initial_timeline.scene",
+                        });
+                    }
+                    if !entry.parts.iter().any(|part| matches!(part, MessagePart::Text { text } if !text.trim().is_empty())) { return Err(ValidationError::InvalidValue { field: "initial_timeline.scene_text" }); }
+                    snapshot_ref.validate()?;
+                }
+                InitialMessageOrigin::StarterMessage {
+                    snapshot_ref,
+                    starter_message_id,
+                } => {
+                    if !matches!(
+                        snapshot_ref.source,
+                        crate::snapshot::SnapshotSource::Starter(_)
+                    ) {
+                        return Err(ValidationError::InvalidReference {
+                            field: "initial_timeline.starter_source",
+                        });
+                    }
+                    if !starters.insert(*starter_message_id) {
+                        return Err(ValidationError::Invariant {
+                            field: "initial_timeline.starter_identity",
+                        });
+                    }
+                    if !matches!(entry.role, MessageRole::User | MessageRole::Assistant)
+                        || entry.author_participant_id.is_none()
+                    {
+                        return Err(ValidationError::InvalidReference {
+                            field: "initial_timeline.starter",
+                        });
+                    }
+                    snapshot_ref.validate()?;
+                }
+            }
+            validate_collection("initial_timeline.parts", &entry.parts, MAX_PARTS)?;
+            for part in &entry.parts {
+                part.validate()?;
+            }
+        }
+        Ok(())
+    }
 }
 
 impl CreateConversationPlan {
@@ -86,6 +208,7 @@ impl CreateConversationPlan {
             false,
         )?;
         self.kind.validate()?;
+        self.initial_timeline.validate()?;
         validate_collection(
             "conversation_plan.participants",
             &self.participants,
@@ -100,6 +223,101 @@ impl CreateConversationPlan {
                 return Err(ValidationError::Invariant {
                     field: "conversation_plan.participant_identity",
                 });
+            }
+        }
+        match &self.kind {
+            ConversationKind::Direct(details) => {
+                let selected_scene = match &details.scene {
+                    crate::snapshot::SnapshotSelection::Inherited(value)
+                    | crate::snapshot::SnapshotSelection::Explicit(value) => {
+                        Some(&value.snapshot_ref)
+                    }
+                    crate::snapshot::SnapshotSelection::Disabled => None,
+                };
+                let selected_starter = match &details.starter {
+                    crate::snapshot::SnapshotSelection::Inherited(value)
+                    | crate::snapshot::SnapshotSelection::Explicit(value) => {
+                        Some(&value.snapshot_ref)
+                    }
+                    crate::snapshot::SnapshotSelection::Disabled => None,
+                };
+                for entry in &self.initial_timeline.entries {
+                    match &entry.origin {
+                        InitialMessageOrigin::SelectedScene { snapshot_ref }
+                            if selected_scene != Some(snapshot_ref) =>
+                        {
+                            return Err(ValidationError::InvalidReference {
+                                field: "conversation_plan.direct.scene_origin",
+                            });
+                        }
+                        InitialMessageOrigin::StarterMessage { snapshot_ref, .. }
+                            if selected_starter != Some(snapshot_ref) =>
+                        {
+                            return Err(ValidationError::InvalidReference {
+                                field: "conversation_plan.direct.starter_origin",
+                            });
+                        }
+                        InitialMessageOrigin::StarterMessage { .. } => {
+                            let participant = entry
+                                .author_participant_id
+                                .and_then(|id| self.participants.iter().find(|p| p.id == id));
+                            if !matches!(
+                                (entry.role, participant.map(|p| p.role)),
+                                (
+                                    crate::content::MessageRole::User,
+                                    Some(ParticipantRole::User)
+                                ) | (
+                                    crate::content::MessageRole::Assistant,
+                                    Some(ParticipantRole::Character)
+                                )
+                            ) {
+                                return Err(ValidationError::InvalidReference {
+                                    field: "conversation_plan.direct.starter_author",
+                                });
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            ConversationKind::Group(details) => {
+                if matches!(
+                    details.group.chat_mode,
+                    crate::snapshot::GroupChatModeSnapshot::Conversation
+                ) && !self.initial_timeline.entries.is_empty()
+                {
+                    return Err(ValidationError::InvalidReference {
+                        field: "conversation_plan.group.conversation_initial_timeline",
+                    });
+                }
+                if self.initial_timeline.entries.iter().any(|entry| {
+                    matches!(entry.origin, InitialMessageOrigin::StarterMessage { .. })
+                }) {
+                    return Err(ValidationError::InvalidReference {
+                        field: "conversation_plan.group.starter_origin",
+                    });
+                }
+                if let Some(entry) = self.initial_timeline.entries.first() {
+                    if let InitialMessageOrigin::SelectedScene { snapshot_ref } = &entry.origin {
+                        let selected = match &details.group.scene {
+                            crate::snapshot::SnapshotSelection::Inherited(value)
+                            | crate::snapshot::SnapshotSelection::Explicit(value) => {
+                                Some(&value.snapshot_ref)
+                            }
+                            crate::snapshot::SnapshotSelection::Disabled => None,
+                        };
+                        if selected != Some(snapshot_ref)
+                            || !matches!(
+                                details.group.chat_mode,
+                                crate::snapshot::GroupChatModeSnapshot::Roleplay
+                            )
+                        {
+                            return Err(ValidationError::InvalidReference {
+                                field: "conversation_plan.group.scene_origin",
+                            });
+                        }
+                    }
+                }
             }
         }
         match self.kind {
@@ -237,7 +455,8 @@ impl MessageDraft {
             part.validate()?;
         }
         match (self.role, self.author_participant_id) {
-            (MessageRole::System, Some(_)) | (MessageRole::User | MessageRole::Assistant, None) => {
+            (MessageRole::System | MessageRole::Scene, Some(_))
+            | (MessageRole::User | MessageRole::Assistant, None) => {
                 Err(ValidationError::InvalidReference {
                     field: "message_draft.author",
                 })

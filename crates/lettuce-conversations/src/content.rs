@@ -181,6 +181,7 @@ pub enum MessageRole {
     User,
     Assistant,
     System,
+    Scene,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -232,9 +233,11 @@ impl Message {
             self.updated_at,
         )?;
         match (self.role, self.author_participant_id) {
-            (MessageRole::System, Some(_)) => Err(ValidationError::InvalidReference {
-                field: "message.system_author",
-            }),
+            (MessageRole::System | MessageRole::Scene, Some(_)) => {
+                Err(ValidationError::InvalidReference {
+                    field: "message.non_chat_author",
+                })
+            }
             (MessageRole::User | MessageRole::Assistant, None) => {
                 Err(ValidationError::InvalidReference {
                     field: "message.participant_author",

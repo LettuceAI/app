@@ -100,7 +100,7 @@ CREATE TABLE conversation_messages (
     branch_id TEXT NOT NULL,
     parent_message_id TEXT,
     author_participant_id TEXT,
-    role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
+    role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system', 'scene')),
     timeline_ordinal INTEGER NOT NULL CHECK (timeline_ordinal >= 1),
     logical_time INTEGER NOT NULL,
     effective_time INTEGER NOT NULL,
@@ -130,7 +130,7 @@ CREATE TABLE conversation_messages (
         REFERENCES conversation_message_candidates(conversation_id, message_id, id)
         DEFERRABLE INITIALLY DEFERRED,
     CHECK ((active_revision_id IS NOT NULL) <> (active_candidate_id IS NOT NULL)),
-    CHECK ((role = 'system') = (author_participant_id IS NULL)),
+    CHECK ((role IN ('system', 'scene')) = (author_participant_id IS NULL)),
     CHECK (created_at <= updated_at)
 ) STRICT;
 CREATE INDEX conversation_messages_updated_idx ON conversation_messages(conversation_id, updated_at, id);
@@ -309,7 +309,8 @@ CREATE TABLE conversation_snapshot_artifacts (
     retention TEXT NOT NULL CHECK (retention = 'conversation'),
     bytes BLOB NOT NULL CHECK (length(bytes) = byte_size),
     created_at INTEGER NOT NULL,
-    UNIQUE (artifact_id, digest, schema_version, byte_size, codec, retention)
+    UNIQUE (artifact_id, digest, schema_version, byte_size, codec, retention),
+    UNIQUE (artifact_id, source_kind)
 ) STRICT;
 
 CREATE TABLE conversation_replay_artifacts (
@@ -410,6 +411,23 @@ WHEN NOT EXISTS (SELECT 1 FROM conversation_messages WHERE conversation_id = NEW
 BEGIN SELECT RAISE(ABORT, 'candidate target must be assistant on turn branch'); END;
 CREATE INDEX conversation_candidates_page_idx
     ON conversation_message_candidates(conversation_id, message_id, ordinal, id);
+
+CREATE TABLE conversation_initial_message_origins (
+    conversation_id TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    snapshot_artifact_id TEXT NOT NULL,
+    source_kind TEXT NOT NULL CHECK (source_kind IN ('scene', 'starter')),
+    starter_message_id TEXT,
+    PRIMARY KEY (conversation_id, message_id),
+    FOREIGN KEY (conversation_id, message_id) REFERENCES conversation_messages(conversation_id, id) ON DELETE RESTRICT,
+    FOREIGN KEY (snapshot_artifact_id, source_kind) REFERENCES conversation_snapshot_artifacts(artifact_id, source_kind) ON DELETE RESTRICT,
+    FOREIGN KEY (conversation_id, snapshot_artifact_id) REFERENCES conversation_snapshot_refs(conversation_id, artifact_id) ON DELETE RESTRICT,
+    CHECK ((source_kind = 'scene' AND starter_message_id IS NULL) OR
+           (source_kind = 'starter' AND starter_message_id IS NOT NULL)),
+    UNIQUE (conversation_id, message_id, snapshot_artifact_id)
+) STRICT;
+CREATE INDEX conversation_initial_message_origins_source_idx
+    ON conversation_initial_message_origins(conversation_id, source_kind, snapshot_artifact_id);
 
 CREATE TABLE generation_attempts (
     conversation_id TEXT NOT NULL,

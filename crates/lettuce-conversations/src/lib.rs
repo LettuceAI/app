@@ -33,8 +33,9 @@ mod tests {
     use super::*;
     use lettuce_types::{
         CharacterId, ContentHash, ConversationBranchId, ConversationId, ConversationParticipantId,
-        GenerationAttemptId, GenerationTurnId, MessageCandidateId, MessageId, MessageRevisionId,
-        ReplayArtifactId, Revision, SnapshotArtifactId, TimestampMillis, UsageEventId,
+        GenerationAttemptId, GenerationTurnId, GroupId, MessageCandidateId, MessageId,
+        MessageRevisionId, ReplayArtifactId, Revision, SceneId, SnapshotArtifactId,
+        StarterMessageId, TimestampMillis, UsageEventId,
     };
 
     #[derive(Default)]
@@ -278,6 +279,380 @@ mod tests {
         assert!(SnapshotSelection::<u32>::Inherited(1).is_resolved());
         assert!(SnapshotSelection::<u32>::Explicit(1).is_explicit());
         assert!(!SnapshotSelection::<u32>::Disabled.is_resolved());
+    }
+
+    fn initial_entry(
+        origin: InitialMessageOrigin,
+        role: MessageRole,
+        author: Option<ConversationParticipantId>,
+        text: Option<&str>,
+    ) -> InitialMessageDraft {
+        InitialMessageDraft {
+            message_id: MessageId::new(),
+            revision_id: MessageRevisionId::new(),
+            origin,
+            role,
+            author_participant_id: author,
+            parts: text
+                .into_iter()
+                .map(|text| MessagePart::Text { text: text.into() })
+                .collect(),
+        }
+    }
+
+    fn direct_plan(
+        initial_timeline: InitialTimelineDraft,
+    ) -> (
+        CreateConversationPlan,
+        ConversationParticipantId,
+        ConversationParticipantId,
+        ProtectedSnapshotRef,
+        ProtectedSnapshotRef,
+    ) {
+        let user_id = ConversationParticipantId::new();
+        let character_participant_id = ConversationParticipantId::new();
+        let character_id = CharacterId::new();
+        let scene_ref = snapshot_ref(SnapshotSource::Scene(SceneId::new()));
+        let starter_ref = snapshot_ref(SnapshotSource::Starter(
+            lettuce_types::ConversationStarterId::new(),
+        ));
+        let plan = CreateConversationPlan {
+            conversation_id: ConversationId::new(),
+            title: "Direct launch".into(),
+            kind: ConversationKind::Direct(DirectConversationDetails {
+                format_version: 1,
+                character: CharacterLaunchSnapshot {
+                    snapshot_ref: snapshot_ref(SnapshotSource::Character(character_id)),
+                    source_id: character_id,
+                    source_revision: Revision::INITIAL,
+                    name: "Character".into(),
+                    nickname: None,
+                },
+                persona: SnapshotSelection::Disabled,
+                scene: SnapshotSelection::Explicit(SceneLaunchSnapshot {
+                    snapshot_ref: scene_ref.clone(),
+                    source_id: match scene_ref.source {
+                        SnapshotSource::Scene(id) => id,
+                        _ => unreachable!(),
+                    },
+                    source_revision: Revision::INITIAL,
+                    title: "Scene".into(),
+                }),
+                starter: SnapshotSelection::Explicit(StarterLaunchSnapshot {
+                    snapshot_ref: starter_ref.clone(),
+                    source_id: match starter_ref.source {
+                        SnapshotSource::Starter(id) => id,
+                        _ => unreachable!(),
+                    },
+                    source_revision: Revision::INITIAL,
+                    title: "Starter".into(),
+                }),
+                prompt: SnapshotSelection::Disabled,
+                lorebooks: SnapshotSelection::Explicit(Vec::new()),
+                model: SnapshotSelection::Disabled,
+                memory: SnapshotSelection::Disabled,
+                voice: SnapshotSelection::Disabled,
+            }),
+            participants: vec![
+                ConversationParticipantDraft {
+                    id: user_id,
+                    role: ParticipantRole::User,
+                    ordinal: 0,
+                    source: ParticipantSource::User,
+                    enabled: true,
+                    muted: false,
+                    display_name: "User".into(),
+                    authored_description: None,
+                    model_selection: SnapshotSelection::Disabled,
+                },
+                ConversationParticipantDraft {
+                    id: character_participant_id,
+                    role: ParticipantRole::Character,
+                    ordinal: 1,
+                    source: ParticipantSource::Character(character_id),
+                    enabled: true,
+                    muted: false,
+                    display_name: "Character".into(),
+                    authored_description: None,
+                    model_selection: SnapshotSelection::Disabled,
+                },
+            ],
+            initial_timeline,
+            operation: OperationToken {
+                key: lettuce_jobs::IdempotencyKey::new("create-direct-plan").expect("key"),
+                request_digest: ContentHash::parse("cd".repeat(32)).expect("digest"),
+            },
+        };
+        (
+            plan,
+            user_id,
+            character_participant_id,
+            scene_ref,
+            starter_ref,
+        )
+    }
+
+    fn group_plan(
+        chat_mode: GroupChatModeSnapshot,
+        scene: SnapshotSelection<SceneLaunchSnapshot>,
+        initial_timeline: InitialTimelineDraft,
+    ) -> CreateConversationPlan {
+        let user_id = ConversationParticipantId::new();
+        let first_id = ConversationParticipantId::new();
+        let second_id = ConversationParticipantId::new();
+        let first_character = CharacterId::new();
+        let second_character = CharacterId::new();
+        let mut details = group_details(
+            GroupId::new(),
+            first_character,
+            second_character,
+            first_id,
+            second_id,
+        );
+        details.group.chat_mode = chat_mode;
+        details.group.scene = scene;
+        CreateConversationPlan {
+            conversation_id: ConversationId::new(),
+            title: "Group launch".into(),
+            kind: ConversationKind::Group(details),
+            participants: vec![
+                ConversationParticipantDraft {
+                    id: user_id,
+                    role: ParticipantRole::User,
+                    ordinal: 0,
+                    source: ParticipantSource::User,
+                    enabled: true,
+                    muted: false,
+                    display_name: "User".into(),
+                    authored_description: None,
+                    model_selection: SnapshotSelection::Disabled,
+                },
+                ConversationParticipantDraft {
+                    id: first_id,
+                    role: ParticipantRole::Character,
+                    ordinal: 1,
+                    source: ParticipantSource::Character(first_character),
+                    enabled: true,
+                    muted: false,
+                    display_name: "First".into(),
+                    authored_description: None,
+                    model_selection: SnapshotSelection::Disabled,
+                },
+                ConversationParticipantDraft {
+                    id: second_id,
+                    role: ParticipantRole::Character,
+                    ordinal: 2,
+                    source: ParticipantSource::Character(second_character),
+                    enabled: true,
+                    muted: false,
+                    display_name: "Second".into(),
+                    authored_description: None,
+                    model_selection: SnapshotSelection::Disabled,
+                },
+            ],
+            initial_timeline,
+            operation: OperationToken {
+                key: lettuce_jobs::IdempotencyKey::new("create-group-plan").expect("key"),
+                request_digest: ContentHash::parse("ef".repeat(32)).expect("digest"),
+            },
+        }
+    }
+
+    #[test]
+    fn create_plan_validates_direct_launch_timeline_and_refs() {
+        let (mut empty, user, character, scene_ref, starter_ref) =
+            direct_plan(InitialTimelineDraft {
+                format_version: 1,
+                entries: Vec::new(),
+            });
+        assert!(empty.validate().is_ok(), "empty direct launch");
+
+        let scene = initial_entry(
+            InitialMessageOrigin::SelectedScene {
+                snapshot_ref: scene_ref.clone(),
+            },
+            MessageRole::Scene,
+            None,
+            Some("scene"),
+        );
+        let starter = initial_entry(
+            InitialMessageOrigin::StarterMessage {
+                snapshot_ref: starter_ref.clone(),
+                starter_message_id: StarterMessageId::new(),
+            },
+            MessageRole::User,
+            Some(user),
+            Some("starter"),
+        );
+        empty.initial_timeline.entries = vec![starter.clone()];
+        assert!(empty.validate().is_ok(), "starter-only direct launch");
+        empty.initial_timeline.entries = vec![scene.clone(), starter];
+        assert!(empty.validate().is_ok(), "scene plus starter launch");
+
+        let mut disabled_scene = empty.clone();
+        if let ConversationKind::Direct(details) = &mut disabled_scene.kind {
+            details.scene = SnapshotSelection::Disabled;
+        }
+        assert!(disabled_scene.validate().is_err());
+
+        let mut mismatch = empty.clone();
+        if let InitialMessageOrigin::SelectedScene {
+            snapshot_ref: origin_ref,
+        } = &mut mismatch.initial_timeline.entries[0].origin
+        {
+            *origin_ref = snapshot_ref(SnapshotSource::Scene(SceneId::new()));
+        }
+        assert!(mismatch.validate().is_err());
+
+        let mut duplicate_revision = mismatch.clone();
+        duplicate_revision.initial_timeline.entries[1].revision_id =
+            duplicate_revision.initial_timeline.entries[0].revision_id;
+        assert!(duplicate_revision.validate().is_err());
+
+        let mut wrong_starter_author = empty;
+        wrong_starter_author.initial_timeline.entries[1].author_participant_id = Some(character);
+        assert!(wrong_starter_author.validate().is_err());
+
+        let mut duplicate_ids = mismatch;
+        duplicate_ids.initial_timeline.entries[0].message_id =
+            duplicate_ids.initial_timeline.entries[1].message_id;
+        assert!(duplicate_ids.validate().is_err());
+    }
+
+    #[test]
+    fn create_plan_enforces_group_chat_mode_initial_timeline_policy() {
+        let scene_ref = snapshot_ref(SnapshotSource::Scene(SceneId::new()));
+        let scene_entry = initial_entry(
+            InitialMessageOrigin::SelectedScene {
+                snapshot_ref: scene_ref.clone(),
+            },
+            MessageRole::Scene,
+            None,
+            Some("group scene"),
+        );
+        let conversation = group_plan(
+            GroupChatModeSnapshot::Conversation,
+            SnapshotSelection::Disabled,
+            InitialTimelineDraft {
+                format_version: 1,
+                entries: vec![scene_entry.clone()],
+            },
+        );
+        assert!(conversation.validate().is_err());
+
+        let roleplay = group_plan(
+            GroupChatModeSnapshot::Roleplay,
+            SnapshotSelection::Explicit(SceneLaunchSnapshot {
+                snapshot_ref: scene_ref.clone(),
+                source_id: match scene_ref.source {
+                    SnapshotSource::Scene(id) => id,
+                    _ => unreachable!(),
+                },
+                source_revision: Revision::INITIAL,
+                title: "Scene".into(),
+            }),
+            InitialTimelineDraft {
+                format_version: 1,
+                entries: vec![scene_entry],
+            },
+        );
+        assert!(roleplay.validate().is_ok());
+
+        let wrong_scene = group_plan(
+            GroupChatModeSnapshot::Roleplay,
+            match &roleplay.kind {
+                ConversationKind::Group(details) => details.group.scene.clone(),
+                ConversationKind::Direct(_) => unreachable!(),
+            },
+            InitialTimelineDraft {
+                format_version: 1,
+                entries: vec![initial_entry(
+                    InitialMessageOrigin::SelectedScene {
+                        snapshot_ref: snapshot_ref(SnapshotSource::Scene(SceneId::new())),
+                    },
+                    MessageRole::Scene,
+                    None,
+                    Some("wrong scene"),
+                )],
+            },
+        );
+        assert!(wrong_scene.validate().is_err());
+    }
+
+    #[test]
+    fn initial_timeline_validation_covers_order_identity_and_origin_shapes() {
+        let scene_ref = snapshot_ref(SnapshotSource::Scene(SceneId::new()));
+        let starter_ref = snapshot_ref(SnapshotSource::Starter(
+            lettuce_types::ConversationStarterId::new(),
+        ));
+        let author = Some(ConversationParticipantId::new());
+        let scene = initial_entry(
+            InitialMessageOrigin::SelectedScene {
+                snapshot_ref: scene_ref.clone(),
+            },
+            MessageRole::Scene,
+            None,
+            Some("scene"),
+        );
+        let starter = initial_entry(
+            InitialMessageOrigin::StarterMessage {
+                snapshot_ref: starter_ref.clone(),
+                starter_message_id: StarterMessageId::new(),
+            },
+            MessageRole::User,
+            author,
+            None,
+        );
+        let mut valid = InitialTimelineDraft {
+            format_version: 1,
+            entries: vec![scene.clone(), starter.clone()],
+        };
+        assert!(valid.validate().is_ok());
+        valid.entries.remove(0);
+        assert!(valid.validate().is_ok());
+        let mut duplicate = InitialTimelineDraft {
+            format_version: 1,
+            entries: vec![starter.clone(), starter.clone()],
+        };
+        duplicate.entries[1].message_id = MessageId::new();
+        duplicate.entries[1].revision_id = MessageRevisionId::new();
+        assert!(duplicate.validate().is_err());
+        let mut bad_scene = InitialTimelineDraft {
+            format_version: 1,
+            entries: vec![starter.clone(), scene.clone()],
+        };
+        assert!(bad_scene.validate().is_err());
+        bad_scene.entries = vec![initial_entry(
+            InitialMessageOrigin::SelectedScene {
+                snapshot_ref: scene_ref,
+            },
+            MessageRole::User,
+            author,
+            Some("x"),
+        )];
+        assert!(bad_scene.validate().is_err());
+        bad_scene.entries = vec![initial_entry(
+            InitialMessageOrigin::SelectedScene {
+                snapshot_ref: starter_ref,
+            },
+            MessageRole::Scene,
+            None,
+            Some("x"),
+        )];
+        assert!(bad_scene.validate().is_err());
+    }
+
+    #[test]
+    fn prompt_purpose_serde_is_final_and_rejects_obsolete_group() {
+        for purpose in [
+            PromptPurposeSnapshot::GroupConversational,
+            PromptPurposeSnapshot::GroupRoleplay,
+        ] {
+            let encoded = serde_json::to_string(&purpose).expect("purpose");
+            let decoded: PromptPurposeSnapshot = serde_json::from_str(&encoded).expect("decode");
+            assert_eq!(decoded, purpose);
+        }
+        assert!(serde_json::from_str::<PromptPurposeSnapshot>("\"group\"").is_err());
     }
 
     #[test]
@@ -679,6 +1054,27 @@ mod tests {
     }
 
     #[test]
+    fn scene_messages_are_system_like_and_cannot_have_an_author() {
+        let valid = MessageDraft {
+            role: MessageRole::Scene,
+            author_participant_id: None,
+            parts: vec![],
+            visibility: MessageVisibility::Visible,
+            pinned: false,
+            scene_edited: false,
+        };
+        assert!(valid.validate().is_ok());
+        assert!(
+            MessageDraft {
+                author_participant_id: Some(ConversationParticipantId::new()),
+                ..valid
+            }
+            .validate()
+            .is_err()
+        );
+    }
+
+    #[test]
     fn branch_status_is_closed() {
         assert_eq!(BranchStatus::Active, BranchStatus::Active);
         assert_ne!(BranchStatus::Archived, BranchStatus::Tombstoned);
@@ -791,6 +1187,28 @@ mod tests {
             at: TimestampMillis::UNIX_EPOCH,
             event: ConversationOutboxEvent::ConversationTombstoned {
                 conversation_id: ConversationId::new(),
+                at: TimestampMillis::UNIX_EPOCH,
+            },
+        };
+        assert!(record.validate().is_err());
+    }
+
+    #[test]
+    fn conversation_created_outbox_requires_a_bounded_head_count_pair() {
+        let conversation_id = ConversationId::new();
+        let record = ConversationOutboxRecord {
+            format_version: 1,
+            id: lettuce_types::OutboxEventId::new(),
+            conversation_id,
+            conversation_revision: Revision::INITIAL,
+            sequence: 1,
+            operation_record_id: lettuce_types::OperationRecordId::new(),
+            at: TimestampMillis::UNIX_EPOCH,
+            event: ConversationOutboxEvent::ConversationCreated {
+                conversation_id,
+                root_branch_id: ConversationBranchId::new(),
+                head_message_id: None,
+                initial_message_count: 1,
                 at: TimestampMillis::UNIX_EPOCH,
             },
         };
@@ -1011,11 +1429,13 @@ mod tests {
                     message: b_message,
                     active_revision: Some(b_revision),
                     active_candidate: None,
+                    initial_origin: None,
                 },
                 TimelineItem {
                     message: c_message,
                     active_revision: Some(c_revision),
                     active_candidate: None,
+                    initial_origin: None,
                 },
             ],
             boundary_parent_id: Some(a),
@@ -1050,6 +1470,7 @@ mod tests {
                 message,
                 active_revision: Some(revision),
                 active_candidate: None,
+                initial_origin: None,
             }],
             boundary_parent_id: None,
             next_cursor: None,
@@ -1078,6 +1499,7 @@ mod tests {
                 message,
                 active_revision: Some(revision),
                 active_candidate: None,
+                initial_origin: None,
             }],
             boundary_parent_id: None,
             next_cursor: None,
@@ -1112,6 +1534,7 @@ mod tests {
                 message: ancestor_message,
                 active_revision: Some(ancestor_revision),
                 active_candidate: None,
+                initial_origin: None,
             }],
             boundary_parent_id: None,
             next_cursor: None,
@@ -1143,11 +1566,13 @@ mod tests {
                     message: c_message,
                     active_revision: Some(c_revision),
                     active_candidate: None,
+                    initial_origin: None,
                 },
                 TimelineItem {
                     message: b_message,
                     active_revision: Some(b_revision),
                     active_candidate: None,
+                    initial_origin: None,
                 },
             ],
             boundary_parent_id: Some(a),
