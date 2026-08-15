@@ -152,6 +152,10 @@ pub struct PersonaLaunchSnapshot {
     pub source_revision: Revision,
     pub title: String,
     pub nickname: Option<String>,
+    /// Lorebooks selected by the persona at launch time.  These are resolved
+    /// immutable snapshots rather than live lorebook IDs so replaying a
+    /// conversation cannot observe later persona edits.
+    pub lorebooks: SnapshotSelection<Vec<LorebookLaunchSnapshot>>,
 }
 
 impl PersonaLaunchSnapshot {
@@ -175,6 +179,7 @@ impl ValidateSnapshot for PersonaLaunchSnapshot {
         if let Some(value) = &self.nickname {
             validate_text(field, value, MAX_AUTHORED_TEXT_BYTES, true)?;
         }
+        validate_lorebooks(&self.lorebooks, "persona.lorebooks")?;
         Ok(())
     }
 }
@@ -480,6 +485,11 @@ pub struct GroupMemberLaunchSnapshot {
     pub enabled: bool,
     pub muted: bool,
     pub model_override: SnapshotSelection<ModelSelectionSnapshot>,
+    /// Character/member lorebooks resolved into the group launch snapshot.
+    /// The group-level `disable_character_lorebook` flag remains authoritative
+    /// for whether these are used, but the selected values stay available for
+    /// deterministic replay and inspection.
+    pub lorebooks: SnapshotSelection<Vec<LorebookLaunchSnapshot>>,
 }
 
 impl GroupMemberLaunchSnapshot {
@@ -491,7 +501,8 @@ impl GroupMemberLaunchSnapshot {
 impl ValidateSnapshot for GroupMemberLaunchSnapshot {
     fn validate_snapshot(&self, field: &'static str) -> Result<(), ValidationError> {
         self.character.validate_snapshot(field)?;
-        self.model_override.validate(field)
+        self.model_override.validate(field)?;
+        validate_lorebooks(&self.lorebooks, "group.member.lorebooks")
     }
 }
 
@@ -580,11 +591,19 @@ fn validate_lorebooks(
     field: &'static str,
 ) -> Result<(), ValidationError> {
     if let SnapshotSelection::Inherited(books) | SnapshotSelection::Explicit(books) = selection {
-        validate_collection(field, books, MAX_LOREBOOKS)?;
-        validate_unique(field, books.iter().map(|book| book.source_id))?;
-        for book in books {
-            book.validate_snapshot(field)?;
-        }
+        validate_lorebook_values(books, field)?;
+    }
+    Ok(())
+}
+
+fn validate_lorebook_values(
+    books: &[LorebookLaunchSnapshot],
+    field: &'static str,
+) -> Result<(), ValidationError> {
+    validate_collection(field, books, MAX_LOREBOOKS)?;
+    validate_unique(field, books.iter().map(|book| book.source_id))?;
+    for book in books {
+        book.validate_snapshot(field)?;
     }
     Ok(())
 }

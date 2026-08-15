@@ -63,6 +63,16 @@ impl ConversationParticipantDraft {
                 field: "participant_draft.source",
             });
         }
+        if self.role != ParticipantRole::Character
+            && !matches!(
+                self.model_selection,
+                crate::snapshot::SnapshotSelection::Disabled
+            )
+        {
+            return Err(ValidationError::InvalidReference {
+                field: "participant_draft.non_character_model",
+            });
+        }
         Ok(())
     }
 }
@@ -348,6 +358,16 @@ impl CreateConversationPlan {
                     if character_source != Some(details.character.source_id) {
                         return Err(ValidationError::InvalidReference {
                             field: "conversation_plan.direct.character_source",
+                        });
+                    }
+                    if self
+                        .participants
+                        .iter()
+                        .find(|participant| participant.role == ParticipantRole::Character)
+                        .is_none_or(|participant| participant.model_selection != details.model)
+                    {
+                        return Err(ValidationError::InvalidReference {
+                            field: "conversation_plan.direct.character_model",
                         });
                     }
                 }

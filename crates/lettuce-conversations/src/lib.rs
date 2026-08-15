@@ -28,7 +28,7 @@ pub use snapshot::*;
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
+    use std::{collections::HashSet, sync::Mutex};
 
     use super::*;
     use lettuce_types::{
@@ -137,14 +137,39 @@ mod tests {
     }
 
     fn snapshot_ref(source: SnapshotSource) -> ProtectedSnapshotRef {
+        let bytes = b"snapshot";
         ProtectedSnapshotRef {
             source,
             source_revision: Revision::INITIAL,
             artifact_id: SnapshotArtifactId::new(),
-            digest: ContentHash::parse("ab".repeat(32)).expect("digest"),
+            digest: ContentHash::parse(blake3::hash(bytes).to_hex().to_string()).expect("digest"),
             schema_version: 1,
-            byte_size: 1,
+            byte_size: bytes.len() as u64,
         }
+    }
+
+    fn snapshot_draft(reference: &ProtectedSnapshotRef) -> SnapshotArtifactDraft {
+        let bytes = ProtectedArtifactBytes::new(b"snapshot".to_vec()).expect("payload");
+        SnapshotArtifactDraft {
+            source: reference.source,
+            source_revision: reference.source_revision,
+            artifact_id: reference.artifact_id,
+            digest: bytes.digest(),
+            schema_version: reference.schema_version,
+            byte_size: bytes.len() as u64,
+            codec: ArtifactCodec::Binary,
+            retention: ArtifactRetention::Conversation,
+            bytes,
+        }
+    }
+
+    fn complete_snapshot_drafts(plan: &CreateConversationPlan) -> Vec<SnapshotArtifactDraft> {
+        let mut ids = HashSet::new();
+        conversation_launch_snapshot_references(plan)
+            .into_iter()
+            .filter(|reference| ids.insert(reference.artifact_id))
+            .map(snapshot_draft)
+            .collect()
     }
 
     #[test]
@@ -520,6 +545,89 @@ mod tests {
     }
 
     #[test]
+    fn participant_models_are_disabled_or_match_the_launch_selection() {
+        let model_id = lettuce_types::ModelProfileId::new();
+        let model_ref = snapshot_ref(SnapshotSource::Model(model_id));
+        let model = ModelSelectionSnapshot {
+            snapshot_ref: model_ref.clone(),
+            source_id: model_id,
+            source_revision: Revision::INITIAL,
+            provider_kind: ModelProviderKind::Other,
+            external_model_id: "model".into(),
+            display_name: "Model".into(),
+            context_length: None,
+            max_output_tokens: None,
+        };
+
+        let (mut direct, ..) = direct_plan(InitialTimelineDraft {
+            format_version: 1,
+            entries: Vec::new(),
+        });
+        direct.participants[0].model_selection = SnapshotSelection::Explicit(model.clone());
+        assert!(matches!(
+            direct.validate(),
+            Err(ValidationError::InvalidReference {
+                field: "participant_draft.non_character_model"
+            })
+        ));
+
+        let (mut direct, ..) = direct_plan(InitialTimelineDraft {
+            format_version: 1,
+            entries: Vec::new(),
+        });
+        if let ConversationKind::Direct(details) = &mut direct.kind {
+            details.model = SnapshotSelection::Explicit(model.clone());
+        }
+        direct.participants[1].model_selection = SnapshotSelection::Disabled;
+        assert!(matches!(
+            direct.validate(),
+            Err(ValidationError::InvalidReference {
+                field: "conversation_plan.direct.character_model"
+            })
+        ));
+
+        if let ConversationKind::Direct(details) = &mut direct.kind {
+            details.model = SnapshotSelection::Explicit(model.clone());
+        }
+        direct.participants[1].model_selection = SnapshotSelection::Explicit(model.clone());
+        let direct_refs = conversation_launch_snapshot_references(&direct);
+        assert_eq!(
+            direct_refs
+                .iter()
+                .filter(|reference| reference.artifact_id == model_ref.artifact_id)
+                .count(),
+            2,
+            "kind and participant model selections are both traversed"
+        );
+        assert!(direct.validate().is_ok());
+
+        let mut group = group_plan(
+            GroupChatModeSnapshot::Conversation,
+            SnapshotSelection::Disabled,
+            InitialTimelineDraft {
+                format_version: 1,
+                entries: Vec::new(),
+            },
+        );
+        if let ConversationKind::Group(details) = &mut group.kind {
+            details.group.members[0].model_override = SnapshotSelection::Explicit(model.clone());
+            details.initial_participant_policy.members[0].model_override =
+                SnapshotSelection::Explicit(model.clone());
+        }
+        group.participants[1].model_selection = SnapshotSelection::Explicit(model);
+        let group_refs = conversation_launch_snapshot_references(&group);
+        assert_eq!(
+            group_refs
+                .iter()
+                .filter(|reference| reference.artifact_id == model_ref.artifact_id)
+                .count(),
+            3,
+            "member, participant, and initial-policy model selections are traversed"
+        );
+        assert!(group.validate().is_ok());
+    }
+
+    #[test]
     fn create_plan_enforces_group_chat_mode_initial_timeline_policy() {
         let scene_ref = snapshot_ref(SnapshotSource::Scene(SceneId::new()));
         let scene_entry = initial_entry(
@@ -788,6 +896,220 @@ mod tests {
             bytes,
         };
         assert!(matches!(sized.validate(), Err(ArtifactError::SizeMismatch)));
+    }
+
+    #[test]
+    fn prepared_launch_requires_an_exact_redacted_artifact_bundle() {
+        let (plan, ..) = direct_plan(InitialTimelineDraft {
+            format_version: 1,
+            entries: Vec::new(),
+        });
+        let expected_count = conversation_launch_snapshot_references(&plan).len();
+        let drafts = complete_snapshot_drafts(&plan);
+        let prepared = PreparedConversationLaunch::new(plan, drafts);
+        let prepared = prepared.expect("complete bundle");
+        let debug = format!("{prepared:?}");
+        assert!(debug.contains(&format!("artifact_count: {expected_count}")));
+        assert!(!debug.contains("Direct launch"));
+        assert!(!debug.contains("payload"));
+    }
+
+    #[test]
+    fn prepared_launch_rejects_missing_extra_duplicate_and_divergent_artifacts() {
+        let (plan, ..) = direct_plan(InitialTimelineDraft {
+            format_version: 1,
+            entries: Vec::new(),
+        });
+        let refs = conversation_launch_snapshot_references(&plan);
+        let mut missing = complete_snapshot_drafts(&plan);
+        missing.pop();
+        assert!(matches!(
+            PreparedConversationLaunch::new(plan.clone(), missing),
+            Err(PreparedConversationLaunchError::MissingArtifact { .. })
+        ));
+
+        let mut extra = complete_snapshot_drafts(&plan);
+        extra.push(snapshot_draft(&snapshot_ref(SnapshotSource::Character(
+            CharacterId::new(),
+        ))));
+        assert!(matches!(
+            PreparedConversationLaunch::new(plan.clone(), extra),
+            Err(PreparedConversationLaunchError::UnexpectedArtifact { .. })
+        ));
+
+        let first = refs[0];
+        let mut duplicate = complete_snapshot_drafts(&plan);
+        duplicate.push(snapshot_draft(first));
+        assert!(matches!(
+            PreparedConversationLaunch::new(plan.clone(), duplicate),
+            Err(PreparedConversationLaunchError::DuplicateArtifact { .. })
+        ));
+
+        let mut divergent_reference = first.clone();
+        divergent_reference.source = SnapshotSource::Character(CharacterId::new());
+        assert!(matches!(
+            PreparedConversationLaunch::new(
+                plan.clone(),
+                vec![snapshot_draft(first), snapshot_draft(&divergent_reference)]
+            ),
+            Err(PreparedConversationLaunchError::DivergentReference { .. })
+        ));
+
+        let mut divergent_plan = plan;
+        if let ConversationKind::Direct(details) = &mut divergent_plan.kind {
+            let character_artifact_id = details.character.snapshot_ref.artifact_id;
+            if let SnapshotSelection::Explicit(scene) = &mut details.scene {
+                scene.snapshot_ref.artifact_id = character_artifact_id;
+            }
+        }
+        assert!(matches!(
+            PreparedConversationLaunch::new(
+                divergent_plan.clone(),
+                complete_snapshot_drafts(&divergent_plan)
+            ),
+            Err(PreparedConversationLaunchError::DivergentReference { .. })
+        ));
+    }
+
+    #[test]
+    fn prepared_launch_traverses_initial_origins_and_deduplicates_shared_refs() {
+        let scene_ref = snapshot_ref(SnapshotSource::Scene(SceneId::new()));
+        let timeline = InitialTimelineDraft {
+            format_version: 1,
+            entries: vec![initial_entry(
+                InitialMessageOrigin::SelectedScene {
+                    snapshot_ref: scene_ref.clone(),
+                },
+                MessageRole::Scene,
+                None,
+                Some("opening"),
+            )],
+        };
+        assert_eq!(
+            initial_timeline_snapshot_references(&timeline),
+            vec![&scene_ref]
+        );
+
+        let (mut plan, _, _, selected_scene, _) = direct_plan(InitialTimelineDraft {
+            format_version: 1,
+            entries: Vec::new(),
+        });
+        plan.initial_timeline.entries = vec![initial_entry(
+            InitialMessageOrigin::SelectedScene {
+                snapshot_ref: selected_scene,
+            },
+            MessageRole::Scene,
+            None,
+            Some("opening"),
+        )];
+        let references = conversation_launch_snapshot_references(&plan);
+        let distinct = references
+            .iter()
+            .map(|reference| reference.artifact_id)
+            .collect::<HashSet<_>>();
+        assert_eq!(references.len(), distinct.len() + 1);
+        let prepared =
+            PreparedConversationLaunch::new(plan.clone(), complete_snapshot_drafts(&plan));
+        assert!(prepared.is_ok(), "shared scene reference is one artifact");
+    }
+
+    #[test]
+    fn persona_and_group_member_lorebooks_are_frozen_and_referenced() {
+        let persona_id = lettuce_types::PersonaId::new();
+        let persona_ref = snapshot_ref(SnapshotSource::Persona(persona_id));
+        let lorebook_id = lettuce_types::LorebookId::new();
+        let lorebook_ref = snapshot_ref(SnapshotSource::Lorebook(lorebook_id));
+        let lorebook = LorebookLaunchSnapshot {
+            snapshot_ref: lorebook_ref.clone(),
+            source_id: lorebook_id,
+            source_revision: Revision::INITIAL,
+            name: "World facts".into(),
+        };
+        let (mut direct, ..) = direct_plan(InitialTimelineDraft {
+            format_version: 1,
+            entries: Vec::new(),
+        });
+        if let ConversationKind::Direct(details) = &mut direct.kind {
+            details.persona = SnapshotSelection::Explicit(PersonaLaunchSnapshot {
+                snapshot_ref: persona_ref.clone(),
+                source_id: persona_id,
+                source_revision: Revision::INITIAL,
+                title: "Traveler".into(),
+                nickname: None,
+                lorebooks: SnapshotSelection::Explicit(vec![lorebook.clone()]),
+            });
+        }
+        direct.validate().expect("persona lorebook is valid");
+        let refs = conversation_snapshot_references(&direct.kind);
+        assert!(refs.iter().any(|reference| **reference == persona_ref));
+        assert!(refs.iter().any(|reference| **reference == lorebook_ref));
+
+        let mut group = group_plan(
+            GroupChatModeSnapshot::Conversation,
+            SnapshotSelection::Disabled,
+            InitialTimelineDraft {
+                format_version: 1,
+                entries: Vec::new(),
+            },
+        );
+        let group_persona_id = lettuce_types::PersonaId::new();
+        let group_persona_ref = snapshot_ref(SnapshotSource::Persona(group_persona_id));
+        let group_lorebook_id = lettuce_types::LorebookId::new();
+        let group_lorebook_ref = snapshot_ref(SnapshotSource::Lorebook(group_lorebook_id));
+        let group_lorebook = LorebookLaunchSnapshot {
+            snapshot_ref: group_lorebook_ref.clone(),
+            source_id: group_lorebook_id,
+            source_revision: Revision::INITIAL,
+            name: "Group facts".into(),
+        };
+        if let ConversationKind::Group(details) = &mut group.kind {
+            details.group.members[0].lorebooks =
+                SnapshotSelection::Explicit(vec![lorebook.clone()]);
+            details.group.persona = SnapshotSelection::Explicit(PersonaLaunchSnapshot {
+                snapshot_ref: group_persona_ref.clone(),
+                source_id: group_persona_id,
+                source_revision: Revision::INITIAL,
+                title: "Group traveler".into(),
+                nickname: None,
+                lorebooks: SnapshotSelection::Explicit(vec![group_lorebook]),
+            });
+        }
+        group.validate().expect("member lorebook is valid");
+        let group_refs = conversation_snapshot_references(&group.kind);
+        assert!(
+            group_refs
+                .iter()
+                .any(|reference| **reference == lorebook_ref)
+        );
+        assert!(
+            group_refs
+                .iter()
+                .any(|reference| **reference == group_persona_ref)
+        );
+        assert!(
+            group_refs
+                .iter()
+                .any(|reference| **reference == group_lorebook_ref)
+        );
+        let mut missing_group_persona_artifact = complete_snapshot_drafts(&group);
+        missing_group_persona_artifact
+            .retain(|draft| draft.artifact_id != group_lorebook_ref.artifact_id);
+        assert!(matches!(
+            PreparedConversationLaunch::new(group.clone(), missing_group_persona_artifact),
+            Err(PreparedConversationLaunchError::MissingArtifact { artifact_id })
+                if artifact_id == group_lorebook_ref.artifact_id
+        ));
+
+        if let ConversationKind::Group(details) = &mut group.kind {
+            if let SnapshotSelection::Explicit(books) = &mut details.group.members[0].lorebooks {
+                books[0].snapshot_ref.source =
+                    SnapshotSource::Lorebook(lettuce_types::LorebookId::new());
+            }
+        }
+        assert!(
+            group.validate().is_err(),
+            "nested lorebook refs are validated"
+        );
     }
 
     #[test]
@@ -1606,6 +1928,7 @@ mod tests {
                 enabled: true,
                 muted: false,
                 model_override: SnapshotSelection::Disabled,
+                lorebooks: SnapshotSelection::Explicit(Vec::new()),
             },
             GroupMemberLaunchSnapshot {
                 character: character(second, "Second"),
@@ -1613,6 +1936,7 @@ mod tests {
                 enabled: true,
                 muted: false,
                 model_override: SnapshotSelection::Disabled,
+                lorebooks: SnapshotSelection::Explicit(Vec::new()),
             },
         ];
         GroupConversationDetails {

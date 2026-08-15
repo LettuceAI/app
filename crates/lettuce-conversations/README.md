@@ -50,11 +50,14 @@ conversations. The final conversation schema must enforce this with a partial un
 `generation_attempts(job_id)`, while the domain reports separate
 `JobAlreadyAttached` and `JobInUse` failures.
 
-The repository exposes its same-database artifact verifier and must verify all
-launch snapshot references before create and replay references before
-finalization. Verification failures are typed repository errors and prevent
-the transaction from staging; payloads staged before a failed mutation are
-cleaned through the artifact store's orphan-cleanup contract.
+Conversation creation receives a non-cloneable `PreparedConversationLaunch`.
+The application planner validates the complete plan, traverses both launch
+settings and initial-message origins, and hands over exactly one validated
+draft for every distinct protected snapshot reference. The repository consumes
+that bundle in one adapter transaction; it does not perform a separate
+pre-verification that could race with staging. The same-database artifact store
+remains available on the full repository for replay finalization and trusted
+retention workflows, with orphan cleanup for staged payloads.
 
 Trusted encrypted backup/sync composition receives a separate
 `ConversationArtifactTransferPort`. It streams chunks into a
@@ -78,11 +81,11 @@ to prompting through the scene-context path instead.
 
 An origin row proves which immutable launch snapshot was selected; it does not
 decrypt that snapshot or independently prove that arbitrary text came from it.
-The application composition layer must therefore build `CreateConversationPlan`
-through the conversation launch planner from the same validated authored
-scene/starter graph used to create the protected artifacts. IPC callers do not
-construct initial timelines, and the database creator only persists and
-revalidates a prepared plan atomically.
+The application composition layer must therefore build
+`PreparedConversationLaunch` through the conversation launch planner from the
+same validated authored scene/starter graph used to create the protected
+artifacts. IPC callers do not construct initial timelines, and the database
+creator only persists and revalidates the prepared plan atomically.
 
 Launch snapshots stay frozen for the conversation lifetime. Current participant
 policy and settings are explicit mutable state; this contract does not derive

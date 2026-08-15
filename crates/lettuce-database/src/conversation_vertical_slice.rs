@@ -11,15 +11,20 @@ use std::str::FromStr;
 
 use lettuce_conversations::{
     Conversation, ConversationAggregate, ConversationBranch, ConversationKind,
-    ConversationLifecycle, ConversationParticipant, ConversationParticipantDraft,
-    ConversationRepositoryError, CreateConversationPlan, CurrentConversationSettings,
-    ParticipantRole, ParticipantSource, SettingProvenance, SnapshotSource,
+    ConversationLifecycle, ConversationParticipant, ConversationRepositoryError,
+    CurrentConversationSettings, ParticipantRole, ParticipantSource, SettingProvenance,
+    SnapshotSelection, SnapshotSource,
 };
-use lettuce_types::{ConversationBranchId, ConversationId, Revision, TimestampMillis};
+use lettuce_types::{ConversationId, Revision, TimestampMillis};
 use rusqlite::{OptionalExtension, Row, Transaction, TransactionBehavior, params};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use super::Database;
+
+#[cfg(test)]
+use lettuce_conversations::{ConversationParticipantDraft, CreateConversationPlan};
+#[cfg(test)]
+use lettuce_types::ConversationBranchId;
 
 const FORMAT_VERSION: u32 = 1;
 
@@ -197,9 +202,11 @@ fn save_branch(
 }
 
 impl Database {
-    /// Creates the normalized root/participant/settings rows. This is an
-    /// internal vertical-slice API, intentionally separate from the complete
-    /// repository port while M8 mutation methods are still being built.
+    /// Fixture-only helper for the M8 vertical-slice tests. It intentionally
+    /// omits initial timeline persistence and must not become the production
+    /// conversation creator; the atomic `ConversationCreator` adapter will
+    /// replace it in the next slice.
+    #[cfg(test)]
     pub(crate) fn create_conversation_record(
         &self,
         plan: &CreateConversationPlan,
@@ -394,6 +401,19 @@ where
         participants.push(row.map_err(db)?);
     }
     drop(statement);
+    for participant in &participants {
+        if participant.role == ParticipantRole::Character {
+            if let SnapshotSelection::Inherited(model) | SnapshotSelection::Explicit(model) =
+                &participant.model_selection
+            {
+                super::conversation_artifact_adapter::verify_snapshot_in_transaction(
+                    transaction,
+                    &model.snapshot_ref,
+                )
+                .map_err(|_| ConversationRepositoryError::Storage)?;
+            }
+        }
+    }
     let settings = transaction
         .query_row("SELECT revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance FROM conversation_settings WHERE conversation_id = ?1", [id.to_string()], read_settings)
         .optional()
@@ -1389,6 +1409,7 @@ mod tests {
                             enabled: true,
                             muted: false,
                             model_override: SnapshotSelection::Explicit(model.clone()),
+                            lorebooks: SnapshotSelection::Explicit(Vec::new()),
                         },
                         GroupMemberLaunchSnapshot {
                             character: CharacterLaunchSnapshot {
@@ -1402,6 +1423,7 @@ mod tests {
                             enabled: true,
                             muted: false,
                             model_override: SnapshotSelection::Disabled,
+                            lorebooks: SnapshotSelection::Explicit(Vec::new()),
                         },
                     ],
                     chat_mode: GroupChatModeSnapshot::Conversation,
@@ -1501,6 +1523,244 @@ mod tests {
                 .verify_snapshot(reference)
                 .expect("reference verifies");
         }
+    }
+
+    #[test]
+    fn aggregate_hydration_verifies_current_models_and_rejects_invalid_non_character_models() {
+        let database = Database::open_in_memory().expect("database");
+        let group_id = lettuce_types::GroupId::new();
+        let character_id = lettuce_types::CharacterId::new();
+        let second_character_id = lettuce_types::CharacterId::new();
+        let model_id = lettuce_types::ModelProfileId::new();
+        let put = |source: SnapshotSource| {
+            put_test_snapshot(&database, source, b"aggregate model snapshot")
+        };
+        let group_ref = put(SnapshotSource::Group(group_id));
+        let character_ref = put(SnapshotSource::Character(character_id));
+        let second_character_ref = put(SnapshotSource::Character(second_character_id));
+        let model_ref = put(SnapshotSource::Model(model_id));
+        let model = ModelSelectionSnapshot {
+            snapshot_ref: model_ref.clone(),
+            source_id: model_id,
+            source_revision: Revision::INITIAL,
+            provider_kind: ModelProviderKind::Other,
+            external_model_id: "model".into(),
+            display_name: "Model".into(),
+            context_length: None,
+            max_output_tokens: None,
+        };
+        let participant_id = ConversationParticipantId::new();
+        let second_participant_id = ConversationParticipantId::new();
+        let plan = CreateConversationPlan {
+            conversation_id: ConversationId::new(),
+            title: "Aggregate model drift".into(),
+            kind: ConversationKind::Group(GroupConversationDetails {
+                format_version: 1,
+                group: GroupLaunchSnapshot {
+                    snapshot_ref: group_ref,
+                    source_id: group_id,
+                    source_revision: Revision::INITIAL,
+                    name: "Group".into(),
+                    members: vec![
+                        GroupMemberLaunchSnapshot {
+                            character: CharacterLaunchSnapshot {
+                                snapshot_ref: character_ref,
+                                source_id: character_id,
+                                source_revision: Revision::INITIAL,
+                                name: "Ada".into(),
+                                nickname: None,
+                            },
+                            ordinal: 0,
+                            enabled: true,
+                            muted: false,
+                            model_override: SnapshotSelection::Explicit(model.clone()),
+                            lorebooks: SnapshotSelection::Explicit(Vec::new()),
+                        },
+                        GroupMemberLaunchSnapshot {
+                            character: CharacterLaunchSnapshot {
+                                snapshot_ref: second_character_ref,
+                                source_id: second_character_id,
+                                source_revision: Revision::INITIAL,
+                                name: "Bea".into(),
+                                nickname: None,
+                            },
+                            ordinal: 1,
+                            enabled: true,
+                            muted: false,
+                            model_override: SnapshotSelection::Disabled,
+                            lorebooks: SnapshotSelection::Explicit(Vec::new()),
+                        },
+                    ],
+                    chat_mode: GroupChatModeSnapshot::Conversation,
+                    speaker_selection: GroupSpeakerSelectionSnapshot::RoundRobin,
+                    memory: SnapshotSelection::Disabled,
+                    disable_character_lorebook: false,
+                    persona: SnapshotSelection::Disabled,
+                    scene: SnapshotSelection::Disabled,
+                    prompt: SnapshotSelection::Disabled,
+                    lorebooks: SnapshotSelection::Explicit(Vec::new()),
+                    model: SnapshotSelection::Explicit(model.clone()),
+                },
+                initial_participant_policy: GroupParticipantPolicyDocument {
+                    members: vec![
+                        GroupParticipantPolicySnapshot {
+                            participant_id,
+                            enabled: true,
+                            muted: false,
+                            model_override: SnapshotSelection::Explicit(model.clone()),
+                        },
+                        GroupParticipantPolicySnapshot {
+                            participant_id: second_participant_id,
+                            enabled: true,
+                            muted: false,
+                            model_override: SnapshotSelection::Disabled,
+                        },
+                    ],
+                    revision: Revision::INITIAL,
+                    created_at: TimestampMillis::UNIX_EPOCH,
+                    updated_at: TimestampMillis::UNIX_EPOCH,
+                },
+            }),
+            participants: vec![
+                ConversationParticipantDraft {
+                    id: ConversationParticipantId::new(),
+                    role: ParticipantRole::User,
+                    ordinal: 0,
+                    source: ParticipantSource::User,
+                    enabled: true,
+                    muted: false,
+                    display_name: "User".into(),
+                    authored_description: None,
+                    model_selection: SnapshotSelection::Disabled,
+                },
+                ConversationParticipantDraft {
+                    id: participant_id,
+                    role: ParticipantRole::Character,
+                    ordinal: 1,
+                    source: ParticipantSource::Character(character_id),
+                    enabled: true,
+                    muted: false,
+                    display_name: "Ada".into(),
+                    authored_description: None,
+                    model_selection: SnapshotSelection::Explicit(model.clone()),
+                },
+                ConversationParticipantDraft {
+                    id: second_participant_id,
+                    role: ParticipantRole::Character,
+                    ordinal: 2,
+                    source: ParticipantSource::Character(second_character_id),
+                    enabled: true,
+                    muted: false,
+                    display_name: "Bea".into(),
+                    authored_description: None,
+                    model_selection: SnapshotSelection::Disabled,
+                },
+            ],
+            initial_timeline: lettuce_conversations::InitialTimelineDraft {
+                format_version: 1,
+                entries: Vec::new(),
+            },
+            operation: OperationToken {
+                key: lettuce_jobs::IdempotencyKey::new("aggregate-model-drift").expect("key"),
+                request_digest: ContentHash::parse("ab".repeat(32)).expect("digest"),
+            },
+        };
+        database
+            .create_conversation_record(&plan, TimestampMillis::UNIX_EPOCH)
+            .expect("create");
+        database
+            .verify_snapshot(&model_ref)
+            .expect("model artifact exists");
+
+        let override_model_id = lettuce_types::ModelProfileId::new();
+        let override_model_ref = put(SnapshotSource::Model(override_model_id));
+        let override_model = ModelSelectionSnapshot {
+            snapshot_ref: override_model_ref.clone(),
+            source_id: override_model_id,
+            source_revision: Revision::INITIAL,
+            provider_kind: ModelProviderKind::Other,
+            external_model_id: "override-model".into(),
+            display_name: "Override model".into(),
+            context_length: None,
+            max_output_tokens: None,
+        };
+        database
+            .connection()
+            .expect("lock")
+            .execute(
+                "UPDATE conversation_participants SET model_selection_json = ?1 WHERE conversation_id = ?2 AND id = ?3",
+                params![encode(&SnapshotSelection::Explicit(override_model.clone())).expect("override model"), plan.conversation_id.to_string(), participant_id.to_string()],
+            )
+            .expect("set current character override");
+        database
+            .get_conversation_record(plan.conversation_id)
+            .expect("valid current character override hydrates");
+
+        let user_id = plan.participants[0].id;
+        database
+            .connection()
+            .expect("lock")
+            .execute(
+                "UPDATE conversation_participants SET model_selection_json = ?1 WHERE conversation_id = ?2 AND id = ?3",
+                params![encode(&SnapshotSelection::Explicit(override_model.clone())).expect("override model"), plan.conversation_id.to_string(), user_id.to_string()],
+            )
+            .expect("tamper non-character model");
+        assert_eq!(
+            database.get_conversation_record(plan.conversation_id),
+            Err(ConversationRepositoryError::Storage)
+        );
+
+        let disabled: SnapshotSelection<ModelSelectionSnapshot> = SnapshotSelection::Disabled;
+        let disabled_json = encode(&disabled).expect("disabled model");
+        database
+            .connection()
+            .expect("lock")
+            .execute(
+                "UPDATE conversation_participants SET model_selection_json = ?1 WHERE conversation_id = ?2 AND id = ?3",
+                params![disabled_json, plan.conversation_id.to_string(), user_id.to_string()],
+            )
+            .expect("restore non-character model");
+
+        let missing_model_id = lettuce_types::ModelProfileId::new();
+        let missing_model = ModelSelectionSnapshot {
+            snapshot_ref: ProtectedSnapshotRef {
+                source: SnapshotSource::Model(missing_model_id),
+                source_revision: Revision::INITIAL,
+                artifact_id: SnapshotArtifactId::new(),
+                digest: model_ref.digest.clone(),
+                schema_version: model_ref.schema_version,
+                byte_size: model_ref.byte_size,
+            },
+            source_id: missing_model_id,
+            source_revision: Revision::INITIAL,
+            provider_kind: ModelProviderKind::Other,
+            external_model_id: "missing-model".into(),
+            display_name: "Missing model".into(),
+            context_length: None,
+            max_output_tokens: None,
+        };
+        database
+            .connection()
+            .expect("lock")
+            .execute(
+                "UPDATE conversation_participants SET model_selection_json = ?1 WHERE conversation_id = ?2 AND id = ?3",
+                params![
+                    encode(&SnapshotSelection::Explicit(missing_model)).expect("missing model"),
+                    plan.conversation_id.to_string(),
+                    participant_id.to_string()
+                ],
+            )
+            .expect("tamper current model reference");
+        assert_eq!(
+            database.get_conversation_record(plan.conversation_id),
+            Err(ConversationRepositoryError::Storage)
+        );
+        database
+            .verify_snapshot(&model_ref)
+            .expect("artifact verification remains independent");
+        database
+            .verify_snapshot(&override_model_ref)
+            .expect("current override artifact remains available");
     }
 
     #[test]

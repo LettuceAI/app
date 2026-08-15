@@ -213,6 +213,13 @@ impl ConversationParticipant {
                 field: "participant.source",
             });
         }
+        if self.role != ParticipantRole::Character
+            && !matches!(self.model_selection, SnapshotSelection::Disabled)
+        {
+            return Err(ValidationError::InvalidReference {
+                field: "participant.non_character_model",
+            });
+        }
         Ok(())
     }
 }

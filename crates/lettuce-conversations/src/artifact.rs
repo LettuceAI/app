@@ -6,6 +6,7 @@
 //! so repositories, IPC DTOs, logs, backups, and sync code cannot accidentally
 //! move a provider payload through the ordinary conversation path.
 
+use std::collections::HashMap;
 use std::fmt;
 
 use blake3::Hash;
@@ -14,8 +15,9 @@ use thiserror::Error;
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::{
-    ConversationKind, ProtectedSnapshotRef, ReplayArtifactRef, ReplayCodec, ReplayRetention,
-    SnapshotSelection, SnapshotSource, ValidationError,
+    ConversationKind, CreateConversationPlan, InitialMessageOrigin, InitialTimelineDraft,
+    ProtectedSnapshotRef, ReplayArtifactRef, ReplayCodec, ReplayRetention, SnapshotSelection,
+    SnapshotSource, ValidationError,
 };
 
 pub(crate) const MAX_PROTECTED_ARTIFACT_BYTES: usize = 16 * 1024 * 1024;
@@ -126,6 +128,32 @@ pub enum ArtifactError {
     InvalidReference(ValidationError),
 }
 
+/// Errors raised while assembling the immutable artifact bundle required by
+/// conversation creation.  A prepared launch is rejected before it reaches a
+/// repository if its plan and artifact drafts do not describe exactly the same
+/// immutable snapshot set.
+#[derive(Debug, Error, Clone, PartialEq, Eq)]
+pub enum PreparedConversationLaunchError {
+    #[error("conversation launch plan is invalid: {0}")]
+    InvalidPlan(#[from] ValidationError),
+    #[error("snapshot artifact {artifact_id} is invalid: {source}")]
+    InvalidArtifact {
+        artifact_id: SnapshotArtifactId,
+        #[source]
+        source: ArtifactError,
+    },
+    #[error("snapshot artifact {artifact_id} was supplied more than once")]
+    DuplicateArtifact { artifact_id: SnapshotArtifactId },
+    #[error("snapshot artifact {artifact_id} is referenced with divergent metadata")]
+    DivergentReference { artifact_id: SnapshotArtifactId },
+    #[error("snapshot artifact {artifact_id} does not match its protected reference")]
+    ReferenceMismatch { artifact_id: SnapshotArtifactId },
+    #[error("snapshot artifact {artifact_id} is missing from the prepared launch")]
+    MissingArtifact { artifact_id: SnapshotArtifactId },
+    #[error("snapshot artifact {artifact_id} is not used by the launch plan")]
+    UnexpectedArtifact { artifact_id: SnapshotArtifactId },
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct SnapshotArtifactDraft {
     pub source: SnapshotSource,
@@ -173,6 +201,112 @@ impl SnapshotArtifactDraft {
             schema_version: self.schema_version,
             byte_size: self.byte_size,
         }
+    }
+}
+
+/// An ownership-safe launch handoff from the application planner to a
+/// conversation repository.  The planner owns the only copies of the plan
+/// and protected payload drafts until the repository consumes this value for
+/// one adapter transaction.  It is intentionally neither `Clone` nor
+/// serializable: duplicating the bundle would make artifact staging and
+/// cleanup ambiguous, while serialization could leak protected bytes.
+pub struct PreparedConversationLaunch {
+    plan: CreateConversationPlan,
+    artifacts: Vec<SnapshotArtifactDraft>,
+}
+
+impl PreparedConversationLaunch {
+    /// Validates the plan, every protected draft, and the exact one-to-one
+    /// relationship between all protected references in the launch document
+    /// (including initial-message origins) and the supplied artifact drafts.
+    pub fn new(
+        plan: CreateConversationPlan,
+        artifacts: Vec<SnapshotArtifactDraft>,
+    ) -> Result<Self, PreparedConversationLaunchError> {
+        plan.validate()
+            .map_err(PreparedConversationLaunchError::InvalidPlan)?;
+
+        let mut references = HashMap::<SnapshotArtifactId, ProtectedSnapshotRef>::new();
+        for reference in conversation_launch_snapshot_references(&plan) {
+            if let Some(existing) = references.get(&reference.artifact_id) {
+                if existing != reference {
+                    return Err(PreparedConversationLaunchError::DivergentReference {
+                        artifact_id: reference.artifact_id,
+                    });
+                }
+            } else {
+                references.insert(reference.artifact_id, reference.clone());
+            }
+        }
+
+        let mut supplied =
+            HashMap::<SnapshotArtifactId, ProtectedSnapshotRef>::with_capacity(artifacts.len());
+        for draft in &artifacts {
+            let artifact_id = draft.artifact_id;
+            draft.validate().map_err(|source| {
+                PreparedConversationLaunchError::InvalidArtifact {
+                    artifact_id,
+                    source,
+                }
+            })?;
+            let draft_reference = draft.reference();
+            if let Some(existing) = supplied.get(&artifact_id) {
+                if existing != &draft_reference {
+                    return Err(PreparedConversationLaunchError::DivergentReference {
+                        artifact_id,
+                    });
+                }
+                return Err(PreparedConversationLaunchError::DuplicateArtifact { artifact_id });
+            }
+            let Some(reference) = references.get(&artifact_id) else {
+                return Err(PreparedConversationLaunchError::UnexpectedArtifact { artifact_id });
+            };
+            if draft_reference != *reference {
+                return Err(PreparedConversationLaunchError::ReferenceMismatch { artifact_id });
+            }
+            supplied.insert(artifact_id, draft_reference);
+        }
+
+        for artifact_id in references.keys().copied() {
+            if !supplied.contains_key(&artifact_id) {
+                return Err(PreparedConversationLaunchError::MissingArtifact { artifact_id });
+            }
+        }
+
+        Ok(Self { plan, artifacts })
+    }
+
+    #[must_use]
+    pub fn plan(&self) -> &CreateConversationPlan {
+        &self.plan
+    }
+
+    /// Splits the prepared bundle for a concrete repository adapter.  The
+    /// adapter must persist both pieces in one transaction and must not retain
+    /// either value after the operation returns.
+    #[must_use]
+    pub fn into_parts(self) -> (CreateConversationPlan, Vec<SnapshotArtifactDraft>) {
+        (self.plan, self.artifacts)
+    }
+}
+
+impl fmt::Debug for PreparedConversationLaunch {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let artifact_ids: Vec<_> = self
+            .artifacts
+            .iter()
+            .map(|artifact| artifact.artifact_id)
+            .collect();
+        formatter
+            .debug_struct("PreparedConversationLaunch")
+            .field("conversation_id", &self.plan.conversation_id)
+            .field("artifact_count", &self.artifacts.len())
+            .field("artifact_ids", &artifact_ids)
+            .field(
+                "initial_message_count",
+                &self.plan.initial_timeline.entries.len(),
+            )
+            .finish()
     }
 }
 
@@ -330,6 +464,11 @@ pub fn conversation_snapshot_references(kind: &ConversationKind) -> Vec<&Protect
                 &details.persona
             {
                 refs.push(&value.snapshot_ref);
+                if let SnapshotSelection::Inherited(books) | SnapshotSelection::Explicit(books) =
+                    &value.lorebooks
+                {
+                    refs.extend(books.iter().map(|book| &book.snapshot_ref));
+                }
             }
             if let SnapshotSelection::Inherited(value) | SnapshotSelection::Explicit(value) =
                 &details.scene
@@ -374,6 +513,11 @@ pub fn conversation_snapshot_references(kind: &ConversationKind) -> Vec<&Protect
             refs.push(&group.snapshot_ref);
             for member in &group.members {
                 refs.push(&member.character.snapshot_ref);
+                if let SnapshotSelection::Inherited(books) | SnapshotSelection::Explicit(books) =
+                    &member.lorebooks
+                {
+                    refs.extend(books.iter().map(|book| &book.snapshot_ref));
+                }
                 if let SnapshotSelection::Inherited(value) | SnapshotSelection::Explicit(value) =
                     &member.model_override
                 {
@@ -391,6 +535,11 @@ pub fn conversation_snapshot_references(kind: &ConversationKind) -> Vec<&Protect
                 &group.persona
             {
                 refs.push(&value.snapshot_ref);
+                if let SnapshotSelection::Inherited(books) | SnapshotSelection::Explicit(books) =
+                    &value.lorebooks
+                {
+                    refs.extend(books.iter().map(|book| &book.snapshot_ref));
+                }
             }
             if let SnapshotSelection::Inherited(value) | SnapshotSelection::Explicit(value) =
                 &group.scene
@@ -415,4 +564,49 @@ pub fn conversation_snapshot_references(kind: &ConversationKind) -> Vec<&Protect
         }
     }
     refs
+}
+
+/// Returns the references used by both the immutable conversation kind and
+/// its ordered initial launch messages.  Initial origins are deliberately
+/// traversed separately from the kind because a starter/scene artifact can be
+/// referenced only by the materialized timeline.
+pub fn conversation_launch_snapshot_references(
+    plan: &CreateConversationPlan,
+) -> Vec<&ProtectedSnapshotRef> {
+    let mut refs = conversation_snapshot_references(&plan.kind);
+    for participant in &plan.participants {
+        if let SnapshotSelection::Inherited(model) | SnapshotSelection::Explicit(model) =
+            &participant.model_selection
+        {
+            refs.push(&model.snapshot_ref);
+        }
+    }
+    if let ConversationKind::Group(details) = &plan.kind {
+        for policy in &details.initial_participant_policy.members {
+            if let SnapshotSelection::Inherited(model) | SnapshotSelection::Explicit(model) =
+                &policy.model_override
+            {
+                refs.push(&model.snapshot_ref);
+            }
+        }
+    }
+    refs.extend(initial_timeline_snapshot_references(&plan.initial_timeline));
+    refs
+}
+
+/// Returns every protected snapshot reference attached to an initial message
+/// origin, including repeated references.  Callers that need artifact staging
+/// should deduplicate by artifact ID only after checking repeated references
+/// for exact equality.
+pub fn initial_timeline_snapshot_references(
+    timeline: &InitialTimelineDraft,
+) -> Vec<&ProtectedSnapshotRef> {
+    timeline
+        .entries
+        .iter()
+        .map(|entry| match &entry.origin {
+            InitialMessageOrigin::SelectedScene { snapshot_ref }
+            | InitialMessageOrigin::StarterMessage { snapshot_ref, .. } => snapshot_ref,
+        })
+        .collect()
 }

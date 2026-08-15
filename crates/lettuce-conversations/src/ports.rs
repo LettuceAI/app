@@ -8,9 +8,9 @@ use lettuce_types::{
 use serde::{Deserialize, Serialize};
 
 use crate::commands::{
-    ArchiveConversation, AttachAttemptJob, ChooseCandidate, ContinueConversation,
-    CreateConversationPlan, EditMessage, ForkBranch, RegenerateCandidate, RestoreConversation,
-    RetryGeneration, SelectBranch, SendConversation, SettleCancellation, TombstoneMessage,
+    ArchiveConversation, AttachAttemptJob, ChooseCandidate, ContinueConversation, EditMessage,
+    ForkBranch, RegenerateCandidate, RestoreConversation, RetryGeneration, SelectBranch,
+    SendConversation, SettleCancellation, TombstoneMessage,
 };
 use crate::content::{Message, MessageCandidate, MessagePart, MessageRevision, ReplayArtifactRef};
 use crate::error::ConversationRepositoryError;
@@ -817,21 +817,23 @@ pub trait ConversationReader: Send + Sync {
 }
 
 pub trait ConversationCreator: ConversationReader {
-    /// The repository's same-database artifact verifier. Mutating adapters
-    /// must use this verifier before staging `create`/`finalize` rows and
-    /// before committing them with their operation/outbox records.
-    fn artifact_store(&self) -> &dyn crate::ConversationArtifactStore;
-    /// Before staging this mutation, verify every launch snapshot reference
-    /// through [`Self::artifact_store`]. The verification and aggregate,
-    /// operation, and outbox inserts belong to one database transaction.
+    /// Consume a validated launch bundle. The adapter must stage its artifact
+    /// drafts and aggregate rows in one transaction, together with the
+    /// idempotency record and creation outbox event.
     fn create(
         &self,
-        plan: &CreateConversationPlan,
+        launch: crate::PreparedConversationLaunch,
         now: TimestampMillis,
     ) -> Result<CreateConversationResult, ConversationRepositoryError>;
 }
 
 pub trait ConversationRepository: ConversationCreator {
+    /// Same-database artifact access used by replay finalization and trusted
+    /// retention workflows. Conversation creation receives its artifact
+    /// drafts through [`ConversationCreator::create`] instead of using this
+    /// verifier, avoiding a check-then-use race.
+    fn artifact_store(&self) -> &dyn crate::ConversationArtifactStore;
+
     fn begin_send(
         &self,
         command: &SendConversation,
