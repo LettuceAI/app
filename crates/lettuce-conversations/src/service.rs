@@ -2,13 +2,15 @@ use lettuce_types::{ConversationId, TimestampMillis};
 
 use crate::commands::{ConversationMutation, CreateConversationPlan};
 use crate::error::{ConversationRepositoryError, ConversationServiceError};
+use crate::generation::GenerationTurn;
 use crate::model::ConversationAggregate;
 use crate::ports::{
-    ArchiveConversationResult, BeginGeneration, ConversationQuery, ConversationRepository,
-    ConversationSummary, CreateConversationResult, EditMessageResult, ForkBranchResult,
-    GenerationFailureResult, GenerationFinalizationResult, GenerationRecoveryResult, KeysetPage,
-    MutationCommit, ParticipantPolicyResult, RestoreConversationResult, SelectBranchResult,
-    SettingsResult, TimelinePage, TombstoneMessageResult,
+    ArchiveConversationResult, BeginGeneration, ConversationOutboxRecord, ConversationQuery,
+    ConversationReader, ConversationRepository, ConversationSummary, CreateConversationResult,
+    EditMessageResult, ForkBranchResult, GenerationFailureResult, GenerationFinalizationResult,
+    GenerationRecoveryResult, KeysetPage, MutationCommit, OperationKind, ParticipantPolicyResult,
+    RestoreConversationResult, SelectBranchResult, SettingsResult, TimelinePage,
+    TombstoneMessageResult,
 };
 
 fn verify_snapshot_references<R: ConversationRepository>(
@@ -44,17 +46,7 @@ impl<R> ConversationManager<R> {
     }
 }
 
-impl<R: ConversationRepository> ConversationManager<R> {
-    pub fn create(
-        &self,
-        plan: &CreateConversationPlan,
-        now: TimestampMillis,
-    ) -> Result<CreateConversationResult, ConversationServiceError> {
-        plan.validate()?;
-        verify_snapshot_references(&self.repository, &plan.kind)?;
-        self.repository.create(plan, now).map_err(Into::into)
-    }
-
+impl<R: ConversationReader> ConversationManager<R> {
     pub fn get(
         &self,
         id: ConversationId,
@@ -67,6 +59,111 @@ impl<R: ConversationRepository> ConversationManager<R> {
         query: &ConversationQuery,
     ) -> Result<KeysetPage<ConversationSummary>, ConversationServiceError> {
         self.repository.page(query).map_err(Into::into)
+    }
+
+    pub fn timeline_page(
+        &self,
+        conversation_id: lettuce_types::ConversationId,
+        branch_id: lettuce_types::ConversationBranchId,
+        page: &lettuce_types::PageRequest,
+    ) -> Result<TimelinePage, ConversationServiceError> {
+        let page = self
+            .repository
+            .timeline_page(conversation_id, branch_id, page)
+            .map_err(ConversationServiceError::from)?;
+        if page.conversation_id != conversation_id || page.selected_branch_id != branch_id {
+            return Err(ConversationServiceError::Invalid(
+                crate::ValidationError::InvalidReference {
+                    field: "timeline_page.request_provenance",
+                },
+            ));
+        }
+        page.validate_page()?;
+        Ok(page)
+    }
+
+    pub fn get_message_revision(
+        &self,
+        id: lettuce_types::MessageRevisionId,
+    ) -> Result<crate::content::MessageRevision, ConversationServiceError> {
+        self.repository.get_message_revision(id).map_err(Into::into)
+    }
+
+    pub fn page_message_revisions(
+        &self,
+        message_id: lettuce_types::MessageId,
+        page: &lettuce_types::PageRequest,
+    ) -> Result<KeysetPage<crate::content::MessageRevision>, ConversationServiceError> {
+        self.repository
+            .page_message_revisions(message_id, page)
+            .map_err(Into::into)
+    }
+
+    pub fn get_candidate(
+        &self,
+        id: lettuce_types::MessageCandidateId,
+    ) -> Result<crate::content::MessageCandidate, ConversationServiceError> {
+        self.repository.get_candidate(id).map_err(Into::into)
+    }
+
+    pub fn page_candidates(
+        &self,
+        message_id: lettuce_types::MessageId,
+        page: &lettuce_types::PageRequest,
+    ) -> Result<KeysetPage<crate::content::MessageCandidate>, ConversationServiceError> {
+        self.repository
+            .page_candidates(message_id, page)
+            .map_err(Into::into)
+    }
+
+    pub fn get_turn(
+        &self,
+        id: lettuce_types::GenerationTurnId,
+    ) -> Result<GenerationTurn, ConversationServiceError> {
+        self.repository.get_turn(id).map_err(Into::into)
+    }
+
+    pub fn page_turns(
+        &self,
+        conversation_id: lettuce_types::ConversationId,
+        page: &lettuce_types::PageRequest,
+    ) -> Result<KeysetPage<GenerationTurn>, ConversationServiceError> {
+        self.repository
+            .page_turns(conversation_id, page)
+            .map_err(Into::into)
+    }
+
+    pub fn operation_record(
+        &self,
+        conversation_id: lettuce_types::ConversationId,
+        kind: OperationKind,
+        token: &crate::commands::OperationToken,
+    ) -> Result<Option<crate::ports::OperationRecord>, ConversationServiceError> {
+        self.repository
+            .operation_record(conversation_id, kind, token)
+            .map_err(Into::into)
+    }
+
+    pub fn page_outbox(
+        &self,
+        conversation_id: lettuce_types::ConversationId,
+        page: &lettuce_types::PageRequest,
+    ) -> Result<KeysetPage<ConversationOutboxRecord>, ConversationServiceError> {
+        self.repository
+            .page_outbox(conversation_id, page)
+            .map_err(Into::into)
+    }
+}
+
+impl<R: ConversationRepository> ConversationManager<R> {
+    pub fn create(
+        &self,
+        plan: &CreateConversationPlan,
+        now: TimestampMillis,
+    ) -> Result<CreateConversationResult, ConversationServiceError> {
+        plan.validate()?;
+        verify_snapshot_references(&self.repository, &plan.kind)?;
+        self.repository.create(plan, now).map_err(Into::into)
     }
 
     pub fn validate_mutation(
@@ -303,27 +400,6 @@ impl<R: ConversationRepository> ConversationManager<R> {
         self.repository.restore(command, now).map_err(Into::into)
     }
 
-    pub fn timeline_page(
-        &self,
-        conversation_id: lettuce_types::ConversationId,
-        branch_id: lettuce_types::ConversationBranchId,
-        page: &lettuce_types::PageRequest,
-    ) -> Result<TimelinePage, ConversationServiceError> {
-        let page = self
-            .repository
-            .timeline_page(conversation_id, branch_id, page)
-            .map_err(ConversationServiceError::from)?;
-        if page.conversation_id != conversation_id || page.selected_branch_id != branch_id {
-            return Err(ConversationServiceError::Invalid(
-                crate::ValidationError::InvalidReference {
-                    field: "timeline_page.request_provenance",
-                },
-            ));
-        }
-        page.validate_page()?;
-        Ok(page)
-    }
-
     pub fn update_participant_policy(
         &self,
         command: &crate::commands::UpdateParticipantPolicy,
@@ -345,18 +421,115 @@ impl<R: ConversationRepository> ConversationManager<R> {
             .update_settings(command, now)
             .map_err(Into::into)
     }
+}
 
-    pub fn get_candidate(
-        &self,
-        id: lettuce_types::MessageCandidateId,
-    ) -> Result<crate::content::MessageCandidate, ConversationServiceError> {
-        self.repository.get_candidate(id).map_err(Into::into)
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct ReaderOnly;
+
+    impl ConversationReader for ReaderOnly {
+        fn get(
+            &self,
+            _id: lettuce_types::ConversationId,
+        ) -> Result<ConversationAggregate, ConversationRepositoryError> {
+            Err(ConversationRepositoryError::Storage)
+        }
+
+        fn page(
+            &self,
+            _query: &ConversationQuery,
+        ) -> Result<KeysetPage<ConversationSummary>, ConversationRepositoryError> {
+            Err(ConversationRepositoryError::Storage)
+        }
+
+        fn timeline_page(
+            &self,
+            _conversation_id: lettuce_types::ConversationId,
+            _branch_id: lettuce_types::ConversationBranchId,
+            _page: &lettuce_types::PageRequest,
+        ) -> Result<TimelinePage, ConversationRepositoryError> {
+            Err(ConversationRepositoryError::Storage)
+        }
+
+        fn get_message_revision(
+            &self,
+            _id: lettuce_types::MessageRevisionId,
+        ) -> Result<crate::content::MessageRevision, ConversationRepositoryError> {
+            Err(ConversationRepositoryError::Storage)
+        }
+
+        fn page_message_revisions(
+            &self,
+            _message_id: lettuce_types::MessageId,
+            _page: &lettuce_types::PageRequest,
+        ) -> Result<KeysetPage<crate::content::MessageRevision>, ConversationRepositoryError>
+        {
+            Err(ConversationRepositoryError::Storage)
+        }
+
+        fn get_candidate(
+            &self,
+            _id: lettuce_types::MessageCandidateId,
+        ) -> Result<crate::content::MessageCandidate, ConversationRepositoryError> {
+            Err(ConversationRepositoryError::Storage)
+        }
+
+        fn page_candidates(
+            &self,
+            _message_id: lettuce_types::MessageId,
+            _page: &lettuce_types::PageRequest,
+        ) -> Result<KeysetPage<crate::content::MessageCandidate>, ConversationRepositoryError>
+        {
+            Err(ConversationRepositoryError::Storage)
+        }
+
+        fn get_turn(
+            &self,
+            _id: lettuce_types::GenerationTurnId,
+        ) -> Result<GenerationTurn, ConversationRepositoryError> {
+            Err(ConversationRepositoryError::Storage)
+        }
+
+        fn page_turns(
+            &self,
+            _conversation_id: lettuce_types::ConversationId,
+            _page: &lettuce_types::PageRequest,
+        ) -> Result<KeysetPage<GenerationTurn>, ConversationRepositoryError> {
+            Err(ConversationRepositoryError::Storage)
+        }
+
+        fn operation_record(
+            &self,
+            _conversation_id: lettuce_types::ConversationId,
+            _kind: OperationKind,
+            _token: &crate::commands::OperationToken,
+        ) -> Result<Option<crate::ports::OperationRecord>, ConversationRepositoryError> {
+            Err(ConversationRepositoryError::Storage)
+        }
+
+        fn page_outbox(
+            &self,
+            _conversation_id: lettuce_types::ConversationId,
+            _page: &lettuce_types::PageRequest,
+        ) -> Result<KeysetPage<ConversationOutboxRecord>, ConversationRepositoryError> {
+            Err(ConversationRepositoryError::Storage)
+        }
     }
 
-    pub fn get_turn(
-        &self,
-        id: lettuce_types::GenerationTurnId,
-    ) -> Result<crate::generation::GenerationTurn, ConversationServiceError> {
-        self.repository.get_turn(id).map_err(Into::into)
+    #[test]
+    fn manager_reads_work_with_a_reader_only_repository() {
+        let manager = ConversationManager::new(ReaderOnly);
+        let result = manager.page(&ConversationQuery {
+            lifecycle: None,
+            page: lettuce_types::PageRequest::default(),
+        });
+        assert!(matches!(
+            result,
+            Err(ConversationServiceError::Repository(
+                ConversationRepositoryError::Storage
+            ))
+        ));
     }
 }

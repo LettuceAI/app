@@ -59,10 +59,11 @@ CREATE TABLE conversation_settings (
     voice_provenance TEXT NOT NULL CHECK (voice_provenance IN ('launch_inherited', 'current_override', 'disabled')),
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
-    CHECK (author_note_provenance <> 'disabled' OR author_note IS NULL),
-    CHECK (memory_provenance <> 'disabled' OR memory_json IS NULL),
-    CHECK (model_provenance <> 'disabled' OR model_override_json IS NULL),
-    CHECK (voice_provenance <> 'disabled' OR voice_json IS NULL),
+    CHECK (author_note IS NULL OR (length(trim(author_note)) > 0 AND length(CAST(author_note AS BLOB)) <= 1048576)),
+    CHECK ((author_note IS NOT NULL) = (author_note_provenance = 'current_override')),
+    CHECK ((memory_json IS NOT NULL) = (memory_provenance = 'current_override')),
+    CHECK ((model_override_json IS NOT NULL) = (model_provenance = 'current_override')),
+    CHECK ((voice_json IS NOT NULL) = (voice_provenance = 'current_override')),
     CHECK (created_at <= updated_at)
 ) STRICT;
 
@@ -192,6 +193,15 @@ CREATE TABLE conversation_turns (
     memory_revision_id TEXT,
     selected_candidate_id TEXT,
     failure TEXT CHECK (failure IS NULL OR failure IN ('invalid_conversation', 'missing_model', 'context_unavailable', 'speaker_unavailable', 'provider_unavailable', 'provider_rejected', 'empty_output', 'cancelled', 'timed_out', 'recovery_unavailable', 'internal')),
+    target_kind TEXT NOT NULL CHECK (target_kind IN ('new_assistant', 'existing_candidate')),
+    target_message_id TEXT NOT NULL CHECK (length(trim(target_message_id)) > 0),
+    target_parent_message_id TEXT,
+    target_prior_candidate_id TEXT,
+    retry_of_turn_id TEXT,
+    guidance TEXT CHECK (guidance IS NULL OR (length(trim(guidance)) > 0 AND length(CAST(guidance AS BLOB)) <= 262144)),
+    requested_model_override_json TEXT CHECK (requested_model_override_json IS NULL OR (json_valid(requested_model_override_json) AND json_extract(requested_model_override_json, '$.format_version') = 1)),
+    forced_speaker_participant_id TEXT,
+    swap_roles INTEGER NOT NULL DEFAULT 0 CHECK (swap_roles IN (0, 1)),
     revision INTEGER NOT NULL CHECK (revision >= 1),
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
@@ -223,6 +233,8 @@ CREATE TABLE conversation_turns (
     CHECK ((prompt_document_id IS NULL) = (prompt_revision IS NULL)),
     CHECK ((status = 'failed') = (failure IS NOT NULL)),
     CHECK ((status = 'succeeded') = (selected_candidate_id IS NOT NULL)),
+    CHECK ((target_kind = 'new_assistant' AND target_parent_message_id IS NOT NULL AND target_prior_candidate_id IS NULL) OR
+          (target_kind = 'existing_candidate' AND target_parent_message_id IS NULL AND target_prior_candidate_id IS NOT NULL)),
     CHECK (created_at <= updated_at)
 ) STRICT;
 CREATE INDEX conversation_turns_page_idx ON conversation_turns(conversation_id, created_at, id);
@@ -259,23 +271,6 @@ WHEN (NEW.input_kind = 'user_message' AND NOT EXISTS (
             AND head_message_id = NEW.head_message_id
       ))
 BEGIN SELECT RAISE(ABORT, 'turn input does not match branch semantics'); END;
-CREATE TRIGGER conversation_turn_identity_immutable
-BEFORE UPDATE OF conversation_id, id, branch_id, operation, input_kind, user_message_id, head_message_id, candidate_message_id, candidate_id
-ON conversation_turns
-WHEN NEW.conversation_id <> OLD.conversation_id OR NEW.id <> OLD.id OR NEW.branch_id <> OLD.branch_id OR NEW.operation <> OLD.operation OR NEW.input_kind <> OLD.input_kind OR coalesce(NEW.user_message_id, '') <> coalesce(OLD.user_message_id, '') OR coalesce(NEW.head_message_id, '') <> coalesce(OLD.head_message_id, '') OR coalesce(NEW.candidate_message_id, '') <> coalesce(OLD.candidate_message_id, '') OR coalesce(NEW.candidate_id, '') <> coalesce(OLD.candidate_id, '')
-BEGIN SELECT RAISE(ABORT, 'turn input identity is immutable'); END;
-CREATE TRIGGER conversation_turn_selected_speaker_group
-BEFORE INSERT ON conversation_turns
-WHEN NEW.selected_speaker_participant_id IS NOT NULL AND NOT EXISTS (
-    SELECT 1 FROM conversations WHERE id = NEW.conversation_id AND kind = 'group'
-)
-BEGIN SELECT RAISE(ABORT, 'selected speaker requires group conversation'); END;
-CREATE TRIGGER conversation_turn_selected_speaker_group_update
-BEFORE UPDATE OF conversation_id, selected_speaker_participant_id, selected_speaker_details_json ON conversation_turns
-WHEN NEW.selected_speaker_participant_id IS NOT NULL AND NOT EXISTS (
-    SELECT 1 FROM conversations WHERE id = NEW.conversation_id AND kind = 'group'
-)
-BEGIN SELECT RAISE(ABORT, 'selected speaker requires group conversation'); END;
 CREATE TRIGGER conversation_turn_terminal_insert
 BEFORE INSERT ON conversation_turns
 WHEN NEW.status IN ('succeeded','failed','cancelled','interrupted')
@@ -575,3 +570,379 @@ CREATE TABLE conversation_outbox (
         REFERENCES conversation_operations(conversation_id, id) ON DELETE RESTRICT
 ) STRICT;
 CREATE INDEX conversation_outbox_page_idx ON conversation_outbox(conversation_id, sequence, id);
+
+CREATE INDEX conversation_turns_id_idx ON conversation_turns(id);
+CREATE INDEX conversation_message_revisions_id_idx ON conversation_message_revisions(id);
+CREATE INDEX conversation_message_candidates_id_idx ON conversation_message_candidates(id);
+
+CREATE TRIGGER conversation_candidate_final_target_insert
+BEFORE INSERT ON conversation_message_candidates
+WHEN EXISTS (
+    SELECT 1 FROM conversation_turns AS turn
+    WHERE turn.conversation_id = NEW.conversation_id
+      AND turn.id = NEW.turn_id
+      AND (
+          NEW.message_id <> turn.target_message_id OR
+          (turn.target_kind = 'new_assistant' AND NOT EXISTS (
+              SELECT 1 FROM conversation_messages AS message
+              WHERE message.conversation_id = NEW.conversation_id
+                AND message.id = turn.target_message_id
+                AND message.branch_id = NEW.branch_id
+                AND message.role = 'assistant'
+                AND message.parent_message_id = turn.target_parent_message_id
+          ))
+      )
+)
+BEGIN SELECT RAISE(ABORT, 'candidate does not match turn target'); END;
+
+CREATE TRIGGER conversation_candidate_final_target_update
+BEFORE UPDATE OF conversation_id, message_id, branch_id, turn_id ON conversation_message_candidates
+WHEN EXISTS (
+    SELECT 1 FROM conversation_turns AS turn
+    WHERE turn.conversation_id = NEW.conversation_id
+      AND turn.id = NEW.turn_id
+      AND (
+          NEW.message_id <> turn.target_message_id OR
+          (turn.target_kind = 'new_assistant' AND NOT EXISTS (
+              SELECT 1 FROM conversation_messages AS message
+              WHERE message.conversation_id = NEW.conversation_id
+                AND message.id = turn.target_message_id
+                AND message.branch_id = NEW.branch_id
+                AND message.role = 'assistant'
+                AND message.parent_message_id = turn.target_parent_message_id
+          ))
+      )
+)
+BEGIN SELECT RAISE(ABORT, 'candidate does not match turn target'); END;
+
+
+
+
+
+CREATE TRIGGER conversation_turn_final_insert_contract
+BEFORE INSERT ON conversation_turns
+WHEN (
+    NEW.target_kind IS NULL OR NEW.target_message_id IS NULL OR length(trim(NEW.target_message_id)) = 0 OR
+    (NEW.target_parent_message_id IS NOT NULL AND length(trim(NEW.target_parent_message_id)) = 0) OR
+    (NEW.target_prior_candidate_id IS NOT NULL AND length(trim(NEW.target_prior_candidate_id)) = 0) OR
+    (NEW.target_kind = 'new_assistant' AND EXISTS (
+        SELECT 1 FROM conversation_messages
+        WHERE conversation_id = NEW.conversation_id AND id = NEW.target_message_id
+    )) OR
+    (NEW.target_kind = 'new_assistant' AND (
+        NEW.target_parent_message_id IS NULL OR NEW.target_prior_candidate_id IS NOT NULL OR
+        (NEW.operation = 'send' AND (
+            NEW.input_kind <> 'user_message' OR NEW.user_message_id IS NULL OR
+            NEW.target_message_id = NEW.user_message_id OR
+            NEW.target_parent_message_id <> NEW.user_message_id)) OR
+        (NEW.operation = 'continue' AND (
+            NEW.input_kind <> 'existing_head' OR NEW.head_message_id IS NULL OR
+            NEW.target_message_id = NEW.head_message_id OR
+            NEW.target_parent_message_id <> NEW.head_message_id)) OR
+        NEW.operation NOT IN ('send', 'continue')
+    )) OR
+    (NEW.target_kind = 'existing_candidate' AND (
+        NEW.target_parent_message_id IS NOT NULL OR NEW.target_prior_candidate_id IS NULL OR
+        NEW.operation <> 'regenerate' OR NEW.input_kind <> 'existing_candidate' OR
+        NEW.candidate_message_id IS NULL OR NEW.candidate_id IS NULL OR
+        NEW.target_message_id <> NEW.candidate_message_id OR
+        NEW.target_prior_candidate_id <> NEW.candidate_id
+    )) OR
+    (NEW.retry_of_turn_id IS NOT NULL AND (
+        NEW.retry_of_turn_id = NEW.id OR NOT EXISTS (
+            SELECT 1 FROM conversation_turns AS source
+            WHERE source.conversation_id = NEW.conversation_id
+              AND source.id = NEW.retry_of_turn_id
+              AND source.branch_id = NEW.branch_id
+              AND source.status IN ('failed', 'cancelled')
+              AND source.operation = NEW.operation
+              AND source.input_kind = NEW.input_kind
+              AND coalesce(source.user_message_id, '') = coalesce(NEW.user_message_id, '')
+              AND coalesce(source.head_message_id, '') = coalesce(NEW.head_message_id, '')
+              AND coalesce(source.candidate_message_id, '') = coalesce(NEW.candidate_message_id, '')
+              AND coalesce(source.candidate_id, '') = coalesce(NEW.candidate_id, '')
+              AND source.target_kind = NEW.target_kind
+              AND source.target_message_id = NEW.target_message_id
+              AND coalesce(source.target_parent_message_id, '') = coalesce(NEW.target_parent_message_id, '')
+              AND coalesce(source.target_prior_candidate_id, '') = coalesce(NEW.target_prior_candidate_id, '')
+              AND coalesce(source.guidance, '') = coalesce(NEW.guidance, '')
+              AND coalesce(source.requested_model_override_json, '') = coalesce(NEW.requested_model_override_json, '')
+              AND coalesce(source.forced_speaker_participant_id, '') = coalesce(NEW.forced_speaker_participant_id, '')
+              AND source.swap_roles = NEW.swap_roles
+        )
+    )) OR
+    (NEW.forced_speaker_participant_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM conversations AS conversation
+        JOIN conversation_participants AS participant
+          ON participant.conversation_id = conversation.id
+         AND participant.id = NEW.forced_speaker_participant_id
+         AND participant.role = 'character'
+        WHERE conversation.id = NEW.conversation_id
+          AND conversation.kind = 'group'
+    )) OR
+    (NEW.swap_roles <> 0 AND EXISTS (
+        SELECT 1 FROM conversations
+        WHERE id = NEW.conversation_id AND kind = 'group'
+    )) OR
+    (NEW.operation = 'continue' AND (
+        NEW.guidance IS NOT NULL OR NEW.requested_model_override_json IS NOT NULL
+    )) OR
+    (NEW.operation = 'regenerate' AND EXISTS (
+        SELECT 1 FROM conversations WHERE id = NEW.conversation_id AND kind = 'group'
+    ) AND NEW.selected_speaker_participant_id IS NOT NULL AND (
+        (NEW.forced_speaker_participant_id IS NULL AND NOT EXISTS (
+            SELECT 1 FROM conversation_messages AS target
+            WHERE target.conversation_id = NEW.conversation_id
+              AND target.id = NEW.target_message_id
+              AND target.author_participant_id = NEW.selected_speaker_participant_id
+        )) OR
+        (NEW.forced_speaker_participant_id IS NOT NULL AND
+            NEW.selected_speaker_participant_id <> NEW.forced_speaker_participant_id)
+    ))
+)
+BEGIN SELECT RAISE(ABORT, 'final generation turn contract violation'); END;
+
+CREATE TRIGGER conversation_turn_final_update_contract
+BEFORE UPDATE OF conversation_id, id, branch_id, operation, input_kind,
+    user_message_id, head_message_id, candidate_message_id, candidate_id,
+    target_kind, target_message_id, target_parent_message_id,
+    target_prior_candidate_id, retry_of_turn_id, guidance,
+    requested_model_override_json, forced_speaker_participant_id,
+    swap_roles ON conversation_turns
+WHEN (
+    NEW.target_kind IS NULL OR NEW.target_message_id IS NULL OR length(trim(NEW.target_message_id)) = 0 OR
+    (NEW.target_parent_message_id IS NOT NULL AND length(trim(NEW.target_parent_message_id)) = 0) OR
+    (NEW.target_prior_candidate_id IS NOT NULL AND length(trim(NEW.target_prior_candidate_id)) = 0) OR
+    (NEW.target_kind = 'new_assistant' AND (
+        NEW.target_parent_message_id IS NULL OR NEW.target_prior_candidate_id IS NOT NULL OR
+        (NEW.operation = 'send' AND (
+            NEW.input_kind <> 'user_message' OR NEW.user_message_id IS NULL OR
+            NEW.target_message_id = NEW.user_message_id OR
+            NEW.target_parent_message_id <> NEW.user_message_id)) OR
+        (NEW.operation = 'continue' AND (
+            NEW.input_kind <> 'existing_head' OR NEW.head_message_id IS NULL OR
+            NEW.target_message_id = NEW.head_message_id OR
+            NEW.target_parent_message_id <> NEW.head_message_id)) OR
+        NEW.operation NOT IN ('send', 'continue')
+    )) OR
+    (NEW.target_kind = 'existing_candidate' AND (
+        NEW.target_parent_message_id IS NOT NULL OR NEW.target_prior_candidate_id IS NULL OR
+        NEW.operation <> 'regenerate' OR NEW.input_kind <> 'existing_candidate' OR
+        NEW.candidate_message_id IS NULL OR NEW.candidate_id IS NULL OR
+        NEW.target_message_id <> NEW.candidate_message_id OR
+        NEW.target_prior_candidate_id <> NEW.candidate_id
+    )) OR
+    (NEW.retry_of_turn_id IS NOT NULL AND (
+        NEW.retry_of_turn_id = NEW.id OR NOT EXISTS (
+            SELECT 1 FROM conversation_turns AS source
+            WHERE source.conversation_id = NEW.conversation_id
+              AND source.id = NEW.retry_of_turn_id
+              AND source.branch_id = NEW.branch_id
+              AND source.status IN ('failed', 'cancelled')
+              AND source.operation = NEW.operation
+              AND source.input_kind = NEW.input_kind
+              AND coalesce(source.user_message_id, '') = coalesce(NEW.user_message_id, '')
+              AND coalesce(source.head_message_id, '') = coalesce(NEW.head_message_id, '')
+              AND coalesce(source.candidate_message_id, '') = coalesce(NEW.candidate_message_id, '')
+              AND coalesce(source.candidate_id, '') = coalesce(NEW.candidate_id, '')
+              AND source.target_kind = NEW.target_kind
+              AND source.target_message_id = NEW.target_message_id
+              AND coalesce(source.target_parent_message_id, '') = coalesce(NEW.target_parent_message_id, '')
+              AND coalesce(source.target_prior_candidate_id, '') = coalesce(NEW.target_prior_candidate_id, '')
+              AND coalesce(source.guidance, '') = coalesce(NEW.guidance, '')
+              AND coalesce(source.requested_model_override_json, '') = coalesce(NEW.requested_model_override_json, '')
+              AND coalesce(source.forced_speaker_participant_id, '') = coalesce(NEW.forced_speaker_participant_id, '')
+              AND source.swap_roles = NEW.swap_roles
+        )
+    )) OR
+    (NEW.forced_speaker_participant_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM conversations AS conversation
+        JOIN conversation_participants AS participant
+          ON participant.conversation_id = conversation.id
+         AND participant.id = NEW.forced_speaker_participant_id
+         AND participant.role = 'character'
+        WHERE conversation.id = NEW.conversation_id
+          AND conversation.kind = 'group'
+    )) OR
+    (NEW.swap_roles <> 0 AND EXISTS (
+        SELECT 1 FROM conversations
+        WHERE id = NEW.conversation_id AND kind = 'group'
+    )) OR
+    (NEW.operation = 'continue' AND (
+        NEW.guidance IS NOT NULL OR NEW.requested_model_override_json IS NOT NULL
+    )) OR
+    (NEW.operation = 'regenerate' AND EXISTS (
+        SELECT 1 FROM conversations WHERE id = NEW.conversation_id AND kind = 'group'
+    ) AND NEW.selected_speaker_participant_id IS NOT NULL AND (
+        (NEW.forced_speaker_participant_id IS NULL AND NOT EXISTS (
+            SELECT 1 FROM conversation_messages AS target
+            WHERE target.conversation_id = NEW.conversation_id
+              AND target.id = NEW.target_message_id
+              AND target.author_participant_id = NEW.selected_speaker_participant_id
+        )) OR
+        (NEW.forced_speaker_participant_id IS NOT NULL AND
+            NEW.selected_speaker_participant_id <> NEW.forced_speaker_participant_id)
+    ))
+)
+BEGIN SELECT RAISE(ABORT, 'final generation turn contract violation'); END;
+
+CREATE TRIGGER conversation_turn_final_intent_immutable
+BEFORE UPDATE OF conversation_id, id, branch_id, operation, input_kind,
+    user_message_id, head_message_id, candidate_message_id, candidate_id,
+    target_kind, target_message_id, target_parent_message_id,
+    target_prior_candidate_id, retry_of_turn_id, guidance,
+    requested_model_override_json, forced_speaker_participant_id, swap_roles
+ON conversation_turns
+WHEN (
+    NEW.conversation_id <> OLD.conversation_id OR NEW.id <> OLD.id OR
+    NEW.branch_id <> OLD.branch_id OR NEW.operation <> OLD.operation OR
+    NEW.input_kind <> OLD.input_kind OR coalesce(NEW.user_message_id, '') <> coalesce(OLD.user_message_id, '') OR
+    coalesce(NEW.head_message_id, '') <> coalesce(OLD.head_message_id, '') OR
+    coalesce(NEW.candidate_message_id, '') <> coalesce(OLD.candidate_message_id, '') OR
+    coalesce(NEW.candidate_id, '') <> coalesce(OLD.candidate_id, '') OR
+    coalesce(NEW.target_kind, '') <> coalesce(OLD.target_kind, '') OR
+    coalesce(NEW.target_message_id, '') <> coalesce(OLD.target_message_id, '') OR
+    coalesce(NEW.target_parent_message_id, '') <> coalesce(OLD.target_parent_message_id, '') OR
+    coalesce(NEW.target_prior_candidate_id, '') <> coalesce(OLD.target_prior_candidate_id, '') OR
+    coalesce(NEW.retry_of_turn_id, '') <> coalesce(OLD.retry_of_turn_id, '') OR
+    coalesce(NEW.guidance, '') <> coalesce(OLD.guidance, '') OR
+    coalesce(NEW.requested_model_override_json, '') <> coalesce(OLD.requested_model_override_json, '') OR
+    coalesce(NEW.forced_speaker_participant_id, '') <> coalesce(OLD.forced_speaker_participant_id, '') OR
+    NEW.swap_roles <> OLD.swap_roles
+)
+BEGIN SELECT RAISE(ABORT, 'generation turn request intent is immutable'); END;
+
+CREATE TRIGGER conversation_turn_retry_source_delete
+BEFORE DELETE ON conversation_turns
+WHEN EXISTS (
+    SELECT 1 FROM conversation_turns AS child
+    WHERE child.retry_of_turn_id = OLD.id
+      AND child.conversation_id = OLD.conversation_id
+)
+BEGIN SELECT RAISE(ABORT, 'retry source is protected'); END;
+
+CREATE TRIGGER conversation_turn_selected_speaker_character_final_insert
+BEFORE INSERT ON conversation_turns
+WHEN NEW.selected_speaker_participant_id IS NOT NULL AND (
+    NOT EXISTS (SELECT 1 FROM conversations WHERE id = NEW.conversation_id AND kind = 'group') OR
+    NOT EXISTS (
+    SELECT 1 FROM conversation_participants
+    WHERE conversation_id = NEW.conversation_id
+      AND id = NEW.selected_speaker_participant_id
+      AND role = 'character'
+    )
+)
+BEGIN SELECT RAISE(ABORT, 'selected speaker must be a character'); END;
+
+CREATE TRIGGER conversation_turn_selected_speaker_character_final_update
+BEFORE UPDATE OF conversation_id, selected_speaker_participant_id ON conversation_turns
+WHEN NEW.selected_speaker_participant_id IS NOT NULL AND (
+    NOT EXISTS (SELECT 1 FROM conversations WHERE id = NEW.conversation_id AND kind = 'group') OR
+    NOT EXISTS (
+    SELECT 1 FROM conversation_participants
+    WHERE conversation_id = NEW.conversation_id
+      AND id = NEW.selected_speaker_participant_id
+      AND role = 'character'
+    )
+)
+BEGIN SELECT RAISE(ABORT, 'selected speaker must be a character'); END;
+
+
+
+CREATE TRIGGER conversation_turn_selected_speaker_immutable
+BEFORE UPDATE OF selected_speaker_participant_id ON conversation_turns
+WHEN OLD.selected_speaker_participant_id IS NOT NULL
+ AND coalesce(NEW.selected_speaker_participant_id, '') <> OLD.selected_speaker_participant_id
+BEGIN SELECT RAISE(ABORT, 'selected speaker is immutable once resolved'); END;
+
+CREATE TRIGGER conversation_message_identity_immutable
+BEFORE UPDATE OF conversation_id, id, branch_id, parent_message_id ON conversation_messages
+WHEN NEW.conversation_id <> OLD.conversation_id
+   OR NEW.id <> OLD.id
+   OR NEW.branch_id <> OLD.branch_id
+   OR coalesce(NEW.parent_message_id, '') <> coalesce(OLD.parent_message_id, '')
+BEGIN SELECT RAISE(ABORT, 'message topology is immutable'); END;
+
+CREATE TRIGGER conversation_branch_head_same_branch_insert
+BEFORE INSERT ON conversation_branches
+WHEN NEW.head_message_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM conversation_messages
+    WHERE conversation_id = NEW.conversation_id
+      AND id = NEW.head_message_id
+      AND branch_id = NEW.id
+)
+BEGIN SELECT RAISE(ABORT, 'branch head must belong to branch'); END;
+
+CREATE TRIGGER conversation_branch_head_same_branch_update
+BEFORE UPDATE OF conversation_id, id, head_message_id ON conversation_branches
+WHEN NEW.head_message_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM conversation_messages
+    WHERE conversation_id = NEW.conversation_id
+      AND id = NEW.head_message_id
+      AND branch_id = NEW.id
+)
+BEGIN SELECT RAISE(ABORT, 'branch head must belong to branch'); END;
+
+CREATE TRIGGER conversation_branch_fork_message_parent_insert
+BEFORE INSERT ON conversation_branches
+WHEN NEW.fork_message_id IS NOT NULL AND NEW.parent_branch_id <> NEW.id AND NOT EXISTS (
+    SELECT 1 FROM conversation_messages
+    WHERE conversation_id = NEW.conversation_id
+      AND id = NEW.fork_message_id
+      AND branch_id = NEW.parent_branch_id
+)
+BEGIN SELECT RAISE(ABORT, 'fork message must belong to parent branch'); END;
+
+CREATE TRIGGER conversation_branch_fork_message_parent_update
+BEFORE UPDATE OF conversation_id, id, parent_branch_id, fork_message_id ON conversation_branches
+WHEN NEW.fork_message_id IS NOT NULL AND NEW.parent_branch_id <> NEW.id AND NOT EXISTS (
+    SELECT 1 FROM conversation_messages
+    WHERE conversation_id = NEW.conversation_id
+      AND id = NEW.fork_message_id
+      AND branch_id = NEW.parent_branch_id
+)
+BEGIN SELECT RAISE(ABORT, 'fork message must belong to parent branch'); END;
+
+CREATE TRIGGER conversation_branch_parent_fork_immutable
+BEFORE UPDATE OF parent_branch_id, fork_message_id ON conversation_branches
+WHEN coalesce(NEW.parent_branch_id, '') <> coalesce(OLD.parent_branch_id, '')
+   OR coalesce(NEW.fork_message_id, '') <> coalesce(OLD.fork_message_id, '')
+BEGIN SELECT RAISE(ABORT, 'branch topology is immutable'); END;
+
+CREATE TRIGGER conversation_message_parent_topology_insert
+BEFORE INSERT ON conversation_messages
+WHEN NEW.parent_message_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM conversation_messages AS parent
+    WHERE parent.conversation_id = NEW.conversation_id
+      AND parent.id = NEW.parent_message_id
+      AND (
+          parent.branch_id = NEW.branch_id OR
+          EXISTS (
+              SELECT 1 FROM conversation_branches AS branch
+              WHERE branch.conversation_id = NEW.conversation_id
+                AND branch.id = NEW.branch_id
+                AND branch.parent_branch_id = parent.branch_id
+                AND branch.fork_message_id = parent.id
+          )
+      )
+)
+BEGIN SELECT RAISE(ABORT, 'message parent violates branch topology'); END;
+
+CREATE TRIGGER conversation_message_parent_topology_update
+BEFORE UPDATE OF conversation_id, id, branch_id, parent_message_id ON conversation_messages
+WHEN NEW.parent_message_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM conversation_messages AS parent
+    WHERE parent.conversation_id = NEW.conversation_id
+      AND parent.id = NEW.parent_message_id
+      AND (
+          parent.branch_id = NEW.branch_id OR
+          EXISTS (
+              SELECT 1 FROM conversation_branches AS branch
+              WHERE branch.conversation_id = NEW.conversation_id
+                AND branch.id = NEW.branch_id
+                AND branch.parent_branch_id = parent.branch_id
+                AND branch.fork_message_id = parent.id
+          )
+      )
+)
+BEGIN SELECT RAISE(ABORT, 'message parent violates branch topology'); END;

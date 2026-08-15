@@ -5,6 +5,7 @@ use lettuce_types::{
     GenerationAttemptId, GenerationTurnId, JobId, MessageCandidateId, MessageId, MessageRevisionId,
     OperationRecordId, Page, PageRequest, TimestampMillis, UsageEventId,
 };
+use serde::{Deserialize, Serialize};
 
 use crate::commands::{
     ArchiveConversation, AttachAttemptJob, ChooseCandidate, ContinueConversation,
@@ -424,21 +425,29 @@ impl TombstoneResult {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AssetReferenceDelta {
     pub asset_id: lettuce_types::AssetId,
     pub retainer: AssetRetainer,
     pub state: AssetReferenceState,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum AssetReferenceState {
     Active,
     Historical,
     Released,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 pub enum ConversationOutboxEvent {
     MessageCommitted {
         conversation_id: ConversationId,
@@ -624,7 +633,8 @@ impl ConversationOutboxRecord {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum OperationKind {
     Create,
     Send,
@@ -648,7 +658,13 @@ pub enum OperationKind {
     AttachJob,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    tag = "kind",
+    content = "id",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 pub enum OperationResultRef {
     Conversation(ConversationId),
     Turn(GenerationTurnId),
@@ -724,19 +740,7 @@ impl OperationRecord {
 /// records must be inserted atomically in one transaction.  Each
 /// begin/finalize operation is one transaction in an adapter, while
 /// network/provider work occurs outside it.  Read methods return plain values.
-pub trait ConversationRepository: Send + Sync {
-    /// The repository's same-database artifact verifier. Mutating adapters
-    /// must use this verifier before staging `create`/`finalize` rows and
-    /// before committing them with their operation/outbox records.
-    fn artifact_store(&self) -> &dyn crate::ConversationArtifactStore;
-    /// Before staging this mutation, verify every launch snapshot reference
-    /// through [`Self::artifact_store`]. The verification and aggregate,
-    /// operation, and outbox inserts belong to one database transaction.
-    fn create(
-        &self,
-        plan: &CreateConversationPlan,
-        now: TimestampMillis,
-    ) -> Result<CreateConversationResult, ConversationRepositoryError>;
+pub trait ConversationReader: Send + Sync {
     fn get(&self, id: ConversationId)
     -> Result<ConversationAggregate, ConversationRepositoryError>;
     fn page(
@@ -785,6 +789,21 @@ pub trait ConversationRepository: Send + Sync {
         conversation_id: ConversationId,
         page: &PageRequest,
     ) -> Result<KeysetPage<ConversationOutboxRecord>, ConversationRepositoryError>;
+}
+
+pub trait ConversationRepository: ConversationReader {
+    /// The repository's same-database artifact verifier. Mutating adapters
+    /// must use this verifier before staging `create`/`finalize` rows and
+    /// before committing them with their operation/outbox records.
+    fn artifact_store(&self) -> &dyn crate::ConversationArtifactStore;
+    /// Before staging this mutation, verify every launch snapshot reference
+    /// through [`Self::artifact_store`]. The verification and aggregate,
+    /// operation, and outbox inserts belong to one database transaction.
+    fn create(
+        &self,
+        plan: &CreateConversationPlan,
+        now: TimestampMillis,
+    ) -> Result<CreateConversationResult, ConversationRepositoryError>;
     fn begin_send(
         &self,
         command: &SendConversation,

@@ -46,7 +46,7 @@ reading conversation internals.
 
 Job attachment is repository-wide, not merely turn-local: an attempt may be
 attached once, and a non-null job ID may belong to only one attempt across all
-conversations. The M8 schema must enforce this with a partial unique index on
+conversations. The final conversation schema must enforce this with a partial unique index on
 `generation_attempts(job_id)`, while the domain reports separate
 `JobAlreadyAttached` and `JobInUse` failures.
 

@@ -4,6 +4,7 @@
 
 mod character_adapter;
 mod conversation_artifact_adapter;
+mod conversation_query;
 mod conversation_vertical_slice;
 mod group_adapter;
 mod lorebook_adapter;
@@ -69,11 +70,6 @@ const MIGRATION_7: Migration = Migration {
 const MIGRATION_8: Migration = Migration {
     id: 8,
     sql: include_str!("../migrations/0008_conversations.sql"),
-};
-
-const MIGRATION_9: Migration = Migration {
-    id: 9,
-    sql: include_str!("../migrations/0009_conversation_runtime_contract.sql"),
 };
 
 const PROVIDER_CONFIG_FORMAT_VERSION: u32 = 1;
@@ -162,7 +158,6 @@ impl Database {
                 MIGRATION_6,
                 MIGRATION_7,
                 MIGRATION_8,
-                MIGRATION_9,
             ],
         )?;
         initialize_settings(&connection)?;
@@ -185,7 +180,6 @@ impl Database {
                 MIGRATION_6,
                 MIGRATION_7,
                 MIGRATION_8,
-                MIGRATION_9,
             ],
         )?;
         initialize_settings(&connection)?;
@@ -1566,7 +1560,7 @@ mod tests {
                 row.get(0)
             })
             .expect("migration count");
-        assert_eq!(count, 9);
+        assert_eq!(count, 8);
 
         let changed = Migration {
             id: 1,
@@ -1631,13 +1625,13 @@ mod tests {
             .expect("apply m1-m7");
         }
         let database = Database::open(&path).expect("upgrade m7 file");
-        let connection = database.connection().expect("database lock");
+        let mut connection = database.connection().expect("database lock");
         assert_eq!(
             connection
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            9
+            8
         );
         let conversation_tables: i64 = connection
             .query_row(
@@ -1647,6 +1641,106 @@ mod tests {
             )
             .expect("conversation tables");
         assert_eq!(conversation_tables, 3);
+        for column in [
+            "target_kind",
+            "target_message_id",
+            "target_parent_message_id",
+            "target_prior_candidate_id",
+            "retry_of_turn_id",
+            "guidance",
+            "requested_model_override_json",
+            "forced_speaker_participant_id",
+            "swap_roles",
+        ] {
+            let present: i64 = connection
+                .query_row(
+                    "SELECT count(*) FROM pragma_table_info('conversation_turns') WHERE name = ?1",
+                    [column],
+                    |row| row.get(0),
+                )
+                .expect("final column lookup");
+            assert_eq!(present, 1, "missing final column {column}");
+        }
+        for trigger in [
+            "conversation_turn_final_insert_contract",
+            "conversation_turn_final_update_contract",
+            "conversation_turn_retry_source_delete",
+            "conversation_turn_selected_speaker_character_final_insert",
+            "conversation_turn_selected_speaker_character_final_update",
+        ] {
+            let present: i64 = connection
+                .query_row(
+                    "SELECT count(*) FROM sqlite_schema WHERE type = 'trigger' AND name = ?1",
+                    [trigger],
+                    |row| row.get(0),
+                )
+                .expect("final trigger lookup");
+            assert_eq!(present, 1, "missing final trigger {trigger}");
+        }
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .expect("final M8 transaction");
+        transaction
+            .execute(
+                "INSERT INTO conversations (id, kind, lifecycle, title, active_branch_id, kind_json, revision, created_at, updated_at) VALUES ('upgrade-conversation', 'direct', 'active', 'Upgrade', 'upgrade-branch', '{\"format_version\":1,\"value\":null}', 1, 0, 0)",
+                [],
+            )
+            .expect("upgrade conversation");
+        transaction
+            .execute(
+                "INSERT INTO conversation_branches (conversation_id, id, status, revision, created_at, updated_at) VALUES ('upgrade-conversation', 'upgrade-branch', 'active', 1, 0, 0)",
+                [],
+            )
+            .expect("upgrade branch");
+        transaction
+            .execute(
+                "INSERT INTO conversation_participants (conversation_id, id, role, ordinal, source_kind, enabled, muted, display_name, model_selection_json, revision, created_at, updated_at) VALUES ('upgrade-conversation', 'upgrade-user', 'user', 0, 'user', 1, 0, 'User', '{\"format_version\":1,\"value\":null}', 1, 0, 0)",
+                [],
+            )
+            .expect("upgrade participant");
+        transaction
+            .execute(
+                "INSERT INTO conversation_message_revisions (conversation_id, id, message_id, branch_id, sequence, parts_json, authored_at) VALUES ('upgrade-conversation', 'upgrade-revision', 'upgrade-message', 'upgrade-branch', 1, '{\"format_version\":1,\"value\":[]}', 0)",
+                [],
+            )
+            .expect("upgrade revision");
+        transaction
+            .execute(
+                "INSERT INTO conversation_messages (conversation_id, id, branch_id, author_participant_id, role, timeline_ordinal, logical_time, effective_time, visibility, pinned, scene_edited, active_revision_id, revision, created_at, updated_at) VALUES ('upgrade-conversation', 'upgrade-message', 'upgrade-branch', 'upgrade-user', 'user', 1, 0, 0, 'visible', 0, 0, 'upgrade-revision', 1, 0, 0)",
+                [],
+            )
+            .expect("upgrade message");
+        transaction
+            .execute(
+                "INSERT INTO conversation_turns (conversation_id, id, branch_id, operation, input_kind, user_message_id, idempotency_key, status, target_kind, target_message_id, target_parent_message_id, revision, created_at, updated_at) VALUES ('upgrade-conversation', 'upgrade-turn', 'upgrade-branch', 'send', 'user_message', 'upgrade-message', 'upgrade-turn-key', 'created', 'new_assistant', 'upgrade-target', 'upgrade-message', 1, 0, 0)",
+                [],
+            )
+            .expect("valid final turn");
+        transaction
+            .execute(
+                "INSERT INTO conversation_settings (conversation_id, revision, author_note_provenance, memory_provenance, model_provenance, voice_provenance, created_at, updated_at) VALUES ('upgrade-conversation', 1, 'disabled', 'disabled', 'disabled', 'disabled', 0, 0)",
+                [],
+            )
+            .expect("valid canonical settings");
+        assert!(transaction
+            .execute(
+                "INSERT INTO conversation_turns (conversation_id, id, branch_id, operation, input_kind, user_message_id, idempotency_key, status, target_kind, target_message_id, target_parent_message_id, revision, created_at, updated_at) VALUES ('upgrade-conversation', 'missing-target', 'upgrade-branch', 'send', 'user_message', 'upgrade-message', 'missing-target-key', 'created', NULL, NULL, NULL, 1, 0, 0)",
+                [],
+            )
+            .is_err());
+        assert!(transaction
+            .execute(
+                "INSERT INTO conversation_settings (conversation_id, revision, author_note, author_note_provenance, memory_provenance, model_provenance, voice_provenance, created_at, updated_at) VALUES ('upgrade-conversation', 2, 'forged', 'disabled', 'disabled', 'disabled', 'disabled', 0, 0)",
+                [],
+            )
+            .is_err());
+        assert!(transaction
+            .execute(
+                "UPDATE conversation_settings SET author_note_provenance = 'current_override' WHERE conversation_id = 'upgrade-conversation'",
+                [],
+            )
+            .is_err());
+        transaction.commit().expect("final M8 commit");
         drop(connection);
         drop(database);
         let tampered = rusqlite::Connection::open(&path).expect("reopen database");
@@ -1674,8 +1768,8 @@ mod tests {
     }
 
     #[test]
-    fn m8_file_upgrades_to_m9_runtime_contract_and_checksums() {
-        let path = std::env::temp_dir().join(format!("lettuce-m8-m9-{}.db", MediaBlobId::new()));
+    fn m8_file_has_final_runtime_contract_and_checksums() {
+        let path = std::env::temp_dir().join(format!("lettuce-m8-final-{}.db", MediaBlobId::new()));
         {
             let mut connection = rusqlite::Connection::open(&path).expect("open m8 file");
             super::configure(&connection, true).expect("configure m8 file");
@@ -1700,15 +1794,10 @@ mod tests {
                 (
                     "m8-settings-launch",
                     "m8-branch-launch",
-                    None,
+                    None::<&str>,
                     "launch_inherited",
                 ),
-                (
-                    "m8-settings-blank",
-                    "m8-branch-blank",
-                    Some("   "),
-                    "launch_inherited",
-                ),
+                ("m8-settings-blank", "m8-branch-blank", None, "disabled"),
             ] {
                 transaction
                     .execute(
@@ -1743,14 +1832,14 @@ mod tests {
                         .expect("M8 user message");
                     transaction
                         .execute(
-                            "INSERT INTO conversation_turns (conversation_id, id, branch_id, operation, input_kind, user_message_id, idempotency_key, status, revision, created_at, updated_at) VALUES (?1, 'm8-turn', ?2, 'send', 'user_message', 'm8-user-message', 'm8-turn-key', 'created', 1, 0, 0)",
+                            "INSERT INTO conversation_turns (conversation_id, id, branch_id, operation, input_kind, user_message_id, idempotency_key, status, target_kind, target_message_id, target_parent_message_id, revision, created_at, updated_at) VALUES (?1, 'm8-turn', ?2, 'send', 'user_message', 'm8-user-message', 'm8-turn-key', 'created', 'new_assistant', 'm8-target-message', 'm8-user-message', 1, 0, 0)",
                             params![conversation_id, branch_id],
                         )
                         .expect("M8 generation turn");
                 }
                 transaction
                     .execute(
-                        "INSERT INTO conversation_settings (conversation_id, revision, author_note, author_note_provenance, memory_provenance, model_provenance, voice_provenance, created_at, updated_at) VALUES (?1, 1, ?2, ?3, 'launch_inherited', 'current_override', 'disabled', 0, 0)",
+                        "INSERT INTO conversation_settings (conversation_id, revision, author_note, author_note_provenance, memory_provenance, model_provenance, voice_provenance, created_at, updated_at) VALUES (?1, 1, ?2, ?3, 'launch_inherited', 'disabled', 'disabled', 0, 0)",
                         params![conversation_id, author_note, author_provenance],
                     )
                     .expect("M8 settings row");
@@ -1764,7 +1853,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            9
+            8
         );
         for column in [
             "target_kind",
@@ -1776,7 +1865,6 @@ mod tests {
             "requested_model_override_json",
             "forced_speaker_participant_id",
             "swap_roles",
-            "contract_version",
         ] {
             let present: i64 = connection
                 .query_row(
@@ -1785,7 +1873,7 @@ mod tests {
                     |row| row.get(0),
                 )
                 .expect("column lookup");
-            assert_eq!(present, 1, "missing M9 column {column}");
+            assert_eq!(present, 1, "missing final conversation column {column}");
         }
         let launch: (Option<String>, String, String, String) = connection
             .query_row(
@@ -1811,28 +1899,35 @@ mod tests {
             )
             .expect("read canonical blank settings");
         assert_eq!(blank, (None, "disabled".into()));
-        let legacy_turn: (String, i64) = connection
+        let final_turn: (String, String, String) = connection
             .query_row(
-                "SELECT status, contract_version FROM conversation_turns WHERE conversation_id = 'm8-settings-launch' AND id = 'm8-turn'",
+                "SELECT status, target_kind, target_message_id FROM conversation_turns WHERE conversation_id = 'm8-settings-launch' AND id = 'm8-turn'",
                 [],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
-            .expect("read upgraded legacy turn");
-        assert_eq!(legacy_turn, ("created".into(), 8));
+            .expect("read final turn");
+        assert_eq!(
+            final_turn,
+            (
+                "created".into(),
+                "new_assistant".into(),
+                "m8-target-message".into()
+            )
+        );
         drop(connection);
         drop(database);
-        Database::open(&path).expect("second reopen after M8 to M9 upgrade");
+        Database::open(&path).expect("second reopen after final M8 migration");
         let tampered = rusqlite::Connection::open(&path).expect("reopen database");
         tampered
             .execute(
-                "UPDATE schema_migrations SET checksum = 'tampered' WHERE id = 9",
+                "UPDATE schema_migrations SET checksum = 'tampered' WHERE id = 8",
                 [],
             )
             .expect("tamper checksum");
         drop(tampered);
         assert!(matches!(
             Database::open(&path),
-            Err(DatabaseError::MigrationChecksum { id: 9 })
+            Err(DatabaseError::MigrationChecksum { id: 8 })
         ));
         let _ = std::fs::remove_file(path);
     }
@@ -2728,7 +2823,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            9
+            8
         );
         drop(connection);
         drop(database);
@@ -2778,7 +2873,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            9
+            8
         );
         drop(connection);
         drop(database);
@@ -2810,7 +2905,7 @@ mod tests {
                 row.get(0)
             })
             .expect("migration count");
-        assert_eq!(migration_count, 9);
+        assert_eq!(migration_count, 8);
         for table in [
             "groups",
             "group_members",
@@ -2859,7 +2954,7 @@ mod tests {
                 row.get(0)
             })
             .expect("migration count");
-        assert_eq!(count, 9);
+        assert_eq!(count, 8);
         for table in [
             "prompt_documents",
             "prompt_entries",
@@ -2887,7 +2982,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            9
+            8
         );
         drop(connection);
         drop(reopened);
@@ -2923,7 +3018,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            9
+            8
         );
         let column: i64 = connection
             .query_row(
@@ -2950,7 +3045,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            9
+            8
         );
         drop(connection);
         drop(reopened);
@@ -2999,7 +3094,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            9
+            8
         );
         drop(connection);
         drop(database);

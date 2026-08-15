@@ -186,6 +186,51 @@ pub(crate) fn verify_snapshot_in_transaction(
     verify_payload(&bytes, &stored_digest, reference.byte_size)
 }
 
+/// Verifies a replay artifact while the read transaction still owns the same
+/// SQLite snapshot used to hydrate its referencing revision or candidate.
+pub(crate) fn verify_replay_in_transaction(
+    transaction: &Transaction<'_>,
+    reference: &ReplayArtifactRef,
+) -> Result<(), ArtifactError> {
+    reference
+        .validate()
+        .map_err(ArtifactError::InvalidReference)?;
+    let row: Option<(String, i64, i64, String, String, Vec<u8>)> = transaction
+        .query_row(
+            "SELECT digest, schema_version, byte_size, codec, retention, bytes FROM conversation_replay_artifacts WHERE artifact_id = ?1",
+            [reference.artifact_id.to_string()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
+        )
+        .optional()
+        .map_err(db_error)?;
+    let Some((digest, schema, size, codec, retention, bytes)) = row else {
+        return Err(ArtifactError::NotFound);
+    };
+    let bytes = Zeroizing::new(bytes);
+    if schema < 1 || size < 1 {
+        return Err(ArtifactError::Storage);
+    }
+    let stored_digest = ContentHash::parse(&digest).map_err(|_| ArtifactError::Storage)?;
+    let expected_codec = match reference.codec {
+        ReplayCodec::Json => ArtifactCodec::Json,
+        ReplayCodec::Cbor => ArtifactCodec::Cbor,
+        ReplayCodec::Binary => ArtifactCodec::Binary,
+    };
+    let expected_retention = match reference.retention {
+        ReplayRetention::Conversation => ArtifactRetention::Conversation,
+        ReplayRetention::Ephemeral => ArtifactRetention::Ephemeral,
+    };
+    if codec_from_name(&codec)? != expected_codec
+        || retention_from_name(&retention)? != expected_retention
+        || digest != reference.digest.as_str()
+        || schema != i64::from(reference.schema_version)
+        || size != sql_u64(reference.byte_size)?
+    {
+        return Err(ArtifactError::Storage);
+    }
+    verify_payload(&bytes, &stored_digest, reference.byte_size)
+}
+
 impl ConversationArtifactStore for Database {
     fn put_snapshot(
         &self,
