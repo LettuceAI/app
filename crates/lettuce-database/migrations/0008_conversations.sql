@@ -964,3 +964,107 @@ WHEN NEW.parent_message_id IS NOT NULL AND NOT EXISTS (
       )
 )
 BEGIN SELECT RAISE(ABORT, 'message parent violates branch topology'); END;
+
+-- Conversation launch artifacts, origin indexes, idempotency records, and
+-- outbox events are append-only facts.  Mutations create a new domain record
+-- (or a new operation) rather than rewriting history in place.
+CREATE TRIGGER conversation_snapshot_artifact_immutable_update
+BEFORE UPDATE ON conversation_snapshot_artifacts
+BEGIN SELECT RAISE(ABORT, 'snapshot artifact is immutable'); END;
+
+CREATE TRIGGER conversation_snapshot_ref_immutable_update
+BEFORE UPDATE ON conversation_snapshot_refs
+BEGIN SELECT RAISE(ABORT, 'snapshot reference is immutable'); END;
+
+CREATE TRIGGER conversation_snapshot_ref_immutable_delete
+BEFORE DELETE ON conversation_snapshot_refs
+BEGIN SELECT RAISE(ABORT, 'snapshot reference is immutable'); END;
+
+CREATE TRIGGER conversation_initial_origin_immutable_update
+BEFORE UPDATE ON conversation_initial_message_origins
+BEGIN SELECT RAISE(ABORT, 'initial message origin is immutable'); END;
+
+CREATE TRIGGER conversation_initial_origin_immutable_delete
+BEFORE DELETE ON conversation_initial_message_origins
+BEGIN SELECT RAISE(ABORT, 'initial message origin is immutable'); END;
+
+CREATE TRIGGER conversation_initial_origin_limit
+BEFORE INSERT ON conversation_initial_message_origins
+WHEN (SELECT count(*) FROM conversation_initial_message_origins
+      WHERE conversation_id = NEW.conversation_id) >= 512
+BEGIN SELECT RAISE(ABORT, 'conversation initial timeline exceeds 512 origins'); END;
+
+CREATE TRIGGER conversation_initial_origin_after_create_forbidden
+BEFORE INSERT ON conversation_initial_message_origins
+WHEN EXISTS (
+    SELECT 1 FROM conversation_operations
+    WHERE conversation_id = NEW.conversation_id AND kind = 'create'
+)
+BEGIN SELECT RAISE(ABORT, 'initial message origin cannot be added after create'); END;
+
+CREATE TRIGGER conversation_operation_immutable_update
+BEFORE UPDATE ON conversation_operations
+BEGIN SELECT RAISE(ABORT, 'conversation operation is immutable'); END;
+
+CREATE TRIGGER conversation_operation_immutable_delete
+BEFORE DELETE ON conversation_operations
+BEGIN SELECT RAISE(ABORT, 'conversation operation is immutable'); END;
+
+CREATE TRIGGER conversation_create_operation_shape
+BEFORE INSERT ON conversation_operations
+WHEN NEW.kind = 'create' AND (
+    NEW.result_kind IS NOT 'conversation' OR
+    NEW.result_id IS NOT NEW.conversation_id OR
+    json_extract(NEW.result_json, '$.value.kind') IS NOT 'conversation' OR
+    json_extract(NEW.result_json, '$.value.id') IS NOT NEW.conversation_id
+)
+BEGIN SELECT RAISE(ABORT, 'create operation result must be its conversation'); END;
+
+CREATE TRIGGER conversation_outbox_immutable_update
+BEFORE UPDATE ON conversation_outbox
+BEGIN SELECT RAISE(ABORT, 'conversation outbox event is immutable'); END;
+
+CREATE TRIGGER conversation_outbox_immutable_delete
+BEFORE DELETE ON conversation_outbox
+BEGIN SELECT RAISE(ABORT, 'conversation outbox event is immutable'); END;
+
+CREATE TRIGGER conversation_create_outbox_shape
+BEFORE INSERT ON conversation_outbox
+WHEN EXISTS (
+    SELECT 1 FROM conversation_operations AS operation
+    WHERE operation.conversation_id = NEW.conversation_id
+      AND operation.id = NEW.operation_record_id
+      AND operation.kind = 'create'
+) AND (
+    NEW.sequence IS NOT 1 OR
+    NEW.conversation_revision IS NOT 1 OR
+    json_extract(NEW.event_json, '$.value.kind') IS NOT 'conversation_created' OR
+    json_extract(NEW.event_json, '$.value.value.conversation_id') IS NOT NEW.conversation_id OR
+    json_extract(NEW.event_json, '$.value.value.at') IS NOT NEW.at
+)
+BEGIN SELECT RAISE(ABORT, 'create outbox event has invalid shape'); END;
+
+CREATE TRIGGER conversation_created_event_requires_create_operation
+BEFORE INSERT ON conversation_outbox
+WHEN json_extract(NEW.event_json, '$.value.kind') IS 'conversation_created'
+ AND NOT EXISTS (
+    SELECT 1 FROM conversation_operations
+    WHERE conversation_id = NEW.conversation_id
+      AND id = NEW.operation_record_id
+      AND kind = 'create'
+ )
+BEGIN SELECT RAISE(ABORT, 'conversation_created event requires create operation'); END;
+
+CREATE TRIGGER conversation_create_outbox_one_per_operation
+BEFORE INSERT ON conversation_outbox
+WHEN EXISTS (
+    SELECT 1 FROM conversation_operations AS operation
+    WHERE operation.conversation_id = NEW.conversation_id
+      AND operation.id = NEW.operation_record_id
+      AND operation.kind = 'create'
+) AND EXISTS (
+    SELECT 1 FROM conversation_outbox AS existing
+    WHERE existing.conversation_id = NEW.conversation_id
+      AND existing.operation_record_id = NEW.operation_record_id
+)
+BEGIN SELECT RAISE(ABORT, 'create operation already has an outbox event'); END;

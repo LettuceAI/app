@@ -12,8 +12,8 @@ use std::str::FromStr;
 use lettuce_conversations::{
     Conversation, ConversationAggregate, ConversationBranch, ConversationKind,
     ConversationLifecycle, ConversationParticipant, ConversationRepositoryError,
-    CurrentConversationSettings, ParticipantRole, ParticipantSource, SettingProvenance,
-    SnapshotSelection, SnapshotSource,
+    CurrentConversationSettings, ParticipantRole, ParticipantSource, ProtectedSnapshotRef,
+    SettingProvenance, SnapshotSelection, SnapshotSource,
 };
 use lettuce_types::{ConversationId, Revision, TimestampMillis};
 use rusqlite::{OptionalExtension, Row, Transaction, TransactionBehavior, params};
@@ -182,7 +182,7 @@ fn save_settings(
     Ok(())
 }
 
-fn save_conversation(
+pub(crate) fn save_conversation(
     transaction: &Transaction<'_>,
     conversation: &Conversation,
 ) -> Result<(), ConversationRepositoryError> {
@@ -192,7 +192,7 @@ fn save_conversation(
     save_settings(transaction, conversation)
 }
 
-fn save_branch(
+pub(crate) fn save_branch(
     transaction: &Transaction<'_>,
     branch: &ConversationBranch,
 ) -> Result<(), ConversationRepositoryError> {
@@ -362,13 +362,81 @@ where
         .optional()
         .map_err(db)?
         .ok_or(ConversationRepositoryError::NotFound)?;
-    let mut expected_artifacts: Vec<String> =
+    let mut participants = Vec::new();
+    let mut statement = transaction.prepare("SELECT id, role, ordinal, source_kind, source_id, enabled, muted, display_name, authored_description, model_selection_json, revision, created_at, updated_at FROM conversation_participants WHERE conversation_id = ?1 ORDER BY ordinal, id").map_err(db)?;
+    for row in statement
+        .query_map([id.to_string()], read_participant)
+        .map_err(db)?
+    {
+        participants.push(row.map_err(db)?);
+    }
+    drop(statement);
+
+    let mut expected_references: Vec<ProtectedSnapshotRef> =
         lettuce_conversations::conversation_snapshot_references(&row.kind)
             .into_iter()
-            .map(|reference| reference.artifact_id.to_string())
+            .cloned()
             .collect();
-    expected_artifacts.sort();
-    expected_artifacts.dedup();
+    let mut origin_statement = transaction
+        .prepare("SELECT artifact.source_kind, artifact.source_id, artifact.source_revision, artifact.artifact_id, artifact.digest, artifact.schema_version, artifact.byte_size FROM conversation_initial_message_origins AS origin JOIN conversation_snapshot_artifacts AS artifact ON artifact.artifact_id = origin.snapshot_artifact_id AND artifact.source_kind = origin.source_kind WHERE origin.conversation_id = ?1 ORDER BY origin.message_id")
+        .map_err(db)?;
+    for origin in origin_statement
+        .query_map([id.to_string()], |child| {
+            Ok((
+                child.get::<_, String>(0)?,
+                child.get::<_, String>(1)?,
+                child.get::<_, i64>(2)?,
+                child.get::<_, String>(3)?,
+                child.get::<_, String>(4)?,
+                child.get::<_, i64>(5)?,
+                child.get::<_, i64>(6)?,
+            ))
+        })
+        .map_err(db)?
+    {
+        let (
+            source_kind,
+            source_id,
+            source_revision,
+            artifact_id,
+            digest,
+            schema_version,
+            byte_size,
+        ) = origin.map_err(db)?;
+        let source =
+            super::conversation_artifact_adapter::source_from_parts(&source_kind, &source_id)
+                .map_err(|_| ConversationRepositoryError::Storage)?;
+        let reference = ProtectedSnapshotRef {
+            source,
+            source_revision: rev(source_revision)?,
+            artifact_id: parse_id(artifact_id)?,
+            digest: digest
+                .parse()
+                .map_err(|_| ConversationRepositoryError::Storage)?,
+            schema_version: u32::try_from(schema_version)
+                .map_err(|_| ConversationRepositoryError::Storage)?,
+            byte_size: u64::try_from(byte_size)
+                .map_err(|_| ConversationRepositoryError::Storage)?,
+        };
+        reference
+            .validate()
+            .map_err(|_| ConversationRepositoryError::Storage)?;
+        expected_references.push(reference);
+    }
+    drop(origin_statement);
+
+    let mut expected_by_id = std::collections::BTreeMap::<String, ProtectedSnapshotRef>::new();
+    for reference in expected_references {
+        let id = reference.artifact_id.to_string();
+        if let Some(existing) = expected_by_id.get(&id) {
+            if existing != &reference {
+                return Err(ConversationRepositoryError::Storage);
+            }
+        } else {
+            expected_by_id.insert(id, reference);
+        }
+    }
+    let expected_artifacts: Vec<String> = expected_by_id.keys().cloned().collect();
     let actual_artifacts: Vec<String> = transaction
         .prepare("SELECT artifact_id FROM conversation_snapshot_refs WHERE conversation_id = ?1 ORDER BY artifact_id")
         .map_err(db)?
@@ -379,7 +447,7 @@ where
     if actual_artifacts != expected_artifacts {
         return Err(ConversationRepositoryError::Storage);
     }
-    for reference in lettuce_conversations::conversation_snapshot_references(&row.kind) {
+    for reference in expected_by_id.values() {
         super::conversation_artifact_adapter::verify_snapshot_in_transaction(
             transaction,
             reference,
@@ -392,15 +460,9 @@ where
     // test; production reads pass a no-op.
     after_snapshot();
 
-    let mut participants = Vec::new();
-    let mut statement = transaction.prepare("SELECT id, role, ordinal, source_kind, source_id, enabled, muted, display_name, authored_description, model_selection_json, revision, created_at, updated_at FROM conversation_participants WHERE conversation_id = ?1 ORDER BY ordinal, id").map_err(db)?;
-    for row in statement
-        .query_map([id.to_string()], read_participant)
-        .map_err(db)?
-    {
-        participants.push(row.map_err(db)?);
-    }
-    drop(statement);
+    // Participant policy is mutable after launch. Its current model refs are
+    // verified independently and are therefore not part of the immutable
+    // launch snapshot-ref relation.
     for participant in &participants {
         if participant.role == ParticipantRole::Character {
             if let SnapshotSelection::Inherited(model) | SnapshotSelection::Explicit(model) =
@@ -414,10 +476,36 @@ where
             }
         }
     }
+
     let settings = transaction
         .query_row("SELECT revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance FROM conversation_settings WHERE conversation_id = ?1", [id.to_string()], read_settings)
         .optional()
         .map_err(db)?;
+    if let Some(settings) = &settings {
+        if let Some(model) = &settings.model_override {
+            super::conversation_artifact_adapter::verify_snapshot_in_transaction(
+                transaction,
+                &model.snapshot_ref,
+            )
+            .map_err(|_| ConversationRepositoryError::Storage)?;
+        }
+        if let Some(voice) = &settings.voice {
+            super::conversation_artifact_adapter::verify_snapshot_in_transaction(
+                transaction,
+                &voice.snapshot_ref,
+            )
+            .map_err(|_| ConversationRepositoryError::Storage)?;
+        }
+        if let Some(memory) = &settings.memory {
+            if let Some(policy) = &memory.policy_ref {
+                super::conversation_artifact_adapter::verify_snapshot_in_transaction(
+                    transaction,
+                    policy,
+                )
+                .map_err(|_| ConversationRepositoryError::Storage)?;
+            }
+        }
+    }
     let mut conversation = row;
     conversation.participants = participants;
     conversation.current_settings = settings;
@@ -989,6 +1077,17 @@ mod tests {
             aggregate.conversation.active_branch_id
         );
         let other_character_id = CharacterId::new();
+        let connection = database.connection().expect("lock");
+        assert!(connection
+            .execute(
+                "UPDATE conversation_snapshot_artifacts SET source_id = ?1 WHERE artifact_id = ?2",
+                params![other_character_id.to_string(), artifact_id.to_string()],
+            )
+            .is_err());
+        connection
+            .execute_batch("DROP TRIGGER conversation_snapshot_artifact_immutable_update")
+            .expect("drop isolated corruption guard");
+        drop(connection);
         database
             .connection()
             .expect("lock")
@@ -1048,14 +1147,23 @@ mod tests {
                 bytes: second_bytes,
             })
             .expect("second artifact");
-        database
-            .connection()
-            .expect("lock")
+        let connection = database.connection().expect("lock");
+        assert!(connection
+            .execute(
+                "UPDATE conversation_snapshot_refs SET artifact_id = ?1 WHERE conversation_id = ?2",
+                params![second_id.to_string(), plan.conversation_id.to_string()],
+            )
+            .is_err());
+        connection
+            .execute_batch("DROP TRIGGER conversation_snapshot_ref_immutable_update")
+            .expect("drop isolated corruption guard");
+        connection
             .execute(
                 "UPDATE conversation_snapshot_refs SET artifact_id = ?1 WHERE conversation_id = ?2",
                 params![second_id.to_string(), plan.conversation_id.to_string()],
             )
             .expect("corrupt set");
+        drop(connection);
         assert_eq!(
             database.get_conversation_record(plan.conversation_id),
             Err(ConversationRepositoryError::Storage)
@@ -1845,6 +1953,14 @@ mod tests {
             "conversation_branch_head_same_branch_insert",
             "conversation_branch_fork_message_parent_insert",
             "conversation_message_parent_topology_insert",
+            "conversation_snapshot_artifact_immutable_update",
+            "conversation_snapshot_ref_immutable_update",
+            "conversation_initial_origin_after_create_forbidden",
+            "conversation_operation_immutable_update",
+            "conversation_create_operation_shape",
+            "conversation_outbox_immutable_update",
+            "conversation_create_outbox_shape",
+            "conversation_created_event_requires_create_operation",
         ] {
             let present: i64 = connection
                 .query_row(

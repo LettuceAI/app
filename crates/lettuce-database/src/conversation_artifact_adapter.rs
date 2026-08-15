@@ -142,6 +142,84 @@ fn verify_payload(bytes: &[u8], digest: &ContentHash, size: u64) -> Result<(), A
     Ok(())
 }
 
+/// Stages a protected snapshot on the caller's transaction.  Conversation
+/// creation uses this instead of `put_snapshot`: the artifact row and every
+/// conversation row must commit (or roll back) together.
+pub(crate) fn stage_snapshot_in_transaction(
+    transaction: &Transaction<'_>,
+    draft: SnapshotArtifactDraft,
+    created_at: lettuce_types::TimestampMillis,
+) -> Result<ProtectedSnapshotRef, ArtifactError> {
+    draft.validate()?;
+    let reference = draft.reference();
+    let (source_kind, source_id) = source_parts(draft.source);
+    let source_revision = sql_u64(draft.source_revision.get())?;
+    let byte_size = sql_u64(reference.byte_size)?;
+    let codec = draft.codec;
+    let bytes = Zeroizing::new(draft.bytes.into_store_bytes());
+    let existing: Option<SnapshotExistingRow> = transaction
+        .query_row(
+            "SELECT source_kind, source_id, source_revision, digest, schema_version, codec, byte_size, retention, bytes FROM conversation_snapshot_artifacts WHERE artifact_id = ?1",
+            [reference.artifact_id.to_string()],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                    row.get(6)?,
+                    row.get(7)?,
+                    row.get(8)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(db_error)?;
+    if let Some((kind, id, revision, digest, schema, stored_codec, size, retention, stored_bytes)) =
+        existing
+    {
+        let stored_bytes = Zeroizing::new(stored_bytes);
+        if revision < 1 || schema < 1 || size < 1 {
+            return Err(ArtifactError::Storage);
+        }
+        let stored_digest = ContentHash::parse(&digest).map_err(|_| ArtifactError::Storage)?;
+        if kind != source_kind
+            || id != source_id
+            || revision != source_revision
+            || digest != reference.digest.as_str()
+            || schema != i64::from(reference.schema_version)
+            || size != byte_size
+            || codec_from_name(&stored_codec)? != codec
+            || retention_from_name(&retention)? != ArtifactRetention::Conversation
+        {
+            return Err(ArtifactError::ImmutableConflict);
+        }
+        verify_payload(&stored_bytes, &stored_digest, reference.byte_size)?;
+        return Ok(reference);
+    }
+
+    transaction
+        .execute(
+            "INSERT INTO conversation_snapshot_artifacts (artifact_id, source_kind, source_id, source_revision, digest, schema_version, byte_size, codec, retention, bytes, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'conversation', ?9, ?10)",
+            params![
+                reference.artifact_id.to_string(),
+                source_kind,
+                source_id,
+                source_revision,
+                reference.digest.as_str(),
+                i64::from(reference.schema_version),
+                byte_size,
+                codec_name(codec),
+                bytes.as_slice(),
+                created_at.get(),
+            ],
+        )
+        .map_err(db_error)?;
+    Ok(reference)
+}
+
 /// Verifies a staged snapshot while the owning conversation mutation holds its
 /// immediate transaction. Artifact bytes remain private to this adapter even
 /// when a repository mutation needs an atomic reference check.

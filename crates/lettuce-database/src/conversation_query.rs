@@ -328,7 +328,7 @@ fn has_terminal_root(chain: &[(String, Option<String>, i64)]) -> bool {
         .is_some_and(|(_, parent_message_id, _)| parent_message_id.is_none())
 }
 
-fn validate_outbox_event_exact(
+pub(crate) fn validate_outbox_event_exact(
     transaction: &Transaction<'_>,
     record: &ConversationOutboxRecord,
 ) -> Result<(), ConversationRepositoryError> {
@@ -1153,6 +1153,56 @@ fn hydrate_timeline(
     Ok(result)
 }
 
+/// Hydrates every message on a branch in timeline order.  Creation uses this
+/// bounded form immediately after inserting the initial chain so the
+/// aggregate, message revisions, media projections, and origin rows are all
+/// validated while the write transaction is still open.
+pub(crate) fn hydrate_branch_timeline_all(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
+) -> Result<TimelinePage, ConversationRepositoryError> {
+    let branches = branch_path(transaction, conversation_id, branch_id)?;
+    let selected = branches
+        .last()
+        .ok_or(ConversationRepositoryError::Storage)?;
+    if selected.status != lettuce_conversations::BranchStatus::Active {
+        return Err(ConversationRepositoryError::Storage);
+    }
+    let mut statement = transaction
+        .prepare("SELECT m.conversation_id, m.id, m.branch_id, m.parent_message_id, m.author_participant_id, m.role, m.logical_time, m.effective_time, m.visibility, m.pinned, m.scene_edited, m.timeline_ordinal, m.active_revision_id, m.active_candidate_id, m.revision, m.created_at, m.updated_at FROM conversation_messages AS m WHERE m.conversation_id = ?1 AND m.branch_id = ?2 ORDER BY m.timeline_ordinal, m.id")
+        .map_err(slice::db)?;
+    let mut items = Vec::new();
+    let mut last_ordinal = 0_i64;
+    for row in statement
+        .query_map(
+            params![conversation_id.to_string(), branch_id.to_string()],
+            |row| message_row(transaction, row).map_err(|_| rusqlite::Error::InvalidQuery),
+        )
+        .map_err(slice::db)?
+    {
+        let (item, ordinal) = row.map_err(slice::db)?;
+        if ordinal != last_ordinal + 1 {
+            return Err(ConversationRepositoryError::Storage);
+        }
+        last_ordinal = ordinal;
+        items.push(item);
+    }
+    drop(statement);
+    let result = TimelinePage {
+        conversation_id,
+        selected_branch_id: branch_id,
+        branch_path: branches,
+        items,
+        boundary_parent_id: None,
+        next_cursor: None,
+    };
+    result
+        .validate_page()
+        .map_err(|_| ConversationRepositoryError::Storage)?;
+    Ok(result)
+}
+
 fn stored_speaker(
     participant_id: Option<String>,
     payload: Option<String>,
@@ -1654,7 +1704,7 @@ fn validate_asset_delta(
     Ok(())
 }
 
-fn validate_outbox_event_timestamp(
+pub(crate) fn validate_outbox_event_timestamp(
     record: &ConversationOutboxRecord,
 ) -> Result<(), ConversationRepositoryError> {
     let event_at = match &record.event {
@@ -1677,7 +1727,7 @@ fn validate_outbox_event_timestamp(
     }
 }
 
-fn validate_outbox_event(
+pub(crate) fn validate_outbox_event(
     transaction: &Transaction<'_>,
     record: &ConversationOutboxRecord,
 ) -> Result<(), ConversationRepositoryError> {
@@ -2523,6 +2573,20 @@ impl ConversationReader for Database {
             validate_outbox_event_timestamp(&value)?;
             let operation_exists: bool = transaction.query_row("SELECT EXISTS(SELECT 1 FROM conversation_operations WHERE conversation_id = ?1 AND id = ?2)", params![conversation_id.to_string(), value.operation_record_id.to_string()], |row| row.get(0)).map_err(slice::db)?;
             if !operation_exists {
+                return Err(ConversationRepositoryError::Storage);
+            }
+            let operation_kind: String = transaction
+                .query_row(
+                    "SELECT kind FROM conversation_operations WHERE conversation_id = ?1 AND id = ?2",
+                    params![conversation_id.to_string(), value.operation_record_id.to_string()],
+                    |row| row.get(0),
+                )
+                .map_err(slice::db)?;
+            let is_created = matches!(
+                value.event,
+                ConversationOutboxEvent::ConversationCreated { .. }
+            );
+            if (operation_kind == "create") != is_created {
                 return Err(ConversationRepositoryError::Storage);
             }
             validate_outbox_event(&transaction, &value)?;
@@ -3942,6 +4006,19 @@ mod tests {
             slice::encode(&OperationResultRef::Conversation(foreign_conversation_id))
                 .expect("foreign result");
         let connection = database.connection().expect("connection");
+        assert!(connection
+            .execute(
+                "UPDATE conversation_operations SET result_id = ?1, result_json = ?2 WHERE id = ?3",
+                params![
+                    foreign_conversation_id.to_string(),
+                    foreign_result,
+                    operation_id.to_string()
+                ],
+            )
+            .is_err());
+        connection
+            .execute_batch("DROP TRIGGER conversation_operation_immutable_update")
+            .expect("drop isolated corruption guard");
         connection
             .execute(
                 "UPDATE conversation_operations SET result_id = ?1, result_json = ?2 WHERE id = ?3",
@@ -4014,6 +4091,15 @@ mod tests {
         assert_eq!(second.items.len(), 1);
         assert!(second.next_cursor.is_none());
         let connection = database.connection().expect("connection");
+        assert!(connection
+            .execute(
+                "UPDATE conversation_outbox SET at = 3 WHERE conversation_id = ?1 AND sequence = 1",
+                [conversation_id.to_string()],
+            )
+            .is_err());
+        connection
+            .execute_batch("DROP TRIGGER conversation_outbox_immutable_update")
+            .expect("drop isolated corruption guard");
         connection
             .execute(
                 "UPDATE conversation_outbox SET at = 3 WHERE conversation_id = ?1 AND sequence = 1",
