@@ -3151,6 +3151,9 @@ export const trMessages: DeepPartialMessageTree<LocaleMessages> = {
       generateEntryAria: "Lorebook girişi oluştur",
       exportLorebookAria: "Lorebook'u dışa aktar",
       regularExpression: "Düzenli ifadeleri kullan",
+      metadataTitle: "Lore kitabını düzenle",
+      tagsLabel: "Etiketler",
+      tagsPlaceholder: "ör. fantezi, bilim kurgu vb...",
     },
     templates: {
       characterNotFound: "Karakter bulunamadı",
@@ -5331,6 +5334,9 @@ export const trMessages: DeepPartialMessageTree<LocaleMessages> = {
       setAsDefault: "Varsayılan olarak ayarla",
       defaultDescription: "Tüm yeni konuşmalar için bu personayı kullan",
       exportButton: "Personayı dışa aktar",
+      tagsLabel: "Etiketler",
+      tagsPlaceholder: "ör. fantezi, bilim kurgu vb...",
+      tagsHint: "Etiketleri virgülle ayırın.",
     },
     designReferences: {
       title: "Tasarım referansları",
@@ -6850,6 +6856,10 @@ export const trMessages: DeepPartialMessageTree<LocaleMessages> = {
         title: "Henüz lore kitabı yok",
         description: "Lore kitapları bir karakterin ayarlarından oluşturulur",
       },
+      noTagMatches: {
+        title: "Eşleşme yok",
+        description: "Seçili etiketlerle eşleşen öğe yok.",
+      },
     },
     actions: {
       startChat: "Sohbet başlat",
@@ -6969,6 +6979,14 @@ export const trMessages: DeepPartialMessageTree<LocaleMessages> = {
         editLorebook: "Bilgi kitabını düzenle",
         exportLorebook: "Bilgi kitabını dışa aktar",
       },
+    },
+    sort: {
+      label: "Sırala",
+      recent: "Son",
+      alphabetical: "A–Z",
+    },
+    tagFilter: {
+      clear: "Etiketleri temizle",
     },
   },
   onboarding: {

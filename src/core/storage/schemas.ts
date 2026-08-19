@@ -3442,6 +3442,7 @@ export const LorebookSchema = z.object({
     .default("recentMessageWindow"),
   createdAt: z.number().int(),
   updatedAt: z.number().int(),
+  tags: z.array(z.string()).optional(),
 });
 
 export type Lorebook = z.infer<typeof LorebookSchema>;
@@ -4022,6 +4023,7 @@ export const PersonaSchema = z.object({
   isDefault: z.boolean().default(false),
   createdAt: z.number().int(),
   updatedAt: z.number().int(),
+  tags: z.array(z.string()).optional(),
 });
 export type Persona = z.infer<typeof PersonaSchema>;
 

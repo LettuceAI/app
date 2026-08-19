@@ -3150,6 +3150,9 @@ export const zhHansMessages: DeepPartialMessageTree<LocaleMessages> = {
       generateEntryAria: "生成世界观条目",
       exportLorebookAria: "导出世界观书籍",
       regularExpression: "使用正则表达式",
+      metadataTitle: "编辑知识库",
+      tagsLabel: "标签",
+      tagsPlaceholder: "例如：奇幻、科幻等...",
     },
     templates: {
       characterNotFound: "找不到角色",
@@ -5328,6 +5331,9 @@ export const zhHansMessages: DeepPartialMessageTree<LocaleMessages> = {
       setAsDefault: "设为默认",
       defaultDescription: "在所有新对话中使用此人设",
       exportButton: "导出人设",
+      tagsLabel: "标签",
+      tagsPlaceholder: "例如：奇幻、科幻等...",
+      tagsHint: "使用逗号分隔标签。",
     },
     designReferences: {
       title: "设计参考",
@@ -6847,6 +6853,10 @@ export const zhHansMessages: DeepPartialMessageTree<LocaleMessages> = {
         title: "还没有知识库",
         description: "知识库从角色设置中创建",
       },
+      noTagMatches: {
+        title: "无匹配项",
+        description: "没有条目与所选标签匹配。",
+      },
     },
     actions: {
       startChat: "开始聊天",
@@ -6966,6 +6976,14 @@ export const zhHansMessages: DeepPartialMessageTree<LocaleMessages> = {
         editLorebook: "编辑知识库",
         exportLorebook: "导出知识库",
       },
+    },
+    sort: {
+      label: "排序",
+      recent: "最近",
+      alphabetical: "字母顺序",
+    },
+    tagFilter: {
+      clear: "清除标签",
     },
   },
   onboarding: {

@@ -1229,6 +1229,7 @@ export async function saveLorebook(
     keywordDetectionMode: lorebook.keywordDetectionMode ?? "recentMessageWindow",
     createdAt: lorebook.createdAt ?? timestamp,
     updatedAt: timestamp,
+    tags: lorebook.tags ?? [],
   };
 
   const stored = await storageBridge.lorebookUpsert(entity);
@@ -2267,6 +2268,7 @@ export async function savePersona(
     isDefault: p.isDefault ?? false,
     createdAt: p.createdAt ?? now(),
     updatedAt: now(),
+    tags: p.tags,
   } as Persona;
 
   const saved = await storageBridge.personaUpsert(entity);

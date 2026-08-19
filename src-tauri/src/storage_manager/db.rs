@@ -594,7 +594,8 @@ fn init_db_connection(conn: &Connection) -> Result<(), String> {
           avatar_path TEXT,
           keyword_detection_mode TEXT NOT NULL DEFAULT 'recent_message_window',
           created_at INTEGER NOT NULL,
-          updated_at INTEGER NOT NULL
+          updated_at INTEGER NOT NULL,
+          tags TEXT
         );
 
         -- Character <-> Lorebook mapping (many-to-many)
@@ -685,7 +686,8 @@ fn init_db_connection(conn: &Connection) -> Result<(), String> {
           active_lorebook_ids TEXT NOT NULL DEFAULT '[]',
           is_default INTEGER NOT NULL DEFAULT 0,
           created_at INTEGER NOT NULL,
-          updated_at INTEGER NOT NULL
+          updated_at INTEGER NOT NULL,
+          tags TEXT
         );
 
         -- Sessions and messages

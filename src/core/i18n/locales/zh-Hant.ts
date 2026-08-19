@@ -3150,6 +3150,9 @@ export const zhHantMessages: DeepPartialMessageTree<LocaleMessages> = {
       generateEntryAria: "生成世界觀條目",
       exportLorebookAria: "匯出世界觀書籍",
       regularExpression: "使用正規表示式",
+      metadataTitle: "編輯設定集",
+      tagsLabel: "標籤",
+      tagsPlaceholder: "例如：奇幻、科幻等...",
     },
     templates: {
       characterNotFound: "找不到角色",
@@ -5328,6 +5331,9 @@ export const zhHantMessages: DeepPartialMessageTree<LocaleMessages> = {
       setAsDefault: "設為預設",
       defaultDescription: "在所有新對話中使用此人設",
       exportButton: "匯出人設",
+      tagsLabel: "標籤",
+      tagsPlaceholder: "例如：奇幻、科幻等...",
+      tagsHint: "使用逗號分隔標籤。",
     },
     designReferences: {
       title: "設計參考",
@@ -6847,6 +6853,10 @@ export const zhHantMessages: DeepPartialMessageTree<LocaleMessages> = {
         title: "尚無設定集",
         description: "設定集從角色設定中建立",
       },
+      noTagMatches: {
+        title: "無相符項目",
+        description: "沒有項目符合所選標籤。",
+      },
     },
     actions: {
       startChat: "開始對話",
@@ -6966,6 +6976,14 @@ export const zhHantMessages: DeepPartialMessageTree<LocaleMessages> = {
         editLorebook: "編輯設定集",
         exportLorebook: "匯出設定集",
       },
+    },
+    sort: {
+      label: "排序",
+      recent: "最近",
+      alphabetical: "字母順序",
+    },
+    tagFilter: {
+      clear: "清除標籤",
     },
   },
   onboarding: {

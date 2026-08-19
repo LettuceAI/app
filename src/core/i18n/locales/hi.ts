@@ -3151,6 +3151,9 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
       generateEntryAria: "लोअरबुक प्रविष्टि जेनरेट करें",
       exportLorebookAria: "लोअरबुक एक्सपोर्ट करें",
       regularExpression: "रेगुलर एक्सप्रेशन का उपयोग करें",
+      metadataTitle: "लोरबुक संपादित करें",
+      tagsLabel: "टैग",
+      tagsPlaceholder: "जैसे फ़ैंटेसी, साई-फ़ाई, आदि...",
     },
     templates: {
       characterNotFound: "कैरेक्टर नहीं मिला",
@@ -4581,6 +4584,9 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
       setAsDefault: "डिफ़ॉल्ट के रूप में सेट करें",
       defaultDescription: "सभी नई बातचीत के लिए इस पर्सोना का उपयोग करें",
       exportButton: "पर्सोना निर्यात करें",
+      tagsLabel: "टैग",
+      tagsPlaceholder: "जैसे फ़ैंटेसी, साई-फ़ाई, आदि...",
+      tagsHint: "टैग को अल्पविराम से अलग करें।",
     },
     designReferences: {
       title: "डिज़ाइन संदर्भ",
@@ -6100,6 +6106,10 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
         title: "अभी तक कोई लोरबुक नहीं",
         description: "लोरबुक कैरेक्टर की सेटिंग्स के भीतर से बनाई जाती हैं",
       },
+      noTagMatches: {
+        title: "कोई मेल नहीं",
+        description: "चयनित टैग से कोई आइटम मेल नहीं खाता।",
+      },
     },
     actions: {
       startChat: "चैट शुरू करें",
@@ -6219,6 +6229,14 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
         editLorebook: "लोरबुक संपादित करें",
         exportLorebook: "लोरबुक निर्यात करें",
       },
+    },
+    sort: {
+      label: "क्रमबद्ध करें",
+      recent: "हाल के",
+      alphabetical: "A–Z",
+    },
+    tagFilter: {
+      clear: "टैग हटाएँ",
     },
   },
   onboarding: {

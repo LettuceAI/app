@@ -365,9 +365,14 @@ fn import_personas(conn: &mut rusqlite::Connection, json: &str) -> Result<(), St
             .unwrap_or(false) as i64;
         let created_at = p.get("createdAt").and_then(|v| v.as_i64()).unwrap_or(now);
         let updated_at = p.get("updatedAt").and_then(|v| v.as_i64()).unwrap_or(now);
+        let tags = p
+            .get("tags")
+            .and_then(|v| v.as_array())
+            .and_then(|arr| serde_json::to_string(arr).ok())
+            .unwrap_or_else(|| "[]".to_string());
         tx.execute(
-            r#"INSERT OR REPLACE INTO personas (id, title, description, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, active_lorebook_ids, is_default, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
+            r#"INSERT OR REPLACE INTO personas (id, title, description, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, active_lorebook_ids, is_default, created_at, updated_at, tags)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
             params![
                 &id,
                 title,
@@ -379,7 +384,8 @@ fn import_personas(conn: &mut rusqlite::Connection, json: &str) -> Result<(), St
                 active_lorebook_ids,
                 is_default,
                 created_at,
-                updated_at
+                updated_at,
+                tags
             ],
         ).map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     }

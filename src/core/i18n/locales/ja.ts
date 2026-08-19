@@ -3151,6 +3151,9 @@ export const jaMessages: DeepPartialMessageTree<LocaleMessages> = {
       generateEntryAria: "ロアブックエントリを生成",
       exportLorebookAria: "ロアブックをエクスポート",
       regularExpression: "正規表現を使用",
+      metadataTitle: "ロアブックを編集",
+      tagsLabel: "タグ",
+      tagsPlaceholder: "例: ファンタジー、SF など...",
     },
     templates: {
       characterNotFound: "キャラクターが見つかりません",
@@ -4580,6 +4583,9 @@ export const jaMessages: DeepPartialMessageTree<LocaleMessages> = {
       setAsDefault: "デフォルトに設定",
       defaultDescription: "すべての新しい会話でこのペルソナを使用",
       exportButton: "ペルソナをエクスポート",
+      tagsLabel: "タグ",
+      tagsPlaceholder: "例: ファンタジー、SF など...",
+      tagsHint: "タグはカンマで区切ってください。",
     },
     designReferences: {
       title: "デザインリファレンス",
@@ -6099,6 +6105,10 @@ export const jaMessages: DeepPartialMessageTree<LocaleMessages> = {
         title: "ロアブックがまだありません",
         description: "ロアブックはキャラクターの設定内から作成されます",
       },
+      noTagMatches: {
+        title: "該当なし",
+        description: "選択したタグに一致する項目はありません。",
+      },
     },
     actions: {
       startChat: "チャット開始",
@@ -6218,6 +6228,14 @@ export const jaMessages: DeepPartialMessageTree<LocaleMessages> = {
         editLorebook: "ロアブックを編集",
         exportLorebook: "ロアブックをエクスポート",
       },
+    },
+    sort: {
+      label: "並び替え",
+      recent: "最近",
+      alphabetical: "A–Z",
+    },
+    tagFilter: {
+      clear: "タグをクリア",
     },
   },
   onboarding: {

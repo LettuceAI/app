@@ -3168,8 +3168,11 @@ export const enMessages = {
       enabledForSession: "enabled for this session",
       tapToViewEntries: "Tap to view entries",
       newLorebookTitle: "New Lorebook",
+      metadataTitle: "Edit lorebook",
       nameLabel: "NAME",
       enterNamePlaceholder: "Enter lorebook name...",
+      tagsLabel: "Tags",
+      tagsPlaceholder: "e.g. Fantasy, Sci-Fi, etc...",
       lorebookExplanation:
         "Lorebooks contain lore entries that are injected into prompts when keywords match.",
       keywordDetectionMode: "KEYWORD DETECTION",
@@ -5742,6 +5745,9 @@ export const enMessages = {
         "Describe how the AI should address you, your preferences, background, or communication style...",
       wordCount: "words",
       descriptionHint: "Be specific about how you want to be addressed",
+      tagsLabel: "Tags",
+      tagsPlaceholder: "e.g. Fantasy, Sci-Fi, etc...",
+      tagsHint: "Separate tags with commas.",
       setAsDefault: "Set as Default",
       defaultDescription: "Use this persona for all new conversations",
       exportButton: "Export Persona",
@@ -7777,6 +7783,14 @@ export const enMessages = {
       images: "Images",
       audio: "Audio",
     },
+    sort: {
+      label: "Sort",
+      recent: "Recent",
+      alphabetical: "A–Z",
+    },
+    tagFilter: {
+      clear: "Clear tags",
+    },
     audio: {
       filters: {
         all: "All",
@@ -7821,6 +7835,10 @@ export const enMessages = {
       lorebooks: {
         title: "No lorebooks yet",
         description: "Lorebooks are created from within a character's settings",
+      },
+      noTagMatches: {
+        title: "No matches",
+        description: "No items match the selected tags.",
       },
     },
     actions: {

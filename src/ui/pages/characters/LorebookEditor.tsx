@@ -34,6 +34,7 @@ import {
 } from "../../../core/storage/repo";
 import { convertToImageRef, deleteImageRef } from "../../../core/storage";
 import { convertFilePathToDataUrl } from "../../../core/storage/images";
+import { parseCommaSeparated } from "../../../core/utils/parseCommaSeparated";
 import {
   buildAvatarLibrarySelectionKey,
   type AvatarLibrarySelectionPayload,
@@ -1294,6 +1295,7 @@ export function LorebookEditor() {
   const [avatarDraftPath, setAvatarDraftPath] = useState<string | null>(null);
   const [keywordDetectionModeDraft, setKeywordDetectionModeDraft] =
     useState<Lorebook["keywordDetectionMode"]>("recentMessageWindow");
+  const [tagsDraft, setTagsDraft] = useState("");
   const [isExporting, setIsExporting] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
@@ -1451,6 +1453,7 @@ export function LorebookEditor() {
     setLorebookNameDraft(activeLorebook.name);
     setAvatarDraftPath(activeLorebook.avatarPath ?? null);
     setKeywordDetectionModeDraft(activeLorebook.keywordDetectionMode);
+    setTagsDraft((activeLorebook.tags ?? []).join(", "));
     setShowLorebookSettingsMenu(true);
   };
 
@@ -1460,6 +1463,7 @@ export function LorebookEditor() {
     setLorebookNameDraft(activeLorebook.name);
     setAvatarDraftPath(activeLorebook.avatarPath ?? null);
     setKeywordDetectionModeDraft(activeLorebook.keywordDetectionMode);
+    setTagsDraft((activeLorebook.tags ?? []).join(", "));
   };
 
   const handleAvatarFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -1483,6 +1487,7 @@ export function LorebookEditor() {
       nameDraft: lorebookNameDraft,
       keywordMode: keywordDetectionModeDraft,
       avatarDraft: avatarDraftPath,
+      tagsDraft,
     };
     sessionStorage.setItem(
       `lorebook-metadata-draft:${lorebookMetadataReturnPath}`,
@@ -1519,6 +1524,7 @@ export function LorebookEditor() {
           nameDraft?: string;
           keywordMode?: Lorebook["keywordDetectionMode"];
           avatarDraft?: string | null;
+          tagsDraft?: string;
         }
       | null = null;
     if (rawDraft) {
@@ -1534,6 +1540,7 @@ export function LorebookEditor() {
       if (draft && draft.lorebookId === activeLorebook.id) {
         if (typeof draft.nameDraft === "string") setLorebookNameDraft(draft.nameDraft);
         if (draft.keywordMode) setKeywordDetectionModeDraft(draft.keywordMode);
+        if (typeof draft.tagsDraft === "string") setTagsDraft(draft.tagsDraft);
       }
       setAvatarDraftPath(dataUrl);
       setShowLorebookSettingsMenu(true);
@@ -1569,6 +1576,7 @@ export function LorebookEditor() {
         name: lorebookNameDraft.trim(),
         avatarPath: nextAvatarPath,
         keywordDetectionMode: keywordDetectionModeDraft,
+        tags: parseCommaSeparated(tagsDraft),
       });
 
       if (activeLorebook.avatarPath && activeLorebook.avatarPath !== saved.avatarPath) {
@@ -1579,6 +1587,7 @@ export function LorebookEditor() {
       setLorebookNameDraft(saved.name);
       setAvatarDraftPath(saved.avatarPath ?? null);
       setKeywordDetectionModeDraft(saved.keywordDetectionMode);
+      setTagsDraft((saved.tags ?? []).join(", "));
       setShowLorebookSettingsMenu(false);
     } catch (error) {
       if (replacementAvatarPath) {
@@ -1810,7 +1819,7 @@ export function LorebookEditor() {
         <LorebookMetadataMenu
           isOpen={showLorebookSettingsMenu}
           onClose={closeLorebookSettings}
-          title={t("library.actions.renameLorebook")}
+          title={t("characters.lorebook.metadataTitle")}
           nameValue={lorebookNameDraft}
           previewName={lorebookNameDraft.trim() || activeLorebook.name}
           namePlaceholder={t("characters.lorebook.enterNamePlaceholder")}
@@ -1823,12 +1832,15 @@ export function LorebookEditor() {
           onChooseFromLibrary={handleChooseAvatarFromLibrary}
           keywordDetectionMode={keywordDetectionModeDraft}
           onKeywordDetectionModeChange={setKeywordDetectionModeDraft}
+          tagsValue={tagsDraft}
+          onTagsChange={setTagsDraft}
           onSave={handleSaveLorebookSettings}
           saveDisabled={
             !lorebookNameDraft.trim() ||
             (lorebookNameDraft.trim() === activeLorebook.name &&
               (avatarDraftPath ?? "") === (activeLorebook.avatarPath ?? "") &&
-              keywordDetectionModeDraft === activeLorebook.keywordDetectionMode)
+              keywordDetectionModeDraft === activeLorebook.keywordDetectionMode &&
+              parseCommaSeparated(tagsDraft).join(",") === (activeLorebook.tags ?? []).join(","))
           }
         />
       )}

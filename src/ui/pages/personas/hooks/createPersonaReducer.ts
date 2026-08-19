@@ -7,6 +7,7 @@ import { invalidateAvatarCache } from "../../../hooks/useAvatar";
 import { importPersona, readFileAsText } from "../../../../core/storage/personaTransfer";
 import { toast } from "../../../components/toast";
 import { useI18n } from "../../../../core/i18n/context";
+import { parseCommaSeparated } from "../../../../core/utils/parseCommaSeparated";
 import type { AvatarCrop } from "../../../../core/storage/schemas";
 
 export interface PersonaFormState {
@@ -20,6 +21,7 @@ export interface PersonaFormState {
   designReferenceImageIds: string[];
   activeLorebookIds: string[];
   isDefault: boolean;
+  tags: string;
   saving: boolean;
   importing: boolean;
   error: string | null;
@@ -36,6 +38,7 @@ export type PersonaFormAction =
   | { type: "set_design_reference_image_ids"; value: string[] }
   | { type: "set_active_lorebook_ids"; value: string[] }
   | { type: "set_default"; value: boolean }
+  | { type: "set_tags"; value: string }
   | { type: "set_saving"; value: boolean }
   | { type: "set_importing"; value: boolean }
   | { type: "set_error"; value: string | null }
@@ -65,6 +68,7 @@ export const initialCreatePersonaState: PersonaFormState = {
   designReferenceImageIds: [],
   activeLorebookIds: [],
   isDefault: false,
+  tags: "",
   saving: false,
   importing: false,
   error: null,
@@ -95,6 +99,8 @@ export function createPersonaReducer(
       return { ...state, activeLorebookIds: action.value };
     case "set_default":
       return { ...state, isDefault: action.value };
+    case "set_tags":
+      return { ...state, tags: action.value };
     case "set_saving":
       return { ...state, saving: action.value };
     case "set_importing":
@@ -275,6 +281,9 @@ export function useCreatePersonaController() {
           designReferenceImageIds.length > 0 ? designReferenceImageIds : undefined,
         activeLorebookIds: state.activeLorebookIds,
         isDefault: state.isDefault,
+        tags: parseCommaSeparated(state.tags).length > 0
+          ? parseCommaSeparated(state.tags)
+          : undefined,
       });
 
       navigate("/library?view=personas", { replace: true });

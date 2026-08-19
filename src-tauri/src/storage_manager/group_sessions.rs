@@ -1029,9 +1029,13 @@ fn load_lorebooks_for_ids(
     for lorebook_id in lorebook_ids {
         if let Some(lorebook) = conn
             .query_row(
-                "SELECT id, name, avatar_path, keyword_detection_mode, created_at, updated_at FROM lorebooks WHERE id = ?1",
+                "SELECT id, name, avatar_path, keyword_detection_mode, created_at, updated_at, tags FROM lorebooks WHERE id = ?1",
                 params![lorebook_id],
                 |row| {
+                    let tags_json: Option<String> = row.get(6)?;
+                    let tags: Vec<String> = tags_json
+                        .and_then(|value| serde_json::from_str(&value).ok())
+                        .unwrap_or_default();
                     Ok(Lorebook {
                         id: row.get(0)?,
                         name: row.get(1)?,
@@ -1042,6 +1046,7 @@ fn load_lorebooks_for_ids(
                             ),
                         created_at: row.get(4)?,
                         updated_at: row.get(5)?,
+                        tags,
                     })
                 },
             )

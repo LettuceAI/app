@@ -508,6 +508,7 @@ pub async fn lorebook_gen_commit(app: AppHandle, args: CommitArgs) -> Result<Com
             keyword_detection_mode: LorebookKeywordDetectionMode::default(),
             created_at: now,
             updated_at: now,
+            tags: Vec::new(),
         };
         let saved = upsert_lorebook(&conn, &new_lb)?;
         saved.id

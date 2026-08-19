@@ -3151,6 +3151,9 @@ export const nlMessages: DeepPartialMessageTree<LocaleMessages> = {
       generateEntryAria: "Lorebook-item genereren",
       exportLorebookAria: "Lorebook exporteren",
       regularExpression: "Reguliere expressies gebruiken",
+      metadataTitle: "Lorebook bewerken",
+      tagsLabel: "Tags",
+      tagsPlaceholder: "bijv. fantasy, sci-fi, enz...",
     },
     templates: {
       characterNotFound: "Karakter niet gevonden",
@@ -5330,6 +5333,9 @@ export const nlMessages: DeepPartialMessageTree<LocaleMessages> = {
       setAsDefault: "Als standaard instellen",
       defaultDescription: "Gebruik deze persona voor alle nieuwe gesprekken",
       exportButton: "Persona exporteren",
+      tagsLabel: "Tags",
+      tagsPlaceholder: "bijv. fantasy, sci-fi, enz...",
+      tagsHint: "Scheid tags met komma's.",
     },
     designReferences: {
       title: "Ontwerpverwijzingen",
@@ -6849,6 +6855,10 @@ export const nlMessages: DeepPartialMessageTree<LocaleMessages> = {
         title: "Nog geen lorebooks",
         description: "Lorebooks worden aangemaakt vanuit de instellingen van een karakter",
       },
+      noTagMatches: {
+        title: "Geen resultaten",
+        description: "Geen items komen overeen met de geselecteerde tags.",
+      },
     },
     actions: {
       startChat: "Chat starten",
@@ -6968,6 +6978,14 @@ export const nlMessages: DeepPartialMessageTree<LocaleMessages> = {
         editLorebook: "Lorebook bewerken",
         exportLorebook: "Lorebook exporteren",
       },
+    },
+    sort: {
+      label: "Sorteren",
+      recent: "Recent",
+      alphabetical: "A–Z",
+    },
+    tagFilter: {
+      clear: "Tags wissen",
     },
   },
   onboarding: {

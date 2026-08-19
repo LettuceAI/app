@@ -165,6 +165,7 @@ fn create_lorebook_omits_internal_lorebook_id_from_entries() {
             lettuceai_lib::storage_manager::lorebook::LorebookKeywordDetectionMode::RecentMessageWindow,
         created_at: 1,
         updated_at: 2,
+        tags: Vec::new(),
     };
     let entries = vec![LorebookEntry {
         id: "entry-1".into(),

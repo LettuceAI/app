@@ -6,6 +6,7 @@ import { loadAvatar, saveAvatar, recalculateGradient } from "../../../../core/st
 import { convertToImageRef, deleteImageRef } from "../../../../core/storage/images";
 import { invalidateAvatarCache } from "../../../hooks/useAvatar";
 import { useI18n } from "../../../../core/i18n/context";
+import { parseCommaSeparated } from "../../../../core/utils/parseCommaSeparated";
 import type { AvatarCrop } from "../../../../core/storage/schemas";
 
 type PersonaFormState = {
@@ -24,6 +25,7 @@ type PersonaFormState = {
   loraName: string | null;
   loraStrength: number | null;
   activeLorebookIds: string[];
+  tags: string;
 };
 
 type Action =
@@ -51,6 +53,7 @@ const initialState: PersonaFormState = {
   loraName: null,
   loraStrength: null,
   activeLorebookIds: [],
+  tags: "",
 };
 
 function reducer(state: PersonaFormState, action: Action): PersonaFormState {
@@ -87,6 +90,7 @@ export function usePersonaFormController(personaId: string | undefined) {
     loraName: string | null;
     loraStrength: number | null;
     activeLorebookIds: string;
+    tags: string;
   } | null>(null);
   const persistedAvatarRef = useRef<{ filename?: string; url?: string }>({});
 
@@ -140,6 +144,7 @@ export function usePersonaFormController(personaId: string | undefined) {
           activeLorebookIds: Array.isArray(persona.activeLorebookIds)
             ? persona.activeLorebookIds
             : [],
+          tags: Array.isArray(persona.tags) ? persona.tags.join(", ") : "",
         },
       });
 
@@ -157,6 +162,7 @@ export function usePersonaFormController(personaId: string | undefined) {
         loraName: persona.loraName ?? null,
         loraStrength: persona.loraStrength ?? null,
         activeLorebookIds: JSON.stringify(persona.activeLorebookIds ?? []),
+        tags: Array.isArray(persona.tags) ? persona.tags.join(", ") : "",
       };
       dispatch({ type: "set_error", payload: null });
     } catch (error) {
@@ -214,6 +220,10 @@ export function usePersonaFormController(personaId: string | undefined) {
     dispatch({ type: "set_fields", payload: { activeLorebookIds: value } });
   }, []);
 
+  const setTags = useCallback((value: string) => {
+    dispatch({ type: "set_fields", payload: { tags: value } });
+  }, []);
+
   const setLora = useCallback((name: string | null, strength: number | null) => {
     dispatch({ type: "set_fields", payload: { loraName: name, loraStrength: strength } });
   }, []);
@@ -236,6 +246,7 @@ export function usePersonaFormController(personaId: string | undefined) {
       loraName,
       loraStrength,
       activeLorebookIds,
+      tags,
     } = state;
     if (!title.trim() || !description.trim()) {
       return;
@@ -303,6 +314,7 @@ export function usePersonaFormController(personaId: string | undefined) {
         loraName: loraName ?? undefined,
         loraStrength: loraName ? (loraStrength ?? undefined) : undefined,
         activeLorebookIds,
+        tags: parseCommaSeparated(tags).length > 0 ? parseCommaSeparated(tags) : undefined,
       });
 
       // Update initial state to match current (for change detection)
@@ -319,6 +331,7 @@ export function usePersonaFormController(personaId: string | undefined) {
         loraName: loraName ?? null,
         loraStrength: loraStrength ?? null,
         activeLorebookIds: JSON.stringify(activeLorebookIds),
+        tags,
       };
 
       // Sync trimmed values
@@ -367,6 +380,7 @@ export function usePersonaFormController(personaId: string | undefined) {
         designDescription: initial.designDescription,
         designReferenceImageIds: JSON.parse(initial.designReferenceImageIds) as string[],
         activeLorebookIds: JSON.parse(initial.activeLorebookIds) as string[],
+        tags: initial.tags,
       },
     });
     dispatch({ type: "set_error", payload: null });
@@ -392,7 +406,8 @@ export function usePersonaFormController(personaId: string | undefined) {
       JSON.stringify(state.avatarRoundPath ?? null) !== initial.avatarRoundPath ||
       state.designDescription !== initial.designDescription ||
       JSON.stringify(state.designReferenceImageIds) !== initial.designReferenceImageIds ||
-      JSON.stringify(state.activeLorebookIds) !== initial.activeLorebookIds;
+      JSON.stringify(state.activeLorebookIds) !== initial.activeLorebookIds ||
+      state.tags !== initial.tags;
 
     return hasChanges;
   })();
@@ -410,6 +425,7 @@ export function usePersonaFormController(personaId: string | undefined) {
     setDesignReferenceImageIds,
     setLora,
     setActiveLorebookIds,
+    setTags,
     handleSave,
     resetToInitial,
     canSave,

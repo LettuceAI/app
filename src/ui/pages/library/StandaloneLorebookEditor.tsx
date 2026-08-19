@@ -27,6 +27,7 @@ import {
 } from "../../../core/storage/repo";
 import { convertToImageRef, deleteImageRef } from "../../../core/storage";
 import { convertFilePathToDataUrl } from "../../../core/storage/images";
+import { parseCommaSeparated } from "../../../core/utils/parseCommaSeparated";
 import {
   buildAvatarLibrarySelectionKey,
   type AvatarLibrarySelectionPayload,
@@ -520,6 +521,7 @@ export function StandaloneLorebookEditor() {
   const [avatarDraftPath, setAvatarDraftPath] = useState<string | null>(null);
   const [keywordDetectionModeDraft, setKeywordDetectionModeDraft] =
     useState<Lorebook["keywordDetectionMode"]>("recentMessageWindow");
+  const [tagsDraft, setTagsDraft] = useState("");
   const [isCreatingEntry, setIsCreatingEntry] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
@@ -656,6 +658,7 @@ export function StandaloneLorebookEditor() {
         name: newName.trim(),
         avatarPath: nextAvatarPath,
         keywordDetectionMode: keywordDetectionModeDraft,
+        tags: parseCommaSeparated(tagsDraft),
       };
       const saved = await saveLorebook(updated);
       if (lorebook.avatarPath && lorebook.avatarPath !== saved.avatarPath) {
@@ -666,6 +669,7 @@ export function StandaloneLorebookEditor() {
       setNewName("");
       setAvatarDraftPath(saved.avatarPath ?? null);
       setKeywordDetectionModeDraft(saved.keywordDetectionMode);
+      setTagsDraft((saved.tags ?? []).join(", "));
     } catch (error) {
       if (replacementAvatarPath) {
         await deleteImageRef(replacementAvatarPath);
@@ -693,6 +697,7 @@ export function StandaloneLorebookEditor() {
       nameDraft: newName,
       keywordMode: keywordDetectionModeDraft,
       avatarDraft: avatarDraftPath,
+      tagsDraft,
     };
     sessionStorage.setItem(
       `lorebook-metadata-draft:${returnPath}`,
@@ -729,6 +734,7 @@ export function StandaloneLorebookEditor() {
           nameDraft?: string;
           keywordMode?: Lorebook["keywordDetectionMode"];
           avatarDraft?: string | null;
+          tagsDraft?: string;
         }
       | null = null;
     if (rawDraft) {
@@ -744,6 +750,7 @@ export function StandaloneLorebookEditor() {
       if (draft && draft.lorebookId === lorebook.id) {
         if (typeof draft.nameDraft === "string") setNewName(draft.nameDraft);
         if (draft.keywordMode) setKeywordDetectionModeDraft(draft.keywordMode);
+        if (typeof draft.tagsDraft === "string") setTagsDraft(draft.tagsDraft);
       }
       setAvatarDraftPath(dataUrl);
       setShowRenameMenu(true);
@@ -859,6 +866,7 @@ export function StandaloneLorebookEditor() {
                 setNewName(lorebook.name);
                 setAvatarDraftPath(lorebook.avatarPath ?? null);
                 setKeywordDetectionModeDraft(lorebook.keywordDetectionMode);
+                setTagsDraft((lorebook.tags ?? []).join(", "));
                 setShowRenameMenu(true);
               }}
               className="flex items-center px-[0.6em] py-[0.3em] justify-center rounded-full text-fg/70 hover:text-fg hover:bg-fg/10 transition"
@@ -1047,8 +1055,9 @@ export function StandaloneLorebookEditor() {
             setNewName("");
             setAvatarDraftPath(lorebook.avatarPath ?? null);
             setKeywordDetectionModeDraft(lorebook.keywordDetectionMode);
+            setTagsDraft("");
           }}
-          title={t("library.actions.renameLorebook")}
+          title={t("characters.lorebook.metadataTitle")}
           nameValue={newName}
           previewName={newName.trim() || lorebook.name}
           namePlaceholder={t("characters.lorebook.enterNamePlaceholder")}
@@ -1061,12 +1070,15 @@ export function StandaloneLorebookEditor() {
           onChooseFromLibrary={handleChooseAvatarFromLibrary}
           keywordDetectionMode={keywordDetectionModeDraft}
           onKeywordDetectionModeChange={setKeywordDetectionModeDraft}
+          tagsValue={tagsDraft}
+          onTagsChange={setTagsDraft}
           onSave={handleRename}
           saveDisabled={
             !newName.trim() ||
             (newName.trim() === lorebook.name &&
               (avatarDraftPath ?? "") === (lorebook.avatarPath ?? "") &&
-              keywordDetectionModeDraft === lorebook.keywordDetectionMode)
+              keywordDetectionModeDraft === lorebook.keywordDetectionMode &&
+              parseCommaSeparated(tagsDraft).join(",") === (lorebook.tags ?? []).join(","))
           }
         />
       </div>

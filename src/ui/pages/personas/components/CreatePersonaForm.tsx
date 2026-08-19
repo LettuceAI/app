@@ -5,6 +5,7 @@ import { PersonaFormState, PersonaFormAction } from "../hooks/createPersonaReduc
 import { AvatarPicker } from "../../../components/AvatarPicker";
 import { Switch } from "../../../components/Switch";
 import { DesignReferenceEditor } from "../../../components/DesignReferenceEditor";
+import { TagsInput } from "../../../components/TagsInput";
 import { ActiveLorebooksSelector } from "../../characters/components/ActiveLorebooksSelector";
 import { typography, radius, spacing, interactive, cn } from "../../../design-tokens";
 import type { AvatarCrop } from "../../../../core/storage/schemas";
@@ -196,6 +197,14 @@ export function CreatePersonaForm({
               {t("personas.edit.nicknameHint")}
             </p>
           </div>
+
+          <TagsInput
+            value={state.tags}
+            onChange={(value) => dispatch({ type: "set_tags", value })}
+            label={t("personas.edit.tagsLabel")}
+            placeholder={t("personas.edit.tagsPlaceholder")}
+            hint={t("personas.edit.tagsHint")}
+          />
 
           {/* Default Option */}
           <div className={spacing.field}>

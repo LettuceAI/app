@@ -3151,6 +3151,9 @@ export const filMessages: DeepPartialMessageTree<LocaleMessages> = {
       generateEntryAria: "Gumawa ng lorebook entry",
       exportLorebookAria: "I-export ang lorebook",
       regularExpression: "Gumamit ng mga regular expression",
+      metadataTitle: "I-edit ang Lorebook",
+      tagsLabel: "Mga Tag",
+      tagsPlaceholder: "hal. fantasy, sci-fi, atbp...",
     },
     templates: {
       characterNotFound: "Hindi nahanap ang karakter",
@@ -5330,6 +5333,9 @@ export const filMessages: DeepPartialMessageTree<LocaleMessages> = {
       setAsDefault: "Itakda bilang Default",
       defaultDescription: "Gamitin ang persona na ito para sa lahat ng bagong usapan",
       exportButton: "I-export ang Persona",
+      tagsLabel: "Mga Tag",
+      tagsPlaceholder: "hal. fantasy, sci-fi, atbp...",
+      tagsHint: "Paghiwalayin ang mga tag gamit ang kuwit.",
     },
     designReferences: {
       title: "Mga reference ng disenyo",
@@ -6849,6 +6855,10 @@ export const filMessages: DeepPartialMessageTree<LocaleMessages> = {
         title: "Wala pang mga lorebook",
         description: "Ang mga lorebook ay ginagawa mula sa loob ng mga setting ng karakter",
       },
+      noTagMatches: {
+        title: "Walang tugma",
+        description: "Walang item na tumutugma sa mga napiling tag.",
+      },
     },
     actions: {
       startChat: "Magsimula ng Chat",
@@ -6968,6 +6978,14 @@ export const filMessages: DeepPartialMessageTree<LocaleMessages> = {
         editLorebook: "I-edit ang lorebook",
         exportLorebook: "I-export ang lorebook",
       },
+    },
+    sort: {
+      label: "Ayusin",
+      recent: "Kamakailan",
+      alphabetical: "A–Z",
+    },
+    tagFilter: {
+      clear: "I-clear ang mga tag",
     },
   },
   onboarding: {

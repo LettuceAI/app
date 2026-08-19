@@ -3151,6 +3151,9 @@ export const noMessages: DeepPartialMessageTree<LocaleMessages> = {
       generateEntryAria: "Generer lorebok-oppføring",
       exportLorebookAria: "Eksporter lorebok",
       regularExpression: "Bruk regulære uttrykk",
+      metadataTitle: "Rediger lorebok",
+      tagsLabel: "Tagger",
+      tagsPlaceholder: "f.eks. fantasi, sci-fi osv...",
     },
     templates: {
       characterNotFound: "Karakter ikke funnet",
@@ -5330,6 +5333,9 @@ export const noMessages: DeepPartialMessageTree<LocaleMessages> = {
       setAsDefault: "Sett som standard",
       defaultDescription: "Bruk denne personaen for alle nye samtaler",
       exportButton: "Eksporter persona",
+      tagsLabel: "Tagger",
+      tagsPlaceholder: "f.eks. fantasi, sci-fi osv...",
+      tagsHint: "Skill tagger med komma.",
     },
     designReferences: {
       title: "Designreferanser",
@@ -6849,6 +6855,10 @@ export const noMessages: DeepPartialMessageTree<LocaleMessages> = {
         title: "Ingen lorebøker ennå",
         description: "Lorebøker opprettes fra en karakters innstillinger",
       },
+      noTagMatches: {
+        title: "Ingen treff",
+        description: "Ingen elementer samsvarer med de valgte taggene.",
+      },
     },
     actions: {
       startChat: "Start chat",
@@ -6968,6 +6978,14 @@ export const noMessages: DeepPartialMessageTree<LocaleMessages> = {
         editLorebook: "Rediger lorebok",
         exportLorebook: "Eksporter lorebok",
       },
+    },
+    sort: {
+      label: "Sorter",
+      recent: "Nylige",
+      alphabetical: "A–Å",
+    },
+    tagFilter: {
+      clear: "Fjern tagger",
     },
   },
   onboarding: {

@@ -237,6 +237,8 @@ pub struct PersonaExportData {
     pub avatar_crop: Option<AvatarCrop>,
     #[serde(default)]
     pub active_lorebook_ids: Vec<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 fn number_to_i64(value: &JsonValue) -> Option<i64> {
@@ -908,6 +910,19 @@ fn parse_uec_persona(value: &JsonValue) -> Result<PersonaExportPackage, String> 
                 .collect::<Vec<String>>()
         })
         .unwrap_or_default();
+    let tags = uec
+        .app_specific_settings
+        .as_ref()
+        .and_then(|value| value.get("tags"))
+        .or_else(|| payload.get("tags"))
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.as_str().map(|tag| tag.to_string()))
+                .collect::<Vec<String>>()
+        })
+        .unwrap_or_default();
 
     Ok(PersonaExportPackage {
         version: 1,
@@ -919,6 +934,7 @@ fn parse_uec_persona(value: &JsonValue) -> Result<PersonaExportPackage, String> 
             is_default,
             avatar_crop,
             active_lorebook_ids,
+            tags,
         },
         avatar_data,
     })
@@ -2073,7 +2089,7 @@ fn import_lorebooks_for_character_package(
         let new_lorebook_id = uuid::Uuid::new_v4().to_string();
         lorebook_id_map.insert(bundled.lorebook.id.clone(), new_lorebook_id.clone());
         tx.execute(
-            "INSERT INTO lorebooks (id, name, avatar_path, keyword_detection_mode, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO lorebooks (id, name, avatar_path, keyword_detection_mode, created_at, updated_at, tags) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 &new_lorebook_id,
                 &bundled.lorebook.name,
@@ -2081,6 +2097,8 @@ fn import_lorebooks_for_character_package(
                 bundled.lorebook.keyword_detection_mode.as_db_value(),
                 now,
                 now,
+                serde_json::to_string(&bundled.lorebook.tags)
+                    .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?,
             ],
         )
         .map_err(|e| {
@@ -3713,7 +3731,7 @@ pub fn persona_export(app: tauri::AppHandle, persona_id: String) -> Result<Strin
     let conn = open_db(&app)?;
 
     // Read persona data
-    let (title, description, nickname, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, active_lorebook_ids, is_default, created_at, updated_at): (
+    let (title, description, nickname, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, active_lorebook_ids, is_default, created_at, updated_at, tags): (
         String,
         String,
         Option<String>,
@@ -3725,11 +3743,12 @@ pub fn persona_export(app: tauri::AppHandle, persona_id: String) -> Result<Strin
         i64,
         i64,
         i64,
+        Option<String>,
     ) = conn
         .query_row(
-            "SELECT title, description, nickname, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, COALESCE(active_lorebook_ids, '[]'), is_default, created_at, updated_at FROM personas WHERE id = ?",
+            "SELECT title, description, nickname, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, COALESCE(active_lorebook_ids, '[]'), is_default, created_at, updated_at, tags FROM personas WHERE id = ?",
             params![&persona_id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?, r.get(10)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?, r.get(10)?, r.get(11)?)),
         )
         .map_err(|e| crate::utils::err_msg(module_path!(), line!(), format!("Persona not found: {}", e)))?;
 
@@ -3770,6 +3789,13 @@ pub fn persona_export(app: tauri::AppHandle, persona_id: String) -> Result<Strin
         if !parsed.is_empty() {
             app_specific.insert("activeLorebookIds".into(), serde_json::json!(parsed));
         }
+    }
+    if let Some(parsed) = tags
+        .as_deref()
+        .and_then(|raw| serde_json::from_str::<Vec<String>>(raw).ok())
+        .filter(|parsed| !parsed.is_empty())
+    {
+        app_specific.insert("tags".into(), serde_json::json!(parsed));
     }
 
     let export_card = create_persona_uec(
@@ -3883,6 +3909,8 @@ pub fn persona_import(app: tauri::AppHandle, import_json: String) -> Result<Stri
         .unwrap_or((None, None, None));
     let active_lorebook_ids = serde_json::to_string(&package.persona.active_lorebook_ids)
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
+    let tags = serde_json::to_string(&package.persona.tags)
+        .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
     if is_default {
         tx.execute("UPDATE personas SET is_default = 0", [])
             .map_err(|e| {
@@ -3895,8 +3923,8 @@ pub fn persona_import(app: tauri::AppHandle, import_json: String) -> Result<Stri
     }
 
     tx.execute(
-        r#"INSERT INTO personas (id, title, description, nickname, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, active_lorebook_ids, is_default, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
+        r#"INSERT INTO personas (id, title, description, nickname, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, active_lorebook_ids, is_default, created_at, updated_at, tags)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
         params![
             &new_persona_id,
             &package.persona.title,
@@ -3909,7 +3937,8 @@ pub fn persona_import(app: tauri::AppHandle, import_json: String) -> Result<Stri
             active_lorebook_ids,
             is_default as i64,
             now,
-            now
+            now,
+            tags
         ],
     )
     .map_err(|e| crate::utils::err_msg(module_path!(), line!(), format!("Failed to insert persona: {}", e)))?;
@@ -3930,13 +3959,13 @@ pub fn persona_import(app: tauri::AppHandle, import_json: String) -> Result<Stri
 
 /// Helper: Read imported persona and return as JSON
 fn read_imported_persona(conn: &rusqlite::Connection, persona_id: &str) -> Result<String, String> {
-    let (title, description, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, active_lorebook_ids, is_default, created_at, updated_at):
-        (String, String, Option<String>, Option<f64>, Option<f64>, Option<f64>, String, i64, i64, i64) =
+    let (title, description, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, active_lorebook_ids, is_default, created_at, updated_at, tags):
+        (String, String, Option<String>, Option<f64>, Option<f64>, Option<f64>, String, i64, i64, i64, Option<String>) =
         conn.query_row(
-            "SELECT title, description, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, COALESCE(active_lorebook_ids, '[]'), is_default, created_at, updated_at FROM personas WHERE id = ?",
+            "SELECT title, description, avatar_path, avatar_crop_x, avatar_crop_y, avatar_crop_scale, COALESCE(active_lorebook_ids, '[]'), is_default, created_at, updated_at, tags FROM personas WHERE id = ?",
             params![persona_id],
             |r| Ok((
-                r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get::<_, i64>(7)?, r.get(8)?, r.get(9)?
+                r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get::<_, i64>(7)?, r.get(8)?, r.get(9)?, r.get(10)?
             )),
         )
         .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
@@ -3957,6 +3986,13 @@ fn read_imported_persona(conn: &rusqlite::Connection, persona_id: &str) -> Resul
     if let Ok(parsed) = serde_json::from_str::<Vec<String>>(&active_lorebook_ids) {
         root.insert("activeLorebookIds".into(), serde_json::json!(parsed));
     }
+    root.insert(
+        "tags".into(),
+        serde_json::json!(tags
+            .as_deref()
+            .and_then(|raw| serde_json::from_str::<Vec<String>>(raw).ok())
+            .unwrap_or_default()),
+    );
     root.insert("isDefault".into(), JsonValue::Bool(is_default != 0));
     root.insert("createdAt".into(), JsonValue::from(created_at));
     root.insert("updatedAt".into(), JsonValue::from(updated_at));

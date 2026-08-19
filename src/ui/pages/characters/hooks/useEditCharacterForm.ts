@@ -13,6 +13,7 @@ import type {
   SystemPromptTemplate,
 } from "../../../../core/storage/schemas";
 import { processBackgroundImage } from "../../../../core/utils/image";
+import { parseCommaSeparated } from "../../../../core/utils/parseCommaSeparated";
 import { convertToImageRef, convertToImageUrl, deleteImageRef } from "../../../../core/storage/images";
 import {
   AVATAR_BANNER_FILENAME,
@@ -496,11 +497,6 @@ export function useEditCharacterForm(characterId: string | undefined) {
         ? (JSON.parse(initialStateRef.current.designReferenceImageIds) as string[])
         : [];
 
-      const parseCommaSeparated = (raw: string): string[] =>
-        raw
-          .split(",")
-          .map((item) => item.trim())
-          .filter((item) => item.length > 0);
       const tags = parseCommaSeparated(state.tagsText);
       let creatorNotesMultilingual: Record<string, string> | null | undefined = undefined;
       if (state.creatorNotesMultilingualText.trim()) {
