@@ -11,26 +11,35 @@
 //! swapping it, and it leaves the conversation revision and outbox untouched.
 
 use lettuce_conversations::{
-    AttachAttemptJob, AttachAttemptJobResult, BeginGeneration, ContinueConversation,
-    ContinueConversationResult, ConversationRepository, ConversationRepositoryError,
-    GenerationAttempt, GenerationCheckpointEnvelope, GenerationCheckpointEvent, GenerationInput,
-    GenerationOperation, GenerationTarget, GenerationTurn, GenerationTurnStatus, MessagePart,
-    OperationKind, OperationResultRef, OperationToken, RegenerateCandidate,
-    RegenerateCandidateResult, RetryGeneration, RetryGenerationResult, SendConversation,
-    SendConversationResult, attempt_job_idempotency_key,
+    AssetReferenceDelta, AssetReferenceState, AttachAttemptJob, AttachAttemptJobResult,
+    BeginGeneration, CancelGeneration, ContinueConversation, ContinueConversationResult,
+    ConversationOutboxEvent, ConversationRepository, ConversationRepositoryError,
+    FinalizationDraft, GenerationAttempt, GenerationAttemptStatus, GenerationCancellation,
+    GenerationCheckpointEnvelope, GenerationCheckpointEvent, GenerationFailure,
+    GenerationFailureCode, GenerationFailureResult, GenerationFinalization,
+    GenerationFinalizationResult, GenerationInput, GenerationInterruptionResult,
+    GenerationOperation, GenerationRecovery, GenerationRecoveryResult, GenerationTarget,
+    GenerationTurn, GenerationTurnStatus, Message, MessageCandidate, MessagePart, OperationKind,
+    OperationResultRef, OperationToken, RegenerateCandidate, RegenerateCandidateResult,
+    RequestCancellationResult, RetryGeneration, RetryGenerationResult, SendConversation,
+    SendConversationResult, SettleCancellation, SettleCancellationResult,
+    attempt_job_idempotency_key,
 };
 use lettuce_types::{
     ConversationBranchId, ConversationId, ConversationParticipantId, GenerationAttemptId,
-    GenerationTurnId, MessageId, MessageRevisionId, Revision, TimestampMillis,
+    GenerationTurnId, MessageCandidateId, MessageId, MessageRevisionId, Revision, TimestampMillis,
+    UsageEventId,
 };
 use rusqlite::{OptionalExtension, Transaction, params};
 
 use super::{
-    Database, conversation_creator, conversation_mutation_kernel as kernel, conversation_query,
+    Database, conversation_artifact_adapter, conversation_creator,
+    conversation_mutation_kernel as kernel, conversation_query,
     conversation_vertical_slice as slice,
 };
 
 const SQLITE_CONSTRAINT_UNIQUE: i32 = 2067;
+const SQLITE_CONSTRAINT_PRIMARYKEY: i32 = 1555;
 
 const MESSAGE_SELECT_SQL: &str = "SELECT conversation_id, id, branch_id, parent_message_id, author_participant_id, role, logical_time, effective_time, visibility, pinned, scene_edited, timeline_ordinal, active_revision_id, active_candidate_id, revision, created_at, updated_at FROM conversation_messages WHERE conversation_id = ?1 AND id = ?2";
 
@@ -43,6 +52,22 @@ fn map_attach_constraint(error: rusqlite::Error) -> ConversationRepositoryError 
         && message == "UNIQUE constraint failed: generation_attempts.job_id"
     {
         return ConversationRepositoryError::JobInUse;
+    }
+    kernel::map_constraint(error)
+}
+
+/// A usage event is recorded once per conversation, so a reused id is a
+/// caller conflict rather than a storage fault.
+fn map_usage_constraint(error: rusqlite::Error) -> ConversationRepositoryError {
+    if let rusqlite::Error::SqliteFailure(code, Some(message)) = &error
+        && code.code == rusqlite::ErrorCode::ConstraintViolation
+        && matches!(
+            code.extended_code,
+            SQLITE_CONSTRAINT_PRIMARYKEY | SQLITE_CONSTRAINT_UNIQUE
+        )
+        && message.contains("conversation_usage_refs")
+    {
+        return ConversationRepositoryError::Conflict;
     }
     kernel::map_constraint(error)
 }
@@ -322,24 +347,568 @@ fn insert_turn(
 
 /// Every begin opens attempt zero. Later attempts belong to recovery, which
 /// links them to their interrupted predecessor.
-fn insert_first_attempt(
+fn insert_attempt(
     transaction: &Transaction<'_>,
     conversation_id: ConversationId,
     turn_id: GenerationTurnId,
+    ordinal: u16,
+    parent_attempt_id: Option<GenerationAttemptId>,
 ) -> Result<GenerationAttemptId, ConversationRepositoryError> {
     let attempt_id = GenerationAttemptId::new();
     transaction
         .execute(
-            "INSERT INTO generation_attempts (conversation_id, turn_id, id, ordinal, parent_attempt_id, status, job_idempotency_key, job_id, started_at, finished_at, usage_event_id, usage_outcome, failure) VALUES (?1, ?2, ?3, 0, NULL, 'created', ?4, NULL, NULL, NULL, NULL, NULL, NULL)",
+            "INSERT INTO generation_attempts (conversation_id, turn_id, id, ordinal, parent_attempt_id, status, job_idempotency_key, job_id, started_at, finished_at, usage_event_id, usage_outcome, failure) VALUES (?1, ?2, ?3, ?4, ?5, 'created', ?6, NULL, NULL, NULL, NULL, NULL, NULL)",
             params![
                 conversation_id.to_string(),
                 turn_id.to_string(),
                 attempt_id.to_string(),
+                i64::from(ordinal),
+                parent_attempt_id.map(|id| id.to_string()),
                 attempt_job_idempotency_key(turn_id, attempt_id).as_str(),
             ],
         )
         .map_err(kernel::map_constraint)?;
     Ok(attempt_id)
+}
+
+fn insert_first_attempt(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    turn_id: GenerationTurnId,
+) -> Result<GenerationAttemptId, ConversationRepositoryError> {
+    insert_attempt(transaction, conversation_id, turn_id, 0, None)
+}
+
+/// Settlement writes in the order the 0008 triggers require: the usage row
+/// first, then the attempt, so the turn's own terminal update already sees
+/// every attempt settled with its usage reference.
+struct AttemptSettlement {
+    outcome: GenerationAttemptStatus,
+    failure: Option<GenerationFailureCode>,
+    usage_event_id: UsageEventId,
+}
+
+fn settle_attempt_terminal(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    turn_id: GenerationTurnId,
+    attempt_id: GenerationAttemptId,
+    settlement: AttemptSettlement,
+    now: TimestampMillis,
+) -> Result<(), ConversationRepositoryError> {
+    let AttemptSettlement {
+        outcome,
+        failure,
+        usage_event_id,
+    } = settlement;
+    let outcome_name = kernel::attempt_status_name(outcome);
+    transaction
+        .execute(
+            "INSERT INTO conversation_usage_refs (conversation_id, turn_id, attempt_id, usage_event_id, outcome, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                conversation_id.to_string(),
+                turn_id.to_string(),
+                attempt_id.to_string(),
+                usage_event_id.to_string(),
+                outcome_name,
+                now.get(),
+            ],
+        )
+        .map_err(map_usage_constraint)?;
+    let changed = transaction
+        .execute(
+            "UPDATE generation_attempts SET status = ?4, usage_event_id = ?5, usage_outcome = ?4, failure = ?6, started_at = COALESCE(started_at, ?7), finished_at = ?7 WHERE conversation_id = ?1 AND turn_id = ?2 AND id = ?3",
+            params![
+                conversation_id.to_string(),
+                turn_id.to_string(),
+                attempt_id.to_string(),
+                outcome_name,
+                usage_event_id.to_string(),
+                failure.map(kernel::failure_name),
+                now.get(),
+            ],
+        )
+        .map_err(kernel::map_constraint)?;
+    if changed == 0 {
+        return Err(ConversationRepositoryError::NotFound);
+    }
+    Ok(())
+}
+
+/// The named attempt must still be open. A settled one would either regress
+/// through the terminal-attempt trigger or double-count its usage.
+fn require_live_attempt(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    turn_id: GenerationTurnId,
+    attempt_id: GenerationAttemptId,
+) -> Result<(), ConversationRepositoryError> {
+    let status: Option<String> = transaction
+        .query_row(
+            "SELECT status FROM generation_attempts WHERE conversation_id = ?1 AND turn_id = ?2 AND id = ?3",
+            params![
+                conversation_id.to_string(),
+                turn_id.to_string(),
+                attempt_id.to_string(),
+            ],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(slice::db)?;
+    let status = status.ok_or(ConversationRepositoryError::NotFound)?;
+    if is_terminal_attempt(&status) {
+        return Err(ConversationRepositoryError::Conflict);
+    }
+    Ok(())
+}
+
+/// A terminal turn requires every attempt settled, so a live sibling is a
+/// conflict rather than a trigger abort.
+fn require_no_other_live_attempt(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    turn_id: GenerationTurnId,
+    attempt_id: GenerationAttemptId,
+) -> Result<(), ConversationRepositoryError> {
+    let live: bool = transaction
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM generation_attempts WHERE conversation_id = ?1 AND turn_id = ?2 AND id <> ?3 AND status NOT IN ('succeeded', 'failed', 'cancelled', 'interrupted'))",
+            params![
+                conversation_id.to_string(),
+                turn_id.to_string(),
+                attempt_id.to_string(),
+            ],
+            |row| row.get(0),
+        )
+        .map_err(slice::db)?;
+    if live {
+        Err(ConversationRepositoryError::Conflict)
+    } else {
+        Ok(())
+    }
+}
+
+fn is_terminal_attempt(status: &str) -> bool {
+    matches!(status, "succeeded" | "failed" | "cancelled" | "interrupted")
+}
+
+/// The domain's transition table is the same one migration 0008 encodes, so
+/// an illegal hop is reported as a conflict before the trigger fires.
+fn require_transition(
+    from: GenerationTurnStatus,
+    to: GenerationTurnStatus,
+) -> Result<(), ConversationRepositoryError> {
+    if from.can_transition_to(to) {
+        Ok(())
+    } else {
+        Err(ConversationRepositoryError::Conflict)
+    }
+}
+
+fn fail_turn(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    turn_id: GenerationTurnId,
+    failure: GenerationFailureCode,
+    now: TimestampMillis,
+) -> Result<(), ConversationRepositoryError> {
+    transaction
+        .execute(
+            "UPDATE conversation_turns SET status = 'failed', failure = ?3, revision = revision + 1, updated_at = ?4 WHERE conversation_id = ?1 AND id = ?2",
+            params![
+                conversation_id.to_string(),
+                turn_id.to_string(),
+                kernel::failure_name(failure),
+                now.get(),
+            ],
+        )
+        .map_err(kernel::map_constraint)?;
+    Ok(())
+}
+
+fn succeed_turn(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    turn_id: GenerationTurnId,
+    candidate_id: MessageCandidateId,
+    now: TimestampMillis,
+) -> Result<(), ConversationRepositoryError> {
+    transaction
+        .execute(
+            "UPDATE conversation_turns SET status = 'succeeded', selected_candidate_id = ?3, revision = revision + 1, updated_at = ?4 WHERE conversation_id = ?1 AND id = ?2",
+            params![
+                conversation_id.to_string(),
+                turn_id.to_string(),
+                candidate_id.to_string(),
+                now.get(),
+            ],
+        )
+        .map_err(kernel::map_constraint)?;
+    Ok(())
+}
+
+fn load_candidate(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    candidate_id: MessageCandidateId,
+) -> Result<MessageCandidate, ConversationRepositoryError> {
+    transaction
+        .query_row(
+            "SELECT conversation_id, id, message_id, branch_id, turn_id, attempt_id, ordinal, parts_json, model_json, created_at, provider_replay_artifact_id, provider_replay_retention, author_participant_id FROM conversation_message_candidates WHERE conversation_id = ?1 AND id = ?2",
+            params![conversation_id.to_string(), candidate_id.to_string()],
+            |row| {
+                conversation_query::hydrate_candidate_row(transaction, row)
+                    .map_err(|_| rusqlite::Error::InvalidQuery)
+            },
+        )
+        .optional()
+        .map_err(slice::db)?
+        .ok_or(ConversationRepositoryError::NotFound)
+}
+
+fn load_message(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    message_id: MessageId,
+) -> Result<Message, ConversationRepositoryError> {
+    let (item, _) = transaction
+        .query_row(
+            MESSAGE_SELECT_SQL,
+            params![conversation_id.to_string(), message_id.to_string()],
+            |row| {
+                conversation_query::message_row(transaction, row)
+                    .map_err(|_| rusqlite::Error::InvalidQuery)
+            },
+        )
+        .optional()
+        .map_err(slice::db)?
+        .ok_or(ConversationRepositoryError::NotFound)?;
+    Ok(item.message)
+}
+
+/// Reads one candidate's media projection back as retention deltas, so the
+/// committed rows are the single source for both the result and the replay.
+fn candidate_deltas(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    candidate_id: MessageCandidateId,
+) -> Result<Vec<AssetReferenceDelta>, ConversationRepositoryError> {
+    let mut statement = transaction
+        .prepare("SELECT asset_id, state FROM candidate_media_refs WHERE conversation_id = ?1 AND candidate_id = ?2 ORDER BY part_ordinal")
+        .map_err(slice::db)?;
+    let rows: Vec<(String, String)> = statement
+        .query_map(
+            params![conversation_id.to_string(), candidate_id.to_string()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(slice::db)?
+        .collect::<rusqlite::Result<_>>()
+        .map_err(slice::db)?;
+    drop(statement);
+    let mut deltas = Vec::with_capacity(rows.len());
+    for (asset_id, state) in rows {
+        deltas.push(AssetReferenceDelta {
+            asset_id: slice::parse_id(asset_id)?,
+            retainer: lettuce_media::AssetRetainer::MessageCandidate(candidate_id),
+            state: match state.as_str() {
+                "active" => AssetReferenceState::Active,
+                "historical" => AssetReferenceState::Historical,
+                _ => return Err(ConversationRepositoryError::Storage),
+            },
+        });
+    }
+    Ok(deltas)
+}
+
+/// Group turns carry the speaker their selection resolved; a direct turn has
+/// exactly one character participant and no speaker columns at all. A
+/// regenerated message keeps its author unless the turn names another.
+fn resolve_candidate_author(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    turn: &GenerationTurn,
+) -> Result<ConversationParticipantId, ConversationRepositoryError> {
+    if let Some(speaker) = turn.selected_speaker.as_ref() {
+        return Ok(speaker.participant_id);
+    }
+    if let Some(forced) = turn.forced_speaker {
+        return Ok(forced);
+    }
+    if let GenerationTarget::ExistingCandidate { message_id, .. } = turn.target {
+        let author: Option<Option<String>> = transaction
+            .query_row(
+                "SELECT author_participant_id FROM conversation_messages WHERE conversation_id = ?1 AND id = ?2",
+                params![conversation_id.to_string(), message_id.to_string()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(slice::db)?;
+        let author = author
+            .ok_or(ConversationRepositoryError::NotFound)?
+            .ok_or(ConversationRepositoryError::Conflict)?;
+        return slice::parse_id(author);
+    }
+    let mut statement = transaction
+        .prepare("SELECT id FROM conversation_participants WHERE conversation_id = ?1 AND role = 'character' ORDER BY ordinal, id LIMIT 2")
+        .map_err(slice::db)?;
+    let candidates: Vec<String> = statement
+        .query_map([conversation_id.to_string()], |row| row.get(0))
+        .map_err(slice::db)?
+        .collect::<rusqlite::Result<_>>()
+        .map_err(slice::db)?;
+    drop(statement);
+    let [only] = candidates.as_slice() else {
+        return Err(ConversationRepositoryError::Conflict);
+    };
+    slice::parse_id(only.clone())
+}
+
+struct CandidateIdentity {
+    candidate_id: MessageCandidateId,
+    message_id: MessageId,
+    turn_id: GenerationTurnId,
+    attempt_id: GenerationAttemptId,
+    author: ConversationParticipantId,
+}
+
+/// The draft's own bounds are checked before the transaction opens so an
+/// oversized part or a non-conversation replay never reaches a CHECK.
+fn validate_finalization_draft(
+    draft: &FinalizationDraft,
+) -> Result<(), ConversationRepositoryError> {
+    if !matches!(draft.outcome, GenerationCheckpointEvent::Completed) {
+        return Err(invalid("finalization.outcome"));
+    }
+    for part in &draft.parts {
+        part.validate()
+            .map_err(ConversationRepositoryError::Invalid)?;
+    }
+    draft
+        .model
+        .validate()
+        .map_err(ConversationRepositoryError::Invalid)?;
+    if let Some(replay) = &draft.replay {
+        replay
+            .validate()
+            .map_err(ConversationRepositoryError::Invalid)?;
+        if replay.retention != lettuce_conversations::ReplayRetention::Conversation {
+            return Err(invalid("finalization.replay_retention"));
+        }
+    }
+    Ok(())
+}
+
+/// Materializes the assistant message a `new_assistant` turn reserved at
+/// begin. Its identity was minted then, so finalization only fills the row.
+#[allow(clippy::too_many_arguments)]
+fn insert_assistant_message(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
+    message_id: MessageId,
+    parent_message_id: Option<MessageId>,
+    author: ConversationParticipantId,
+    candidate_id: MessageCandidateId,
+    now: TimestampMillis,
+) -> Result<(), ConversationRepositoryError> {
+    let ordinal = allocate_timeline_ordinal(transaction, conversation_id)?;
+    transaction
+        .execute(
+            "INSERT INTO conversation_messages (conversation_id, id, branch_id, parent_message_id, author_participant_id, role, timeline_ordinal, logical_time, effective_time, visibility, pinned, scene_edited, active_revision_id, active_candidate_id, revision, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, 'assistant', ?6, ?7, ?7, 'visible', 0, 0, NULL, ?8, 1, ?7, ?7)",
+            params![
+                conversation_id.to_string(),
+                message_id.to_string(),
+                branch_id.to_string(),
+                parent_message_id.map(|id| id.to_string()),
+                author.to_string(),
+                ordinal,
+                now.get(),
+                candidate_id.to_string(),
+            ],
+        )
+        .map_err(kernel::map_constraint)?;
+    Ok(())
+}
+
+/// Candidate ordinals are dense per message, so the repository derives the
+/// next one and treats the draft's value as an expectation to confirm.
+fn next_candidate_ordinal(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    message_id: MessageId,
+) -> Result<u16, ConversationRepositoryError> {
+    let next: i64 = transaction
+        .query_row(
+            "SELECT COALESCE(max(ordinal) + 1, 0) FROM conversation_message_candidates WHERE conversation_id = ?1 AND message_id = ?2",
+            params![conversation_id.to_string(), message_id.to_string()],
+            |row| row.get(0),
+        )
+        .map_err(slice::db)?;
+    u16::try_from(next).map_err(|_| ConversationRepositoryError::Storage)
+}
+
+fn insert_candidate(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
+    draft: &FinalizationDraft,
+    identity: CandidateIdentity,
+    now: TimestampMillis,
+) -> Result<(), ConversationRepositoryError> {
+    let ordinal = next_candidate_ordinal(transaction, conversation_id, identity.message_id)?;
+    if ordinal != draft.ordinal {
+        return Err(invalid("finalization.ordinal"));
+    }
+    let (replay_artifact_id, replay_retention) = match &draft.replay {
+        Some(replay) => (Some(replay.artifact_id.to_string()), Some("conversation")),
+        None => (None, None),
+    };
+    transaction
+        .execute(
+            "INSERT INTO conversation_message_candidates (conversation_id, id, message_id, branch_id, turn_id, attempt_id, author_participant_id, ordinal, parts_json, model_json, created_at, provider_replay_artifact_id, provider_replay_retention) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+            params![
+                conversation_id.to_string(),
+                identity.candidate_id.to_string(),
+                identity.message_id.to_string(),
+                branch_id.to_string(),
+                identity.turn_id.to_string(),
+                identity.attempt_id.to_string(),
+                identity.author.to_string(),
+                i64::from(ordinal),
+                slice::encode(&draft.parts)?,
+                slice::encode(&draft.model)?,
+                now.get(),
+                replay_artifact_id,
+                replay_retention,
+            ],
+        )
+        .map_err(kernel::map_constraint)?;
+    for (part_ordinal, part) in draft.parts.iter().enumerate() {
+        let MessagePart::MediaAsset { asset_id, role } = part else {
+            continue;
+        };
+        transaction
+            .execute(
+                "INSERT INTO candidate_media_refs (conversation_id, candidate_id, part_ordinal, asset_id, media_role, state, created_at) VALUES (?1, ?2, ?3, ?4, ?5, 'active', ?6)",
+                params![
+                    conversation_id.to_string(),
+                    identity.candidate_id.to_string(),
+                    i64::try_from(part_ordinal).map_err(|_| ConversationRepositoryError::Storage)?,
+                    asset_id.to_string(),
+                    conversation_creator::media_role_name(*role),
+                    now.get(),
+                ],
+            )
+            .map_err(kernel::map_constraint)?;
+    }
+    Ok(())
+}
+
+/// Rebuilds the finalization result from the committed rows, so the first
+/// commit and any later replay read the same way.
+fn finalization_value(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    turn_id: GenerationTurnId,
+    candidate_id: MessageCandidateId,
+    usage_event_id: UsageEventId,
+    asset_reference_deltas: Vec<AssetReferenceDelta>,
+) -> Result<GenerationFinalization, ConversationRepositoryError> {
+    let turn = load_turn(transaction, conversation_id, turn_id)?;
+    let candidate = load_candidate(transaction, conversation_id, candidate_id)?;
+    if candidate.turn_id != turn_id {
+        return Err(ConversationRepositoryError::Conflict);
+    }
+    let assistant_message = load_message(transaction, conversation_id, candidate.message_id)?;
+    Ok(GenerationFinalization {
+        turn,
+        assistant_message,
+        candidate,
+        revision: None,
+        asset_reference_deltas,
+        usage_event_id,
+    })
+}
+
+/// Retention deltas are event-shaped facts about one commit. A replay reads
+/// them back from the operation's own outbox records, because the live media
+/// rows keep moving as later regenerations retire candidates.
+fn recorded_deltas(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    operation: &lettuce_conversations::OperationRecord,
+) -> Result<Vec<AssetReferenceDelta>, ConversationRepositoryError> {
+    let records = kernel::read_outbox_for_operation(transaction, conversation_id, operation.id)?;
+    let mut deltas = Vec::new();
+    for record in records {
+        if let ConversationOutboxEvent::AssetReferencesChanged { changes, .. } = record.event {
+            deltas.extend(changes);
+        }
+    }
+    Ok(deltas)
+}
+
+/// The guard sequence every terminal settlement shares: the conversation and
+/// turn are compare-and-swapped, then the attempt is proven open and alone.
+fn settle_preamble(
+    transaction: &Transaction<'_>,
+    context: &kernel::MutationCtx,
+    turn_id: GenerationTurnId,
+    attempt_id: GenerationAttemptId,
+    expected_conversation_revision: Revision,
+    expected_turn_revision: Revision,
+) -> Result<GenerationTurn, ConversationRepositoryError> {
+    let conversation = kernel::cas_conversation(
+        transaction,
+        context.conversation_id,
+        expected_conversation_revision,
+    )?;
+    kernel::require_active(&conversation)?;
+    cas_turn(
+        transaction,
+        context.conversation_id,
+        turn_id,
+        expected_turn_revision,
+    )?;
+    require_live_attempt(transaction, context.conversation_id, turn_id, attempt_id)?;
+    require_no_other_live_attempt(transaction, context.conversation_id, turn_id, attempt_id)?;
+    load_turn(transaction, context.conversation_id, turn_id)
+}
+
+/// A replayed settlement must describe the turn the caller asked about.
+fn replayed_settlement(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    operation: &lettuce_conversations::OperationRecord,
+    turn_id: GenerationTurnId,
+) -> Result<GenerationTurn, ConversationRepositoryError> {
+    let replayed = replayed_turn(operation)?;
+    if replayed != turn_id {
+        return Err(ConversationRepositoryError::Conflict);
+    }
+    load_turn(transaction, conversation_id, turn_id)
+}
+
+fn recovery_value(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    turn_id: GenerationTurnId,
+) -> Result<GenerationRecovery, ConversationRepositoryError> {
+    let turn = load_turn(transaction, conversation_id, turn_id)?;
+    let attempt = turn
+        .attempts
+        .last()
+        .cloned()
+        .ok_or(ConversationRepositoryError::Storage)?;
+    Ok(GenerationRecovery { turn, attempt })
+}
+
+fn memory_revision_ids(turn: &GenerationTurn) -> Vec<lettuce_types::MemoryRevisionId> {
+    turn.memory
+        .as_ref()
+        .map(|memory| memory.revision_id)
+        .into_iter()
+        .collect()
 }
 
 fn load_turn(
@@ -566,7 +1135,7 @@ impl Database {
     }
 }
 
-/// The remaining methods arrive with the settlement and content slices.
+/// The remaining methods arrive with the content slice.
 impl ConversationRepository for Database {
     fn artifact_store(&self) -> &dyn lettuce_conversations::ConversationArtifactStore {
         self
@@ -880,22 +1449,31 @@ impl ConversationRepository for Database {
                     command.turn_id,
                     command.expected_turn_revision,
                 )?;
-                let (status, branch_id): (String, String) = transaction
+                let source: (String, String, String, Option<String>) = transaction
                     .query_row(
-                        "SELECT status, branch_id FROM conversation_turns WHERE conversation_id = ?1 AND id = ?2",
+                        "SELECT status, branch_id, target_kind, target_parent_message_id FROM conversation_turns WHERE conversation_id = ?1 AND id = ?2",
                         params![
                             context.conversation_id.to_string(),
                             command.turn_id.to_string(),
                         ],
-                        |row| Ok((row.get(0)?, row.get(1)?)),
+                        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
                     )
                     .optional()
                     .map_err(slice::db)?
                     .ok_or(ConversationRepositoryError::NotFound)?;
+                let (status, branch_id, target_kind, target_parent_message_id) = source;
                 if branch_id != command.branch_id.to_string()
                     || !matches!(status.as_str(), "failed" | "cancelled")
                 {
                     return Err(ConversationRepositoryError::Conflict);
+                }
+                if target_kind == "new_assistant" {
+                    let head =
+                        branch_head(transaction, context.conversation_id, command.branch_id)?
+                            .map(|id| id.to_string());
+                    if head != target_parent_message_id {
+                        return Err(ConversationRepositoryError::Conflict);
+                    }
                 }
                 let turn_id = GenerationTurnId::new();
                 transaction
@@ -1126,73 +1704,711 @@ impl ConversationRepository for Database {
 
     fn finalize_generation(
         &self,
-        _turn_id: GenerationTurnId,
-        _attempt_id: GenerationAttemptId,
-        _expected_conversation_revision: Revision,
-        _expected_turn_revision: Revision,
-        _operation: &OperationToken,
-        _draft: lettuce_conversations::FinalizationDraft,
-        _usage_event_id: lettuce_types::UsageEventId,
-        _now: TimestampMillis,
-    ) -> Result<lettuce_conversations::GenerationFinalizationResult, ConversationRepositoryError>
-    {
-        Err(ConversationRepositoryError::Unsupported)
+        turn_id: GenerationTurnId,
+        attempt_id: GenerationAttemptId,
+        expected_conversation_revision: Revision,
+        expected_turn_revision: Revision,
+        operation: &OperationToken,
+        draft: FinalizationDraft,
+        usage_event_id: UsageEventId,
+        now: TimestampMillis,
+    ) -> Result<GenerationFinalizationResult, ConversationRepositoryError> {
+        validate_finalization_draft(&draft)?;
+        let conversation_id = self.conversation_for_turn(turn_id)?;
+        kernel::run_mutation(
+            self,
+            conversation_id,
+            OperationKind::Finalize,
+            operation,
+            now,
+            |transaction, context| {
+                let conversation = kernel::cas_conversation(
+                    transaction,
+                    context.conversation_id,
+                    expected_conversation_revision,
+                )?;
+                kernel::require_active(&conversation)?;
+                cas_turn(
+                    transaction,
+                    context.conversation_id,
+                    turn_id,
+                    expected_turn_revision,
+                )?;
+                if let Some(reference) = &draft.replay {
+                    conversation_artifact_adapter::verify_replay_in_transaction(
+                        transaction,
+                        reference,
+                    )
+                    .map_err(ConversationRepositoryError::ArtifactReference)?;
+                }
+                let turn = load_turn(transaction, context.conversation_id, turn_id)?;
+                if !matches!(
+                    turn.status,
+                    GenerationTurnStatus::Running | GenerationTurnStatus::Finalizing
+                ) {
+                    return Err(ConversationRepositoryError::Conflict);
+                }
+                require_live_attempt(transaction, context.conversation_id, turn_id, attempt_id)?;
+                require_no_other_live_attempt(
+                    transaction,
+                    context.conversation_id,
+                    turn_id,
+                    attempt_id,
+                )?;
+                let author = resolve_candidate_author(transaction, context.conversation_id, &turn)?;
+                let candidate_id = MessageCandidateId::new();
+                let (message_id, prior_candidate_id) = match turn.target {
+                    GenerationTarget::NewAssistant {
+                        message_id,
+                        parent_message_id,
+                    } => {
+                        insert_assistant_message(
+                            transaction,
+                            context.conversation_id,
+                            turn.branch_id,
+                            message_id,
+                            parent_message_id,
+                            author,
+                            candidate_id,
+                            context.now,
+                        )?;
+                        (message_id, None)
+                    }
+                    GenerationTarget::ExistingCandidate {
+                        message_id,
+                        prior_candidate_id,
+                    } => (message_id, Some(prior_candidate_id)),
+                };
+                insert_candidate(
+                    transaction,
+                    context.conversation_id,
+                    turn.branch_id,
+                    &draft,
+                    CandidateIdentity {
+                        candidate_id,
+                        message_id,
+                        turn_id,
+                        attempt_id,
+                        author,
+                    },
+                    context.now,
+                )?;
+                if let Some(prior_candidate_id) = prior_candidate_id {
+                    transaction
+                        .execute(
+                            "UPDATE candidate_media_refs SET state = 'historical' WHERE conversation_id = ?1 AND candidate_id = ?2 AND state = 'active'",
+                            params![
+                                context.conversation_id.to_string(),
+                                prior_candidate_id.to_string(),
+                            ],
+                        )
+                        .map_err(kernel::map_constraint)?;
+                    let flipped = transaction
+                        .execute(
+                            "UPDATE conversation_messages SET active_candidate_id = ?3, author_participant_id = ?4, revision = revision + 1, updated_at = ?5 WHERE conversation_id = ?1 AND id = ?2 AND active_candidate_id = ?6",
+                            params![
+                                context.conversation_id.to_string(),
+                                message_id.to_string(),
+                                candidate_id.to_string(),
+                                author.to_string(),
+                                context.now.get(),
+                                prior_candidate_id.to_string(),
+                            ],
+                        )
+                        .map_err(kernel::map_constraint)?;
+                    if flipped == 0 {
+                        return Err(ConversationRepositoryError::Conflict);
+                    }
+                } else {
+                    let parent = match turn.target {
+                        GenerationTarget::NewAssistant {
+                            parent_message_id, ..
+                        } => parent_message_id,
+                        GenerationTarget::ExistingCandidate { .. } => {
+                            return Err(ConversationRepositoryError::Storage);
+                        }
+                    };
+                    let advanced = transaction
+                        .execute(
+                            "UPDATE conversation_branches SET head_message_id = ?1, updated_at = ?2 WHERE conversation_id = ?3 AND id = ?4 AND head_message_id IS ?5",
+                            params![
+                                message_id.to_string(),
+                                context.now.get(),
+                                context.conversation_id.to_string(),
+                                turn.branch_id.to_string(),
+                                parent.map(|id| id.to_string()),
+                            ],
+                        )
+                        .map_err(kernel::map_constraint)?;
+                    if advanced == 0 {
+                        return Err(ConversationRepositoryError::Conflict);
+                    }
+                }
+                settle_attempt_terminal(
+                    transaction,
+                    context.conversation_id,
+                    turn_id,
+                    attempt_id,
+                    AttemptSettlement {
+                        outcome: GenerationAttemptStatus::Succeeded,
+                        failure: None,
+                        usage_event_id,
+                    },
+                    context.now,
+                )?;
+                if turn.status == GenerationTurnStatus::Running {
+                    advance_turn(
+                        transaction,
+                        context.conversation_id,
+                        turn_id,
+                        Some(GenerationTurnStatus::Finalizing),
+                        context.now,
+                    )?;
+                }
+                succeed_turn(
+                    transaction,
+                    context.conversation_id,
+                    turn_id,
+                    candidate_id,
+                    context.now,
+                )?;
+                let revision =
+                    kernel::bump_conversation(transaction, context.conversation_id, context.now)?;
+                let mut owned_deltas = vec![(
+                    candidate_id,
+                    candidate_deltas(transaction, context.conversation_id, candidate_id)?,
+                )];
+                if let Some(prior_candidate_id) = prior_candidate_id {
+                    owned_deltas.push((
+                        prior_candidate_id,
+                        candidate_deltas(transaction, context.conversation_id, prior_candidate_id)?,
+                    ));
+                }
+                let value = finalization_value(
+                    transaction,
+                    context.conversation_id,
+                    turn_id,
+                    candidate_id,
+                    usage_event_id,
+                    owned_deltas
+                        .iter()
+                        .flat_map(|(_, deltas)| deltas.iter().cloned())
+                        .collect(),
+                )?;
+                let mut events = vec![kernel::StagedEvent {
+                    conversation_revision: revision,
+                    at: context.now,
+                    event: ConversationOutboxEvent::TurnFinalized {
+                        conversation_id: context.conversation_id,
+                        branch_id: turn.branch_id,
+                        turn_id,
+                        attempt_id,
+                        message_id,
+                        candidate_id,
+                        revision_id: None,
+                        effective_time: context.now,
+                        usage_event_id,
+                        used_memory_revision_ids: memory_revision_ids(&turn),
+                    },
+                }];
+                if prior_candidate_id.is_none() {
+                    events.push(kernel::StagedEvent {
+                        conversation_revision: revision,
+                        at: context.now,
+                        event: ConversationOutboxEvent::MessageCommitted {
+                            conversation_id: context.conversation_id,
+                            branch_id: turn.branch_id,
+                            message_id,
+                            revision_id: None,
+                            candidate_id: Some(candidate_id),
+                            at: context.now,
+                        },
+                    });
+                }
+                for (owner, changes) in owned_deltas {
+                    if changes.is_empty() {
+                        continue;
+                    }
+                    events.push(kernel::StagedEvent {
+                        conversation_revision: revision,
+                        at: context.now,
+                        event: ConversationOutboxEvent::AssetReferencesChanged {
+                            conversation_id: context.conversation_id,
+                            message_revision_id: None,
+                            candidate_id: Some(owner),
+                            changes,
+                            at: context.now,
+                        },
+                    });
+                }
+                Ok(kernel::Staged {
+                    value,
+                    result: OperationResultRef::Candidate(candidate_id),
+                    events,
+                })
+            },
+            |transaction, operation| {
+                let OperationResultRef::Candidate(candidate_id) = operation.result else {
+                    return Err(ConversationRepositoryError::Storage);
+                };
+                let deltas = recorded_deltas(transaction, conversation_id, operation)?;
+                let value = finalization_value(
+                    transaction,
+                    conversation_id,
+                    turn_id,
+                    candidate_id,
+                    usage_event_id,
+                    deltas,
+                )?;
+                if value.turn.id != turn_id {
+                    return Err(ConversationRepositoryError::Conflict);
+                }
+                let settled = value
+                    .turn
+                    .attempts
+                    .iter()
+                    .find(|attempt| attempt.id == value.candidate.attempt_id)
+                    .ok_or(ConversationRepositoryError::Storage)?;
+                if settled.usage_event_id != Some(usage_event_id) {
+                    return Err(ConversationRepositoryError::Conflict);
+                }
+                Ok(value)
+            },
+        )
     }
 
     fn fail_generation(
         &self,
-        _turn_id: GenerationTurnId,
-        _attempt_id: GenerationAttemptId,
-        _expected_conversation_revision: Revision,
-        _expected_turn_revision: Revision,
-        _operation: &OperationToken,
-        _failure: lettuce_conversations::GenerationFailureCode,
-        _usage_event_id: lettuce_types::UsageEventId,
-        _now: TimestampMillis,
-    ) -> Result<lettuce_conversations::GenerationFailureResult, ConversationRepositoryError> {
-        Err(ConversationRepositoryError::Unsupported)
+        turn_id: GenerationTurnId,
+        attempt_id: GenerationAttemptId,
+        expected_conversation_revision: Revision,
+        expected_turn_revision: Revision,
+        operation: &OperationToken,
+        failure: GenerationFailureCode,
+        usage_event_id: UsageEventId,
+        now: TimestampMillis,
+    ) -> Result<GenerationFailureResult, ConversationRepositoryError> {
+        let conversation_id = self.conversation_for_turn(turn_id)?;
+        kernel::run_mutation(
+            self,
+            conversation_id,
+            OperationKind::Fail,
+            operation,
+            now,
+            |transaction, context| {
+                let turn = settle_preamble(
+                    transaction,
+                    context,
+                    turn_id,
+                    attempt_id,
+                    expected_conversation_revision,
+                    expected_turn_revision,
+                )?;
+                require_transition(turn.status, GenerationTurnStatus::Failed)?;
+                settle_attempt_terminal(
+                    transaction,
+                    context.conversation_id,
+                    turn_id,
+                    attempt_id,
+                    AttemptSettlement {
+                        outcome: GenerationAttemptStatus::Failed,
+                        failure: Some(failure),
+                        usage_event_id,
+                    },
+                    context.now,
+                )?;
+                fail_turn(
+                    transaction,
+                    context.conversation_id,
+                    turn_id,
+                    failure,
+                    context.now,
+                )?;
+                let revision =
+                    kernel::bump_conversation(transaction, context.conversation_id, context.now)?;
+                let settled = load_turn(transaction, context.conversation_id, turn_id)?;
+                let events = vec![kernel::StagedEvent {
+                    conversation_revision: revision,
+                    at: context.now,
+                    event: ConversationOutboxEvent::TurnFailed {
+                        conversation_id: context.conversation_id,
+                        branch_id: settled.branch_id,
+                        turn_id,
+                        attempt_id,
+                        usage_event_id,
+                        used_memory_revision_ids: memory_revision_ids(&settled),
+                        at: context.now,
+                    },
+                }];
+                Ok(kernel::Staged {
+                    value: GenerationFailure {
+                        turn: settled,
+                        failure,
+                        usage_event_id,
+                    },
+                    result: OperationResultRef::Turn(turn_id),
+                    events,
+                })
+            },
+            |transaction, operation| {
+                let turn = replayed_settlement(transaction, conversation_id, operation, turn_id)?;
+                if turn.failure != Some(failure) {
+                    return Err(ConversationRepositoryError::Conflict);
+                }
+                Ok(GenerationFailure {
+                    turn,
+                    failure,
+                    usage_event_id,
+                })
+            },
+        )
     }
 
     fn interrupt_generation(
         &self,
-        _turn_id: GenerationTurnId,
-        _attempt_id: GenerationAttemptId,
-        _expected_conversation_revision: Revision,
-        _expected_turn_revision: Revision,
-        _operation: &OperationToken,
-        _usage_event_id: lettuce_types::UsageEventId,
-        _now: TimestampMillis,
-    ) -> Result<lettuce_conversations::GenerationInterruptionResult, ConversationRepositoryError>
-    {
-        Err(ConversationRepositoryError::Unsupported)
+        turn_id: GenerationTurnId,
+        attempt_id: GenerationAttemptId,
+        expected_conversation_revision: Revision,
+        expected_turn_revision: Revision,
+        operation: &OperationToken,
+        usage_event_id: UsageEventId,
+        now: TimestampMillis,
+    ) -> Result<GenerationInterruptionResult, ConversationRepositoryError> {
+        let conversation_id = self.conversation_for_turn(turn_id)?;
+        kernel::run_mutation(
+            self,
+            conversation_id,
+            OperationKind::Interrupt,
+            operation,
+            now,
+            |transaction, context| {
+                let turn = settle_preamble(
+                    transaction,
+                    context,
+                    turn_id,
+                    attempt_id,
+                    expected_conversation_revision,
+                    expected_turn_revision,
+                )?;
+                require_transition(turn.status, GenerationTurnStatus::Interrupted)?;
+                settle_attempt_terminal(
+                    transaction,
+                    context.conversation_id,
+                    turn_id,
+                    attempt_id,
+                    AttemptSettlement {
+                        outcome: GenerationAttemptStatus::Interrupted,
+                        failure: None,
+                        usage_event_id,
+                    },
+                    context.now,
+                )?;
+                advance_turn(
+                    transaction,
+                    context.conversation_id,
+                    turn_id,
+                    Some(GenerationTurnStatus::Interrupted),
+                    context.now,
+                )?;
+                kernel::bump_conversation(transaction, context.conversation_id, context.now)?;
+                Ok(kernel::Staged {
+                    value: load_turn(transaction, context.conversation_id, turn_id)?,
+                    result: OperationResultRef::Turn(turn_id),
+                    events: Vec::new(),
+                })
+            },
+            |transaction, operation| {
+                replayed_settlement(transaction, conversation_id, operation, turn_id)
+            },
+        )
     }
 
+    /// Cancellation is two mutations under one operation kind. The request and
+    /// the settlement carry different tokens by contract, so the operations
+    /// `UNIQUE (conversation, kind, key)` still separates them.
     fn request_cancellation(
         &self,
-        _command: &lettuce_conversations::CancelGeneration,
-        _now: TimestampMillis,
-    ) -> Result<lettuce_conversations::RequestCancellationResult, ConversationRepositoryError> {
-        Err(ConversationRepositoryError::Unsupported)
+        command: &CancelGeneration,
+        now: TimestampMillis,
+    ) -> Result<RequestCancellationResult, ConversationRepositoryError> {
+        command
+            .validate()
+            .map_err(ConversationRepositoryError::Invalid)?;
+        kernel::run_mutation(
+            self,
+            command.conversation_id,
+            OperationKind::Cancel,
+            &command.operation,
+            now,
+            |transaction, context| {
+                let conversation = kernel::cas_conversation(
+                    transaction,
+                    context.conversation_id,
+                    command.expected_revision,
+                )?;
+                kernel::require_active(&conversation)?;
+                cas_turn(
+                    transaction,
+                    context.conversation_id,
+                    command.turn_id,
+                    command.expected_turn_revision,
+                )?;
+                let turn = load_turn(transaction, context.conversation_id, command.turn_id)?;
+                require_transition(turn.status, GenerationTurnStatus::CancellationRequested)?;
+                require_live_attempt(
+                    transaction,
+                    context.conversation_id,
+                    command.turn_id,
+                    command.attempt_id,
+                )?;
+                advance_turn(
+                    transaction,
+                    context.conversation_id,
+                    command.turn_id,
+                    Some(GenerationTurnStatus::CancellationRequested),
+                    context.now,
+                )?;
+                let revision =
+                    kernel::bump_conversation(transaction, context.conversation_id, context.now)?;
+                let events = vec![kernel::StagedEvent {
+                    conversation_revision: revision,
+                    at: context.now,
+                    event: ConversationOutboxEvent::TurnCancellationRequested {
+                        conversation_id: context.conversation_id,
+                        branch_id: turn.branch_id,
+                        turn_id: command.turn_id,
+                        attempt_id: command.attempt_id,
+                        at: context.now,
+                    },
+                }];
+                Ok(kernel::Staged {
+                    value: load_turn(transaction, context.conversation_id, command.turn_id)?,
+                    result: OperationResultRef::Turn(command.turn_id),
+                    events,
+                })
+            },
+            |transaction, operation| {
+                let turn = replayed_settlement(
+                    transaction,
+                    command.conversation_id,
+                    operation,
+                    command.turn_id,
+                )?;
+                if !matches!(
+                    turn.status,
+                    GenerationTurnStatus::CancellationRequested | GenerationTurnStatus::Cancelled
+                ) {
+                    return Err(ConversationRepositoryError::Conflict);
+                }
+                Ok(turn)
+            },
+        )
     }
 
+    /// Only `cancellation_requested` and `created` settle here. Migration 0008
+    /// also permits finalizing, interrupted and recovering to reach cancelled,
+    /// but those edges are reserved: interrupted and recovering settle through
+    /// fail or recover, and finalizing's cancel arrives with a later slice.
     fn settle_cancellation(
         &self,
-        _command: &lettuce_conversations::SettleCancellation,
-        _now: TimestampMillis,
-    ) -> Result<lettuce_conversations::SettleCancellationResult, ConversationRepositoryError> {
-        Err(ConversationRepositoryError::Unsupported)
+        command: &SettleCancellation,
+        now: TimestampMillis,
+    ) -> Result<SettleCancellationResult, ConversationRepositoryError> {
+        command
+            .validate()
+            .map_err(ConversationRepositoryError::Invalid)?;
+        kernel::run_mutation(
+            self,
+            command.conversation_id,
+            OperationKind::Cancel,
+            &command.operation,
+            now,
+            |transaction, context| {
+                let conversation = kernel::cas_conversation(
+                    transaction,
+                    context.conversation_id,
+                    command.expected_revision,
+                )?;
+                kernel::require_active(&conversation)?;
+                cas_turn(
+                    transaction,
+                    context.conversation_id,
+                    command.turn_id,
+                    command.expected_turn_revision,
+                )?;
+                let turn = load_turn(transaction, context.conversation_id, command.turn_id)?;
+                if !matches!(
+                    turn.status,
+                    GenerationTurnStatus::CancellationRequested | GenerationTurnStatus::Created
+                ) {
+                    return Err(ConversationRepositoryError::Conflict);
+                }
+                require_live_attempt(
+                    transaction,
+                    context.conversation_id,
+                    command.turn_id,
+                    command.attempt_id,
+                )?;
+                require_no_other_live_attempt(
+                    transaction,
+                    context.conversation_id,
+                    command.turn_id,
+                    command.attempt_id,
+                )?;
+                settle_attempt_terminal(
+                    transaction,
+                    context.conversation_id,
+                    command.turn_id,
+                    command.attempt_id,
+                    AttemptSettlement {
+                        outcome: GenerationAttemptStatus::Cancelled,
+                        failure: None,
+                        usage_event_id: command.usage_event_id,
+                    },
+                    context.now,
+                )?;
+                advance_turn(
+                    transaction,
+                    context.conversation_id,
+                    command.turn_id,
+                    Some(GenerationTurnStatus::Cancelled),
+                    context.now,
+                )?;
+                let revision =
+                    kernel::bump_conversation(transaction, context.conversation_id, context.now)?;
+                let settled = load_turn(transaction, context.conversation_id, command.turn_id)?;
+                let events = vec![kernel::StagedEvent {
+                    conversation_revision: revision,
+                    at: context.now,
+                    event: ConversationOutboxEvent::TurnCancelled {
+                        conversation_id: context.conversation_id,
+                        branch_id: settled.branch_id,
+                        turn_id: command.turn_id,
+                        attempt_id: command.attempt_id,
+                        usage_event_id: command.usage_event_id,
+                        used_memory_revision_ids: memory_revision_ids(&settled),
+                        at: context.now,
+                    },
+                }];
+                Ok(kernel::Staged {
+                    value: GenerationCancellation {
+                        turn: settled,
+                        attempt_id: command.attempt_id,
+                        usage_event_id: command.usage_event_id,
+                    },
+                    result: OperationResultRef::Turn(command.turn_id),
+                    events,
+                })
+            },
+            |transaction, operation| {
+                let turn = replayed_settlement(
+                    transaction,
+                    command.conversation_id,
+                    operation,
+                    command.turn_id,
+                )?;
+                if turn.status != GenerationTurnStatus::Cancelled {
+                    return Err(ConversationRepositoryError::Conflict);
+                }
+                let settled = turn
+                    .attempts
+                    .iter()
+                    .find(|attempt| attempt.id == command.attempt_id)
+                    .ok_or(ConversationRepositoryError::Conflict)?;
+                if settled.status != GenerationAttemptStatus::Cancelled
+                    || settled.usage_event_id != Some(command.usage_event_id)
+                {
+                    return Err(ConversationRepositoryError::Conflict);
+                }
+                Ok(GenerationCancellation {
+                    turn,
+                    attempt_id: command.attempt_id,
+                    usage_event_id: command.usage_event_id,
+                })
+            },
+        )
     }
 
     fn recover_generation(
         &self,
-        _turn_id: GenerationTurnId,
-        _attempt_id: GenerationAttemptId,
-        _expected_conversation_revision: Revision,
-        _expected_turn_revision: Revision,
-        _operation: &OperationToken,
-        _now: TimestampMillis,
-    ) -> Result<lettuce_conversations::GenerationRecoveryResult, ConversationRepositoryError> {
-        Err(ConversationRepositoryError::Unsupported)
+        turn_id: GenerationTurnId,
+        attempt_id: GenerationAttemptId,
+        expected_conversation_revision: Revision,
+        expected_turn_revision: Revision,
+        operation: &OperationToken,
+        now: TimestampMillis,
+    ) -> Result<GenerationRecoveryResult, ConversationRepositoryError> {
+        let conversation_id = self.conversation_for_turn(turn_id)?;
+        kernel::run_mutation(
+            self,
+            conversation_id,
+            OperationKind::Recover,
+            operation,
+            now,
+            |transaction, context| {
+                let conversation = kernel::cas_conversation(
+                    transaction,
+                    context.conversation_id,
+                    expected_conversation_revision,
+                )?;
+                kernel::require_active(&conversation)?;
+                cas_turn(
+                    transaction,
+                    context.conversation_id,
+                    turn_id,
+                    expected_turn_revision,
+                )?;
+                let interrupted = load_turn(transaction, context.conversation_id, turn_id)?;
+                if interrupted.status != GenerationTurnStatus::Interrupted {
+                    return Err(ConversationRepositoryError::Conflict);
+                }
+                let previous = interrupted
+                    .attempts
+                    .last()
+                    .cloned()
+                    .ok_or(ConversationRepositoryError::Storage)?;
+                if previous.id != attempt_id
+                    || previous.status != GenerationAttemptStatus::Interrupted
+                {
+                    return Err(ConversationRepositoryError::Conflict);
+                }
+                let ordinal = previous
+                    .ordinal
+                    .checked_add(1)
+                    .ok_or(ConversationRepositoryError::Storage)?;
+                insert_attempt(
+                    transaction,
+                    context.conversation_id,
+                    turn_id,
+                    ordinal,
+                    Some(previous.id),
+                )?;
+                advance_turn(
+                    transaction,
+                    context.conversation_id,
+                    turn_id,
+                    Some(GenerationTurnStatus::Recovering),
+                    context.now,
+                )?;
+                kernel::bump_conversation(transaction, context.conversation_id, context.now)?;
+                let value = recovery_value(transaction, context.conversation_id, turn_id)?;
+                value
+                    .validate_against(&previous, &interrupted)
+                    .map_err(ConversationRepositoryError::Invalid)?;
+                Ok(kernel::Staged {
+                    value,
+                    result: OperationResultRef::Turn(turn_id),
+                    events: Vec::new(),
+                })
+            },
+            |transaction, operation| {
+                let replayed = replayed_turn(operation)?;
+                if replayed != turn_id {
+                    return Err(ConversationRepositoryError::Conflict);
+                }
+                recovery_value(transaction, conversation_id, turn_id)
+            },
+        )
     }
 
     fn choose_candidate(
@@ -1601,14 +2817,14 @@ mod tests {
         vec![MessagePart::Text { text: value.into() }]
     }
 
-    fn stage_media_asset(database: &Database) -> AssetId {
+    fn stage_media_asset(database: &Database, seed: &str) -> AssetId {
         let asset_id = AssetId::new();
         let blob_id = MediaBlobId::new();
         let connection = database.connection().expect("connection");
         connection
             .execute(
                 "INSERT INTO media_blobs (id, content_hash, kind, mime_type, byte_size, width, height, duration_ms, validation_version, state, created_at, updated_at) VALUES (?1, ?2, 'image', 'image/png', 4, NULL, NULL, NULL, 1, 'ready', 1, 1)",
-                params![blob_id.to_string(), "ab".repeat(32)],
+                params![blob_id.to_string(), seed.repeat(32)],
             )
             .expect("blob");
         connection
@@ -1620,194 +2836,191 @@ mod tests {
         asset_id
     }
 
-    fn settle_terminal(fixture: &Fixture, turn: &GenerationTurn, outcome: &str, now: i64) {
-        let attempt = turn.attempts.first().expect("attempt");
-        let mut connection = fixture.database.connection().expect("connection");
-        let transaction = connection
-            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
-            .expect("transaction");
-        settle_attempt(
-            &transaction,
-            fixture.conversation_id,
-            turn.id,
-            attempt.id,
-            outcome,
-            now,
-        );
-        let intermediate = if outcome == "cancelled" {
-            "cancellation_requested"
-        } else {
-            "preparing"
-        };
-        transaction
-            .execute(
-                "UPDATE conversation_turns SET status = ?3, revision = revision + 1, updated_at = ?4 WHERE conversation_id = ?1 AND id = ?2",
-                params![
-                    fixture.conversation_id.to_string(),
-                    turn.id.to_string(),
-                    intermediate,
-                    now,
-                ],
-            )
-            .expect("intermediate status");
-        transaction
-            .execute(
-                "UPDATE conversation_turns SET status = ?3, failure = ?4, revision = revision + 1, updated_at = ?5 WHERE conversation_id = ?1 AND id = ?2",
-                params![
-                    fixture.conversation_id.to_string(),
-                    turn.id.to_string(),
-                    outcome,
-                    if outcome == "failed" { Some("internal") } else { None },
-                    now,
-                ],
-            )
-            .expect("terminal status");
-        transaction.commit().expect("commit");
-    }
-
-    fn settle_attempt(
-        transaction: &Transaction<'_>,
-        conversation_id: ConversationId,
+    fn next_checkpoint_sequence(
+        fixture: &Fixture,
         turn_id: GenerationTurnId,
         attempt_id: GenerationAttemptId,
-        outcome: &str,
-        now: i64,
-    ) {
-        let usage_event_id = UsageEventId::new();
-        transaction
-            .execute(
-                "INSERT INTO conversation_usage_refs (conversation_id, turn_id, attempt_id, usage_event_id, outcome, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+    ) -> u64 {
+        let value: i64 = fixture
+            .database
+            .connection()
+            .expect("connection")
+            .query_row(
+                "SELECT COALESCE(max(sequence), 0) + 1 FROM generation_checkpoints WHERE conversation_id = ?1 AND turn_id = ?2 AND attempt_id = ?3",
                 params![
-                    conversation_id.to_string(),
+                    fixture.conversation_id.to_string(),
                     turn_id.to_string(),
                     attempt_id.to_string(),
-                    usage_event_id.to_string(),
-                    outcome,
-                    now,
                 ],
+                |row| row.get(0),
             )
-            .expect("usage ref");
-        transaction
-            .execute(
-                "UPDATE generation_attempts SET status = ?4, started_at = ?5, finished_at = ?5, usage_event_id = ?6, usage_outcome = ?4, failure = ?7 WHERE conversation_id = ?1 AND turn_id = ?2 AND id = ?3",
-                params![
-                    conversation_id.to_string(),
-                    turn_id.to_string(),
-                    attempt_id.to_string(),
-                    outcome,
-                    now,
-                    usage_event_id.to_string(),
-                    if outcome == "failed" { Some("internal") } else { None },
-                ],
-            )
-            .expect("attempt outcome");
+            .expect("sequence");
+        u64::try_from(value).expect("sequence")
     }
 
-    /// Drives a live turn all the way to `succeeded` with a materialized
-    /// assistant message and candidate, using the trigger-legal status path.
+    fn attempt_job(
+        fixture: &Fixture,
+        turn_id: GenerationTurnId,
+        attempt_id: GenerationAttemptId,
+    ) -> Option<JobId> {
+        fixture
+            .database
+            .connection()
+            .expect("connection")
+            .query_row(
+                "SELECT job_id FROM generation_attempts WHERE conversation_id = ?1 AND turn_id = ?2 AND id = ?3",
+                params![
+                    fixture.conversation_id.to_string(),
+                    turn_id.to_string(),
+                    attempt_id.to_string(),
+                ],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .expect("attempt")
+            .map(|value| value.parse().expect("job id"))
+    }
+
+    /// Walks a live turn through real stage checkpoints, continuing the
+    /// attempt's own sequence and carrying whatever job it has attached.
+    fn drive(
+        fixture: &Fixture,
+        turn_id: GenerationTurnId,
+        attempt_id: GenerationAttemptId,
+        stages: &[GenerationTurnStatus],
+        key: &str,
+        now: i64,
+    ) -> Revision {
+        let mut revision = turn_revision(fixture, turn_id);
+        let job_id = attempt_job(fixture, turn_id, attempt_id);
+        for status in stages {
+            let sequence = next_checkpoint_sequence(fixture, turn_id, attempt_id);
+            revision = fixture
+                .database
+                .append_event(
+                    turn_id,
+                    revision,
+                    &token(&format!("{key}-{sequence}"), "cd"),
+                    GenerationCheckpointEnvelope {
+                        turn_id,
+                        attempt_id,
+                        job_id,
+                        correlation_id: None,
+                        sequence,
+                        event: GenerationCheckpointEvent::Stage { status: *status },
+                    },
+                    TimestampMillis::new(now + i64::try_from(sequence).expect("sequence")),
+                )
+                .expect("stage checkpoint")
+                .value
+                .revision;
+        }
+        revision
+    }
+
+    fn settle_failed(fixture: &Fixture, turn: &GenerationTurn, now: i64) {
+        let attempt_id = turn.attempts.first().expect("attempt").id;
+        let revision = drive(
+            fixture,
+            turn.id,
+            attempt_id,
+            &[GenerationTurnStatus::Preparing],
+            &format!("drive-fail-{}", turn.id),
+            now,
+        );
+        fixture
+            .database
+            .fail_generation(
+                turn.id,
+                attempt_id,
+                conversation_revision(fixture),
+                revision,
+                &token(&format!("fail-{}", turn.id), "cd"),
+                GenerationFailureCode::Internal,
+                UsageEventId::new(),
+                TimestampMillis::new(now + 50),
+            )
+            .expect("fail");
+    }
+
+    fn settle_cancelled(fixture: &Fixture, turn: &GenerationTurn, now: i64) {
+        let attempt_id = turn.attempts.first().expect("attempt").id;
+        let requested = fixture
+            .database
+            .request_cancellation(
+                &CancelGeneration {
+                    conversation_id: fixture.conversation_id,
+                    turn_id: turn.id,
+                    attempt_id,
+                    expected_revision: conversation_revision(fixture),
+                    expected_turn_revision: turn_revision(fixture, turn.id),
+                    operation: token(&format!("cancel-{}", turn.id), "cd"),
+                },
+                TimestampMillis::new(now),
+            )
+            .expect("request cancellation");
+        fixture
+            .database
+            .settle_cancellation(
+                &SettleCancellation {
+                    conversation_id: fixture.conversation_id,
+                    turn_id: turn.id,
+                    attempt_id,
+                    expected_revision: conversation_revision(fixture),
+                    expected_turn_revision: requested.value.revision,
+                    operation: token(&format!("settle-{}", turn.id), "cd"),
+                    usage_event_id: UsageEventId::new(),
+                },
+                TimestampMillis::new(now + 1),
+            )
+            .expect("settle cancellation");
+    }
+
+    fn finalization_draft(parts: Vec<MessagePart>, ordinal: u16) -> FinalizationDraft {
+        FinalizationDraft {
+            parts,
+            ordinal,
+            model: model_snapshot(),
+            replay: None,
+            outcome: GenerationCheckpointEvent::Completed,
+        }
+    }
+
+    /// Drives a live turn to running and finalizes it through the real port.
     fn settle_succeeded(
         fixture: &Fixture,
         turn: &GenerationTurn,
-        author: ConversationParticipantId,
         now: i64,
     ) -> (MessageId, MessageCandidateId) {
-        let GenerationTarget::NewAssistant {
-            message_id,
-            parent_message_id,
-        } = turn.target
-        else {
-            panic!("expected a new assistant target");
-        };
-        let attempt = turn.attempts.first().expect("attempt");
-        let candidate_id = MessageCandidateId::new();
-        let mut connection = fixture.database.connection().expect("connection");
-        let transaction = connection
-            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
-            .expect("transaction");
-        let ordinal: i64 = transaction
-            .query_row(
-                "UPDATE conversations SET next_timeline_ordinal = next_timeline_ordinal + 1 WHERE id = ?1 RETURNING next_timeline_ordinal - 1",
-                [fixture.conversation_id.to_string()],
-                |row| row.get(0),
-            )
-            .expect("ordinal");
-        transaction
-            .execute(
-                "INSERT INTO conversation_messages (conversation_id, id, branch_id, parent_message_id, author_participant_id, role, timeline_ordinal, logical_time, effective_time, visibility, pinned, scene_edited, active_revision_id, active_candidate_id, revision, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, 'assistant', ?6, ?7, ?7, 'visible', 0, 0, NULL, ?8, 1, ?7, ?7)",
-                params![
-                    fixture.conversation_id.to_string(),
-                    message_id.to_string(),
-                    fixture.branch_id.to_string(),
-                    parent_message_id.map(|id| id.to_string()),
-                    author.to_string(),
-                    ordinal,
-                    now,
-                    candidate_id.to_string(),
-                ],
-            )
-            .expect("assistant message");
-        transaction
-            .execute(
-                "INSERT INTO conversation_message_candidates (conversation_id, id, message_id, branch_id, turn_id, attempt_id, author_participant_id, ordinal, parts_json, model_json, created_at, provider_replay_artifact_id, provider_replay_retention) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, ?8, ?9, ?10, NULL, NULL)",
-                params![
-                    fixture.conversation_id.to_string(),
-                    candidate_id.to_string(),
-                    message_id.to_string(),
-                    fixture.branch_id.to_string(),
-                    turn.id.to_string(),
-                    attempt.id.to_string(),
-                    author.to_string(),
-                    slice::encode(&text("generated")).expect("parts"),
-                    slice::encode(&model_snapshot()).expect("model"),
-                    now,
-                ],
-            )
-            .expect("candidate");
-        transaction
-            .execute(
-                "UPDATE conversation_branches SET head_message_id = ?1, updated_at = ?2 WHERE conversation_id = ?3 AND id = ?4",
-                params![
-                    message_id.to_string(),
-                    now,
-                    fixture.conversation_id.to_string(),
-                    fixture.branch_id.to_string(),
-                ],
-            )
-            .expect("advance head");
-        settle_attempt(
-            &transaction,
-            fixture.conversation_id,
+        let attempt_id = turn.attempts.first().expect("attempt").id;
+        let revision = drive(
+            fixture,
             turn.id,
-            attempt.id,
-            "succeeded",
+            attempt_id,
+            &[
+                GenerationTurnStatus::Preparing,
+                GenerationTurnStatus::ContextPrepared,
+                GenerationTurnStatus::Running,
+            ],
+            &format!("drive-ok-{}", turn.id),
             now,
         );
-        for status in ["preparing", "context_prepared", "running", "finalizing"] {
-            transaction
-                .execute(
-                    "UPDATE conversation_turns SET status = ?3, revision = revision + 1, updated_at = ?4 WHERE conversation_id = ?1 AND id = ?2",
-                    params![
-                        fixture.conversation_id.to_string(),
-                        turn.id.to_string(),
-                        status,
-                        now,
-                    ],
-                )
-                .expect("turn status");
-        }
-        transaction
-            .execute(
-                "UPDATE conversation_turns SET status = 'succeeded', selected_candidate_id = ?3, revision = revision + 1, updated_at = ?4 WHERE conversation_id = ?1 AND id = ?2",
-                params![
-                    fixture.conversation_id.to_string(),
-                    turn.id.to_string(),
-                    candidate_id.to_string(),
-                    now,
-                ],
+        let finalized = fixture
+            .database
+            .finalize_generation(
+                turn.id,
+                attempt_id,
+                conversation_revision(fixture),
+                revision,
+                &token(&format!("finalize-{}", turn.id), "cd"),
+                finalization_draft(text("generated"), 0),
+                UsageEventId::new(),
+                TimestampMillis::new(now + 50),
             )
-            .expect("succeeded");
-        transaction.commit().expect("commit");
-        (message_id, candidate_id)
+            .expect("finalize");
+        (
+            finalized.value.assistant_message.id,
+            finalized.value.candidate.id,
+        )
     }
 
     fn scalar<T: rusqlite::types::FromSql>(database: &Database, sql: &str, id: &str) -> T {
@@ -1823,6 +3036,20 @@ mod tests {
             .expect("aggregate")
             .conversation
             .revision
+    }
+
+    fn turn_status(fixture: &Fixture, turn_id: GenerationTurnId) -> GenerationTurnStatus {
+        let value: String = fixture
+            .database
+            .connection()
+            .expect("connection")
+            .query_row(
+                "SELECT status FROM conversation_turns WHERE conversation_id = ?1 AND id = ?2",
+                params![fixture.conversation_id.to_string(), turn_id.to_string()],
+                |row| row.get(0),
+            )
+            .expect("turn status");
+        conversation_query::generation_status(&value).expect("status")
     }
 
     fn turn_revision(fixture: &Fixture, turn_id: GenerationTurnId) -> Revision {
@@ -1855,7 +3082,7 @@ mod tests {
     #[test]
     fn send_commits_the_user_message_and_opens_one_attempt() {
         let fixture = direct_fixture();
-        let asset_id = stage_media_asset(&fixture.database);
+        let asset_id = stage_media_asset(&fixture.database, "ab");
         let parts = vec![
             MessagePart::Text {
                 text: "hello".into(),
@@ -2074,7 +3301,8 @@ mod tests {
             Err(ConversationRepositoryError::Conflict)
         );
 
-        settle_terminal(&fixture, &first.value.turn, "failed", 22);
+        settle_failed(&fixture, &first.value.turn, 22);
+        fixture.revision = conversation_revision(&fixture);
         let second = fixture
             .database
             .begin_send(
@@ -2121,7 +3349,7 @@ mod tests {
                 TimestampMillis::new(21),
             )
             .expect("send");
-        settle_terminal(&fixture, &send.value.turn, "failed", 22);
+        settle_failed(&fixture, &send.value.turn, 22);
         fixture.revision = conversation_revision(&fixture);
         let command = ContinueConversation {
             conversation_id: fixture.conversation_id,
@@ -2166,8 +3394,7 @@ mod tests {
                 TimestampMillis::new(20),
             )
             .expect("send");
-        let author = fixture.characters[0];
-        let (message_id, candidate_id) = settle_succeeded(&fixture, &send.value.turn, author, 21);
+        let (message_id, candidate_id) = settle_succeeded(&fixture, &send.value.turn, 21);
         fixture.revision = conversation_revision(&fixture);
         let source_revision = turn_revision(&fixture, send.value.turn.id);
 
@@ -2270,7 +3497,7 @@ mod tests {
                 TimestampMillis::new(20),
             )
             .expect("send");
-        settle_terminal(&fixture, &send.value.turn, "failed", 21);
+        settle_failed(&fixture, &send.value.turn, 21);
         fixture.revision = conversation_revision(&fixture);
         let command = RetryGeneration {
             conversation_id: fixture.conversation_id,
@@ -2307,7 +3534,7 @@ mod tests {
             vec!["retry.shared-key".to_owned(), "send.shared-key".to_owned()]
         );
 
-        settle_terminal(&fixture, &result.value.turn, "failed", 23);
+        settle_failed(&fixture, &result.value.turn, 23);
         let succeeded_send = fixture
             .database
             .begin_send(
@@ -2319,12 +3546,7 @@ mod tests {
                 TimestampMillis::new(24),
             )
             .expect("second send");
-        settle_succeeded(
-            &fixture,
-            &succeeded_send.value.turn,
-            fixture.characters[0],
-            25,
-        );
+        settle_succeeded(&fixture, &succeeded_send.value.turn, 25);
         let refused = RetryGeneration {
             conversation_id: fixture.conversation_id,
             branch_id: fixture.branch_id,
@@ -2640,7 +3862,7 @@ mod tests {
                 TimestampMillis::new(21),
             )
             .expect("group send");
-        settle_terminal(&fixture, &send.value.turn, "cancelled", 22);
+        settle_cancelled(&fixture, &send.value.turn, 22);
         fixture.revision = conversation_revision(&fixture);
         let forced = fixture
             .database
@@ -2669,7 +3891,7 @@ mod tests {
                 TimestampMillis::new(20),
             )
             .expect("direct send");
-        settle_terminal(&direct, &direct_send.value.turn, "failed", 21);
+        settle_failed(&direct, &direct_send.value.turn, 21);
         assert_eq!(
             direct.database.begin_continue(
                 &ContinueConversation {
@@ -2779,7 +4001,7 @@ mod tests {
             .expect("matching job");
         assert_eq!(matched.value.revision, Revision::new(2));
 
-        settle_terminal(&fixture, &matched.value, "failed", 26);
+        settle_failed(&fixture, &matched.value, 26);
         assert_eq!(
             fixture.database.append_event(
                 turn_id,
@@ -2875,8 +4097,7 @@ mod tests {
                 TimestampMillis::new(20),
             )
             .expect("send");
-        let (message_id, candidate_id) =
-            settle_succeeded(&fixture, &first.value.turn, fixture.characters[0], 21);
+        let (message_id, candidate_id) = settle_succeeded(&fixture, &first.value.turn, 21);
         fixture.revision = conversation_revision(&fixture);
         let second = fixture
             .database
@@ -2885,7 +4106,7 @@ mod tests {
                 TimestampMillis::new(22),
             )
             .expect("second send");
-        settle_terminal(&fixture, &second.value.turn, "failed", 23);
+        settle_failed(&fixture, &second.value.turn, 23);
         fixture.revision = conversation_revision(&fixture);
 
         assert_eq!(
@@ -2960,7 +4181,8 @@ mod tests {
                 TimestampMillis::new(21),
             )
             .expect("checkpoint");
-        settle_terminal(&fixture, &first.value.turn, "failed", 22);
+        settle_failed(&fixture, &first.value.turn, 22);
+        fixture.revision = conversation_revision(&fixture);
         fixture.revision = conversation_revision(&fixture);
         let second = fixture
             .database
@@ -3063,6 +4285,1562 @@ mod tests {
         assert_eq!(replay.value.turn.status, GenerationTurnStatus::Preparing);
         assert_eq!(replay.value.turn.revision, Revision::new(2));
         assert_eq!(first.value.turn.status, GenerationTurnStatus::Created);
+    }
+
+    #[test]
+    fn finalize_commits_the_reserved_assistant_message() {
+        let mut fixture = direct_fixture();
+        let asset_id = stage_media_asset(&fixture.database, "ab");
+        let send = fixture
+            .database
+            .begin_send(
+                &send_command(&fixture, "send-finalize", "cd", text("hello")),
+                TimestampMillis::new(20),
+            )
+            .expect("send");
+        let turn_id = send.value.turn.id;
+        let attempt_id = send.value.attempt.id;
+        let GenerationTarget::NewAssistant {
+            message_id: reserved,
+            ..
+        } = send.value.turn.target
+        else {
+            panic!("expected a new assistant target");
+        };
+        let turn_revision_before = drive(
+            &fixture,
+            turn_id,
+            attempt_id,
+            &[
+                GenerationTurnStatus::Preparing,
+                GenerationTurnStatus::ContextPrepared,
+                GenerationTurnStatus::Running,
+            ],
+            "drive-finalize",
+            21,
+        );
+        let usage_event_id = UsageEventId::new();
+        let result = fixture
+            .database
+            .finalize_generation(
+                turn_id,
+                attempt_id,
+                conversation_revision(&fixture),
+                turn_revision_before,
+                &token("finalize-happy", "cd"),
+                finalization_draft(
+                    vec![
+                        MessagePart::Text {
+                            text: "generated".into(),
+                        },
+                        MessagePart::MediaAsset {
+                            asset_id,
+                            role: lettuce_conversations::MediaAssetRole::Inline,
+                        },
+                    ],
+                    0,
+                ),
+                usage_event_id,
+                TimestampMillis::new(30),
+            )
+            .expect("finalize");
+
+        assert_eq!(result.value.assistant_message.id, reserved);
+        assert_eq!(result.value.candidate.message_id, reserved);
+        assert_eq!(result.value.candidate.turn_id, turn_id);
+        assert_eq!(result.value.candidate.attempt_id, attempt_id);
+        assert_eq!(
+            result.value.candidate.author_participant_id,
+            fixture.characters[0]
+        );
+        assert_eq!(result.value.turn.status, GenerationTurnStatus::Succeeded);
+        assert_eq!(
+            result.value.turn.selected_candidate_id,
+            Some(result.value.candidate.id)
+        );
+        assert_eq!(result.value.revision, None);
+        assert_eq!(result.value.usage_event_id, usage_event_id);
+        assert_eq!(result.value.asset_reference_deltas.len(), 1);
+        assert_eq!(
+            result.value.asset_reference_deltas[0].state,
+            AssetReferenceState::Active
+        );
+        assert_eq!(
+            result.value.turn.attempts[0].status,
+            GenerationAttemptStatus::Succeeded
+        );
+        assert_eq!(
+            result.value.turn.attempts[0].usage_event_id,
+            Some(usage_event_id)
+        );
+
+        assert!(matches!(
+            result.outbox[0].event,
+            ConversationOutboxEvent::TurnFinalized {
+                revision_id: None,
+                ..
+            }
+        ));
+        assert!(matches!(
+            result.outbox[1].event,
+            ConversationOutboxEvent::MessageCommitted {
+                candidate_id: Some(_),
+                revision_id: None,
+                ..
+            }
+        ));
+        assert!(matches!(
+            result.outbox[2].event,
+            ConversationOutboxEvent::AssetReferencesChanged { .. }
+        ));
+        assert_eq!(result.outbox.len(), 3);
+
+        let head: Option<String> = scalar(
+            &fixture.database,
+            "SELECT head_message_id FROM conversation_branches WHERE id = ?1",
+            &fixture.branch_id.to_string(),
+        );
+        assert_eq!(head, Some(reserved.to_string()));
+        let usage_rows: i64 = scalar(
+            &fixture.database,
+            "SELECT count(*) FROM conversation_usage_refs WHERE usage_event_id = ?1",
+            &usage_event_id.to_string(),
+        );
+        assert_eq!(usage_rows, 1);
+        let ordinals: Vec<i64> = fixture
+            .database
+            .connection()
+            .expect("connection")
+            .prepare("SELECT timeline_ordinal FROM conversation_messages WHERE conversation_id = ?1 ORDER BY timeline_ordinal")
+            .expect("statement")
+            .query_map([fixture.conversation_id.to_string()], |row| row.get(0))
+            .expect("ordinals")
+            .collect::<rusqlite::Result<_>>()
+            .expect("ordinals");
+        assert_eq!(ordinals, vec![1, 2]);
+
+        let timeline = ConversationReader::timeline_page(
+            fixture.database.as_ref(),
+            fixture.conversation_id,
+            fixture.branch_id,
+            &PageRequest {
+                cursor: None,
+                limit: PageLimit::new(20),
+            },
+        )
+        .expect("timeline");
+        assert_eq!(timeline.items.len(), 2);
+        assert_eq!(timeline.items[0].message.id, reserved);
+        assert!(timeline.items[0].active_candidate.is_some());
+        assert!(timeline.items[0].active_revision.is_none());
+        ConversationReader::get(fixture.database.as_ref(), fixture.conversation_id)
+            .expect("aggregate");
+
+        fixture.revision = conversation_revision(&fixture);
+        fixture
+            .database
+            .begin_send(
+                &send_command(&fixture, "send-after-finalize", "cd", text("again")),
+                TimestampMillis::new(40),
+            )
+            .expect("the finalized turn is no longer live");
+    }
+
+    #[test]
+    fn regenerate_finalize_swaps_the_active_candidate() {
+        let mut fixture = direct_fixture();
+        let send = fixture
+            .database
+            .begin_send(
+                &send_command(&fixture, "send-regen-finalize", "cd", text("hello")),
+                TimestampMillis::new(20),
+            )
+            .expect("send");
+        let (message_id, first_candidate) = settle_succeeded(&fixture, &send.value.turn, 21);
+        fixture.revision = conversation_revision(&fixture);
+        let regenerate = fixture
+            .database
+            .begin_regenerate(
+                &RegenerateCandidate {
+                    conversation_id: fixture.conversation_id,
+                    branch_id: fixture.branch_id,
+                    message_id,
+                    turn_id: send.value.turn.id,
+                    expected_revision: fixture.revision,
+                    expected_turn_revision: turn_revision(&fixture, send.value.turn.id),
+                    operation: token("regen-finalize", "cd"),
+                    active_candidate_id: first_candidate,
+                    guidance: None,
+                    model_override: None,
+                    forced_speaker: None,
+                    swap_roles: false,
+                },
+                TimestampMillis::new(80),
+            )
+            .expect("regenerate");
+        let attempt_id = regenerate.value.attempt.id;
+        let revision = drive(
+            &fixture,
+            regenerate.value.turn.id,
+            attempt_id,
+            &[
+                GenerationTurnStatus::Preparing,
+                GenerationTurnStatus::ContextPrepared,
+                GenerationTurnStatus::Running,
+            ],
+            "drive-regen",
+            81,
+        );
+        let result = fixture
+            .database
+            .finalize_generation(
+                regenerate.value.turn.id,
+                attempt_id,
+                conversation_revision(&fixture),
+                revision,
+                &token("finalize-regen", "cd"),
+                finalization_draft(text("second take"), 1),
+                UsageEventId::new(),
+                TimestampMillis::new(90),
+            )
+            .expect("finalize regenerate");
+
+        assert_eq!(result.value.assistant_message.id, message_id);
+        assert_ne!(result.value.candidate.id, first_candidate);
+        assert_eq!(
+            result.value.assistant_message.active_render_source,
+            lettuce_conversations::MessageRenderSource::Candidate(result.value.candidate.id)
+        );
+        assert_eq!(result.outbox.len(), 1);
+        assert!(matches!(
+            result.outbox[0].event,
+            ConversationOutboxEvent::TurnFinalized { .. }
+        ));
+        let candidates: i64 = scalar(
+            &fixture.database,
+            "SELECT count(*) FROM conversation_message_candidates WHERE message_id = ?1",
+            &message_id.to_string(),
+        );
+        assert_eq!(candidates, 2);
+        let head: Option<String> = scalar(
+            &fixture.database,
+            "SELECT head_message_id FROM conversation_branches WHERE id = ?1",
+            &fixture.branch_id.to_string(),
+        );
+        assert_eq!(head, Some(message_id.to_string()), "the head is unchanged");
+        let messages: i64 = scalar(
+            &fixture.database,
+            "SELECT count(*) FROM conversation_messages WHERE conversation_id = ?1",
+            &fixture.conversation_id.to_string(),
+        );
+        assert_eq!(messages, 2);
+    }
+
+    #[test]
+    fn group_finalization_resolves_the_forced_speaker() {
+        let mut fixture = group_fixture();
+        let send = fixture
+            .database
+            .begin_send(
+                &send_command(&fixture, "group-finalize-send", "cd", text("hello")),
+                TimestampMillis::new(20),
+            )
+            .expect("group send");
+        settle_cancelled(&fixture, &send.value.turn, 21);
+        fixture.revision = conversation_revision(&fixture);
+
+        let first_speaker = fixture.characters[1];
+        let continued = fixture
+            .database
+            .begin_continue(
+                &ContinueConversation {
+                    conversation_id: fixture.conversation_id,
+                    branch_id: fixture.branch_id,
+                    expected_revision: fixture.revision,
+                    forced_speaker: Some(first_speaker),
+                    swap_roles: false,
+                    operation: token("group-finalize-continue", "cd"),
+                },
+                TimestampMillis::new(30),
+            )
+            .expect("group continue");
+        let revision = drive(
+            &fixture,
+            continued.value.turn.id,
+            continued.value.attempt.id,
+            &[
+                GenerationTurnStatus::Preparing,
+                GenerationTurnStatus::ContextPrepared,
+                GenerationTurnStatus::Running,
+            ],
+            "drive-group",
+            31,
+        );
+        let finalized = fixture
+            .database
+            .finalize_generation(
+                continued.value.turn.id,
+                continued.value.attempt.id,
+                conversation_revision(&fixture),
+                revision,
+                &token("group-finalize", "cd"),
+                finalization_draft(text("first speaker"), 0),
+                UsageEventId::new(),
+                TimestampMillis::new(40),
+            )
+            .expect("group finalize");
+        assert_eq!(
+            finalized.value.candidate.author_participant_id,
+            first_speaker
+        );
+        assert_eq!(
+            finalized.value.assistant_message.author_participant_id,
+            Some(first_speaker)
+        );
+
+        let second_speaker = fixture.characters[0];
+        fixture.revision = conversation_revision(&fixture);
+        let regenerate = fixture
+            .database
+            .begin_regenerate(
+                &RegenerateCandidate {
+                    conversation_id: fixture.conversation_id,
+                    branch_id: fixture.branch_id,
+                    message_id: finalized.value.assistant_message.id,
+                    turn_id: continued.value.turn.id,
+                    expected_revision: fixture.revision,
+                    expected_turn_revision: turn_revision(&fixture, continued.value.turn.id),
+                    operation: token("group-regen", "cd"),
+                    active_candidate_id: finalized.value.candidate.id,
+                    guidance: None,
+                    model_override: None,
+                    forced_speaker: Some(second_speaker),
+                    swap_roles: false,
+                },
+                TimestampMillis::new(50),
+            )
+            .expect("group regenerate");
+        let revision = drive(
+            &fixture,
+            regenerate.value.turn.id,
+            regenerate.value.attempt.id,
+            &[
+                GenerationTurnStatus::Preparing,
+                GenerationTurnStatus::ContextPrepared,
+                GenerationTurnStatus::Running,
+            ],
+            "drive-group-regen",
+            51,
+        );
+        let reauthored = fixture
+            .database
+            .finalize_generation(
+                regenerate.value.turn.id,
+                regenerate.value.attempt.id,
+                conversation_revision(&fixture),
+                revision,
+                &token("group-regen-finalize", "cd"),
+                finalization_draft(text("second speaker"), 1),
+                UsageEventId::new(),
+                TimestampMillis::new(60),
+            )
+            .expect("group regenerate finalize");
+        assert_eq!(
+            reauthored.value.candidate.author_participant_id,
+            second_speaker
+        );
+        assert_eq!(
+            reauthored.value.assistant_message.author_participant_id,
+            Some(second_speaker),
+            "the message author follows its active candidate"
+        );
+    }
+
+    #[test]
+    fn failure_settles_from_running_and_from_a_cancellation_request() {
+        let mut fixture = direct_fixture();
+        let send = fixture
+            .database
+            .begin_send(
+                &send_command(&fixture, "send-fail-running", "cd", text("hello")),
+                TimestampMillis::new(20),
+            )
+            .expect("send");
+        let attempt_id = send.value.attempt.id;
+        let revision = drive(
+            &fixture,
+            send.value.turn.id,
+            attempt_id,
+            &[
+                GenerationTurnStatus::Preparing,
+                GenerationTurnStatus::ContextPrepared,
+                GenerationTurnStatus::Running,
+            ],
+            "drive-fail-running",
+            21,
+        );
+        let usage_event_id = UsageEventId::new();
+        let failed = fixture
+            .database
+            .fail_generation(
+                send.value.turn.id,
+                attempt_id,
+                conversation_revision(&fixture),
+                revision,
+                &token("fail-running", "cd"),
+                GenerationFailureCode::ProviderRejected,
+                usage_event_id,
+                TimestampMillis::new(30),
+            )
+            .expect("fail");
+        assert_eq!(failed.value.turn.status, GenerationTurnStatus::Failed);
+        assert_eq!(
+            failed.value.turn.failure,
+            Some(GenerationFailureCode::ProviderRejected)
+        );
+        assert_eq!(
+            failed.value.turn.attempts[0].failure,
+            Some(GenerationFailureCode::ProviderRejected)
+        );
+        assert_eq!(failed.value.usage_event_id, usage_event_id);
+        assert_eq!(failed.outbox.len(), 1);
+        assert!(matches!(
+            failed.outbox[0].event,
+            ConversationOutboxEvent::TurnFailed { .. }
+        ));
+
+        fixture.revision = conversation_revision(&fixture);
+        let second = fixture
+            .database
+            .begin_send(
+                &send_command(&fixture, "send-fail-cancelling", "cd", text("again")),
+                TimestampMillis::new(40),
+            )
+            .expect("second send");
+        let requested = fixture
+            .database
+            .request_cancellation(
+                &CancelGeneration {
+                    conversation_id: fixture.conversation_id,
+                    turn_id: second.value.turn.id,
+                    attempt_id: second.value.attempt.id,
+                    expected_revision: conversation_revision(&fixture),
+                    expected_turn_revision: Revision::INITIAL,
+                    operation: token("cancel-then-fail", "cd"),
+                },
+                TimestampMillis::new(41),
+            )
+            .expect("request cancellation");
+        assert_eq!(
+            requested.value.status,
+            GenerationTurnStatus::CancellationRequested
+        );
+        let late = fixture
+            .database
+            .fail_generation(
+                second.value.turn.id,
+                second.value.attempt.id,
+                conversation_revision(&fixture),
+                requested.value.revision,
+                &token("fail-cancelling", "cd"),
+                GenerationFailureCode::Internal,
+                UsageEventId::new(),
+                TimestampMillis::new(42),
+            )
+            .expect("fail after a cancellation request");
+        assert_eq!(late.value.turn.status, GenerationTurnStatus::Failed);
+    }
+
+    #[test]
+    fn an_interrupted_turn_recovers_into_a_child_attempt_and_finalizes() {
+        let mut fixture = direct_fixture();
+        let send = fixture
+            .database
+            .begin_send(
+                &send_command(&fixture, "send-recovery", "cd", text("hello")),
+                TimestampMillis::new(20),
+            )
+            .expect("send");
+        let turn_id = send.value.turn.id;
+        let first_attempt = send.value.attempt.id;
+        let revision = drive(
+            &fixture,
+            turn_id,
+            first_attempt,
+            &[
+                GenerationTurnStatus::Preparing,
+                GenerationTurnStatus::ContextPrepared,
+                GenerationTurnStatus::Running,
+            ],
+            "drive-recovery",
+            21,
+        );
+        let interrupted = fixture
+            .database
+            .interrupt_generation(
+                turn_id,
+                first_attempt,
+                conversation_revision(&fixture),
+                revision,
+                &token("interrupt", "cd"),
+                UsageEventId::new(),
+                TimestampMillis::new(30),
+            )
+            .expect("interrupt");
+        assert_eq!(interrupted.value.status, GenerationTurnStatus::Interrupted);
+        assert_eq!(
+            interrupted.value.attempts[0].status,
+            GenerationAttemptStatus::Interrupted
+        );
+        assert!(interrupted.outbox.is_empty());
+
+        let recovered = fixture
+            .database
+            .recover_generation(
+                turn_id,
+                first_attempt,
+                conversation_revision(&fixture),
+                interrupted.value.revision,
+                &token("recover", "cd"),
+                TimestampMillis::new(31),
+            )
+            .expect("recover");
+        assert_eq!(
+            recovered.value.turn.status,
+            GenerationTurnStatus::Recovering
+        );
+        assert_eq!(recovered.value.turn.attempts.len(), 2);
+        assert_eq!(recovered.value.attempt.ordinal, 1);
+        assert_eq!(
+            recovered.value.attempt.parent_attempt_id,
+            Some(first_attempt)
+        );
+        assert_eq!(
+            recovered.value.attempt.status,
+            GenerationAttemptStatus::Created
+        );
+        assert_eq!(
+            recovered.value.attempt.job_idempotency_key,
+            attempt_job_idempotency_key(turn_id, recovered.value.attempt.id)
+        );
+        assert!(recovered.outbox.is_empty());
+
+        let child = recovered.value.attempt.id;
+        let revision = drive(
+            &fixture,
+            turn_id,
+            child,
+            &[GenerationTurnStatus::Running],
+            "drive-child",
+            32,
+        );
+        let finalized = fixture
+            .database
+            .finalize_generation(
+                turn_id,
+                child,
+                conversation_revision(&fixture),
+                revision,
+                &token("finalize-recovered", "cd"),
+                finalization_draft(text("recovered output"), 0),
+                UsageEventId::new(),
+                TimestampMillis::new(40),
+            )
+            .expect("finalize the recovered attempt");
+        assert_eq!(finalized.value.turn.status, GenerationTurnStatus::Succeeded);
+        assert_eq!(finalized.value.candidate.attempt_id, child);
+        assert_eq!(finalized.value.turn.attempts.len(), 2);
+        fixture.revision = conversation_revision(&fixture);
+        ConversationReader::get(fixture.database.as_ref(), fixture.conversation_id)
+            .expect("aggregate");
+    }
+
+    #[test]
+    fn cancellation_settles_with_or_without_a_request() {
+        let mut fixture = direct_fixture();
+        let send = fixture
+            .database
+            .begin_send(
+                &send_command(&fixture, "send-cancel-requested", "cd", text("hello")),
+                TimestampMillis::new(20),
+            )
+            .expect("send");
+        let requested = fixture
+            .database
+            .request_cancellation(
+                &CancelGeneration {
+                    conversation_id: fixture.conversation_id,
+                    turn_id: send.value.turn.id,
+                    attempt_id: send.value.attempt.id,
+                    expected_revision: conversation_revision(&fixture),
+                    expected_turn_revision: Revision::INITIAL,
+                    operation: token("cancel-request", "cd"),
+                },
+                TimestampMillis::new(21),
+            )
+            .expect("request");
+        assert_eq!(requested.outbox.len(), 1);
+        assert!(matches!(
+            requested.outbox[0].event,
+            ConversationOutboxEvent::TurnCancellationRequested { .. }
+        ));
+
+        let wrong_attempt = SettleCancellation {
+            conversation_id: fixture.conversation_id,
+            turn_id: send.value.turn.id,
+            attempt_id: GenerationAttemptId::new(),
+            expected_revision: conversation_revision(&fixture),
+            expected_turn_revision: requested.value.revision,
+            operation: token("settle-wrong-attempt", "cd"),
+            usage_event_id: UsageEventId::new(),
+        };
+        assert_eq!(
+            fixture
+                .database
+                .settle_cancellation(&wrong_attempt, TimestampMillis::new(22)),
+            Err(ConversationRepositoryError::NotFound)
+        );
+
+        let usage_event_id = UsageEventId::new();
+        let settled = fixture
+            .database
+            .settle_cancellation(
+                &SettleCancellation {
+                    attempt_id: send.value.attempt.id,
+                    operation: token("settle-request", "cd"),
+                    usage_event_id,
+                    ..wrong_attempt
+                },
+                TimestampMillis::new(23),
+            )
+            .expect("settle");
+        assert_eq!(settled.value.turn.status, GenerationTurnStatus::Cancelled);
+        assert_eq!(settled.value.usage_event_id, usage_event_id);
+        assert_eq!(
+            settled.value.turn.attempts[0].status,
+            GenerationAttemptStatus::Cancelled
+        );
+        assert!(matches!(
+            settled.outbox[0].event,
+            ConversationOutboxEvent::TurnCancelled { .. }
+        ));
+        let replay = fixture
+            .database
+            .settle_cancellation(
+                &SettleCancellation {
+                    attempt_id: send.value.attempt.id,
+                    operation: token("settle-request", "cd"),
+                    usage_event_id,
+                    expected_revision: Revision::new(99),
+                    ..wrong_attempt
+                },
+                TimestampMillis::new(24),
+            )
+            .expect("settle replay");
+        assert_eq!(replay.operation, settled.operation);
+        assert_eq!(replay.outbox, settled.outbox);
+        assert_eq!(replay.value.turn.status, GenerationTurnStatus::Cancelled);
+
+        fixture.revision = conversation_revision(&fixture);
+        let direct = fixture
+            .database
+            .begin_send(
+                &send_command(&fixture, "send-cancel-direct", "cd", text("again")),
+                TimestampMillis::new(30),
+            )
+            .expect("second send");
+        let settled_from_created = fixture
+            .database
+            .settle_cancellation(
+                &SettleCancellation {
+                    conversation_id: fixture.conversation_id,
+                    turn_id: direct.value.turn.id,
+                    attempt_id: direct.value.attempt.id,
+                    expected_revision: conversation_revision(&fixture),
+                    expected_turn_revision: Revision::INITIAL,
+                    operation: token("settle-created", "cd"),
+                    usage_event_id: UsageEventId::new(),
+                },
+                TimestampMillis::new(31),
+            )
+            .expect("settle from created");
+        assert_eq!(
+            settled_from_created.value.turn.status,
+            GenerationTurnStatus::Cancelled
+        );
+    }
+
+    #[test]
+    fn settlement_rejects_ineligible_statuses_and_stale_revisions() {
+        let fixture = direct_fixture();
+        let send = fixture
+            .database
+            .begin_send(
+                &send_command(&fixture, "send-settle-guards", "cd", text("hello")),
+                TimestampMillis::new(20),
+            )
+            .expect("send");
+        let turn_id = send.value.turn.id;
+        let attempt_id = send.value.attempt.id;
+        let draft = || finalization_draft(text("generated"), 0);
+
+        assert_eq!(
+            fixture.database.finalize_generation(
+                turn_id,
+                attempt_id,
+                conversation_revision(&fixture),
+                Revision::INITIAL,
+                &token("finalize-created", "cd"),
+                draft(),
+                UsageEventId::new(),
+                TimestampMillis::new(21),
+            ),
+            Err(ConversationRepositoryError::Conflict),
+            "a created turn has produced nothing to finalize"
+        );
+        assert_eq!(
+            fixture.database.fail_generation(
+                turn_id,
+                attempt_id,
+                conversation_revision(&fixture),
+                Revision::INITIAL,
+                &token("fail-created", "cd"),
+                GenerationFailureCode::Internal,
+                UsageEventId::new(),
+                TimestampMillis::new(22),
+            ),
+            Err(ConversationRepositoryError::Conflict),
+            "created has no legal edge to failed"
+        );
+        assert_eq!(
+            fixture.database.recover_generation(
+                turn_id,
+                attempt_id,
+                conversation_revision(&fixture),
+                Revision::INITIAL,
+                &token("recover-created", "cd"),
+                TimestampMillis::new(23),
+            ),
+            Err(ConversationRepositoryError::Conflict)
+        );
+
+        let revision = drive(
+            &fixture,
+            turn_id,
+            attempt_id,
+            &[
+                GenerationTurnStatus::Preparing,
+                GenerationTurnStatus::ContextPrepared,
+                GenerationTurnStatus::Running,
+            ],
+            "drive-guards",
+            24,
+        );
+        assert_eq!(
+            fixture.database.finalize_generation(
+                turn_id,
+                attempt_id,
+                Revision::new(99),
+                revision,
+                &token("finalize-stale-conversation", "cd"),
+                draft(),
+                UsageEventId::new(),
+                TimestampMillis::new(30),
+            ),
+            Err(ConversationRepositoryError::StaleRevision {
+                expected: Revision::new(99),
+                actual: conversation_revision(&fixture),
+            })
+        );
+        assert_eq!(
+            fixture.database.finalize_generation(
+                turn_id,
+                attempt_id,
+                conversation_revision(&fixture),
+                Revision::new(99),
+                &token("finalize-stale-turn", "cd"),
+                draft(),
+                UsageEventId::new(),
+                TimestampMillis::new(31),
+            ),
+            Err(ConversationRepositoryError::StaleRevision {
+                expected: Revision::new(99),
+                actual: revision,
+            })
+        );
+    }
+
+    #[test]
+    fn a_usage_event_is_recorded_once_per_conversation() {
+        let mut fixture = direct_fixture();
+        let first = fixture
+            .database
+            .begin_send(
+                &send_command(&fixture, "send-usage-one", "cd", text("hello")),
+                TimestampMillis::new(20),
+            )
+            .expect("send");
+        let usage_event_id = UsageEventId::new();
+        let revision = drive(
+            &fixture,
+            first.value.turn.id,
+            first.value.attempt.id,
+            &[GenerationTurnStatus::Preparing],
+            "drive-usage-one",
+            21,
+        );
+        fixture
+            .database
+            .fail_generation(
+                first.value.turn.id,
+                first.value.attempt.id,
+                conversation_revision(&fixture),
+                revision,
+                &token("fail-usage-one", "cd"),
+                GenerationFailureCode::Internal,
+                usage_event_id,
+                TimestampMillis::new(30),
+            )
+            .expect("first failure");
+
+        fixture.revision = conversation_revision(&fixture);
+        let second = fixture
+            .database
+            .begin_send(
+                &send_command(&fixture, "send-usage-two", "cd", text("again")),
+                TimestampMillis::new(40),
+            )
+            .expect("second send");
+        let revision = drive(
+            &fixture,
+            second.value.turn.id,
+            second.value.attempt.id,
+            &[GenerationTurnStatus::Preparing],
+            "drive-usage-two",
+            41,
+        );
+        assert_eq!(
+            fixture.database.fail_generation(
+                second.value.turn.id,
+                second.value.attempt.id,
+                conversation_revision(&fixture),
+                revision,
+                &token("fail-usage-two", "cd"),
+                GenerationFailureCode::Internal,
+                usage_event_id,
+                TimestampMillis::new(50),
+            ),
+            Err(ConversationRepositoryError::Conflict)
+        );
+    }
+
+    #[test]
+    fn finalize_replays_its_records_and_rolls_back_a_failed_write() {
+        let fixture = direct_fixture();
+        let send = fixture
+            .database
+            .begin_send(
+                &send_command(&fixture, "send-finalize-replay", "cd", text("hello")),
+                TimestampMillis::new(20),
+            )
+            .expect("send");
+        let turn_id = send.value.turn.id;
+        let attempt_id = send.value.attempt.id;
+        let revision = drive(
+            &fixture,
+            turn_id,
+            attempt_id,
+            &[
+                GenerationTurnStatus::Preparing,
+                GenerationTurnStatus::ContextPrepared,
+                GenerationTurnStatus::Running,
+            ],
+            "drive-finalize-replay",
+            21,
+        );
+
+        fixture
+            .database
+            .connection()
+            .expect("connection")
+            .execute_batch(
+                "CREATE TRIGGER fail_test_usage BEFORE INSERT ON conversation_usage_refs BEGIN SELECT RAISE(ABORT, 'test rollback'); END;",
+            )
+            .expect("failure trigger");
+        let usage_event_id = UsageEventId::new();
+        assert_eq!(
+            fixture.database.finalize_generation(
+                turn_id,
+                attempt_id,
+                conversation_revision(&fixture),
+                revision,
+                &token("finalize-rollback", "cd"),
+                finalization_draft(text("generated"), 0),
+                usage_event_id,
+                TimestampMillis::new(30),
+            ),
+            Err(ConversationRepositoryError::Storage)
+        );
+        for table in [
+            "conversation_message_candidates",
+            "conversation_usage_refs",
+            "candidate_media_refs",
+        ] {
+            let count: i64 = scalar(
+                &fixture.database,
+                &format!("SELECT count(*) FROM {table} WHERE conversation_id = ?1"),
+                &fixture.conversation_id.to_string(),
+            );
+            assert_eq!(count, 0, "rows leaked in {table}");
+        }
+        let messages: i64 = scalar(
+            &fixture.database,
+            "SELECT count(*) FROM conversation_messages WHERE conversation_id = ?1",
+            &fixture.conversation_id.to_string(),
+        );
+        assert_eq!(messages, 1, "the assistant message was rolled back");
+        assert_eq!(turn_revision(&fixture, turn_id), revision);
+
+        fixture
+            .database
+            .connection()
+            .expect("connection")
+            .execute_batch("DROP TRIGGER fail_test_usage")
+            .expect("drop trigger");
+        let finalize_token = token("finalize-replayed", "cd");
+        let first = fixture
+            .database
+            .finalize_generation(
+                turn_id,
+                attempt_id,
+                conversation_revision(&fixture),
+                revision,
+                &finalize_token,
+                finalization_draft(text("generated"), 0),
+                usage_event_id,
+                TimestampMillis::new(40),
+            )
+            .expect("finalize");
+        let replay = fixture
+            .database
+            .finalize_generation(
+                turn_id,
+                attempt_id,
+                Revision::new(99),
+                Revision::new(99),
+                &finalize_token,
+                finalization_draft(text("generated"), 0),
+                usage_event_id,
+                TimestampMillis::new(41),
+            )
+            .expect("replay ignores the stale expectations it never re-checks");
+        assert_eq!(replay.operation, first.operation);
+        assert_eq!(replay.outbox, first.outbox);
+        assert_eq!(replay.value.candidate.id, first.value.candidate.id);
+        assert_eq!(replay.value.turn.status, GenerationTurnStatus::Succeeded);
+
+        let candidates: i64 = scalar(
+            &fixture.database,
+            "SELECT count(*) FROM conversation_message_candidates WHERE conversation_id = ?1",
+            &fixture.conversation_id.to_string(),
+        );
+        assert_eq!(candidates, 1);
+    }
+
+    #[test]
+    fn a_stale_head_blocks_retry_at_begin_and_finalize() {
+        let mut fixture = direct_fixture();
+        let first = fixture
+            .database
+            .begin_send(
+                &send_command(&fixture, "send-orphan-one", "cd", text("first")),
+                TimestampMillis::new(20),
+            )
+            .expect("first send");
+        settle_failed(&fixture, &first.value.turn, 21);
+        fixture.revision = conversation_revision(&fixture);
+        let second = fixture
+            .database
+            .begin_send(
+                &send_command(&fixture, "send-orphan-two", "cd", text("second")),
+                TimestampMillis::new(30),
+            )
+            .expect("second send");
+        settle_succeeded(&fixture, &second.value.turn, 31);
+        fixture.revision = conversation_revision(&fixture);
+
+        assert_eq!(
+            fixture.database.begin_retry(
+                &RetryGeneration {
+                    conversation_id: fixture.conversation_id,
+                    branch_id: fixture.branch_id,
+                    turn_id: first.value.turn.id,
+                    expected_revision: fixture.revision,
+                    expected_turn_revision: turn_revision(&fixture, first.value.turn.id),
+                    operation: token("retry-orphan", "cd"),
+                },
+                TimestampMillis::new(40)
+            ),
+            Err(ConversationRepositoryError::Conflict),
+            "the failed turn's parent is no longer the branch head"
+        );
+
+        let live = fixture
+            .database
+            .begin_send(
+                &send_command(&fixture, "send-orphan-three", "cd", text("third")),
+                TimestampMillis::new(50),
+            )
+            .expect("third send");
+        let revision = drive(
+            &fixture,
+            live.value.turn.id,
+            live.value.attempt.id,
+            &[
+                GenerationTurnStatus::Preparing,
+                GenerationTurnStatus::ContextPrepared,
+                GenerationTurnStatus::Running,
+            ],
+            "drive-orphan",
+            51,
+        );
+        fixture
+            .database
+            .connection()
+            .expect("connection")
+            .execute(
+                "UPDATE conversation_branches SET head_message_id = NULL WHERE conversation_id = ?1 AND id = ?2",
+                params![
+                    fixture.conversation_id.to_string(),
+                    fixture.branch_id.to_string(),
+                ],
+            )
+            .expect("raw head move: no port retracts a head yet");
+        assert_eq!(
+            fixture.database.finalize_generation(
+                live.value.turn.id,
+                live.value.attempt.id,
+                conversation_revision(&fixture),
+                revision,
+                &token("finalize-orphan", "cd"),
+                finalization_draft(text("generated"), 0),
+                UsageEventId::new(),
+                TimestampMillis::new(60),
+            ),
+            Err(ConversationRepositoryError::Conflict),
+            "the head moved under the running turn"
+        );
+        let messages: i64 = scalar(
+            &fixture.database,
+            "SELECT count(*) FROM conversation_messages WHERE conversation_id = ?1",
+            &fixture.conversation_id.to_string(),
+        );
+        assert_eq!(messages, 4, "the rolled-back finalize wrote no message");
+    }
+
+    #[test]
+    fn finalize_confirms_the_derived_ordinal_and_the_settled_usage_event() {
+        let fixture = direct_fixture();
+        let send = fixture
+            .database
+            .begin_send(
+                &send_command(&fixture, "send-ordinal", "cd", text("hello")),
+                TimestampMillis::new(20),
+            )
+            .expect("send");
+        let turn_id = send.value.turn.id;
+        let attempt_id = send.value.attempt.id;
+        let revision = drive(
+            &fixture,
+            turn_id,
+            attempt_id,
+            &[
+                GenerationTurnStatus::Preparing,
+                GenerationTurnStatus::ContextPrepared,
+                GenerationTurnStatus::Running,
+            ],
+            "drive-ordinal",
+            21,
+        );
+        assert_eq!(
+            fixture.database.finalize_generation(
+                turn_id,
+                attempt_id,
+                conversation_revision(&fixture),
+                revision,
+                &token("finalize-bad-ordinal", "cd"),
+                finalization_draft(text("generated"), 3),
+                UsageEventId::new(),
+                TimestampMillis::new(30),
+            ),
+            Err(invalid("finalization.ordinal"))
+        );
+        assert_eq!(
+            fixture.database.finalize_generation(
+                turn_id,
+                attempt_id,
+                conversation_revision(&fixture),
+                revision,
+                &token("finalize-bad-outcome", "cd"),
+                FinalizationDraft {
+                    outcome: GenerationCheckpointEvent::CandidateReady {
+                        candidate_id: MessageCandidateId::new()
+                    },
+                    ..finalization_draft(text("generated"), 0)
+                },
+                UsageEventId::new(),
+                TimestampMillis::new(31),
+            ),
+            Err(invalid("finalization.outcome"))
+        );
+
+        let usage_event_id = UsageEventId::new();
+        let finalize_token = token("finalize-usage-check", "cd");
+        fixture
+            .database
+            .finalize_generation(
+                turn_id,
+                attempt_id,
+                conversation_revision(&fixture),
+                revision,
+                &finalize_token,
+                finalization_draft(text("generated"), 0),
+                usage_event_id,
+                TimestampMillis::new(40),
+            )
+            .expect("finalize");
+        assert_eq!(
+            fixture.database.finalize_generation(
+                turn_id,
+                attempt_id,
+                conversation_revision(&fixture),
+                turn_revision(&fixture, turn_id),
+                &finalize_token,
+                finalization_draft(text("generated"), 0),
+                UsageEventId::new(),
+                TimestampMillis::new(41),
+            ),
+            Err(ConversationRepositoryError::Conflict),
+            "the settled attempt's usage event is authoritative on replay"
+        );
+    }
+
+    #[test]
+    fn retention_deltas_are_attributed_to_their_owning_candidate() {
+        let mut fixture = direct_fixture();
+        let first_asset = stage_media_asset(&fixture.database, "11");
+        let second_asset = stage_media_asset(&fixture.database, "22");
+        let media = |asset_id| {
+            vec![MessagePart::MediaAsset {
+                asset_id,
+                role: lettuce_conversations::MediaAssetRole::Inline,
+            }]
+        };
+        let send = fixture
+            .database
+            .begin_send(
+                &send_command(&fixture, "send-deltas", "cd", text("hello")),
+                TimestampMillis::new(20),
+            )
+            .expect("send");
+        let revision = drive(
+            &fixture,
+            send.value.turn.id,
+            send.value.attempt.id,
+            &[
+                GenerationTurnStatus::Preparing,
+                GenerationTurnStatus::ContextPrepared,
+                GenerationTurnStatus::Running,
+            ],
+            "drive-deltas-one",
+            21,
+        );
+        let first = fixture
+            .database
+            .finalize_generation(
+                send.value.turn.id,
+                send.value.attempt.id,
+                conversation_revision(&fixture),
+                revision,
+                &token("finalize-deltas-one", "cd"),
+                finalization_draft(media(first_asset), 0),
+                UsageEventId::new(),
+                TimestampMillis::new(30),
+            )
+            .expect("first finalize");
+        fixture.revision = conversation_revision(&fixture);
+
+        let regenerate = fixture
+            .database
+            .begin_regenerate(
+                &RegenerateCandidate {
+                    conversation_id: fixture.conversation_id,
+                    branch_id: fixture.branch_id,
+                    message_id: first.value.assistant_message.id,
+                    turn_id: send.value.turn.id,
+                    expected_revision: fixture.revision,
+                    expected_turn_revision: turn_revision(&fixture, send.value.turn.id),
+                    operation: token("regen-deltas", "cd"),
+                    active_candidate_id: first.value.candidate.id,
+                    guidance: None,
+                    model_override: None,
+                    forced_speaker: None,
+                    swap_roles: false,
+                },
+                TimestampMillis::new(40),
+            )
+            .expect("regenerate");
+        let revision = drive(
+            &fixture,
+            regenerate.value.turn.id,
+            regenerate.value.attempt.id,
+            &[
+                GenerationTurnStatus::Preparing,
+                GenerationTurnStatus::ContextPrepared,
+                GenerationTurnStatus::Running,
+            ],
+            "drive-deltas-two",
+            41,
+        );
+        let second = fixture
+            .database
+            .finalize_generation(
+                regenerate.value.turn.id,
+                regenerate.value.attempt.id,
+                conversation_revision(&fixture),
+                revision,
+                &token("finalize-deltas-two", "cd"),
+                finalization_draft(media(second_asset), 1),
+                UsageEventId::new(),
+                TimestampMillis::new(50),
+            )
+            .expect("second finalize");
+
+        assert_eq!(second.outbox.len(), 3);
+        let ConversationOutboxEvent::AssetReferencesChanged {
+            candidate_id: Some(new_owner),
+            changes: new_changes,
+            ..
+        } = &second.outbox[1].event
+        else {
+            panic!("expected the new candidate's asset event");
+        };
+        assert_eq!(*new_owner, second.value.candidate.id);
+        assert_eq!(new_changes.len(), 1);
+        assert_eq!(new_changes[0].asset_id, second_asset);
+        assert_eq!(new_changes[0].state, AssetReferenceState::Active);
+        assert_eq!(
+            new_changes[0].retainer,
+            lettuce_media::AssetRetainer::MessageCandidate(second.value.candidate.id)
+        );
+        let ConversationOutboxEvent::AssetReferencesChanged {
+            candidate_id: Some(prior_owner),
+            changes: prior_changes,
+            ..
+        } = &second.outbox[2].event
+        else {
+            panic!("expected the prior candidate's asset event");
+        };
+        assert_eq!(*prior_owner, first.value.candidate.id);
+        assert_eq!(prior_changes.len(), 1);
+        assert_eq!(prior_changes[0].asset_id, first_asset);
+        assert_eq!(prior_changes[0].state, AssetReferenceState::Historical);
+        assert_eq!(
+            prior_changes[0].retainer,
+            lettuce_media::AssetRetainer::MessageCandidate(first.value.candidate.id)
+        );
+        assert_eq!(second.value.asset_reference_deltas.len(), 2);
+
+        let replay = fixture
+            .database
+            .finalize_generation(
+                regenerate.value.turn.id,
+                regenerate.value.attempt.id,
+                Revision::new(99),
+                Revision::new(99),
+                &token("finalize-deltas-two", "cd"),
+                finalization_draft(media(second_asset), 1),
+                second.value.usage_event_id,
+                TimestampMillis::new(60),
+            )
+            .expect("replay");
+        assert_eq!(
+            replay.value.asset_reference_deltas, second.value.asset_reference_deltas,
+            "replayed deltas come from the recorded events"
+        );
+
+        let outbox = ConversationReader::page_outbox(
+            fixture.database.as_ref(),
+            fixture.conversation_id,
+            &PageRequest {
+                cursor: None,
+                limit: PageLimit::new(50),
+            },
+        )
+        .expect("outbox page");
+        let sequences: Vec<u64> = outbox.items.iter().map(|record| record.sequence).collect();
+        assert_eq!(
+            sequences,
+            (1..=u64::try_from(outbox.items.len()).expect("len")).collect::<Vec<_>>()
+        );
+        for record in &second.outbox {
+            assert!(
+                outbox.items.contains(record),
+                "the finalize records read back unchanged"
+            );
+        }
+    }
+
+    #[test]
+    fn a_regenerated_message_flip_requires_the_expected_active_candidate() {
+        let mut fixture = direct_fixture();
+        let send = fixture
+            .database
+            .begin_send(
+                &send_command(&fixture, "send-flip", "cd", text("hello")),
+                TimestampMillis::new(20),
+            )
+            .expect("send");
+        let (message_id, first_candidate) = settle_succeeded(&fixture, &send.value.turn, 21);
+        fixture.revision = conversation_revision(&fixture);
+        let regenerate = fixture
+            .database
+            .begin_regenerate(
+                &RegenerateCandidate {
+                    conversation_id: fixture.conversation_id,
+                    branch_id: fixture.branch_id,
+                    message_id,
+                    turn_id: send.value.turn.id,
+                    expected_revision: fixture.revision,
+                    expected_turn_revision: turn_revision(&fixture, send.value.turn.id),
+                    operation: token("regen-flip", "cd"),
+                    active_candidate_id: first_candidate,
+                    guidance: None,
+                    model_override: None,
+                    forced_speaker: None,
+                    swap_roles: false,
+                },
+                TimestampMillis::new(80),
+            )
+            .expect("regenerate");
+        let revision = drive(
+            &fixture,
+            regenerate.value.turn.id,
+            regenerate.value.attempt.id,
+            &[
+                GenerationTurnStatus::Preparing,
+                GenerationTurnStatus::ContextPrepared,
+                GenerationTurnStatus::Running,
+            ],
+            "drive-flip",
+            81,
+        );
+        let intruder = MessageCandidateId::new();
+        fixture
+            .database
+            .connection()
+            .expect("connection")
+            .execute(
+                "INSERT INTO conversation_message_candidates (conversation_id, id, message_id, branch_id, turn_id, attempt_id, author_participant_id, ordinal, parts_json, model_json, created_at, provider_replay_artifact_id, provider_replay_retention) SELECT conversation_id, ?3, message_id, branch_id, turn_id, attempt_id, author_participant_id, 1, parts_json, model_json, created_at, NULL, NULL FROM conversation_message_candidates WHERE conversation_id = ?1 AND id = ?2",
+                params![
+                    fixture.conversation_id.to_string(),
+                    first_candidate.to_string(),
+                    intruder.to_string(),
+                ],
+            )
+            .expect("raw sibling candidate: choose_candidate arrives in a later slice");
+        fixture
+            .database
+            .connection()
+            .expect("connection")
+            .execute(
+                "UPDATE conversation_messages SET active_candidate_id = ?3 WHERE conversation_id = ?1 AND id = ?2",
+                params![
+                    fixture.conversation_id.to_string(),
+                    message_id.to_string(),
+                    intruder.to_string(),
+                ],
+            )
+            .expect("raw active candidate move");
+        assert_eq!(
+            fixture.database.finalize_generation(
+                regenerate.value.turn.id,
+                regenerate.value.attempt.id,
+                conversation_revision(&fixture),
+                revision,
+                &token("finalize-flip", "cd"),
+                finalization_draft(text("second take"), 2),
+                UsageEventId::new(),
+                TimestampMillis::new(90),
+            ),
+            Err(ConversationRepositoryError::Conflict),
+            "the active candidate moved under the regeneration"
+        );
+    }
+
+    #[test]
+    fn cancellation_tokens_do_not_impersonate_each_other() {
+        let mut fixture = direct_fixture();
+        let send = fixture
+            .database
+            .begin_send(
+                &send_command(&fixture, "send-cancel-tokens", "cd", text("hello")),
+                TimestampMillis::new(20),
+            )
+            .expect("send");
+        let request_token = token("cancel-token-request", "cd");
+        let requested = fixture
+            .database
+            .request_cancellation(
+                &CancelGeneration {
+                    conversation_id: fixture.conversation_id,
+                    turn_id: send.value.turn.id,
+                    attempt_id: send.value.attempt.id,
+                    expected_revision: conversation_revision(&fixture),
+                    expected_turn_revision: Revision::INITIAL,
+                    operation: request_token.clone(),
+                },
+                TimestampMillis::new(21),
+            )
+            .expect("request");
+        fixture
+            .database
+            .settle_cancellation(
+                &SettleCancellation {
+                    conversation_id: fixture.conversation_id,
+                    turn_id: send.value.turn.id,
+                    attempt_id: send.value.attempt.id,
+                    expected_revision: conversation_revision(&fixture),
+                    expected_turn_revision: requested.value.revision,
+                    operation: token("cancel-token-settle", "cd"),
+                    usage_event_id: UsageEventId::new(),
+                },
+                TimestampMillis::new(22),
+            )
+            .expect("settle");
+
+        assert_eq!(
+            fixture.database.settle_cancellation(
+                &SettleCancellation {
+                    conversation_id: fixture.conversation_id,
+                    turn_id: send.value.turn.id,
+                    attempt_id: send.value.attempt.id,
+                    expected_revision: conversation_revision(&fixture),
+                    expected_turn_revision: Revision::INITIAL,
+                    operation: request_token.clone(),
+                    usage_event_id: UsageEventId::new(),
+                },
+                TimestampMillis::new(23),
+            ),
+            Err(ConversationRepositoryError::Conflict),
+            "the request record does not describe a settled usage event"
+        );
+
+        fixture.revision = conversation_revision(&fixture);
+        let other = fixture
+            .database
+            .begin_send(
+                &send_command(&fixture, "send-cancel-tokens-two", "cd", text("again")),
+                TimestampMillis::new(30),
+            )
+            .expect("second send");
+        assert_eq!(
+            fixture.database.request_cancellation(
+                &CancelGeneration {
+                    conversation_id: fixture.conversation_id,
+                    turn_id: other.value.turn.id,
+                    attempt_id: other.value.attempt.id,
+                    expected_revision: conversation_revision(&fixture),
+                    expected_turn_revision: Revision::INITIAL,
+                    operation: request_token,
+                },
+                TimestampMillis::new(31),
+            ),
+            Err(ConversationRepositoryError::Conflict),
+            "a cancellation token belongs to the turn it was minted for"
+        );
+        assert_eq!(
+            fixture.database.request_cancellation(
+                &CancelGeneration {
+                    conversation_id: fixture.conversation_id,
+                    turn_id: other.value.turn.id,
+                    attempt_id: other.value.attempt.id,
+                    expected_revision: Revision::new(0),
+                    expected_turn_revision: Revision::INITIAL,
+                    operation: token("cancel-zero", "cd"),
+                },
+                TimestampMillis::new(32),
+            ),
+            Err(ConversationRepositoryError::Invalid(
+                lettuce_conversations::ValidationError::ZeroRevision
+            ))
+        );
+    }
+
+    #[test]
+    fn a_group_turn_without_a_speaker_cannot_finalize_but_still_settles() {
+        let mut fixture = group_fixture();
+        let send = fixture
+            .database
+            .begin_send(
+                &send_command(&fixture, "group-no-speaker", "cd", text("hello")),
+                TimestampMillis::new(20),
+            )
+            .expect("group send");
+        let revision = drive(
+            &fixture,
+            send.value.turn.id,
+            send.value.attempt.id,
+            &[
+                GenerationTurnStatus::Preparing,
+                GenerationTurnStatus::ContextPrepared,
+                GenerationTurnStatus::Running,
+            ],
+            "drive-group-no-speaker",
+            21,
+        );
+        assert_eq!(
+            fixture.database.finalize_generation(
+                send.value.turn.id,
+                send.value.attempt.id,
+                conversation_revision(&fixture),
+                revision,
+                &token("group-no-speaker-finalize", "cd"),
+                finalization_draft(text("generated"), 0),
+                UsageEventId::new(),
+                TimestampMillis::new(30),
+            ),
+            Err(ConversationRepositoryError::Conflict),
+            "a group cast has no sole character to author the candidate"
+        );
+        let failed = fixture
+            .database
+            .fail_generation(
+                send.value.turn.id,
+                send.value.attempt.id,
+                conversation_revision(&fixture),
+                revision,
+                &token("group-no-speaker-fail", "cd"),
+                GenerationFailureCode::SpeakerUnavailable,
+                UsageEventId::new(),
+                TimestampMillis::new(31),
+            )
+            .expect("fail recovers the stuck turn");
+        assert_eq!(failed.value.turn.status, GenerationTurnStatus::Failed);
+
+        fixture.revision = conversation_revision(&fixture);
+        let second = fixture
+            .database
+            .begin_send(
+                &send_command(&fixture, "group-no-speaker-two", "cd", text("again")),
+                TimestampMillis::new(40),
+            )
+            .expect("second group send");
+        settle_cancelled(&fixture, &second.value.turn, 41);
+        assert_eq!(
+            turn_status(&fixture, second.value.turn.id),
+            GenerationTurnStatus::Cancelled
+        );
     }
 
     #[test]

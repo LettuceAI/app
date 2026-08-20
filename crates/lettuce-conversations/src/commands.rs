@@ -616,6 +616,15 @@ pub struct AttachAttemptJob {
     pub job_id: lettuce_types::JobId,
 }
 
+impl CancelGeneration {
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        if self.expected_revision.get() == 0 || self.expected_turn_revision.get() == 0 {
+            return Err(ValidationError::ZeroRevision);
+        }
+        Ok(())
+    }
+}
+
 impl AttachAttemptJob {
     pub fn validate(&self) -> Result<(), ValidationError> {
         if self.expected_revision.get() == 0 || self.expected_turn_revision.get() == 0 {
