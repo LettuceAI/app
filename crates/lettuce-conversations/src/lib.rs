@@ -8,6 +8,7 @@
 mod artifact;
 mod commands;
 mod content;
+mod document;
 mod error;
 mod generation;
 mod model;
@@ -19,6 +20,7 @@ mod validation;
 pub use artifact::*;
 pub use commands::*;
 pub use content::*;
+pub use document::*;
 pub use error::*;
 pub use generation::*;
 pub use model::*;
@@ -157,7 +159,7 @@ mod tests {
             digest: bytes.digest(),
             schema_version: reference.schema_version,
             byte_size: bytes.len() as u64,
-            codec: ArtifactCodec::Binary,
+            codec: ArtifactCodec::Json,
             retention: ArtifactRetention::Conversation,
             bytes,
         }

@@ -19,7 +19,7 @@ use lettuce_media::{
     MediaBlob, MediaBlobRepository, MediaBlobRepositoryError, MediaKind, RetentionClass,
 };
 use lettuce_models::{
-    ModelDependencyReference, ModelKind, ModelProfile, ModelProfileRepository,
+    Modality, ModelDependencyReference, ModelKind, ModelProfile, ModelProfileRepository,
     ModelRepositoryError, ProviderAccount, ProviderAccountRepository, ProviderConfig,
     ProviderProtocol, SecretHeader,
 };
@@ -480,10 +480,23 @@ fn validate_profile(profile: &ModelProfile) -> Result<(), ModelRepositoryError> 
         || profile.config.input_modalities.is_empty()
         || profile.config.output_modalities.is_empty()
         || profile.revision.get() == 0
+        || has_duplicate_modalities(&profile.config.input_modalities)
+        || has_duplicate_modalities(&profile.config.output_modalities)
+        || profile
+            .config
+            .temperature
+            .is_some_and(|value| !value.is_finite())
     {
         return Err(ModelRepositoryError::InvalidData);
     }
     Ok(())
+}
+
+fn has_duplicate_modalities(modalities: &[Modality]) -> bool {
+    modalities
+        .iter()
+        .enumerate()
+        .any(|(index, modality)| modalities[..index].contains(modality))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

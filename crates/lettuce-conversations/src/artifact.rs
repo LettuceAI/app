@@ -16,8 +16,8 @@ use zeroize::{Zeroize, Zeroizing};
 
 use crate::{
     ConversationKind, CreateConversationPlan, InitialMessageOrigin, InitialTimelineDraft,
-    ProtectedSnapshotRef, ReplayArtifactRef, ReplayCodec, ReplayRetention, SnapshotSelection,
-    SnapshotSource, ValidationError,
+    ProtectedSnapshotRef, ReplayArtifactRef, ReplayCodec, ReplayRetention,
+    SNAPSHOT_DOCUMENT_FORMAT_V1, SnapshotSelection, SnapshotSource, ValidationError,
 };
 
 pub(crate) const MAX_PROTECTED_ARTIFACT_BYTES: usize = 16 * 1024 * 1024;
@@ -185,6 +185,13 @@ impl SnapshotArtifactDraft {
             return Err(ArtifactError::InvalidReference(
                 ValidationError::InvalidValue {
                     field: "snapshot_artifact.retention",
+                },
+            ));
+        }
+        if self.schema_version == SNAPSHOT_DOCUMENT_FORMAT_V1 && self.codec != ArtifactCodec::Json {
+            return Err(ArtifactError::InvalidReference(
+                ValidationError::InvalidValue {
+                    field: "snapshot_artifact.codec",
                 },
             ));
         }
