@@ -94,17 +94,19 @@ fn validate_cursor_number(
     if valid { Ok(()) } else { Err(cursor_error()) }
 }
 
-fn parse<T: FromStr>(value: String) -> Result<T, ConversationRepositoryError> {
+pub(crate) fn parse<T: FromStr>(value: String) -> Result<T, ConversationRepositoryError> {
     value
         .parse()
         .map_err(|_| ConversationRepositoryError::Storage)
 }
 
-fn parse_opt<T: FromStr>(value: Option<String>) -> Result<Option<T>, ConversationRepositoryError> {
+pub(crate) fn parse_opt<T: FromStr>(
+    value: Option<String>,
+) -> Result<Option<T>, ConversationRepositoryError> {
     value.map(parse).transpose()
 }
 
-fn timestamp(value: i64) -> TimestampMillis {
+pub(crate) fn timestamp(value: i64) -> TimestampMillis {
     TimestampMillis::new(value)
 }
 
@@ -116,7 +118,7 @@ fn open_read<'a>(
         .map_err(|_| ConversationRepositoryError::Storage)
 }
 
-fn operation_kind(value: &str) -> Result<OperationKind, ConversationRepositoryError> {
+pub(crate) fn operation_kind(value: &str) -> Result<OperationKind, ConversationRepositoryError> {
     Ok(match value {
         "create" => OperationKind::Create,
         "send" => OperationKind::Send,
@@ -144,7 +146,9 @@ fn operation_kind(value: &str) -> Result<OperationKind, ConversationRepositoryEr
     })
 }
 
-fn generation_operation(value: &str) -> Result<GenerationOperation, ConversationRepositoryError> {
+pub(crate) fn generation_operation(
+    value: &str,
+) -> Result<GenerationOperation, ConversationRepositoryError> {
     match value {
         "send" => Ok(GenerationOperation::Send),
         "continue" => Ok(GenerationOperation::Continue),
@@ -153,7 +157,9 @@ fn generation_operation(value: &str) -> Result<GenerationOperation, Conversation
     }
 }
 
-fn generation_status(value: &str) -> Result<GenerationTurnStatus, ConversationRepositoryError> {
+pub(crate) fn generation_status(
+    value: &str,
+) -> Result<GenerationTurnStatus, ConversationRepositoryError> {
     use GenerationTurnStatus::*;
     Ok(match value {
         "created" => Created,
@@ -172,7 +178,9 @@ fn generation_status(value: &str) -> Result<GenerationTurnStatus, ConversationRe
     })
 }
 
-fn attempt_status(value: &str) -> Result<GenerationAttemptStatus, ConversationRepositoryError> {
+pub(crate) fn attempt_status(
+    value: &str,
+) -> Result<GenerationAttemptStatus, ConversationRepositoryError> {
     use GenerationAttemptStatus::*;
     Ok(match value {
         "created" => Created,
@@ -186,7 +194,7 @@ fn attempt_status(value: &str) -> Result<GenerationAttemptStatus, ConversationRe
     })
 }
 
-fn failure(
+pub(crate) fn failure(
     value: Option<String>,
 ) -> Result<Option<GenerationFailureCode>, ConversationRepositoryError> {
     value
@@ -207,7 +215,7 @@ fn failure(
         .transpose()
 }
 
-fn message_role(value: &str) -> Result<MessageRole, ConversationRepositoryError> {
+pub(crate) fn message_role(value: &str) -> Result<MessageRole, ConversationRepositoryError> {
     match value {
         "user" => Ok(MessageRole::User),
         "assistant" => Ok(MessageRole::Assistant),
@@ -217,7 +225,9 @@ fn message_role(value: &str) -> Result<MessageRole, ConversationRepositoryError>
     }
 }
 
-fn message_visibility(value: &str) -> Result<MessageVisibility, ConversationRepositoryError> {
+pub(crate) fn message_visibility(
+    value: &str,
+) -> Result<MessageVisibility, ConversationRepositoryError> {
     match value {
         "visible" => Ok(MessageVisibility::Visible),
         "hidden" => Ok(MessageVisibility::Hidden),
@@ -226,7 +236,7 @@ fn message_visibility(value: &str) -> Result<MessageVisibility, ConversationRepo
     }
 }
 
-fn replay_codec(value: &str) -> Result<ReplayCodec, ConversationRepositoryError> {
+pub(crate) fn replay_codec(value: &str) -> Result<ReplayCodec, ConversationRepositoryError> {
     match value {
         "json" => Ok(ReplayCodec::Json),
         "cbor" => Ok(ReplayCodec::Cbor),
@@ -235,7 +245,7 @@ fn replay_codec(value: &str) -> Result<ReplayCodec, ConversationRepositoryError>
     }
 }
 
-fn replay_ref(
+pub(crate) fn replay_ref(
     transaction: &Transaction<'_>,
     artifact_id: Option<String>,
     retention: Option<String>,
@@ -276,7 +286,7 @@ fn replay_ref(
     Ok(Some(reference))
 }
 
-fn verify_media_projection(
+pub(crate) fn verify_media_projection(
     transaction: &Transaction<'_>,
     conversation_id: ConversationId,
     owner_table: &str,
@@ -704,7 +714,7 @@ pub(crate) fn validate_outbox_event_exact(
     Ok(())
 }
 
-fn hydrate_revision_row(
+pub(crate) fn hydrate_revision_row(
     transaction: &Transaction<'_>,
     row: &Row<'_>,
 ) -> Result<MessageRevision, ConversationRepositoryError> {
@@ -751,7 +761,7 @@ fn hydrate_revision_row(
     Ok(value)
 }
 
-fn hydrate_candidate_row(
+pub(crate) fn hydrate_candidate_row(
     transaction: &Transaction<'_>,
     row: &Row<'_>,
 ) -> Result<MessageCandidate, ConversationRepositoryError> {
@@ -805,7 +815,7 @@ fn hydrate_candidate_row(
     Ok(value)
 }
 
-fn message_row(
+pub(crate) fn message_row(
     transaction: &Transaction<'_>,
     row: &Row<'_>,
 ) -> Result<(TimelineItem, i64), ConversationRepositoryError> {
@@ -1096,7 +1106,7 @@ fn hydrate_initial_origin(
     Ok(Some(origin))
 }
 
-fn branch_path(
+pub(crate) fn branch_path(
     transaction: &Transaction<'_>,
     conversation_id: ConversationId,
     selected: ConversationBranchId,
@@ -1256,7 +1266,7 @@ pub(crate) fn hydrate_branch_timeline_all(
     Ok(result)
 }
 
-fn stored_speaker(
+pub(crate) fn stored_speaker(
     participant_id: Option<String>,
     payload: Option<String>,
 ) -> Result<Option<SelectedSpeakerDecision>, ConversationRepositoryError> {
@@ -1289,7 +1299,7 @@ fn stored_speaker(
     }))
 }
 
-fn hydrate_attempts(
+pub(crate) fn hydrate_attempts(
     transaction: &Transaction<'_>,
     conversation_id: ConversationId,
     turn_id: GenerationTurnId,
@@ -1363,7 +1373,7 @@ fn hydrate_attempts(
     Ok((attempts, all_candidates))
 }
 
-fn hydrate_lorebooks(
+pub(crate) fn hydrate_lorebooks(
     transaction: &Transaction<'_>,
     conversation_id: ConversationId,
     turn_id: GenerationTurnId,
@@ -1393,7 +1403,7 @@ fn hydrate_lorebooks(
     Ok(values)
 }
 
-fn hydrate_turn_row(
+pub(crate) fn hydrate_turn_row(
     transaction: &Transaction<'_>,
     row: &Row<'_>,
 ) -> Result<GenerationTurn, ConversationRepositoryError> {
@@ -1574,7 +1584,7 @@ fn hydrate_turn_row_inner(
     Ok(value)
 }
 
-fn owned_ref(
+pub(crate) fn owned_ref(
     transaction: &Transaction<'_>,
     table: &str,
     column: &str,
@@ -1598,7 +1608,7 @@ fn owned_ref(
     }
 }
 
-fn validate_character_participant(
+pub(crate) fn validate_character_participant(
     transaction: &Transaction<'_>,
     conversation_id: ConversationId,
     participant_id: ConversationParticipantId,
@@ -1617,7 +1627,7 @@ fn validate_character_participant(
     }
 }
 
-fn validate_operation_result_ownership(
+pub(crate) fn validate_operation_result_ownership(
     transaction: &Transaction<'_>,
     conversation_id: ConversationId,
     result: &OperationResultRef,
@@ -1656,7 +1666,7 @@ fn validate_operation_result_ownership(
     Ok(())
 }
 
-fn require_exists<P: rusqlite::Params>(
+pub(crate) fn require_exists<P: rusqlite::Params>(
     transaction: &Transaction<'_>,
     sql: &str,
     parameters: P,
@@ -1671,7 +1681,7 @@ fn require_exists<P: rusqlite::Params>(
     }
 }
 
-fn validate_asset_delta(
+pub(crate) fn validate_asset_delta(
     transaction: &Transaction<'_>,
     conversation_id: ConversationId,
     delta: &lettuce_conversations::AssetReferenceDelta,
@@ -2090,11 +2100,11 @@ pub(crate) fn validate_outbox_event(
     Ok(())
 }
 
-fn turn_select_sql() -> &'static str {
+pub(crate) fn turn_select_sql() -> &'static str {
     "SELECT conversation_id, id, branch_id, operation, input_kind, user_message_id, head_message_id, candidate_message_id, candidate_id, idempotency_key, status, selected_speaker_participant_id, selected_speaker_details_json, resolved_model_json, prompt_document_id, prompt_revision, memory_revision_id, selected_candidate_id, failure, revision, created_at, updated_at, correlation_id, target_kind, target_message_id, target_parent_message_id, target_prior_candidate_id, guidance, requested_model_override_json, forced_speaker_participant_id, swap_roles, retry_of_turn_id FROM conversation_turns"
 }
 
-fn unique_message_conversation(
+pub(crate) fn unique_message_conversation(
     transaction: &Transaction<'_>,
     message_id: MessageId,
 ) -> Result<ConversationId, ConversationRepositoryError> {

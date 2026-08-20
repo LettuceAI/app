@@ -5,6 +5,7 @@
 mod character_adapter;
 mod conversation_artifact_adapter;
 mod conversation_creator;
+mod conversation_mutation_kernel;
 mod conversation_query;
 mod conversation_vertical_slice;
 mod group_adapter;

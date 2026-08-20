@@ -11,27 +11,22 @@ use lettuce_conversations::{
     Conversation, ConversationAggregate, ConversationBranch, ConversationCreator,
     ConversationLifecycle, ConversationOutboxEvent, ConversationOutboxRecord,
     ConversationParticipant, ConversationRepositoryError, InitialMessageOrigin, MessagePart,
-    MessageRole, MessageVisibility, OperationKind, OperationRecord, OperationResultRef,
+    MessageVisibility, OperationKind, OperationRecord, OperationResultRef,
     PreparedConversationLaunch, ProtectedSnapshotRef, SnapshotArtifactDraft,
 };
 use lettuce_types::{
     ConversationBranchId, ConversationId, OperationRecordId, OutboxEventId, Revision,
     TimestampMillis,
 };
-use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
+use rusqlite::{Transaction, TransactionBehavior, params};
 
 use super::{
-    Database, conversation_artifact_adapter, conversation_query, conversation_vertical_slice,
+    Database, conversation_artifact_adapter, conversation_mutation_kernel, conversation_query,
+    conversation_vertical_slice,
 };
 
-fn role_name(role: MessageRole) -> &'static str {
-    match role {
-        MessageRole::User => "user",
-        MessageRole::Assistant => "assistant",
-        MessageRole::System => "system",
-        MessageRole::Scene => "scene",
-    }
-}
+#[cfg(test)]
+use lettuce_conversations::MessageRole;
 
 fn media_role_name(role: lettuce_conversations::MediaAssetRole) -> &'static str {
     match role {
@@ -193,7 +188,7 @@ fn persist_initial_timeline(
                     entry
                         .author_participant_id
                         .map(|id| id.to_string()),
-                    role_name(entry.role),
+                    conversation_mutation_kernel::message_role_name(entry.role),
                     ordinal,
                     now.get(),
                     entry.revision_id.to_string(),
@@ -290,31 +285,22 @@ fn persist_operation_and_outbox(
     head_message_id: Option<lettuce_types::MessageId>,
     now: TimestampMillis,
 ) -> Result<(OperationRecord, ConversationOutboxRecord), ConversationRepositoryError> {
-    let operation_id = OperationRecordId::new();
-    let result = OperationResultRef::Conversation(plan.conversation_id);
-    let result_json = conversation_vertical_slice::encode(&result)?;
-    transaction
-        .execute(
-            "INSERT INTO conversation_operations (id, conversation_id, kind, operation_key, request_digest, result_kind, result_id, result_json, created_at) VALUES (?1, ?2, 'create', ?3, ?4, 'conversation', ?5, ?6, ?7)",
-            params![
-                operation_id.to_string(),
-                plan.conversation_id.to_string(),
-                plan.operation.key.as_str(),
-                plan.operation.request_digest.as_str(),
-                plan.conversation_id.to_string(),
-                result_json,
-                now.get(),
-            ],
-        )
-        .map_err(conversation_vertical_slice::db)?;
-    let operation = OperationRecord {
-        id: operation_id,
-        conversation_id: plan.conversation_id,
-        kind: OperationKind::Create,
-        operation: plan.operation.clone(),
-        result,
-        created_at: now,
-    };
+    let operation = conversation_mutation_kernel::insert_operation(
+        transaction,
+        plan.conversation_id,
+        OperationKind::Create,
+        &plan.operation,
+        &OperationResultRef::Conversation(plan.conversation_id),
+        now,
+    )?;
+    let sequence = conversation_mutation_kernel::next_outbox_sequence(
+        transaction,
+        plan.conversation_id,
+        OperationKind::Create,
+    )?;
+    if sequence != 1 {
+        return Err(ConversationRepositoryError::Storage);
+    }
     let event = ConversationOutboxEvent::ConversationCreated {
         conversation_id: plan.conversation_id,
         root_branch_id,
@@ -328,26 +314,12 @@ fn persist_operation_and_outbox(
         id: OutboxEventId::new(),
         conversation_id: plan.conversation_id,
         conversation_revision: Revision::INITIAL,
-        sequence: 1,
-        operation_record_id: operation_id,
+        sequence,
+        operation_record_id: operation.id,
         at: now,
         event,
     };
-    outbox
-        .validate()
-        .map_err(ConversationRepositoryError::Invalid)?;
-    transaction
-        .execute(
-            "INSERT INTO conversation_outbox (conversation_id, id, sequence, conversation_revision, operation_record_id, at, event_json) VALUES (?1, ?2, 1, 1, ?3, ?4, ?5)",
-            params![
-                plan.conversation_id.to_string(),
-                outbox.id.to_string(),
-                operation_id.to_string(),
-                now.get(),
-                conversation_vertical_slice::encode(&outbox.event)?,
-            ],
-        )
-        .map_err(conversation_vertical_slice::db)?;
+    conversation_mutation_kernel::insert_outbox(transaction, &outbox)?;
     Ok((operation, outbox))
 }
 
@@ -426,42 +398,12 @@ fn read_operation(
     conversation_id: ConversationId,
     key: &lettuce_conversations::OperationToken,
 ) -> Result<Option<OperationRecord>, ConversationRepositoryError> {
-    let row: Option<(String, String, String, String, String, String, i64)> = transaction
-        .query_row(
-            "SELECT id, operation_key, request_digest, result_kind, result_id, result_json, created_at FROM conversation_operations WHERE conversation_id = ?1 AND kind = 'create' AND operation_key = ?2",
-            params![conversation_id.to_string(), key.key.as_str()],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?)),
-        )
-        .optional()
-        .map_err(conversation_vertical_slice::db)?;
-    let Some((id, stored_key, digest, result_kind, result_id, result_json, created_at)) = row
-    else {
-        return Ok(None);
-    };
-    let stored_key = stored_key
-        .parse()
-        .map_err(|_| ConversationRepositoryError::Storage)?;
-    let digest = digest
-        .parse()
-        .map_err(|_| ConversationRepositoryError::Storage)?;
-    let result: OperationResultRef = conversation_vertical_slice::decode(&result_json)?;
-    if result_kind != "conversation"
-        || result != OperationResultRef::Conversation(conversation_id)
-        || result_id != conversation_id.to_string()
-    {
-        return Err(ConversationRepositoryError::Storage);
-    }
-    Ok(Some(OperationRecord {
-        id: conversation_vertical_slice::parse_id(id)?,
+    conversation_mutation_kernel::read_operation_any(
+        transaction,
         conversation_id,
-        kind: OperationKind::Create,
-        operation: lettuce_conversations::OperationToken {
-            key: stored_key,
-            request_digest: digest,
-        },
-        result,
-        created_at: TimestampMillis::new(created_at),
-    }))
+        OperationKind::Create,
+        key,
+    )
 }
 
 fn read_creation_outbox(
@@ -469,40 +411,14 @@ fn read_creation_outbox(
     conversation_id: ConversationId,
     operation_id: OperationRecordId,
 ) -> Result<ConversationOutboxRecord, ConversationRepositoryError> {
-    let rows: Vec<ConversationOutboxRecord> = transaction
-        .prepare("SELECT id, sequence, conversation_revision, operation_record_id, at, event_json FROM conversation_outbox WHERE conversation_id = ?1 AND operation_record_id = ?2 ORDER BY sequence, id")
-        .map_err(conversation_vertical_slice::db)?
-        .query_map(
-            params![conversation_id.to_string(), operation_id.to_string()],
-            |row| {
-                let event: ConversationOutboxEvent =
-                    conversation_vertical_slice::decode(&row.get::<_, String>(5)?)
-                        .map_err(|_| rusqlite::Error::InvalidQuery)?;
-                Ok(ConversationOutboxRecord {
-                    format_version: 1,
-                    id: conversation_vertical_slice::parse_id(row.get(0)?)
-                        .map_err(|_| rusqlite::Error::InvalidQuery)?,
-                    conversation_id,
-                    sequence: u64::try_from(row.get::<_, i64>(1)?)
-                        .map_err(|_| rusqlite::Error::InvalidQuery)?,
-                    conversation_revision: conversation_vertical_slice::rev(row.get(2)?)
-                        .map_err(|_| rusqlite::Error::InvalidQuery)?,
-                    operation_record_id: conversation_vertical_slice::parse_id(row.get(3)?)
-                        .map_err(|_| rusqlite::Error::InvalidQuery)?,
-                    at: TimestampMillis::new(row.get(4)?),
-                    event,
-                })
-            },
-        )
-        .map_err(conversation_vertical_slice::db)?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(conversation_vertical_slice::db)?;
-    let [record] = rows.as_slice() else {
+    let records = conversation_mutation_kernel::read_outbox_for_operation(
+        transaction,
+        conversation_id,
+        operation_id,
+    )?;
+    let [record] = records.as_slice() else {
         return Err(ConversationRepositoryError::Storage);
     };
-    record
-        .validate()
-        .map_err(ConversationRepositoryError::Invalid)?;
     Ok(record.clone())
 }
 

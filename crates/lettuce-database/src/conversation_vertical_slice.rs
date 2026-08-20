@@ -73,11 +73,11 @@ pub(crate) fn rev(value: i64) -> Result<Revision, ConversationRepositoryError> {
         .map_err(|_| ConversationRepositoryError::Storage)
 }
 
-fn sql_revision(value: Revision) -> Result<i64, ConversationRepositoryError> {
+pub(crate) fn sql_revision(value: Revision) -> Result<i64, ConversationRepositoryError> {
     i64::try_from(value.get()).map_err(|_| ConversationRepositoryError::Storage)
 }
 
-fn provenance_name(value: SettingProvenance) -> &'static str {
+pub(crate) fn provenance_name(value: SettingProvenance) -> &'static str {
     match value {
         SettingProvenance::LaunchInherited => "launch_inherited",
         SettingProvenance::CurrentOverride => "current_override",
@@ -85,7 +85,7 @@ fn provenance_name(value: SettingProvenance) -> &'static str {
     }
 }
 
-fn provenance_from_name(value: &str) -> Result<SettingProvenance, rusqlite::Error> {
+pub(crate) fn provenance_from_name(value: &str) -> Result<SettingProvenance, rusqlite::Error> {
     match value {
         "launch_inherited" => Ok(SettingProvenance::LaunchInherited),
         "current_override" => Ok(SettingProvenance::CurrentOverride),
@@ -109,14 +109,14 @@ fn snapshot_source_columns(source: SnapshotSource) -> (&'static str, String) {
     }
 }
 
-fn source_columns(source: ParticipantSource) -> (&'static str, Option<String>) {
+pub(crate) fn source_columns(source: ParticipantSource) -> (&'static str, Option<String>) {
     match source {
         ParticipantSource::User => ("user", None),
         ParticipantSource::Character(id) => ("character", Some(id.to_string())),
         ParticipantSource::System => ("system", None),
     }
 }
-fn source_from_columns(
+pub(crate) fn source_from_columns(
     kind: &str,
     id: Option<String>,
 ) -> Result<ParticipantSource, ConversationRepositoryError> {
@@ -127,14 +127,14 @@ fn source_from_columns(
         _ => Err(ConversationRepositoryError::Storage),
     }
 }
-fn role_name(role: ParticipantRole) -> &'static str {
+pub(crate) fn role_name(role: ParticipantRole) -> &'static str {
     match role {
         ParticipantRole::User => "user",
         ParticipantRole::Character => "character",
         ParticipantRole::System => "system",
     }
 }
-fn role_from_name(value: &str) -> Result<ParticipantRole, ConversationRepositoryError> {
+pub(crate) fn role_from_name(value: &str) -> Result<ParticipantRole, ConversationRepositoryError> {
     match value {
         "user" => Ok(ParticipantRole::User),
         "character" => Ok(ParticipantRole::Character),
@@ -142,14 +142,16 @@ fn role_from_name(value: &str) -> Result<ParticipantRole, ConversationRepository
         _ => Err(ConversationRepositoryError::Storage),
     }
 }
-fn lifecycle_name(value: ConversationLifecycle) -> &'static str {
+pub(crate) fn lifecycle_name(value: ConversationLifecycle) -> &'static str {
     match value {
         ConversationLifecycle::Active => "active",
         ConversationLifecycle::Archived => "archived",
         ConversationLifecycle::Tombstoned => "tombstoned",
     }
 }
-fn lifecycle_from_name(value: &str) -> Result<ConversationLifecycle, ConversationRepositoryError> {
+pub(crate) fn lifecycle_from_name(
+    value: &str,
+) -> Result<ConversationLifecycle, ConversationRepositoryError> {
     match value {
         "active" => Ok(ConversationLifecycle::Active),
         "archived" => Ok(ConversationLifecycle::Archived),
