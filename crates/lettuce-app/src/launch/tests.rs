@@ -1,19 +1,21 @@
 use lettuce_characters::{
     Character, CharacterDefaults, CharacterMedia, CharacterPresentationV1, CharacterProfile,
-    CharacterProvenance, CharacterRepository, ConversationStarter, CreateCharacterPlan,
+    CharacterProvenance, CharacterRepository, ChatMode, ConversationStarter, CreateCharacterPlan,
+    CreateGroupPlan, GroupMember, GroupProfile, GroupRepository, GroupStartingScene,
     InteractionMode, LifecycleStatus, MemoryPolicy, Persona, PersonaRepository, Scene,
     SceneDocumentV1, SceneOwner, ScenePart, SceneVariant, Selection, StarterMessage, StarterRole,
 };
 use lettuce_context::{
     BindingInsertionTarget, CharacterLorebookBindingRepository, DetectionPolicy,
-    LorebookBehaviorVersion, LorebookBindingCreate, LorebookMetadataDraft, LorebookRepository,
-    PersonaLorebookBindingRepository, PromptBehaviorVersion, PromptMetadataDraft, PromptPurpose,
-    PromptRepository,
+    GroupLorebookBindingRepository, LorebookBehaviorVersion, LorebookBindingCreate,
+    LorebookMetadataDraft, LorebookRepository, PersonaLorebookBindingRepository,
+    PromptBehaviorVersion, PromptMetadataDraft, PromptPurpose, PromptRepository,
 };
 use lettuce_conversations::{
     ConversationKind, ConversationReader, CreateConversationPlan, DirectConversationDetails,
-    IdempotencyKey, InitialMessageOrigin, MemoryModeSnapshot, MessagePart, MessageRole,
-    ModelProviderKind, ParticipantRole, SnapshotSelection, SnapshotSource,
+    GroupChatModeSnapshot, GroupConversationDetails, IdempotencyKey, InitialMessageOrigin,
+    MemoryModeSnapshot, MessagePart, MessageRole, ModelProviderKind, ParticipantRole,
+    PromptPurposeSnapshot, SnapshotSelection, SnapshotSource,
 };
 use lettuce_database::Database;
 use lettuce_models::{
@@ -22,14 +24,17 @@ use lettuce_models::{
 };
 use lettuce_settings::GlobalSettingsStore;
 use lettuce_types::{
-    CharacterId, ConversationStarterId, LorebookId, ModelProfileId, PersonaId, ProviderAccountId,
-    Revision, SceneId, SceneVariantId, StarterMessageId, TimestampMillis,
+    CharacterId, ConversationStarterId, GroupId, LorebookId, ModelProfileId, PersonaId,
+    ProviderAccountId, Revision, SceneId, SceneVariantId, StarterMessageId, TimestampMillis,
 };
 
 use super::planner::ConversationLaunchPlanner;
 use super::policy;
-use super::request::{DirectConversationLaunchRequest, DirectUserParticipant, LaunchSelection};
-use crate::DirectLaunchError;
+use super::request::{
+    DirectConversationLaunchRequest, DirectUserParticipant, GroupConversationLaunchRequest,
+    LaunchSelection,
+};
+use crate::{AppBackend, BuiltInPromptId, ConversationLaunchError};
 
 const NOW: TimestampMillis = TimestampMillis::new(1_000);
 
@@ -379,7 +384,7 @@ fn archived_character_is_rejected() {
         ConversationLaunchPlanner::new(&database)
             .prepare_direct(&request(character_id, "archived"))
             .expect_err("archived character"),
-        DirectLaunchError::CharacterArchived { character_id }
+        ConversationLaunchError::CharacterArchived { character_id }
     );
 }
 
@@ -393,7 +398,7 @@ fn companion_character_is_unsupported() {
         ConversationLaunchPlanner::new(&database)
             .prepare_direct(&request(character_id, "companion"))
             .expect_err("companion"),
-        DirectLaunchError::CompanionUnsupported { character_id }
+        ConversationLaunchError::CompanionUnsupported { character_id }
     );
 }
 
@@ -890,7 +895,7 @@ fn persona_resolution_covers_explicit_inherited_and_disabled() {
         ConversationLaunchPlanner::new(&database)
             .prepare_direct(&missing)
             .expect_err("missing persona"),
-        DirectLaunchError::PersonaNotFound { persona_id }
+        ConversationLaunchError::PersonaNotFound { persona_id }
     );
 }
 
@@ -934,7 +939,7 @@ fn prompt_precedence_prefers_the_starter_and_rejects_a_wrong_purpose() {
         ConversationLaunchPlanner::new(&database)
             .prepare_direct(&request(wrong_character, "prompt-wrong-purpose"))
             .expect_err("wrong purpose"),
-        DirectLaunchError::PromptWrongPurpose { prompt_id: wrong }
+        ConversationLaunchError::PromptWrongPurpose { prompt_id: wrong }
     );
 }
 
@@ -1045,7 +1050,7 @@ fn a_foreign_scene_or_starter_is_rejected() {
         ConversationLaunchPlanner::new(&database)
             .prepare_direct(&scene_request)
             .expect_err("foreign scene"),
-        DirectLaunchError::SceneNotOwned {
+        ConversationLaunchError::SceneNotOwned {
             scene_id: foreign_scene_id,
             character_id,
         }
@@ -1057,7 +1062,7 @@ fn a_foreign_scene_or_starter_is_rejected() {
         ConversationLaunchPlanner::new(&database)
             .prepare_direct(&starter_request)
             .expect_err("foreign starter"),
-        DirectLaunchError::StarterNotOwned {
+        ConversationLaunchError::StarterNotOwned {
             starter_id: foreign_starter_id,
             character_id,
         }
@@ -1127,7 +1132,7 @@ fn reusing_a_key_after_a_source_edit_conflicts() {
         planner
             .launch_direct(&launch, TimestampMillis::new(2_000))
             .expect_err("conflict"),
-        DirectLaunchError::CreateConflict
+        ConversationLaunchError::CreateConflict
     );
 }
 
@@ -1329,7 +1334,7 @@ fn an_inherited_archived_prompt_degrades_while_an_authored_one_errors() {
                 starter_id
             ))
             .expect_err("archived starter prompt"),
-        DirectLaunchError::PromptArchived { prompt_id }
+        ConversationLaunchError::PromptArchived { prompt_id }
     );
 }
 
@@ -1383,7 +1388,7 @@ fn an_archived_bound_lorebook_is_skipped_but_an_authored_one_errors() {
                 starter_id
             ))
             .expect_err("authored archived lorebook"),
-        DirectLaunchError::LorebookArchived {
+        ConversationLaunchError::LorebookArchived {
             lorebook_id: archived
         }
     );
@@ -1406,7 +1411,7 @@ fn a_non_chat_model_or_disabled_provider_is_rejected() {
         ConversationLaunchPlanner::new(&database)
             .prepare_direct(&request(character_id, "model-non-chat"))
             .expect_err("non chat model"),
-        DirectLaunchError::NonChatModel {
+        ConversationLaunchError::NonChatModel {
             model_profile_id: image
         }
     );
@@ -1430,7 +1435,7 @@ fn a_non_chat_model_or_disabled_provider_is_rejected() {
         ConversationLaunchPlanner::new(&database)
             .prepare_direct(&request(disabled_character, "model-disabled-provider"))
             .expect_err("disabled provider"),
-        DirectLaunchError::ProviderDisabled {
+        ConversationLaunchError::ProviderDisabled {
             provider_account_id: account
         }
     );
@@ -1452,7 +1457,7 @@ fn an_image_application_default_model_is_rejected() {
         ConversationLaunchPlanner::new(&database)
             .prepare_direct(&request(character_id, "application-default-image"))
             .expect_err("image application default"),
-        DirectLaunchError::NonChatModel {
+        ConversationLaunchError::NonChatModel {
             model_profile_id: image
         }
     );
@@ -1507,7 +1512,7 @@ fn the_resolved_lorebook_set_is_bounded_before_loading() {
         ConversationLaunchPlanner::new(&database)
             .prepare_direct(&request(character_id, "lorebooks-over-bound"))
             .expect_err("lorebook bound"),
-        DirectLaunchError::TooManyLorebooks {
+        ConversationLaunchError::TooManyLorebooks {
             max: policy::MAX_LAUNCH_LOREBOOKS
         }
     );
@@ -1564,7 +1569,7 @@ fn the_initial_timeline_is_bounded_before_building() {
                 over_bound_id
             ))
             .expect_err("timeline bound"),
-        DirectLaunchError::TooManyInitialMessages {
+        ConversationLaunchError::TooManyInitialMessages {
             max: policy::MAX_LAUNCH_TIMELINE_ENTRIES
         }
     );
@@ -1583,7 +1588,7 @@ fn retrying_after_a_source_is_archived_reports_the_existing_conversation() {
         planner
             .launch_direct(&launch, TimestampMillis::new(2_000))
             .expect_err("already launched"),
-        DirectLaunchError::AlreadyLaunched {
+        ConversationLaunchError::AlreadyLaunched {
             conversation_id: created.value.conversation.id
         }
     );
@@ -1646,5 +1651,1352 @@ fn generated_operation_keys_are_unique() {
     assert_ne!(
         super::identity::launch_conversation_id(&first),
         super::identity::launch_conversation_id(&second)
+    );
+}
+
+fn backend() -> AppBackend {
+    AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend")
+}
+
+fn seed_named_character(database: &Database, name: &str) -> CharacterId {
+    seed_named_character_with(database, name, |_| {})
+}
+
+fn seed_named_character_with(
+    database: &Database,
+    name: &str,
+    mutate: impl FnOnce(&mut CharacterDefaults),
+) -> CharacterId {
+    let id = CharacterId::new();
+    let mut defaults = CharacterDefaults::default();
+    mutate(&mut defaults);
+    let character = Character::new(
+        id,
+        CharacterProfile {
+            name: name.into(),
+            nickname: None,
+            description: Some("A member of the cast".into()),
+            definition: None,
+            design_description: None,
+        },
+        CharacterProvenance::default(),
+        defaults,
+        CharacterPresentationV1::default(),
+        None,
+        CharacterMedia::default(),
+        TimestampMillis::new(1),
+    )
+    .expect("character");
+    CharacterRepository::create(
+        database,
+        CreateCharacterPlan {
+            character,
+            scenes: Vec::new(),
+            variants: Vec::new(),
+            starters: Vec::new(),
+        },
+    )
+    .expect("create character");
+    id
+}
+
+fn member(character_id: CharacterId, ordinal: u32) -> GroupMember {
+    GroupMember {
+        character_id,
+        ordinal,
+        muted: false,
+        model_profile_override: None,
+    }
+}
+
+fn group_starting_scene(text: &str) -> GroupStartingScene {
+    GroupStartingScene {
+        scene: Scene::new(
+            SceneId::new(),
+            SceneOwner::Group(GroupId::new()),
+            0,
+            SceneDocumentV1::new(vec![ScenePart::Text { text: text.into() }]).expect("document"),
+            TimestampMillis::new(1),
+        )
+        .expect("scene"),
+        variants: Vec::new(),
+    }
+}
+
+fn seed_group(
+    database: &Database,
+    members: Vec<GroupMember>,
+    starting_scene: Option<GroupStartingScene>,
+    mutate: impl FnOnce(&mut GroupProfile),
+) -> GroupId {
+    let id = GroupId::new();
+    let starting_scene = starting_scene.map(|mut starting| {
+        starting.scene.owner = SceneOwner::Group(id);
+        for variant in &mut starting.variants {
+            variant.scene_id = starting.scene.id;
+        }
+        starting
+    });
+    let mut group =
+        GroupProfile::new(id, "Cast".into(), members, TimestampMillis::new(1)).expect("group");
+    group.starting_scene_id = starting_scene.as_ref().map(|starting| starting.scene.id);
+    mutate(&mut group);
+    GroupRepository::create(
+        database,
+        CreateGroupPlan {
+            group,
+            starting_scene,
+        },
+    )
+    .expect("create group");
+    id
+}
+
+fn two_member_group(database: &Database) -> GroupId {
+    let first = seed_named_character(database, "Ada");
+    let second = seed_named_character(database, "Bea");
+    seed_group(
+        database,
+        vec![member(first, 0), member(second, 1)],
+        None,
+        |_| {},
+    )
+}
+
+fn group_request(group_id: GroupId, operation_key: &str) -> GroupConversationLaunchRequest {
+    GroupConversationLaunchRequest {
+        format_version: 1,
+        title: "Session".into(),
+        user: DirectUserParticipant {
+            display_name: "Traveller".into(),
+            authored_description: None,
+        },
+        group_id,
+        persona: LaunchSelection::Inherit,
+        operation_key: key(operation_key),
+    }
+}
+
+fn group_plan_for(
+    database: &Database,
+    request: &GroupConversationLaunchRequest,
+) -> CreateConversationPlan {
+    ConversationLaunchPlanner::new(database)
+        .prepare_group(request, NOW)
+        .expect("prepare group launch")
+        .into_parts()
+        .0
+}
+
+fn group_details(plan: &CreateConversationPlan) -> &GroupConversationDetails {
+    match &plan.kind {
+        ConversationKind::Group(details) => details,
+        ConversationKind::Direct(_) => panic!("group launch produced a direct conversation"),
+    }
+}
+
+fn character_participants(
+    plan: &CreateConversationPlan,
+) -> Vec<&lettuce_conversations::ConversationParticipantDraft> {
+    plan.participants
+        .iter()
+        .filter(|participant| participant.role == ParticipantRole::Character)
+        .collect()
+}
+
+fn model_source_id(
+    selection: &SnapshotSelection<lettuce_conversations::ModelSelectionSnapshot>,
+) -> Option<ModelProfileId> {
+    match selection {
+        SnapshotSelection::Inherited(model) | SnapshotSelection::Explicit(model) => {
+            Some(model.source_id)
+        }
+        SnapshotSelection::Disabled => None,
+    }
+}
+
+#[test]
+fn a_conversation_mode_group_opens_empty_even_with_a_starting_scene() {
+    let backend = backend();
+    let database = backend.database();
+    let first = seed_named_character(database, "Ada");
+    let second = seed_named_character(database, "Bea");
+    let group_id = seed_group(
+        database,
+        vec![member(first, 0), member(second, 1)],
+        Some(group_starting_scene("A quiet harbour at dawn.")),
+        |_| {},
+    );
+    let plan = group_plan_for(
+        database,
+        &group_request(group_id, "group-conversation-scene"),
+    );
+    let details = group_details(&plan);
+    assert_eq!(details.group.chat_mode, GroupChatModeSnapshot::Conversation);
+    assert_eq!(details.group.scene, SnapshotSelection::Disabled);
+    assert!(plan.initial_timeline.entries.is_empty());
+}
+
+#[test]
+fn a_roleplay_group_materializes_one_trimmed_scene_message_from_the_selected_variant() {
+    let backend = backend();
+    let database = backend.database();
+    let first = seed_named_character(database, "Ada");
+    let second = seed_named_character(database, "Bea");
+    let mut starting = group_starting_scene("  Base body.  ");
+    let variant_id = SceneVariantId::new();
+    starting.variants = vec![SceneVariant {
+        id: variant_id,
+        scene_id: starting.scene.id,
+        ordinal: 0,
+        content: SceneDocumentV1::new(vec![ScenePart::Text {
+            text: "  Variant body.  ".into(),
+        }])
+        .expect("variant document"),
+        direction: None,
+        revision: Revision::INITIAL,
+        created_at: TimestampMillis::new(1),
+        updated_at: TimestampMillis::new(1),
+    }];
+    starting.scene.selected_variant_id = Some(variant_id);
+    starting.scene.direction = Some("Keep it slow.".into());
+    let group_id = seed_group(
+        database,
+        vec![member(first, 0), member(second, 1)],
+        Some(starting),
+        |group| group.chat_mode = ChatMode::Roleplay,
+    );
+    let plan = group_plan_for(database, &group_request(group_id, "group-roleplay-scene"));
+    let details = group_details(&plan);
+    assert!(matches!(
+        details.group.scene,
+        SnapshotSelection::Inherited(_)
+    ));
+    assert_eq!(plan.initial_timeline.entries.len(), 1);
+    let entry = &plan.initial_timeline.entries[0];
+    assert_eq!(entry.role, MessageRole::Scene);
+    assert_eq!(entry.author_participant_id, None);
+    assert_eq!(entry.parts.len(), 1);
+    assert_eq!(message_text(&entry.parts[0]), "Variant body.");
+    assert!(matches!(
+        entry.origin,
+        InitialMessageOrigin::SelectedScene { .. }
+    ));
+
+    let launched = ConversationLaunchPlanner::new(database)
+        .launch_group(&group_request(group_id, "group-roleplay-scene-launch"), NOW)
+        .expect("launch");
+    launched.value.validate().expect("aggregate validates");
+    let timeline = ConversationReader::timeline_page(
+        database,
+        launched.value.conversation.id,
+        launched.value.conversation.active_branch_id,
+        &lettuce_types::PageRequest::default(),
+    )
+    .expect("timeline");
+    assert_eq!(timeline.items.len(), 1);
+    assert_eq!(timeline.items[0].message.role, MessageRole::Scene);
+    assert!(matches!(
+        timeline.items[0].initial_origin,
+        Some(InitialMessageOrigin::SelectedScene { .. })
+    ));
+}
+
+#[test]
+fn a_blank_group_scene_is_selected_without_a_timeline_entry() {
+    let backend = backend();
+    let database = backend.database();
+    let first = seed_named_character(database, "Ada");
+    let second = seed_named_character(database, "Bea");
+    let group_id = seed_group(
+        database,
+        vec![member(first, 0), member(second, 1)],
+        Some(group_starting_scene("   ")),
+        |group| group.chat_mode = ChatMode::Roleplay,
+    );
+    let plan = group_plan_for(database, &group_request(group_id, "group-blank-scene"));
+    match &group_details(&plan).group.scene {
+        SnapshotSelection::Inherited(scene) => assert_eq!(scene.title, "Scene 1"),
+        other => panic!("expected an inherited scene, got {other:?}"),
+    }
+    assert!(plan.initial_timeline.entries.is_empty());
+}
+
+#[test]
+fn an_archived_group_scene_degrades_to_no_scene() {
+    let backend = backend();
+    let database = backend.database();
+    let first = seed_named_character(database, "Ada");
+    let second = seed_named_character(database, "Bea");
+    let mut starting = group_starting_scene("A quiet harbour at dawn.");
+    starting.scene.status = LifecycleStatus::Archived;
+    let group_id = seed_group(
+        database,
+        vec![member(first, 0), member(second, 1)],
+        Some(starting),
+        |group| group.chat_mode = ChatMode::Roleplay,
+    );
+    let plan = group_plan_for(database, &group_request(group_id, "group-archived-scene"));
+    assert_eq!(
+        group_details(&plan).group.scene,
+        SnapshotSelection::Disabled
+    );
+    assert!(plan.initial_timeline.entries.is_empty());
+}
+
+#[test]
+fn a_group_prompt_never_falls_back_to_a_member_direct_prompt() {
+    let backend = backend();
+    let database = backend.database();
+    let direct_prompt = seed_prompt(database, "Member prompt", PromptPurpose::DirectChat);
+    let first = seed_named_character_with(database, "Ada", |defaults| {
+        defaults.direct_prompt_id = Some(direct_prompt);
+    });
+    let second = seed_named_character_with(database, "Bea", |defaults| {
+        defaults.direct_prompt_id = Some(direct_prompt);
+    });
+    let group_id = seed_group(
+        database,
+        vec![member(first, 0), member(second, 1)],
+        None,
+        |_| {},
+    );
+    let plan = group_plan_for(
+        database,
+        &group_request(group_id, "group-prompt-tier-three"),
+    );
+    match &group_details(&plan).group.prompt {
+        SnapshotSelection::Inherited(prompt) => {
+            assert_eq!(
+                prompt.source_id,
+                backend
+                    .built_in_prompt_ids()
+                    .get(BuiltInPromptId::GroupChat)
+            );
+            assert_eq!(prompt.purpose, PromptPurposeSnapshot::GroupConversational);
+        }
+        other => panic!("expected the built-in group prompt, got {other:?}"),
+    }
+}
+
+#[test]
+fn the_roleplay_built_in_prompt_is_used_when_the_group_sets_none() {
+    let backend = backend();
+    let database = backend.database();
+    let first = seed_named_character(database, "Ada");
+    let second = seed_named_character(database, "Bea");
+    let group_id = seed_group(
+        database,
+        vec![member(first, 0), member(second, 1)],
+        None,
+        |group| group.chat_mode = ChatMode::Roleplay,
+    );
+    let plan = group_plan_for(database, &group_request(group_id, "group-prompt-roleplay"));
+    match &group_details(&plan).group.prompt {
+        SnapshotSelection::Inherited(prompt) => {
+            assert_eq!(
+                prompt.source_id,
+                backend
+                    .built_in_prompt_ids()
+                    .get(BuiltInPromptId::GroupChatRoleplay)
+            );
+            assert_eq!(prompt.purpose, PromptPurposeSnapshot::GroupRoleplay);
+        }
+        other => panic!("expected the built-in roleplay prompt, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_group_prompt_is_inherited_and_an_archived_one_degrades_to_the_built_in() {
+    let backend = backend();
+    let database = backend.database();
+    let authored = seed_prompt(
+        database,
+        "Group prompt",
+        PromptPurpose::GroupChatConversational,
+    );
+    let first = seed_named_character(database, "Ada");
+    let second = seed_named_character(database, "Bea");
+    let group_id = seed_group(
+        database,
+        vec![member(first, 0), member(second, 1)],
+        None,
+        |group| group.group_conversation_prompt_id = Some(authored),
+    );
+    let plan = group_plan_for(database, &group_request(group_id, "group-prompt-authored"));
+    match &group_details(&plan).group.prompt {
+        SnapshotSelection::Inherited(prompt) => assert_eq!(prompt.source_id, authored),
+        other => panic!("expected the authored group prompt, got {other:?}"),
+    }
+
+    PromptRepository::archive(database, authored, Revision::INITIAL, NOW).expect("archive prompt");
+    let degraded = group_plan_for(database, &group_request(group_id, "group-prompt-archived"));
+    match &group_details(&degraded).group.prompt {
+        SnapshotSelection::Inherited(prompt) => assert_eq!(
+            prompt.source_id,
+            backend
+                .built_in_prompt_ids()
+                .get(BuiltInPromptId::GroupChat)
+        ),
+        other => panic!("expected the built-in group prompt, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_group_prompt_with_the_wrong_purpose_is_rejected() {
+    let backend = backend();
+    let database = backend.database();
+    let wrong = seed_prompt(database, "Direct prompt", PromptPurpose::DirectChat);
+    let first = seed_named_character(database, "Ada");
+    let second = seed_named_character(database, "Bea");
+    let group_id = seed_group(
+        database,
+        vec![member(first, 0), member(second, 1)],
+        None,
+        |group| group.group_conversation_prompt_id = Some(wrong),
+    );
+    assert_eq!(
+        ConversationLaunchPlanner::new(database)
+            .prepare_group(&group_request(group_id, "group-prompt-wrong"), NOW)
+            .expect_err("wrong purpose"),
+        ConversationLaunchError::PromptWrongPurpose { prompt_id: wrong }
+    );
+}
+
+#[test]
+fn member_ordinals_are_reindexed_from_gapped_authored_ordinals() {
+    let first = CharacterId::new();
+    let second = CharacterId::new();
+    let reindexed = policy::ordered_members(&[member(first, 7), member(second, 3)]);
+    assert_eq!(
+        reindexed
+            .iter()
+            .map(|value| (value.character_id, value.ordinal))
+            .collect::<Vec<_>>(),
+        vec![(second, 0), (first, 1)]
+    );
+}
+
+#[test]
+fn a_group_needs_two_members_and_one_unmuted_member() {
+    let first = CharacterId::new();
+    let second = CharacterId::new();
+    assert_eq!(
+        policy::member_shape(&[member(first, 0)]),
+        policy::MemberShape::TooFew
+    );
+    let mut muted_first = member(first, 0);
+    muted_first.muted = true;
+    let mut muted_second = member(second, 1);
+    muted_second.muted = true;
+    assert_eq!(
+        policy::member_shape(&[muted_first.clone(), muted_second]),
+        policy::MemberShape::AllMuted
+    );
+    assert_eq!(
+        policy::member_shape(&[muted_first, member(second, 1)]),
+        policy::MemberShape::Launchable
+    );
+    let at_bound: Vec<GroupMember> = (0..policy::MAX_GROUP_MEMBERS)
+        .map(|ordinal| member(CharacterId::new(), ordinal as u32))
+        .collect();
+    assert_eq!(
+        policy::member_shape(&at_bound),
+        policy::MemberShape::Launchable
+    );
+    let mut over_bound = at_bound;
+    over_bound.push(member(CharacterId::new(), policy::MAX_GROUP_MEMBERS as u32));
+    assert_eq!(
+        policy::member_shape(&over_bound),
+        policy::MemberShape::TooMany
+    );
+}
+
+#[test]
+fn a_muted_member_stays_muted_and_enabled_in_the_launch() {
+    let backend = backend();
+    let database = backend.database();
+    let first = seed_named_character(database, "Ada");
+    let second = seed_named_character(database, "Bea");
+    let mut muted = member(second, 1);
+    muted.muted = true;
+    let group_id = seed_group(database, vec![member(first, 0), muted], None, |_| {});
+    let plan = group_plan_for(database, &group_request(group_id, "group-muted-member"));
+    let details = group_details(&plan);
+    assert_eq!(
+        details
+            .group
+            .members
+            .iter()
+            .map(|value| (value.ordinal, value.enabled, value.muted))
+            .collect::<Vec<_>>(),
+        vec![(0, true, false), (1, true, true)]
+    );
+    assert_eq!(
+        character_participants(&plan)
+            .iter()
+            .map(|participant| (participant.ordinal, participant.enabled, participant.muted))
+            .collect::<Vec<_>>(),
+        vec![(1, true, false), (2, true, true)]
+    );
+}
+
+#[test]
+fn an_archived_group_or_member_character_is_rejected() {
+    let backend = backend();
+    let database = backend.database();
+    let first = seed_named_character(database, "Ada");
+    let second = seed_named_character(database, "Bea");
+    let group_id = seed_group(
+        database,
+        vec![member(first, 0), member(second, 1)],
+        None,
+        |_| {},
+    );
+    CharacterRepository::archive(database, second, Revision::INITIAL, NOW)
+        .expect("archive member character");
+    assert_eq!(
+        ConversationLaunchPlanner::new(database)
+            .prepare_group(&group_request(group_id, "group-archived-member"), NOW)
+            .expect_err("archived member"),
+        ConversationLaunchError::MemberCharacterArchived {
+            character_id: second
+        }
+    );
+
+    let archived_group = two_member_group(database);
+    GroupRepository::archive(database, archived_group, Revision::INITIAL, NOW).expect("archive");
+    assert_eq!(
+        ConversationLaunchPlanner::new(database)
+            .prepare_group(&group_request(archived_group, "group-archived"), NOW)
+            .expect_err("archived group"),
+        ConversationLaunchError::GroupArchived {
+            group_id: archived_group
+        }
+    );
+
+    let missing = GroupId::new();
+    assert_eq!(
+        ConversationLaunchPlanner::new(database)
+            .prepare_group(&group_request(missing, "group-missing"), NOW)
+            .expect_err("missing group"),
+        ConversationLaunchError::GroupNotFound { group_id: missing }
+    );
+}
+
+#[test]
+fn member_models_prefer_the_override_then_the_character_default_and_never_the_app_default() {
+    let backend = backend();
+    let database = backend.database();
+    let application = seed_model(database, ProviderProtocol::OpenAiCompatible, "openrouter");
+    let character_model = seed_model(database, ProviderProtocol::Gemini, "gemini");
+    let override_model = seed_model(database, ProviderProtocol::Anthropic, "anthropic");
+    set_application_default_model(database, application);
+    let first = seed_named_character_with(database, "Ada", |defaults| {
+        defaults.model_profile_id = Some(character_model);
+    });
+    let second = seed_named_character(database, "Bea");
+    let third = seed_named_character(database, "Cai");
+    let mut overridden = member(second, 1);
+    overridden.model_profile_override = Some(override_model);
+    let group_id = seed_group(
+        database,
+        vec![member(first, 0), overridden, member(third, 2)],
+        None,
+        |_| {},
+    );
+    let plan = group_plan_for(database, &group_request(group_id, "group-member-models"));
+    let details = group_details(&plan);
+    match &details.group.members[0].model_override {
+        SnapshotSelection::Inherited(model) => assert_eq!(model.source_id, character_model),
+        other => panic!("expected the character default model, got {other:?}"),
+    }
+    match &details.group.members[1].model_override {
+        SnapshotSelection::Explicit(model) => {
+            assert_eq!(model.source_id, override_model);
+            assert_eq!(model.provider_kind, ModelProviderKind::Anthropic);
+        }
+        other => panic!("expected the member override model, got {other:?}"),
+    }
+    assert_eq!(
+        details.group.members[2].model_override,
+        SnapshotSelection::Disabled
+    );
+    match &details.group.model {
+        SnapshotSelection::Inherited(model) => assert_eq!(model.source_id, application),
+        other => panic!("expected the application default model, got {other:?}"),
+    }
+    assert_eq!(
+        character_participants(&plan)
+            .iter()
+            .map(|participant| participant.model_selection.clone())
+            .collect::<Vec<_>>(),
+        details
+            .group
+            .members
+            .iter()
+            .map(|value| value.model_override.clone())
+            .collect::<Vec<_>>()
+    );
+    let sources: Vec<SnapshotSource> = ConversationLaunchPlanner::new(database)
+        .prepare_group(&group_request(group_id, "group-member-models"), NOW)
+        .expect("prepare")
+        .into_parts()
+        .1
+        .iter()
+        .map(|draft| draft.source)
+        .collect();
+    assert_eq!(
+        sources
+            .iter()
+            .filter(|source| matches!(source, SnapshotSource::Model(_)))
+            .count(),
+        3
+    );
+}
+
+#[test]
+fn a_group_without_an_application_default_model_has_no_group_model() {
+    let backend = backend();
+    let database = backend.database();
+    let group_id = two_member_group(database);
+    let plan = group_plan_for(database, &group_request(group_id, "group-model-disabled"));
+    assert_eq!(
+        group_details(&plan).group.model,
+        SnapshotSelection::Disabled
+    );
+}
+
+#[test]
+fn a_shared_member_model_is_staged_once() {
+    let backend = backend();
+    let database = backend.database();
+    let shared = seed_model(database, ProviderProtocol::Gemini, "gemini");
+    let first = seed_named_character_with(database, "Ada", |defaults| {
+        defaults.model_profile_id = Some(shared);
+    });
+    let second = seed_named_character_with(database, "Bea", |defaults| {
+        defaults.model_profile_id = Some(shared);
+    });
+    let group_id = seed_group(
+        database,
+        vec![member(first, 0), member(second, 1)],
+        None,
+        |_| {},
+    );
+    let drafts = ConversationLaunchPlanner::new(database)
+        .prepare_group(&group_request(group_id, "group-shared-model"), NOW)
+        .expect("prepare")
+        .into_parts()
+        .1;
+    assert_eq!(
+        drafts
+            .iter()
+            .filter(|draft| matches!(draft.source, SnapshotSource::Model(_)))
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn disabling_character_lorebooks_empties_member_scopes_but_keeps_the_group_and_persona_scopes() {
+    let backend = backend();
+    let database = backend.database();
+    let group_book = seed_lorebook(database, "Group");
+    let member_book = seed_lorebook(database, "Member");
+    let persona_book = seed_lorebook(database, "Persona");
+    let first = seed_named_character(database, "Ada");
+    let second = seed_named_character(database, "Bea");
+    CharacterLorebookBindingRepository::bind_character_lorebook(
+        database,
+        first,
+        Revision::INITIAL,
+        LorebookBindingCreate {
+            lorebook_id: member_book,
+            target: BindingInsertionTarget::Append,
+        },
+        NOW,
+    )
+    .expect("bind member book");
+    let persona_id = seed_persona(database, "Traveller");
+    PersonaLorebookBindingRepository::bind_persona_lorebook(
+        database,
+        persona_id,
+        Revision::INITIAL,
+        LorebookBindingCreate {
+            lorebook_id: persona_book,
+            target: BindingInsertionTarget::Append,
+        },
+        NOW,
+    )
+    .expect("bind persona book");
+
+    let live = seed_group(
+        database,
+        vec![member(first, 0), member(second, 1)],
+        None,
+        |_| {},
+    );
+    GroupLorebookBindingRepository::bind_group_lorebook(
+        database,
+        live,
+        Revision::INITIAL,
+        LorebookBindingCreate {
+            lorebook_id: group_book,
+            target: BindingInsertionTarget::Append,
+        },
+        NOW,
+    )
+    .expect("bind group book");
+    let mut request = group_request(live, "group-books-live");
+    request.persona = LaunchSelection::Explicit(persona_id);
+    let plan = group_plan_for(database, &request);
+    let details = group_details(&plan);
+    assert_eq!(
+        lorebook_names(&details.group.lorebooks),
+        Some(vec!["Group".to_owned()])
+    );
+    assert!(details.group.lorebooks.is_explicit());
+    assert_eq!(
+        lorebook_names(&details.group.members[0].lorebooks),
+        Some(vec!["Member".to_owned()])
+    );
+    assert_eq!(
+        lorebook_names(&details.group.members[1].lorebooks),
+        Some(Vec::new())
+    );
+    match &details.group.persona {
+        SnapshotSelection::Explicit(persona) => assert_eq!(
+            lorebook_names(&persona.lorebooks),
+            Some(vec!["Persona".to_owned()])
+        ),
+        other => panic!("expected an explicit persona, got {other:?}"),
+    }
+
+    let disabled = seed_group(
+        database,
+        vec![member(first, 0), member(second, 1)],
+        None,
+        |group| group.disable_character_lorebooks = true,
+    );
+    GroupLorebookBindingRepository::bind_group_lorebook(
+        database,
+        disabled,
+        Revision::INITIAL,
+        LorebookBindingCreate {
+            lorebook_id: group_book,
+            target: BindingInsertionTarget::Append,
+        },
+        NOW,
+    )
+    .expect("bind group book");
+    let mut request = group_request(disabled, "group-books-disabled");
+    request.persona = LaunchSelection::Explicit(persona_id);
+    let plan = group_plan_for(database, &request);
+    let details = group_details(&plan);
+    assert!(details.group.disable_character_lorebook);
+    for snapshot in &details.group.members {
+        assert_eq!(snapshot.lorebooks, SnapshotSelection::Disabled);
+    }
+    assert_eq!(
+        lorebook_names(&details.group.lorebooks),
+        Some(vec!["Group".to_owned()])
+    );
+    match &details.group.persona {
+        SnapshotSelection::Explicit(persona) => assert_eq!(
+            lorebook_names(&persona.lorebooks),
+            Some(vec!["Persona".to_owned()])
+        ),
+        other => panic!("expected an explicit persona, got {other:?}"),
+    }
+}
+
+#[test]
+fn an_archived_group_bound_lorebook_is_skipped() {
+    let backend = backend();
+    let database = backend.database();
+    let kept = seed_lorebook(database, "Kept");
+    let archived = seed_lorebook(database, "Archived");
+    let group_id = two_member_group(database);
+    let bound = GroupLorebookBindingRepository::bind_group_lorebook(
+        database,
+        group_id,
+        Revision::INITIAL,
+        LorebookBindingCreate {
+            lorebook_id: kept,
+            target: BindingInsertionTarget::Append,
+        },
+        NOW,
+    )
+    .expect("bind kept");
+    GroupLorebookBindingRepository::bind_group_lorebook(
+        database,
+        group_id,
+        bound.owner_revision,
+        LorebookBindingCreate {
+            lorebook_id: archived,
+            target: BindingInsertionTarget::Append,
+        },
+        NOW,
+    )
+    .expect("bind archived");
+    LorebookRepository::archive(database, archived, Revision::INITIAL, NOW).expect("archive book");
+    let plan = group_plan_for(database, &group_request(group_id, "group-archived-book"));
+    assert_eq!(
+        lorebook_names(&group_details(&plan).group.lorebooks),
+        Some(vec!["Kept".to_owned()])
+    );
+}
+
+#[test]
+fn group_persona_resolution_covers_explicit_inherited_and_disabled() {
+    let backend = backend();
+    let database = backend.database();
+    let group_id = two_member_group(database);
+    let persona_id = seed_persona(database, "Traveller");
+
+    let mut explicit = group_request(group_id, "group-persona-explicit");
+    explicit.persona = LaunchSelection::Explicit(persona_id);
+    assert!(matches!(
+        group_details(&group_plan_for(database, &explicit))
+            .group
+            .persona,
+        SnapshotSelection::Explicit(_)
+    ));
+
+    let inherit = group_request(group_id, "group-persona-inherit-none");
+    assert_eq!(
+        group_details(&group_plan_for(database, &inherit))
+            .group
+            .persona,
+        SnapshotSelection::Disabled
+    );
+
+    let default_revision = PersonaRepository::get_default_snapshot(database)
+        .expect("default snapshot")
+        .state
+        .revision;
+    PersonaRepository::set_default(database, persona_id, default_revision, NOW)
+        .expect("set default");
+    let inherited = group_request(group_id, "group-persona-inherited");
+    assert!(matches!(
+        group_details(&group_plan_for(database, &inherited))
+            .group
+            .persona,
+        SnapshotSelection::Inherited(_)
+    ));
+
+    let mut disabled = group_request(group_id, "group-persona-disabled");
+    disabled.persona = LaunchSelection::Disabled;
+    assert_eq!(
+        group_details(&group_plan_for(database, &disabled))
+            .group
+            .persona,
+        SnapshotSelection::Disabled
+    );
+}
+
+#[test]
+fn a_blank_title_derivation_matches_the_legacy_cast_naming() {
+    assert_eq!(
+        policy::derive_group_title(&["Ada".into(), "Bea".into()], 1024),
+        "Ada, Bea"
+    );
+    assert_eq!(
+        policy::derive_group_title(&["Ada".into(), "Bea".into(), "Cai".into()], 1024),
+        "Ada, Bea, Cai"
+    );
+    assert_eq!(
+        policy::derive_group_title(
+            &["Ada".into(), "Bea".into(), "Cai".into(), "Dee".into()],
+            1024
+        ),
+        "Ada, Bea & 2 others"
+    );
+    assert!(policy::derive_group_title(&["x".repeat(4_000)], 1024).len() <= 1024);
+}
+
+#[test]
+fn a_blank_group_title_falls_back_to_the_group_name() {
+    let backend = backend();
+    let database = backend.database();
+    let first = seed_named_character(database, "Ada");
+    let second = seed_named_character(database, "Bea");
+    let group_id = seed_group(
+        database,
+        vec![member(first, 0), member(second, 1)],
+        None,
+        |group| group.name = "Harbour Crew".into(),
+    );
+    let mut blank = group_request(group_id, "group-title-blank");
+    blank.title = "   ".into();
+    assert_eq!(group_plan_for(database, &blank).title, "Harbour Crew");
+
+    let mut empty = group_request(group_id, "group-title-empty");
+    empty.title = String::new();
+    assert_eq!(group_plan_for(database, &empty).title, "Harbour Crew");
+
+    let authored = group_request(group_id, "group-title-authored");
+    assert_eq!(group_plan_for(database, &authored).title, "Session");
+}
+
+#[test]
+fn the_participant_policy_document_mirrors_the_character_participants() {
+    let backend = backend();
+    let database = backend.database();
+    let model = seed_model(database, ProviderProtocol::Gemini, "gemini");
+    let first = seed_named_character_with(database, "Ada", |defaults| {
+        defaults.model_profile_id = Some(model);
+    });
+    let second = seed_named_character(database, "Bea");
+    let mut muted = member(second, 1);
+    muted.muted = true;
+    let group_id = seed_group(database, vec![member(first, 0), muted], None, |_| {});
+    let plan = group_plan_for(database, &group_request(group_id, "group-policy-mirror"));
+    let details = group_details(&plan);
+    let policy_members = &details.initial_participant_policy.members;
+    let participants = character_participants(&plan);
+    assert_eq!(policy_members.len(), participants.len());
+    for (policy, participant) in policy_members.iter().zip(participants) {
+        assert_eq!(policy.participant_id, participant.id);
+        assert_eq!(policy.enabled, participant.enabled);
+        assert_eq!(policy.muted, participant.muted);
+        assert_eq!(policy.model_override, participant.model_selection);
+    }
+    assert_eq!(
+        details.initial_participant_policy.revision,
+        Revision::INITIAL
+    );
+    assert_eq!(details.initial_participant_policy.created_at, NOW);
+    assert_eq!(details.initial_participant_policy.updated_at, NOW);
+    assert_eq!(
+        model_source_id(&details.group.members[0].model_override),
+        Some(model)
+    );
+}
+
+#[test]
+fn the_group_memory_policy_lands_in_the_frozen_snapshot() {
+    let backend = backend();
+    let database = backend.database();
+    let first = seed_named_character(database, "Ada");
+    let second = seed_named_character(database, "Bea");
+    let group_id = seed_group(
+        database,
+        vec![member(first, 0), member(second, 1)],
+        None,
+        |group| group.memory_policy = MemoryPolicy::Dynamic,
+    );
+    let plan = group_plan_for(database, &group_request(group_id, "group-memory"));
+    match &group_details(&plan).group.memory {
+        SnapshotSelection::Inherited(memory) => {
+            assert_eq!(memory.mode, MemoryModeSnapshot::Dynamic);
+            assert!(memory.selected_revision_ids.is_empty());
+            assert!(memory.policy_ref.is_none());
+        }
+        other => panic!("expected inherited memory, got {other:?}"),
+    }
+}
+
+#[test]
+fn two_group_planner_runs_on_identical_state_are_byte_identical() {
+    let backend = backend();
+    let database = backend.database();
+    let group_id = two_member_group(database);
+    let launch = group_request(group_id, "group-determinism");
+    assert_eq!(
+        group_plan_for(database, &launch),
+        group_plan_for(database, &launch)
+    );
+}
+
+#[test]
+fn an_identical_group_retry_replays_a_single_conversation() {
+    let backend = backend();
+    let database = backend.database();
+    let group_id = two_member_group(database);
+    let launch = group_request(group_id, "group-idempotent");
+    let planner = ConversationLaunchPlanner::new(database);
+    let first = planner.launch_group(&launch, NOW).expect("first launch");
+    let second = planner
+        .launch_group(&launch, TimestampMillis::new(2_000))
+        .expect("replayed launch");
+    assert_eq!(first.value.conversation.id, second.value.conversation.id);
+    assert_eq!(first.operation.id, second.operation.id);
+    assert_eq!(
+        ConversationReader::page(
+            database,
+            &lettuce_conversations::ConversationQuery::default()
+        )
+        .expect("page")
+        .items
+        .len(),
+        1
+    );
+}
+
+#[test]
+fn reusing_a_group_key_after_a_source_edit_conflicts() {
+    let backend = backend();
+    let database = backend.database();
+    let group_id = two_member_group(database);
+    let launch = group_request(group_id, "group-conflicting");
+    let planner = ConversationLaunchPlanner::new(database);
+    planner.launch_group(&launch, NOW).expect("first launch");
+    GroupRepository::rename(
+        database,
+        group_id,
+        Revision::INITIAL,
+        "Renamed cast".into(),
+        NOW,
+    )
+    .expect("rename group");
+    assert_eq!(
+        planner
+            .launch_group(&launch, TimestampMillis::new(2_000))
+            .expect_err("conflict"),
+        ConversationLaunchError::CreateConflict
+    );
+}
+
+#[test]
+fn retrying_a_group_launch_after_the_group_is_archived_reports_the_existing_conversation() {
+    let backend = backend();
+    let database = backend.database();
+    let group_id = two_member_group(database);
+    let launch = group_request(group_id, "group-already-launched");
+    let planner = ConversationLaunchPlanner::new(database);
+    let created = planner.launch_group(&launch, NOW).expect("first launch");
+    GroupRepository::archive(database, group_id, Revision::INITIAL, NOW).expect("archive group");
+    assert_eq!(
+        planner
+            .launch_group(&launch, TimestampMillis::new(2_000))
+            .expect_err("already launched"),
+        ConversationLaunchError::AlreadyLaunched {
+            conversation_id: created.value.conversation.id
+        }
+    );
+}
+
+#[test]
+fn group_source_drift_between_the_two_reads_is_detected() {
+    let group_id = GroupId::new();
+    let character_id = CharacterId::new();
+    let persona_id = PersonaId::new();
+    assert_eq!(
+        policy::detect_group_source_drift(
+            (group_id, Revision::INITIAL, Revision::INITIAL),
+            &[(character_id, Revision::INITIAL, Revision::INITIAL)],
+            Some((persona_id, Revision::INITIAL, Revision::INITIAL)),
+        ),
+        None
+    );
+    assert_eq!(
+        policy::detect_group_source_drift(
+            (group_id, Revision::INITIAL, Revision::new(2)),
+            &[],
+            None,
+        ),
+        Some(SnapshotSource::Group(group_id))
+    );
+    assert_eq!(
+        policy::detect_group_source_drift(
+            (group_id, Revision::INITIAL, Revision::INITIAL),
+            &[(character_id, Revision::INITIAL, Revision::new(4))],
+            None,
+        ),
+        Some(SnapshotSource::Character(character_id))
+    );
+    assert_eq!(
+        policy::detect_group_source_drift(
+            (group_id, Revision::INITIAL, Revision::INITIAL),
+            &[],
+            Some((persona_id, Revision::INITIAL, Revision::new(3))),
+        ),
+        Some(SnapshotSource::Persona(persona_id))
+    );
+}
+
+#[test]
+fn a_companion_member_character_is_rejected() {
+    let backend = backend();
+    let database = backend.database();
+    let first = seed_named_character(database, "Ada");
+    let companion = seed_named_character_with(database, "Bea", |defaults| {
+        defaults.interaction_mode = InteractionMode::Companion;
+    });
+    let group_id = seed_group(
+        database,
+        vec![member(first, 0), member(companion, 1)],
+        None,
+        |_| {},
+    );
+    assert_eq!(
+        ConversationLaunchPlanner::new(database)
+            .prepare_group(&group_request(group_id, "group-companion-member"), NOW)
+            .expect_err("companion member"),
+        ConversationLaunchError::MemberCharacterCompanion {
+            character_id: companion
+        }
+    );
+}
+
+#[test]
+fn member_lorebook_scopes_are_bounded_in_aggregate() {
+    let backend = backend();
+    let database = backend.database();
+    let first = seed_named_character(database, "Ada");
+    let second = seed_named_character(database, "Bea");
+    let per_member = policy::MAX_LAUNCH_LOREBOOKS / 2 + 1;
+    for (slot, character_id) in [first, second].into_iter().enumerate() {
+        let mut revision = Revision::INITIAL;
+        for index in 0..per_member {
+            let book = seed_lorebook(database, &format!("Book {slot}-{index}"));
+            revision = CharacterLorebookBindingRepository::bind_character_lorebook(
+                database,
+                character_id,
+                revision,
+                LorebookBindingCreate {
+                    lorebook_id: book,
+                    target: BindingInsertionTarget::Append,
+                },
+                NOW,
+            )
+            .expect("bind")
+            .owner_revision;
+        }
+    }
+    assert!(!policy::lorebook_bound_exceeded(per_member));
+    assert!(policy::lorebook_bound_exceeded(per_member * 2));
+    let group_id = seed_group(
+        database,
+        vec![member(first, 0), member(second, 1)],
+        None,
+        |_| {},
+    );
+    assert_eq!(
+        ConversationLaunchPlanner::new(database)
+            .prepare_group(&group_request(group_id, "group-books-aggregate"), NOW)
+            .expect_err("aggregate lorebook bound"),
+        ConversationLaunchError::TooManyLorebooks {
+            max: policy::MAX_LAUNCH_LOREBOOKS
+        }
+    );
+}
+
+#[test]
+fn a_missing_built_in_group_prompt_is_reported_instead_of_being_skipped() {
+    let database = database();
+    let first = seed_named_character(&database, "Ada");
+    let second = seed_named_character(&database, "Bea");
+    let group_id = seed_group(
+        &database,
+        vec![member(first, 0), member(second, 1)],
+        None,
+        |_| {},
+    );
+    assert_eq!(
+        ConversationLaunchPlanner::new(&database)
+            .prepare_group(
+                &group_request(group_id, "group-prompt-missing-built-in"),
+                NOW
+            )
+            .expect_err("missing built-in prompt"),
+        ConversationLaunchError::BuiltInPromptMissing {
+            purpose: PromptPurpose::GroupChatConversational
+        }
+    );
+}
+
+#[test]
+fn a_member_without_any_model_falls_back_to_the_group_model() {
+    let backend = backend();
+    let database = backend.database();
+    let application = seed_model(database, ProviderProtocol::OpenAiCompatible, "openrouter");
+    set_application_default_model(database, application);
+    let first = seed_named_character(database, "Ada");
+    let second = seed_named_character(database, "Bea");
+    let group_id = seed_group(
+        database,
+        vec![member(first, 0), member(second, 1)],
+        None,
+        |_| {},
+    );
+    let plan = group_plan_for(database, &group_request(group_id, "group-model-fallback"));
+    let details = group_details(&plan);
+    for snapshot in &details.group.members {
+        assert_eq!(snapshot.model_override, SnapshotSelection::Disabled);
+    }
+    match &details.group.model {
+        SnapshotSelection::Inherited(model) => assert_eq!(model.source_id, application),
+        other => panic!("expected the application default model, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_broken_application_default_is_untouched_when_no_member_needs_it() {
+    let backend = backend();
+    let database = backend.database();
+    let broken = seed_model_with(
+        database,
+        ProviderProtocol::Anthropic,
+        "anthropic",
+        ModelKind::Chat,
+        false,
+    );
+    set_application_default_model(database, broken);
+    let usable = seed_model(database, ProviderProtocol::Gemini, "gemini");
+    let first = seed_named_character_with(database, "Ada", |defaults| {
+        defaults.model_profile_id = Some(usable);
+    });
+    let second = seed_named_character(database, "Bea");
+    let mut overridden = member(second, 1);
+    overridden.model_profile_override = Some(usable);
+    let group_id = seed_group(database, vec![member(first, 0), overridden], None, |_| {});
+    let plan = group_plan_for(database, &group_request(group_id, "group-model-unneeded"));
+    assert_eq!(
+        group_details(&plan).group.model,
+        SnapshotSelection::Disabled
+    );
+}
+
+#[test]
+fn a_broken_application_default_is_rejected_when_a_member_needs_it() {
+    let backend = backend();
+    let database = backend.database();
+    let broken = seed_model_with(
+        database,
+        ProviderProtocol::Anthropic,
+        "anthropic",
+        ModelKind::Chat,
+        false,
+    );
+    set_application_default_model(database, broken);
+    let usable = seed_model(database, ProviderProtocol::Gemini, "gemini");
+    let first = seed_named_character_with(database, "Ada", |defaults| {
+        defaults.model_profile_id = Some(usable);
+    });
+    let second = seed_named_character(database, "Bea");
+    let group_id = seed_group(
+        database,
+        vec![member(first, 0), member(second, 1)],
+        None,
+        |_| {},
+    );
+    let provider_account_id = ModelProfileRepository::get(database, broken)
+        .expect("profile")
+        .expect("profile exists")
+        .provider_account_id;
+    assert_eq!(
+        ConversationLaunchPlanner::new(database)
+            .prepare_group(&group_request(group_id, "group-model-needed"), NOW)
+            .expect_err("disabled provider"),
+        ConversationLaunchError::ProviderDisabled {
+            provider_account_id
+        }
+    );
+}
+
+#[test]
+fn a_group_scene_never_speaks_its_direction() {
+    let mut scene = text_scene(CharacterId::new(), 0, "   ");
+    scene.direction = Some("  Keep it slow.  ".into());
+    assert_eq!(
+        policy::resolve_scene_text(&scene, &[]),
+        Some("Keep it slow.".to_owned())
+    );
+    assert_eq!(policy::resolve_group_scene_text(&scene, &[]), None);
+
+    let backend = backend();
+    let database = backend.database();
+    let first = seed_named_character(database, "Ada");
+    let second = seed_named_character(database, "Bea");
+    let mut starting = group_starting_scene("   ");
+    starting.scene.direction = Some("Keep it slow.".into());
+    let group_id = seed_group(
+        database,
+        vec![member(first, 0), member(second, 1)],
+        Some(starting),
+        |group| group.chat_mode = ChatMode::Roleplay,
+    );
+    let plan = group_plan_for(database, &group_request(group_id, "group-scene-direction"));
+    assert!(plan.initial_timeline.entries.is_empty());
+    match &group_details(&plan).group.scene {
+        SnapshotSelection::Inherited(scene) => assert_eq!(scene.title, "Scene 1"),
+        other => panic!("expected an inherited scene, got {other:?}"),
+    }
+}
+
+#[test]
+fn the_group_profile_persona_sits_between_the_request_and_the_application_default() {
+    let backend = backend();
+    let database = backend.database();
+    let authored = seed_persona(database, "Cartographer");
+    let application = seed_persona(database, "Traveller");
+    let default_revision = PersonaRepository::get_default_snapshot(database)
+        .expect("default snapshot")
+        .state
+        .revision;
+    PersonaRepository::set_default(database, application, default_revision, NOW)
+        .expect("set default");
+    let first = seed_named_character(database, "Ada");
+    let second = seed_named_character(database, "Bea");
+
+    let explicit = seed_group(
+        database,
+        vec![member(first, 0), member(second, 1)],
+        None,
+        |group| group.persona = Selection::Explicit(authored),
+    );
+    match &group_details(&group_plan_for(
+        database,
+        &group_request(explicit, "group-persona-profile"),
+    ))
+    .group
+    .persona
+    {
+        SnapshotSelection::Inherited(persona) => assert_eq!(persona.source_id, authored),
+        other => panic!("expected the group profile persona, got {other:?}"),
+    }
+
+    let mut overridden = group_request(explicit, "group-persona-request-wins");
+    overridden.persona = LaunchSelection::Explicit(application);
+    match &group_details(&group_plan_for(database, &overridden))
+        .group
+        .persona
+    {
+        SnapshotSelection::Explicit(persona) => assert_eq!(persona.source_id, application),
+        other => panic!("expected the requested persona, got {other:?}"),
+    }
+
+    let disabled = seed_group(
+        database,
+        vec![member(first, 0), member(second, 1)],
+        None,
+        |group| group.persona = Selection::Disabled,
+    );
+    assert_eq!(
+        group_details(&group_plan_for(
+            database,
+            &group_request(disabled, "group-persona-profile-off")
+        ))
+        .group
+        .persona,
+        SnapshotSelection::Disabled
+    );
+}
+
+#[test]
+fn the_app_backend_exposes_the_group_launch() {
+    let backend = backend();
+    let group_id = two_member_group(backend.database());
+    let result = backend
+        .launch_group_conversation(&group_request(group_id, "backend-group-launch"), NOW)
+        .expect("launch");
+    result.value.validate().expect("aggregate validates");
+    assert_eq!(result.value.conversation.participants.len(), 3);
+    assert_eq!(
+        result.value.conversation.id,
+        super::identity::launch_conversation_id(&key("backend-group-launch"))
     );
 }

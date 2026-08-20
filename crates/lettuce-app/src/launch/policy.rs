@@ -1,14 +1,16 @@
 use lettuce_characters::{
-    Character, CharacterDefaults, ConversationStarter, InteractionMode, MemoryPolicy, Scene,
-    ScenePart, SceneVariant, Selection,
+    Character, CharacterDefaults, ChatMode, ConversationStarter, GroupMember, InteractionMode,
+    MemoryPolicy, Scene, ScenePart, SceneVariant, Selection, SpeakerSelection,
 };
 use lettuce_context::LorebookBinding;
 use lettuce_conversations::{
-    MemoryModeSnapshot, ModelProviderKind, SnapshotSelection, SnapshotSource,
+    GroupChatModeSnapshot, GroupSpeakerSelectionSnapshot, MemoryModeSnapshot, ModelProviderKind,
+    SnapshotSelection, SnapshotSource,
 };
 use lettuce_models::ProviderProtocol;
 use lettuce_types::{
-    CharacterId, ConversationStarterId, LorebookId, ModelProfileId, PersonaId, Revision, SceneId,
+    CharacterId, ConversationStarterId, GroupId, LorebookId, ModelProfileId, PersonaId, Revision,
+    SceneId,
 };
 
 use super::request::LaunchSelection;
@@ -89,9 +91,135 @@ pub(crate) const fn is_companion(defaults: &CharacterDefaults) -> bool {
 }
 
 pub(crate) const fn memory_mode(defaults: &CharacterDefaults) -> MemoryModeSnapshot {
-    match defaults.memory_policy {
+    memory_mode_of(defaults.memory_policy)
+}
+
+pub(crate) const fn memory_mode_of(policy: MemoryPolicy) -> MemoryModeSnapshot {
+    match policy {
         MemoryPolicy::Manual => MemoryModeSnapshot::Manual,
         MemoryPolicy::Dynamic => MemoryModeSnapshot::Dynamic,
+    }
+}
+
+pub(crate) const fn group_chat_mode(mode: ChatMode) -> GroupChatModeSnapshot {
+    match mode {
+        ChatMode::Conversation => GroupChatModeSnapshot::Conversation,
+        ChatMode::Roleplay => GroupChatModeSnapshot::Roleplay,
+    }
+}
+
+pub(crate) const fn group_speaker_selection(
+    selection: SpeakerSelection,
+) -> GroupSpeakerSelectionSnapshot {
+    match selection {
+        SpeakerSelection::Llm => GroupSpeakerSelectionSnapshot::Llm,
+        SpeakerSelection::Heuristic => GroupSpeakerSelectionSnapshot::Heuristic,
+        SpeakerSelection::RoundRobin => GroupSpeakerSelectionSnapshot::RoundRobin,
+        SpeakerSelection::Director => GroupSpeakerSelectionSnapshot::Director,
+        SpeakerSelection::DirectorAction => GroupSpeakerSelectionSnapshot::DirectorAction,
+    }
+}
+
+/// Authored member ordinals only have to be an order; the launch document
+/// requires positions. Sorting first keeps the authored order, reindexing
+/// closes any gap a reorder left behind.
+pub(crate) fn ordered_members(members: &[GroupMember]) -> Vec<GroupMember> {
+    let mut ordered = members.to_vec();
+    ordered.sort_by_key(|member| member.ordinal);
+    for (index, member) in ordered.iter_mut().enumerate() {
+        member.ordinal = u32::try_from(index).unwrap_or(u32::MAX);
+    }
+    ordered
+}
+
+pub(crate) const MIN_GROUP_MEMBERS: usize = 2;
+
+/// One participant slot always belongs to the user, so a cast can only fill
+/// the rest of the conversation's participant bound.
+pub(crate) const MAX_GROUP_MEMBERS: usize = 255;
+
+/// The launch document rejects these shapes as well, but a caller deserves a
+/// typed reason before the planner starts drafting snapshots.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MemberShape {
+    Launchable,
+    TooFew,
+    TooMany,
+    AllMuted,
+}
+
+pub(crate) fn member_shape(members: &[GroupMember]) -> MemberShape {
+    if members.len() < MIN_GROUP_MEMBERS {
+        return MemberShape::TooFew;
+    }
+    if members.len() > MAX_GROUP_MEMBERS {
+        return MemberShape::TooMany;
+    }
+    if members.iter().all(|member| member.muted) {
+        return MemberShape::AllMuted;
+    }
+    MemberShape::Launchable
+}
+
+/// Legacy naming for an untitled cast: up to three names in member order,
+/// then the first two followed by how many members were left out.
+pub(crate) fn derive_group_title(names: &[String], max_bytes: usize) -> String {
+    let derived = if names.len() <= 3 {
+        names.join(", ")
+    } else {
+        format!(
+            "{}, {} & {} others",
+            names[0],
+            names[1],
+            names.len().saturating_sub(2)
+        )
+    };
+    bound_display(&derived, max_bytes)
+}
+
+fn bound_display(value: &str, max_bytes: usize) -> String {
+    if value.len() <= max_bytes {
+        return value.to_owned();
+    }
+    let mut bounded = String::with_capacity(max_bytes);
+    for character in value.chars() {
+        if bounded.len() + character.len_utf8() > max_bytes {
+            break;
+        }
+        bounded.push(character);
+    }
+    bounded
+}
+
+/// A member's own override wins, then the character's default model. The
+/// application default is a group-level fallback, never a member one.
+pub(crate) fn member_model_choice(
+    member: &GroupMember,
+    defaults: &CharacterDefaults,
+) -> Selected<ModelProfileId> {
+    match member.model_profile_override {
+        Some(id) => Selected::Explicit(id),
+        None => match defaults.model_profile_id {
+            Some(id) => Selected::Inherited(id),
+            None => Selected::Disabled,
+        },
+    }
+}
+
+/// The application default only enters a group launch when at least one
+/// member would otherwise be left without a model to generate with.
+pub(crate) fn group_model_needed(choices: &[Selected<ModelProfileId>]) -> bool {
+    choices
+        .iter()
+        .any(|choice| matches!(choice, Selected::Disabled))
+}
+
+pub(crate) fn application_model_choice(
+    application_default: Option<ModelProfileId>,
+) -> Selected<ModelProfileId> {
+    match application_default {
+        Some(id) => Selected::Inherited(id),
+        None => Selected::Disabled,
     }
 }
 
@@ -223,10 +351,20 @@ pub(crate) fn project_scene_text(parts: &[ScenePart]) -> String {
         .collect()
 }
 
-/// Legacy scene text precedence: selected variant, then the base document,
-/// then the direction. A selected variant that no longer belongs to this scene
-/// falls back to the base document rather than blanking the scene.
+/// Legacy direct scene text precedence: selected variant, then the base
+/// document, then the direction. A selected variant that no longer belongs to
+/// this scene falls back to the base document rather than blanking the scene.
 pub(crate) fn resolve_scene_text(scene: &Scene, variants: &[SceneVariant]) -> Option<String> {
+    scene_text(scene, variants, true)
+}
+
+/// A group scene only ever spoke its content. The direction stays authored
+/// guidance for the prompt and never becomes the opening message.
+pub(crate) fn resolve_group_scene_text(scene: &Scene, variants: &[SceneVariant]) -> Option<String> {
+    scene_text(scene, variants, false)
+}
+
+fn scene_text(scene: &Scene, variants: &[SceneVariant], with_direction: bool) -> Option<String> {
     let variant_text = scene
         .selected_variant_id
         .and_then(|id| {
@@ -236,16 +374,15 @@ pub(crate) fn resolve_scene_text(scene: &Scene, variants: &[SceneVariant]) -> Op
         })
         .map(|variant| project_scene_text(&variant.content.parts));
     let base_text = project_scene_text(&scene.content.parts);
-    [
-        variant_text.as_deref(),
-        Some(base_text.as_str()),
-        scene.direction.as_deref(),
-    ]
-    .into_iter()
-    .flatten()
-    .map(str::trim)
-    .find(|value| !value.is_empty())
-    .map(str::to_owned)
+    let direction = with_direction
+        .then_some(scene.direction.as_deref())
+        .flatten();
+    [variant_text.as_deref(), Some(base_text.as_str()), direction]
+        .into_iter()
+        .flatten()
+        .map(str::trim)
+        .find(|value| !value.is_empty())
+        .map(str::to_owned)
 }
 
 pub(crate) fn scene_title(text: Option<&str>, ordinal: u32) -> String {
@@ -302,6 +439,32 @@ pub(crate) fn detect_source_drift(
     None
 }
 
+/// The group counterpart of [`detect_source_drift`]. Member characters are
+/// re-read too: their bodies are copied before the per-member binding queries,
+/// so an edit in between would pin a body and a binding list from two
+/// different revisions of the same character.
+pub(crate) fn detect_group_source_drift(
+    group: (GroupId, Revision, Revision),
+    members: &[(CharacterId, Revision, Revision)],
+    persona: Option<(PersonaId, Revision, Revision)>,
+) -> Option<SnapshotSource> {
+    let (group_id, before, after) = group;
+    if before != after {
+        return Some(SnapshotSource::Group(group_id));
+    }
+    for (character_id, before, after) in members {
+        if before != after {
+            return Some(SnapshotSource::Character(*character_id));
+        }
+    }
+    if let Some((persona_id, before, after)) = persona
+        && before != after
+    {
+        return Some(SnapshotSource::Persona(persona_id));
+    }
+    None
+}
+
 pub(crate) fn find_starter(
     starters: &[ConversationStarter],
     id: ConversationStarterId,
@@ -309,15 +472,23 @@ pub(crate) fn find_starter(
     starters.iter().find(|starter| starter.id == id)
 }
 
-/// Registers every lorebook a launch needs exactly once so a book reachable
-/// from both the conversation and its persona still produces one artifact.
-#[derive(Debug, Default)]
-pub(crate) struct LorebookRegistry {
-    ordered: Vec<LorebookId>,
+/// Registers every source a launch needs exactly once so a record reachable
+/// from more than one slot still produces a single artifact.
+#[derive(Debug)]
+pub(crate) struct LaunchRegistry<T> {
+    ordered: Vec<T>,
 }
 
-impl LorebookRegistry {
-    pub(crate) fn register(&mut self, id: LorebookId) -> usize {
+impl<T> Default for LaunchRegistry<T> {
+    fn default() -> Self {
+        Self {
+            ordered: Vec::new(),
+        }
+    }
+}
+
+impl<T: Copy + PartialEq> LaunchRegistry<T> {
+    pub(crate) fn register(&mut self, id: T) -> usize {
         match self.ordered.iter().position(|value| *value == id) {
             Some(index) => index,
             None => {
@@ -327,7 +498,10 @@ impl LorebookRegistry {
         }
     }
 
-    pub(crate) fn ordered(&self) -> &[LorebookId] {
+    pub(crate) fn ordered(&self) -> &[T] {
         &self.ordered
     }
 }
+
+pub(crate) type LorebookRegistry = LaunchRegistry<LorebookId>;
+pub(crate) type ModelRegistry = LaunchRegistry<ModelProfileId>;

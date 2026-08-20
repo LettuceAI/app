@@ -3,8 +3,8 @@ use std::path::Path;
 use lettuce_database::{Database, DatabaseError};
 
 use crate::{
-    BuiltInPromptIds, BuiltInPromptService, BuiltInPromptServiceError, ConversationLaunchPlanner,
-    DirectConversationLaunchRequest, DirectLaunchError,
+    BuiltInPromptIds, BuiltInPromptService, BuiltInPromptServiceError, ConversationLaunchError,
+    ConversationLaunchPlanner, DirectConversationLaunchRequest, GroupConversationLaunchRequest,
 };
 
 /// The application composition root. Opening an application database through
@@ -66,9 +66,18 @@ impl AppBackend {
         &self,
         request: &DirectConversationLaunchRequest,
         now: lettuce_types::TimestampMillis,
-    ) -> Result<lettuce_conversations::CreateConversationResult, DirectLaunchError> {
+    ) -> Result<lettuce_conversations::CreateConversationResult, ConversationLaunchError> {
         self.conversation_launch_planner()
             .launch_direct(request, now)
+    }
+
+    pub fn launch_group_conversation(
+        &self,
+        request: &GroupConversationLaunchRequest,
+        now: lettuce_types::TimestampMillis,
+    ) -> Result<lettuce_conversations::CreateConversationResult, ConversationLaunchError> {
+        self.conversation_launch_planner()
+            .launch_group(request, now)
     }
 }
 

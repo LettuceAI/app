@@ -522,6 +522,8 @@ pub struct GroupLaunchSnapshot {
     pub scene: SnapshotSelection<SceneLaunchSnapshot>,
     pub prompt: SnapshotSelection<PromptLaunchSnapshot>,
     pub lorebooks: SnapshotSelection<Vec<LorebookLaunchSnapshot>>,
+    /// The cast-wide model: a member whose `model_override` is `Disabled`
+    /// generates with this one.
     pub model: SnapshotSelection<ModelSelectionSnapshot>,
 }
 

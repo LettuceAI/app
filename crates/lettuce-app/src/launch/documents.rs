@@ -1,7 +1,7 @@
 use lettuce_characters::{
-    Character, CharacterMediaSlot, ConversationStarter, ImageRecommendation, Persona,
-    PersonaMediaSlot, Scene, SceneAssetSlot, SceneOwner, ScenePart, SceneVariant, Selection,
-    StarterRole, VoicePreference,
+    Character, CharacterMediaSlot, ChatMode, ConversationStarter, GroupMember, GroupProfile,
+    ImageRecommendation, Persona, PersonaMediaSlot, Scene, SceneAssetSlot, SceneOwner, ScenePart,
+    SceneVariant, Selection, SpeakerSelection, StarterRole, VoicePreference,
 };
 use lettuce_context::{
     DetectionPolicy, KeywordMatchMode, LorebookBehaviorVersion, LorebookDetails,
@@ -10,17 +10,18 @@ use lettuce_context::{
     PromptEntryRole, PromptPurpose,
 };
 use lettuce_conversations::{
-    ArtifactError, CharacterMediaLinkV1, CharacterMediaSlotV1, CharacterSnapshotBodyV1,
-    DetectionPolicyV1, DocumentSelectionV1, ImageRecommendationV1, InteractionModeV1,
-    KeywordMatchModeV1, LorebookBehaviorVersionV1, LorebookEntryV1, LorebookSnapshotBodyV1,
-    MemoryPolicyV1, ModalityV1, ModelKindV1, ModelSnapshotBodyV1, PersonaMediaLinkV1,
-    PersonaMediaSlotV1, PersonaSnapshotBodyV1, PromptBehaviorVersionV1, PromptEntryChatModeV1,
-    PromptEntryConditionV1, PromptEntryImageSlotV1, PromptEntryInfoSourceV1, PromptEntryPayloadV1,
-    PromptEntryPositionV1, PromptEntryRoleV1, PromptEntryV1, PromptPurposeV1, PromptSnapshotBodyV1,
-    ProviderProtocolV1, SceneAssetLinkV1, SceneAssetSlotV1, SceneOwnerV1, ScenePartV1,
-    SceneSnapshotBodyV1, SceneVariantBodyV1, SnapshotArtifactDraft, SnapshotDocumentBody,
-    SnapshotEnvelopeV1, SnapshotProviderDescriptorV1, StarterMessageV1, StarterRoleV1,
-    StarterSnapshotBodyV1, build_snapshot_draft,
+    ArtifactError, CharacterMediaLinkV1, CharacterMediaSlotV1, CharacterSnapshotBodyV1, ChatModeV1,
+    DetectionPolicyV1, DocumentSelectionV1, GroupMemberV1, GroupSnapshotBodyV1,
+    ImageRecommendationV1, InteractionModeV1, KeywordMatchModeV1, LorebookBehaviorVersionV1,
+    LorebookEntryV1, LorebookSnapshotBodyV1, MemoryPolicyV1, ModalityV1, ModelKindV1,
+    ModelSnapshotBodyV1, PersonaMediaLinkV1, PersonaMediaSlotV1, PersonaSnapshotBodyV1,
+    PromptBehaviorVersionV1, PromptEntryChatModeV1, PromptEntryConditionV1, PromptEntryImageSlotV1,
+    PromptEntryInfoSourceV1, PromptEntryPayloadV1, PromptEntryPositionV1, PromptEntryRoleV1,
+    PromptEntryV1, PromptPurposeV1, PromptSnapshotBodyV1, ProviderProtocolV1, SceneAssetLinkV1,
+    SceneAssetSlotV1, SceneOwnerV1, ScenePartV1, SceneSnapshotBodyV1, SceneVariantBodyV1,
+    SnapshotArtifactDraft, SnapshotDocumentBody, SnapshotEnvelopeV1, SnapshotProviderDescriptorV1,
+    SpeakerSelectionV1, StarterMessageV1, StarterRoleV1, StarterSnapshotBodyV1,
+    build_snapshot_draft,
 };
 use lettuce_models::{Modality, ModelKind, ModelProfile, ProviderAccount, ProviderProtocol};
 use lettuce_types::{Revision, SnapshotArtifactId};
@@ -92,6 +93,47 @@ pub(crate) fn character_body(character: &Character) -> CharacterSnapshotBodyV1 {
             .referenced_asset_ids()
             .into_iter()
             .collect(),
+    }
+}
+
+pub(crate) fn group_body(group: &GroupProfile, members: &[GroupMember]) -> GroupSnapshotBodyV1 {
+    GroupSnapshotBodyV1 {
+        group_id: group.id,
+        name: group.name.clone(),
+        chat_mode: match group.chat_mode {
+            ChatMode::Conversation => ChatModeV1::Conversation,
+            ChatMode::Roleplay => ChatModeV1::Roleplay,
+        },
+        speaker_selection: match group.speaker_selection {
+            SpeakerSelection::Llm => SpeakerSelectionV1::Llm,
+            SpeakerSelection::Heuristic => SpeakerSelectionV1::Heuristic,
+            SpeakerSelection::RoundRobin => SpeakerSelectionV1::RoundRobin,
+            SpeakerSelection::Director => SpeakerSelectionV1::Director,
+            SpeakerSelection::DirectorAction => SpeakerSelectionV1::DirectorAction,
+        },
+        memory_policy: match group.memory_policy {
+            lettuce_characters::MemoryPolicy::Manual => MemoryPolicyV1::Manual,
+            lettuce_characters::MemoryPolicy::Dynamic => MemoryPolicyV1::Dynamic,
+        },
+        disable_character_lorebooks: group.disable_character_lorebooks,
+        persona: match group.persona {
+            Selection::Inherit => DocumentSelectionV1::Inherit,
+            Selection::Explicit(id) => DocumentSelectionV1::Explicit(id),
+            Selection::Disabled => DocumentSelectionV1::Disabled,
+        },
+        group_conversation_prompt_id: group.group_conversation_prompt_id,
+        group_roleplay_prompt_id: group.group_roleplay_prompt_id,
+        members: members
+            .iter()
+            .map(|member| GroupMemberV1 {
+                character_id: member.character_id,
+                ordinal: member.ordinal,
+                muted: member.muted,
+                model_profile_override: member.model_profile_override,
+            })
+            .collect(),
+        starting_scene_id: group.starting_scene_id,
+        background_asset_id: group.background_asset_id,
     }
 }
 

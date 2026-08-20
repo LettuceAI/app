@@ -1,12 +1,14 @@
-use lettuce_context::{BindingRepositoryError, LorebookRepositoryError, PromptRepositoryError};
+use lettuce_context::{
+    BindingRepositoryError, LorebookRepositoryError, PromptPurpose, PromptRepositoryError,
+};
 use lettuce_conversations::{
     ArtifactError, ConversationRepositoryError, PreparedConversationLaunchError, SnapshotSource,
 };
 use lettuce_models::ModelRepositoryError;
 use lettuce_settings::GlobalSettingsStoreError;
 use lettuce_types::{
-    CharacterId, ConversationId, ConversationStarterId, LorebookId, ModelProfileId, PersonaId,
-    PromptDocumentId, ProviderAccountId, SceneId,
+    CharacterId, ConversationId, ConversationStarterId, GroupId, LorebookId, ModelProfileId,
+    PersonaId, PromptDocumentId, ProviderAccountId, SceneId,
 };
 
 /// A read failure of one launch source, kept separate per source so a caller
@@ -15,6 +17,8 @@ use lettuce_types::{
 pub enum LaunchSourceError {
     #[error("character source failed: {0}")]
     Character(lettuce_characters::RepositoryError),
+    #[error("group source failed: {0}")]
+    Group(lettuce_characters::RepositoryError),
     #[error("persona source failed: {0}")]
     Persona(lettuce_characters::RepositoryError),
     #[error("prompt source failed: {0}")]
@@ -32,7 +36,7 @@ pub enum LaunchSourceError {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum DirectLaunchError {
+pub enum ConversationLaunchError {
     #[error("launch request field {field} is invalid")]
     InvalidRequest { field: &'static str },
     #[error("character {character_id} was not found")]
@@ -41,12 +45,33 @@ pub enum DirectLaunchError {
     CharacterArchived { character_id: CharacterId },
     #[error("character {character_id} runs in companion mode, which cannot be launched yet")]
     CompanionUnsupported { character_id: CharacterId },
+    #[error("group {group_id} was not found")]
+    GroupNotFound { group_id: GroupId },
+    #[error("group {group_id} is archived")]
+    GroupArchived { group_id: GroupId },
+    #[error("group member character {character_id} was not found")]
+    MemberCharacterNotFound { character_id: CharacterId },
+    #[error("group member character {character_id} is archived")]
+    MemberCharacterArchived { character_id: CharacterId },
+    #[error("group member character {character_id} runs in companion mode")]
+    MemberCharacterCompanion { character_id: CharacterId },
+    #[error("a group launch needs at least {min} members")]
+    TooFewMembers { min: usize },
+    #[error("a group launch holds at most {max} members")]
+    TooManyMembers { max: usize },
+    #[error("group {group_id} has no unmuted member")]
+    AllMembersMuted { group_id: GroupId },
     #[error("scene {scene_id} was not found")]
     SceneNotFound { scene_id: SceneId },
     #[error("scene {scene_id} is not an active scene of character {character_id}")]
     SceneNotOwned {
         scene_id: SceneId,
         character_id: CharacterId,
+    },
+    #[error("scene {scene_id} is not a scene of group {group_id}")]
+    SceneNotOwnedByGroup {
+        scene_id: SceneId,
+        group_id: GroupId,
     },
     #[error("conversation starter {starter_id} was not found")]
     StarterNotFound { starter_id: ConversationStarterId },
@@ -61,10 +86,12 @@ pub enum DirectLaunchError {
     PersonaInactive { persona_id: PersonaId },
     #[error("prompt {prompt_id} was not found")]
     PromptNotFound { prompt_id: PromptDocumentId },
-    #[error("prompt {prompt_id} does not have the direct chat purpose")]
+    #[error("prompt {prompt_id} does not have the purpose this launch needs")]
     PromptWrongPurpose { prompt_id: PromptDocumentId },
     #[error("prompt {prompt_id} is archived")]
     PromptArchived { prompt_id: PromptDocumentId },
+    #[error("the built-in prompt for purpose {purpose:?} is missing")]
+    BuiltInPromptMissing { purpose: PromptPurpose },
     #[error("lorebook {lorebook_id} was not found")]
     LorebookNotFound { lorebook_id: LorebookId },
     #[error("lorebook {lorebook_id} is archived")]
@@ -99,13 +126,13 @@ pub enum DirectLaunchError {
     Repository(#[from] LaunchSourceError),
 }
 
-impl From<PreparedConversationLaunchError> for DirectLaunchError {
+impl From<PreparedConversationLaunchError> for ConversationLaunchError {
     fn from(value: PreparedConversationLaunchError) -> Self {
         Self::InvalidLaunch(value)
     }
 }
 
-impl From<ArtifactError> for DirectLaunchError {
+impl From<ArtifactError> for ConversationLaunchError {
     fn from(value: ArtifactError) -> Self {
         Self::ArtifactEncode(value)
     }

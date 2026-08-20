@@ -14,12 +14,12 @@ mod planner;
 mod policy;
 mod request;
 
-pub use error::{DirectLaunchError, LaunchSourceError};
+pub use error::{ConversationLaunchError, LaunchSourceError};
 pub use identity::launch_conversation_id;
-pub use planner::{ConversationLaunchPlanner, DirectLaunchSources};
+pub use planner::{ConversationLaunchPlanner, DirectLaunchSources, GroupLaunchSources};
 pub use request::{
     DIRECT_LAUNCH_REQUEST_FORMAT_V1, DirectConversationLaunchRequest, DirectUserParticipant,
-    LaunchSelection,
+    GROUP_LAUNCH_REQUEST_FORMAT_V1, GroupConversationLaunchRequest, LaunchSelection,
 };
 
 #[cfg(test)]

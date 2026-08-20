@@ -40,6 +40,12 @@ impl LaunchIdentities {
         ConversationParticipantId::from_uuid(self.derive("participant.character"))
     }
 
+    pub(crate) fn group_member_participant(self, ordinal: usize) -> ConversationParticipantId {
+        ConversationParticipantId::from_uuid(
+            self.derive(&format!("participant.group.member.{ordinal}")),
+        )
+    }
+
     pub(crate) fn artifact(self, slot: ArtifactSlot) -> SnapshotArtifactId {
         SnapshotArtifactId::from_uuid(self.derive(&slot.label()))
     }
@@ -70,6 +76,9 @@ pub(crate) enum ArtifactSlot {
     Prompt,
     Model,
     Lorebook(usize),
+    Group,
+    GroupMember(usize),
+    GroupModel(usize),
 }
 
 impl ArtifactSlot {
@@ -82,6 +91,9 @@ impl ArtifactSlot {
             Self::Prompt => "artifact.prompt".into(),
             Self::Model => "artifact.model".into(),
             Self::Lorebook(ordinal) => format!("artifact.lorebook.{ordinal}"),
+            Self::Group => "artifact.group".into(),
+            Self::GroupMember(ordinal) => format!("artifact.group.member.{ordinal}"),
+            Self::GroupModel(ordinal) => format!("artifact.group.model.{ordinal}"),
         }
     }
 }
