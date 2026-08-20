@@ -359,6 +359,7 @@ pub fn adapter_for(credential: &ProviderCredential) -> Box<dyn ProviderAdapter +
         "nanogpt" => Box::new(nanogpt::NanoGPTAdapter),
         "xai" => Box::new(xai::XAIAdapter),
         "anannas" => Box::new(anannas::AnannasAdapter),
+        "concentrate" => Box::new(openai::OpenAIAdapter),
         "google" | "google-gemini" | "gemini" => Box::new(google_gemini::GoogleGeminiAdapter),
         "gemini-agent-platform-express" => {
             Box::new(gemini_agent_platform_express::GeminiAgentPlatformExpressAdapter::new())
