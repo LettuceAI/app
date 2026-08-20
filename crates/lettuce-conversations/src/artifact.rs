@@ -530,6 +530,11 @@ pub fn conversation_snapshot_references(kind: &ConversationKind) -> Vec<&Protect
                 {
                     refs.push(&value.snapshot_ref);
                 }
+                if let SnapshotSelection::Inherited(value) | SnapshotSelection::Explicit(value) =
+                    &member.prompt
+                {
+                    refs.push(&value.snapshot_ref);
+                }
             }
             if let SnapshotSelection::Inherited(value) | SnapshotSelection::Explicit(value) =
                 &group.memory

@@ -79,6 +79,7 @@ pub(crate) enum ArtifactSlot {
     Group,
     GroupMember(usize),
     GroupModel(usize),
+    GroupPrompt(usize),
 }
 
 impl ArtifactSlot {
@@ -94,6 +95,7 @@ impl ArtifactSlot {
             Self::Group => "artifact.group".into(),
             Self::GroupMember(ordinal) => format!("artifact.group.member.{ordinal}"),
             Self::GroupModel(ordinal) => format!("artifact.group.model.{ordinal}"),
+            Self::GroupPrompt(ordinal) => format!("artifact.group.prompt.{ordinal}"),
         }
     }
 }

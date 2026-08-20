@@ -35,7 +35,7 @@ use super::digest::{
 use super::documents;
 use super::error::{ConversationLaunchError, LaunchSourceError};
 use super::identity::{ArtifactSlot, LaunchIdentities, launch_conversation_id};
-use super::policy::{self, LorebookRegistry, ModelRegistry, Selected};
+use super::policy::{self, LorebookRegistry, ModelRegistry, PromptRegistry, Selected};
 use super::request::{
     DIRECT_LAUNCH_REQUEST_FORMAT_V1, DirectConversationLaunchRequest,
     GROUP_LAUNCH_REQUEST_FORMAT_V1, GroupConversationLaunchRequest, LaunchSelection,
@@ -795,6 +795,7 @@ where
             .value()
             .and_then(|value| policy::resolve_group_scene_text(value, variants));
         let prompt = self.resolve_group_prompt(&group.group, chat_mode)?;
+        let member_prompts = self.resolve_member_prompts(&characters, chat_mode)?;
 
         let group_bindings =
             GroupLorebookBindingRepository::list_group_bindings(self.sources, group_id)
@@ -928,13 +929,37 @@ where
                 documents::scene_body(value, variants),
             )?);
         }
-        let mut prompt_draft = None;
-        if let Some(value) = prompt.value() {
-            prompt_draft = Some(documents::draft(
-                identities.artifact(ArtifactSlot::Prompt),
-                value.revision,
-                documents::prompt_body(value),
-            )?);
+        let mut prompt_registry = PromptRegistry::default();
+        let mut prompt_documents: Vec<&PromptDocument> = Vec::new();
+        for document in prompt
+            .value()
+            .into_iter()
+            .chain(member_prompts.iter().filter_map(Selected::value))
+        {
+            if prompt_registry.register(document.id) == prompt_documents.len() {
+                prompt_documents.push(document);
+            }
+        }
+        let mut prompt_drafts = Vec::with_capacity(prompt_documents.len());
+        let mut prompt_snapshots: Vec<(PromptDocumentId, PromptLaunchSnapshot)> =
+            Vec::with_capacity(prompt_documents.len());
+        for (ordinal, document) in prompt_documents.iter().enumerate() {
+            let draft = documents::draft(
+                identities.artifact(ArtifactSlot::GroupPrompt(ordinal)),
+                document.revision,
+                documents::prompt_body(document),
+            )?;
+            prompt_snapshots.push((
+                document.id,
+                PromptLaunchSnapshot {
+                    snapshot_ref: draft.reference(),
+                    source_id: document.id,
+                    source_revision: document.revision,
+                    title: document.name.clone(),
+                    purpose: group_prompt_purpose_snapshot(chat_mode),
+                },
+            ));
+            prompt_drafts.push(draft);
         }
         let mut lorebook_drafts = Vec::with_capacity(books.len());
         let mut lorebook_snapshots: Vec<(LorebookId, LorebookLaunchSnapshot)> =
@@ -1010,6 +1035,10 @@ where
                     .as_ref()
                     .map(|ids| collect_lorebooks(ids, &lorebook_snapshots))
                     .into_snapshot(),
+                prompt: member_prompts[ordinal]
+                    .as_ref()
+                    .map(|document| collect_prompt(document.id, &prompt_snapshots))
+                    .into_snapshot(),
             });
         }
         let initial_participant_policy = GroupParticipantPolicyDocument {
@@ -1056,24 +1085,10 @@ where
                 })
                 .into_snapshot(),
         };
-        let prompt_snapshot = match prompt_draft.as_ref() {
-            None => SnapshotSelection::Disabled,
-            Some(draft) => prompt
-                .as_ref()
-                .map(|value| PromptLaunchSnapshot {
-                    snapshot_ref: draft.reference(),
-                    source_id: value.id,
-                    source_revision: value.revision,
-                    title: value.name.clone(),
-                    purpose: match chat_mode {
-                        GroupChatModeSnapshot::Conversation => {
-                            PromptPurposeSnapshot::GroupConversational
-                        }
-                        GroupChatModeSnapshot::Roleplay => PromptPurposeSnapshot::GroupRoleplay,
-                    },
-                })
-                .into_snapshot(),
-        };
+        let prompt_snapshot = prompt
+            .as_ref()
+            .map(|document| collect_prompt(document.id, &prompt_snapshots))
+            .into_snapshot();
         let group_model_snapshot = group_model_choice
             .map(|id| collect_model(id, &model_snapshots))
             .into_snapshot();
@@ -1101,7 +1116,7 @@ where
         drafts.extend(member_drafts);
         drafts.extend(persona_draft);
         drafts.extend(scene_draft);
-        drafts.extend(prompt_draft);
+        drafts.extend(prompt_drafts);
         drafts.extend(lorebook_drafts);
         drafts.extend(model_drafts);
 
@@ -1114,6 +1129,7 @@ where
                 enabled: true,
                 muted: member.muted,
                 model: member_model_choices[ordinal],
+                prompt: member_prompts[ordinal].as_ref().map(|document| document.id),
                 lorebooks: member_lorebooks[ordinal].as_ref().map(Vec::as_slice),
             })
             .collect();
@@ -1210,14 +1226,13 @@ where
         group: &GroupProfile,
         chat_mode: GroupChatModeSnapshot,
     ) -> Result<Selected<PromptDocument>, ConversationLaunchError> {
-        let (purpose, built_in, authored) = match chat_mode {
+        let purpose = group_prompt_purpose(chat_mode);
+        let (built_in, authored) = match chat_mode {
             GroupChatModeSnapshot::Conversation => (
-                PromptPurpose::GroupChatConversational,
                 BuiltInPromptId::GroupChat,
                 group.group_conversation_prompt_id,
             ),
             GroupChatModeSnapshot::Roleplay => (
-                PromptPurpose::GroupChatRoleplay,
                 BuiltInPromptId::GroupChatRoleplay,
                 group.group_roleplay_prompt_id,
             ),
@@ -1241,6 +1256,45 @@ where
         Ok(Selected::Inherited(
             self.built_in_prompt(built_in, purpose)?,
         ))
+    }
+
+    /// Tier two of the group prompt chain: a speaker generates with its own
+    /// prompt for this mode and falls through to the group prompt without one.
+    /// The other mode's authored id is never read, and a member's direct prompt
+    /// is not a group prompt at all.
+    fn resolve_member_prompts(
+        &self,
+        characters: &[lettuce_characters::CharacterDetails],
+        chat_mode: GroupChatModeSnapshot,
+    ) -> Result<Vec<Selected<PromptDocument>>, ConversationLaunchError> {
+        let purpose = group_prompt_purpose(chat_mode);
+        let mut resolved = Vec::with_capacity(characters.len());
+        for details in characters {
+            let defaults = &details.character.defaults;
+            let authored = match chat_mode {
+                GroupChatModeSnapshot::Conversation => defaults.group_conversation_prompt_id,
+                GroupChatModeSnapshot::Roleplay => defaults.group_roleplay_prompt_id,
+            };
+            let Some(prompt_id) = authored else {
+                resolved.push(Selected::Disabled);
+                continue;
+            };
+            match PromptRepository::lookup_exact(self.sources, prompt_id, purpose)
+                .map_err(LaunchSourceError::Prompt)?
+            {
+                PromptLookupResult::Missing => {
+                    return Err(ConversationLaunchError::PromptNotFound { prompt_id });
+                }
+                PromptLookupResult::PurposeMismatch { .. } => {
+                    return Err(ConversationLaunchError::PromptWrongPurpose { prompt_id });
+                }
+                PromptLookupResult::Archived { .. } => resolved.push(Selected::Disabled),
+                PromptLookupResult::Available { document } => {
+                    resolved.push(Selected::Inherited(document));
+                }
+            }
+        }
+        Ok(resolved)
     }
 
     /// Scans the purpose-filtered library for the bundled document, which is
@@ -1350,6 +1404,31 @@ where
             None => Ok(()),
         }
     }
+}
+
+const fn group_prompt_purpose(chat_mode: GroupChatModeSnapshot) -> PromptPurpose {
+    match chat_mode {
+        GroupChatModeSnapshot::Conversation => PromptPurpose::GroupChatConversational,
+        GroupChatModeSnapshot::Roleplay => PromptPurpose::GroupChatRoleplay,
+    }
+}
+
+const fn group_prompt_purpose_snapshot(chat_mode: GroupChatModeSnapshot) -> PromptPurposeSnapshot {
+    match chat_mode {
+        GroupChatModeSnapshot::Conversation => PromptPurposeSnapshot::GroupConversational,
+        GroupChatModeSnapshot::Roleplay => PromptPurposeSnapshot::GroupRoleplay,
+    }
+}
+
+fn collect_prompt(
+    id: PromptDocumentId,
+    snapshots: &[(PromptDocumentId, PromptLaunchSnapshot)],
+) -> PromptLaunchSnapshot {
+    snapshots
+        .iter()
+        .find(|(candidate, _)| *candidate == id)
+        .map(|(_, snapshot)| snapshot.clone())
+        .expect("every resolved prompt is registered before its snapshot is used")
 }
 
 fn is_built_in(document: &PromptDocument, built_in: BuiltInPromptId) -> bool {

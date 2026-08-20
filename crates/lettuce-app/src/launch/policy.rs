@@ -9,8 +9,8 @@ use lettuce_conversations::{
 };
 use lettuce_models::ProviderProtocol;
 use lettuce_types::{
-    CharacterId, ConversationStarterId, GroupId, LorebookId, ModelProfileId, PersonaId, Revision,
-    SceneId,
+    CharacterId, ConversationStarterId, GroupId, LorebookId, ModelProfileId, PersonaId,
+    PromptDocumentId, Revision, SceneId,
 };
 
 use super::request::LaunchSelection;
@@ -505,3 +505,4 @@ impl<T: Copy + PartialEq> LaunchRegistry<T> {
 
 pub(crate) type LorebookRegistry = LaunchRegistry<LorebookId>;
 pub(crate) type ModelRegistry = LaunchRegistry<ModelProfileId>;
+pub(crate) type PromptRegistry = LaunchRegistry<PromptDocumentId>;

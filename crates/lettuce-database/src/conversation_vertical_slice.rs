@@ -1518,6 +1518,7 @@ mod tests {
                             muted: false,
                             model_override: SnapshotSelection::Explicit(model.clone()),
                             lorebooks: SnapshotSelection::Explicit(Vec::new()),
+                            prompt: SnapshotSelection::Disabled,
                         },
                         GroupMemberLaunchSnapshot {
                             character: CharacterLaunchSnapshot {
@@ -1532,6 +1533,7 @@ mod tests {
                             muted: false,
                             model_override: SnapshotSelection::Disabled,
                             lorebooks: SnapshotSelection::Explicit(Vec::new()),
+                            prompt: SnapshotSelection::Disabled,
                         },
                     ],
                     chat_mode: GroupChatModeSnapshot::Conversation,
@@ -1683,6 +1685,7 @@ mod tests {
                             muted: false,
                             model_override: SnapshotSelection::Explicit(model.clone()),
                             lorebooks: SnapshotSelection::Explicit(Vec::new()),
+                            prompt: SnapshotSelection::Disabled,
                         },
                         GroupMemberLaunchSnapshot {
                             character: CharacterLaunchSnapshot {
@@ -1697,6 +1700,7 @@ mod tests {
                             muted: false,
                             model_override: SnapshotSelection::Disabled,
                             lorebooks: SnapshotSelection::Explicit(Vec::new()),
+                            prompt: SnapshotSelection::Disabled,
                         },
                     ],
                     chat_mode: GroupChatModeSnapshot::Conversation,

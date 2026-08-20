@@ -162,6 +162,7 @@ pub(crate) struct GroupMemberIntent<'a> {
     pub(crate) enabled: bool,
     pub(crate) muted: bool,
     pub(crate) model: Selected<ModelProfileId>,
+    pub(crate) prompt: Selected<PromptDocumentId>,
     pub(crate) lorebooks: Selected<&'a [LorebookId]>,
 }
 
@@ -186,6 +187,7 @@ struct GroupMemberIntentV1<'a> {
     enabled: bool,
     muted: bool,
     model: IntentResolvedV1<ModelProfileId>,
+    prompt: IntentResolvedV1<PromptDocumentId>,
     lorebooks: IntentResolvedV1<&'a [LorebookId]>,
 }
 
@@ -241,6 +243,7 @@ pub(crate) fn group_request_digest(
                 enabled: member.enabled,
                 muted: member.muted,
                 model: member.model.into(),
+                prompt: member.prompt.into(),
                 lorebooks: member.lorebooks.into(),
             })
             .collect(),

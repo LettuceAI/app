@@ -1965,7 +1965,8 @@ fn a_group_prompt_never_falls_back_to_a_member_direct_prompt() {
         database,
         &group_request(group_id, "group-prompt-tier-three"),
     );
-    match &group_details(&plan).group.prompt {
+    let details = group_details(&plan);
+    match &details.group.prompt {
         SnapshotSelection::Inherited(prompt) => {
             assert_eq!(
                 prompt.source_id,
@@ -1976,6 +1977,9 @@ fn a_group_prompt_never_falls_back_to_a_member_direct_prompt() {
             assert_eq!(prompt.purpose, PromptPurposeSnapshot::GroupConversational);
         }
         other => panic!("expected the built-in group prompt, got {other:?}"),
+    }
+    for snapshot in &details.group.members {
+        assert_eq!(snapshot.prompt, SnapshotSelection::Disabled);
     }
 }
 
@@ -2984,6 +2988,263 @@ fn the_group_profile_persona_sits_between_the_request_and_the_application_defaul
         .persona,
         SnapshotSelection::Disabled
     );
+}
+
+#[test]
+fn a_member_carries_its_own_group_prompt_for_the_launched_mode() {
+    let backend = backend();
+    let database = backend.database();
+    let conversational = seed_prompt(
+        database,
+        "Member conversational",
+        PromptPurpose::GroupChatConversational,
+    );
+    let roleplay = seed_prompt(
+        database,
+        "Member roleplay",
+        PromptPurpose::GroupChatRoleplay,
+    );
+    let first = seed_named_character_with(database, "Ada", |defaults| {
+        defaults.group_conversation_prompt_id = Some(conversational);
+        defaults.group_roleplay_prompt_id = Some(roleplay);
+    });
+    let second = seed_named_character(database, "Bea");
+    let group_id = seed_group(
+        database,
+        vec![member(first, 0), member(second, 1)],
+        None,
+        |_| {},
+    );
+    let plan = group_plan_for(database, &group_request(group_id, "group-member-prompt"));
+    let details = group_details(&plan);
+    match &details.group.members[0].prompt {
+        SnapshotSelection::Inherited(prompt) => {
+            assert_eq!(prompt.source_id, conversational);
+            assert_eq!(prompt.purpose, PromptPurposeSnapshot::GroupConversational);
+        }
+        other => panic!("expected the member group prompt, got {other:?}"),
+    }
+    assert_eq!(details.group.members[1].prompt, SnapshotSelection::Disabled);
+
+    let roleplay_group = seed_group(
+        database,
+        vec![member(first, 0), member(second, 1)],
+        None,
+        |group| group.chat_mode = ChatMode::Roleplay,
+    );
+    let plan = group_plan_for(
+        database,
+        &group_request(roleplay_group, "group-member-prompt-roleplay"),
+    );
+    match &group_details(&plan).group.members[0].prompt {
+        SnapshotSelection::Inherited(prompt) => {
+            assert_eq!(prompt.source_id, roleplay);
+            assert_eq!(prompt.purpose, PromptPurposeSnapshot::GroupRoleplay);
+        }
+        other => panic!("expected the member roleplay prompt, got {other:?}"),
+    }
+}
+
+#[test]
+fn an_archived_member_prompt_degrades_while_dangling_and_mismatched_ones_error() {
+    let backend = backend();
+    let database = backend.database();
+    let archived = seed_prompt(
+        database,
+        "Member archived",
+        PromptPurpose::GroupChatConversational,
+    );
+    let first = seed_named_character_with(database, "Ada", |defaults| {
+        defaults.group_conversation_prompt_id = Some(archived);
+    });
+    let second = seed_named_character(database, "Bea");
+    let group_id = seed_group(
+        database,
+        vec![member(first, 0), member(second, 1)],
+        None,
+        |_| {},
+    );
+    PromptRepository::archive(database, archived, Revision::INITIAL, NOW).expect("archive prompt");
+    let plan = group_plan_for(
+        database,
+        &group_request(group_id, "group-member-prompt-archived"),
+    );
+    assert_eq!(
+        group_details(&plan).group.members[0].prompt,
+        SnapshotSelection::Disabled
+    );
+
+    let dangling = lettuce_types::PromptDocumentId::new();
+    let third = seed_named_character_with(database, "Cai", |defaults| {
+        defaults.group_conversation_prompt_id = Some(dangling);
+    });
+    let dangling_group = seed_group(
+        database,
+        vec![member(second, 0), member(third, 1)],
+        None,
+        |_| {},
+    );
+    assert_eq!(
+        ConversationLaunchPlanner::new(database)
+            .prepare_group(
+                &group_request(dangling_group, "group-member-prompt-dangling"),
+                NOW
+            )
+            .expect_err("dangling member prompt"),
+        ConversationLaunchError::PromptNotFound {
+            prompt_id: dangling
+        }
+    );
+
+    let wrong = seed_prompt(database, "Member direct", PromptPurpose::DirectChat);
+    let fourth = seed_named_character_with(database, "Dee", |defaults| {
+        defaults.group_conversation_prompt_id = Some(wrong);
+    });
+    let wrong_group = seed_group(
+        database,
+        vec![member(second, 0), member(fourth, 1)],
+        None,
+        |_| {},
+    );
+    assert_eq!(
+        ConversationLaunchPlanner::new(database)
+            .prepare_group(
+                &group_request(wrong_group, "group-member-prompt-wrong"),
+                NOW
+            )
+            .expect_err("mismatched member prompt"),
+        ConversationLaunchError::PromptWrongPurpose { prompt_id: wrong }
+    );
+}
+
+#[test]
+fn one_prompt_document_shared_by_members_and_the_group_is_staged_once() {
+    let backend = backend();
+    let database = backend.database();
+    let shared = seed_prompt(
+        database,
+        "Shared group prompt",
+        PromptPurpose::GroupChatConversational,
+    );
+    let first = seed_named_character_with(database, "Ada", |defaults| {
+        defaults.group_conversation_prompt_id = Some(shared);
+    });
+    let second = seed_named_character_with(database, "Bea", |defaults| {
+        defaults.group_conversation_prompt_id = Some(shared);
+    });
+    let group_id = seed_group(
+        database,
+        vec![member(first, 0), member(second, 1)],
+        None,
+        |group| group.group_conversation_prompt_id = Some(shared),
+    );
+    let request = group_request(group_id, "group-prompt-shared");
+    let plan = group_plan_for(database, &request);
+    let details = group_details(&plan);
+    let group_prompt = match &details.group.prompt {
+        SnapshotSelection::Inherited(prompt) => prompt.clone(),
+        other => panic!("expected the shared group prompt, got {other:?}"),
+    };
+    for snapshot in &details.group.members {
+        match &snapshot.prompt {
+            SnapshotSelection::Inherited(prompt) => assert_eq!(prompt, &group_prompt),
+            other => panic!("expected the shared member prompt, got {other:?}"),
+        }
+    }
+    let drafts = ConversationLaunchPlanner::new(database)
+        .prepare_group(&request, NOW)
+        .expect("prepare")
+        .into_parts()
+        .1;
+    assert_eq!(
+        drafts
+            .iter()
+            .filter(|draft| draft.source == SnapshotSource::Prompt(shared))
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn changing_a_member_prompt_conflicts_on_the_same_operation_key() {
+    let backend = backend();
+    let database = backend.database();
+    let prompt_id = seed_prompt(
+        database,
+        "Member conversational",
+        PromptPurpose::GroupChatConversational,
+    );
+    let first = seed_named_character(database, "Ada");
+    let second = seed_named_character(database, "Bea");
+    let group_id = seed_group(
+        database,
+        vec![member(first, 0), member(second, 1)],
+        None,
+        |_| {},
+    );
+    let launch = group_request(group_id, "group-member-prompt-digest");
+    let planner = ConversationLaunchPlanner::new(database);
+    planner.launch_group(&launch, NOW).expect("first launch");
+
+    let mut defaults = CharacterRepository::get(database, first)
+        .expect("character")
+        .expect("character exists")
+        .character
+        .defaults;
+    defaults.group_conversation_prompt_id = Some(prompt_id);
+    CharacterRepository::update_defaults(database, first, Revision::INITIAL, defaults, NOW)
+        .expect("update defaults");
+    assert_eq!(
+        planner
+            .launch_group(&launch, TimestampMillis::new(2_000))
+            .expect_err("conflict"),
+        ConversationLaunchError::CreateConflict
+    );
+}
+
+#[test]
+fn a_group_conversation_with_member_prompts_hydrates_from_the_database() {
+    let backend = backend();
+    let database = backend.database();
+    let member_prompt = seed_prompt(
+        database,
+        "Member conversational",
+        PromptPurpose::GroupChatConversational,
+    );
+    let group_prompt = seed_prompt(
+        database,
+        "Group conversational",
+        PromptPurpose::GroupChatConversational,
+    );
+    let first = seed_named_character_with(database, "Ada", |defaults| {
+        defaults.group_conversation_prompt_id = Some(member_prompt);
+    });
+    let second = seed_named_character(database, "Bea");
+    let group_id = seed_group(
+        database,
+        vec![member(first, 0), member(second, 1)],
+        None,
+        |group| group.group_conversation_prompt_id = Some(group_prompt),
+    );
+    let created = ConversationLaunchPlanner::new(database)
+        .launch_group(&group_request(group_id, "group-member-prompt-hydrate"), NOW)
+        .expect("launch");
+    created.value.validate().expect("aggregate validates");
+    let hydrated = ConversationReader::get(database, created.value.conversation.id)
+        .expect("hydrate conversation");
+    let details = match &hydrated.conversation.kind {
+        ConversationKind::Group(details) => details,
+        ConversationKind::Direct(_) => panic!("group launch hydrated as a direct conversation"),
+    };
+    match &details.group.members[0].prompt {
+        SnapshotSelection::Inherited(prompt) => assert_eq!(prompt.source_id, member_prompt),
+        other => panic!("expected the member prompt to survive hydration, got {other:?}"),
+    }
+    assert_eq!(details.group.members[1].prompt, SnapshotSelection::Disabled);
+    match &details.group.prompt {
+        SnapshotSelection::Inherited(prompt) => assert_eq!(prompt.source_id, group_prompt),
+        other => panic!("expected the group prompt to survive hydration, got {other:?}"),
+    }
 }
 
 #[test]

@@ -490,6 +490,9 @@ pub struct GroupMemberLaunchSnapshot {
     /// for whether these are used, but the selected values stay available for
     /// deterministic replay and inspection.
     pub lorebooks: SnapshotSelection<Vec<LorebookLaunchSnapshot>>,
+    /// The member's own prompt for the group's chat mode. A speaker generates
+    /// with this one and falls through to the group prompt when it is absent.
+    pub prompt: SnapshotSelection<PromptLaunchSnapshot>,
 }
 
 impl GroupMemberLaunchSnapshot {
@@ -502,6 +505,7 @@ impl ValidateSnapshot for GroupMemberLaunchSnapshot {
     fn validate_snapshot(&self, field: &'static str) -> Result<(), ValidationError> {
         self.character.validate_snapshot(field)?;
         self.model_override.validate(field)?;
+        self.prompt.validate(field)?;
         validate_lorebooks(&self.lorebooks, "group.member.lorebooks")
     }
 }
@@ -659,16 +663,25 @@ impl GroupConversationDetails {
             });
         }
         self.group.validate()?;
+        let expected = match self.group.chat_mode {
+            GroupChatModeSnapshot::Conversation => PromptPurposeSnapshot::GroupConversational,
+            GroupChatModeSnapshot::Roleplay => PromptPurposeSnapshot::GroupRoleplay,
+        };
         if let SnapshotSelection::Inherited(prompt) | SnapshotSelection::Explicit(prompt) =
             &self.group.prompt
+            && prompt.purpose != expected
         {
-            let expected = match self.group.chat_mode {
-                GroupChatModeSnapshot::Conversation => PromptPurposeSnapshot::GroupConversational,
-                GroupChatModeSnapshot::Roleplay => PromptPurposeSnapshot::GroupRoleplay,
-            };
-            if prompt.purpose != expected {
+            return Err(ValidationError::InvalidReference {
+                field: "group.prompt.purpose",
+            });
+        }
+        for member in &self.group.members {
+            if let SnapshotSelection::Inherited(prompt) | SnapshotSelection::Explicit(prompt) =
+                &member.prompt
+                && prompt.purpose != expected
+            {
                 return Err(ValidationError::InvalidReference {
-                    field: "group.prompt.purpose",
+                    field: "group.member.prompt.purpose",
                 });
             }
         }

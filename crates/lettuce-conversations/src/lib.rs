@@ -1931,6 +1931,7 @@ mod tests {
                 muted: false,
                 model_override: SnapshotSelection::Disabled,
                 lorebooks: SnapshotSelection::Explicit(Vec::new()),
+                prompt: SnapshotSelection::Disabled,
             },
             GroupMemberLaunchSnapshot {
                 character: character(second, "Second"),
@@ -1939,6 +1940,7 @@ mod tests {
                 muted: false,
                 model_override: SnapshotSelection::Disabled,
                 lorebooks: SnapshotSelection::Explicit(Vec::new()),
+                prompt: SnapshotSelection::Disabled,
             },
         ];
         GroupConversationDetails {
