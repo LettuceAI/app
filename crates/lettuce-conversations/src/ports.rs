@@ -509,6 +509,8 @@ pub enum ConversationOutboxEvent {
         message_id: MessageId,
         descendants: crate::commands::DescendantPolicy,
         affected_message_ids: Vec<MessageId>,
+        /// One id per affected message that renders from a revision: the
+        /// revision it was rendering, not that message's whole history.
         affected_revision_ids: Vec<MessageRevisionId>,
         asset_reference_deltas: Vec<AssetReferenceDelta>,
         at: TimestampMillis,
