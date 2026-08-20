@@ -1889,6 +1889,41 @@ mod tests {
                 .expect("column lookup");
             assert_eq!(present, 1, "missing final conversation column {column}");
         }
+        let candidate_author: i64 = connection
+            .query_row(
+                "SELECT count(*) FROM pragma_table_info('conversation_message_candidates') WHERE name = 'author_participant_id' AND \"notnull\" = 1",
+                [],
+                |row| row.get(0),
+            )
+            .expect("candidate author column");
+        assert_eq!(candidate_author, 1);
+        for trigger in [
+            "conversation_candidate_author_role",
+            "conversation_candidate_author_immutable",
+            "conversation_message_tombstone_final",
+        ] {
+            let present: i64 = connection
+                .query_row(
+                    "SELECT count(*) FROM sqlite_master WHERE type = 'trigger' AND name = ?1",
+                    [trigger],
+                    |row| row.get(0),
+                )
+                .expect("trigger lookup");
+            assert_eq!(present, 1, "missing conversation trigger {trigger}");
+        }
+        let operation_table: String = connection
+            .query_row(
+                "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'conversation_operations'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("operation table sql");
+        for kind in ["'interrupt'", "'flags'"] {
+            assert!(
+                operation_table.contains(kind),
+                "missing operation kind {kind}"
+            );
+        }
         let launch: (Option<String>, String, String, String) = connection
             .query_row(
                 "SELECT author_note, author_note_provenance, memory_provenance, model_provenance FROM conversation_settings WHERE conversation_id = 'm8-settings-launch'",

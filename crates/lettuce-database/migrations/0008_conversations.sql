@@ -159,6 +159,10 @@ WHEN NEW.author_participant_id IS NOT NULL AND NOT EXISTS (
            (NEW.role = 'assistant' AND role = 'character'))
 )
 BEGIN SELECT RAISE(ABORT, 'message author role does not match participant'); END;
+CREATE TRIGGER conversation_message_tombstone_final
+BEFORE UPDATE OF visibility ON conversation_messages
+WHEN OLD.visibility = 'tombstoned' AND NEW.visibility <> 'tombstoned'
+BEGIN SELECT RAISE(ABORT, 'tombstoned message cannot be restored'); END;
 CREATE TRIGGER conversation_message_user_turn_role_update
 BEFORE UPDATE OF role ON conversation_messages
 WHEN NEW.role <> 'user' AND EXISTS (
@@ -374,6 +378,7 @@ CREATE TABLE conversation_message_candidates (
     branch_id TEXT NOT NULL,
     turn_id TEXT NOT NULL,
     attempt_id TEXT NOT NULL,
+    author_participant_id TEXT NOT NULL,
     ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
     parts_json TEXT NOT NULL CHECK (json_valid(parts_json) AND json_extract(parts_json, '$.format_version') = 1),
     model_json TEXT NOT NULL CHECK (json_valid(model_json) AND json_extract(model_json, '$.format_version') = 1),
@@ -397,10 +402,25 @@ CREATE TABLE conversation_message_candidates (
         REFERENCES conversation_turns(conversation_id, id, branch_id) ON DELETE RESTRICT,
     FOREIGN KEY (conversation_id, turn_id, attempt_id)
         REFERENCES generation_attempts(conversation_id, turn_id, id) ON DELETE RESTRICT,
+    FOREIGN KEY (conversation_id, author_participant_id)
+        REFERENCES conversation_participants(conversation_id, id) ON DELETE RESTRICT,
     FOREIGN KEY (provider_replay_artifact_id, provider_replay_retention)
         REFERENCES conversation_replay_artifacts(artifact_id, retention)
         ON DELETE RESTRICT
 ) STRICT;
+CREATE TRIGGER conversation_candidate_author_role
+BEFORE INSERT ON conversation_message_candidates
+WHEN NOT EXISTS (
+    SELECT 1 FROM conversation_participants
+    WHERE conversation_id = NEW.conversation_id
+      AND id = NEW.author_participant_id
+      AND role = 'character'
+)
+BEGIN SELECT RAISE(ABORT, 'candidate author must be a character participant'); END;
+CREATE TRIGGER conversation_candidate_author_immutable
+BEFORE UPDATE OF conversation_id, author_participant_id ON conversation_message_candidates
+WHEN NEW.author_participant_id <> OLD.author_participant_id OR NEW.conversation_id <> OLD.conversation_id
+BEGIN SELECT RAISE(ABORT, 'candidate author is immutable'); END;
 CREATE TRIGGER conversation_candidate_assistant
 BEFORE INSERT ON conversation_message_candidates
 WHEN NOT EXISTS (SELECT 1 FROM conversation_messages WHERE conversation_id = NEW.conversation_id AND id = NEW.message_id AND branch_id = NEW.branch_id AND role = 'assistant')
@@ -563,7 +583,7 @@ CREATE TABLE conversation_usage_refs (
 CREATE TABLE conversation_operations (
     id TEXT PRIMARY KEY,
     conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE RESTRICT,
-    kind TEXT NOT NULL CHECK (kind IN ('create', 'send', 'continue', 'regenerate', 'retry', 'checkpoint', 'cancel', 'finalize', 'fail', 'recover', 'choose_candidate', 'edit', 'fork', 'select_branch', 'tombstone', 'archive', 'restore', 'participant_policy', 'settings', 'attach_job')),
+    kind TEXT NOT NULL CHECK (kind IN ('create', 'send', 'continue', 'regenerate', 'retry', 'checkpoint', 'cancel', 'finalize', 'fail', 'interrupt', 'recover', 'choose_candidate', 'edit', 'flags', 'fork', 'select_branch', 'tombstone', 'archive', 'restore', 'participant_policy', 'settings', 'attach_job')),
     operation_key TEXT NOT NULL CHECK (length(trim(operation_key)) > 0),
     request_digest TEXT NOT NULL CHECK (length(request_digest) = 64 AND lower(request_digest) = request_digest AND request_digest NOT GLOB '*[^0-9a-f]*'),
     result_kind TEXT NOT NULL CHECK (result_kind IN ('conversation', 'turn', 'message', 'candidate', 'branch')),

@@ -288,6 +288,10 @@ pub struct MessageCandidate {
     pub message_id: MessageId,
     pub turn_id: GenerationTurnId,
     pub attempt_id: lettuce_types::GenerationAttemptId,
+    /// Records who spoke this candidate; `choose_candidate` restores it onto
+    /// the message.  Candidates only exist on assistant messages, which always
+    /// have an author.
+    pub author_participant_id: ConversationParticipantId,
     pub ordinal: u16,
     pub parts: Vec<MessagePart>,
     pub model: ModelSelectionSnapshot,

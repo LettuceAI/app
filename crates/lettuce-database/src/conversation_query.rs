@@ -127,9 +127,11 @@ fn operation_kind(value: &str) -> Result<OperationKind, ConversationRepositoryEr
         "cancel" => OperationKind::Cancel,
         "finalize" => OperationKind::Finalize,
         "fail" => OperationKind::Fail,
+        "interrupt" => OperationKind::Interrupt,
         "recover" => OperationKind::Recover,
         "choose_candidate" => OperationKind::ChooseCandidate,
         "edit" => OperationKind::Edit,
+        "flags" => OperationKind::Flags,
         "fork" => OperationKind::Fork,
         "select_branch" => OperationKind::SelectBranch,
         "tombstone" => OperationKind::Tombstone,
@@ -620,6 +622,56 @@ pub(crate) fn validate_outbox_event_exact(
                 params![conversation_id.to_string(), branch_id.to_string()],
             )?;
         }
+        ConversationOutboxEvent::CandidateChosen {
+            message_id,
+            candidate_id,
+            ..
+        } => {
+            require_exists(
+                transaction,
+                "SELECT EXISTS(SELECT 1 FROM conversation_message_candidates WHERE conversation_id = ?1 AND id = ?2 AND message_id = ?3)",
+                params![
+                    conversation_id.to_string(),
+                    candidate_id.to_string(),
+                    message_id.to_string()
+                ],
+            )?;
+        }
+        ConversationOutboxEvent::BranchSelected { branch_id, .. } => {
+            require_exists(
+                transaction,
+                "SELECT EXISTS(SELECT 1 FROM conversation_branches WHERE conversation_id = ?1 AND id = ?2)",
+                params![conversation_id.to_string(), branch_id.to_string()],
+            )?;
+        }
+        ConversationOutboxEvent::ConversationLifecycleChanged { .. } => {
+            require_exists(
+                transaction,
+                "SELECT EXISTS(SELECT 1 FROM conversations WHERE id = ?1)",
+                params![conversation_id.to_string()],
+            )?;
+        }
+        ConversationOutboxEvent::SettingsChanged { .. } => {
+            require_exists(
+                transaction,
+                "SELECT EXISTS(SELECT 1 FROM conversation_settings WHERE conversation_id = ?1)",
+                params![conversation_id.to_string()],
+            )?;
+        }
+        ConversationOutboxEvent::ParticipantPolicyChanged { participant_id, .. } => {
+            require_exists(
+                transaction,
+                "SELECT EXISTS(SELECT 1 FROM conversation_participants WHERE conversation_id = ?1 AND id = ?2)",
+                params![conversation_id.to_string(), participant_id.to_string()],
+            )?;
+        }
+        ConversationOutboxEvent::MessageFlagsChanged { message_id, .. } => {
+            require_exists(
+                transaction,
+                "SELECT EXISTS(SELECT 1 FROM conversation_messages WHERE conversation_id = ?1 AND id = ?2)",
+                params![conversation_id.to_string(), message_id.to_string()],
+            )?;
+        }
         ConversationOutboxEvent::ConversationTombstoned { .. } => {}
         ConversationOutboxEvent::AssetReferencesChanged {
             message_revision_id,
@@ -729,6 +781,7 @@ fn hydrate_candidate_row(
         message_id,
         turn_id,
         attempt_id,
+        author_participant_id: parse(row.get::<_, String>(12).map_err(slice::db)?)?,
         ordinal: u16::try_from(row.get::<_, i64>(6).map_err(slice::db)?)
             .map_err(|_| ConversationRepositoryError::Storage)?,
         parts,
@@ -805,7 +858,7 @@ fn message_row(
         return Err(ConversationRepositoryError::Storage);
     };
     let active_candidate = if let Some(candidate_id) = active_candidate_id {
-        let mut statement = transaction.prepare("SELECT conversation_id, id, message_id, branch_id, turn_id, attempt_id, ordinal, parts_json, model_json, created_at, provider_replay_artifact_id, provider_replay_retention FROM conversation_message_candidates WHERE conversation_id = ?1 AND id = ?2").map_err(slice::db)?;
+        let mut statement = transaction.prepare("SELECT conversation_id, id, message_id, branch_id, turn_id, attempt_id, ordinal, parts_json, model_json, created_at, provider_replay_artifact_id, provider_replay_retention, author_participant_id FROM conversation_message_candidates WHERE conversation_id = ?1 AND id = ?2").map_err(slice::db)?;
         Some(
             statement
                 .query_row(
@@ -1103,7 +1156,7 @@ fn hydrate_timeline(
     }
     let cursor_number = cursor.as_ref().map(|c| c.number).unwrap_or(i64::MAX);
     let cursor_id = cursor.as_ref().map(|c| c.text.as_str()).unwrap_or("");
-    let sql = "WITH RECURSIVE ancestry(id) AS (SELECT head_message_id FROM conversation_branches WHERE conversation_id = ?1 AND id = ?2 AND head_message_id IS NOT NULL UNION ALL SELECT m.parent_message_id FROM conversation_messages AS m JOIN ancestry ON m.id = ancestry.id WHERE m.conversation_id = ?1 AND m.parent_message_id IS NOT NULL) SELECT m.conversation_id, m.id, m.branch_id, m.parent_message_id, m.author_participant_id, m.role, m.logical_time, m.effective_time, m.visibility, m.pinned, m.scene_edited, m.timeline_ordinal, m.active_revision_id, m.active_candidate_id, m.revision, m.created_at, m.updated_at FROM conversation_messages AS m JOIN ancestry ON ancestry.id = m.id WHERE m.conversation_id = ?1 AND (m.timeline_ordinal < ?3 OR (m.timeline_ordinal = ?3 AND m.id > ?4)) ORDER BY m.timeline_ordinal DESC, m.id LIMIT ?5";
+    let sql = "WITH RECURSIVE ancestry(id) AS (SELECT coalesce(head_message_id, fork_message_id) FROM conversation_branches WHERE conversation_id = ?1 AND id = ?2 AND coalesce(head_message_id, fork_message_id) IS NOT NULL UNION ALL SELECT m.parent_message_id FROM conversation_messages AS m JOIN ancestry ON m.id = ancestry.id WHERE m.conversation_id = ?1 AND m.parent_message_id IS NOT NULL) SELECT m.conversation_id, m.id, m.branch_id, m.parent_message_id, m.author_participant_id, m.role, m.logical_time, m.effective_time, m.visibility, m.pinned, m.scene_edited, m.timeline_ordinal, m.active_revision_id, m.active_candidate_id, m.revision, m.created_at, m.updated_at FROM conversation_messages AS m JOIN ancestry ON ancestry.id = m.id WHERE m.conversation_id = ?1 AND (m.timeline_ordinal < ?3 OR (m.timeline_ordinal = ?3 AND m.id > ?4)) ORDER BY m.timeline_ordinal DESC, m.id LIMIT ?5";
     let mut statement = transaction.prepare(sql).map_err(slice::db)?;
     let mut items = Vec::new();
     let mut ordinals = Vec::new();
@@ -1125,7 +1178,7 @@ fn hydrate_timeline(
         ordinals.push(ordinal);
     }
     let next_cursor = if let (Some(last), Some(&ordinal)) = (items.last(), ordinals.last()) {
-        let has_more: bool = transaction.query_row("WITH RECURSIVE ancestry(id) AS (SELECT head_message_id FROM conversation_branches WHERE conversation_id = ?1 AND id = ?2 AND head_message_id IS NOT NULL UNION ALL SELECT m.parent_message_id FROM conversation_messages AS m JOIN ancestry ON m.id = ancestry.id WHERE m.conversation_id = ?1 AND m.parent_message_id IS NOT NULL) SELECT EXISTS(SELECT 1 FROM conversation_messages AS m JOIN ancestry ON ancestry.id = m.id WHERE m.conversation_id = ?1 AND (m.timeline_ordinal < ?3 OR (m.timeline_ordinal = ?3 AND m.id > ?4)))", params![conversation_id.to_string(), branch_id.to_string(), ordinal, last.message.id.to_string()], |row| row.get(0)).map_err(slice::db)?;
+        let has_more: bool = transaction.query_row("WITH RECURSIVE ancestry(id) AS (SELECT coalesce(head_message_id, fork_message_id) FROM conversation_branches WHERE conversation_id = ?1 AND id = ?2 AND coalesce(head_message_id, fork_message_id) IS NOT NULL UNION ALL SELECT m.parent_message_id FROM conversation_messages AS m JOIN ancestry ON m.id = ancestry.id WHERE m.conversation_id = ?1 AND m.parent_message_id IS NOT NULL) SELECT EXISTS(SELECT 1 FROM conversation_messages AS m JOIN ancestry ON ancestry.id = m.id WHERE m.conversation_id = ?1 AND (m.timeline_ordinal < ?3 OR (m.timeline_ordinal = ?3 AND m.id > ?4)))", params![conversation_id.to_string(), branch_id.to_string(), ordinal, last.message.id.to_string()], |row| row.get(0)).map_err(slice::db)?;
         if has_more {
             Some(encode_cursor(
                 &scope,
@@ -1716,6 +1769,12 @@ pub(crate) fn validate_outbox_event_timestamp(
         | ConversationOutboxEvent::TurnCancellationRequested { at, .. }
         | ConversationOutboxEvent::TurnCancelled { at, .. }
         | ConversationOutboxEvent::BranchForked { at, .. }
+        | ConversationOutboxEvent::CandidateChosen { at, .. }
+        | ConversationOutboxEvent::BranchSelected { at, .. }
+        | ConversationOutboxEvent::ConversationLifecycleChanged { at, .. }
+        | ConversationOutboxEvent::SettingsChanged { at, .. }
+        | ConversationOutboxEvent::ParticipantPolicyChanged { at, .. }
+        | ConversationOutboxEvent::MessageFlagsChanged { at, .. }
         | ConversationOutboxEvent::ConversationTombstoned { at, .. }
         | ConversationOutboxEvent::AssetReferencesChanged { at, .. } => *at,
         ConversationOutboxEvent::TurnFinalized { effective_time, .. } => *effective_time,
@@ -1957,13 +2016,50 @@ pub(crate) fn validate_outbox_event(
                 attempt_id,
             )?;
         }
-        ConversationOutboxEvent::BranchForked { branch_id, .. } => owned_ref(
+        ConversationOutboxEvent::BranchForked { branch_id, .. }
+        | ConversationOutboxEvent::BranchSelected { branch_id, .. } => owned_ref(
             transaction,
             "conversation_branches",
             "id",
             conversation_id,
             branch_id,
         )?,
+        ConversationOutboxEvent::CandidateChosen {
+            message_id,
+            candidate_id,
+            ..
+        } => {
+            owned_ref(
+                transaction,
+                "conversation_messages",
+                "id",
+                conversation_id,
+                message_id,
+            )?;
+            owned_ref(
+                transaction,
+                "conversation_message_candidates",
+                "id",
+                conversation_id,
+                candidate_id,
+            )?;
+        }
+        ConversationOutboxEvent::MessageFlagsChanged { message_id, .. } => owned_ref(
+            transaction,
+            "conversation_messages",
+            "id",
+            conversation_id,
+            message_id,
+        )?,
+        ConversationOutboxEvent::ParticipantPolicyChanged { participant_id, .. } => owned_ref(
+            transaction,
+            "conversation_participants",
+            "id",
+            conversation_id,
+            participant_id,
+        )?,
+        ConversationOutboxEvent::ConversationLifecycleChanged { .. }
+        | ConversationOutboxEvent::SettingsChanged { .. } => {}
         ConversationOutboxEvent::ConversationTombstoned { .. } => {}
         ConversationOutboxEvent::AssetReferencesChanged {
             message_revision_id,
@@ -2097,7 +2193,7 @@ fn read_candidate_page(
         .as_ref()
         .map(|value| value.text.as_str())
         .unwrap_or("");
-    let sql = "SELECT conversation_id, id, message_id, branch_id, turn_id, attempt_id, ordinal, parts_json, model_json, created_at, provider_replay_artifact_id, provider_replay_retention FROM conversation_message_candidates WHERE conversation_id = ?1 AND message_id = ?2 AND (ordinal > ?3 OR (ordinal = ?3 AND id > ?4)) ORDER BY ordinal, id LIMIT ?5";
+    let sql = "SELECT conversation_id, id, message_id, branch_id, turn_id, attempt_id, ordinal, parts_json, model_json, created_at, provider_replay_artifact_id, provider_replay_retention, author_participant_id FROM conversation_message_candidates WHERE conversation_id = ?1 AND message_id = ?2 AND (ordinal > ?3 OR (ordinal = ?3 AND id > ?4)) ORDER BY ordinal, id LIMIT ?5";
     let mut statement = transaction.prepare(sql).map_err(slice::db)?;
     let mut values = Vec::new();
     for row in statement
@@ -2287,7 +2383,7 @@ impl ConversationReader for Database {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Deferred)
             .map_err(slice::db)?;
-        let mut statement = transaction.prepare("SELECT conversation_id, id, message_id, branch_id, turn_id, attempt_id, ordinal, parts_json, model_json, created_at, provider_replay_artifact_id, provider_replay_retention FROM conversation_message_candidates WHERE id = ?1").map_err(slice::db)?;
+        let mut statement = transaction.prepare("SELECT conversation_id, id, message_id, branch_id, turn_id, attempt_id, ordinal, parts_json, model_json, created_at, provider_replay_artifact_id, provider_replay_retention, author_participant_id FROM conversation_message_candidates WHERE id = ?1").map_err(slice::db)?;
         let mut values = Vec::new();
         for row in statement
             .query_map([id.to_string()], |row| {
@@ -2985,7 +3081,7 @@ mod tests {
         transaction.execute("UPDATE conversation_branches SET head_message_id = ?1 WHERE conversation_id = ?2 AND id = ?3", params![assistant_id.to_string(), conversation_id.to_string(), branch_id.to_string()]).expect("head");
         transaction.execute("INSERT INTO conversation_turns (conversation_id, id, branch_id, operation, input_kind, candidate_message_id, candidate_id, idempotency_key, status, target_kind, target_message_id, target_prior_candidate_id, revision, created_at, updated_at) VALUES (?1, ?2, ?3, 'regenerate', 'existing_candidate', ?4, ?5, ?6, 'created', 'existing_candidate', ?4, ?5, 1, 0, 0)", params![conversation_id.to_string(), source_turn_id.to_string(), branch_id.to_string(), assistant_id.to_string(), candidate_id.to_string(), format!("source-{source_turn_id}")]).expect("source turn");
         transaction.execute("INSERT INTO generation_attempts (conversation_id, turn_id, id, ordinal, status, job_idempotency_key) VALUES (?1, ?2, ?3, 0, 'created', ?4)", params![conversation_id.to_string(), source_turn_id.to_string(), source_attempt_id.to_string(), format!("generation.{source_turn_id}.{source_attempt_id}")]).expect("source attempt");
-        transaction.execute("INSERT INTO conversation_message_candidates (conversation_id, id, message_id, branch_id, turn_id, attempt_id, ordinal, parts_json, model_json, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, ?7, ?8, 0)", params![conversation_id.to_string(), candidate_id.to_string(), assistant_id.to_string(), branch_id.to_string(), source_turn_id.to_string(), source_attempt_id.to_string(), parts, model_json]).expect("candidate");
+        transaction.execute("INSERT INTO conversation_message_candidates (conversation_id, id, message_id, branch_id, turn_id, attempt_id, author_participant_id, ordinal, parts_json, model_json, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, ?8, ?9, 0)", params![conversation_id.to_string(), candidate_id.to_string(), assistant_id.to_string(), branch_id.to_string(), source_turn_id.to_string(), source_attempt_id.to_string(), character_participant.to_string(), parts, model_json]).expect("candidate");
         transaction.execute("INSERT INTO conversation_turns (conversation_id, id, branch_id, operation, input_kind, candidate_message_id, candidate_id, idempotency_key, status, target_kind, target_message_id, target_prior_candidate_id, revision, created_at, updated_at) VALUES (?1, ?2, ?3, 'regenerate', 'existing_candidate', ?4, ?5, ?6, 'created', 'existing_candidate', ?4, ?5, 1, 0, 0)", params![conversation_id.to_string(), current_turn_id.to_string(), branch_id.to_string(), assistant_id.to_string(), candidate_id.to_string(), format!("current-{current_turn_id}")]).expect("current turn");
         transaction.execute("INSERT INTO generation_attempts (conversation_id, turn_id, id, ordinal, status, job_idempotency_key) VALUES (?1, ?2, ?3, 0, 'created', ?4)", params![conversation_id.to_string(), current_turn_id.to_string(), current_attempt_id.to_string(), format!("generation.{current_turn_id}.{current_attempt_id}")]).expect("current attempt");
         transaction.commit().expect("content commit");
@@ -3619,6 +3715,195 @@ mod tests {
     }
 
     #[test]
+    fn message_flag_events_survive_a_later_flag_change() {
+        let database = Database::open_in_memory().expect("database");
+        let (conversation_id, revision_id, ..) = create_content_fixture(&database);
+        let message_id = ConversationReader::get_message_revision(&database, revision_id)
+            .expect("revision")
+            .message_id;
+        let connection = database.connection().expect("connection");
+        for (sequence, pinned, visibility) in [
+            (1_i64, true, MessageVisibility::Visible),
+            (2_i64, false, MessageVisibility::Hidden),
+        ] {
+            let operation_id = OperationRecordId::new();
+            connection
+                .execute(
+                    "INSERT INTO conversation_operations (id, conversation_id, kind, operation_key, request_digest, result_kind, result_id, result_json, created_at) VALUES (?1, ?2, 'flags', ?3, ?4, 'message', ?5, ?6, 1)",
+                    params![
+                        operation_id.to_string(),
+                        conversation_id.to_string(),
+                        format!("flags-{sequence}"),
+                        "e1".repeat(32),
+                        message_id.to_string(),
+                        slice::encode(&OperationResultRef::Message(message_id)).expect("result")
+                    ],
+                )
+                .expect("flags operation");
+            connection
+                .execute(
+                    "UPDATE conversation_messages SET pinned = ?1, visibility = ?2 WHERE conversation_id = ?3 AND id = ?4",
+                    params![
+                        i64::from(pinned),
+                        match visibility {
+                            MessageVisibility::Visible => "visible",
+                            MessageVisibility::Hidden => "hidden",
+                            MessageVisibility::Tombstoned => "tombstoned",
+                        },
+                        conversation_id.to_string(),
+                        message_id.to_string()
+                    ],
+                )
+                .expect("flag change");
+            let event = ConversationOutboxEvent::MessageFlagsChanged {
+                conversation_id,
+                message_id,
+                pinned,
+                visibility,
+                at: TimestampMillis::new(sequence),
+            };
+            connection
+                .execute(
+                    "INSERT INTO conversation_outbox (conversation_id, id, sequence, conversation_revision, operation_record_id, at, event_json) VALUES (?1, ?2, ?3, 1, ?4, ?5, ?6)",
+                    params![
+                        conversation_id.to_string(),
+                        OutboxEventId::new().to_string(),
+                        sequence,
+                        operation_id.to_string(),
+                        sequence,
+                        slice::encode(&event).expect("event")
+                    ],
+                )
+                .expect("outbox");
+        }
+        drop(connection);
+        let page = ConversationReader::page_outbox(
+            &database,
+            conversation_id,
+            &PageRequest {
+                cursor: None,
+                limit: lettuce_types::PageLimit::new(8),
+            },
+        )
+        .expect("outbox page");
+        assert_eq!(page.items.len(), 2);
+    }
+
+    #[test]
+    fn a_tombstoned_message_cannot_be_restored() {
+        let database = Database::open_in_memory().expect("database");
+        let (conversation_id, revision_id, ..) = create_content_fixture(&database);
+        let message_id = ConversationReader::get_message_revision(&database, revision_id)
+            .expect("revision")
+            .message_id;
+        let connection = database.connection().expect("connection");
+        connection
+            .execute(
+                "UPDATE conversation_messages SET visibility = 'tombstoned' WHERE conversation_id = ?1 AND id = ?2",
+                params![conversation_id.to_string(), message_id.to_string()],
+            )
+            .expect("tombstone");
+        for visibility in ["visible", "hidden"] {
+            assert!(
+                connection
+                    .execute(
+                        "UPDATE conversation_messages SET visibility = ?1 WHERE conversation_id = ?2 AND id = ?3",
+                        params![
+                            visibility,
+                            conversation_id.to_string(),
+                            message_id.to_string()
+                        ],
+                    )
+                    .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn a_headless_fork_branch_pages_its_inherited_ancestry() {
+        let database = Database::open_in_memory().expect("database");
+        let (conversation_id, revision_id, ..) = create_content_fixture(&database);
+        let user_message_id = ConversationReader::get_message_revision(&database, revision_id)
+            .expect("revision")
+            .message_id;
+        let root_branch_id = ConversationReader::get(&database, conversation_id)
+            .expect("aggregate")
+            .conversation
+            .active_branch_id;
+        let fork_branch_id = lettuce_types::ConversationBranchId::new();
+        database
+            .connection()
+            .expect("connection")
+            .execute(
+                "INSERT INTO conversation_branches (conversation_id, id, parent_branch_id, fork_message_id, head_message_id, status, revision, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, NULL, 'active', 1, 0, 0)",
+                params![
+                    conversation_id.to_string(),
+                    fork_branch_id.to_string(),
+                    root_branch_id.to_string(),
+                    user_message_id.to_string()
+                ],
+            )
+            .expect("fork branch");
+        let page = ConversationReader::timeline_page(
+            &database,
+            conversation_id,
+            fork_branch_id,
+            &PageRequest {
+                cursor: None,
+                limit: lettuce_types::PageLimit::new(8),
+            },
+        )
+        .expect("fork timeline");
+        assert_eq!(page.selected_branch_id, fork_branch_id);
+        assert_eq!(page.items.len(), 1);
+        assert_eq!(page.items[0].message.id, user_message_id);
+        assert!(page.next_cursor.is_none());
+    }
+
+    #[test]
+    fn candidate_author_round_trips_and_must_be_a_character() {
+        let database = Database::open_in_memory().expect("database");
+        let (conversation_id, _, candidate_id, ..) = create_content_fixture(&database);
+        let participants = ConversationReader::get(&database, conversation_id)
+            .expect("aggregate")
+            .conversation
+            .participants;
+        let character_participant = participants
+            .iter()
+            .find(|participant| participant.role == ParticipantRole::Character)
+            .expect("character")
+            .id;
+        let user_participant = participants
+            .iter()
+            .find(|participant| participant.role == ParticipantRole::User)
+            .expect("user")
+            .id;
+        let candidate =
+            ConversationReader::get_candidate(&database, candidate_id).expect("candidate");
+        assert_eq!(candidate.author_participant_id, character_participant);
+        let connection = database.connection().expect("connection");
+        let immutable = connection.execute(
+            "UPDATE conversation_message_candidates SET author_participant_id = ?1 WHERE conversation_id = ?2 AND id = ?3",
+            params![
+                user_participant.to_string(),
+                conversation_id.to_string(),
+                candidate_id.to_string()
+            ],
+        );
+        assert!(immutable.is_err());
+        let non_character = connection.execute(
+            "INSERT INTO conversation_message_candidates (conversation_id, id, message_id, branch_id, turn_id, attempt_id, author_participant_id, ordinal, parts_json, model_json, created_at) SELECT conversation_id, ?1, message_id, branch_id, turn_id, attempt_id, ?2, ordinal + 1, parts_json, model_json, created_at FROM conversation_message_candidates WHERE conversation_id = ?3 AND id = ?4",
+            params![
+                MessageCandidateId::new().to_string(),
+                user_participant.to_string(),
+                conversation_id.to_string(),
+                candidate_id.to_string()
+            ],
+        );
+        assert!(non_character.is_err());
+    }
+
+    #[test]
     fn reader_hydrates_content_turn_variants_and_replay_fail_closed() {
         let database = Database::open_in_memory().expect("database");
         let (conversation_id, revision_id, candidate_id, source_id, current_id) =
@@ -3919,7 +4204,7 @@ mod tests {
             .expect("duplicate revision");
         transaction
             .execute(
-                "INSERT INTO conversation_message_candidates (conversation_id, id, message_id, branch_id, turn_id, attempt_id, ordinal, parts_json, model_json, created_at, provider_replay_artifact_id, provider_replay_retention) SELECT conversation_id, ?1, message_id, branch_id, turn_id, attempt_id, ordinal + 1, parts_json, model_json, created_at, provider_replay_artifact_id, provider_replay_retention FROM conversation_message_candidates WHERE conversation_id = ?2 AND id = ?3",
+                "INSERT INTO conversation_message_candidates (conversation_id, id, message_id, branch_id, turn_id, attempt_id, author_participant_id, ordinal, parts_json, model_json, created_at, provider_replay_artifact_id, provider_replay_retention) SELECT conversation_id, ?1, message_id, branch_id, turn_id, attempt_id, author_participant_id, ordinal + 1, parts_json, model_json, created_at, provider_replay_artifact_id, provider_replay_retention FROM conversation_message_candidates WHERE conversation_id = ?2 AND id = ?3",
                 params![first_candidate.to_string(), second_conversation.to_string(), second_candidate.to_string()],
             )
             .expect("duplicate candidate");

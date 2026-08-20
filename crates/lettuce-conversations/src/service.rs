@@ -8,9 +8,10 @@ use crate::ports::{
     ArchiveConversationResult, BeginGeneration, ConversationCreator, ConversationOutboxRecord,
     ConversationQuery, ConversationReader, ConversationRepository, ConversationSummary,
     CreateConversationResult, EditMessageResult, ForkBranchResult, GenerationFailureResult,
-    GenerationFinalizationResult, GenerationRecoveryResult, KeysetPage, MutationCommit,
-    OperationKind, ParticipantPolicyResult, RestoreConversationResult, SelectBranchResult,
-    SettingsResult, TimelinePage, TombstoneMessageResult,
+    GenerationFinalizationResult, GenerationInterruptionResult, GenerationRecoveryResult,
+    KeysetPage, MutationCommit, OperationKind, ParticipantPolicyResult, RestoreConversationResult,
+    SelectBranchResult, SettingsResult, TimelinePage, TombstoneMessageResult,
+    UpdateMessageFlagsResult,
 };
 
 /// Thin application-facing façade.  It validates command contracts and
@@ -293,6 +294,30 @@ impl<R: ConversationRepository> ConversationManager<R> {
             .map_err(Into::into)
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn interrupt_generation(
+        &self,
+        turn_id: lettuce_types::GenerationTurnId,
+        attempt_id: lettuce_types::GenerationAttemptId,
+        expected_conversation_revision: lettuce_types::Revision,
+        expected_turn_revision: lettuce_types::Revision,
+        operation: &crate::commands::OperationToken,
+        usage_event_id: lettuce_types::UsageEventId,
+        now: TimestampMillis,
+    ) -> Result<GenerationInterruptionResult, ConversationServiceError> {
+        self.repository
+            .interrupt_generation(
+                turn_id,
+                attempt_id,
+                expected_conversation_revision,
+                expected_turn_revision,
+                operation,
+                usage_event_id,
+                now,
+            )
+            .map_err(Into::into)
+    }
+
     pub fn recover_generation(
         &self,
         turn_id: lettuce_types::GenerationTurnId,
@@ -336,15 +361,26 @@ impl<R: ConversationRepository> ConversationManager<R> {
             .map_err(Into::into)
     }
 
+    pub fn update_message_flags(
+        &self,
+        command: &crate::commands::UpdateMessageFlags,
+        now: TimestampMillis,
+    ) -> Result<UpdateMessageFlagsResult, ConversationServiceError> {
+        ConversationMutation::Flags(command.clone()).validate()?;
+        let result = self.repository.update_message_flags(command, now)?;
+        command.validate_result(&result.value)?;
+        Ok(result)
+    }
+
     pub fn fork_branch(
         &self,
         command: &crate::commands::ForkBranch,
         now: TimestampMillis,
     ) -> Result<ForkBranchResult, ConversationServiceError> {
         ConversationMutation::Fork(command.clone()).validate()?;
-        self.repository
-            .fork_branch(command, now)
-            .map_err(Into::into)
+        let result = self.repository.fork_branch(command, now)?;
+        result.value.validate()?;
+        Ok(result)
     }
 
     pub fn select_branch(

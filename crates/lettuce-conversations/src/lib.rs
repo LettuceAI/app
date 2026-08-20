@@ -2454,4 +2454,736 @@ mod tests {
         };
         assert!(aggregate.validate().is_ok());
     }
+
+    fn contract_participant(
+        ordinal: u32,
+        role: ParticipantRole,
+        source: ParticipantSource,
+    ) -> ConversationParticipant {
+        ConversationParticipant {
+            id: ConversationParticipantId::new(),
+            role,
+            ordinal,
+            enabled: true,
+            muted: false,
+            source,
+            display_name: "Participant".into(),
+            authored_description: None,
+            model_selection: SnapshotSelection::Disabled,
+            revision: Revision::INITIAL,
+            created_at: TimestampMillis::UNIX_EPOCH,
+            updated_at: TimestampMillis::UNIX_EPOCH,
+        }
+    }
+
+    fn contract_model() -> ModelSelectionSnapshot {
+        let model_id = lettuce_types::ModelProfileId::new();
+        ModelSelectionSnapshot {
+            snapshot_ref: snapshot_ref(SnapshotSource::Model(model_id)),
+            source_id: model_id,
+            source_revision: Revision::INITIAL,
+            provider_kind: ModelProviderKind::Other,
+            external_model_id: "model".into(),
+            display_name: "Model".into(),
+            context_length: None,
+            max_output_tokens: None,
+        }
+    }
+
+    fn contract_conversation(
+        conversation_id: ConversationId,
+        active_branch_id: ConversationBranchId,
+    ) -> Conversation {
+        let character_id = CharacterId::new();
+        let now = TimestampMillis::UNIX_EPOCH;
+        Conversation {
+            id: conversation_id,
+            lifecycle: ConversationLifecycle::Active,
+            title: "Chat".into(),
+            kind: ConversationKind::Direct(DirectConversationDetails {
+                format_version: 1,
+                character: CharacterLaunchSnapshot {
+                    snapshot_ref: snapshot_ref(SnapshotSource::Character(character_id)),
+                    source_id: character_id,
+                    source_revision: Revision::INITIAL,
+                    name: "Ada".into(),
+                    nickname: None,
+                },
+                persona: SnapshotSelection::Disabled,
+                scene: SnapshotSelection::Disabled,
+                starter: SnapshotSelection::Disabled,
+                prompt: SnapshotSelection::Disabled,
+                lorebooks: SnapshotSelection::Explicit(Vec::new()),
+                model: SnapshotSelection::Disabled,
+                memory: SnapshotSelection::Disabled,
+                voice: SnapshotSelection::Disabled,
+            }),
+            active_branch_id,
+            participants: vec![
+                contract_participant(0, ParticipantRole::User, ParticipantSource::User),
+                contract_participant(
+                    1,
+                    ParticipantRole::Character,
+                    ParticipantSource::Character(character_id),
+                ),
+            ],
+            current_settings: None,
+            revision: Revision::INITIAL,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    fn candidate_history(
+        conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
+        participants: &[ConversationParticipant],
+        message_author: ConversationParticipantId,
+        candidate_author: ConversationParticipantId,
+    ) -> ConversationHistory {
+        let now = TimestampMillis::UNIX_EPOCH;
+        let user_author = participants
+            .iter()
+            .find(|participant| participant.role == ParticipantRole::User)
+            .expect("user participant")
+            .id;
+        let user_message_id = MessageId::new();
+        let assistant_id = MessageId::new();
+        let turn_id = GenerationTurnId::new();
+        let attempt_id = GenerationAttemptId::new();
+        let candidate_id = MessageCandidateId::new();
+        let candidate = MessageCandidate {
+            id: candidate_id,
+            message_id: assistant_id,
+            turn_id,
+            attempt_id,
+            author_participant_id: candidate_author,
+            ordinal: 0,
+            parts: vec![MessagePart::Text {
+                text: "reply".into(),
+            }],
+            model: contract_model(),
+            created_at: now,
+            provider_replay: None,
+        };
+        let assistant = Message {
+            id: assistant_id,
+            conversation_id,
+            branch_id,
+            parent_message_id: Some(user_message_id),
+            author_participant_id: Some(message_author),
+            role: MessageRole::Assistant,
+            logical_time: now,
+            effective_time: now,
+            visibility: MessageVisibility::Visible,
+            pinned: false,
+            scene_edited: false,
+            active_render_source: MessageRenderSource::Candidate(candidate_id),
+            revision: Revision::INITIAL,
+            created_at: now,
+            updated_at: now,
+        };
+        let attempt = GenerationAttempt {
+            id: attempt_id,
+            turn_id,
+            ordinal: 0,
+            parent_attempt_id: None,
+            status: GenerationAttemptStatus::Succeeded,
+            job_idempotency_key: attempt_job_idempotency_key(turn_id, attempt_id),
+            job_id: None,
+            started_at: Some(now),
+            finished_at: Some(now),
+            candidate_ids: vec![candidate_id],
+            usage_event_id: Some(UsageEventId::new()),
+            failure: None,
+        };
+        let turn = GenerationTurn {
+            id: turn_id,
+            conversation_id,
+            branch_id,
+            operation: GenerationOperation::Send,
+            input: GenerationInput::UserMessage {
+                message_id: user_message_id,
+            },
+            target: GenerationTarget::NewAssistant {
+                message_id: assistant_id,
+                parent_message_id: Some(user_message_id),
+            },
+            swap_roles: false,
+            retry_of_turn_id: None,
+            idempotency_key: lettuce_jobs::IdempotencyKey::new("candidate-turn").expect("key"),
+            correlation_id: None,
+            status: GenerationTurnStatus::Succeeded,
+            selected_speaker: None,
+            guidance: None,
+            requested_model_override: None,
+            forced_speaker: None,
+            resolved_model: None,
+            prompt: None,
+            lorebooks: Vec::new(),
+            memory: None,
+            candidate_ids: vec![candidate_id],
+            selected_candidate_id: Some(candidate_id),
+            attempts: vec![attempt],
+            failure: None,
+            revision: Revision::INITIAL,
+            created_at: now,
+            updated_at: now,
+        };
+        ConversationHistory {
+            conversation_id,
+            branch_id,
+            head_message_id: Some(assistant_id),
+            fork_message_id: None,
+            branches: vec![history_branch(
+                branch_id,
+                conversation_id,
+                None,
+                None,
+                Some(assistant_id),
+            )],
+            items: vec![
+                history_item(
+                    conversation_id,
+                    branch_id,
+                    user_message_id,
+                    None,
+                    user_author,
+                    0,
+                    1,
+                ),
+                ConversationHistoryItem {
+                    message: assistant,
+                    active_revision: None,
+                    active_candidate: Some(candidate),
+                    depth: 1,
+                    order: 2,
+                },
+            ],
+            turns: vec![turn],
+        }
+    }
+
+    #[test]
+    fn candidate_author_must_be_a_character_participant() {
+        let conversation_id = ConversationId::new();
+        let branch_id = ConversationBranchId::new();
+        let character_id = CharacterId::new();
+        let participants = vec![
+            contract_participant(0, ParticipantRole::User, ParticipantSource::User),
+            contract_participant(
+                1,
+                ParticipantRole::Character,
+                ParticipantSource::Character(character_id),
+            ),
+        ];
+        let history = candidate_history(
+            conversation_id,
+            branch_id,
+            &participants,
+            participants[1].id,
+            participants[0].id,
+        );
+        assert!(matches!(
+            history.validate(&participants),
+            Err(ValidationError::InvalidReference {
+                field: "conversation_history.candidate_author"
+            })
+        ));
+        let unknown = candidate_history(
+            conversation_id,
+            branch_id,
+            &participants,
+            participants[1].id,
+            ConversationParticipantId::new(),
+        );
+        assert!(unknown.validate(&participants).is_err());
+    }
+
+    #[test]
+    fn active_candidate_author_pins_the_message_speaker() {
+        let conversation_id = ConversationId::new();
+        let branch_id = ConversationBranchId::new();
+        let participants = vec![
+            contract_participant(0, ParticipantRole::User, ParticipantSource::User),
+            contract_participant(
+                1,
+                ParticipantRole::Character,
+                ParticipantSource::Character(CharacterId::new()),
+            ),
+            contract_participant(
+                2,
+                ParticipantRole::Character,
+                ParticipantSource::Character(CharacterId::new()),
+            ),
+        ];
+        let matching = candidate_history(
+            conversation_id,
+            branch_id,
+            &participants,
+            participants[1].id,
+            participants[1].id,
+        );
+        assert!(matching.validate(&participants).is_ok());
+        let drifted = candidate_history(
+            conversation_id,
+            branch_id,
+            &participants,
+            participants[1].id,
+            participants[2].id,
+        );
+        assert!(matches!(
+            drifted.validate(&participants),
+            Err(ValidationError::InvalidReference {
+                field: "conversation_history.candidate_author_speaker"
+            })
+        ));
+    }
+
+    #[test]
+    fn tombstone_fork_selects_a_branch_from_the_parent_message() {
+        let conversation_id = ConversationId::new();
+        let source_branch_id = ConversationBranchId::new();
+        let new_branch_id = ConversationBranchId::new();
+        let conversation = contract_conversation(conversation_id, new_branch_id);
+        let author = conversation.participants[0].id;
+        let parent_id = MessageId::new();
+        let target_id = MessageId::new();
+        let (message, _) = history_message(
+            conversation_id,
+            source_branch_id,
+            target_id,
+            Some(parent_id),
+            author,
+        );
+        let result = TombstoneResult {
+            conversation,
+            message,
+            descendant_count: 0,
+            asset_reference_deltas: Vec::new(),
+            forked_branch: Some(history_branch(
+                new_branch_id,
+                conversation_id,
+                Some(source_branch_id),
+                Some(parent_id),
+                None,
+            )),
+        };
+        assert!(result.validate_for_policy(DescendantPolicy::Fork).is_ok());
+
+        let self_fork = TombstoneResult {
+            forked_branch: Some(history_branch(
+                new_branch_id,
+                conversation_id,
+                Some(source_branch_id),
+                Some(target_id),
+                None,
+            )),
+            ..result.clone()
+        };
+        assert!(
+            self_fork
+                .validate_for_policy(DescendantPolicy::Fork)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn tombstone_fork_accepts_a_parent_on_another_branch() {
+        let conversation_id = ConversationId::new();
+        let ancestor_branch_id = ConversationBranchId::new();
+        let source_branch_id = ConversationBranchId::new();
+        let new_branch_id = ConversationBranchId::new();
+        let conversation = contract_conversation(conversation_id, new_branch_id);
+        let author = conversation.participants[0].id;
+        let parent_id = MessageId::new();
+        let target_id = MessageId::new();
+        let (message, _) = history_message(
+            conversation_id,
+            source_branch_id,
+            target_id,
+            Some(parent_id),
+            author,
+        );
+        let result = TombstoneResult {
+            conversation,
+            message,
+            descendant_count: 0,
+            asset_reference_deltas: Vec::new(),
+            forked_branch: Some(history_branch(
+                new_branch_id,
+                conversation_id,
+                Some(ancestor_branch_id),
+                Some(parent_id),
+                None,
+            )),
+        };
+        assert!(result.validate_for_policy(DescendantPolicy::Fork).is_ok());
+    }
+
+    #[test]
+    fn tombstone_fork_rejects_a_root_message() {
+        let conversation_id = ConversationId::new();
+        let source_branch_id = ConversationBranchId::new();
+        let new_branch_id = ConversationBranchId::new();
+        let conversation = contract_conversation(conversation_id, new_branch_id);
+        let author = conversation.participants[0].id;
+        let target_id = MessageId::new();
+        let (message, _) =
+            history_message(conversation_id, source_branch_id, target_id, None, author);
+        let result = TombstoneResult {
+            conversation,
+            message,
+            descendant_count: 0,
+            asset_reference_deltas: Vec::new(),
+            forked_branch: Some(history_branch(
+                new_branch_id,
+                conversation_id,
+                Some(source_branch_id),
+                None,
+                None,
+            )),
+        };
+        assert!(result.validate_for_policy(DescendantPolicy::Fork).is_err());
+    }
+
+    #[test]
+    fn fork_result_requires_the_new_branch_to_be_selected() {
+        let conversation_id = ConversationId::new();
+        let branch_id = ConversationBranchId::new();
+        let conversation = contract_conversation(conversation_id, branch_id);
+        let branch = history_branch(branch_id, conversation_id, None, None, None);
+        let result = BranchResult {
+            branch: branch.clone(),
+            conversation: conversation.clone(),
+        };
+        assert!(result.validate().is_ok());
+
+        let unselected = BranchResult {
+            branch: history_branch(
+                ConversationBranchId::new(),
+                conversation_id,
+                None,
+                None,
+                None,
+            ),
+            conversation: conversation.clone(),
+        };
+        assert!(unselected.validate().is_err());
+
+        let mut archived = branch;
+        archived.status = BranchStatus::Archived;
+        assert!(
+            BranchResult {
+                branch: archived,
+                conversation: conversation.clone(),
+            }
+            .validate()
+            .is_err()
+        );
+
+        let foreign = BranchResult {
+            branch: history_branch(branch_id, ConversationId::new(), None, None, None),
+            conversation,
+        };
+        assert!(foreign.validate().is_err());
+    }
+
+    fn outbox_record(
+        conversation_id: ConversationId,
+        event: ConversationOutboxEvent,
+    ) -> ConversationOutboxRecord {
+        ConversationOutboxRecord {
+            format_version: 1,
+            id: lettuce_types::OutboxEventId::new(),
+            conversation_id,
+            conversation_revision: Revision::INITIAL,
+            sequence: 1,
+            operation_record_id: lettuce_types::OperationRecordId::new(),
+            at: TimestampMillis::UNIX_EPOCH,
+            event,
+        }
+    }
+
+    #[test]
+    fn mutation_outbox_variants_bind_to_their_conversation() {
+        let conversation_id = ConversationId::new();
+        let at = TimestampMillis::UNIX_EPOCH;
+        let events = vec![
+            ConversationOutboxEvent::CandidateChosen {
+                conversation_id,
+                message_id: MessageId::new(),
+                candidate_id: MessageCandidateId::new(),
+                at,
+            },
+            ConversationOutboxEvent::BranchSelected {
+                conversation_id,
+                branch_id: ConversationBranchId::new(),
+                at,
+            },
+            ConversationOutboxEvent::ConversationLifecycleChanged {
+                conversation_id,
+                lifecycle: ConversationLifecycle::Archived,
+                at,
+            },
+            ConversationOutboxEvent::SettingsChanged {
+                conversation_id,
+                settings_revision: Revision::INITIAL,
+                at,
+            },
+            ConversationOutboxEvent::ParticipantPolicyChanged {
+                conversation_id,
+                participant_id: ConversationParticipantId::new(),
+                at,
+            },
+            ConversationOutboxEvent::MessageFlagsChanged {
+                conversation_id,
+                message_id: MessageId::new(),
+                pinned: true,
+                visibility: MessageVisibility::Hidden,
+                at,
+            },
+        ];
+        for event in events {
+            let record = outbox_record(conversation_id, event);
+            assert!(record.validate().is_ok());
+            let foreign = ConversationOutboxRecord {
+                conversation_id: ConversationId::new(),
+                ..record
+            };
+            assert!(matches!(
+                foreign.validate(),
+                Err(ValidationError::InvalidReference {
+                    field: "outbox.conversation_id"
+                })
+            ));
+        }
+    }
+
+    #[test]
+    fn mutation_outbox_variants_reject_out_of_range_payloads() {
+        let conversation_id = ConversationId::new();
+        let at = TimestampMillis::UNIX_EPOCH;
+        assert!(
+            outbox_record(
+                conversation_id,
+                ConversationOutboxEvent::ConversationLifecycleChanged {
+                    conversation_id,
+                    lifecycle: ConversationLifecycle::Tombstoned,
+                    at,
+                },
+            )
+            .validate()
+            .is_err()
+        );
+        assert!(matches!(
+            outbox_record(
+                conversation_id,
+                ConversationOutboxEvent::SettingsChanged {
+                    conversation_id,
+                    settings_revision: Revision::new(0),
+                    at,
+                },
+            )
+            .validate(),
+            Err(ValidationError::ZeroRevision)
+        ));
+        assert!(
+            outbox_record(
+                conversation_id,
+                ConversationOutboxEvent::MessageFlagsChanged {
+                    conversation_id,
+                    message_id: MessageId::new(),
+                    pinned: false,
+                    visibility: MessageVisibility::Tombstoned,
+                    at,
+                },
+            )
+            .validate()
+            .is_err()
+        );
+    }
+
+    fn flags_command(
+        pinned: Option<bool>,
+        visibility: Option<MessageVisibility>,
+    ) -> UpdateMessageFlags {
+        UpdateMessageFlags {
+            conversation_id: ConversationId::new(),
+            message_id: MessageId::new(),
+            expected_revision: Revision::INITIAL,
+            operation: OperationToken {
+                key: lettuce_jobs::IdempotencyKey::new("flags").expect("key"),
+                request_digest: ContentHash::parse("ab".repeat(32)).expect("digest"),
+            },
+            pinned,
+            visibility,
+        }
+    }
+
+    #[test]
+    fn message_flags_command_requires_a_non_tombstoning_patch() {
+        assert!(
+            ConversationMutation::Flags(flags_command(Some(true), None))
+                .validate()
+                .is_ok()
+        );
+        assert!(
+            ConversationMutation::Flags(flags_command(None, Some(MessageVisibility::Hidden)))
+                .validate()
+                .is_ok()
+        );
+        assert!(matches!(
+            flags_command(None, None).validate(),
+            Err(ValidationError::Invariant {
+                field: "message_flags.empty_patch"
+            })
+        ));
+        assert!(matches!(
+            flags_command(Some(true), Some(MessageVisibility::Tombstoned)).validate(),
+            Err(ValidationError::InvalidValue {
+                field: "message_flags.visibility"
+            })
+        ));
+        let mut stale = flags_command(Some(true), None);
+        stale.expected_revision = Revision::new(0);
+        assert!(matches!(
+            ConversationMutation::Flags(stale).validate(),
+            Err(ValidationError::ZeroRevision)
+        ));
+    }
+
+    #[test]
+    fn drafts_cannot_smuggle_a_tombstone_or_a_foreign_scene_edit() {
+        let scene = MessageDraft {
+            role: MessageRole::Scene,
+            author_participant_id: None,
+            parts: vec![],
+            visibility: MessageVisibility::Visible,
+            pinned: false,
+            scene_edited: true,
+        };
+        assert!(scene.validate().is_ok());
+        assert!(matches!(
+            MessageDraft {
+                role: MessageRole::User,
+                author_participant_id: Some(ConversationParticipantId::new()),
+                ..scene.clone()
+            }
+            .validate(),
+            Err(ValidationError::InvalidValue {
+                field: "message_draft.scene_edited"
+            })
+        ));
+        assert!(matches!(
+            MessageDraft {
+                visibility: MessageVisibility::Tombstoned,
+                ..scene
+            }
+            .validate(),
+            Err(ValidationError::InvalidValue {
+                field: "message_draft.visibility"
+            })
+        ));
+        assert!(matches!(
+            MessageEditDraft {
+                parts: vec![],
+                visibility: MessageVisibility::Tombstoned,
+                pinned: false,
+                scene_edited: false,
+            }
+            .validate(),
+            Err(ValidationError::InvalidValue {
+                field: "message_edit.visibility"
+            })
+        ));
+    }
+
+    #[test]
+    fn a_headless_fork_branch_renders_its_inherited_ancestry() {
+        let conversation_id = ConversationId::new();
+        let root_id = ConversationBranchId::new();
+        let fork_id = ConversationBranchId::new();
+        let participant = history_participant();
+        let a = MessageId::new();
+        let b = MessageId::new();
+        let history = ConversationHistory {
+            conversation_id,
+            branch_id: fork_id,
+            head_message_id: None,
+            fork_message_id: Some(b),
+            branches: vec![
+                history_branch(root_id, conversation_id, None, None, Some(b)),
+                history_branch(fork_id, conversation_id, Some(root_id), Some(b), None),
+            ],
+            items: vec![
+                history_item(conversation_id, root_id, a, None, participant.id, 0, 1),
+                history_item(conversation_id, root_id, b, Some(a), participant.id, 1, 2),
+            ],
+            turns: Vec::new(),
+        };
+        assert!(history.validate(std::slice::from_ref(&participant)).is_ok());
+
+        let truncated = ConversationHistory {
+            items: vec![history_item(
+                conversation_id,
+                root_id,
+                a,
+                None,
+                participant.id,
+                0,
+                1,
+            )],
+            ..history
+        };
+        assert!(truncated.validate(&[participant]).is_err());
+    }
+
+    #[test]
+    fn message_flags_result_must_carry_the_requested_patch() {
+        let command = flags_command(Some(true), Some(MessageVisibility::Hidden));
+        let (message, _) = history_message(
+            command.conversation_id,
+            ConversationBranchId::new(),
+            command.message_id,
+            None,
+            ConversationParticipantId::new(),
+        );
+        assert!(matches!(
+            command.validate_result(&message),
+            Err(ValidationError::Invariant {
+                field: "message_flags.result_patch"
+            })
+        ));
+        let applied = Message {
+            pinned: true,
+            visibility: MessageVisibility::Hidden,
+            ..message
+        };
+        assert!(command.validate_result(&applied).is_ok());
+        let foreign = Message {
+            id: MessageId::new(),
+            ..applied.clone()
+        };
+        assert!(matches!(
+            command.validate_result(&foreign),
+            Err(ValidationError::InvalidReference {
+                field: "message_flags.result_identity"
+            })
+        ));
+        let pinned_only = UpdateMessageFlags {
+            visibility: None,
+            ..command
+        };
+        let tombstoned = Message {
+            visibility: MessageVisibility::Tombstoned,
+            ..applied
+        };
+        assert!(matches!(
+            pinned_only.validate_result(&tombstoned),
+            Err(ValidationError::InvalidValue {
+                field: "message_flags.result_visibility"
+            })
+        ));
+    }
 }

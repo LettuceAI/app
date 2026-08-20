@@ -694,6 +694,7 @@ mod tests {
         source_turn_id: GenerationTurnId,
         source_attempt_id: GenerationAttemptId,
         source_candidate_id: MessageCandidateId,
+        character_participant_id: ConversationParticipantId,
     }
 
     fn seed_turn_graph(database: &Database) -> TurnGraph {
@@ -708,9 +709,10 @@ mod tests {
             source_turn_id: GenerationTurnId::new(),
             source_attempt_id: GenerationAttemptId::new(),
             source_candidate_id: MessageCandidateId::new(),
+            character_participant_id: ConversationParticipantId::new(),
         };
         let user_participant_id = ConversationParticipantId::new();
-        let character_participant_id = ConversationParticipantId::new();
+        let character_participant_id = graph.character_participant_id;
         let mut connection = database.connection().expect("connection");
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -877,7 +879,7 @@ mod tests {
             .expect("source attempt");
         transaction
             .execute(
-                "INSERT INTO conversation_message_candidates (conversation_id, id, message_id, branch_id, turn_id, attempt_id, ordinal, parts_json, model_json, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, '{\"format_version\":1,\"value\":null}', '{\"format_version\":1,\"value\":null}', 0)",
+                "INSERT INTO conversation_message_candidates (conversation_id, id, message_id, branch_id, turn_id, attempt_id, author_participant_id, ordinal, parts_json, model_json, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, '{\"format_version\":1,\"value\":null}', '{\"format_version\":1,\"value\":null}', 0)",
                 params![
                     graph.conversation_id.to_string(),
                     graph.source_candidate_id.to_string(),
@@ -885,6 +887,7 @@ mod tests {
                     graph.root_branch_id.to_string(),
                     graph.source_turn_id.to_string(),
                     graph.source_attempt_id.to_string(),
+                    graph.character_participant_id.to_string(),
                 ],
             )
             .expect("source candidate");
@@ -1286,11 +1289,12 @@ mod tests {
             .expect("regenerate attempt");
         connection
             .execute(
-                "INSERT INTO conversation_message_candidates (conversation_id, id, message_id, branch_id, turn_id, attempt_id, ordinal, parts_json, model_json, created_at) VALUES (?1, 'valid-regenerate-candidate', ?2, ?3, 'valid-regenerate', 'valid-regenerate-attempt', 1, '{\"format_version\":1,\"value\":null}', '{\"format_version\":1,\"value\":null}', 0)",
+                "INSERT INTO conversation_message_candidates (conversation_id, id, message_id, branch_id, turn_id, attempt_id, author_participant_id, ordinal, parts_json, model_json, created_at) VALUES (?1, 'valid-regenerate-candidate', ?2, ?3, 'valid-regenerate', 'valid-regenerate-attempt', ?4, 1, '{\"format_version\":1,\"value\":null}', '{\"format_version\":1,\"value\":null}', 0)",
                 params![
                     graph.conversation_id.to_string(),
                     graph.root_head_message_id.to_string(),
                     graph.root_branch_id.to_string(),
+                    graph.character_participant_id.to_string(),
                 ],
             )
             .expect("regenerate candidate target is valid");
@@ -2203,13 +2207,13 @@ mod tests {
             .expect("target message commit");
         assert!(connection
             .execute(
-                "INSERT INTO conversation_message_candidates (conversation_id, id, message_id, branch_id, turn_id, attempt_id, ordinal, parts_json, model_json, created_at) VALUES (?1, 'wrong-candidate', 'wrong-assistant', ?2, 'final-turn', 'final-attempt', 0, '{\"format_version\":1,\"value\":null}', '{\"format_version\":1,\"value\":null}', 0)",
+                "INSERT INTO conversation_message_candidates (conversation_id, id, message_id, branch_id, turn_id, attempt_id, author_participant_id, ordinal, parts_json, model_json, created_at) VALUES (?1, 'wrong-candidate', 'wrong-assistant', ?2, 'final-turn', 'final-attempt', 'character-participant', 0, '{\"format_version\":1,\"value\":null}', '{\"format_version\":1,\"value\":null}', 0)",
                 params![conversation_id.to_string(), branch_id.to_string()],
             )
             .is_err());
         connection
             .execute(
-                "INSERT INTO conversation_message_candidates (conversation_id, id, message_id, branch_id, turn_id, attempt_id, ordinal, parts_json, model_json, created_at) VALUES (?1, 'valid-candidate', 'new-assistant', ?2, 'final-turn', 'final-attempt', 0, '{\"format_version\":1,\"value\":null}', '{\"format_version\":1,\"value\":null}', 0)",
+                "INSERT INTO conversation_message_candidates (conversation_id, id, message_id, branch_id, turn_id, attempt_id, author_participant_id, ordinal, parts_json, model_json, created_at) VALUES (?1, 'valid-candidate', 'new-assistant', ?2, 'final-turn', 'final-attempt', 'character-participant', 0, '{\"format_version\":1,\"value\":null}', '{\"format_version\":1,\"value\":null}', 0)",
                 params![conversation_id.to_string(), branch_id.to_string()],
             )
             .expect("valid final candidate target");

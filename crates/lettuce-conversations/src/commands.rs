@@ -474,6 +474,16 @@ impl MessageDraft {
         for part in &self.parts {
             part.validate()?;
         }
+        if self.visibility == MessageVisibility::Tombstoned {
+            return Err(ValidationError::InvalidValue {
+                field: "message_draft.visibility",
+            });
+        }
+        if self.scene_edited && self.role != MessageRole::Scene {
+            return Err(ValidationError::InvalidValue {
+                field: "message_draft.scene_edited",
+            });
+        }
         match (self.role, self.author_participant_id) {
             (MessageRole::System | MessageRole::Scene, Some(_))
             | (MessageRole::User | MessageRole::Assistant, None) => {
@@ -621,6 +631,7 @@ pub struct ChooseCandidate {
     pub conversation_id: ConversationId,
     pub message_id: MessageId,
     pub candidate_id: MessageCandidateId,
+    /// The conversation revision, not the message revision.
     pub expected_revision: Revision,
     pub operation: OperationToken,
 }
@@ -630,6 +641,7 @@ pub struct ChooseCandidate {
 pub struct EditMessage {
     pub conversation_id: ConversationId,
     pub message_id: MessageId,
+    /// The conversation revision, not the message revision.
     pub expected_revision: Revision,
     pub operation: OperationToken,
     pub draft: MessageEditDraft,
@@ -641,6 +653,7 @@ pub struct MessageEditDraft {
     pub parts: Vec<MessagePart>,
     pub visibility: MessageVisibility,
     pub pinned: bool,
+    /// Applies to scene-role messages; the edit adapter rejects it elsewhere.
     pub scene_edited: bool,
 }
 
@@ -650,7 +663,64 @@ impl MessageEditDraft {
         for part in &self.parts {
             part.validate()?;
         }
+        if self.visibility == MessageVisibility::Tombstoned {
+            return Err(ValidationError::InvalidValue {
+                field: "message_edit.visibility",
+            });
+        }
         Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UpdateMessageFlags {
+    pub conversation_id: ConversationId,
+    pub message_id: MessageId,
+    /// The conversation revision, not the message revision.
+    pub expected_revision: Revision,
+    pub operation: OperationToken,
+    pub pinned: Option<bool>,
+    pub visibility: Option<MessageVisibility>,
+}
+
+impl UpdateMessageFlags {
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        if self.pinned.is_none() && self.visibility.is_none() {
+            return Err(ValidationError::Invariant {
+                field: "message_flags.empty_patch",
+            });
+        }
+        if self.visibility == Some(MessageVisibility::Tombstoned) {
+            return Err(ValidationError::InvalidValue {
+                field: "message_flags.visibility",
+            });
+        }
+        Ok(())
+    }
+
+    /// The committed message must carry exactly the requested patch.
+    pub fn validate_result(&self, message: &Message) -> Result<(), ValidationError> {
+        if message.id != self.message_id || message.conversation_id != self.conversation_id {
+            return Err(ValidationError::InvalidReference {
+                field: "message_flags.result_identity",
+            });
+        }
+        if message.visibility == MessageVisibility::Tombstoned {
+            return Err(ValidationError::InvalidValue {
+                field: "message_flags.result_visibility",
+            });
+        }
+        if self.pinned.is_some_and(|pinned| pinned != message.pinned)
+            || self
+                .visibility
+                .is_some_and(|visibility| visibility != message.visibility)
+        {
+            return Err(ValidationError::Invariant {
+                field: "message_flags.result_patch",
+            });
+        }
+        message.validate()
     }
 }
 
@@ -659,6 +729,8 @@ impl MessageEditDraft {
 pub struct ForkBranch {
     pub conversation_id: ConversationId,
     pub source_branch_id: ConversationBranchId,
+    /// `None` forks at the source branch head.  A headless source branch is a
+    /// conflict, never an empty fork.
     pub at_message_id: Option<MessageId>,
     pub expected_revision: Revision,
     pub operation: OperationToken,
@@ -678,8 +750,13 @@ pub struct SelectBranch {
 pub struct TombstoneMessage {
     pub conversation_id: ConversationId,
     pub message_id: MessageId,
+    /// The conversation revision, not the message revision.
     pub expected_revision: Revision,
     pub operation: OperationToken,
+    /// [`DescendantPolicy::Tombstone`] leaves the branch head unchanged, since
+    /// a tombstone is a flag and the timeline still renders tombstoned
+    /// entries.  The policy is branch-local: cross-branch descendants belong
+    /// to `Fork` or to branch archival.
     pub descendants: DescendantPolicy,
 }
 
@@ -691,6 +768,7 @@ pub enum DescendantPolicy {
     Fork,
 }
 
+/// Metadata only: an in-flight generation keeps running, matching legacy.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ArchiveConversation {
@@ -1003,6 +1081,7 @@ pub enum ConversationMutation {
     Cancel(CancelGeneration),
     Choose(ChooseCandidate),
     Edit(EditMessage),
+    Flags(UpdateMessageFlags),
     Fork(ForkBranch),
     SelectBranch(SelectBranch),
     Tombstone(TombstoneMessage),
@@ -1048,6 +1127,10 @@ impl ConversationMutation {
             Self::Edit(command) => {
                 validate_expected(command.expected_revision)?;
                 command.draft.validate()
+            }
+            Self::Flags(command) => {
+                validate_expected(command.expected_revision)?;
+                command.validate()
             }
             Self::Fork(command) => validate_expected(command.expected_revision),
             Self::SelectBranch(command) => validate_expected(command.expected_revision),

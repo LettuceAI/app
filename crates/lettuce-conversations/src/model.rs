@@ -523,6 +523,8 @@ pub struct ConversationHistoryItem {
 pub struct ConversationHistory {
     pub conversation_id: ConversationId,
     pub branch_id: ConversationBranchId,
+    /// `None` on a freshly forked branch, whose timeline is then the inherited
+    /// ancestry ending at `fork_message_id`.
     pub head_message_id: Option<lettuce_types::MessageId>,
     pub fork_message_id: Option<lettuce_types::MessageId>,
     /// The complete root-to-selected branch ancestry.  A page may omit
@@ -726,6 +728,19 @@ impl ConversationHistory {
                         });
                     }
                     candidate.validate()?;
+                    if participant_by_id
+                        .get(&candidate.author_participant_id)
+                        .is_none_or(|participant| participant.role != ParticipantRole::Character)
+                    {
+                        return Err(ValidationError::InvalidReference {
+                            field: "conversation_history.candidate_author",
+                        });
+                    }
+                    if item.message.author_participant_id != Some(candidate.author_participant_id) {
+                        return Err(ValidationError::InvalidReference {
+                            field: "conversation_history.candidate_author_speaker",
+                        });
+                    }
                     let turn = turn_ids.get(&candidate.turn_id).ok_or(
                         ValidationError::InvalidReference {
                             field: "conversation_history.candidate_turn",
@@ -744,13 +759,14 @@ impl ConversationHistory {
             }
             by_id.insert(item.message.id, item);
         }
-        if self.head_message_id.is_none() && !self.items.is_empty() {
+        let path_tip = self.head_message_id.or(self.fork_message_id);
+        if path_tip.is_none() && !self.items.is_empty() {
             return Err(ValidationError::Invariant {
                 field: "conversation_history.empty_head",
             });
         }
         let mut path_reverse = Vec::new();
-        let mut current = self.head_message_id;
+        let mut current = path_tip;
         let mut visited = std::collections::HashSet::new();
         while let Some(id) = current {
             if !visited.insert(id) {

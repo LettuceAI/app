@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::commands::{
     ArchiveConversation, AttachAttemptJob, ChooseCandidate, ContinueConversation, EditMessage,
     ForkBranch, RegenerateCandidate, RestoreConversation, RetryGeneration, SelectBranch,
-    SendConversation, SettleCancellation, TombstoneMessage,
+    SendConversation, SettleCancellation, TombstoneMessage, UpdateMessageFlags,
 };
 use crate::content::{Message, MessageCandidate, MessagePart, MessageRevision, ReplayArtifactRef};
 use crate::error::ConversationRepositoryError;
@@ -299,6 +299,9 @@ pub struct GenerationFinalization {
     pub turn: GenerationTurn,
     pub assistant_message: Message,
     pub candidate: MessageCandidate,
+    /// Adapters write `None` in M8. A `Some` value must carry
+    /// `source_turn_id` equal to the finalized turn and never becomes the
+    /// active render source.
     pub revision: Option<MessageRevision>,
     pub asset_reference_deltas: Vec<AssetReferenceDelta>,
     pub usage_event_id: UsageEventId,
@@ -323,6 +326,7 @@ pub type SettleCancellationResult = MutationCommit<GenerationCancellation>;
 pub type CancelGenerationResult = SettleCancellationResult;
 pub type AttachAttemptJobResult = MutationCommit<GenerationAttempt>;
 pub type ChooseCandidateResult = MutationCommit<Message>;
+pub type UpdateMessageFlagsResult = MutationCommit<Message>;
 pub type ArchiveConversationResult = MutationCommit<Conversation>;
 pub type RestoreConversationResult = MutationCommit<Conversation>;
 
@@ -352,6 +356,7 @@ impl GenerationRecovery {
 pub type AppendCheckpointResult = MutationCommit<GenerationTurn>;
 pub type GenerationFinalizationResult = MutationCommit<GenerationFinalization>;
 pub type GenerationFailureResult = MutationCommit<GenerationFailure>;
+pub type GenerationInterruptionResult = MutationCommit<GenerationTurn>;
 pub type GenerationRecoveryResult = MutationCommit<GenerationRecovery>;
 pub type EditMessageResult = MutationCommit<EditResult>;
 pub type ForkBranchResult = MutationCommit<BranchResult>;
@@ -373,6 +378,23 @@ pub struct BranchResult {
     pub conversation: Conversation,
 }
 
+impl BranchResult {
+    /// A fork always selects the branch it just created.
+    pub fn validate(&self) -> Result<(), crate::ValidationError> {
+        self.conversation.validate()?;
+        self.branch.validate()?;
+        if self.branch.conversation_id != self.conversation.id
+            || self.branch.status != crate::model::BranchStatus::Active
+            || self.conversation.active_branch_id != self.branch.id
+        {
+            return Err(crate::ValidationError::InvalidReference {
+                field: "branch_result.selected_branch",
+            });
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TombstoneResult {
     pub conversation: Conversation,
@@ -380,7 +402,9 @@ pub struct TombstoneResult {
     pub descendant_count: u32,
     pub asset_reference_deltas: Vec<AssetReferenceDelta>,
     /// The preservation branch selected atomically by a `Fork` tombstone.
-    /// Other descendant policies must leave this absent.
+    /// Other descendant policies must leave this absent. The old branch keeps
+    /// the tombstoned subtree; this new active branch continues from the
+    /// message before it, and forks from whichever branch owns that parent.
     pub forked_branch: Option<ConversationBranch>,
 }
 
@@ -402,8 +426,9 @@ impl TombstoneResult {
                 if branch.conversation_id != self.conversation.id
                     || self.conversation.active_branch_id != branch.id
                     || branch.status != crate::model::BranchStatus::Active
-                    || branch.parent_branch_id != Some(self.message.branch_id)
-                    || branch.fork_message_id != Some(self.message.id)
+                    || branch.parent_branch_id.is_none()
+                    || branch.fork_message_id.is_none()
+                    || branch.fork_message_id != self.message.parent_message_id
                 {
                     return Err(crate::ValidationError::InvalidReference {
                         field: "tombstone.forked_branch",
@@ -439,6 +464,8 @@ pub struct AssetReferenceDelta {
 pub enum AssetReferenceState {
     Active,
     Historical,
+    /// Never persisted in a `*_media_refs` table. This is a retention signal
+    /// for the media crate alone.
     Released,
 }
 
@@ -492,6 +519,7 @@ pub enum ConversationOutboxEvent {
         revision_id: Option<MessageRevisionId>,
         effective_time: TimestampMillis,
         usage_event_id: UsageEventId,
+        /// Zero or one id, taken from the turn's memory attribution.
         used_memory_revision_ids: Vec<lettuce_types::MemoryRevisionId>,
     },
     TurnFailed {
@@ -500,6 +528,7 @@ pub enum ConversationOutboxEvent {
         turn_id: GenerationTurnId,
         attempt_id: GenerationAttemptId,
         usage_event_id: UsageEventId,
+        /// Zero or one id, taken from the turn's memory attribution.
         used_memory_revision_ids: Vec<lettuce_types::MemoryRevisionId>,
         at: TimestampMillis,
     },
@@ -516,6 +545,7 @@ pub enum ConversationOutboxEvent {
         turn_id: GenerationTurnId,
         attempt_id: GenerationAttemptId,
         usage_event_id: UsageEventId,
+        /// Zero or one id, taken from the turn's memory attribution.
         used_memory_revision_ids: Vec<lettuce_types::MemoryRevisionId>,
         at: TimestampMillis,
     },
@@ -524,6 +554,40 @@ pub enum ConversationOutboxEvent {
         branch_id: ConversationBranchId,
         at: TimestampMillis,
     },
+    CandidateChosen {
+        conversation_id: ConversationId,
+        message_id: MessageId,
+        candidate_id: MessageCandidateId,
+        at: TimestampMillis,
+    },
+    BranchSelected {
+        conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
+        at: TimestampMillis,
+    },
+    ConversationLifecycleChanged {
+        conversation_id: ConversationId,
+        lifecycle: crate::model::ConversationLifecycle,
+        at: TimestampMillis,
+    },
+    SettingsChanged {
+        conversation_id: ConversationId,
+        settings_revision: lettuce_types::Revision,
+        at: TimestampMillis,
+    },
+    ParticipantPolicyChanged {
+        conversation_id: ConversationId,
+        participant_id: ConversationParticipantId,
+        at: TimestampMillis,
+    },
+    MessageFlagsChanged {
+        conversation_id: ConversationId,
+        message_id: MessageId,
+        pinned: bool,
+        visibility: crate::content::MessageVisibility,
+        at: TimestampMillis,
+    },
+    /// Its producer arrives with the future purge slice.
     ConversationTombstoned {
         conversation_id: ConversationId,
         at: TimestampMillis,
@@ -590,6 +654,24 @@ impl ConversationOutboxRecord {
             | ConversationOutboxEvent::BranchForked {
                 conversation_id, ..
             }
+            | ConversationOutboxEvent::CandidateChosen {
+                conversation_id, ..
+            }
+            | ConversationOutboxEvent::BranchSelected {
+                conversation_id, ..
+            }
+            | ConversationOutboxEvent::ConversationLifecycleChanged {
+                conversation_id, ..
+            }
+            | ConversationOutboxEvent::SettingsChanged {
+                conversation_id, ..
+            }
+            | ConversationOutboxEvent::ParticipantPolicyChanged {
+                conversation_id, ..
+            }
+            | ConversationOutboxEvent::MessageFlagsChanged {
+                conversation_id, ..
+            }
             | ConversationOutboxEvent::ConversationTombstoned {
                 conversation_id, ..
             }
@@ -633,6 +715,27 @@ impl ConversationOutboxRecord {
                 });
             }
         }
+        if let ConversationOutboxEvent::ConversationLifecycleChanged { lifecycle, .. } = &self.event
+            && *lifecycle == crate::model::ConversationLifecycle::Tombstoned
+        {
+            return Err(crate::ValidationError::InvalidValue {
+                field: "outbox.lifecycle_changed.tombstoned",
+            });
+        }
+        if let ConversationOutboxEvent::SettingsChanged {
+            settings_revision, ..
+        } = &self.event
+            && settings_revision.get() == 0
+        {
+            return Err(crate::ValidationError::ZeroRevision);
+        }
+        if let ConversationOutboxEvent::MessageFlagsChanged { visibility, .. } = &self.event
+            && *visibility == crate::content::MessageVisibility::Tombstoned
+        {
+            return Err(crate::ValidationError::InvalidValue {
+                field: "outbox.message_flags.visibility",
+            });
+        }
         let used_memory_revision_ids = match &self.event {
             ConversationOutboxEvent::TurnFinalized {
                 used_memory_revision_ids,
@@ -670,9 +773,11 @@ pub enum OperationKind {
     Cancel,
     Finalize,
     Fail,
+    Interrupt,
     Recover,
     ChooseCandidate,
     Edit,
+    Flags,
     Fork,
     SelectBranch,
     Tombstone,
@@ -827,6 +932,11 @@ pub trait ConversationCreator: ConversationReader {
     ) -> Result<CreateConversationResult, ConversationRepositoryError>;
 }
 
+/// Mutations other than [`Self::restore`] require an Active conversation;
+/// adapters answer [`ConversationRepositoryError::Conflict`] otherwise.  The
+/// begin methods additionally require that no non-terminal turn exists on the
+/// conversation.  Adapters enforce that single in-flight rule; its supporting
+/// index is deferred.
 pub trait ConversationRepository: ConversationCreator {
     /// Same-database artifact access used by replay finalization and trusted
     /// retention workflows. Conversation creation receives its artifact
@@ -889,6 +999,19 @@ pub trait ConversationRepository: ConversationCreator {
         usage_event_id: UsageEventId,
         now: TimestampMillis,
     ) -> Result<GenerationFailureResult, ConversationRepositoryError>;
+    /// Settles the attempt as interrupted with its usage event and moves the
+    /// turn to Interrupted; recovery then appends a child attempt.
+    #[allow(clippy::too_many_arguments)]
+    fn interrupt_generation(
+        &self,
+        turn_id: GenerationTurnId,
+        attempt_id: GenerationAttemptId,
+        expected_conversation_revision: lettuce_types::Revision,
+        expected_turn_revision: lettuce_types::Revision,
+        operation: &crate::commands::OperationToken,
+        usage_event_id: UsageEventId,
+        now: TimestampMillis,
+    ) -> Result<GenerationInterruptionResult, ConversationRepositoryError>;
     fn request_cancellation(
         &self,
         command: &crate::commands::CancelGeneration,
@@ -935,11 +1058,23 @@ pub trait ConversationRepository: ConversationCreator {
         command: &SelectBranch,
         now: TimestampMillis,
     ) -> Result<SelectBranchResult, ConversationRepositoryError>;
+    /// A tombstoned message can never be restored, so adapters answer
+    /// [`ConversationRepositoryError::Conflict`] for one.
     fn edit_message(
         &self,
         command: &EditMessage,
         now: TimestampMillis,
     ) -> Result<EditMessageResult, ConversationRepositoryError>;
+    /// Emits [`ConversationOutboxEvent::MessageFlagsChanged`].  A tombstoned
+    /// message can never be restored, so adapters answer
+    /// [`ConversationRepositoryError::Conflict`] for one.
+    fn update_message_flags(
+        &self,
+        command: &UpdateMessageFlags,
+        now: TimestampMillis,
+    ) -> Result<UpdateMessageFlagsResult, ConversationRepositoryError>;
+    /// Tombstoning a root message under [`crate::commands::DescendantPolicy::Fork`]
+    /// is a conflict: there is no parent message to fork from.
     fn tombstone_message(
         &self,
         command: &TombstoneMessage,
