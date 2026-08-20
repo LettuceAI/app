@@ -2,7 +2,10 @@ use std::path::Path;
 
 use lettuce_database::{Database, DatabaseError};
 
-use crate::{BuiltInPromptIds, BuiltInPromptService, BuiltInPromptServiceError};
+use crate::{
+    BuiltInPromptIds, BuiltInPromptService, BuiltInPromptServiceError, ConversationLaunchPlanner,
+    DirectConversationLaunchRequest, DirectLaunchError,
+};
 
 /// The application composition root. Opening an application database through
 /// this type always applies migrations and reconciles the bundled prompt
@@ -52,6 +55,20 @@ impl AppBackend {
     #[must_use]
     pub const fn built_in_prompt_ids(&self) -> &BuiltInPromptIds {
         &self.built_in_prompt_ids
+    }
+
+    #[must_use]
+    pub const fn conversation_launch_planner(&self) -> ConversationLaunchPlanner<'_, Database> {
+        ConversationLaunchPlanner::new(&self.database)
+    }
+
+    pub fn launch_direct_conversation(
+        &self,
+        request: &DirectConversationLaunchRequest,
+        now: lettuce_types::TimestampMillis,
+    ) -> Result<lettuce_conversations::CreateConversationResult, DirectLaunchError> {
+        self.conversation_launch_planner()
+            .launch_direct(request, now)
     }
 }
 

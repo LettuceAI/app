@@ -8,9 +8,11 @@
 
 mod built_in_prompts;
 mod composition;
+mod launch;
 
 pub use built_in_prompts::*;
 pub use composition::*;
+pub use launch::*;
 
 #[cfg(test)]
 mod tests {

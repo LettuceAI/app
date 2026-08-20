@@ -648,7 +648,7 @@ impl SnapshotDocumentBody for StarterSnapshotBodyV1 {
                 "starter_document.messages.content",
                 &message.content,
                 MAX_AUTHORED_TEXT_BYTES,
-                false,
+                true,
             )?;
         }
         if let DocumentSelectionV1::Explicit(lorebooks) = &self.lorebooks {
