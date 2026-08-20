@@ -28,7 +28,7 @@ use super::{
 #[cfg(test)]
 use lettuce_conversations::MessageRole;
 
-fn media_role_name(role: lettuce_conversations::MediaAssetRole) -> &'static str {
+pub(crate) fn media_role_name(role: lettuce_conversations::MediaAssetRole) -> &'static str {
     match role {
         lettuce_conversations::MediaAssetRole::Inline => "inline",
         lettuce_conversations::MediaAssetRole::Attachment => "attachment",

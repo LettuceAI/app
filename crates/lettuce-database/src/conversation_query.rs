@@ -865,7 +865,7 @@ pub(crate) fn message_row(
                 .ok_or(ConversationRepositoryError::Storage)?,
         )
     } else {
-        return Err(ConversationRepositoryError::Storage);
+        None
     };
     let active_candidate = if let Some(candidate_id) = active_candidate_id {
         let mut statement = transaction.prepare("SELECT conversation_id, id, message_id, branch_id, turn_id, attempt_id, ordinal, parts_json, model_json, created_at, provider_replay_artifact_id, provider_replay_retention, author_participant_id FROM conversation_message_candidates WHERE conversation_id = ?1 AND id = ?2").map_err(slice::db)?;
@@ -917,28 +917,35 @@ fn validate_initial_origin_message(
     origin: Option<&InitialMessageOrigin>,
 ) -> Result<(), ConversationRepositoryError> {
     let Some(origin) = origin else { return Ok(()) };
-    let (role, author, revision_id): (String, Option<String>, String) = transaction
+    let (role, author, revision_id): (String, Option<String>, Option<String>) = transaction
         .query_row(
             "SELECT role, author_participant_id, active_revision_id FROM conversation_messages WHERE conversation_id = ?1 AND id = ?2",
             params![conversation_id.to_string(), message_id.to_string()],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .map_err(slice::db)?;
-    let parts_json: String = transaction
-        .query_row(
-            "SELECT parts_json FROM conversation_message_revisions WHERE conversation_id = ?1 AND id = ?2 AND message_id = ?3",
-            params![conversation_id.to_string(), revision_id, message_id.to_string()],
-            |row| row.get(0),
-        )
-        .map_err(slice::db)?;
-    let parts: Vec<MessagePart> = slice::decode(&parts_json)?;
-    for part in &parts {
-        part.validate()
-            .map_err(|_| ConversationRepositoryError::Storage)?;
-    }
+    let parts: Vec<MessagePart> = match &revision_id {
+        Some(revision_id) => {
+            let parts_json: String = transaction
+                .query_row(
+                    "SELECT parts_json FROM conversation_message_revisions WHERE conversation_id = ?1 AND id = ?2 AND message_id = ?3",
+                    params![conversation_id.to_string(), revision_id, message_id.to_string()],
+                    |row| row.get(0),
+                )
+                .map_err(slice::db)?;
+            let parts: Vec<MessagePart> = slice::decode(&parts_json)?;
+            for part in &parts {
+                part.validate()
+                    .map_err(|_| ConversationRepositoryError::Storage)?;
+            }
+            parts
+        }
+        None => Vec::new(),
+    };
     match origin {
         InitialMessageOrigin::SelectedScene { .. } => {
-            if role != "scene"
+            if revision_id.is_none()
+                || role != "scene"
                 || author.is_some()
                 || !parts.iter().any(
                     |part| matches!(part, MessagePart::Text { text } if !text.trim().is_empty()),

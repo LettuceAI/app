@@ -281,6 +281,10 @@ pub struct FinalizationDraft {
 /// transaction.  Callers must never observe one without the other.  Reads
 /// intentionally return their value directly because they do not create an
 /// operation or an outbox event.
+///
+/// A replayed mutation returns the original operation and outbox records
+/// unchanged, while `value` is rehydrated from current state: the same
+/// identity, but the live value rather than a snapshot of the first commit.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MutationCommit<T> {
     pub value: T,
