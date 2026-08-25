@@ -11,8 +11,8 @@ use crate::snapshot::{
     ModelSelectionSnapshot, SnapshotSelection,
 };
 use crate::validation::{
-    MAX_DISPLAY_CHARS, MAX_PARTICIPANTS, validate_collection, validate_revision_timestamps,
-    validate_text, validate_unique,
+    MAX_DISPLAY_CHARS, MAX_LOREBOOKS, MAX_PARTICIPANTS, validate_collection,
+    validate_revision_timestamps, validate_text, validate_unique,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -97,6 +97,14 @@ pub struct CurrentConversationSettings {
     pub model_provenance: crate::commands::SettingProvenance,
     pub voice: Option<crate::snapshot::VoiceSettingsSnapshot>,
     pub voice_provenance: crate::commands::SettingProvenance,
+    pub prompt: Option<crate::snapshot::PromptLaunchSnapshot>,
+    pub prompt_provenance: crate::commands::SettingProvenance,
+    pub lorebooks: Option<Vec<crate::snapshot::LorebookLaunchSnapshot>>,
+    pub lorebooks_provenance: crate::commands::SettingProvenance,
+    pub persona: Option<crate::snapshot::PersonaLaunchSnapshot>,
+    pub persona_provenance: crate::commands::SettingProvenance,
+    pub scene: Option<crate::snapshot::SceneLaunchSnapshot>,
+    pub scene_provenance: crate::commands::SettingProvenance,
 }
 
 impl CurrentConversationSettings {
@@ -166,6 +174,50 @@ impl CurrentConversationSettings {
                 field: "conversation_settings.voice_provenance",
             });
         }
+        if (!matches!(
+            self.prompt_provenance,
+            crate::commands::SettingProvenance::CurrentOverride
+        )) && self.prompt.is_some()
+            || (self.prompt_provenance == crate::commands::SettingProvenance::CurrentOverride
+                && self.prompt.is_none())
+        {
+            return Err(ValidationError::InvalidReference {
+                field: "conversation_settings.prompt_provenance",
+            });
+        }
+        if (!matches!(
+            self.lorebooks_provenance,
+            crate::commands::SettingProvenance::CurrentOverride
+        )) && self.lorebooks.is_some()
+            || (self.lorebooks_provenance == crate::commands::SettingProvenance::CurrentOverride
+                && self.lorebooks.is_none())
+        {
+            return Err(ValidationError::InvalidReference {
+                field: "conversation_settings.lorebooks_provenance",
+            });
+        }
+        if (!matches!(
+            self.persona_provenance,
+            crate::commands::SettingProvenance::CurrentOverride
+        )) && self.persona.is_some()
+            || (self.persona_provenance == crate::commands::SettingProvenance::CurrentOverride
+                && self.persona.is_none())
+        {
+            return Err(ValidationError::InvalidReference {
+                field: "conversation_settings.persona_provenance",
+            });
+        }
+        if (!matches!(
+            self.scene_provenance,
+            crate::commands::SettingProvenance::CurrentOverride
+        )) && self.scene.is_some()
+            || (self.scene_provenance == crate::commands::SettingProvenance::CurrentOverride
+                && self.scene.is_none())
+        {
+            return Err(ValidationError::InvalidReference {
+                field: "conversation_settings.scene_provenance",
+            });
+        }
         if let Some(memory) = &self.memory {
             memory.validate()?;
         }
@@ -174,6 +226,66 @@ impl CurrentConversationSettings {
         }
         if let Some(voice) = &self.voice {
             voice.validate()?;
+        }
+        if let Some(prompt) = &self.prompt {
+            prompt.validate()?;
+        }
+        if let Some(lorebooks) = &self.lorebooks {
+            if lorebooks.is_empty() {
+                return Err(ValidationError::InvalidValue {
+                    field: "conversation_settings.lorebooks",
+                });
+            }
+            validate_collection("conversation_settings.lorebooks", lorebooks, MAX_LOREBOOKS)?;
+            validate_unique(
+                "conversation_settings.lorebook_ids",
+                lorebooks.iter().map(|book| book.source_id),
+            )?;
+            for book in lorebooks {
+                book.validate()?;
+            }
+        }
+        if let Some(persona) = &self.persona {
+            persona.validate()?;
+        }
+        if let Some(scene) = &self.scene {
+            scene.validate()?;
+        }
+        Ok(())
+    }
+
+    pub fn validate_against_kind(&self, kind: &ConversationKind) -> Result<(), ValidationError> {
+        self.validate()?;
+        let expected_prompt = match kind {
+            ConversationKind::Direct(_) => crate::snapshot::PromptPurposeSnapshot::Direct,
+            ConversationKind::Group(details) => match details.group.chat_mode {
+                crate::snapshot::GroupChatModeSnapshot::Conversation => {
+                    crate::snapshot::PromptPurposeSnapshot::GroupConversational
+                }
+                crate::snapshot::GroupChatModeSnapshot::Roleplay => {
+                    crate::snapshot::PromptPurposeSnapshot::GroupRoleplay
+                }
+            },
+        };
+        if self
+            .prompt
+            .as_ref()
+            .is_some_and(|prompt| prompt.purpose != expected_prompt)
+        {
+            return Err(ValidationError::InvalidReference {
+                field: "conversation_settings.prompt.purpose",
+            });
+        }
+        if matches!(
+            kind,
+            ConversationKind::Group(details)
+                if details.group.chat_mode
+                    == crate::snapshot::GroupChatModeSnapshot::Conversation
+                    && self.scene.is_some()
+        ) {
+            return Err(ValidationError::InvalidReference {
+                field: "conversation_settings.scene",
+            });
         }
         Ok(())
     }
@@ -313,7 +425,7 @@ impl Conversation {
             participant.validate()?;
         }
         if let Some(settings) = &self.current_settings {
-            settings.validate()?;
+            settings.validate_against_kind(&self.kind)?;
         }
         match &self.kind {
             ConversationKind::Direct(_) => {

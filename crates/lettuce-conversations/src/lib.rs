@@ -993,6 +993,74 @@ mod tests {
     }
 
     #[test]
+    fn prepared_settings_bundle_rejects_unused_duplicate_and_mismatched_artifacts() {
+        let prompt_id = lettuce_types::PromptDocumentId::new();
+        let prompt_ref = snapshot_ref(SnapshotSource::Prompt(prompt_id));
+        let prompt = PromptLaunchSnapshot {
+            snapshot_ref: prompt_ref.clone(),
+            source_id: prompt_id,
+            source_revision: Revision::INITIAL,
+            title: "Prompt".into(),
+            purpose: PromptPurposeSnapshot::Direct,
+        };
+        let command = |patch: CurrentConversationSettingsPatch| UpdateConversationSettings {
+            conversation_id: ConversationId::new(),
+            expected_settings_revision: None,
+            operation: OperationToken {
+                key: lettuce_jobs::IdempotencyKey::new("prepared-settings").expect("key"),
+                request_digest: ContentHash::parse("ab".repeat(32)).expect("digest"),
+            },
+            patch,
+        };
+        let patch = CurrentConversationSettingsPatch {
+            author_note: PatchValue::Keep,
+            memory: PatchValue::Keep,
+            model_override: PatchValue::Keep,
+            voice: PatchValue::Keep,
+            prompt: PatchValue::Set(prompt),
+            lorebooks: PatchValue::Keep,
+            persona: PatchValue::Keep,
+            scene: PatchValue::Keep,
+        };
+        assert!(
+            PreparedConversationSettingsUpdate::new(command(patch.clone()), Vec::new()).is_ok()
+        );
+        let draft = snapshot_draft(&prompt_ref);
+        assert!(
+            PreparedConversationSettingsUpdate::new(
+                command(patch.clone()),
+                vec![snapshot_draft(&prompt_ref),]
+            )
+            .is_ok()
+        );
+        assert!(matches!(
+            PreparedConversationSettingsUpdate::new(
+                command(patch.clone()),
+                vec![snapshot_draft(&snapshot_ref(SnapshotSource::Character(
+                    CharacterId::new()
+                )))],
+            ),
+            Err(PreparedConversationSettingsUpdateError::UnexpectedArtifact { .. })
+        ));
+        assert!(matches!(
+            PreparedConversationSettingsUpdate::new(
+                command(patch.clone()),
+                vec![snapshot_draft(&prompt_ref), snapshot_draft(&prompt_ref)],
+            ),
+            Err(PreparedConversationSettingsUpdateError::DuplicateArtifact { .. })
+        ));
+        let mut mismatched = draft.reference();
+        mismatched.source = SnapshotSource::Prompt(lettuce_types::PromptDocumentId::new());
+        assert!(matches!(
+            PreparedConversationSettingsUpdate::new(
+                command(patch),
+                vec![snapshot_draft(&mismatched)]
+            ),
+            Err(PreparedConversationSettingsUpdateError::ReferenceMismatch { .. })
+        ));
+    }
+
+    #[test]
     fn prepared_launch_traverses_initial_origins_and_deduplicates_shared_refs() {
         let scene_ref = snapshot_ref(SnapshotSource::Scene(SceneId::new()));
         let timeline = InitialTimelineDraft {
@@ -2359,6 +2427,10 @@ mod tests {
             memory: PatchValue::Keep,
             model_override: PatchValue::Keep,
             voice: PatchValue::Keep,
+            prompt: PatchValue::Keep,
+            lorebooks: PatchValue::Keep,
+            persona: PatchValue::Keep,
+            scene: PatchValue::Keep,
         };
         let command = UpdateConversationSettings {
             conversation_id: ConversationId::new(),
@@ -2401,6 +2473,14 @@ mod tests {
             model_provenance: SettingProvenance::Disabled,
             voice: None,
             voice_provenance: SettingProvenance::Disabled,
+            prompt: None,
+            prompt_provenance: SettingProvenance::Disabled,
+            lorebooks: None,
+            lorebooks_provenance: SettingProvenance::Disabled,
+            persona: None,
+            persona_provenance: SettingProvenance::Disabled,
+            scene: None,
+            scene_provenance: SettingProvenance::Disabled,
         };
         let preserved = patch
             .apply(Some(&existing), Some(Revision::INITIAL))
@@ -2436,6 +2516,10 @@ mod tests {
             memory: PatchValue::Set(memory.clone()),
             model_override: PatchValue::Set(model.clone()),
             voice: PatchValue::Set(voice.clone()),
+            prompt: PatchValue::Keep,
+            lorebooks: PatchValue::Keep,
+            persona: PatchValue::Keep,
+            scene: PatchValue::Keep,
         };
         let created = set.apply(None, None).expect("create settings");
         assert_eq!(created.revision, Revision::INITIAL);
@@ -2455,6 +2539,10 @@ mod tests {
             memory: PatchValue::UseLaunchDefault,
             model_override: PatchValue::UseLaunchDefault,
             voice: PatchValue::UseLaunchDefault,
+            prompt: PatchValue::UseLaunchDefault,
+            lorebooks: PatchValue::UseLaunchDefault,
+            persona: PatchValue::UseLaunchDefault,
+            scene: PatchValue::UseLaunchDefault,
         };
         let inherited = use_launch_default
             .apply(Some(&created), Some(Revision::INITIAL))
@@ -2486,6 +2574,10 @@ mod tests {
             memory: PatchValue::Clear,
             model_override: PatchValue::Clear,
             voice: PatchValue::Clear,
+            prompt: PatchValue::Clear,
+            lorebooks: PatchValue::Clear,
+            persona: PatchValue::Clear,
+            scene: PatchValue::Clear,
         };
         let disabled = clear
             .apply(Some(&created), Some(Revision::INITIAL))
@@ -2538,6 +2630,130 @@ mod tests {
     }
 
     #[test]
+    fn context_settings_apply_and_validate_against_conversation_kind() {
+        let prompt_id = lettuce_types::PromptDocumentId::new();
+        let prompt = PromptLaunchSnapshot {
+            snapshot_ref: snapshot_ref(SnapshotSource::Prompt(prompt_id)),
+            source_id: prompt_id,
+            source_revision: Revision::INITIAL,
+            title: "Prompt".into(),
+            purpose: PromptPurposeSnapshot::Direct,
+        };
+        let lorebook_id = lettuce_types::LorebookId::new();
+        let lorebook = LorebookLaunchSnapshot {
+            snapshot_ref: snapshot_ref(SnapshotSource::Lorebook(lorebook_id)),
+            source_id: lorebook_id,
+            source_revision: Revision::INITIAL,
+            name: "Lore".into(),
+        };
+        let persona_id = lettuce_types::PersonaId::new();
+        let persona = PersonaLaunchSnapshot {
+            snapshot_ref: snapshot_ref(SnapshotSource::Persona(persona_id)),
+            source_id: persona_id,
+            source_revision: Revision::INITIAL,
+            title: "Persona".into(),
+            nickname: None,
+            lorebooks: SnapshotSelection::Explicit(vec![lorebook.clone()]),
+        };
+        let scene_id = SceneId::new();
+        let scene = SceneLaunchSnapshot {
+            snapshot_ref: snapshot_ref(SnapshotSource::Scene(scene_id)),
+            source_id: scene_id,
+            source_revision: Revision::INITIAL,
+            title: "Scene".into(),
+        };
+        let patch = CurrentConversationSettingsPatch {
+            author_note: PatchValue::Keep,
+            memory: PatchValue::Keep,
+            model_override: PatchValue::Keep,
+            voice: PatchValue::Keep,
+            prompt: PatchValue::Set(prompt.clone()),
+            lorebooks: PatchValue::Set(vec![lorebook.clone()]),
+            persona: PatchValue::Set(persona),
+            scene: PatchValue::Set(scene),
+        };
+        let current = patch.apply(None, None).expect("context settings");
+        assert_eq!(current.prompt, Some(prompt.clone()));
+        assert_eq!(
+            current.prompt_provenance,
+            SettingProvenance::CurrentOverride
+        );
+        assert_eq!(current.lorebooks, Some(vec![lorebook]));
+        assert_eq!(
+            current.lorebooks_provenance,
+            SettingProvenance::CurrentOverride
+        );
+
+        let mut direct = direct_plan(InitialTimelineDraft {
+            format_version: 1,
+            entries: Vec::new(),
+        })
+        .0;
+        assert!(current.validate_against_kind(&direct.kind).is_ok());
+        direct.kind = match direct.kind {
+            ConversationKind::Direct(mut details) => {
+                details.prompt = SnapshotSelection::Explicit(prompt.clone());
+                ConversationKind::Direct(details)
+            }
+            ConversationKind::Group(_) => unreachable!(),
+        };
+        let mut wrong_prompt = current.clone();
+        wrong_prompt.prompt.as_mut().expect("prompt").purpose = PromptPurposeSnapshot::Other;
+        assert!(wrong_prompt.validate_against_kind(&direct.kind).is_err());
+
+        let group = group_plan(
+            GroupChatModeSnapshot::Conversation,
+            SnapshotSelection::Disabled,
+            InitialTimelineDraft {
+                format_version: 1,
+                entries: Vec::new(),
+            },
+        );
+        assert!(current.validate_against_kind(&group.kind).is_err());
+        let mut group_roleplay = group.clone();
+        if let ConversationKind::Group(details) = &mut group_roleplay.kind {
+            details.group.chat_mode = GroupChatModeSnapshot::Roleplay;
+        }
+        let mut roleplay_settings = current.clone();
+        roleplay_settings.prompt.as_mut().expect("prompt").purpose =
+            PromptPurposeSnapshot::GroupRoleplay;
+        assert!(
+            roleplay_settings
+                .validate_against_kind(&group_roleplay.kind)
+                .is_ok()
+        );
+
+        let mut invalid = patch.clone();
+        invalid.lorebooks = PatchValue::Set(Vec::new());
+        assert!(invalid.apply(None, None).is_err());
+        let mut launch_default = patch.clone();
+        launch_default.prompt = PatchValue::UseLaunchDefault;
+        launch_default.lorebooks = PatchValue::UseLaunchDefault;
+        launch_default.persona = PatchValue::UseLaunchDefault;
+        launch_default.scene = PatchValue::UseLaunchDefault;
+        let inherited = launch_default
+            .apply(Some(&current), Some(Revision::INITIAL))
+            .expect("reset context settings");
+        assert_eq!(inherited.revision, Revision::new(2));
+        assert_eq!(
+            inherited.prompt_provenance,
+            SettingProvenance::LaunchInherited
+        );
+        assert_eq!(
+            inherited.lorebooks_provenance,
+            SettingProvenance::LaunchInherited
+        );
+        assert_eq!(
+            inherited.persona_provenance,
+            SettingProvenance::LaunchInherited
+        );
+        assert_eq!(
+            inherited.scene_provenance,
+            SettingProvenance::LaunchInherited
+        );
+    }
+
+    #[test]
     fn persisted_settings_require_a_revision_and_validate_resolved_values() {
         let mut settings = CurrentConversationSettings {
             revision: Revision::INITIAL,
@@ -2549,6 +2765,14 @@ mod tests {
             model_provenance: SettingProvenance::Disabled,
             voice: None,
             voice_provenance: SettingProvenance::Disabled,
+            prompt: None,
+            prompt_provenance: SettingProvenance::Disabled,
+            lorebooks: None,
+            lorebooks_provenance: SettingProvenance::Disabled,
+            persona: None,
+            persona_provenance: SettingProvenance::Disabled,
+            scene: None,
+            scene_provenance: SettingProvenance::Disabled,
         };
         assert!(settings.validate().is_ok());
         settings.revision = Revision::new(0);

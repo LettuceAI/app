@@ -15,9 +15,11 @@ use thiserror::Error;
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::{
-    ConversationKind, CreateConversationPlan, InitialMessageOrigin, InitialTimelineDraft,
+    ConversationKind, CreateConversationPlan, CurrentConversationSettings,
+    CurrentConversationSettingsPatch, InitialMessageOrigin, InitialTimelineDraft, PatchValue,
     ProtectedSnapshotRef, ReplayArtifactRef, ReplayCodec, ReplayRetention,
-    SNAPSHOT_DOCUMENT_FORMAT_V1, SnapshotSelection, SnapshotSource, ValidationError,
+    SNAPSHOT_DOCUMENT_FORMAT_V1, SnapshotSelection, SnapshotSource, UpdateConversationSettings,
+    ValidationError,
 };
 
 pub(crate) const MAX_PROTECTED_ARTIFACT_BYTES: usize = 16 * 1024 * 1024;
@@ -154,6 +156,26 @@ pub enum PreparedConversationLaunchError {
     UnexpectedArtifact { artifact_id: SnapshotArtifactId },
 }
 
+#[derive(Debug, Error, Clone, PartialEq, Eq)]
+pub enum PreparedConversationSettingsUpdateError {
+    #[error("conversation settings command is invalid: {0}")]
+    InvalidCommand(#[from] ValidationError),
+    #[error("snapshot artifact {artifact_id} is invalid: {source}")]
+    InvalidArtifact {
+        artifact_id: SnapshotArtifactId,
+        #[source]
+        source: ArtifactError,
+    },
+    #[error("snapshot artifact {artifact_id} was supplied more than once")]
+    DuplicateArtifact { artifact_id: SnapshotArtifactId },
+    #[error("snapshot artifact {artifact_id} is referenced with divergent metadata")]
+    DivergentReference { artifact_id: SnapshotArtifactId },
+    #[error("snapshot artifact {artifact_id} does not match its protected reference")]
+    ReferenceMismatch { artifact_id: SnapshotArtifactId },
+    #[error("snapshot artifact {artifact_id} is not introduced by the settings update")]
+    UnexpectedArtifact { artifact_id: SnapshotArtifactId },
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct SnapshotArtifactDraft {
     pub source: SnapshotSource,
@@ -220,6 +242,98 @@ impl SnapshotArtifactDraft {
 pub struct PreparedConversationLaunch {
     plan: CreateConversationPlan,
     artifacts: Vec<SnapshotArtifactDraft>,
+}
+
+pub struct PreparedConversationSettingsUpdate {
+    command: UpdateConversationSettings,
+    artifacts: Vec<SnapshotArtifactDraft>,
+}
+
+impl PreparedConversationSettingsUpdate {
+    pub fn new(
+        command: UpdateConversationSettings,
+        artifacts: Vec<SnapshotArtifactDraft>,
+    ) -> Result<Self, PreparedConversationSettingsUpdateError> {
+        command
+            .validate()
+            .map_err(PreparedConversationSettingsUpdateError::InvalidCommand)?;
+
+        let mut references = HashMap::<SnapshotArtifactId, ProtectedSnapshotRef>::new();
+        for reference in conversation_settings_patch_snapshot_references(&command.patch) {
+            if let Some(existing) = references.get(&reference.artifact_id) {
+                if existing != reference {
+                    return Err(
+                        PreparedConversationSettingsUpdateError::DivergentReference {
+                            artifact_id: reference.artifact_id,
+                        },
+                    );
+                }
+            } else {
+                references.insert(reference.artifact_id, reference.clone());
+            }
+        }
+
+        let mut supplied = HashMap::<SnapshotArtifactId, ProtectedSnapshotRef>::new();
+        for draft in &artifacts {
+            let artifact_id = draft.artifact_id;
+            draft.validate().map_err(|source| {
+                PreparedConversationSettingsUpdateError::InvalidArtifact {
+                    artifact_id,
+                    source,
+                }
+            })?;
+            let draft_reference = draft.reference();
+            if let Some(existing) = supplied.get(&artifact_id) {
+                if existing != &draft_reference {
+                    return Err(
+                        PreparedConversationSettingsUpdateError::DivergentReference { artifact_id },
+                    );
+                }
+                return Err(PreparedConversationSettingsUpdateError::DuplicateArtifact {
+                    artifact_id,
+                });
+            }
+            let Some(reference) = references.get(&artifact_id) else {
+                return Err(
+                    PreparedConversationSettingsUpdateError::UnexpectedArtifact { artifact_id },
+                );
+            };
+            if draft_reference != *reference {
+                return Err(PreparedConversationSettingsUpdateError::ReferenceMismatch {
+                    artifact_id,
+                });
+            }
+            supplied.insert(artifact_id, draft_reference);
+        }
+
+        Ok(Self { command, artifacts })
+    }
+
+    #[must_use]
+    pub fn command(&self) -> &UpdateConversationSettings {
+        &self.command
+    }
+
+    #[must_use]
+    pub fn into_parts(self) -> (UpdateConversationSettings, Vec<SnapshotArtifactDraft>) {
+        (self.command, self.artifacts)
+    }
+}
+
+impl fmt::Debug for PreparedConversationSettingsUpdate {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let artifact_ids: Vec<_> = self
+            .artifacts
+            .iter()
+            .map(|artifact| artifact.artifact_id)
+            .collect();
+        formatter
+            .debug_struct("PreparedConversationSettingsUpdate")
+            .field("conversation_id", &self.command.conversation_id)
+            .field("artifact_count", &self.artifacts.len())
+            .field("artifact_ids", &artifact_ids)
+            .finish()
+    }
 }
 
 impl PreparedConversationLaunch {
@@ -574,6 +688,76 @@ pub fn conversation_snapshot_references(kind: &ConversationKind) -> Vec<&Protect
                 refs.push(&value.snapshot_ref);
             }
         }
+    }
+    refs
+}
+
+pub fn conversation_settings_snapshot_references(
+    settings: &CurrentConversationSettings,
+) -> Vec<&ProtectedSnapshotRef> {
+    let mut refs = Vec::new();
+    if let Some(memory) = &settings.memory {
+        if let Some(reference) = &memory.policy_ref {
+            refs.push(reference);
+        }
+    }
+    if let Some(model) = &settings.model_override {
+        refs.push(&model.snapshot_ref);
+    }
+    if let Some(voice) = &settings.voice {
+        refs.push(&voice.snapshot_ref);
+    }
+    if let Some(prompt) = &settings.prompt {
+        refs.push(&prompt.snapshot_ref);
+    }
+    if let Some(lorebooks) = &settings.lorebooks {
+        refs.extend(lorebooks.iter().map(|book| &book.snapshot_ref));
+    }
+    if let Some(persona) = &settings.persona {
+        refs.push(&persona.snapshot_ref);
+        if let SnapshotSelection::Inherited(books) | SnapshotSelection::Explicit(books) =
+            &persona.lorebooks
+        {
+            refs.extend(books.iter().map(|book| &book.snapshot_ref));
+        }
+    }
+    if let Some(scene) = &settings.scene {
+        refs.push(&scene.snapshot_ref);
+    }
+    refs
+}
+
+fn conversation_settings_patch_snapshot_references(
+    patch: &CurrentConversationSettingsPatch,
+) -> Vec<&ProtectedSnapshotRef> {
+    let mut refs = Vec::new();
+    if let PatchValue::Set(memory) = &patch.memory {
+        if let Some(reference) = &memory.policy_ref {
+            refs.push(reference);
+        }
+    }
+    if let PatchValue::Set(model) = &patch.model_override {
+        refs.push(&model.snapshot_ref);
+    }
+    if let PatchValue::Set(voice) = &patch.voice {
+        refs.push(&voice.snapshot_ref);
+    }
+    if let PatchValue::Set(prompt) = &patch.prompt {
+        refs.push(&prompt.snapshot_ref);
+    }
+    if let PatchValue::Set(lorebooks) = &patch.lorebooks {
+        refs.extend(lorebooks.iter().map(|book| &book.snapshot_ref));
+    }
+    if let PatchValue::Set(persona) = &patch.persona {
+        refs.push(&persona.snapshot_ref);
+        if let SnapshotSelection::Inherited(books) | SnapshotSelection::Explicit(books) =
+            &persona.lorebooks
+        {
+            refs.extend(books.iter().map(|book| &book.snapshot_ref));
+        }
+    }
+    if let PatchValue::Set(scene) = &patch.scene {
+        refs.push(&scene.snapshot_ref);
     }
     refs
 }

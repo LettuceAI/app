@@ -57,6 +57,14 @@ CREATE TABLE conversation_settings (
     model_provenance TEXT NOT NULL CHECK (model_provenance IN ('launch_inherited', 'current_override', 'disabled')),
     voice_json TEXT CHECK (voice_json IS NULL OR (json_valid(voice_json) AND json_extract(voice_json, '$.format_version') = 1)),
     voice_provenance TEXT NOT NULL CHECK (voice_provenance IN ('launch_inherited', 'current_override', 'disabled')),
+    prompt_json TEXT CHECK (prompt_json IS NULL OR (json_valid(prompt_json) AND json_extract(prompt_json, '$.format_version') = 1)),
+    prompt_provenance TEXT NOT NULL CHECK (prompt_provenance IN ('launch_inherited', 'current_override', 'disabled')),
+    lorebooks_json TEXT CHECK (lorebooks_json IS NULL OR (json_valid(lorebooks_json) AND json_extract(lorebooks_json, '$.format_version') = 1 AND json_type(json_extract(lorebooks_json, '$.value')) = 'array' AND json_array_length(json_extract(lorebooks_json, '$.value')) > 0)),
+    lorebooks_provenance TEXT NOT NULL CHECK (lorebooks_provenance IN ('launch_inherited', 'current_override', 'disabled')),
+    persona_json TEXT CHECK (persona_json IS NULL OR (json_valid(persona_json) AND json_extract(persona_json, '$.format_version') = 1)),
+    persona_provenance TEXT NOT NULL CHECK (persona_provenance IN ('launch_inherited', 'current_override', 'disabled')),
+    scene_json TEXT CHECK (scene_json IS NULL OR (json_valid(scene_json) AND json_extract(scene_json, '$.format_version') = 1)),
+    scene_provenance TEXT NOT NULL CHECK (scene_provenance IN ('launch_inherited', 'current_override', 'disabled')),
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     CHECK (author_note IS NULL OR (length(trim(author_note)) > 0 AND length(CAST(author_note AS BLOB)) <= 1048576)),
@@ -64,6 +72,10 @@ CREATE TABLE conversation_settings (
     CHECK ((memory_json IS NOT NULL) = (memory_provenance = 'current_override')),
     CHECK ((model_override_json IS NOT NULL) = (model_provenance = 'current_override')),
     CHECK ((voice_json IS NOT NULL) = (voice_provenance = 'current_override')),
+    CHECK ((prompt_json IS NOT NULL) = (prompt_provenance = 'current_override')),
+    CHECK ((lorebooks_json IS NOT NULL) = (lorebooks_provenance = 'current_override')),
+    CHECK ((persona_json IS NOT NULL) = (persona_provenance = 'current_override')),
+    CHECK ((scene_json IS NOT NULL) = (scene_provenance = 'current_override')),
     CHECK (created_at <= updated_at)
 ) STRICT;
 

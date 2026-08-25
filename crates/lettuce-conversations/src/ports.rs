@@ -1161,7 +1161,7 @@ pub trait ConversationRepository: ConversationCreator {
     ) -> Result<ParticipantPolicyResult, ConversationRepositoryError>;
     fn update_settings(
         &self,
-        command: &crate::commands::UpdateConversationSettings,
+        update: crate::PreparedConversationSettingsUpdate,
         now: TimestampMillis,
     ) -> Result<SettingsResult, ConversationRepositoryError>;
 }

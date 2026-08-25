@@ -1734,7 +1734,7 @@ mod tests {
             .expect("valid final turn");
         transaction
             .execute(
-                "INSERT INTO conversation_settings (conversation_id, revision, author_note_provenance, memory_provenance, model_provenance, voice_provenance, created_at, updated_at) VALUES ('upgrade-conversation', 1, 'disabled', 'disabled', 'disabled', 'disabled', 0, 0)",
+                "INSERT INTO conversation_settings (conversation_id, revision, author_note_provenance, memory_provenance, model_provenance, voice_provenance, prompt_provenance, lorebooks_provenance, persona_provenance, scene_provenance, created_at, updated_at) VALUES ('upgrade-conversation', 1, 'disabled', 'disabled', 'disabled', 'disabled', 'disabled', 'disabled', 'disabled', 'disabled', 0, 0)",
                 [],
             )
             .expect("valid canonical settings");
@@ -1746,7 +1746,7 @@ mod tests {
             .is_err());
         assert!(transaction
             .execute(
-                "INSERT INTO conversation_settings (conversation_id, revision, author_note, author_note_provenance, memory_provenance, model_provenance, voice_provenance, created_at, updated_at) VALUES ('upgrade-conversation', 2, 'forged', 'disabled', 'disabled', 'disabled', 'disabled', 0, 0)",
+                "INSERT INTO conversation_settings (conversation_id, revision, author_note, author_note_provenance, memory_provenance, model_provenance, voice_provenance, prompt_provenance, lorebooks_provenance, persona_provenance, scene_provenance, created_at, updated_at) VALUES ('upgrade-conversation', 2, 'forged', 'disabled', 'disabled', 'disabled', 'disabled', 'disabled', 'disabled', 'disabled', 'disabled', 0, 0)",
                 [],
             )
             .is_err());
@@ -1855,7 +1855,7 @@ mod tests {
                 }
                 transaction
                     .execute(
-                        "INSERT INTO conversation_settings (conversation_id, revision, author_note, author_note_provenance, memory_provenance, model_provenance, voice_provenance, created_at, updated_at) VALUES (?1, 1, ?2, ?3, 'launch_inherited', 'disabled', 'disabled', 0, 0)",
+                        "INSERT INTO conversation_settings (conversation_id, revision, author_note, author_note_provenance, memory_provenance, model_provenance, voice_provenance, prompt_provenance, lorebooks_provenance, persona_provenance, scene_provenance, created_at, updated_at) VALUES (?1, 1, ?2, ?3, 'launch_inherited', 'disabled', 'disabled', 'launch_inherited', 'launch_inherited', 'launch_inherited', 'launch_inherited', 0, 0)",
                         params![conversation_id, author_note, author_provenance],
                     )
                     .expect("M8 settings row");
@@ -1890,6 +1890,25 @@ mod tests {
                 )
                 .expect("column lookup");
             assert_eq!(present, 1, "missing final conversation column {column}");
+        }
+        for column in [
+            "prompt_json",
+            "prompt_provenance",
+            "lorebooks_json",
+            "lorebooks_provenance",
+            "persona_json",
+            "persona_provenance",
+            "scene_json",
+            "scene_provenance",
+        ] {
+            let present: i64 = connection
+                .query_row(
+                    "SELECT count(*) FROM pragma_table_info('conversation_settings') WHERE name = ?1",
+                    [column],
+                    |row| row.get(0),
+                )
+                .expect("settings column lookup");
+            assert_eq!(present, 1, "missing final settings column {column}");
         }
         let candidate_author: i64 = connection
             .query_row(

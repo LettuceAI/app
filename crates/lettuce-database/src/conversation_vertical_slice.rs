@@ -180,7 +180,7 @@ fn save_settings(
         return Ok(());
     };
     let revision = sql_revision(settings.revision)?;
-    transaction.execute("INSERT INTO conversation_settings (conversation_id, revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)", params![conversation.id.to_string(), revision, settings.author_note, provenance_name(settings.author_note_provenance), settings.memory.as_ref().map(encode).transpose()?, provenance_name(settings.memory_provenance), settings.model_override.as_ref().map(encode).transpose()?, provenance_name(settings.model_provenance), settings.voice.as_ref().map(encode).transpose()?, provenance_name(settings.voice_provenance), conversation.created_at.get(), conversation.updated_at.get()]).map_err(db)?;
+    transaction.execute("INSERT INTO conversation_settings (conversation_id, revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance, prompt_json, prompt_provenance, lorebooks_json, lorebooks_provenance, persona_json, persona_provenance, scene_json, scene_provenance, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)", params![conversation.id.to_string(), revision, settings.author_note, provenance_name(settings.author_note_provenance), settings.memory.as_ref().map(encode).transpose()?, provenance_name(settings.memory_provenance), settings.model_override.as_ref().map(encode).transpose()?, provenance_name(settings.model_provenance), settings.voice.as_ref().map(encode).transpose()?, provenance_name(settings.voice_provenance), settings.prompt.as_ref().map(encode).transpose()?, provenance_name(settings.prompt_provenance), settings.lorebooks.as_ref().map(encode).transpose()?, provenance_name(settings.lorebooks_provenance), settings.persona.as_ref().map(encode).transpose()?, provenance_name(settings.persona_provenance), settings.scene.as_ref().map(encode).transpose()?, provenance_name(settings.scene_provenance), conversation.created_at.get(), conversation.updated_at.get()]).map_err(db)?;
     Ok(())
 }
 
@@ -191,7 +191,24 @@ pub(crate) fn save_conversation(
     let revision = sql_revision(conversation.revision)?;
     transaction.execute("INSERT INTO conversations (id, kind, lifecycle, title, active_branch_id, kind_json, revision, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)", params![conversation.id.to_string(), if conversation.kind.is_group() { "group" } else { "direct" }, lifecycle_name(conversation.lifecycle), conversation.title, conversation.active_branch_id.to_string(), encode(&conversation.kind)?, revision, conversation.created_at.get(), conversation.updated_at.get()]).map_err(db)?;
     save_participants(transaction, conversation)?;
-    save_settings(transaction, conversation)
+    save_settings(transaction, conversation)?;
+    if let Some(settings) = &conversation.current_settings {
+        for reference in lettuce_conversations::conversation_settings_snapshot_references(settings)
+        {
+            super::conversation_artifact_adapter::verify_snapshot_in_transaction(
+                transaction,
+                reference,
+            )
+            .map_err(ConversationRepositoryError::ArtifactReference)?;
+            transaction
+                .execute(
+                    "INSERT OR IGNORE INTO conversation_snapshot_refs (conversation_id, artifact_id) VALUES (?1, ?2)",
+                    params![conversation.id.to_string(), reference.artifact_id.to_string()],
+                )
+                .map_err(db)?;
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn save_branch(
@@ -446,7 +463,10 @@ where
         .map_err(db)?
         .collect::<rusqlite::Result<Vec<String>>>()
         .map_err(db)?;
-    if actual_artifacts != expected_artifacts {
+    if expected_artifacts
+        .iter()
+        .any(|artifact_id| !actual_artifacts.contains(artifact_id))
+    {
         return Err(ConversationRepositoryError::Storage);
     }
     for reference in expected_by_id.values() {
@@ -457,7 +477,7 @@ where
         .map_err(|_| ConversationRepositoryError::Storage)?;
     }
 
-    // The root row and exact reference set have been acquired on this read
+    // The root row and required reference set have been acquired on this read
     // transaction.  The callback exists only for the two-handle coherence
     // test; production reads pass a no-op.
     after_snapshot();
@@ -480,32 +500,23 @@ where
     }
 
     let settings = transaction
-        .query_row("SELECT revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance FROM conversation_settings WHERE conversation_id = ?1", [id.to_string()], read_settings)
+        .query_row("SELECT revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance, prompt_json, prompt_provenance, lorebooks_json, lorebooks_provenance, persona_json, persona_provenance, scene_json, scene_provenance FROM conversation_settings WHERE conversation_id = ?1", [id.to_string()], read_settings)
         .optional()
         .map_err(db)?;
     if let Some(settings) = &settings {
-        if let Some(model) = &settings.model_override {
-            super::conversation_artifact_adapter::verify_snapshot_in_transaction(
-                transaction,
-                &model.snapshot_ref,
-            )
+        settings
+            .validate_against_kind(&row.kind)
             .map_err(|_| ConversationRepositoryError::Storage)?;
-        }
-        if let Some(voice) = &settings.voice {
-            super::conversation_artifact_adapter::verify_snapshot_in_transaction(
-                transaction,
-                &voice.snapshot_ref,
-            )
-            .map_err(|_| ConversationRepositoryError::Storage)?;
-        }
-        if let Some(memory) = &settings.memory {
-            if let Some(policy) = &memory.policy_ref {
-                super::conversation_artifact_adapter::verify_snapshot_in_transaction(
-                    transaction,
-                    policy,
-                )
-                .map_err(|_| ConversationRepositoryError::Storage)?;
+        for reference in lettuce_conversations::conversation_settings_snapshot_references(settings)
+        {
+            if !actual_artifacts.contains(&reference.artifact_id.to_string()) {
+                return Err(ConversationRepositoryError::Storage);
             }
+            super::conversation_artifact_adapter::verify_snapshot_in_transaction(
+                transaction,
+                reference,
+            )
+            .map_err(|_| ConversationRepositoryError::Storage)?;
         }
     }
     let mut conversation = row;
@@ -601,6 +612,30 @@ pub(crate) fn read_settings(row: &Row<'_>) -> Result<CurrentConversationSettings
             .transpose()
             .map_err(|_| rusqlite::Error::InvalidQuery)?,
         voice_provenance: provenance_from_name(&row.get::<_, String>(8)?)?,
+        prompt: row
+            .get::<_, Option<String>>(9)?
+            .map(|v| decode(&v))
+            .transpose()
+            .map_err(|_| rusqlite::Error::InvalidQuery)?,
+        prompt_provenance: provenance_from_name(&row.get::<_, String>(10)?)?,
+        lorebooks: row
+            .get::<_, Option<String>>(11)?
+            .map(|v| decode(&v))
+            .transpose()
+            .map_err(|_| rusqlite::Error::InvalidQuery)?,
+        lorebooks_provenance: provenance_from_name(&row.get::<_, String>(12)?)?,
+        persona: row
+            .get::<_, Option<String>>(13)?
+            .map(|v| decode(&v))
+            .transpose()
+            .map_err(|_| rusqlite::Error::InvalidQuery)?,
+        persona_provenance: provenance_from_name(&row.get::<_, String>(14)?)?,
+        scene: row
+            .get::<_, Option<String>>(15)?
+            .map(|v| decode(&v))
+            .transpose()
+            .map_err(|_| rusqlite::Error::InvalidQuery)?,
+        scene_provenance: provenance_from_name(&row.get::<_, String>(16)?)?,
     })
 }
 
@@ -2049,19 +2084,19 @@ mod tests {
             .is_err());
         assert!(connection
             .execute(
-                "INSERT INTO conversation_settings (conversation_id, revision, author_note, author_note_provenance, memory_provenance, model_provenance, voice_provenance, created_at, updated_at) VALUES (?1, 1, 'forged', 'disabled', 'disabled', 'disabled', 'disabled', 0, 0)",
+                "INSERT INTO conversation_settings (conversation_id, revision, author_note, author_note_provenance, memory_provenance, model_provenance, voice_provenance, prompt_provenance, lorebooks_provenance, persona_provenance, scene_provenance, created_at, updated_at) VALUES (?1, 1, 'forged', 'disabled', 'disabled', 'disabled', 'disabled', 'disabled', 'disabled', 'disabled', 'disabled', 0, 0)",
                 [conversation_id.to_string()],
             )
             .is_err());
         assert!(connection
             .execute(
-                "INSERT INTO conversation_settings (conversation_id, revision, author_note_provenance, memory_provenance, model_provenance, voice_provenance, created_at, updated_at) VALUES (?1, 1, 'current_override', 'launch_inherited', 'launch_inherited', 'launch_inherited', 0, 0)",
+                "INSERT INTO conversation_settings (conversation_id, revision, author_note_provenance, memory_provenance, model_provenance, voice_provenance, prompt_provenance, lorebooks_provenance, persona_provenance, scene_provenance, created_at, updated_at) VALUES (?1, 1, 'current_override', 'launch_inherited', 'launch_inherited', 'launch_inherited', 'launch_inherited', 'launch_inherited', 'launch_inherited', 'launch_inherited', 0, 0)",
                 [conversation_id.to_string()],
             )
             .is_err());
         assert!(connection
             .execute(
-                "INSERT INTO conversation_settings (conversation_id, revision, author_note, author_note_provenance, memory_provenance, model_provenance, voice_provenance, created_at, updated_at) VALUES (?1, 1, 'forged', 'launch_inherited', 'launch_inherited', 'launch_inherited', 'launch_inherited', 0, 0)",
+                "INSERT INTO conversation_settings (conversation_id, revision, author_note, author_note_provenance, memory_provenance, model_provenance, voice_provenance, prompt_provenance, lorebooks_provenance, persona_provenance, scene_provenance, created_at, updated_at) VALUES (?1, 1, 'forged', 'launch_inherited', 'launch_inherited', 'launch_inherited', 'launch_inherited', 'launch_inherited', 'launch_inherited', 'launch_inherited', 'launch_inherited', 0, 0)",
                 [conversation_id.to_string()],
             )
             .is_err());

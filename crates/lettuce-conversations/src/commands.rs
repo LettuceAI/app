@@ -9,8 +9,13 @@ use crate::content::{Message, MessagePart, MessageRenderSource, MessageRole, Mes
 use crate::error::ValidationError;
 use crate::generation::{GenerationOperation, IdempotencyKey};
 use crate::model::{ConversationKind, ParticipantRole, ParticipantSource};
-use crate::snapshot::{ModelSelectionSnapshot, ProtectedSnapshotRef, ValidateSnapshot};
-use crate::validation::{MAX_PARTS, validate_collection, validate_text};
+use crate::snapshot::{
+    LorebookLaunchSnapshot, ModelSelectionSnapshot, PersonaLaunchSnapshot, PromptLaunchSnapshot,
+    ProtectedSnapshotRef, SceneLaunchSnapshot, ValidateSnapshot,
+};
+use crate::validation::{
+    MAX_LOREBOOKS, MAX_PARTS, validate_collection, validate_text, validate_unique,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -946,6 +951,10 @@ pub struct CurrentConversationSettingsPatch {
     pub memory: PatchValue<crate::snapshot::MemorySettingsSnapshot>,
     pub model_override: PatchValue<ModelSelectionSnapshot>,
     pub voice: PatchValue<crate::snapshot::VoiceSettingsSnapshot>,
+    pub prompt: PatchValue<PromptLaunchSnapshot>,
+    pub lorebooks: PatchValue<Vec<LorebookLaunchSnapshot>>,
+    pub persona: PatchValue<PersonaLaunchSnapshot>,
+    pub scene: PatchValue<SceneLaunchSnapshot>,
 }
 
 impl CurrentConversationSettingsPatch {
@@ -966,6 +975,30 @@ impl CurrentConversationSettingsPatch {
         }
         if let PatchValue::Set(voice) = &self.voice {
             voice.validate()?;
+        }
+        if let PatchValue::Set(prompt) = &self.prompt {
+            prompt.validate()?;
+        }
+        if let PatchValue::Set(lorebooks) = &self.lorebooks {
+            if lorebooks.is_empty() {
+                return Err(ValidationError::InvalidValue {
+                    field: "conversation_settings.lorebooks",
+                });
+            }
+            validate_collection("conversation_settings.lorebooks", lorebooks, MAX_LOREBOOKS)?;
+            validate_unique(
+                "conversation_settings.lorebook_ids",
+                lorebooks.iter().map(|book| book.source_id),
+            )?;
+            for book in lorebooks {
+                book.validate()?;
+            }
+        }
+        if let PatchValue::Set(persona) = &self.persona {
+            persona.validate()?;
+        }
+        if let PatchValue::Set(scene) = &self.scene {
+            scene.validate()?;
         }
         Ok(())
     }
@@ -1035,6 +1068,14 @@ impl CurrentConversationSettingsPatch {
             model_provenance: SettingProvenance::LaunchInherited,
             voice: None,
             voice_provenance: SettingProvenance::LaunchInherited,
+            prompt: None,
+            prompt_provenance: SettingProvenance::LaunchInherited,
+            lorebooks: None,
+            lorebooks_provenance: SettingProvenance::LaunchInherited,
+            persona: None,
+            persona_provenance: SettingProvenance::LaunchInherited,
+            scene: None,
+            scene_provenance: SettingProvenance::LaunchInherited,
         };
         let base = current.unwrap_or(&empty);
         let (author_note, author_note_provenance) = apply_value(
@@ -1061,6 +1102,30 @@ impl CurrentConversationSettingsPatch {
             base.voice_provenance,
             current.is_some(),
         );
+        let (prompt, prompt_provenance) = apply_value(
+            &self.prompt,
+            base.prompt.as_ref(),
+            base.prompt_provenance,
+            current.is_some(),
+        );
+        let (lorebooks, lorebooks_provenance) = apply_value(
+            &self.lorebooks,
+            base.lorebooks.as_ref(),
+            base.lorebooks_provenance,
+            current.is_some(),
+        );
+        let (persona, persona_provenance) = apply_value(
+            &self.persona,
+            base.persona.as_ref(),
+            base.persona_provenance,
+            current.is_some(),
+        );
+        let (scene, scene_provenance) = apply_value(
+            &self.scene,
+            base.scene.as_ref(),
+            base.scene_provenance,
+            current.is_some(),
+        );
         let result = crate::model::CurrentConversationSettings {
             revision,
             author_note,
@@ -1071,6 +1136,14 @@ impl CurrentConversationSettingsPatch {
             model_provenance,
             voice,
             voice_provenance,
+            prompt,
+            prompt_provenance,
+            lorebooks,
+            lorebooks_provenance,
+            persona,
+            persona_provenance,
+            scene,
+            scene_provenance,
         };
         result.validate()?;
         Ok(result)
@@ -1125,6 +1198,7 @@ impl UpdateConversationSettings {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(clippy::large_enum_variant)]
 pub enum ConversationMutation {
     Send(SendConversation),
     Continue(ContinueConversation),

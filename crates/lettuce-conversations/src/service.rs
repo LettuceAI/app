@@ -445,12 +445,12 @@ impl<R: ConversationRepository> ConversationManager<R> {
 
     pub fn update_settings(
         &self,
-        command: &crate::commands::UpdateConversationSettings,
+        update: crate::PreparedConversationSettingsUpdate,
         now: TimestampMillis,
     ) -> Result<SettingsResult, ConversationServiceError> {
-        ConversationMutation::Settings(command.clone()).validate()?;
+        update.command().validate()?;
         self.repository
-            .update_settings(command, now)
+            .update_settings(update, now)
             .map_err(Into::into)
     }
 }

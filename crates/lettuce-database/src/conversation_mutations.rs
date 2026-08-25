@@ -11,25 +11,26 @@
 //! swapping it, and it leaves the conversation revision and outbox untouched.
 
 use lettuce_conversations::{
-    ArchiveConversation, ArchiveConversationResult, AssetReferenceDelta, AssetReferenceState,
-    AttachAttemptJob, AttachAttemptJobResult, BeginGeneration, BranchResult, CancelGeneration,
-    ChooseCandidate, ChooseCandidateResult, ContinueConversation, ContinueConversationResult,
-    ConversationBranch, ConversationLifecycle, ConversationOutboxEvent, ConversationRepository,
-    ConversationRepositoryError, DescendantPolicy, EditMessage, EditMessageResult, EditResult,
-    FinalizationDraft, ForkBranch, ForkBranchResult, GenerationAttempt, GenerationAttemptStatus,
-    GenerationCancellation, GenerationCheckpointEnvelope, GenerationCheckpointEvent,
-    GenerationFailure, GenerationFailureCode, GenerationFailureResult, GenerationFinalization,
+    ArchiveConversation, ArchiveConversationResult, ArtifactError, AssetReferenceDelta,
+    AssetReferenceState, AttachAttemptJob, AttachAttemptJobResult, BeginGeneration, BranchResult,
+    CancelGeneration, ChooseCandidate, ChooseCandidateResult, ContinueConversation,
+    ContinueConversationResult, ConversationBranch, ConversationKind, ConversationLifecycle,
+    ConversationOutboxEvent, ConversationRepository, ConversationRepositoryError, DescendantPolicy,
+    EditMessage, EditMessageResult, EditResult, FinalizationDraft, ForkBranch, ForkBranchResult,
+    GenerationAttempt, GenerationAttemptStatus, GenerationCancellation,
+    GenerationCheckpointEnvelope, GenerationCheckpointEvent, GenerationFailure,
+    GenerationFailureCode, GenerationFailureResult, GenerationFinalization,
     GenerationFinalizationResult, GenerationInput, GenerationInterruptionResult,
     GenerationOperation, GenerationRecovery, GenerationRecoveryResult, GenerationTarget,
     GenerationTurn, GenerationTurnStatus, Message, MessageCandidate, MessagePart, OperationKind,
-    OperationResultRef, OperationToken, ParticipantPolicyResult, RegenerateCandidate,
-    RegenerateCandidateResult, RenameConversation, RenameConversationResult,
-    RequestCancellationResult, ResolveGroupSpeaker, ResolveGroupSpeakerResult, RestoreConversation,
-    RestoreConversationResult, RetryGeneration, RetryGenerationResult, SelectBranch,
-    SelectBranchResult, SelectedSpeakerDecision, SendConversation, SendConversationResult,
-    SettingsCasRequirement, SettingsResult, SettleCancellation, SettleCancellationResult,
-    SnapshotSelection, TombstoneMessage, TombstoneMessageResult, TombstoneResult,
-    UpdateConversationSettings, UpdateMessageFlags, UpdateMessageFlagsResult,
+    OperationResultRef, OperationToken, ParticipantPolicyResult,
+    PreparedConversationSettingsUpdate, RegenerateCandidate, RegenerateCandidateResult,
+    RenameConversation, RenameConversationResult, RequestCancellationResult, ResolveGroupSpeaker,
+    ResolveGroupSpeakerResult, RestoreConversation, RestoreConversationResult, RetryGeneration,
+    RetryGenerationResult, SelectBranch, SelectBranchResult, SelectedSpeakerDecision,
+    SendConversation, SendConversationResult, SettingsCasRequirement, SettingsResult,
+    SettleCancellation, SettleCancellationResult, SnapshotSelection, TombstoneMessage,
+    TombstoneMessageResult, TombstoneResult, UpdateMessageFlags, UpdateMessageFlagsResult,
     UpdateParticipantPolicy, attempt_job_idempotency_key,
 };
 use lettuce_types::{
@@ -1228,6 +1229,31 @@ fn verify_current_snapshot(
         .map_err(ConversationRepositoryError::ArtifactReference)
 }
 
+fn verify_settings_snapshot(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    reference: &lettuce_conversations::ProtectedSnapshotRef,
+) -> Result<(), ConversationRepositoryError> {
+    verify_current_snapshot(transaction, reference)?;
+    let attached: bool = transaction
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM conversation_snapshot_refs WHERE conversation_id = ?1 AND artifact_id = ?2)",
+            params![conversation_id.to_string(), reference.artifact_id.to_string()],
+            |row| row.get(0),
+        )
+        .map_err(slice::db)?;
+    if !attached {
+        return Err(ConversationRepositoryError::ArtifactReference(
+            ArtifactError::InvalidReference(
+                lettuce_conversations::ValidationError::InvalidReference {
+                    field: "conversation_settings.snapshot_ref",
+                },
+            ),
+        ));
+    }
+    Ok(())
+}
+
 fn edit_result(
     transaction: &Transaction<'_>,
     conversation_id: ConversationId,
@@ -1305,7 +1331,7 @@ fn read_current_settings(
 {
     transaction
         .query_row(
-            "SELECT revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance FROM conversation_settings WHERE conversation_id = ?1",
+            "SELECT revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance, prompt_json, prompt_provenance, lorebooks_json, lorebooks_provenance, persona_json, persona_provenance, scene_json, scene_provenance FROM conversation_settings WHERE conversation_id = ?1",
             [conversation_id.to_string()],
             slice::read_settings,
         )
@@ -1328,10 +1354,14 @@ fn write_settings(
         .map(slice::encode)
         .transpose()?;
     let voice = settings.voice.as_ref().map(slice::encode).transpose()?;
+    let prompt = settings.prompt.as_ref().map(slice::encode).transpose()?;
+    let lorebooks = settings.lorebooks.as_ref().map(slice::encode).transpose()?;
+    let persona = settings.persona.as_ref().map(slice::encode).transpose()?;
+    let scene = settings.scene.as_ref().map(slice::encode).transpose()?;
     if create {
         transaction
             .execute(
-                "INSERT INTO conversation_settings (conversation_id, revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)",
+                "INSERT INTO conversation_settings (conversation_id, revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance, prompt_json, prompt_provenance, lorebooks_json, lorebooks_provenance, persona_json, persona_provenance, scene_json, scene_provenance, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?19)",
                 params![
                     conversation_id.to_string(),
                     revision,
@@ -1343,6 +1373,14 @@ fn write_settings(
                     slice::provenance_name(settings.model_provenance),
                     voice,
                     slice::provenance_name(settings.voice_provenance),
+                    prompt,
+                    slice::provenance_name(settings.prompt_provenance),
+                    lorebooks,
+                    slice::provenance_name(settings.lorebooks_provenance),
+                    persona,
+                    slice::provenance_name(settings.persona_provenance),
+                    scene,
+                    slice::provenance_name(settings.scene_provenance),
                     now.get(),
                 ],
             )
@@ -1351,7 +1389,7 @@ fn write_settings(
     }
     let changed = transaction
         .execute(
-            "UPDATE conversation_settings SET revision = ?2, author_note = ?3, author_note_provenance = ?4, memory_json = ?5, memory_provenance = ?6, model_override_json = ?7, model_provenance = ?8, voice_json = ?9, voice_provenance = ?10, updated_at = ?11 WHERE conversation_id = ?1 AND revision = ?12",
+            "UPDATE conversation_settings SET revision = ?2, author_note = ?3, author_note_provenance = ?4, memory_json = ?5, memory_provenance = ?6, model_override_json = ?7, model_provenance = ?8, voice_json = ?9, voice_provenance = ?10, prompt_json = ?11, prompt_provenance = ?12, lorebooks_json = ?13, lorebooks_provenance = ?14, persona_json = ?15, persona_provenance = ?16, scene_json = ?17, scene_provenance = ?18, updated_at = ?19 WHERE conversation_id = ?1 AND revision = ?20",
             params![
                 conversation_id.to_string(),
                 revision,
@@ -1363,6 +1401,14 @@ fn write_settings(
                 slice::provenance_name(settings.model_provenance),
                 voice,
                 slice::provenance_name(settings.voice_provenance),
+                prompt,
+                slice::provenance_name(settings.prompt_provenance),
+                lorebooks,
+                slice::provenance_name(settings.lorebooks_provenance),
+                persona,
+                slice::provenance_name(settings.persona_provenance),
+                scene,
+                slice::provenance_name(settings.scene_provenance),
                 now.get(),
                 revision - 1,
             ],
@@ -4102,20 +4148,29 @@ impl ConversationRepository for Database {
     /// so this mutation reads the lifecycle instead of swapping the aggregate.
     fn update_settings(
         &self,
-        command: &UpdateConversationSettings,
+        update: PreparedConversationSettingsUpdate,
         now: TimestampMillis,
     ) -> Result<SettingsResult, ConversationRepositoryError> {
-        lettuce_conversations::ConversationMutation::Settings(command.clone())
-            .validate()
-            .map_err(ConversationRepositoryError::Invalid)?;
+        let conversation_id = update.command().conversation_id;
+        let operation = update.command().operation.clone();
         kernel::run_mutation(
             self,
-            command.conversation_id,
+            conversation_id,
             OperationKind::Settings,
-            &command.operation,
+            &operation,
             now,
-            |transaction, context| {
+            move |transaction, context| {
+                let (command, drafts) = update.into_parts();
                 require_active_conversation(transaction, context.conversation_id)?;
+                let kind_json: String = transaction
+                    .query_row(
+                        "SELECT kind_json FROM conversations WHERE id = ?1",
+                        [context.conversation_id.to_string()],
+                        |row| row.get(0),
+                    )
+                    .map_err(slice::db)?;
+                let kind: ConversationKind =
+                    slice::decode(&kind_json).map_err(|_| ConversationRepositoryError::Storage)?;
                 let current = read_current_settings(transaction, context.conversation_id)?;
                 match (command.cas_requirement(), &current) {
                     (SettingsCasRequirement::CreateOnly, Some(_)) => {
@@ -4141,18 +4196,29 @@ impl ConversationRepository for Database {
                     .patch
                     .apply(current.as_ref(), command.expected_settings_revision)
                     .map_err(ConversationRepositoryError::Invalid)?;
-                if let Some(model) = &next.model_override {
-                    verify_current_snapshot(transaction, &model.snapshot_ref)?;
+                next.validate_against_kind(&kind)
+                    .map_err(ConversationRepositoryError::Invalid)?;
+                for draft in drafts {
+                    let reference = conversation_artifact_adapter::stage_snapshot_in_transaction(
+                        transaction,
+                        draft,
+                        context.now,
+                    )
+                    .map_err(ConversationRepositoryError::ArtifactReference)?;
+                    transaction
+                        .execute(
+                            "INSERT OR IGNORE INTO conversation_snapshot_refs (conversation_id, artifact_id) VALUES (?1, ?2)",
+                            params![
+                                context.conversation_id.to_string(),
+                                reference.artifact_id.to_string()
+                            ],
+                        )
+                        .map_err(slice::db)?;
                 }
-                if let Some(voice) = &next.voice {
-                    verify_current_snapshot(transaction, &voice.snapshot_ref)?;
-                }
-                if let Some(policy) = next
-                    .memory
-                    .as_ref()
-                    .and_then(|memory| memory.policy_ref.as_ref())
+                for reference in
+                    lettuce_conversations::conversation_settings_snapshot_references(&next)
                 {
-                    verify_current_snapshot(transaction, policy)?;
+                    verify_settings_snapshot(transaction, context.conversation_id, reference)?;
                 }
                 write_settings(
                     transaction,
@@ -4178,13 +4244,13 @@ impl ConversationRepository for Database {
                 })
             },
             |transaction, operation| {
-                let recorded = recorded_events(transaction, command.conversation_id, operation)?
+                let recorded = recorded_events(transaction, conversation_id, operation)?
                     .into_iter()
                     .any(|event| matches!(event, ConversationOutboxEvent::SettingsChanged { .. }));
                 if !recorded {
                     return Err(ConversationRepositoryError::Conflict);
                 }
-                conversation_value(transaction, command.conversation_id)
+                conversation_value(transaction, conversation_id)
             },
         )
     }
@@ -4201,8 +4267,9 @@ mod tests {
         GroupLaunchSnapshot, GroupMemberLaunchSnapshot, GroupParticipantPolicyDocument,
         GroupParticipantPolicySnapshot, GroupSpeakerSelectionSnapshot, InitialTimelineDraft,
         MessageDraft, MessageRole, MessageVisibility, ModelProviderKind, ModelSelectionSnapshot,
-        ParticipantRole, ParticipantSource, PreparedConversationLaunch, ProtectedArtifactBytes,
-        ProtectedSnapshotRef, SnapshotArtifactDraft, SnapshotSelection, SnapshotSource,
+        ParticipantRole, ParticipantSource, PreparedConversationLaunch,
+        PreparedConversationSettingsUpdate, ProtectedArtifactBytes, ProtectedSnapshotRef,
+        SnapshotArtifactDraft, SnapshotSelection, SnapshotSource,
     };
     use lettuce_conversations::{
         CurrentConversationSettingsPatch, PatchValue, RenameConversation, ResolveGroupSpeaker,
@@ -9635,17 +9702,24 @@ mod tests {
                 memory: PatchValue::Keep,
                 model_override: model,
                 voice: PatchValue::Keep,
+                prompt: PatchValue::Keep,
+                lorebooks: PatchValue::Keep,
+                persona: PatchValue::Keep,
+                scene: PatchValue::Keep,
             }
+        };
+        let prepared = |command: UpdateConversationSettings| {
+            PreparedConversationSettingsUpdate::new(command, Vec::new()).expect("prepared settings")
         };
         let created = fixture
             .database
             .update_settings(
-                &UpdateConversationSettings {
+                prepared(UpdateConversationSettings {
                     conversation_id: fixture.conversation_id,
                     expected_settings_revision: None,
                     operation: token("settings-create", "cd"),
                     patch: patch(PatchValue::Set("be brief".into()), PatchValue::Keep),
-                },
+                }),
                 TimestampMillis::new(20),
             )
             .expect("create settings");
@@ -9672,24 +9746,24 @@ mod tests {
 
         assert_eq!(
             fixture.database.update_settings(
-                &UpdateConversationSettings {
+                prepared(UpdateConversationSettings {
                     conversation_id: fixture.conversation_id,
                     expected_settings_revision: None,
                     operation: token("settings-create-again", "cd"),
                     patch: patch(PatchValue::Keep, PatchValue::Keep),
-                },
+                }),
                 TimestampMillis::new(21),
             ),
             Err(ConversationRepositoryError::Conflict)
         );
         assert_eq!(
             fixture.database.update_settings(
-                &UpdateConversationSettings {
+                prepared(UpdateConversationSettings {
                     conversation_id: fixture.conversation_id,
                     expected_settings_revision: Some(Revision::new(7)),
                     operation: token("settings-stale", "cd"),
                     patch: patch(PatchValue::Keep, PatchValue::Keep),
-                },
+                }),
                 TimestampMillis::new(22),
             ),
             Err(ConversationRepositoryError::StaleRevision {
@@ -9699,27 +9773,39 @@ mod tests {
         );
         assert!(matches!(
             fixture.database.update_settings(
-                &UpdateConversationSettings {
+                prepared(UpdateConversationSettings {
                     conversation_id: fixture.conversation_id,
                     expected_settings_revision: Some(Revision::INITIAL),
                     operation: token("settings-unstaged-model", "cd"),
                     patch: patch(PatchValue::Keep, PatchValue::Set(model_snapshot())),
-                },
+                }),
                 TimestampMillis::new(23),
             ),
             Err(ConversationRepositoryError::ArtifactReference(_))
         ));
 
         let model = staged_model(fixture.database.as_ref());
+        fixture
+            .database
+            .connection()
+            .expect("database lock")
+            .execute(
+                "INSERT INTO conversation_snapshot_refs (conversation_id, artifact_id) VALUES (?1, ?2)",
+                params![
+                    fixture.conversation_id.to_string(),
+                    model.snapshot_ref.artifact_id.to_string()
+                ],
+            )
+            .expect("attach existing model artifact");
         let updated = fixture
             .database
             .update_settings(
-                &UpdateConversationSettings {
+                prepared(UpdateConversationSettings {
                     conversation_id: fixture.conversation_id,
                     expected_settings_revision: Some(Revision::INITIAL),
                     operation: token("settings-update", "cd"),
                     patch: patch(PatchValue::Clear, PatchValue::Set(model.clone())),
-                },
+                }),
                 TimestampMillis::new(24),
             )
             .expect("update settings");
@@ -9741,12 +9827,12 @@ mod tests {
         let replay = fixture
             .database
             .update_settings(
-                &UpdateConversationSettings {
+                prepared(UpdateConversationSettings {
                     conversation_id: fixture.conversation_id,
                     expected_settings_revision: Some(Revision::INITIAL),
                     operation: token("settings-update", "cd"),
                     patch: patch(PatchValue::Clear, PatchValue::Keep),
-                },
+                }),
                 TimestampMillis::new(25),
             )
             .expect("replay");
@@ -9755,6 +9841,219 @@ mod tests {
             replay.value.current_settings.expect("settings").revision,
             Revision::new(2)
         );
+    }
+
+    #[test]
+    fn settings_context_artifacts_are_atomic_and_historical_refs_survive_reset() {
+        let fixture = direct_fixture();
+        let prompt_id = lettuce_types::PromptDocumentId::new();
+        let (prompt_ref, prompt_draft) = artifact(SnapshotSource::Prompt(prompt_id), b"prompt");
+        let prompt = lettuce_conversations::PromptLaunchSnapshot {
+            snapshot_ref: prompt_ref.clone(),
+            source_id: prompt_id,
+            source_revision: Revision::INITIAL,
+            title: "Prompt".into(),
+            purpose: lettuce_conversations::PromptPurposeSnapshot::Direct,
+        };
+        let patch = |prompt: PatchValue<lettuce_conversations::PromptLaunchSnapshot>| {
+            CurrentConversationSettingsPatch {
+                author_note: PatchValue::Keep,
+                memory: PatchValue::Keep,
+                model_override: PatchValue::Keep,
+                voice: PatchValue::Keep,
+                prompt,
+                lorebooks: PatchValue::Keep,
+                persona: PatchValue::Keep,
+                scene: PatchValue::Keep,
+            }
+        };
+        let create = fixture
+            .database
+            .update_settings(
+                PreparedConversationSettingsUpdate::new(
+                    UpdateConversationSettings {
+                        conversation_id: fixture.conversation_id,
+                        expected_settings_revision: None,
+                        operation: token("settings-context-create", "cd"),
+                        patch: patch(PatchValue::Set(prompt.clone())),
+                    },
+                    vec![prompt_draft],
+                )
+                .expect("prepared context settings"),
+                TimestampMillis::new(20),
+            )
+            .expect("create context settings");
+        let settings = create.value.current_settings.expect("settings present");
+        assert_eq!(settings.prompt, Some(prompt.clone()));
+        assert_eq!(
+            settings.prompt_provenance,
+            lettuce_conversations::SettingProvenance::CurrentOverride
+        );
+        let attached: i64 = fixture
+            .database
+            .connection()
+            .expect("connection")
+            .query_row(
+                "SELECT count(*) FROM conversation_snapshot_refs WHERE conversation_id = ?1 AND artifact_id = ?2",
+                params![fixture.conversation_id.to_string(), prompt_ref.artifact_id.to_string()],
+                |row| row.get(0),
+            )
+            .expect("attached ref");
+        assert_eq!(attached, 1);
+
+        let reset = fixture
+            .database
+            .update_settings(
+                PreparedConversationSettingsUpdate::new(
+                    UpdateConversationSettings {
+                        conversation_id: fixture.conversation_id,
+                        expected_settings_revision: Some(Revision::INITIAL),
+                        operation: token("settings-context-reset", "ef"),
+                        patch: patch(PatchValue::UseLaunchDefault),
+                    },
+                    Vec::new(),
+                )
+                .expect("prepared reset"),
+                TimestampMillis::new(21),
+            )
+            .expect("reset context settings");
+        let settings = reset.value.current_settings.expect("settings present");
+        assert_eq!(settings.revision, Revision::new(2));
+        assert_eq!(settings.prompt, None);
+        assert_eq!(
+            settings.prompt_provenance,
+            lettuce_conversations::SettingProvenance::LaunchInherited
+        );
+        let historical: i64 = fixture
+            .database
+            .connection()
+            .expect("connection")
+            .query_row(
+                "SELECT count(*) FROM conversation_snapshot_refs WHERE conversation_id = ?1 AND artifact_id = ?2",
+                params![fixture.conversation_id.to_string(), prompt_ref.artifact_id.to_string()],
+                |row| row.get(0),
+            )
+            .expect("historical ref");
+        assert_eq!(historical, 1);
+        ConversationReader::get(fixture.database.as_ref(), fixture.conversation_id)
+            .expect("historical refs do not invalidate reads");
+
+        let bad_id = lettuce_types::PromptDocumentId::new();
+        let (bad_ref, bad_draft) = artifact(SnapshotSource::Prompt(bad_id), b"bad prompt");
+        let mut bad_prompt = prompt.clone();
+        bad_prompt.snapshot_ref = bad_ref.clone();
+        bad_prompt.source_id = bad_id;
+        bad_prompt.purpose = lettuce_conversations::PromptPurposeSnapshot::GroupRoleplay;
+        let failed = fixture.database.update_settings(
+            PreparedConversationSettingsUpdate::new(
+                UpdateConversationSettings {
+                    conversation_id: fixture.conversation_id,
+                    expected_settings_revision: Some(Revision::new(2)),
+                    operation: token("settings-context-rollback", "12"),
+                    patch: patch(PatchValue::Set(bad_prompt)),
+                },
+                vec![bad_draft],
+            )
+            .expect("prepared invalid context settings"),
+            TimestampMillis::new(22),
+        );
+        assert!(matches!(
+            failed,
+            Err(ConversationRepositoryError::Invalid(_))
+        ));
+        let artifact_count: i64 = fixture
+            .database
+            .connection()
+            .expect("connection")
+            .query_row(
+                "SELECT count(*) FROM conversation_snapshot_artifacts WHERE artifact_id = ?1",
+                [bad_ref.artifact_id.to_string()],
+                |row| row.get(0),
+            )
+            .expect("rollback artifact count");
+        assert_eq!(artifact_count, 0);
+    }
+
+    #[test]
+    fn group_conversational_settings_accept_prompt_but_reject_scene() {
+        let fixture = group_fixture();
+        let prompt_id = lettuce_types::PromptDocumentId::new();
+        let (prompt_ref, prompt_draft) =
+            artifact(SnapshotSource::Prompt(prompt_id), b"group prompt");
+        let prompt = lettuce_conversations::PromptLaunchSnapshot {
+            snapshot_ref: prompt_ref,
+            source_id: prompt_id,
+            source_revision: Revision::INITIAL,
+            title: "Group prompt".into(),
+            purpose: lettuce_conversations::PromptPurposeSnapshot::GroupConversational,
+        };
+        let patch =
+            |prompt: PatchValue<lettuce_conversations::PromptLaunchSnapshot>,
+             scene: PatchValue<lettuce_conversations::SceneLaunchSnapshot>| {
+                CurrentConversationSettingsPatch {
+                    author_note: PatchValue::Keep,
+                    memory: PatchValue::Keep,
+                    model_override: PatchValue::Keep,
+                    voice: PatchValue::Keep,
+                    prompt,
+                    lorebooks: PatchValue::Keep,
+                    persona: PatchValue::Keep,
+                    scene,
+                }
+            };
+        fixture
+            .database
+            .update_settings(
+                PreparedConversationSettingsUpdate::new(
+                    UpdateConversationSettings {
+                        conversation_id: fixture.conversation_id,
+                        expected_settings_revision: None,
+                        operation: token("group-settings-prompt", "34"),
+                        patch: patch(PatchValue::Set(prompt), PatchValue::Keep),
+                    },
+                    vec![prompt_draft],
+                )
+                .expect("prepared group prompt"),
+                TimestampMillis::new(20),
+            )
+            .expect("group prompt");
+
+        let scene_id = lettuce_types::SceneId::new();
+        let (scene_ref, scene_draft) = artifact(SnapshotSource::Scene(scene_id), b"group scene");
+        let scene = lettuce_conversations::SceneLaunchSnapshot {
+            snapshot_ref: scene_ref.clone(),
+            source_id: scene_id,
+            source_revision: Revision::INITIAL,
+            title: "Group scene".into(),
+        };
+        let result = fixture.database.update_settings(
+            PreparedConversationSettingsUpdate::new(
+                UpdateConversationSettings {
+                    conversation_id: fixture.conversation_id,
+                    expected_settings_revision: Some(Revision::INITIAL),
+                    operation: token("group-settings-scene", "56"),
+                    patch: patch(PatchValue::Keep, PatchValue::Set(scene)),
+                },
+                vec![scene_draft],
+            )
+            .expect("prepared group scene"),
+            TimestampMillis::new(21),
+        );
+        assert!(matches!(
+            result,
+            Err(ConversationRepositoryError::Invalid(_))
+        ));
+        let artifact_count: i64 = fixture
+            .database
+            .connection()
+            .expect("connection")
+            .query_row(
+                "SELECT count(*) FROM conversation_snapshot_artifacts WHERE artifact_id = ?1",
+                [scene_ref.artifact_id.to_string()],
+                |row| row.get(0),
+            )
+            .expect("scene rollback");
+        assert_eq!(artifact_count, 0);
     }
 
     #[test]
