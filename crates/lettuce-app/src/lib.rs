@@ -31,7 +31,7 @@ mod tests {
         ModelKind, ModelProfile, ModelProfileConfig, ModelProfileRepository, ProviderAccount,
         ProviderAccountRepository, ProviderConfig, ProviderProtocol,
     };
-    use lettuce_settings::{GlobalSettingsStore, HeaderName, SecretRef};
+    use lettuce_settings::{GlobalSettingsStore, HeaderName, SecretOwnerId, SecretRef};
     use lettuce_types::{
         ContentHash, MediaBlobId, ModelProfileId, ProviderAccountId, Revision, TimestampMillis,
     };
@@ -42,6 +42,7 @@ mod tests {
         let account_id = ProviderAccountId::new();
         let account = ProviderAccount {
             id: account_id,
+            secret_owner_id: SecretOwnerId::new(),
             provider_kind: "openrouter".into(),
             protocol: ProviderProtocol::OpenAiCompatible,
             label: "OpenRouter".into(),

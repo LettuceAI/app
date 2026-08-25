@@ -3458,8 +3458,8 @@ mod smoke_tests {
         let connection = database.connection().expect("database lock");
         connection
             .execute(
-                "INSERT INTO provider_accounts (id,provider_kind,protocol,label,endpoint,enabled,api_key_secret_ref,secret_headers_json,config_json,revision,created_at,updated_at) VALUES (?1,'test','open_ai_compatible','Test',NULL,1,NULL,'[]','{\"format_version\":1,\"value\":{\"kind\":\"standard\"}}',1,1,1)",
-                [provider_id.to_string()],
+                "INSERT INTO provider_accounts (id,provider_kind,protocol,label,endpoint,enabled,api_key_secret_ref,secret_owner_id,secret_headers_json,config_json,revision,created_at,updated_at) VALUES (?1,'test','open_ai_compatible','Test',NULL,1,NULL,?2,'[]','{\"format_version\":1,\"value\":{\"kind\":\"standard\"}}',1,1,1)",
+                rusqlite::params![provider_id.to_string(), lettuce_settings::SecretOwnerId::new().as_uuid().to_string()],
             )
             .expect("provider");
         connection

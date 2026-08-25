@@ -23,11 +23,11 @@ use lettuce_media::{
 use lettuce_models::{
     ModelDependencyReference, ModelKind, ModelProfile, ModelProfileRepository,
     ModelRepositoryError, ProviderAccount, ProviderAccountRepository, ProviderConfig,
-    ProviderProtocol, SecretHeader,
+    ProviderProtocol, SecretHeader, validate_provider_connection,
 };
 use lettuce_settings::{
     GLOBAL_SETTINGS_FORMAT_VERSION, GlobalSettings, GlobalSettingsStore, GlobalSettingsStoreError,
-    SecretRef, StoredGlobalSettings,
+    SecretOwnerId, SecretRef, StoredGlobalSettings,
 };
 use lettuce_types::{
     AssetId, ContentHash, MediaBlobId, ModelProfileId, Page, PageRequest, ProviderAccountId,
@@ -413,11 +413,18 @@ fn secret_ref_from_text(value: String) -> rusqlite::Result<SecretRef> {
         .map_err(|_| rusqlite::Error::InvalidQuery)
 }
 
+fn secret_owner_id_from_text(value: String) -> rusqlite::Result<SecretOwnerId> {
+    uuid::Uuid::parse_str(&value)
+        .map(SecretOwnerId::from_uuid)
+        .map_err(|_| rusqlite::Error::InvalidQuery)
+}
+
 fn provider_from_row(row: &Row<'_>) -> rusqlite::Result<ProviderAccount> {
-    let secret_headers: String = row.get(7)?;
-    let config: String = row.get(8)?;
-    Ok(ProviderAccount {
+    let secret_headers: String = row.get(8)?;
+    let config: String = row.get(9)?;
+    let account = ProviderAccount {
         id: parse_id(row.get(0)?)?,
+        secret_owner_id: secret_owner_id_from_text(row.get(7)?)?,
         provider_kind: row.get(1)?,
         protocol: parse_provider_protocol(&row.get::<_, String>(2)?)?,
         label: row.get(3)?,
@@ -430,10 +437,12 @@ fn provider_from_row(row: &Row<'_>) -> rusqlite::Result<ProviderAccount> {
         secret_headers: serde_json::from_str::<Vec<SecretHeader>>(&secret_headers)
             .map_err(|_| rusqlite::Error::InvalidQuery)?,
         config: decode_provider_config(&config).map_err(|_| rusqlite::Error::InvalidQuery)?,
-        revision: to_revision(row.get(9)?)?,
-        created_at: TimestampMillis::new(row.get(10)?),
-        updated_at: TimestampMillis::new(row.get(11)?),
-    })
+        revision: to_revision(row.get(10)?)?,
+        created_at: TimestampMillis::new(row.get(11)?),
+        updated_at: TimestampMillis::new(row.get(12)?),
+    };
+    validate_provider_connection(&account).map_err(|_| rusqlite::Error::InvalidQuery)?;
+    Ok(account)
 }
 
 fn model_error(error: rusqlite::Error) -> ModelRepositoryError {
@@ -467,7 +476,7 @@ fn model_dependency_sort_key(value: &ModelDependencyReference) -> (u8, String, S
 }
 
 fn validate_account(account: &ProviderAccount) -> Result<(), ModelRepositoryError> {
-    if account.provider_kind.trim().is_empty()
+    if validate_provider_connection(account).is_err()
         || account.label.trim().is_empty()
         || account.revision.get() == 0
     {
@@ -520,6 +529,25 @@ impl ProviderAccountRepository for Database {
             .connection()
             .map_err(|_| ModelRepositoryError::Storage)?;
         let changed = if let Some(expected) = expected_revision {
+            let stored = connection
+                .query_row(
+                    "SELECT secret_owner_id, revision FROM provider_accounts WHERE id=?1",
+                    [account.id.to_string()],
+                    |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+                )
+                .optional()
+                .map_err(model_error)?;
+            let Some((stored_owner, stored_revision)) = stored else {
+                return Err(ModelRepositoryError::StaleRevision);
+            };
+            if to_revision(stored_revision).map_err(model_error)? != expected {
+                return Err(ModelRepositoryError::StaleRevision);
+            }
+            if secret_owner_id_from_text(stored_owner).map_err(model_error)?
+                != account.secret_owner_id
+            {
+                return Err(ModelRepositoryError::InvalidData);
+            }
             let next = expected.next().map_err(|_| ModelRepositoryError::Storage)?;
             connection.execute(
                 "UPDATE provider_accounts SET provider_kind=?2, protocol=?3, label=?4, endpoint=?5, \
@@ -533,12 +561,13 @@ impl ProviderAccountRepository for Database {
         } else {
             connection.execute(
                 "INSERT INTO provider_accounts (id, provider_kind, protocol, label, endpoint, enabled, \
-                 api_key_secret_ref, secret_headers_json, config_json, revision, created_at, updated_at) \
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
+                 api_key_secret_ref, secret_owner_id, secret_headers_json, config_json, revision, created_at, updated_at) \
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
                 params![account.id.to_string(), account.provider_kind, provider_protocol_name(account.protocol),
                     account.label, account.endpoint, account.enabled, account.api_key_ref.map(|v| v.to_string()),
-                    headers, config, to_i64(account.revision.get()).map_err(model_error)?,
-                    account.created_at.get(), account.updated_at.get()],
+                    account.secret_owner_id.as_uuid().to_string(), headers, config,
+                    to_i64(account.revision.get()).map_err(model_error)?, account.created_at.get(),
+                    account.updated_at.get()],
             ).map_err(model_error)?
         };
         if changed == 0 {
@@ -547,7 +576,7 @@ impl ProviderAccountRepository for Database {
         connection
             .query_row(
                 "SELECT id, provider_kind, protocol, label, endpoint, enabled, api_key_secret_ref, \
-                 secret_headers_json, config_json, revision, created_at, updated_at \
+                 secret_owner_id, secret_headers_json, config_json, revision, created_at, updated_at \
                  FROM provider_accounts WHERE id=?1",
                 [account.id.to_string()],
                 provider_from_row,
@@ -562,7 +591,7 @@ impl ProviderAccountRepository for Database {
             .map_err(|_| ModelRepositoryError::Storage)?
             .query_row(
                 "SELECT id, provider_kind, protocol, label, endpoint, enabled, api_key_secret_ref, \
-                 secret_headers_json, config_json, revision, created_at, updated_at \
+                 secret_owner_id, secret_headers_json, config_json, revision, created_at, updated_at \
                  FROM provider_accounts WHERE id=?1",
                 [id.to_string()],
                 provider_from_row,
@@ -1485,6 +1514,7 @@ mod tests {
         let id = ProviderAccountId::new();
         ProviderAccount {
             id,
+            secret_owner_id: SecretOwnerId::new(),
             provider_kind: "openrouter".into(),
             protocol: ProviderProtocol::OpenAiCompatible,
             label: "OpenRouter".into(),
@@ -2173,17 +2203,75 @@ mod tests {
                 .all(|name| !columns.iter().any(|column| column == name))
         );
         assert!(columns.iter().any(|column| column == "api_key_secret_ref"));
+        assert!(columns.iter().any(|column| column == "secret_owner_id"));
         drop(connection);
 
         let purpose = SecretPurpose::ProviderApiKey {
-            owner: SecretOwnerId::from_uuid(expected.id.as_uuid()),
+            owner: stored.secret_owner_id,
         };
-        assert!(matches!(purpose, SecretPurpose::ProviderApiKey { .. }));
+        assert_eq!(
+            purpose,
+            SecretPurpose::ProviderApiKey {
+                owner: expected.secret_owner_id
+            }
+        );
 
         assert!(matches!(
             ProviderAccountRepository::upsert(&database, expected, None),
             Err(ModelRepositoryError::AlreadyExists)
         ));
+    }
+
+    #[test]
+    fn provider_secret_owner_is_unique_and_creation_only() {
+        let database = Database::open_in_memory().expect("open database");
+        let original =
+            ProviderAccountRepository::upsert(&database, provider(), None).expect("insert account");
+
+        let mut duplicate = provider();
+        duplicate.secret_owner_id = original.secret_owner_id;
+        assert_eq!(
+            ProviderAccountRepository::upsert(&database, duplicate, None),
+            Err(ModelRepositoryError::AlreadyExists)
+        );
+
+        let mut same_owner = original.clone();
+        same_owner.label = "Updated account".into();
+        let updated =
+            ProviderAccountRepository::upsert(&database, same_owner, Some(original.revision))
+                .expect("same owner CAS update");
+        assert_eq!(updated.secret_owner_id, original.secret_owner_id);
+        assert_eq!(
+            updated.revision,
+            original.revision.next().expect("next revision")
+        );
+
+        let mut changed_owner = updated.clone();
+        changed_owner.secret_owner_id = SecretOwnerId::new();
+        changed_owner.label = "Must not write".into();
+        assert_eq!(
+            ProviderAccountRepository::upsert(&database, changed_owner, Some(updated.revision)),
+            Err(ModelRepositoryError::InvalidData)
+        );
+        assert_eq!(
+            ProviderAccountRepository::get(&database, updated.id)
+                .expect("read account")
+                .expect("account exists"),
+            updated
+        );
+
+        let mut stale = updated.clone();
+        stale.label = "Stale write".into();
+        assert_eq!(
+            ProviderAccountRepository::upsert(&database, stale, Some(original.revision)),
+            Err(ModelRepositoryError::StaleRevision)
+        );
+        assert_eq!(
+            ProviderAccountRepository::get(&database, updated.id)
+                .expect("read account")
+                .expect("account exists"),
+            updated
+        );
     }
 
     #[test]
@@ -2274,6 +2362,44 @@ mod tests {
     }
 
     #[test]
+    fn provider_secret_owner_corruption_is_rejected() {
+        let database = Database::open_in_memory().expect("open database");
+        let account =
+            ProviderAccountRepository::upsert(&database, provider(), None).expect("insert account");
+        let connection = database.connection().expect("database lock");
+        connection
+            .execute(
+                "UPDATE provider_accounts SET secret_owner_id='not-a-uuid' WHERE id=?1",
+                [account.id.to_string()],
+            )
+            .expect("corrupt provider owner");
+        drop(connection);
+        assert_eq!(
+            ProviderAccountRepository::get(&database, account.id),
+            Err(ModelRepositoryError::InvalidData)
+        );
+    }
+
+    #[test]
+    fn provider_endpoint_corruption_is_rejected() {
+        let database = Database::open_in_memory().expect("open database");
+        let account =
+            ProviderAccountRepository::upsert(&database, provider(), None).expect("insert account");
+        let connection = database.connection().expect("database lock");
+        connection
+            .execute(
+                "UPDATE provider_accounts SET endpoint='https://user:canary-secret-value@example.invalid' WHERE id=?1",
+                [account.id.to_string()],
+            )
+            .expect("corrupt provider endpoint");
+        drop(connection);
+        assert_eq!(
+            ProviderAccountRepository::get(&database, account.id),
+            Err(ModelRepositoryError::InvalidData)
+        );
+    }
+
+    #[test]
     fn model_profile_config_corruption_is_rejected() {
         let database = Database::open_in_memory().expect("open database");
         let account =
@@ -2348,6 +2474,26 @@ mod tests {
             ProviderAccountRepository::upsert(&database, invalid, None),
             Err(ModelRepositoryError::InvalidData)
         );
+        let mut invalid = provider();
+        invalid.provider_kind = "x".repeat(129);
+        assert_eq!(
+            ProviderAccountRepository::upsert(&database, invalid, None),
+            Err(ModelRepositoryError::InvalidData)
+        );
+        for endpoint in [
+            "https://user:password@example.invalid",
+            "https://example.invalid/api?token=canary-secret-value",
+            "https://example.invalid/api#fragment",
+            "ftp://example.invalid/api",
+        ] {
+            let mut invalid = provider();
+            invalid.endpoint = Some(endpoint.into());
+            assert_eq!(
+                ProviderAccountRepository::upsert(&database, invalid, None),
+                Err(ModelRepositoryError::InvalidData),
+                "endpoint should be rejected: {endpoint}"
+            );
+        }
         let mut invalid_profile = profile(missing);
         invalid_profile.config.capabilities.format_version = 0;
         assert_eq!(

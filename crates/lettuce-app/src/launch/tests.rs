@@ -22,7 +22,7 @@ use lettuce_models::{
     ModelKind, ModelProfile, ModelProfileConfig, ModelProfileRepository, ProviderAccount,
     ProviderAccountRepository, ProviderConfig, ProviderProtocol,
 };
-use lettuce_settings::GlobalSettingsStore;
+use lettuce_settings::{GlobalSettingsStore, SecretOwnerId};
 use lettuce_types::{
     CharacterId, ConversationStarterId, GroupId, LorebookId, ModelProfileId, PersonaId,
     ProviderAccountId, Revision, SceneId, SceneVariantId, StarterMessageId, TimestampMillis,
@@ -235,6 +235,7 @@ fn seed_model_with(
         database,
         ProviderAccount {
             id: ProviderAccountId::new(),
+            secret_owner_id: SecretOwnerId::new(),
             provider_kind: kind_label.into(),
             protocol,
             label: "Account".into(),

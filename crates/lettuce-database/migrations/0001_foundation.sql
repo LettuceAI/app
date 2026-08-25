@@ -1,11 +1,12 @@
 CREATE TABLE provider_accounts (
     id TEXT PRIMARY KEY,
-    provider_kind TEXT NOT NULL CHECK (length(trim(provider_kind)) > 0),
+    provider_kind TEXT NOT NULL CHECK (length(trim(provider_kind)) > 0 AND length(CAST(provider_kind AS BLOB)) <= 128),
     protocol TEXT NOT NULL CHECK (protocol IN ('open_ai_compatible','anthropic','gemini','ollama','llama_cpp','stable_diffusion')),
     label TEXT NOT NULL CHECK (length(trim(label)) > 0),
     endpoint TEXT,
     enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
     api_key_secret_ref TEXT,
+    secret_owner_id TEXT NOT NULL UNIQUE,
     secret_headers_json TEXT NOT NULL,
     config_json TEXT NOT NULL,
     revision INTEGER NOT NULL CHECK (revision >= 1),

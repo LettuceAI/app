@@ -10,11 +10,15 @@ pub use capabilities::*;
 pub use parameters::*;
 pub use resolution::*;
 
-use lettuce_settings::{HeaderName, SecretRef};
+use lettuce_settings::{HeaderName, SecretOwnerId, SecretRef};
 use lettuce_types::{
     CharacterId, GroupId, ModelProfileId, ProviderAccountId, Revision, TimestampMillis,
 };
 use serde::{Deserialize, Serialize};
+
+const MAX_PROVIDER_KIND_BYTES: usize = 128;
+const MAX_PROVIDER_ENDPOINT_BYTES: usize = 4096;
+const MAX_PROVIDER_PATH_BYTES: usize = 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -58,6 +62,7 @@ pub enum CustomAuth {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProviderAccount {
     pub id: ProviderAccountId,
+    pub secret_owner_id: SecretOwnerId,
     pub provider_kind: String,
     pub protocol: ProviderProtocol,
     pub label: String,
@@ -69,6 +74,87 @@ pub struct ProviderAccount {
     pub revision: Revision,
     pub created_at: TimestampMillis,
     pub updated_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProviderConnectionValidationError {
+    ProviderKind,
+    Endpoint,
+    Path,
+}
+
+/// Validates the non-secret connection metadata shared by storage and
+/// resolution. Secret values are deliberately outside this contract.
+pub fn validate_provider_connection(
+    account: &ProviderAccount,
+) -> Result<(), ProviderConnectionValidationError> {
+    if account.provider_kind.trim().is_empty()
+        || account.provider_kind.len() > MAX_PROVIDER_KIND_BYTES
+    {
+        return Err(ProviderConnectionValidationError::ProviderKind);
+    }
+    if let Some(endpoint) = account.endpoint.as_deref() {
+        validate_endpoint(endpoint)?;
+    }
+    if let ProviderConfig::Custom {
+        chat_path,
+        models_path,
+        ..
+    } = &account.config
+    {
+        validate_path(chat_path)?;
+        if let Some(models_path) = models_path {
+            validate_path(models_path)?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_endpoint(endpoint: &str) -> Result<(), ProviderConnectionValidationError> {
+    if endpoint.trim() != endpoint
+        || endpoint.is_empty()
+        || endpoint.len() > MAX_PROVIDER_ENDPOINT_BYTES
+        || endpoint
+            .chars()
+            .any(|character| character.is_control() || character.is_whitespace())
+        || endpoint.contains(['?', '#'])
+    {
+        return Err(ProviderConnectionValidationError::Endpoint);
+    }
+    let Some(scheme_end) = endpoint.find("://") else {
+        return Err(ProviderConnectionValidationError::Endpoint);
+    };
+    if !matches!(
+        &endpoint[..scheme_end],
+        scheme if scheme.eq_ignore_ascii_case("http") || scheme.eq_ignore_ascii_case("https")
+    ) {
+        return Err(ProviderConnectionValidationError::Endpoint);
+    }
+    let authority_start = scheme_end + 3;
+    let authority_end = endpoint[authority_start..]
+        .find('/')
+        .map_or(endpoint.len(), |offset| authority_start + offset);
+    let authority = &endpoint[authority_start..authority_end];
+    if authority.is_empty() || authority.contains('@') {
+        return Err(ProviderConnectionValidationError::Endpoint);
+    }
+    Ok(())
+}
+
+fn validate_path(path: &str) -> Result<(), ProviderConnectionValidationError> {
+    if path.trim() != path
+        || path.is_empty()
+        || path.len() > MAX_PROVIDER_PATH_BYTES
+        || !path.starts_with('/')
+        || path.starts_with("//")
+        || path.contains(['?', '#'])
+        || path
+            .chars()
+            .any(|character| character.is_control() || character.is_whitespace())
+    {
+        return Err(ProviderConnectionValidationError::Path);
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

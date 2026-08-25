@@ -6,7 +6,7 @@ use crate::{
     CapabilityStatus, ChatParameterOverrides, ChatParameterProfile, ModelCapabilities, ModelKind,
     ModelProfile, ParameterOverride, ParameterSupport, ParameterValidationError, PromptCaching,
     ProviderAccount, ProviderConfig, ProviderProtocol, ReasoningEffort, ReasoningMode,
-    SecretHeader,
+    SecretHeader, validate_provider_connection,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -106,8 +106,12 @@ pub struct ResolvedChatProfile {
     pub model_revision: Revision,
     pub provider_account_id: ProviderAccountId,
     pub provider_account_revision: Revision,
+    pub secret_owner_id: lettuce_settings::SecretOwnerId,
     pub external_model_id: String,
+    pub provider_kind: String,
     pub provider_protocol: ProviderProtocol,
+    pub endpoint: Option<String>,
+    pub provider_config: ProviderConfig,
     pub capabilities: ModelCapabilities,
     pub parameters: ResolvedChatParameters,
     pub api_key_ref: Option<lettuce_settings::SecretRef>,
@@ -189,6 +193,8 @@ pub enum ChatProfileResolutionError {
     InvalidParameter { field: &'static str },
     #[error("model capabilities are invalid")]
     InvalidCapabilities,
+    #[error("provider connection metadata is invalid")]
+    InvalidConnection,
     #[error("completion allowance overflowed")]
     CompletionAllowanceOverflow,
 }
@@ -201,6 +207,8 @@ pub fn resolve_chat_profile(
     requirements: &ChatRequirements,
 ) -> Result<ResolvedChatProfile, ChatProfileResolutionError> {
     validate_identity(expected, profile, account)?;
+    validate_provider_connection(account)
+        .map_err(|_| ChatProfileResolutionError::InvalidConnection)?;
     if !account.enabled {
         return Err(ChatProfileResolutionError::AccountDisabled);
     }
@@ -232,8 +240,12 @@ pub fn resolve_chat_profile(
         model_revision: profile.revision,
         provider_account_id: account.id,
         provider_account_revision: account.revision,
+        secret_owner_id: account.secret_owner_id,
         external_model_id: profile.external_model_id.clone(),
+        provider_kind: account.provider_kind.clone(),
         provider_protocol: account.protocol,
+        endpoint: account.endpoint.clone(),
+        provider_config: account.config.clone(),
         capabilities: capabilities.clone(),
         parameters,
         api_key_ref: account.api_key_ref,
@@ -697,7 +709,7 @@ mod tests {
         CapabilityEvidence, CapabilityEvidenceSource, ModalityCapabilities, ProviderConfig,
         SecretHeader,
     };
-    use lettuce_settings::{HeaderName, SecretRef};
+    use lettuce_settings::{HeaderName, SecretOwnerId, SecretRef};
     use lettuce_types::{Revision, TimestampMillis};
 
     fn fixture() -> (ExpectedModelIdentity, ModelProfile, ProviderAccount) {
@@ -750,6 +762,7 @@ mod tests {
         };
         let account = ProviderAccount {
             id: provider_account_id,
+            secret_owner_id: SecretOwnerId::new(),
             provider_kind: "test".into(),
             protocol: ProviderProtocol::OpenAiCompatible,
             label: "Test account".into(),
@@ -800,9 +813,16 @@ mod tests {
         assert_eq!(resolved.parameters.temperature, Some(0.9));
         assert_eq!(resolved.parameters.reasoning_budget_tokens, Some(2_048));
         assert_eq!(resolved.parameters.total_completion_allowance, Some(2_148));
+        assert_eq!(resolved.provider_kind, account.provider_kind);
+        assert_eq!(resolved.endpoint, account.endpoint);
+        assert_eq!(resolved.provider_config, account.config);
+        assert_eq!(resolved.secret_owner_id, account.secret_owner_id);
         let encoded = serde_json::to_string(&resolved).expect("resolved encode");
-        assert!(!encoded.contains("example.invalid"));
+        assert!(encoded.contains("example.invalid"));
         assert!(encoded.contains("api_key_ref"));
+        assert!(encoded.contains("secret_owner_id"));
+        assert!(encoded.contains("provider_kind"));
+        assert!(encoded.contains("provider_config"));
         assert!(format!("{resolved:?}").contains(&account.api_key_ref.expect("key").to_string()));
         assert!(!encoded.contains("canary-secret-value"));
         assert!(!format!("{resolved:?}").contains("canary-secret-value"));
@@ -874,6 +894,83 @@ mod tests {
                 requirement: CredentialRequirement::ApiKey
             })
         ));
+    }
+
+    #[test]
+    fn connection_metadata_rejects_endpoint_credentials_queries_and_bad_paths() {
+        let (expected, profile, account) = fixture();
+        for endpoint in [
+            "https://user:password@example.invalid",
+            "https://example.invalid/api?token=canary-secret-value",
+            "https://example.invalid/api#fragment",
+            "ftp://example.invalid/api",
+        ] {
+            let mut invalid = account.clone();
+            invalid.endpoint = Some(endpoint.into());
+            let error = resolve_chat_profile(
+                &expected,
+                &profile,
+                &invalid,
+                &ChatParameterResolutionInput::default(),
+                &ChatRequirements::default(),
+            )
+            .expect_err("invalid endpoint must be rejected");
+            assert!(matches!(
+                error,
+                ChatProfileResolutionError::InvalidConnection
+            ));
+            assert!(!format!("{error:?}").contains("canary-secret-value"));
+        }
+
+        let mut accepted = account.clone();
+        accepted.endpoint = Some("https://example.invalid/api/@v1".into());
+        assert!(
+            resolve_chat_profile(
+                &expected,
+                &profile,
+                &accepted,
+                &ChatParameterResolutionInput::default(),
+                &ChatRequirements::default(),
+            )
+            .is_ok()
+        );
+        accepted.config = ProviderConfig::Custom {
+            chat_path: "/v1/users/@me".into(),
+            models_path: Some("/models/@all".into()),
+            streaming: true,
+            auth: crate::CustomAuth::Bearer,
+        };
+        assert!(
+            resolve_chat_profile(
+                &expected,
+                &profile,
+                &accepted,
+                &ChatParameterResolutionInput::default(),
+                &ChatRequirements::default(),
+            )
+            .is_ok()
+        );
+
+        let mut invalid = account;
+        invalid.config = ProviderConfig::Custom {
+            chat_path: "/chat/completions?token=canary-secret-value".into(),
+            models_path: Some("/models".into()),
+            streaming: true,
+            auth: crate::CustomAuth::Bearer,
+        };
+        let error = resolve_chat_profile(
+            &expected,
+            &profile,
+            &invalid,
+            &ChatParameterResolutionInput::default(),
+            &ChatRequirements::default(),
+        )
+        .expect_err("invalid provider path must be rejected");
+        assert!(matches!(
+            error,
+            ChatProfileResolutionError::InvalidConnection
+        ));
+        assert!(!format!("{error:?}").contains("canary-secret-value"));
     }
 
     #[test]
