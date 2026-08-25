@@ -13,6 +13,10 @@ use crate::commands::{
     SelectBranch, SendConversation, SettleCancellation, TombstoneMessage, UpdateMessageFlags,
 };
 use crate::content::{Message, MessageCandidate, MessagePart, MessageRevision, ReplayArtifactRef};
+use crate::document::{
+    CharacterSnapshotBodyV1, LorebookSnapshotBodyV1, PersonaSnapshotBodyV1, PromptSnapshotBodyV1,
+    SceneSnapshotBodyV1,
+};
 use crate::error::ConversationRepositoryError;
 #[allow(unused_imports)]
 pub use crate::generation::GenerationTarget;
@@ -21,7 +25,10 @@ use crate::generation::{
     GenerationOperation, GenerationTurn, IdempotencyKey,
 };
 use crate::model::{Conversation, ConversationAggregate, ConversationBranch};
-use crate::snapshot::{GroupConversationDetails, ModelSelectionSnapshot};
+use crate::snapshot::{
+    CharacterLaunchSnapshot, GroupConversationDetails, LorebookLaunchSnapshot,
+    ModelSelectionSnapshot, PersonaLaunchSnapshot, PromptLaunchSnapshot, SceneLaunchSnapshot,
+};
 
 /// A bounded keyset result.  Implementations must never fetch more than the
 /// caller's `PageRequest.limit` and should return an opaque continuation token.
@@ -972,6 +979,37 @@ pub trait ConversationReader: Send + Sync {
         conversation_id: ConversationId,
         page: &PageRequest,
     ) -> Result<KeysetPage<ConversationOutboxRecord>, ConversationRepositoryError>;
+}
+
+/// Materializes one protected launch snapshot through the conversation's
+/// ownership reference. Implementations must read the reference and artifact
+/// from the same storage snapshot and must never resolve live source rows.
+pub trait ConversationSnapshotMaterializer: Send + Sync {
+    fn materialize_character(
+        &self,
+        conversation_id: ConversationId,
+        snapshot: &CharacterLaunchSnapshot,
+    ) -> Result<CharacterSnapshotBodyV1, crate::ArtifactError>;
+    fn materialize_persona(
+        &self,
+        conversation_id: ConversationId,
+        snapshot: &PersonaLaunchSnapshot,
+    ) -> Result<PersonaSnapshotBodyV1, crate::ArtifactError>;
+    fn materialize_scene(
+        &self,
+        conversation_id: ConversationId,
+        snapshot: &SceneLaunchSnapshot,
+    ) -> Result<SceneSnapshotBodyV1, crate::ArtifactError>;
+    fn materialize_prompt(
+        &self,
+        conversation_id: ConversationId,
+        snapshot: &PromptLaunchSnapshot,
+    ) -> Result<PromptSnapshotBodyV1, crate::ArtifactError>;
+    fn materialize_lorebook(
+        &self,
+        conversation_id: ConversationId,
+        snapshot: &LorebookLaunchSnapshot,
+    ) -> Result<LorebookSnapshotBodyV1, crate::ArtifactError>;
 }
 
 pub trait ConversationCreator: ConversationReader {

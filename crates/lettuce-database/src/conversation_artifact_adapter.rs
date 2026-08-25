@@ -8,12 +8,16 @@ use std::str::FromStr;
 
 use blake3::Hash;
 use lettuce_conversations::{
-    ArtifactCodec, ArtifactError, ArtifactRetention, ConversationArtifactStore,
-    ConversationArtifactTransferPort, ProtectedSnapshotRef, ReplayArtifactDraft, ReplayArtifactRef,
-    ReplayCodec, ReplayRetention, SnapshotArtifactDraft, SnapshotSource, TrustedArtifactDescriptor,
-    TrustedArtifactSink,
+    ArtifactCodec, ArtifactError, ArtifactRetention, CharacterLaunchSnapshot,
+    CharacterSnapshotBodyV1, ConversationArtifactStore, ConversationArtifactTransferPort,
+    ConversationSnapshotMaterializer, LorebookLaunchSnapshot, LorebookSnapshotBodyV1,
+    PersonaLaunchSnapshot, PersonaSnapshotBodyV1, PromptLaunchSnapshot, PromptSnapshotBodyV1,
+    ProtectedSnapshotRef, ReplayArtifactDraft, ReplayArtifactRef, ReplayCodec, ReplayRetention,
+    SNAPSHOT_DOCUMENT_FORMAT_V1, SceneLaunchSnapshot, SceneSnapshotBodyV1, SnapshotArtifactDraft,
+    SnapshotDocumentBody, SnapshotSource, TrustedArtifactDescriptor, TrustedArtifactSink,
+    decode_snapshot_document,
 };
-use lettuce_types::{ContentHash, ReplayArtifactId, Revision, SnapshotArtifactId};
+use lettuce_types::{ContentHash, ConversationId, ReplayArtifactId, Revision, SnapshotArtifactId};
 use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
 use zeroize::Zeroizing;
 
@@ -307,6 +311,192 @@ pub(crate) fn verify_replay_in_transaction(
         return Err(ArtifactError::Storage);
     }
     verify_payload(&bytes, &stored_digest, reference.byte_size)
+}
+
+fn materialization_reference_error() -> ArtifactError {
+    ArtifactError::InvalidReference(lettuce_conversations::ValidationError::InvalidReference {
+        field: "conversation_snapshot.materialization",
+    })
+}
+
+fn materialize_snapshot<T: SnapshotDocumentBody>(
+    database: &Database,
+    conversation_id: ConversationId,
+    reference: &ProtectedSnapshotRef,
+    expected_source: SnapshotSource,
+) -> Result<T, ArtifactError> {
+    reference
+        .validate()
+        .map_err(|_| materialization_reference_error())?;
+    if reference.source != expected_source {
+        return Err(materialization_reference_error());
+    }
+
+    let mut connection = database.connection().map_err(|_| ArtifactError::Storage)?;
+    let transaction = connection
+        .transaction_with_behavior(TransactionBehavior::Deferred)
+        .map_err(db_error)?;
+    let row: Option<SnapshotStoredRow> = transaction
+        .query_row(
+            "SELECT artifact.source_kind, artifact.source_id, artifact.source_revision, artifact.digest, artifact.schema_version, artifact.byte_size, artifact.codec, artifact.retention, artifact.bytes FROM conversation_snapshot_refs AS reference JOIN conversation_snapshot_artifacts AS artifact ON artifact.artifact_id = reference.artifact_id WHERE reference.conversation_id = ?1 AND reference.artifact_id = ?2",
+            params![conversation_id.to_string(), reference.artifact_id.to_string()],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                    row.get(6)?,
+                    row.get(7)?,
+                    row.get(8)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(db_error)?;
+    let Some((
+        source_kind,
+        source_id,
+        source_revision,
+        digest,
+        schema,
+        size,
+        codec,
+        retention,
+        bytes,
+    )) = row
+    else {
+        return Err(ArtifactError::NotFound);
+    };
+
+    if source_revision < 1 || schema != i64::from(SNAPSHOT_DOCUMENT_FORMAT_V1) || size < 1 {
+        return Err(ArtifactError::Storage);
+    }
+    if codec_from_name(&codec)? != ArtifactCodec::Json
+        || retention_from_name(&retention)? != ArtifactRetention::Conversation
+    {
+        return Err(ArtifactError::Storage);
+    }
+    let stored_source = source_from_parts(&source_kind, &source_id)?;
+    let stored_digest = ContentHash::parse(&digest).map_err(|_| ArtifactError::Storage)?;
+    let stored_reference = ProtectedSnapshotRef {
+        source: stored_source,
+        source_revision: Revision::new(
+            u64::try_from(source_revision).map_err(|_| ArtifactError::Storage)?,
+        ),
+        artifact_id: reference.artifact_id,
+        digest: stored_digest.clone(),
+        schema_version: u32::try_from(schema).map_err(|_| ArtifactError::Storage)?,
+        byte_size: u64::try_from(size).map_err(|_| ArtifactError::Storage)?,
+    };
+    if stored_reference != *reference {
+        return Err(ArtifactError::ImmutableConflict);
+    }
+    if stored_source != expected_source {
+        return Err(materialization_reference_error());
+    }
+
+    let bytes = Zeroizing::new(bytes);
+    verify_payload(&bytes, &stored_digest, stored_reference.byte_size)?;
+    let envelope = match decode_snapshot_document::<T>(&bytes, T::KIND) {
+        Ok(envelope) => envelope,
+        Err(ArtifactError::InvalidReference(_)) => {
+            return Err(materialization_reference_error());
+        }
+        Err(error) => return Err(error),
+    };
+    if envelope.source != expected_source
+        || envelope.source_revision != stored_reference.source_revision
+    {
+        return Err(materialization_reference_error());
+    }
+    let payload = envelope.payload;
+    transaction.commit().map_err(db_error)?;
+    Ok(payload)
+}
+
+impl ConversationSnapshotMaterializer for Database {
+    fn materialize_character(
+        &self,
+        conversation_id: ConversationId,
+        snapshot: &CharacterLaunchSnapshot,
+    ) -> Result<CharacterSnapshotBodyV1, ArtifactError> {
+        snapshot
+            .validate()
+            .map_err(|_| materialization_reference_error())?;
+        materialize_snapshot(
+            self,
+            conversation_id,
+            &snapshot.snapshot_ref,
+            SnapshotSource::Character(snapshot.source_id),
+        )
+    }
+
+    fn materialize_persona(
+        &self,
+        conversation_id: ConversationId,
+        snapshot: &PersonaLaunchSnapshot,
+    ) -> Result<PersonaSnapshotBodyV1, ArtifactError> {
+        snapshot
+            .validate()
+            .map_err(|_| materialization_reference_error())?;
+        materialize_snapshot(
+            self,
+            conversation_id,
+            &snapshot.snapshot_ref,
+            SnapshotSource::Persona(snapshot.source_id),
+        )
+    }
+
+    fn materialize_scene(
+        &self,
+        conversation_id: ConversationId,
+        snapshot: &SceneLaunchSnapshot,
+    ) -> Result<SceneSnapshotBodyV1, ArtifactError> {
+        snapshot
+            .validate()
+            .map_err(|_| materialization_reference_error())?;
+        materialize_snapshot(
+            self,
+            conversation_id,
+            &snapshot.snapshot_ref,
+            SnapshotSource::Scene(snapshot.source_id),
+        )
+    }
+
+    fn materialize_prompt(
+        &self,
+        conversation_id: ConversationId,
+        snapshot: &PromptLaunchSnapshot,
+    ) -> Result<PromptSnapshotBodyV1, ArtifactError> {
+        snapshot
+            .validate()
+            .map_err(|_| materialization_reference_error())?;
+        materialize_snapshot(
+            self,
+            conversation_id,
+            &snapshot.snapshot_ref,
+            SnapshotSource::Prompt(snapshot.source_id),
+        )
+    }
+
+    fn materialize_lorebook(
+        &self,
+        conversation_id: ConversationId,
+        snapshot: &LorebookLaunchSnapshot,
+    ) -> Result<LorebookSnapshotBodyV1, ArtifactError> {
+        snapshot
+            .validate()
+            .map_err(|_| materialization_reference_error())?;
+        materialize_snapshot(
+            self,
+            conversation_id,
+            &snapshot.snapshot_ref,
+            SnapshotSource::Lorebook(snapshot.source_id),
+        )
+    }
 }
 
 impl ConversationArtifactStore for Database {
@@ -603,10 +793,19 @@ fn export_replay(
 mod tests {
     use super::*;
     use lettuce_conversations::{
-        ConversationArtifactStore, ConversationArtifactTransferPort, ProtectedArtifactBytes,
-        TrustedArtifactDescriptor,
+        CharacterLaunchSnapshot, CharacterSnapshotBodyV1, ConversationArtifactStore,
+        ConversationArtifactTransferPort, ConversationSnapshotMaterializer, DetectionPolicyV1,
+        InteractionModeV1, LorebookBehaviorVersionV1, LorebookLaunchSnapshot,
+        LorebookSnapshotBodyV1, MemoryPolicyV1, PersonaLaunchSnapshot, PersonaSnapshotBodyV1,
+        PromptBehaviorVersionV1, PromptLaunchSnapshot, PromptPurposeSnapshot, PromptPurposeV1,
+        PromptSnapshotBodyV1, ProtectedArtifactBytes, SceneLaunchSnapshot, SceneOwnerV1,
+        SceneSnapshotBodyV1, SnapshotDocumentBody, SnapshotEnvelopeV1, SnapshotSource,
+        TrustedArtifactDescriptor, build_snapshot_draft,
     };
-    use lettuce_types::{CharacterId, ConversationBranchId, ConversationId};
+    use lettuce_types::{
+        CharacterId, ConversationBranchId, ConversationId, LorebookId, PersonaId, PromptDocumentId,
+        SceneId,
+    };
 
     fn replay_draft(artifact_id: ReplayArtifactId, payload: &[u8]) -> ReplayArtifactDraft {
         let bytes = ProtectedArtifactBytes::new(payload.to_vec()).expect("payload");
@@ -634,6 +833,355 @@ mod tests {
             retention: ArtifactRetention::Conversation,
             bytes,
         }
+    }
+
+    fn character_body(id: CharacterId) -> CharacterSnapshotBodyV1 {
+        CharacterSnapshotBodyV1 {
+            character_id: id,
+            name: "Ada".into(),
+            nickname: None,
+            description: None,
+            definition: None,
+            design_description: None,
+            interaction_mode: InteractionModeV1::Roleplay,
+            memory_policy: MemoryPolicyV1::Manual,
+            model_profile_id: None,
+            default_scene_id: None,
+            default_starter_id: None,
+            direct_prompt_id: None,
+            group_conversation_prompt_id: None,
+            group_roleplay_prompt_id: None,
+            voice: None,
+            voice_autoplay: false,
+            image_recommendation: None,
+            media: Vec::new(),
+            presentation_asset_ids: Vec::new(),
+        }
+    }
+
+    fn persona_body(id: PersonaId) -> PersonaSnapshotBodyV1 {
+        PersonaSnapshotBodyV1 {
+            persona_id: id,
+            title: "Writer".into(),
+            description: "A careful writer".into(),
+            nickname: None,
+            design_description: None,
+            image_recommendation: None,
+            media: Vec::new(),
+        }
+    }
+
+    fn scene_body(id: SceneId) -> SceneSnapshotBodyV1 {
+        SceneSnapshotBodyV1 {
+            scene_id: id,
+            owner: SceneOwnerV1::Character(CharacterId::new()),
+            ordinal: 0,
+            content: Vec::new(),
+            direction: None,
+            selected_variant_id: None,
+            variants: Vec::new(),
+            assets: Vec::new(),
+        }
+    }
+
+    fn prompt_body(id: PromptDocumentId) -> PromptSnapshotBodyV1 {
+        PromptSnapshotBodyV1 {
+            prompt_id: id,
+            name: "Direct".into(),
+            purpose: PromptPurposeV1::DirectChat,
+            condense: false,
+            behavior_version: PromptBehaviorVersionV1::LegacyV1,
+            entries: Vec::new(),
+        }
+    }
+
+    fn lorebook_body(id: LorebookId) -> LorebookSnapshotBodyV1 {
+        LorebookSnapshotBodyV1 {
+            lorebook_id: id,
+            name: "Facts".into(),
+            detection_policy: DetectionPolicyV1::LatestUserMessage,
+            icon_asset_id: None,
+            behavior_version: LorebookBehaviorVersionV1::LegacyV1,
+            entries: Vec::new(),
+        }
+    }
+
+    fn attach_conversation(database: &Database, conversation_id: ConversationId) {
+        let branch_id = ConversationBranchId::new();
+        let mut connection = database.connection().expect("connection");
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .expect("transaction");
+        transaction
+            .execute(
+                "INSERT INTO conversations (id, kind, lifecycle, title, active_branch_id, kind_json, revision, created_at, updated_at) VALUES (?1, 'direct', 'active', 'Materializer', ?2, '{\"format_version\":1,\"value\":null}', 1, 0, 0)",
+                params![conversation_id.to_string(), branch_id.to_string()],
+            )
+            .expect("conversation");
+        transaction
+            .execute(
+                "INSERT INTO conversation_branches (conversation_id, id, status, revision, created_at, updated_at) VALUES (?1, ?2, 'active', 1, 0, 0)",
+                params![conversation_id.to_string(), branch_id.to_string()],
+            )
+            .expect("branch");
+        transaction.commit().expect("commit");
+    }
+
+    fn attach_snapshot<T: SnapshotDocumentBody>(
+        database: &Database,
+        conversation_id: ConversationId,
+        body: T,
+    ) -> ProtectedSnapshotRef {
+        let envelope = SnapshotEnvelopeV1::new(Revision::INITIAL, body).expect("envelope");
+        let draft = build_snapshot_draft(SnapshotArtifactId::new(), &envelope).expect("draft");
+        let reference = draft.reference();
+        database.put_snapshot(draft).expect("artifact");
+        let connection = database.connection().expect("connection");
+        connection
+            .execute(
+                "INSERT INTO conversation_snapshot_refs (conversation_id, artifact_id) VALUES (?1, ?2)",
+                params![conversation_id.to_string(), reference.artifact_id.to_string()],
+            )
+            .expect("reference");
+        reference
+    }
+
+    fn character_snapshot(
+        reference: ProtectedSnapshotRef,
+        source_id: CharacterId,
+    ) -> CharacterLaunchSnapshot {
+        CharacterLaunchSnapshot {
+            snapshot_ref: reference,
+            source_id,
+            source_revision: Revision::INITIAL,
+            name: "Ada".into(),
+            nickname: None,
+        }
+    }
+
+    #[test]
+    fn materializes_all_typed_v1_snapshots_from_attached_conversation() {
+        let database = Database::open_in_memory().expect("database");
+        let conversation_id = ConversationId::new();
+        attach_conversation(&database, conversation_id);
+
+        let character_id = CharacterId::new();
+        let character_reference =
+            attach_snapshot(&database, conversation_id, character_body(character_id));
+        let character = database
+            .materialize_character(
+                conversation_id,
+                &character_snapshot(character_reference, character_id),
+            )
+            .expect("character");
+        assert_eq!(character.character_id, character_id);
+
+        let persona_id = PersonaId::new();
+        let persona_reference =
+            attach_snapshot(&database, conversation_id, persona_body(persona_id));
+        let persona = database
+            .materialize_persona(
+                conversation_id,
+                &PersonaLaunchSnapshot {
+                    snapshot_ref: persona_reference,
+                    source_id: persona_id,
+                    source_revision: Revision::INITIAL,
+                    title: "Writer".into(),
+                    nickname: None,
+                    lorebooks: lettuce_conversations::SnapshotSelection::Disabled,
+                },
+            )
+            .expect("persona");
+        assert_eq!(persona.persona_id, persona_id);
+
+        let scene_id = SceneId::new();
+        let scene_reference = attach_snapshot(&database, conversation_id, scene_body(scene_id));
+        let scene = database
+            .materialize_scene(
+                conversation_id,
+                &SceneLaunchSnapshot {
+                    snapshot_ref: scene_reference,
+                    source_id: scene_id,
+                    source_revision: Revision::INITIAL,
+                    title: "Opening".into(),
+                },
+            )
+            .expect("scene");
+        assert_eq!(scene.scene_id, scene_id);
+
+        let prompt_id = PromptDocumentId::new();
+        let prompt_reference = attach_snapshot(&database, conversation_id, prompt_body(prompt_id));
+        let prompt = database
+            .materialize_prompt(
+                conversation_id,
+                &PromptLaunchSnapshot {
+                    snapshot_ref: prompt_reference,
+                    source_id: prompt_id,
+                    source_revision: Revision::INITIAL,
+                    title: "Direct".into(),
+                    purpose: PromptPurposeSnapshot::Direct,
+                },
+            )
+            .expect("prompt");
+        assert_eq!(prompt.prompt_id, prompt_id);
+
+        let lorebook_id = LorebookId::new();
+        let lorebook_reference =
+            attach_snapshot(&database, conversation_id, lorebook_body(lorebook_id));
+        let lorebook = database
+            .materialize_lorebook(
+                conversation_id,
+                &LorebookLaunchSnapshot {
+                    snapshot_ref: lorebook_reference,
+                    source_id: lorebook_id,
+                    source_revision: Revision::INITIAL,
+                    name: "Facts".into(),
+                },
+            )
+            .expect("lorebook");
+        assert_eq!(lorebook.lorebook_id, lorebook_id);
+    }
+
+    #[test]
+    fn materializer_denies_cross_conversation_artifact_access() {
+        let database = Database::open_in_memory().expect("database");
+        let owner = ConversationId::new();
+        let foreign = ConversationId::new();
+        attach_conversation(&database, owner);
+        attach_conversation(&database, foreign);
+        let source_id = CharacterId::new();
+        let reference = attach_snapshot(&database, owner, character_body(source_id));
+
+        assert_eq!(
+            database.materialize_character(foreign, &character_snapshot(reference, source_id)),
+            Err(ArtifactError::NotFound)
+        );
+    }
+
+    #[test]
+    fn materializer_rejects_wrong_wrapper_ownership() {
+        let database = Database::open_in_memory().expect("database");
+        let conversation_id = ConversationId::new();
+        attach_conversation(&database, conversation_id);
+        let source_id = CharacterId::new();
+        let reference = attach_snapshot(&database, conversation_id, character_body(source_id));
+        let wrong_source_id = CharacterId::new();
+
+        assert!(matches!(
+            database.materialize_character(
+                conversation_id,
+                &character_snapshot(reference, wrong_source_id),
+            ),
+            Err(ArtifactError::InvalidReference(
+                lettuce_conversations::ValidationError::InvalidReference {
+                    field: "conversation_snapshot.materialization"
+                }
+            ))
+        ));
+    }
+
+    #[test]
+    fn materializer_rejects_envelope_kind_mismatch() {
+        let database = Database::open_in_memory().expect("database");
+        let conversation_id = ConversationId::new();
+        attach_conversation(&database, conversation_id);
+        let character_id = CharacterId::new();
+        let envelope = SnapshotEnvelopeV1::new(Revision::INITIAL, persona_body(PersonaId::new()))
+            .expect("envelope");
+        let mut draft = build_snapshot_draft(SnapshotArtifactId::new(), &envelope).expect("draft");
+        draft.source = SnapshotSource::Character(character_id);
+        let reference = draft.reference();
+        database.put_snapshot(draft).expect("artifact");
+        let connection = database.connection().expect("connection");
+        connection
+            .execute(
+                "INSERT INTO conversation_snapshot_refs (conversation_id, artifact_id) VALUES (?1, ?2)",
+                params![conversation_id.to_string(), reference.artifact_id.to_string()],
+            )
+            .expect("reference");
+        drop(connection);
+
+        assert!(matches!(
+            database.materialize_character(
+                conversation_id,
+                &character_snapshot(reference, character_id),
+            ),
+            Err(ArtifactError::InvalidReference(
+                lettuce_conversations::ValidationError::InvalidReference {
+                    field: "conversation_snapshot.materialization"
+                }
+            ))
+        ));
+    }
+
+    #[test]
+    fn materializer_rejects_envelope_and_reference_revision_mismatch() {
+        let database = Database::open_in_memory().expect("database");
+        let conversation_id = ConversationId::new();
+        attach_conversation(&database, conversation_id);
+        let source_id = CharacterId::new();
+        let envelope = SnapshotEnvelopeV1::new(Revision::INITIAL, character_body(source_id))
+            .expect("envelope");
+        let mut draft = build_snapshot_draft(SnapshotArtifactId::new(), &envelope).expect("draft");
+        draft.source_revision = Revision::new(2);
+        let reference = draft.reference();
+        database.put_snapshot(draft).expect("artifact");
+        let connection = database.connection().expect("connection");
+        connection
+            .execute(
+                "INSERT INTO conversation_snapshot_refs (conversation_id, artifact_id) VALUES (?1, ?2)",
+                params![conversation_id.to_string(), reference.artifact_id.to_string()],
+            )
+            .expect("reference");
+        drop(connection);
+        let snapshot = CharacterLaunchSnapshot {
+            snapshot_ref: reference,
+            source_id,
+            source_revision: Revision::new(2),
+            name: "Ada".into(),
+            nickname: None,
+        };
+
+        assert!(matches!(
+            database.materialize_character(conversation_id, &snapshot),
+            Err(ArtifactError::InvalidReference(
+                lettuce_conversations::ValidationError::InvalidReference {
+                    field: "conversation_snapshot.materialization"
+                }
+            ))
+        ));
+    }
+
+    #[test]
+    fn materializer_detects_tampered_bytes() {
+        let database = Database::open_in_memory().expect("database");
+        let conversation_id = ConversationId::new();
+        attach_conversation(&database, conversation_id);
+        let source_id = CharacterId::new();
+        let reference = attach_snapshot(&database, conversation_id, character_body(source_id));
+        let connection = database.connection().expect("connection");
+        connection
+            .execute_batch("DROP TRIGGER conversation_snapshot_artifact_immutable_update")
+            .expect("drop immutability trigger");
+        connection
+            .pragma_update(None, "ignore_check_constraints", true)
+            .expect("ignore checks");
+        connection
+            .execute(
+                "UPDATE conversation_snapshot_artifacts SET bytes = X'00' WHERE artifact_id = ?1",
+                [reference.artifact_id.to_string()],
+            )
+            .expect("tamper");
+        connection
+            .pragma_update(None, "ignore_check_constraints", false)
+            .expect("restore checks");
+        drop(connection);
+
+        assert_eq!(
+            database
+                .materialize_character(conversation_id, &character_snapshot(reference, source_id),),
+            Err(ArtifactError::SizeMismatch)
+        );
     }
 
     #[derive(Default)]
