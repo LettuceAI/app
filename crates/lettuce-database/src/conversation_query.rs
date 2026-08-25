@@ -139,6 +139,7 @@ pub(crate) fn operation_kind(value: &str) -> Result<OperationKind, ConversationR
         "tombstone" => OperationKind::Tombstone,
         "archive" => OperationKind::Archive,
         "restore" => OperationKind::Restore,
+        "rename" => OperationKind::Rename,
         "participant_policy" => OperationKind::ParticipantPolicy,
         "settings" => OperationKind::Settings,
         "attach_job" => OperationKind::AttachJob,
@@ -700,6 +701,13 @@ pub(crate) fn validate_outbox_event_exact(
             )?;
         }
         ConversationOutboxEvent::ConversationLifecycleChanged { .. } => {
+            require_exists(
+                transaction,
+                "SELECT EXISTS(SELECT 1 FROM conversations WHERE id = ?1)",
+                params![conversation_id.to_string()],
+            )?;
+        }
+        ConversationOutboxEvent::TitleChanged { .. } => {
             require_exists(
                 transaction,
                 "SELECT EXISTS(SELECT 1 FROM conversations WHERE id = ?1)",
@@ -1827,6 +1835,7 @@ pub(crate) fn validate_outbox_event_timestamp(
         | ConversationOutboxEvent::MessageCommitted { at, .. }
         | ConversationOutboxEvent::MessageRevised { at, .. }
         | ConversationOutboxEvent::MessageTombstoned { at, .. }
+        | ConversationOutboxEvent::TitleChanged { at, .. }
         | ConversationOutboxEvent::TurnFailed { at, .. }
         | ConversationOutboxEvent::TurnInterrupted { at, .. }
         | ConversationOutboxEvent::TurnRecovering { at, .. }
@@ -2175,6 +2184,7 @@ pub(crate) fn validate_outbox_event(
             participant_id,
         )?,
         ConversationOutboxEvent::ConversationLifecycleChanged { .. }
+        | ConversationOutboxEvent::TitleChanged { .. }
         | ConversationOutboxEvent::SettingsChanged { .. } => {}
         ConversationOutboxEvent::ConversationTombstoned { .. } => {}
         ConversationOutboxEvent::AssetReferencesChanged {

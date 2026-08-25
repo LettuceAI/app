@@ -815,6 +815,27 @@ pub struct RestoreConversation {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct RenameConversation {
+    pub conversation_id: ConversationId,
+    pub expected_revision: Revision,
+    pub operation: OperationToken,
+    pub title: String,
+}
+
+impl RenameConversation {
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        validate_expected(self.expected_revision)?;
+        validate_text(
+            "conversation.title",
+            &self.title,
+            crate::validation::MAX_DISPLAY_CHARS * 4,
+            false,
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateParticipantPolicy {
     pub conversation_id: ConversationId,
     pub participant_id: ConversationParticipantId,
@@ -1115,6 +1136,7 @@ pub enum ConversationMutation {
     Tombstone(TombstoneMessage),
     Archive(ArchiveConversation),
     Restore(RestoreConversation),
+    Rename(RenameConversation),
     ParticipantPolicy(UpdateParticipantPolicy),
     Settings(UpdateConversationSettings),
 }
@@ -1165,6 +1187,7 @@ impl ConversationMutation {
             Self::Tombstone(command) => validate_expected(command.expected_revision),
             Self::Archive(command) => validate_expected(command.expected_revision),
             Self::Restore(command) => validate_expected(command.expected_revision),
+            Self::Rename(command) => command.validate(),
             Self::ParticipantPolicy(command) => validate_expected(command.expected_revision),
             Self::Settings(command) => command.validate(),
         }
@@ -1187,6 +1210,39 @@ fn validate_expected(revision: Revision) -> Result<(), ValidationError> {
         Err(ValidationError::ZeroRevision)
     } else {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rename_title_uses_conversation_bounds() {
+        let mut command = RenameConversation {
+            conversation_id: ConversationId::new(),
+            expected_revision: Revision::INITIAL,
+            operation: OperationToken {
+                key: IdempotencyKey::new("rename").expect("key"),
+                request_digest: ContentHash::parse("ab".repeat(32)).expect("digest"),
+            },
+            title: "   ".into(),
+        };
+        assert_eq!(
+            command.validate(),
+            Err(ValidationError::Blank {
+                field: "conversation.title"
+            })
+        );
+        command.title = "a".repeat(crate::validation::MAX_DISPLAY_CHARS * 4 + 1);
+        assert_eq!(
+            command.validate(),
+            Err(ValidationError::TooLarge {
+                field: "conversation.title"
+            })
+        );
+        command.title = "Renamed".into();
+        command.validate().expect("valid title");
     }
 }
 

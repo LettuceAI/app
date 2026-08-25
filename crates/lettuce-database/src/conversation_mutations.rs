@@ -23,13 +23,14 @@ use lettuce_conversations::{
     GenerationOperation, GenerationRecovery, GenerationRecoveryResult, GenerationTarget,
     GenerationTurn, GenerationTurnStatus, Message, MessageCandidate, MessagePart, OperationKind,
     OperationResultRef, OperationToken, ParticipantPolicyResult, RegenerateCandidate,
-    RegenerateCandidateResult, RequestCancellationResult, ResolveGroupSpeaker,
-    ResolveGroupSpeakerResult, RestoreConversation, RestoreConversationResult, RetryGeneration,
-    RetryGenerationResult, SelectBranch, SelectBranchResult, SelectedSpeakerDecision,
-    SendConversation, SendConversationResult, SettingsCasRequirement, SettingsResult,
-    SettleCancellation, SettleCancellationResult, SnapshotSelection, TombstoneMessage,
-    TombstoneMessageResult, TombstoneResult, UpdateConversationSettings, UpdateMessageFlags,
-    UpdateMessageFlagsResult, UpdateParticipantPolicy, attempt_job_idempotency_key,
+    RegenerateCandidateResult, RenameConversation, RenameConversationResult,
+    RequestCancellationResult, ResolveGroupSpeaker, ResolveGroupSpeakerResult, RestoreConversation,
+    RestoreConversationResult, RetryGeneration, RetryGenerationResult, SelectBranch,
+    SelectBranchResult, SelectedSpeakerDecision, SendConversation, SendConversationResult,
+    SettingsCasRequirement, SettingsResult, SettleCancellation, SettleCancellationResult,
+    SnapshotSelection, TombstoneMessage, TombstoneMessageResult, TombstoneResult,
+    UpdateConversationSettings, UpdateMessageFlags, UpdateMessageFlagsResult,
+    UpdateParticipantPolicy, attempt_job_idempotency_key,
 };
 use lettuce_types::{
     AssetId, ConversationBranchId, ConversationId, ConversationParticipantId, GenerationAttemptId,
@@ -3954,6 +3955,66 @@ impl ConversationRepository for Database {
         )
     }
 
+    fn rename(
+        &self,
+        command: &RenameConversation,
+        now: TimestampMillis,
+    ) -> Result<RenameConversationResult, ConversationRepositoryError> {
+        lettuce_conversations::ConversationMutation::Rename(command.clone())
+            .validate()
+            .map_err(ConversationRepositoryError::Invalid)?;
+        kernel::run_mutation(
+            self,
+            command.conversation_id,
+            OperationKind::Rename,
+            &command.operation,
+            now,
+            |transaction, context| {
+                let conversation = kernel::cas_conversation(
+                    transaction,
+                    context.conversation_id,
+                    command.expected_revision,
+                )?;
+                kernel::require_active(&conversation)?;
+                transaction
+                    .execute(
+                        "UPDATE conversations SET title = ?2 WHERE id = ?1",
+                        params![context.conversation_id.to_string(), command.title],
+                    )
+                    .map_err(kernel::map_constraint)?;
+                let revision =
+                    kernel::bump_conversation(transaction, context.conversation_id, context.now)?;
+                Ok(kernel::Staged {
+                    value: conversation_value(transaction, context.conversation_id)?,
+                    result: OperationResultRef::Conversation(context.conversation_id),
+                    events: vec![kernel::StagedEvent {
+                        conversation_revision: revision,
+                        at: context.now,
+                        event: ConversationOutboxEvent::TitleChanged {
+                            conversation_id: context.conversation_id,
+                            title: command.title.clone(),
+                            at: context.now,
+                        },
+                    }],
+                })
+            },
+            |transaction, operation| {
+                let recorded = recorded_events(transaction, command.conversation_id, operation)?;
+                if !matches!(
+                    recorded.as_slice(),
+                    [ConversationOutboxEvent::TitleChanged {
+                        conversation_id,
+                        title,
+                        ..
+                    }] if *conversation_id == command.conversation_id && title == &command.title
+                ) {
+                    return Err(ConversationRepositoryError::Conflict);
+                }
+                conversation_value(transaction, command.conversation_id)
+            },
+        )
+    }
+
     fn update_participant_policy(
         &self,
         command: &UpdateParticipantPolicy,
@@ -4134,19 +4195,20 @@ mod tests {
     use super::*;
     use lettuce_conversations::{
         ArtifactCodec, ArtifactRetention, CharacterLaunchSnapshot, ContinueConversation,
-        ConversationCreator, ConversationKind, ConversationParticipantDraft, ConversationReader,
-        CreateConversationPlan, DirectConversationDetails, GroupChatModeSnapshot,
-        GroupConversationDetails, GroupLaunchSnapshot, GroupMemberLaunchSnapshot,
-        GroupParticipantPolicyDocument, GroupParticipantPolicySnapshot,
-        GroupSpeakerSelectionSnapshot, InitialTimelineDraft, MessageDraft, MessageRole,
-        MessageVisibility, ModelProviderKind, ModelSelectionSnapshot, ParticipantRole,
-        ParticipantSource, PreparedConversationLaunch, ProtectedArtifactBytes,
+        ConversationCreator, ConversationKind, ConversationOutboxRecord,
+        ConversationParticipantDraft, ConversationReader, CreateConversationPlan,
+        DirectConversationDetails, GroupChatModeSnapshot, GroupConversationDetails,
+        GroupLaunchSnapshot, GroupMemberLaunchSnapshot, GroupParticipantPolicyDocument,
+        GroupParticipantPolicySnapshot, GroupSpeakerSelectionSnapshot, InitialTimelineDraft,
+        MessageDraft, MessageRole, MessageVisibility, ModelProviderKind, ModelSelectionSnapshot,
+        ParticipantRole, ParticipantSource, PreparedConversationLaunch, ProtectedArtifactBytes,
         ProtectedSnapshotRef, SnapshotArtifactDraft, SnapshotSelection, SnapshotSource,
     };
     use lettuce_conversations::{
-        CurrentConversationSettingsPatch, PatchValue, ResolveGroupSpeaker, RestoreConversation,
-        SelectBranch, SelectedSpeakerDecision, SpeakerDecisionMethod, SpeakerFallback,
-        TombstoneMessage, UpdateConversationSettings, UpdateMessageFlags, UpdateParticipantPolicy,
+        CurrentConversationSettingsPatch, PatchValue, RenameConversation, ResolveGroupSpeaker,
+        RestoreConversation, SelectBranch, SelectedSpeakerDecision, SpeakerDecisionMethod,
+        SpeakerFallback, TombstoneMessage, UpdateConversationSettings, UpdateMessageFlags,
+        UpdateParticipantPolicy,
     };
     use lettuce_types::{
         AssetId, CharacterId, ContentHash, GroupId, JobId, MediaBlobId, MessageCandidateId,
@@ -9338,6 +9400,137 @@ mod tests {
             Err(ConversationRepositoryError::Conflict),
             "the archive replay no longer describes an archived conversation"
         );
+    }
+
+    #[test]
+    fn rename_updates_revision_and_replays_historical_title() {
+        let mut fixture = direct_fixture();
+        let first_command = RenameConversation {
+            conversation_id: fixture.conversation_id,
+            expected_revision: fixture.revision,
+            operation: token("rename-first", "cd"),
+            title: "First title".into(),
+        };
+        let first = fixture
+            .database
+            .rename(&first_command, TimestampMillis::new(20))
+            .expect("rename");
+        assert_eq!(first.value.title, "First title");
+        assert_eq!(first.value.revision, Revision::new(2));
+        assert!(matches!(
+            first.outbox.as_slice(),
+            [ConversationOutboxRecord {
+                event: ConversationOutboxEvent::TitleChanged { title, .. },
+                ..
+            }] if title == "First title"
+        ));
+        outbox_reads_back(&fixture, &first.outbox);
+        fixture.revision = conversation_revision(&fixture);
+
+        let replay = fixture
+            .database
+            .rename(
+                &RenameConversation {
+                    expected_revision: Revision::new(99),
+                    ..first_command.clone()
+                },
+                TimestampMillis::new(21),
+            )
+            .expect("replay");
+        assert_eq!(replay.operation, first.operation);
+        assert_eq!(replay.outbox, first.outbox);
+        assert_eq!(replay.value.title, "First title");
+
+        let second = fixture
+            .database
+            .rename(
+                &RenameConversation {
+                    conversation_id: fixture.conversation_id,
+                    expected_revision: fixture.revision,
+                    operation: token("rename-second", "cd"),
+                    title: "Second title".into(),
+                },
+                TimestampMillis::new(22),
+            )
+            .expect("second rename");
+        assert_eq!(second.value.title, "Second title");
+        fixture.revision = conversation_revision(&fixture);
+        let replay_after_later_rename = fixture
+            .database
+            .rename(
+                &RenameConversation {
+                    expected_revision: Revision::new(1),
+                    ..first_command
+                },
+                TimestampMillis::new(23),
+            )
+            .expect("historical replay");
+        assert_eq!(replay_after_later_rename.outbox, first.outbox);
+        assert_eq!(replay_after_later_rename.value.title, "Second title");
+        outbox_reads_back(&fixture, &first.outbox);
+
+        assert_eq!(
+            fixture.database.rename(
+                &RenameConversation {
+                    conversation_id: fixture.conversation_id,
+                    expected_revision: Revision::INITIAL,
+                    operation: token("rename-stale", "cd"),
+                    title: "Stale title".into(),
+                },
+                TimestampMillis::new(24),
+            ),
+            Err(ConversationRepositoryError::StaleRevision {
+                expected: Revision::INITIAL,
+                actual: fixture.revision,
+            })
+        );
+
+        let archived = fixture
+            .database
+            .archive(
+                &ArchiveConversation {
+                    conversation_id: fixture.conversation_id,
+                    expected_revision: fixture.revision,
+                    operation: token("rename-archive", "cd"),
+                },
+                TimestampMillis::new(25),
+            )
+            .expect("archive");
+        assert_eq!(
+            fixture.database.rename(
+                &RenameConversation {
+                    conversation_id: fixture.conversation_id,
+                    expected_revision: archived.value.revision,
+                    operation: token("rename-archived", "cd"),
+                    title: "Archived title".into(),
+                },
+                TimestampMillis::new(26),
+            ),
+            Err(ConversationRepositoryError::Conflict)
+        );
+    }
+
+    #[test]
+    fn group_rename_uses_the_same_conversation_mutation_path() {
+        let fixture = group_fixture();
+        let renamed = fixture
+            .database
+            .rename(
+                &RenameConversation {
+                    conversation_id: fixture.conversation_id,
+                    expected_revision: fixture.revision,
+                    operation: token("group-rename", "cd"),
+                    title: "Group renamed".into(),
+                },
+                TimestampMillis::new(20),
+            )
+            .expect("group rename");
+        assert_eq!(renamed.value.title, "Group renamed");
+        assert!(matches!(
+            renamed.outbox[0].event,
+            ConversationOutboxEvent::TitleChanged { ref title, .. } if title == "Group renamed"
+        ));
+        outbox_reads_back(&fixture, &renamed.outbox);
     }
 
     #[test]

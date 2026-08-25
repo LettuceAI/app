@@ -9,8 +9,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::commands::{
     ArchiveConversation, AttachAttemptJob, ChooseCandidate, ContinueConversation, EditMessage,
-    ForkBranch, RegenerateCandidate, RestoreConversation, RetryGeneration, SelectBranch,
-    SendConversation, SettleCancellation, TombstoneMessage, UpdateMessageFlags,
+    ForkBranch, RegenerateCandidate, RenameConversation, RestoreConversation, RetryGeneration,
+    SelectBranch, SendConversation, SettleCancellation, TombstoneMessage, UpdateMessageFlags,
 };
 use crate::content::{Message, MessageCandidate, MessagePart, MessageRevision, ReplayArtifactRef};
 use crate::error::ConversationRepositoryError;
@@ -369,6 +369,7 @@ pub type SelectBranchResult = MutationCommit<Conversation>;
 pub type TombstoneMessageResult = MutationCommit<TombstoneResult>;
 pub type ParticipantPolicyResult = MutationCommit<Conversation>;
 pub type SettingsResult = MutationCommit<Conversation>;
+pub type RenameConversationResult = MutationCommit<Conversation>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EditResult {
@@ -594,6 +595,11 @@ pub enum ConversationOutboxEvent {
         lifecycle: crate::model::ConversationLifecycle,
         at: TimestampMillis,
     },
+    TitleChanged {
+        conversation_id: ConversationId,
+        title: String,
+        at: TimestampMillis,
+    },
     SettingsChanged {
         conversation_id: ConversationId,
         settings_revision: lettuce_types::Revision,
@@ -693,6 +699,9 @@ impl ConversationOutboxRecord {
             | ConversationOutboxEvent::ConversationLifecycleChanged {
                 conversation_id, ..
             }
+            | ConversationOutboxEvent::TitleChanged {
+                conversation_id, ..
+            }
             | ConversationOutboxEvent::SettingsChanged {
                 conversation_id, ..
             }
@@ -766,6 +775,14 @@ impl ConversationOutboxRecord {
                 field: "outbox.message_flags.visibility",
             });
         }
+        if let ConversationOutboxEvent::TitleChanged { title, .. } = &self.event {
+            crate::validation::validate_text(
+                "conversation.title",
+                title,
+                crate::validation::MAX_DISPLAY_CHARS * 4,
+                false,
+            )?;
+        }
         let used_memory_revision_ids = match &self.event {
             ConversationOutboxEvent::TurnFinalized {
                 used_memory_revision_ids,
@@ -817,6 +834,7 @@ pub enum OperationKind {
     Tombstone,
     Archive,
     Restore,
+    Rename,
     ParticipantPolicy,
     Settings,
     AttachJob,
@@ -1131,6 +1149,11 @@ pub trait ConversationRepository: ConversationCreator {
         command: &RestoreConversation,
         now: TimestampMillis,
     ) -> Result<RestoreConversationResult, ConversationRepositoryError>;
+    fn rename(
+        &self,
+        command: &RenameConversation,
+        now: TimestampMillis,
+    ) -> Result<RenameConversationResult, ConversationRepositoryError>;
     fn update_participant_policy(
         &self,
         command: &crate::commands::UpdateParticipantPolicy,

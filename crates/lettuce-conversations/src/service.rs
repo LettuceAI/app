@@ -9,9 +9,9 @@ use crate::ports::{
     ConversationQuery, ConversationReader, ConversationRepository, ConversationSummary,
     CreateConversationResult, EditMessageResult, ForkBranchResult, GenerationFailureResult,
     GenerationFinalizationResult, GenerationInterruptionResult, GenerationRecoveryResult,
-    KeysetPage, MutationCommit, OperationKind, ParticipantPolicyResult, RestoreConversationResult,
-    SelectBranchResult, SettingsResult, TimelinePage, TombstoneMessageResult,
-    UpdateMessageFlagsResult,
+    KeysetPage, MutationCommit, OperationKind, ParticipantPolicyResult, RenameConversationResult,
+    RestoreConversationResult, SelectBranchResult, SettingsResult, TimelinePage,
+    TombstoneMessageResult, UpdateMessageFlagsResult,
 };
 
 /// Thin application-facing façade.  It validates command contracts and
@@ -421,6 +421,15 @@ impl<R: ConversationRepository> ConversationManager<R> {
     ) -> Result<RestoreConversationResult, ConversationServiceError> {
         ConversationMutation::Restore(command.clone()).validate()?;
         self.repository.restore(command, now).map_err(Into::into)
+    }
+
+    pub fn rename(
+        &self,
+        command: &crate::commands::RenameConversation,
+        now: TimestampMillis,
+    ) -> Result<RenameConversationResult, ConversationServiceError> {
+        ConversationMutation::Rename(command.clone()).validate()?;
+        self.repository.rename(command, now).map_err(Into::into)
     }
 
     pub fn update_participant_policy(
