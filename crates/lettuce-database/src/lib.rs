@@ -1667,6 +1667,7 @@ mod tests {
             "requested_model_override_json",
             "forced_speaker_participant_id",
             "swap_roles",
+            "prompt_entry_ids_json",
         ] {
             let present: i64 = connection
                 .query_row(
@@ -1881,6 +1882,7 @@ mod tests {
             "requested_model_override_json",
             "forced_speaker_participant_id",
             "swap_roles",
+            "prompt_entry_ids_json",
         ] {
             let present: i64 = connection
                 .query_row(
@@ -1910,6 +1912,14 @@ mod tests {
                 .expect("settings column lookup");
             assert_eq!(present, 1, "missing final settings column {column}");
         }
+        let present: i64 = connection
+            .query_row(
+                "SELECT count(*) FROM pragma_table_info('turn_lorebooks') WHERE name = 'activated_entry_ids_json'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("turn lorebook column lookup");
+        assert_eq!(present, 1, "missing final turn lorebook column");
         let candidate_author: i64 = connection
             .query_row(
                 "SELECT count(*) FROM pragma_table_info('conversation_message_candidates') WHERE name = 'author_participant_id' AND \"notnull\" = 1",

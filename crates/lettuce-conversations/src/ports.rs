@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use lettuce_media::AssetRetainer;
 use lettuce_types::{
-    ContentHash, ConversationBranchId, ConversationId, ConversationParticipantId,
+    AssetId, ContentHash, ConversationBranchId, ConversationId, ConversationParticipantId,
     GenerationAttemptId, GenerationTurnId, JobId, MessageCandidateId, MessageId, MessageRevisionId,
     OperationRecordId, Page, PageRequest, TimestampMillis, UsageEventId,
 };
@@ -12,17 +12,21 @@ use crate::commands::{
     ForkBranch, RegenerateCandidate, RenameConversation, RestoreConversation, RetryGeneration,
     SelectBranch, SendConversation, SettleCancellation, TombstoneMessage, UpdateMessageFlags,
 };
-use crate::content::{Message, MessageCandidate, MessagePart, MessageRevision, ReplayArtifactRef};
+use crate::content::{
+    MediaAssetRole, Message, MessageCandidate, MessagePart, MessageRevision, MessageRole,
+    ReplayArtifactRef,
+};
 use crate::document::{
     CharacterSnapshotBodyV1, LorebookSnapshotBodyV1, PersonaSnapshotBodyV1, PromptSnapshotBodyV1,
-    SceneSnapshotBodyV1,
+    SceneSnapshotBodyV1, SnapshotDocumentKind,
 };
 use crate::error::ConversationRepositoryError;
 #[allow(unused_imports)]
 pub use crate::generation::GenerationTarget;
 use crate::generation::{
     GenerationAttempt, GenerationCheckpointEnvelope, GenerationCheckpointEvent,
-    GenerationOperation, GenerationTurn, IdempotencyKey,
+    GenerationOperation, GenerationTurn, IdempotencyKey, LorebookAttribution, MemoryAttribution,
+    PromptAttribution,
 };
 use crate::model::{Conversation, ConversationAggregate, ConversationBranch};
 use crate::snapshot::{
@@ -1221,12 +1225,17 @@ pub struct LaunchResolution {
 pub struct ContextRequest {
     pub conversation_id: ConversationId,
     pub branch_id: ConversationBranchId,
-    pub source_message_id: Option<MessageId>,
+    pub branch_path: Vec<ConversationBranchId>,
+    pub source_message_id: MessageId,
     pub operation: GenerationOperation,
-    pub policy: ContextPolicy,
+    pub swap_roles: bool,
+    pub guidance: Option<String>,
+    pub window: ContextWindowPolicy,
     pub selected_speaker: Option<crate::generation::SelectedSpeakerDecision>,
     pub capabilities: CapabilitySet,
     pub safety: SafetyContext,
+    pub prompt_runtime: PromptRuntimeFacts,
+    pub memory: Option<MemoryContribution>,
     pub timeline: Vec<TimelineItem>,
 }
 
@@ -1238,19 +1247,181 @@ impl ContextRequest {
                 max: 512,
             });
         }
-        if self.policy == ContextPolicy::Direct && self.selected_speaker.is_some() {
+        if self.branch_path.is_empty()
+            || self.branch_path.len() > crate::validation::MAX_BRANCHES
+            || self.branch_path.last().copied() != Some(self.branch_id)
+        {
             return Err(crate::ValidationError::InvalidReference {
-                field: "context_request.direct_speaker",
+                field: "context_request.branch_path",
             });
+        }
+        crate::validation::validate_unique(
+            "context_request.branch_path",
+            self.branch_path.iter().copied(),
+        )?;
+        self.window.validate()?;
+        self.prompt_runtime.validate()?;
+        if let Some(guidance) = &self.guidance {
+            crate::validation::validate_text(
+                "context_request.guidance",
+                guidance,
+                crate::validation::MAX_REASONING_BYTES,
+                false,
+            )?;
+        }
+        if let Some(memory) = &self.memory {
+            memory.validate()?;
+        }
+        let source_item = self
+            .timeline
+            .iter()
+            .find(|item| item.message.id == self.source_message_id)
+            .ok_or(crate::ValidationError::InvalidReference {
+                field: "context_request.source_message_id",
+            })?;
+        let source_role_is_coherent = match self.operation {
+            GenerationOperation::Send => source_item.message.role == MessageRole::User,
+            // Continue may be requested at either side of a sparse or
+            // imported head, so role is intentionally left open here.
+            GenerationOperation::Continue => true,
+            GenerationOperation::Regenerate => source_item.message.role == MessageRole::Assistant,
+        };
+        if !source_role_is_coherent {
+            return Err(crate::ValidationError::InvalidReference {
+                field: "context_request.source_message_id",
+            });
+        }
+        for item in &self.timeline {
+            if item.message.conversation_id != self.conversation_id {
+                return Err(crate::ValidationError::InvalidReference {
+                    field: "context_request.timeline_conversation",
+                });
+            }
+            if !self.branch_path.contains(&item.message.branch_id) {
+                return Err(crate::ValidationError::InvalidReference {
+                    field: "context_request.timeline_branch",
+                });
+            }
+            item.message.validate()?;
         }
         Ok(())
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ContextPolicy {
-    Direct,
-    Group,
+pub struct ContextWindowPolicy {
+    pub recent_non_pinned_limit: usize,
+}
+
+impl Default for ContextWindowPolicy {
+    fn default() -> Self {
+        Self {
+            recent_non_pinned_limit: 64,
+        }
+    }
+}
+
+impl ContextWindowPolicy {
+    fn validate(self) -> Result<(), crate::ValidationError> {
+        if self.recent_non_pinned_limit > 512 {
+            return Err(crate::ValidationError::OutOfBounds {
+                field: "context_window.recent_non_pinned_limit",
+            });
+        }
+        Ok(())
+    }
+}
+
+/// Runtime values required by the prompt condition vocabulary.  Authored
+/// snapshot facts remain owned by the assembler; these values are supplied by
+/// the current model/runtime admission step.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct PromptRuntimeFacts {
+    pub provider_id: Option<String>,
+    pub provider_label: Option<String>,
+    pub input_scopes: Vec<String>,
+    pub output_scopes: Vec<String>,
+    pub scene_generation_enabled: bool,
+    pub avatar_generation_enabled: bool,
+    pub is_local_image_generation_model: bool,
+    pub is_scene_generation_local_image_model: bool,
+    pub dynamic_memory_enabled: bool,
+    pub has_active_scheduled_note: bool,
+    pub time_awareness_enabled: bool,
+    pub companion_mode_enabled: bool,
+}
+
+impl PromptRuntimeFacts {
+    fn validate(&self) -> Result<(), crate::ValidationError> {
+        for (field, value) in [
+            ("context_runtime.provider_id", self.provider_id.as_deref()),
+            (
+                "context_runtime.provider_label",
+                self.provider_label.as_deref(),
+            ),
+        ] {
+            if let Some(value) = value {
+                crate::validation::validate_text(
+                    field,
+                    value,
+                    crate::validation::MAX_DISPLAY_CHARS,
+                    false,
+                )?;
+            }
+        }
+        for (field, scopes) in [
+            ("context_runtime.input_scopes", self.input_scopes.as_slice()),
+            (
+                "context_runtime.output_scopes",
+                self.output_scopes.as_slice(),
+            ),
+        ] {
+            crate::validation::validate_collection(field, scopes, 64)?;
+            for scope in scopes {
+                crate::validation::validate_text(
+                    "context_runtime.scope",
+                    scope,
+                    crate::validation::MAX_DISPLAY_CHARS,
+                    false,
+                )?;
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MemoryContribution {
+    pub attribution: MemoryAttribution,
+    pub summary: Option<String>,
+    pub key_memories: Vec<String>,
+}
+
+impl MemoryContribution {
+    fn validate(&self) -> Result<(), crate::ValidationError> {
+        if let Some(summary) = &self.summary {
+            crate::validation::validate_text(
+                "memory_contribution.summary",
+                summary,
+                crate::validation::MAX_REASONING_BYTES,
+                false,
+            )?;
+        }
+        crate::validation::validate_collection(
+            "memory_contribution.key_memories",
+            &self.key_memories,
+            crate::validation::MAX_MEMORY_REVISIONS,
+        )?;
+        for memory in &self.key_memories {
+            crate::validation::validate_text(
+                "memory_contribution.key_memory",
+                memory,
+                crate::validation::MAX_REASONING_BYTES,
+                false,
+            )?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -1272,9 +1443,34 @@ pub enum SafetyContext {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProviderContextPart {
+    Text {
+        text: String,
+    },
+    MediaAsset {
+        asset_id: AssetId,
+        role: MediaAssetRole,
+    },
+}
+
+impl ProviderContextPart {
+    fn validate(&self) -> Result<(), crate::ValidationError> {
+        if let Self::Text { text } = self {
+            crate::validation::validate_text(
+                "provider_context_part.text",
+                text,
+                crate::validation::MAX_AUTHORED_TEXT_BYTES,
+                false,
+            )?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProviderNeutralMessage {
-    pub role: crate::content::MessageRole,
-    pub parts: Vec<MessagePart>,
+    pub role: MessageRole,
+    pub parts: Vec<ProviderContextPart>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1298,6 +1494,34 @@ impl ProviderNeutralContext {
                 max: crate::validation::MAX_LOREBOOKS,
             });
         }
+        if let Some(prompt) = &self.attributions.prompt {
+            if prompt.revision.get() == 0 {
+                return Err(crate::ValidationError::ZeroRevision);
+            }
+            crate::validation::validate_collection(
+                "provider_context.prompt_entry_ids",
+                &prompt.selected_entry_ids,
+                crate::validation::MAX_DOCUMENT_ENTRIES,
+            )?;
+            crate::validation::validate_unique(
+                "provider_context.prompt_entry_ids",
+                prompt.selected_entry_ids.iter().copied(),
+            )?;
+        }
+        for lorebook in &self.attributions.lorebooks {
+            if lorebook.revision.get() == 0 {
+                return Err(crate::ValidationError::ZeroRevision);
+            }
+            crate::validation::validate_collection(
+                "provider_context.lorebook_entry_ids",
+                &lorebook.activated_entry_ids,
+                crate::validation::MAX_DOCUMENT_ENTRIES,
+            )?;
+            crate::validation::validate_unique(
+                "provider_context.lorebook_entry_ids",
+                lorebook.activated_entry_ids.iter().copied(),
+            )?;
+        }
         for message in &self.messages {
             if message.parts.len() > crate::validation::MAX_PARTS {
                 return Err(crate::ValidationError::TooMany {
@@ -1315,14 +1539,18 @@ impl ProviderNeutralContext {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ContextAttributions {
-    pub prompt: Option<crate::generation::PromptAttribution>,
-    pub lorebooks: Vec<crate::generation::LorebookAttribution>,
-    pub memory: Option<crate::generation::MemoryAttribution>,
+    pub prompt: Option<PromptAttribution>,
+    pub lorebooks: Vec<LorebookAttribution>,
+    pub memory: Option<MemoryAttribution>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ContextBudgetReport {
     pub selected_messages: u32,
+    pub omitted_messages: u32,
+    pub input_bytes: u32,
+    /// A conservative estimate intended for admission and reporting. It is
+    /// not a provider tokenizer result.
     pub estimated_input_tokens: u32,
     pub truncated: bool,
 }
@@ -1560,6 +1788,35 @@ pub enum PortError {
     Empty,
 }
 
+/// Redacted failures emitted while assembling provider-neutral context.
+///
+/// Variants intentionally carry no authored text, provider payload, or
+/// dependency error. Callers can map these stable categories to UX and
+/// telemetry without accidentally logging prompt content.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum ContextAssemblyError {
+    #[error("context request is invalid")]
+    InvalidRequest,
+    #[error("conversation is unavailable")]
+    ConversationUnavailable,
+    #[error("snapshot is unavailable ({kind:?})")]
+    SnapshotUnavailable { kind: SnapshotDocumentKind },
+    #[error("snapshot is invalid ({kind:?})")]
+    SnapshotInvalid { kind: SnapshotDocumentKind },
+    #[error("prompt rendering failed")]
+    PromptRender,
+    #[error("lorebook activation failed")]
+    LorebookActivation,
+    #[error("conversation speaker is missing")]
+    MissingSpeaker,
+    #[error("conversation timeline is invalid")]
+    InvalidTimeline,
+    #[error("context part is unsupported")]
+    UnsupportedPart,
+    #[error("context exceeds its size limit")]
+    SizeLimit,
+}
+
 #[async_trait]
 pub trait LaunchResolver: Send + Sync {
     async fn resolve(&self, request: LaunchResolveRequest) -> Result<LaunchResolution, PortError>;
@@ -1567,7 +1824,10 @@ pub trait LaunchResolver: Send + Sync {
 
 #[async_trait]
 pub trait ContextAssembler: Send + Sync {
-    async fn assemble(&self, request: ContextRequest) -> Result<ProviderNeutralContext, PortError>;
+    async fn assemble(
+        &self,
+        request: ContextRequest,
+    ) -> Result<ProviderNeutralContext, ContextAssemblyError>;
 }
 
 #[async_trait]
@@ -1654,4 +1914,105 @@ pub trait ConversationApplication: Send + Sync {
         conversation_id: ConversationId,
         operation_id: OperationRecordId,
     ) -> Result<OperationRecord, PortError>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn context_request_requires_a_source_message_in_the_timeline() {
+        let branch_id = ConversationBranchId::new();
+        let request = ContextRequest {
+            conversation_id: ConversationId::new(),
+            branch_id,
+            branch_path: vec![branch_id],
+            source_message_id: MessageId::new(),
+            operation: GenerationOperation::Send,
+            swap_roles: false,
+            guidance: None,
+            window: ContextWindowPolicy::default(),
+            selected_speaker: None,
+            capabilities: CapabilitySet::default(),
+            safety: SafetyContext::Standard,
+            prompt_runtime: PromptRuntimeFacts::default(),
+            memory: None,
+            timeline: Vec::new(),
+        };
+        assert!(matches!(
+            request.validate(),
+            Err(crate::ValidationError::InvalidReference {
+                field: "context_request.source_message_id"
+            })
+        ));
+    }
+
+    #[test]
+    fn provider_context_parts_are_limited_to_text_and_media() {
+        let context = ProviderNeutralContext {
+            messages: vec![ProviderNeutralMessage {
+                role: MessageRole::System,
+                parts: vec![
+                    ProviderContextPart::Text {
+                        text: "rules".into(),
+                    },
+                    ProviderContextPart::MediaAsset {
+                        asset_id: AssetId::new(),
+                        role: MediaAssetRole::Inline,
+                    },
+                ],
+            }],
+            attributions: ContextAttributions::default(),
+            budget: ContextBudgetReport {
+                selected_messages: 1,
+                omitted_messages: 0,
+                input_bytes: 5,
+                estimated_input_tokens: 2,
+                truncated: false,
+            },
+        };
+        assert!(context.validate().is_ok());
+    }
+
+    #[test]
+    fn runtime_facts_and_memory_text_are_bounded() {
+        let runtime = PromptRuntimeFacts {
+            provider_label: Some("x".repeat(crate::validation::MAX_DISPLAY_CHARS + 1)),
+            ..PromptRuntimeFacts::default()
+        };
+        assert!(runtime.validate().is_err());
+
+        let memory = MemoryContribution {
+            attribution: MemoryAttribution {
+                revision_id: lettuce_types::MemoryRevisionId::new(),
+            },
+            summary: Some("summary".into()),
+            key_memories: vec!["a durable fact".into()],
+        };
+        assert!(memory.validate().is_ok());
+    }
+
+    #[test]
+    fn context_assembly_errors_do_not_include_authored_text() {
+        let errors = [
+            ContextAssemblyError::InvalidRequest,
+            ContextAssemblyError::ConversationUnavailable,
+            ContextAssemblyError::SnapshotUnavailable {
+                kind: SnapshotDocumentKind::Prompt,
+            },
+            ContextAssemblyError::SnapshotInvalid {
+                kind: SnapshotDocumentKind::Lorebook,
+            },
+            ContextAssemblyError::PromptRender,
+            ContextAssemblyError::LorebookActivation,
+            ContextAssemblyError::MissingSpeaker,
+            ContextAssemblyError::InvalidTimeline,
+            ContextAssemblyError::UnsupportedPart,
+            ContextAssemblyError::SizeLimit,
+        ];
+        for error in errors {
+            assert!(!format!("{error:?}").contains("secret"));
+            assert!(!error.to_string().contains("secret"));
+        }
+    }
 }

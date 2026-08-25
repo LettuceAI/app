@@ -1,7 +1,7 @@
 use lettuce_types::{
     ConversationBranchId, ConversationId, ConversationParticipantId, GenerationAttemptId,
-    GenerationTurnId, JobId, MemoryRevisionId, MessageCandidateId, MessageId, PromptDocumentId,
-    RequestId, Revision, TimestampMillis, UsageEventId,
+    GenerationTurnId, JobId, LorebookEntryId, MemoryRevisionId, MessageCandidateId, MessageId,
+    PromptDocumentId, PromptEntryId, RequestId, Revision, TimestampMillis, UsageEventId,
 };
 use serde::{Deserialize, Serialize};
 
@@ -143,6 +143,11 @@ pub enum GenerationTransitionError {
 pub struct PromptAttribution {
     pub document_id: PromptDocumentId,
     pub revision: Revision,
+    /// Exact entries selected from the immutable prompt snapshot for this
+    /// assembly.  Keeping entry identity alongside document provenance makes
+    /// replay/audit output explainable without re-running activation.
+    #[serde(default)]
+    pub selected_entry_ids: Vec<PromptEntryId>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -150,6 +155,9 @@ pub struct PromptAttribution {
 pub struct LorebookAttribution {
     pub lorebook_id: lettuce_types::LorebookId,
     pub revision: Revision,
+    /// Exact entries activated from the immutable lorebook snapshot.
+    #[serde(default)]
+    pub activated_entry_ids: Vec<LorebookEntryId>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -598,9 +606,29 @@ impl GenerationTurn {
             if attribution.revision.get() == 0 {
                 return Err(ValidationError::ZeroRevision);
             }
+            validate_collection(
+                "generation_turn.prompt_entry_ids",
+                &attribution.selected_entry_ids,
+                crate::validation::MAX_DOCUMENT_ENTRIES,
+            )?;
+            validate_unique(
+                "generation_turn.prompt_entry_ids",
+                attribution.selected_entry_ids.iter().copied(),
+            )?;
         }
-        if self.lorebooks.iter().any(|book| book.revision.get() == 0) {
-            return Err(ValidationError::ZeroRevision);
+        for book in &self.lorebooks {
+            if book.revision.get() == 0 {
+                return Err(ValidationError::ZeroRevision);
+            }
+            validate_collection(
+                "generation_turn.lorebook_entry_ids",
+                &book.activated_entry_ids,
+                crate::validation::MAX_DOCUMENT_ENTRIES,
+            )?;
+            validate_unique(
+                "generation_turn.lorebook_entry_ids",
+                book.activated_entry_ids.iter().copied(),
+            )?;
         }
         for attempt in &self.attempts {
             attempt.validate()?;

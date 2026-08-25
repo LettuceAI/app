@@ -206,6 +206,13 @@ CREATE TABLE conversation_turns (
     resolved_model_json TEXT CHECK (resolved_model_json IS NULL OR (json_valid(resolved_model_json) AND json_extract(resolved_model_json, '$.format_version') = 1)),
     prompt_document_id TEXT,
     prompt_revision INTEGER CHECK (prompt_revision IS NULL OR prompt_revision >= 1),
+    prompt_entry_ids_json TEXT CHECK (prompt_entry_ids_json IS NULL OR (
+        json_valid(prompt_entry_ids_json)
+        AND json_extract(prompt_entry_ids_json, '$.format_version') = 1
+        AND json_type(prompt_entry_ids_json, '$.value') = 'array'
+        AND json_array_length(json_extract(prompt_entry_ids_json, '$.value')) <= 512
+        AND length(CAST(prompt_entry_ids_json AS BLOB)) <= 65536
+    )),
     memory_revision_id TEXT,
     selected_candidate_id TEXT,
     failure TEXT CHECK (failure IS NULL OR failure IN ('invalid_conversation', 'missing_model', 'context_unavailable', 'speaker_unavailable', 'provider_unavailable', 'provider_rejected', 'empty_output', 'cancelled', 'timed_out', 'recovery_unavailable', 'internal')),
@@ -246,7 +253,8 @@ CREATE TABLE conversation_turns (
            (input_kind = 'existing_head' AND user_message_id IS NULL AND head_message_id IS NOT NULL AND candidate_message_id IS NULL AND candidate_id IS NULL) OR
            (input_kind = 'existing_candidate' AND user_message_id IS NULL AND head_message_id IS NULL AND candidate_message_id IS NOT NULL AND candidate_id IS NOT NULL)),
     CHECK ((operation = 'send' AND input_kind = 'user_message') OR (operation = 'continue' AND input_kind = 'existing_head') OR (operation = 'regenerate' AND input_kind = 'existing_candidate')),
-    CHECK ((prompt_document_id IS NULL) = (prompt_revision IS NULL)),
+    CHECK ((prompt_document_id IS NULL) = (prompt_revision IS NULL) AND
+           (prompt_document_id IS NULL) = (prompt_entry_ids_json IS NULL)),
     CHECK ((status = 'failed') = (failure IS NOT NULL)),
     CHECK ((status = 'succeeded') = (selected_candidate_id IS NOT NULL)),
     CHECK ((target_kind = 'new_assistant' AND target_parent_message_id IS NOT NULL AND target_prior_candidate_id IS NULL) OR
@@ -524,6 +532,13 @@ CREATE TABLE turn_lorebooks (
     lorebook_id TEXT NOT NULL,
     revision INTEGER NOT NULL CHECK (revision >= 1),
     ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+    activated_entry_ids_json TEXT NOT NULL CHECK (
+        json_valid(activated_entry_ids_json)
+        AND json_extract(activated_entry_ids_json, '$.format_version') = 1
+        AND json_type(activated_entry_ids_json, '$.value') = 'array'
+        AND json_array_length(json_extract(activated_entry_ids_json, '$.value')) <= 512
+        AND length(CAST(activated_entry_ids_json AS BLOB)) <= 65536
+    ),
     PRIMARY KEY (conversation_id, turn_id, lorebook_id),
     UNIQUE (conversation_id, turn_id, ordinal),
     FOREIGN KEY (conversation_id, turn_id)

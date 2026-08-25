@@ -22,7 +22,7 @@ use lettuce_media::AssetRetainer;
 use lettuce_types::{
     ConversationBranchId, ConversationId, ConversationParticipantId, GenerationAttemptId,
     GenerationTurnId, MessageCandidateId, MessageId, MessageRevisionId, Page, PageRequest,
-    TimestampMillis,
+    PromptEntryId, TimestampMillis,
 };
 use rusqlite::{OptionalExtension, Row, Transaction, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
@@ -1438,7 +1438,7 @@ pub(crate) fn hydrate_lorebooks(
     conversation_id: ConversationId,
     turn_id: GenerationTurnId,
 ) -> Result<Vec<LorebookAttribution>, ConversationRepositoryError> {
-    let mut statement = transaction.prepare("SELECT lorebook_id, revision FROM turn_lorebooks WHERE conversation_id = ?1 AND turn_id = ?2 ORDER BY ordinal, lorebook_id").map_err(slice::db)?;
+    let mut statement = transaction.prepare("SELECT lorebook_id, revision, activated_entry_ids_json FROM turn_lorebooks WHERE conversation_id = ?1 AND turn_id = ?2 ORDER BY ordinal, lorebook_id").map_err(slice::db)?;
     let mut values = Vec::new();
     for row in statement
         .query_map(
@@ -1450,6 +1450,8 @@ pub(crate) fn hydrate_lorebooks(
                         .parse()
                         .map_err(|_| rusqlite::Error::InvalidQuery)?,
                     revision: slice::rev(row.get(1)?).map_err(|_| rusqlite::Error::InvalidQuery)?,
+                    activated_entry_ids: slice::decode(&row.get::<_, String>(2)?)
+                        .map_err(|_| rusqlite::Error::InvalidQuery)?,
                 })
             },
         )
@@ -1513,27 +1515,34 @@ fn hydrate_turn_row_inner(
         .map_err(slice::db)?
         .map(slice::rev)
         .transpose()?;
-    if prompt_id.is_some() != prompt_revision.is_some() {
+    let prompt_entry_ids_json = row.get::<_, Option<String>>(16).map_err(slice::db)?;
+    if prompt_id.is_some() != prompt_revision.is_some()
+        || prompt_id.is_some() != prompt_entry_ids_json.is_some()
+    {
         return Err(ConversationRepositoryError::Storage);
     }
-    let prompt = prompt_id
-        .zip(prompt_revision)
-        .map(|(document_id, revision)| PromptAttribution {
+    let selected_entry_ids: Option<Vec<PromptEntryId>> = prompt_entry_ids_json
+        .map(|entry_ids_json| slice::decode(&entry_ids_json))
+        .transpose()?;
+    let prompt = prompt_id.zip(prompt_revision).zip(selected_entry_ids).map(
+        |((document_id, revision), selected_entry_ids)| PromptAttribution {
             document_id,
             revision,
-        });
-    let memory = parse_opt(row.get(16).map_err(slice::db)?)?
+            selected_entry_ids,
+        },
+    );
+    let memory = parse_opt(row.get(17).map_err(slice::db)?)?
         .map(|revision_id| MemoryAttribution { revision_id });
-    let selected_candidate_id = parse_opt(row.get(17).map_err(slice::db)?)?;
-    let failure = failure(row.get(18).map_err(slice::db)?)?;
-    let revision = slice::rev(row.get(19).map_err(slice::db)?)?;
-    let created_at = timestamp(row.get(20).map_err(slice::db)?);
-    let updated_at = timestamp(row.get(21).map_err(slice::db)?);
-    let target_kind: String = row.get(23).map_err(slice::db)?;
-    let target_message_id: MessageId = parse(row.get::<_, String>(24).map_err(slice::db)?)?;
-    let target_parent_message_id: Option<MessageId> = parse_opt(row.get(25).map_err(slice::db)?)?;
+    let selected_candidate_id = parse_opt(row.get(18).map_err(slice::db)?)?;
+    let failure = failure(row.get(19).map_err(slice::db)?)?;
+    let revision = slice::rev(row.get(20).map_err(slice::db)?)?;
+    let created_at = timestamp(row.get(21).map_err(slice::db)?);
+    let updated_at = timestamp(row.get(22).map_err(slice::db)?);
+    let target_kind: String = row.get(24).map_err(slice::db)?;
+    let target_message_id: MessageId = parse(row.get::<_, String>(25).map_err(slice::db)?)?;
+    let target_parent_message_id: Option<MessageId> = parse_opt(row.get(26).map_err(slice::db)?)?;
     let target_prior_candidate_id: Option<MessageCandidateId> =
-        parse_opt(row.get(26).map_err(slice::db)?)?;
+        parse_opt(row.get(27).map_err(slice::db)?)?;
     let target = match (
         target_kind.as_str(),
         target_parent_message_id,
@@ -1551,25 +1560,25 @@ fn hydrate_turn_row_inner(
         }
         _ => return Err(ConversationRepositoryError::Storage),
     };
-    let guidance = row.get::<_, Option<String>>(27).map_err(slice::db)?;
+    let guidance = row.get::<_, Option<String>>(28).map_err(slice::db)?;
     let requested_model_override = row
-        .get::<_, Option<String>>(28)
+        .get::<_, Option<String>>(29)
         .map_err(slice::db)?
         .map(|value| slice::decode(&value))
         .transpose()?;
-    let forced_speaker = parse_opt(row.get(29).map_err(slice::db)?)?;
+    let forced_speaker = parse_opt(row.get(30).map_err(slice::db)?)?;
     if let Some(participant_id) = forced_speaker {
         validate_character_participant(transaction, conversation_id, participant_id)?;
     }
-    let swap_roles = row.get::<_, i64>(30).map_err(slice::db)? != 0;
-    let retry_of_turn_id = parse_opt(row.get(31).map_err(slice::db)?)?;
+    let swap_roles = row.get::<_, i64>(31).map_err(slice::db)? != 0;
+    let retry_of_turn_id = parse_opt(row.get(32).map_err(slice::db)?)?;
     let idempotency_key: lettuce_jobs::IdempotencyKey = row
         .get::<_, String>(9)
         .map_err(slice::db)?
         .parse()
         .map_err(|_| ConversationRepositoryError::Storage)?;
     let correlation_id = row
-        .get::<_, Option<String>>(22)
+        .get::<_, Option<String>>(23)
         .map_err(slice::db)?
         .map(|value| {
             value
@@ -2217,7 +2226,7 @@ pub(crate) fn validate_outbox_event(
 }
 
 pub(crate) fn turn_select_sql() -> &'static str {
-    "SELECT conversation_id, id, branch_id, operation, input_kind, user_message_id, head_message_id, candidate_message_id, candidate_id, idempotency_key, status, selected_speaker_participant_id, selected_speaker_details_json, resolved_model_json, prompt_document_id, prompt_revision, memory_revision_id, selected_candidate_id, failure, revision, created_at, updated_at, correlation_id, target_kind, target_message_id, target_parent_message_id, target_prior_candidate_id, guidance, requested_model_override_json, forced_speaker_participant_id, swap_roles, retry_of_turn_id FROM conversation_turns"
+    "SELECT conversation_id, id, branch_id, operation, input_kind, user_message_id, head_message_id, candidate_message_id, candidate_id, idempotency_key, status, selected_speaker_participant_id, selected_speaker_details_json, resolved_model_json, prompt_document_id, prompt_revision, prompt_entry_ids_json, memory_revision_id, selected_candidate_id, failure, revision, created_at, updated_at, correlation_id, target_kind, target_message_id, target_parent_message_id, target_prior_candidate_id, guidance, requested_model_override_json, forced_speaker_participant_id, swap_roles, retry_of_turn_id FROM conversation_turns"
 }
 
 pub(crate) fn unique_message_conversation(
@@ -2852,8 +2861,9 @@ mod tests {
     };
     use lettuce_types::{
         AssetId, CharacterId, ContentHash, ConversationParticipantId, ConversationStarterId,
-        MediaBlobId, MessageId, MessageRevisionId, OperationRecordId, OutboxEventId, Revision,
-        SceneId, SnapshotArtifactId, StarterMessageId,
+        LorebookEntryId, LorebookId, MediaBlobId, MessageId, MessageRevisionId, OperationRecordId,
+        OutboxEventId, PromptDocumentId, PromptEntryId, Revision, SceneId, SnapshotArtifactId,
+        StarterMessageId,
     };
 
     fn create_fixture(database: &Database, title: &str) -> ConversationId {
@@ -3219,6 +3229,83 @@ mod tests {
             source_turn_id,
             current_turn_id,
         )
+    }
+
+    #[test]
+    fn reader_round_trips_exact_prompt_and_lorebook_entry_attribution() {
+        let database = Database::open_in_memory().expect("database");
+        let (_conversation_id, _revision_id, _candidate_id, _source_turn, current_turn) =
+            create_content_fixture(&database);
+        let prompt_id = PromptDocumentId::new();
+        let prompt_entry_id = PromptEntryId::new();
+        let lorebook_id = LorebookId::new();
+        let lorebook_entry_id = LorebookEntryId::new();
+        let prompt_entry_ids =
+            slice::encode(&vec![prompt_entry_id]).expect("prompt attribution json");
+        let activated_entry_ids =
+            slice::encode(&vec![lorebook_entry_id]).expect("lorebook attribution json");
+        let mut connection = database.connection().expect("connection");
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .expect("transaction");
+        transaction
+            .execute(
+                "INSERT INTO prompt_documents (id, status, name, purpose, condense, behavior_version, provenance_kind, provenance_json, revision, created_at, updated_at) VALUES (?1, 'active', 'Prompt', 'direct_chat', 0, 'deterministic_v2', 'user', '{}', 1, 0, 0)",
+                params![prompt_id.to_string()],
+            )
+            .expect("prompt document");
+        transaction
+            .execute(
+                "INSERT INTO lorebooks (id, status, name, detection_policy, behavior_version, revision, created_at, updated_at) VALUES (?1, 'active', 'Lorebook', 'latest_user_message', 'deterministic_v2', 1, 0, 0)",
+                params![lorebook_id.to_string()],
+            )
+            .expect("lorebook");
+        transaction
+            .execute(
+                "UPDATE conversation_turns SET prompt_document_id = ?1, prompt_revision = 1, prompt_entry_ids_json = ?2 WHERE id = ?3",
+                params![prompt_id.to_string(), prompt_entry_ids, current_turn.to_string()],
+            )
+            .expect("prompt attribution");
+        transaction
+            .execute(
+                "INSERT INTO turn_lorebooks (conversation_id, turn_id, lorebook_id, revision, ordinal, activated_entry_ids_json) SELECT conversation_id, ?1, ?2, 1, 0, ?3 FROM conversation_turns WHERE id = ?1",
+                params![current_turn.to_string(), lorebook_id.to_string(), activated_entry_ids],
+            )
+            .expect("lorebook attribution");
+        transaction.commit().expect("commit");
+        drop(connection);
+
+        let turn = database.get_turn(current_turn).expect("turn");
+        assert_eq!(
+            turn.prompt.expect("prompt attribution").selected_entry_ids,
+            vec![prompt_entry_id]
+        );
+        assert_eq!(
+            turn.lorebooks[0].activated_entry_ids,
+            vec![lorebook_entry_id]
+        );
+
+        let connection = database.connection().expect("connection");
+        assert!(
+            connection
+                .execute(
+                    "UPDATE conversation_turns SET prompt_entry_ids_json = NULL WHERE id = ?1",
+                    params![current_turn.to_string()],
+                )
+                .is_err()
+        );
+        let malformed_ids = slice::encode(&vec!["not-a-prompt-entry-id"]).expect("malformed ids");
+        connection
+            .execute(
+                "UPDATE conversation_turns SET prompt_entry_ids_json = ?1 WHERE id = ?2",
+                params![malformed_ids, current_turn.to_string()],
+            )
+            .expect("typed id corruption fixture");
+        drop(connection);
+        assert_eq!(
+            database.get_turn(current_turn),
+            Err(ConversationRepositoryError::Storage)
+        );
     }
 
     #[test]
