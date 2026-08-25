@@ -1378,8 +1378,10 @@ fn prompt_conditions(
         input_scopes: runtime.input_scopes.clone(),
         output_scopes: runtime.output_scopes.clone(),
         provider_id: runtime.provider_id.clone(),
-        reasoning_enabled: request.capabilities.reasoning,
-        vision_enabled: request.capabilities.vision,
+        reasoning_enabled: request.capabilities.reasoning
+            == lettuce_models::CapabilityStatus::Supported,
+        vision_enabled: request.capabilities.input_modalities.image
+            == lettuce_models::CapabilityStatus::Supported,
         time_awareness_enabled: runtime.time_awareness_enabled,
         companion_mode_enabled: runtime.companion_mode_enabled,
     }
@@ -2097,7 +2099,7 @@ mod tests {
             guidance: None,
             window: lettuce_conversations::ContextWindowPolicy::default(),
             selected_speaker: None,
-            capabilities: lettuce_conversations::CapabilitySet::default(),
+            capabilities: lettuce_models::ModelCapabilities::default(),
             safety: lettuce_conversations::SafetyContext::Standard,
             prompt_runtime: lettuce_conversations::PromptRuntimeFacts::default(),
             prompt_values: lettuce_conversations::PromptRuntimeValues::default(),

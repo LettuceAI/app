@@ -14,12 +14,12 @@ use lettuce_context::{
 use lettuce_conversations::{
     ConversationKind, ConversationReader, CreateConversationPlan, DirectConversationDetails,
     GroupChatModeSnapshot, GroupConversationDetails, IdempotencyKey, InitialMessageOrigin,
-    MemoryModeSnapshot, MessagePart, MessageRole, ModelProviderKind, ParticipantRole,
-    PromptPurposeSnapshot, SnapshotSelection, SnapshotSource,
+    MemoryModeSnapshot, MessagePart, MessageRole, ParticipantRole, PromptPurposeSnapshot,
+    SnapshotSelection, SnapshotSource,
 };
 use lettuce_database::Database;
 use lettuce_models::{
-    Modality, ModelKind, ModelProfile, ModelProfileConfig, ModelProfileRepository, ProviderAccount,
+    ModelKind, ModelProfile, ModelProfileConfig, ModelProfileRepository, ProviderAccount,
     ProviderAccountRepository, ProviderConfig, ProviderProtocol,
 };
 use lettuce_settings::GlobalSettingsStore;
@@ -259,11 +259,23 @@ fn seed_model_with(
             display_name: "Vendor Model".into(),
             kind,
             config: ModelProfileConfig {
-                input_modalities: vec![Modality::Text],
-                output_modalities: vec![Modality::Text],
-                temperature: Some(0.7),
-                context_length: Some(8192),
-                max_output_tokens: Some(1024),
+                chat_parameters: lettuce_models::ChatParameterProfile {
+                    temperature: Some(0.7),
+                    context_length: Some(8192),
+                    max_output_tokens: Some(1024),
+                    ..Default::default()
+                },
+                capabilities: lettuce_models::ModelCapabilities {
+                    input_modalities: lettuce_models::ModalityCapabilities {
+                        text: lettuce_models::CapabilityStatus::Supported,
+                        ..Default::default()
+                    },
+                    output_modalities: lettuce_models::ModalityCapabilities {
+                        text: lettuce_models::CapabilityStatus::Supported,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
             },
             revision: Revision::INITIAL,
             created_at: TimestampMillis::new(1),
@@ -960,7 +972,7 @@ fn model_prefers_the_character_default_over_the_application_default() {
     {
         SnapshotSelection::Inherited(model) => {
             assert_eq!(model.source_id, character_model);
-            assert_eq!(model.provider_kind, ModelProviderKind::Gemini);
+            assert_eq!(model.provider_protocol, ProviderProtocol::Gemini);
             assert_eq!(model.context_length, Some(8192));
             assert_eq!(model.max_output_tokens, Some(1024));
         }
@@ -1006,7 +1018,7 @@ fn an_unmapped_provider_protocol_becomes_other() {
     .model
     {
         SnapshotSelection::Inherited(model) => {
-            assert_eq!(model.provider_kind, ModelProviderKind::Other);
+            assert_eq!(model.provider_protocol, ProviderProtocol::StableDiffusion);
         }
         other => panic!("expected an inherited model, got {other:?}"),
     }
@@ -2218,7 +2230,7 @@ fn member_models_prefer_the_override_then_the_character_default_and_never_the_ap
     match &details.group.members[1].model_override {
         SnapshotSelection::Explicit(model) => {
             assert_eq!(model.source_id, override_model);
-            assert_eq!(model.provider_kind, ModelProviderKind::Anthropic);
+            assert_eq!(model.provider_protocol, ProviderProtocol::Anthropic);
         }
         other => panic!("expected the member override model, got {other:?}"),
     }

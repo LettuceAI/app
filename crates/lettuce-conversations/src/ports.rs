@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use lettuce_media::AssetRetainer;
+use lettuce_models::ModelCapabilities;
 use lettuce_types::{
     AssetId, ContentHash, ConversationBranchId, ConversationId, ConversationParticipantId,
     GenerationAttemptId, GenerationTurnId, JobId, MessageCandidateId, MessageId, MessageRevisionId,
@@ -1232,7 +1233,7 @@ pub struct ContextRequest {
     pub guidance: Option<String>,
     pub window: ContextWindowPolicy,
     pub selected_speaker: Option<crate::generation::SelectedSpeakerDecision>,
-    pub capabilities: CapabilitySet,
+    pub capabilities: ModelCapabilities,
     pub safety: SafetyContext,
     pub prompt_runtime: PromptRuntimeFacts,
     pub prompt_values: PromptRuntimeValues,
@@ -1261,6 +1262,11 @@ impl ContextRequest {
             self.branch_path.iter().copied(),
         )?;
         self.window.validate()?;
+        self.capabilities
+            .validate()
+            .map_err(|_| crate::ValidationError::InvalidValue {
+                field: "context_request.capabilities",
+            })?;
         self.prompt_runtime.validate()?;
         self.prompt_values.validate()?;
         if let Some(guidance) = &self.guidance {
@@ -1525,18 +1531,6 @@ impl MemoryContribution {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct CapabilitySet {
-    pub vision: bool,
-    pub tools: bool,
-    pub audio: bool,
-    pub text_input: bool,
-    pub text_output: bool,
-    pub streaming: bool,
-    pub reasoning: bool,
-    pub prompt_cache: bool,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SafetyContext {
     Standard,
@@ -1684,7 +1678,7 @@ pub struct ModelResolveRequest {
     pub operation: GenerationOperation,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct InferenceRequest {
     pub turn_id: GenerationTurnId,
     pub attempt_id: GenerationAttemptId,
@@ -1696,31 +1690,13 @@ pub struct InferenceRequest {
     pub media_grants: Vec<lettuce_types::AssetId>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ResolvedInferenceProfile {
-    pub model: ModelSelectionSnapshot,
-    pub model_profile_id: lettuce_types::ModelProfileId,
-    pub model_revision: lettuce_types::Revision,
-    pub provider_account_id: lettuce_types::ProviderAccountId,
-    pub provider_account_revision: lettuce_types::Revision,
-    pub capabilities: CapabilitySet,
-    pub numeric_settings: ResolvedNumericSettings,
+    pub chat_profile: lettuce_models::ResolvedChatProfile,
     pub tool_policy: ToolPolicy,
-    pub reasoning_policy: ReasoningPolicy,
     pub output_policy: OutputPolicy,
     pub safety_policy: SafetyContext,
     pub correlation_id: Option<lettuce_types::RequestId>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct ResolvedNumericSettings {
-    pub max_output_tokens: u32,
-    pub temperature_milli: u32,
-    pub top_p_milli: u32,
-    pub top_k: u32,
-    pub frequency_penalty_milli: i32,
-    pub presence_penalty_milli: i32,
-    pub repetition_penalty_milli: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1728,13 +1704,6 @@ pub enum ToolPolicy {
     Disabled,
     Allowed,
     Required,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ReasoningPolicy {
-    Disabled,
-    SummaryOnly,
-    Enabled,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2034,7 +2003,7 @@ mod tests {
             guidance: None,
             window: ContextWindowPolicy::default(),
             selected_speaker: None,
-            capabilities: CapabilitySet::default(),
+            capabilities: ModelCapabilities::default(),
             safety: SafetyContext::Standard,
             prompt_runtime: PromptRuntimeFacts::default(),
             prompt_values: PromptRuntimeValues::default(),

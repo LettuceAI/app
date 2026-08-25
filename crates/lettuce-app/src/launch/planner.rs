@@ -1461,11 +1461,13 @@ fn model_snapshot(
         snapshot_ref: draft.reference(),
         source_id: profile.id,
         source_revision: profile.revision,
-        provider_kind: policy::provider_kind(account.protocol),
+        provider_account_id: account.id,
+        provider_account_revision: account.revision,
+        provider_protocol: account.protocol,
         external_model_id: profile.external_model_id.clone(),
         display_name: profile.display_name.clone(),
-        context_length: profile.config.context_length,
-        max_output_tokens: profile.config.max_output_tokens,
+        context_length: profile.config.chat_parameters.context_length,
+        max_output_tokens: profile.config.chat_parameters.max_output_tokens,
     }
 }
 

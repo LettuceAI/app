@@ -2,6 +2,7 @@
 //! authored values needed to replay a conversation; they are not live domain
 //! pointers and never contain adapter-specific maps or provider requests.
 
+use lettuce_models::{ExpectedModelIdentity, ModelKind, ProviderProtocol};
 use lettuce_types::{
     CharacterId, ContentHash, ConversationStarterId, GroupId, LorebookId, MemoryRevisionId,
     ModelProfileId, PersonaId, PromptDocumentId, Revision, SceneId, SnapshotArtifactId,
@@ -324,7 +325,9 @@ pub struct ModelSelectionSnapshot {
     pub snapshot_ref: ProtectedSnapshotRef,
     pub source_id: ModelProfileId,
     pub source_revision: Revision,
-    pub provider_kind: ModelProviderKind,
+    pub provider_account_id: lettuce_types::ProviderAccountId,
+    pub provider_account_revision: Revision,
+    pub provider_protocol: ProviderProtocol,
     pub external_model_id: String,
     pub display_name: String,
     pub context_length: Option<u32>,
@@ -335,22 +338,27 @@ impl ModelSelectionSnapshot {
     pub fn validate(&self) -> Result<(), ValidationError> {
         self.validate_snapshot("model_snapshot")
     }
-}
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ModelProviderKind {
-    OpenAiCompatible,
-    Anthropic,
-    Gemini,
-    Ollama,
-    LlamaCpp,
-    Other,
+    /// Bridges the immutable launch selection to the model-domain resolver.
+    /// The resolver compares this frozen account identity with live state;
+    /// no endpoint or credential data crosses this boundary.
+    pub fn expected_chat_identity(&self) -> ExpectedModelIdentity {
+        ExpectedModelIdentity {
+            model_profile_id: self.source_id,
+            model_revision: self.source_revision,
+            provider_account_id: self.provider_account_id,
+            provider_account_revision: self.provider_account_revision,
+            external_model_id: self.external_model_id.clone(),
+            display_name: self.display_name.clone(),
+            provider_protocol: self.provider_protocol,
+            model_kind: ModelKind::Chat,
+        }
+    }
 }
 
 impl ValidateSnapshot for ModelSelectionSnapshot {
     fn validate_snapshot(&self, field: &'static str) -> Result<(), ValidationError> {
-        if self.source_revision.get() == 0 {
+        if self.source_revision.get() == 0 || self.provider_account_revision.get() == 0 {
             return Err(ValidationError::ZeroRevision);
         }
         validate_source_ref(
@@ -360,7 +368,11 @@ impl ValidateSnapshot for ModelSelectionSnapshot {
             "model_snapshot.ref",
         )?;
         validate_text(field, &self.external_model_id, MAX_DISPLAY_CHARS * 4, false)?;
-        validate_text(field, &self.display_name, MAX_DISPLAY_CHARS * 4, false)
+        validate_text(field, &self.display_name, MAX_DISPLAY_CHARS * 4, false)?;
+        if self.context_length == Some(0) || self.max_output_tokens == Some(0) {
+            return Err(ValidationError::InvalidValue { field });
+        }
+        Ok(())
     }
 }
 
@@ -716,5 +728,42 @@ impl GroupParticipantPolicyDocument {
             member.validate()?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lettuce_types::SnapshotArtifactId;
+
+    fn model_snapshot() -> ModelSelectionSnapshot {
+        let source_id = ModelProfileId::new();
+        let source_revision = Revision::new(2);
+        ModelSelectionSnapshot {
+            snapshot_ref: ProtectedSnapshotRef {
+                source: SnapshotSource::Model(source_id),
+                source_revision,
+                artifact_id: SnapshotArtifactId::new(),
+                digest: ContentHash::parse("ab".repeat(32)).expect("digest"),
+                schema_version: 1,
+                byte_size: 1,
+            },
+            source_id,
+            source_revision,
+            provider_account_id: lettuce_types::ProviderAccountId::new(),
+            provider_account_revision: Revision::new(3),
+            provider_protocol: ProviderProtocol::OpenAiCompatible,
+            external_model_id: "remote-model".into(),
+            display_name: "Remote model".into(),
+            context_length: Some(1_000),
+            max_output_tokens: Some(100),
+        }
+    }
+
+    #[test]
+    fn model_snapshot_requires_frozen_account_revision() {
+        let mut snapshot = model_snapshot();
+        snapshot.provider_account_revision = Revision::new(0);
+        assert_eq!(snapshot.validate(), Err(ValidationError::ZeroRevision));
     }
 }

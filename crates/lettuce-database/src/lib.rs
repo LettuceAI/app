@@ -21,7 +21,7 @@ use lettuce_media::{
     MediaBlob, MediaBlobRepository, MediaBlobRepositoryError, MediaKind, RetentionClass,
 };
 use lettuce_models::{
-    Modality, ModelDependencyReference, ModelKind, ModelProfile, ModelProfileRepository,
+    ModelDependencyReference, ModelKind, ModelProfile, ModelProfileRepository,
     ModelRepositoryError, ProviderAccount, ProviderAccountRepository, ProviderConfig,
     ProviderProtocol, SecretHeader,
 };
@@ -479,26 +479,13 @@ fn validate_account(account: &ProviderAccount) -> Result<(), ModelRepositoryErro
 fn validate_profile(profile: &ModelProfile) -> Result<(), ModelRepositoryError> {
     if profile.external_model_id.trim().is_empty()
         || profile.display_name.trim().is_empty()
-        || profile.config.input_modalities.is_empty()
-        || profile.config.output_modalities.is_empty()
         || profile.revision.get() == 0
-        || has_duplicate_modalities(&profile.config.input_modalities)
-        || has_duplicate_modalities(&profile.config.output_modalities)
-        || profile
-            .config
-            .temperature
-            .is_some_and(|value| !value.is_finite())
+        || profile.config.chat_parameters.validate().is_err()
+        || profile.config.capabilities.validate().is_err()
     {
         return Err(ModelRepositoryError::InvalidData);
     }
     Ok(())
-}
-
-fn has_duplicate_modalities(modalities: &[Modality]) -> bool {
-    modalities
-        .iter()
-        .enumerate()
-        .any(|(index, modality)| modalities[..index].contains(modality))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1427,9 +1414,10 @@ mod tests {
         MediaAssetRepositoryError, MediaBlob, MediaBlobRepository, MediaKind, RetentionClass,
     };
     use lettuce_models::{
-        CustomAuth, Modality, ModelDependencyReference, ModelKind, ModelProfile,
-        ModelProfileConfig, ModelProfileRepository, ModelRepositoryError, ProviderAccount,
-        ProviderAccountRepository, ProviderConfig, ProviderProtocol, SecretHeader,
+        CapabilityEvidence, CapabilityEvidenceSource, CustomAuth, ModelCapabilities,
+        ModelDependencyReference, ModelKind, ModelProfile, ModelProfileConfig,
+        ModelProfileRepository, ModelRepositoryError, ProviderAccount, ProviderAccountRepository,
+        ProviderConfig, ProviderProtocol, SecretHeader,
     };
     use lettuce_settings::{
         GlobalSettingsStore, GlobalSettingsStoreError, HeaderName, SecretOwnerId, SecretPurpose,
@@ -1479,11 +1467,13 @@ mod tests {
             display_name: "Example".into(),
             kind: ModelKind::Chat,
             config: ModelProfileConfig {
-                input_modalities: vec![Modality::Text, Modality::Image],
-                output_modalities: vec![Modality::Text],
-                temperature: Some(0.8),
-                context_length: Some(32_768),
-                max_output_tokens: Some(2_048),
+                chat_parameters: lettuce_models::ChatParameterProfile {
+                    temperature: Some(0.8),
+                    context_length: Some(32_768),
+                    max_output_tokens: Some(2_048),
+                    ..Default::default()
+                },
+                capabilities: lettuce_models::ModelCapabilities::default(),
             },
             revision: Revision::INITIAL,
             created_at: TimestampMillis::new(20),
@@ -2178,6 +2168,29 @@ mod tests {
     }
 
     #[test]
+    fn typed_chat_parameters_and_capabilities_round_trip() {
+        let database = Database::open_in_memory().expect("open database");
+        let account =
+            ProviderAccountRepository::upsert(&database, provider(), None).expect("insert account");
+        let mut authored = profile(account.id);
+        authored.config.capabilities = ModelCapabilities::unknown(CapabilityEvidence {
+            source: CapabilityEvidenceSource::Catalog,
+            source_version: 1,
+            observed_at: TimestampMillis::new(30),
+        });
+        let stored = ModelProfileRepository::upsert(&database, authored.clone(), None)
+            .expect("insert profile");
+        assert_eq!(stored.config, authored.config);
+        assert_eq!(
+            ModelProfileRepository::get(&database, stored.id)
+                .expect("load profile")
+                .expect("profile exists")
+                .config,
+            authored.config
+        );
+    }
+
+    #[test]
     fn provider_config_corruption_is_rejected() {
         let database = Database::open_in_memory().expect("open database");
         let account =
@@ -2281,7 +2294,7 @@ mod tests {
             Err(ModelRepositoryError::InvalidData)
         );
         let mut invalid_profile = profile(missing);
-        invalid_profile.config.input_modalities.clear();
+        invalid_profile.config.capabilities.format_version = 0;
         assert_eq!(
             ModelProfileRepository::upsert(&database, invalid_profile, None),
             Err(ModelRepositoryError::InvalidData)

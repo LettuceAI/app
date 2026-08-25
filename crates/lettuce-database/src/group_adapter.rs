@@ -1462,7 +1462,7 @@ mod tests {
             .expect("provider fixture");
         connection
             .execute(
-                "INSERT INTO model_profiles (id,provider_account_id,external_model_id,display_name,kind,config_json,revision,created_at,updated_at) VALUES (?1,?2,'test/model','Test',?3,'{\"format_version\":1,\"value\":{\"input_modalities\":[\"text\"],\"output_modalities\":[\"text\"]}}',1,1,1)",
+                "INSERT INTO model_profiles (id,provider_account_id,external_model_id,display_name,kind,config_json,revision,created_at,updated_at) VALUES (?1,?2,'test/model','Test',?3,'{\"format_version\":1,\"value\":{\"chat_parameters\":{},\"capabilities\":{\"format_version\":1,\"evidence\":{\"source\":\"unspecified\",\"source_version\":0,\"observed_at\":0},\"input_modalities\":{\"text\":\"unknown\",\"image\":\"unknown\",\"audio\":\"unknown\"},\"output_modalities\":{\"text\":\"unknown\",\"image\":\"unknown\",\"audio\":\"unknown\"},\"streaming\":\"unknown\",\"tools\":\"unknown\",\"structured_output\":\"unknown\",\"reasoning\":\"unknown\",\"prompt_cache\":\"unknown\",\"context_length\":null,\"max_visible_output_tokens\":null,\"max_total_completion_tokens\":null,\"parameter_support\":{\"temperature\":\"unknown\",\"top_p\":\"unknown\",\"top_k\":\"unknown\",\"frequency_penalty\":\"unknown\",\"presence_penalty\":\"unknown\",\"repetition_penalty\":\"unknown\"}}}}',1,1,1)",
                 rusqlite::params![id.to_string(), account.to_string(), kind],
             )
             .expect("model fixture");

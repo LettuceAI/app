@@ -349,6 +349,7 @@ dependencies = [
  "blake3",
  "lettuce-jobs",
  "lettuce-media",
+ "lettuce-models",
  "lettuce-types",
  "serde",
  "serde_json",

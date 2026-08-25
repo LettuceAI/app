@@ -40,8 +40,8 @@ mod tests {
     use lettuce_types::{
         CharacterId, ContentHash, ConversationBranchId, ConversationId, ConversationParticipantId,
         GenerationAttemptId, GenerationTurnId, GroupId, MessageCandidateId, MessageId,
-        MessageRevisionId, ReplayArtifactId, Revision, SceneId, SnapshotArtifactId,
-        StarterMessageId, TimestampMillis, UsageEventId,
+        MessageRevisionId, ProviderAccountId, ReplayArtifactId, Revision, SceneId,
+        SnapshotArtifactId, StarterMessageId, TimestampMillis, UsageEventId,
     };
 
     #[derive(Default)]
@@ -575,7 +575,9 @@ mod tests {
             snapshot_ref: model_ref.clone(),
             source_id: model_id,
             source_revision: Revision::INITIAL,
-            provider_kind: ModelProviderKind::Other,
+            provider_account_id: ProviderAccountId::new(),
+            provider_account_revision: Revision::INITIAL,
+            provider_protocol: lettuce_models::ProviderProtocol::OpenAiCompatible,
             external_model_id: "model".into(),
             display_name: "Model".into(),
             context_length: None,
@@ -2887,7 +2889,9 @@ mod tests {
             snapshot_ref: snapshot_ref(SnapshotSource::Model(model_id)),
             source_id: model_id,
             source_revision: Revision::INITIAL,
-            provider_kind: ModelProviderKind::Other,
+            provider_account_id: ProviderAccountId::new(),
+            provider_account_revision: Revision::INITIAL,
+            provider_protocol: lettuce_models::ProviderProtocol::OpenAiCompatible,
             external_model_id: "model".into(),
             display_name: "Model".into(),
             context_length: None,

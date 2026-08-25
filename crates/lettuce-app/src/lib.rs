@@ -28,8 +28,8 @@ mod tests {
         MediaBlob, MediaBlobRepository, MediaKind, RetentionClass,
     };
     use lettuce_models::{
-        Modality, ModelKind, ModelProfile, ModelProfileConfig, ModelProfileRepository,
-        ProviderAccount, ProviderAccountRepository, ProviderConfig, ProviderProtocol,
+        ModelKind, ModelProfile, ModelProfileConfig, ModelProfileRepository, ProviderAccount,
+        ProviderAccountRepository, ProviderConfig, ProviderProtocol,
     };
     use lettuce_settings::{GlobalSettingsStore, HeaderName, SecretRef};
     use lettuce_types::{
@@ -66,11 +66,23 @@ mod tests {
             display_name: "Example".into(),
             kind: ModelKind::Chat,
             config: ModelProfileConfig {
-                input_modalities: vec![Modality::Text],
-                output_modalities: vec![Modality::Text],
-                temperature: Some(0.7),
-                context_length: Some(4096),
-                max_output_tokens: Some(512),
+                chat_parameters: lettuce_models::ChatParameterProfile {
+                    temperature: Some(0.7),
+                    context_length: Some(4096),
+                    max_output_tokens: Some(512),
+                    ..Default::default()
+                },
+                capabilities: lettuce_models::ModelCapabilities {
+                    input_modalities: lettuce_models::ModalityCapabilities {
+                        text: lettuce_models::CapabilityStatus::Supported,
+                        ..Default::default()
+                    },
+                    output_modalities: lettuce_models::ModalityCapabilities {
+                        text: lettuce_models::CapabilityStatus::Supported,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
             },
             revision: Revision::INITIAL,
             created_at: TimestampMillis::new(2),

@@ -23,7 +23,9 @@ use lettuce_conversations::{
     SpeakerSelectionV1, StarterMessageV1, StarterRoleV1, StarterSnapshotBodyV1,
     build_snapshot_draft,
 };
-use lettuce_models::{Modality, ModelKind, ModelProfile, ProviderAccount, ProviderProtocol};
+use lettuce_models::{
+    CapabilityStatus, Modality, ModelKind, ModelProfile, ProviderAccount, ProviderProtocol,
+};
 use lettuce_types::{Revision, SnapshotArtifactId};
 
 pub(crate) fn draft<T: SnapshotDocumentBody>(
@@ -341,23 +343,11 @@ pub(crate) fn model_body(profile: &ModelProfile, account: &ProviderAccount) -> M
             ModelKind::Embedding => ModelKindV1::Embedding,
             ModelKind::Speech => ModelKindV1::Speech,
         },
-        input_modalities: profile
-            .config
-            .input_modalities
-            .iter()
-            .copied()
-            .map(modality)
-            .collect(),
-        output_modalities: profile
-            .config
-            .output_modalities
-            .iter()
-            .copied()
-            .map(modality)
-            .collect(),
-        temperature: profile.config.temperature,
-        context_length: profile.config.context_length,
-        max_output_tokens: profile.config.max_output_tokens,
+        input_modalities: supported_modalities(profile.config.capabilities.input_modalities),
+        output_modalities: supported_modalities(profile.config.capabilities.output_modalities),
+        temperature: profile.config.chat_parameters.temperature,
+        context_length: profile.config.chat_parameters.context_length,
+        max_output_tokens: profile.config.chat_parameters.max_output_tokens,
         provider: SnapshotProviderDescriptorV1 {
             provider_account_id: account.id,
             provider_revision: account.revision,
@@ -381,6 +371,14 @@ const fn modality(value: Modality) -> ModalityV1 {
         Modality::Image => ModalityV1::Image,
         Modality::Audio => ModalityV1::Audio,
     }
+}
+
+fn supported_modalities(value: lettuce_models::ModalityCapabilities) -> Vec<ModalityV1> {
+    [Modality::Text, Modality::Image, Modality::Audio]
+        .into_iter()
+        .filter(|modality| value.get(*modality) == CapabilityStatus::Supported)
+        .map(modality)
+        .collect()
 }
 
 fn image_recommendation(value: &ImageRecommendation) -> ImageRecommendationV1 {

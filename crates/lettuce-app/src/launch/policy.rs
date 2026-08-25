@@ -4,10 +4,9 @@ use lettuce_characters::{
 };
 use lettuce_context::LorebookBinding;
 use lettuce_conversations::{
-    GroupChatModeSnapshot, GroupSpeakerSelectionSnapshot, MemoryModeSnapshot, ModelProviderKind,
-    SnapshotSelection, SnapshotSource,
+    GroupChatModeSnapshot, GroupSpeakerSelectionSnapshot, MemoryModeSnapshot, SnapshotSelection,
+    SnapshotSource,
 };
-use lettuce_models::ProviderProtocol;
 use lettuce_types::{
     CharacterId, ConversationStarterId, GroupId, LorebookId, ModelProfileId, PersonaId,
     PromptDocumentId, Revision, SceneId,
@@ -396,17 +395,6 @@ pub(crate) fn scene_title(text: Option<&str>, ordinal: u32) -> String {
         format!("Scene {}", ordinal.saturating_add(1))
     } else {
         derived
-    }
-}
-
-pub(crate) const fn provider_kind(protocol: ProviderProtocol) -> ModelProviderKind {
-    match protocol {
-        ProviderProtocol::OpenAiCompatible => ModelProviderKind::OpenAiCompatible,
-        ProviderProtocol::Anthropic => ModelProviderKind::Anthropic,
-        ProviderProtocol::Gemini => ModelProviderKind::Gemini,
-        ProviderProtocol::Ollama => ModelProviderKind::Ollama,
-        ProviderProtocol::LlamaCpp => ModelProviderKind::LlamaCpp,
-        ProviderProtocol::StableDiffusion => ModelProviderKind::Other,
     }
 }
 

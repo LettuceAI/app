@@ -2,6 +2,14 @@
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
+mod capabilities;
+mod parameters;
+mod resolution;
+
+pub use capabilities::*;
+pub use parameters::*;
+pub use resolution::*;
+
 use lettuce_settings::{HeaderName, SecretRef};
 use lettuce_types::{
     CharacterId, GroupId, ModelProfileId, ProviderAccountId, Revision, TimestampMillis,
@@ -83,11 +91,9 @@ pub enum Modality {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ModelProfileConfig {
-    pub input_modalities: Vec<Modality>,
-    pub output_modalities: Vec<Modality>,
-    pub temperature: Option<f64>,
-    pub context_length: Option<u32>,
-    pub max_output_tokens: Option<u32>,
+    #[serde(default)]
+    pub chat_parameters: ChatParameterProfile,
+    pub capabilities: ModelCapabilities,
 }
 
 #[derive(Debug, Clone, PartialEq)]

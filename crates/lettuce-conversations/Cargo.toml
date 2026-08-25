@@ -19,6 +19,7 @@ blake3.workspace = true
 lettuce-types.workspace = true
 lettuce-jobs.workspace = true
 lettuce-media.workspace = true
+lettuce-models.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
