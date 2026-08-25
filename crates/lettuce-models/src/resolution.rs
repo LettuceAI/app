@@ -136,7 +136,6 @@ pub enum IdentityField {
 #[serde(rename_all = "snake_case")]
 pub enum CredentialRequirement {
     ApiKey,
-    SecretHeader,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -316,21 +315,15 @@ fn validate_credentials(account: &ProviderAccount) -> Result<(), ChatProfileReso
         .then_some(CredentialRequirement::ApiKey),
         ProviderConfig::Custom { auth, .. } => match auth {
             crate::CustomAuth::None => None,
-            crate::CustomAuth::Bearer | crate::CustomAuth::Query => {
-                Some(CredentialRequirement::ApiKey)
-            }
-            crate::CustomAuth::Header => Some(CredentialRequirement::SecretHeader),
+            crate::CustomAuth::Bearer
+            | crate::CustomAuth::Query { .. }
+            | crate::CustomAuth::Header { .. } => Some(CredentialRequirement::ApiKey),
         },
     };
     match required {
         Some(CredentialRequirement::ApiKey) if account.api_key_ref.is_none() => {
             Err(ChatProfileResolutionError::MissingCredential {
                 requirement: CredentialRequirement::ApiKey,
-            })
-        }
-        Some(CredentialRequirement::SecretHeader) if account.secret_headers.is_empty() => {
-            Err(ChatProfileResolutionError::MissingCredential {
-                requirement: CredentialRequirement::SecretHeader,
             })
         }
         _ => Ok(()),
@@ -950,6 +943,32 @@ mod tests {
             )
             .is_ok()
         );
+        for auth in [
+            crate::CustomAuth::Header {
+                name: HeaderName::new("x-api-key").expect("header"),
+            },
+            crate::CustomAuth::Query {
+                name: crate::QueryParameterName::new("api_key").expect("query name"),
+            },
+            crate::CustomAuth::None,
+        ] {
+            accepted.config = ProviderConfig::Custom {
+                chat_path: "/chat/completions".into(),
+                models_path: Some("/models".into()),
+                streaming: true,
+                auth,
+            };
+            assert!(
+                resolve_chat_profile(
+                    &expected,
+                    &profile,
+                    &accepted,
+                    &ChatParameterResolutionInput::default(),
+                    &ChatRequirements::default(),
+                )
+                .is_ok()
+            );
+        }
 
         let mut invalid = account;
         invalid.config = ProviderConfig::Custom {

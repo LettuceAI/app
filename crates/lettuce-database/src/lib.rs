@@ -1494,7 +1494,7 @@ mod tests {
         CapabilityEvidence, CapabilityEvidenceSource, CustomAuth, ModelCapabilities,
         ModelDependencyReference, ModelKind, ModelProfile, ModelProfileConfig,
         ModelProfileRepository, ModelRepositoryError, ProviderAccount, ProviderAccountRepository,
-        ProviderConfig, ProviderProtocol, SecretHeader,
+        ProviderConfig, ProviderProtocol, QueryParameterName, SecretHeader,
     };
     use lettuce_settings::{
         GlobalSettingsStore, GlobalSettingsStoreError, HeaderName, SecretOwnerId, SecretPurpose,
@@ -2359,6 +2359,159 @@ mod tests {
                 Err(ModelRepositoryError::InvalidData)
             );
         }
+    }
+
+    #[test]
+    fn provider_auth_metadata_is_validated_on_write_and_read() {
+        let database = Database::open_in_memory().expect("open database");
+
+        let mut header = provider();
+        header.config = ProviderConfig::Custom {
+            chat_path: "/chat".into(),
+            models_path: Some("/models".into()),
+            streaming: true,
+            auth: CustomAuth::Header {
+                name: HeaderName::new("X-API-Key").expect("header name"),
+            },
+        };
+        let stored = ProviderAccountRepository::upsert(&database, header.clone(), None)
+            .expect("custom header account writes");
+        assert_eq!(
+            ProviderAccountRepository::get(&database, stored.id)
+                .expect("read account")
+                .expect("account exists")
+                .config,
+            header.config
+        );
+
+        let mut query = provider();
+        query.config = ProviderConfig::Custom {
+            chat_path: "/chat".into(),
+            models_path: None,
+            streaming: false,
+            auth: CustomAuth::Query {
+                name: QueryParameterName::new("api_key").expect("query name"),
+            },
+        };
+        assert!(ProviderAccountRepository::upsert(&database, query, None).is_ok());
+
+        let mut none = provider();
+        none.api_key_ref = None;
+        none.config = ProviderConfig::Custom {
+            chat_path: "/chat".into(),
+            models_path: None,
+            streaming: false,
+            auth: CustomAuth::None,
+        };
+        assert!(ProviderAccountRepository::upsert(&database, none, None).is_ok());
+
+        for auth in [
+            CustomAuth::Bearer,
+            CustomAuth::Header {
+                name: HeaderName::new("X-API-Key").expect("header name"),
+            },
+            CustomAuth::Query {
+                name: QueryParameterName::new("api_key").expect("query name"),
+            },
+        ] {
+            let mut invalid = provider();
+            invalid.config = ProviderConfig::Custom {
+                chat_path: "/chat".into(),
+                models_path: None,
+                streaming: false,
+                auth,
+            };
+            invalid.api_key_ref = None;
+            assert_eq!(
+                ProviderAccountRepository::upsert(&database, invalid, None),
+                Err(ModelRepositoryError::InvalidData)
+            );
+        }
+
+        let mut no_endpoint = provider();
+        no_endpoint.endpoint = None;
+        no_endpoint.config = ProviderConfig::Custom {
+            chat_path: "/chat".into(),
+            models_path: None,
+            streaming: false,
+            auth: CustomAuth::None,
+        };
+        assert_eq!(
+            ProviderAccountRepository::upsert(&database, no_endpoint, None),
+            Err(ModelRepositoryError::InvalidData)
+        );
+
+        let mut duplicate_names = provider();
+        duplicate_names.secret_headers = vec![
+            SecretHeader {
+                name: HeaderName::new("X-Debug").expect("header name"),
+                secret_ref: SecretRef::new(),
+            },
+            SecretHeader {
+                name: HeaderName::new("x-debug").expect("header name"),
+                secret_ref: SecretRef::new(),
+            },
+        ];
+        assert_eq!(
+            ProviderAccountRepository::upsert(&database, duplicate_names, None),
+            Err(ModelRepositoryError::InvalidData)
+        );
+
+        let mut duplicate_refs = provider();
+        let duplicate_ref = SecretRef::new();
+        duplicate_refs.secret_headers = vec![
+            SecretHeader {
+                name: HeaderName::new("X-One").expect("header name"),
+                secret_ref: duplicate_ref,
+            },
+            SecretHeader {
+                name: HeaderName::new("X-Two").expect("header name"),
+                secret_ref: duplicate_ref,
+            },
+        ];
+        assert_eq!(
+            ProviderAccountRepository::upsert(&database, duplicate_refs, None),
+            Err(ModelRepositoryError::InvalidData)
+        );
+
+        let mut reserved = provider();
+        reserved.secret_headers = vec![SecretHeader {
+            name: HeaderName::new("Content-Length").expect("header name"),
+            secret_ref: SecretRef::new(),
+        }];
+        assert_eq!(
+            ProviderAccountRepository::upsert(&database, reserved, None),
+            Err(ModelRepositoryError::InvalidData)
+        );
+
+        let mut api_key_collision = provider();
+        api_key_collision.secret_headers = vec![SecretHeader {
+            name: HeaderName::new("X-Collision").expect("header name"),
+            secret_ref: api_key_collision.api_key_ref.expect("api key ref"),
+        }];
+        assert_eq!(
+            ProviderAccountRepository::upsert(&database, api_key_collision, None),
+            Err(ModelRepositoryError::InvalidData)
+        );
+
+        let corrupt = provider();
+        let stored = ProviderAccountRepository::upsert(&database, corrupt, None)
+            .expect("insert read-corruption fixture");
+        let connection = database.connection().expect("database lock");
+        connection
+            .execute(
+                "UPDATE provider_accounts SET config_json=?1 WHERE id=?2",
+                rusqlite::params![
+                    r#"{"format_version":1,"value":{"kind":"custom","chat_path":"/chat","models_path":null,"streaming":false,"auth":{"query":{"name":"api&key"}}}}"#,
+                    stored.id.to_string()
+                ],
+            )
+            .expect("corrupt query name");
+        drop(connection);
+        assert_eq!(
+            ProviderAccountRepository::get(&database, stored.id),
+            Err(ModelRepositoryError::InvalidData)
+        );
     }
 
     #[test]

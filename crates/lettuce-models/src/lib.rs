@@ -14,11 +14,14 @@ use lettuce_settings::{HeaderName, SecretOwnerId, SecretRef};
 use lettuce_types::{
     CharacterId, GroupId, ModelProfileId, ProviderAccountId, Revision, TimestampMillis,
 };
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
+use std::collections::HashSet;
 
 const MAX_PROVIDER_KIND_BYTES: usize = 128;
 const MAX_PROVIDER_ENDPOINT_BYTES: usize = 4096;
 const MAX_PROVIDER_PATH_BYTES: usize = 1024;
+const MAX_PROVIDER_QUERY_PARAMETER_BYTES: usize = 128;
+const MAX_PROVIDER_SECRET_HEADERS: usize = 16;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -51,12 +54,56 @@ pub enum ProviderConfig {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum CustomAuth {
     Bearer,
-    Header,
-    Query,
+    Header { name: HeaderName },
+    Query { name: QueryParameterName },
     None,
+}
+
+/// A bounded query parameter name for custom provider authentication.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[serde(transparent)]
+pub struct QueryParameterName(String);
+
+impl QueryParameterName {
+    pub fn new(value: impl Into<String>) -> Result<Self, QueryParameterNameError> {
+        let value = value.into();
+        if value.is_empty() || value.len() > MAX_PROVIDER_QUERY_PARAMETER_BYTES {
+            return Err(QueryParameterNameError::InvalidLength);
+        }
+        if !value.bytes().all(is_query_parameter_byte) {
+            return Err(QueryParameterNameError::InvalidCharacter);
+        }
+        Ok(Self(value))
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for QueryParameterName {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Self::new(String::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+    }
+}
+
+fn is_query_parameter_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || b"!$%'*+-.^_`|~".contains(&byte)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum QueryParameterNameError {
+    #[error("query parameter name has an invalid length")]
+    InvalidLength,
+    #[error("query parameter name contains an invalid character")]
+    InvalidCharacter,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -81,6 +128,8 @@ pub enum ProviderConnectionValidationError {
     ProviderKind,
     Endpoint,
     Path,
+    Authentication,
+    SecretHeaders,
 }
 
 /// Validates the non-secret connection metadata shared by storage and
@@ -99,15 +148,103 @@ pub fn validate_provider_connection(
     if let ProviderConfig::Custom {
         chat_path,
         models_path,
+        auth,
         ..
     } = &account.config
     {
+        if account.endpoint.is_none() {
+            return Err(ProviderConnectionValidationError::Endpoint);
+        }
         validate_path(chat_path)?;
         if let Some(models_path) = models_path {
             validate_path(models_path)?;
         }
+        match auth {
+            CustomAuth::Bearer => {
+                if account.api_key_ref.is_none() {
+                    return Err(ProviderConnectionValidationError::Authentication);
+                }
+            }
+            CustomAuth::Header { name } => {
+                if account.api_key_ref.is_none() || is_dangerous_header_name(name) {
+                    return Err(ProviderConnectionValidationError::Authentication);
+                }
+            }
+            CustomAuth::Query { .. } => {
+                if account.api_key_ref.is_none() {
+                    return Err(ProviderConnectionValidationError::Authentication);
+                }
+            }
+            CustomAuth::None => {}
+        }
+    }
+    validate_secret_headers(account)?;
+    Ok(())
+}
+
+fn validate_secret_headers(
+    account: &ProviderAccount,
+) -> Result<(), ProviderConnectionValidationError> {
+    if account.secret_headers.len() > MAX_PROVIDER_SECRET_HEADERS {
+        return Err(ProviderConnectionValidationError::SecretHeaders);
+    }
+    let mut names = HashSet::with_capacity(account.secret_headers.len());
+    let mut refs = HashSet::with_capacity(account.secret_headers.len());
+    let auth_header_name = match &account.config {
+        ProviderConfig::Custom {
+            auth: CustomAuth::Header { name },
+            ..
+        } => Some(name.as_str()),
+        _ => None,
+    };
+    let standard_or_bearer = matches!(
+        &account.config,
+        ProviderConfig::Standard
+            | ProviderConfig::Custom {
+                auth: CustomAuth::Bearer,
+                ..
+            }
+    );
+    for header in &account.secret_headers {
+        let normalized_name = header.name.as_str().to_ascii_lowercase();
+        if !names.insert(normalized_name)
+            || !refs.insert(header.secret_ref)
+            || is_dangerous_header_name(&header.name)
+            || account
+                .api_key_ref
+                .is_some_and(|api_key_ref| api_key_ref == header.secret_ref)
+            || auth_header_name.is_some_and(|name| name.eq_ignore_ascii_case(header.name.as_str()))
+            || (standard_or_bearer && header.name.as_str().eq_ignore_ascii_case("authorization"))
+        {
+            return Err(ProviderConnectionValidationError::SecretHeaders);
+        }
     }
     Ok(())
+}
+
+fn is_dangerous_header_name(name: &HeaderName) -> bool {
+    matches_ignore_ascii_case(
+        name.as_str(),
+        [
+            "host",
+            "content-length",
+            "content-type",
+            "transfer-encoding",
+            "connection",
+            "upgrade",
+            "keep-alive",
+            "te",
+            "trailer",
+            "proxy-authorization",
+            "proxy-connection",
+        ],
+    )
+}
+
+fn matches_ignore_ascii_case<const N: usize>(value: &str, candidates: [&str; N]) -> bool {
+    candidates
+        .into_iter()
+        .any(|candidate| value.eq_ignore_ascii_case(candidate))
 }
 
 fn validate_endpoint(endpoint: &str) -> Result<(), ProviderConnectionValidationError> {
@@ -261,8 +398,32 @@ pub trait ModelProfileRepository: Send + Sync {
 
 #[cfg(test)]
 mod tests {
-    use super::{ModelDependencyReference, ModelRepositoryError};
+    use super::{
+        CustomAuth, ModelDependencyReference, ModelRepositoryError, ProviderAccount,
+        ProviderConfig, ProviderConnectionValidationError, ProviderProtocol, QueryParameterName,
+        SecretHeader, validate_provider_connection,
+    };
+    use lettuce_settings::{HeaderName, SecretOwnerId, SecretRef};
     use lettuce_types::CharacterId;
+    use lettuce_types::{ProviderAccountId, Revision, TimestampMillis};
+
+    fn account() -> ProviderAccount {
+        ProviderAccount {
+            id: ProviderAccountId::new(),
+            secret_owner_id: SecretOwnerId::new(),
+            provider_kind: "test".into(),
+            protocol: ProviderProtocol::OpenAiCompatible,
+            label: "Test".into(),
+            endpoint: Some("https://example.invalid".into()),
+            enabled: true,
+            api_key_ref: Some(SecretRef::new()),
+            secret_headers: Vec::new(),
+            config: ProviderConfig::Standard,
+            revision: Revision::INITIAL,
+            created_at: TimestampMillis::new(1),
+            updated_at: TimestampMillis::new(1),
+        }
+    }
 
     #[test]
     fn model_dependencies_are_typed_and_closed() {
@@ -296,5 +457,132 @@ mod tests {
             r#"{"kind":"group_member_override","id":{"group_id":"00000000-0000-0000-0000-000000000000","character_id":"00000000-0000-0000-0000-000000000000","extra":true}}"#
         )
         .is_err());
+    }
+
+    #[test]
+    fn custom_auth_metadata_is_typed_and_exactly_serialized() {
+        let header = CustomAuth::Header {
+            name: HeaderName::new("X-API-Key").expect("header name"),
+        };
+        assert_eq!(
+            serde_json::to_value(&header).expect("header auth serializes"),
+            serde_json::json!({"header": {"name": "X-API-Key"}})
+        );
+        let query = CustomAuth::Query {
+            name: QueryParameterName::new("api_key").expect("query name"),
+        };
+        assert_eq!(
+            serde_json::to_value(&query).expect("query auth serializes"),
+            serde_json::json!({"query": {"name": "api_key"}})
+        );
+        assert_eq!(
+            serde_json::from_value::<CustomAuth>(serde_json::json!({
+                "query": {"name": "api_key"}
+            }))
+            .expect("query auth decodes"),
+            query
+        );
+        for name in [
+            "", "api key", "api&key", "api=key", "api?key", "api#key", "é",
+        ] {
+            assert!(
+                QueryParameterName::new(name).is_err(),
+                "invalid query name should be rejected: {name:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn provider_connection_validates_custom_auth_and_secret_header_metadata() {
+        let mut account = account();
+        account.config = ProviderConfig::Custom {
+            chat_path: "/chat".into(),
+            models_path: Some("/models".into()),
+            streaming: true,
+            auth: CustomAuth::Header {
+                name: HeaderName::new("X-API-Key").expect("header name"),
+            },
+        };
+        assert!(validate_provider_connection(&account).is_ok());
+
+        account.api_key_ref = None;
+        assert_eq!(
+            validate_provider_connection(&account),
+            Err(ProviderConnectionValidationError::Authentication)
+        );
+        account.api_key_ref = Some(SecretRef::new());
+        account.endpoint = None;
+        assert_eq!(
+            validate_provider_connection(&account),
+            Err(ProviderConnectionValidationError::Endpoint)
+        );
+
+        account.endpoint = Some("https://example.invalid".into());
+        account.secret_headers = vec![SecretHeader {
+            name: HeaderName::new("x-api-key").expect("header name"),
+            secret_ref: SecretRef::new(),
+        }];
+        assert_eq!(
+            validate_provider_connection(&account),
+            Err(ProviderConnectionValidationError::SecretHeaders)
+        );
+
+        account.secret_headers[0].name = HeaderName::new("Host").expect("header name");
+        assert_eq!(
+            validate_provider_connection(&account),
+            Err(ProviderConnectionValidationError::SecretHeaders)
+        );
+
+        account.secret_headers = vec![SecretHeader {
+            name: HeaderName::new("X-Other").expect("header name"),
+            secret_ref: account.api_key_ref.expect("api key ref"),
+        }];
+        assert_eq!(
+            validate_provider_connection(&account),
+            Err(ProviderConnectionValidationError::SecretHeaders)
+        );
+
+        account.secret_headers[0].secret_ref = SecretRef::new();
+        account.config = ProviderConfig::Custom {
+            chat_path: "/chat".into(),
+            models_path: None,
+            streaming: false,
+            auth: CustomAuth::Bearer,
+        };
+        account.secret_headers[0].name = HeaderName::new("AUTHORIZATION").expect("header name");
+        assert_eq!(
+            validate_provider_connection(&account),
+            Err(ProviderConnectionValidationError::SecretHeaders)
+        );
+    }
+
+    #[test]
+    fn custom_none_allows_missing_api_key_and_custom_paths_remain_required() {
+        let mut account = account();
+        account.api_key_ref = None;
+        account.config = ProviderConfig::Custom {
+            chat_path: "/chat".into(),
+            models_path: None,
+            streaming: false,
+            auth: CustomAuth::None,
+        };
+        assert!(validate_provider_connection(&account).is_ok());
+
+        account.endpoint = None;
+        assert_eq!(
+            validate_provider_connection(&account),
+            Err(ProviderConnectionValidationError::Endpoint)
+        );
+        account.endpoint = Some("https://example.invalid".into());
+        account.config = ProviderConfig::Custom {
+            chat_path: "chat".into(),
+            models_path: None,
+            streaming: false,
+            auth: CustomAuth::None,
+        };
+        assert_eq!(
+            validate_provider_connection(&account),
+            Err(ProviderConnectionValidationError::Path)
+        );
     }
 }
