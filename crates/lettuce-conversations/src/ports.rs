@@ -538,6 +538,23 @@ pub enum ConversationOutboxEvent {
         used_memory_revision_ids: Vec<lettuce_types::MemoryRevisionId>,
         at: TimestampMillis,
     },
+    TurnInterrupted {
+        conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
+        turn_id: GenerationTurnId,
+        attempt_id: GenerationAttemptId,
+        usage_event_id: UsageEventId,
+        used_memory_revision_ids: Vec<lettuce_types::MemoryRevisionId>,
+        at: TimestampMillis,
+    },
+    TurnRecovering {
+        conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
+        turn_id: GenerationTurnId,
+        previous_attempt_id: GenerationAttemptId,
+        attempt_id: GenerationAttemptId,
+        at: TimestampMillis,
+    },
     TurnCancellationRequested {
         conversation_id: ConversationId,
         branch_id: ConversationBranchId,
@@ -651,6 +668,12 @@ impl ConversationOutboxRecord {
             | ConversationOutboxEvent::TurnFailed {
                 conversation_id, ..
             }
+            | ConversationOutboxEvent::TurnInterrupted {
+                conversation_id, ..
+            }
+            | ConversationOutboxEvent::TurnRecovering {
+                conversation_id, ..
+            }
             | ConversationOutboxEvent::TurnCancellationRequested {
                 conversation_id, ..
             }
@@ -748,6 +771,10 @@ impl ConversationOutboxRecord {
                 ..
             }
             | ConversationOutboxEvent::TurnFailed {
+                used_memory_revision_ids,
+                ..
+            }
+            | ConversationOutboxEvent::TurnInterrupted {
                 used_memory_revision_ids,
                 ..
             }

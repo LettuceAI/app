@@ -1345,6 +1345,44 @@ mod tests {
     }
 
     #[test]
+    fn interrupted_and_recovering_outbox_events_validate() {
+        let conversation_id = ConversationId::new();
+        let turn_id = GenerationTurnId::new();
+        let previous_attempt_id = GenerationAttemptId::new();
+        for event in [
+            ConversationOutboxEvent::TurnInterrupted {
+                conversation_id,
+                branch_id: ConversationBranchId::new(),
+                turn_id,
+                attempt_id: previous_attempt_id,
+                usage_event_id: UsageEventId::new(),
+                used_memory_revision_ids: Vec::new(),
+                at: TimestampMillis::UNIX_EPOCH,
+            },
+            ConversationOutboxEvent::TurnRecovering {
+                conversation_id,
+                branch_id: ConversationBranchId::new(),
+                turn_id,
+                previous_attempt_id,
+                attempt_id: GenerationAttemptId::new(),
+                at: TimestampMillis::UNIX_EPOCH,
+            },
+        ] {
+            let record = ConversationOutboxRecord {
+                format_version: 1,
+                id: lettuce_types::OutboxEventId::new(),
+                conversation_id,
+                conversation_revision: Revision::INITIAL,
+                sequence: 1,
+                operation_record_id: lettuce_types::OperationRecordId::new(),
+                at: TimestampMillis::UNIX_EPOCH,
+                event,
+            };
+            assert!(record.validate().is_ok());
+        }
+    }
+
+    #[test]
     fn media_retainers_use_canonical_typed_identity() {
         let revision = lettuce_media::AssetRetainer::MessageRevision(MessageRevisionId::new());
         let candidate = lettuce_media::AssetRetainer::MessageCandidate(MessageCandidateId::new());

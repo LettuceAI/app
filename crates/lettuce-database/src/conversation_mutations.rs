@@ -2644,15 +2644,48 @@ impl ConversationRepository for Database {
                     Some(GenerationTurnStatus::Interrupted),
                     context.now,
                 )?;
-                kernel::bump_conversation(transaction, context.conversation_id, context.now)?;
+                let revision =
+                    kernel::bump_conversation(transaction, context.conversation_id, context.now)?;
+                let settled = load_turn(transaction, context.conversation_id, turn_id)?;
                 Ok(kernel::Staged {
-                    value: load_turn(transaction, context.conversation_id, turn_id)?,
+                    value: settled.clone(),
                     result: OperationResultRef::Turn(turn_id),
-                    events: Vec::new(),
+                    events: vec![kernel::StagedEvent {
+                        conversation_revision: revision,
+                        at: context.now,
+                        event: ConversationOutboxEvent::TurnInterrupted {
+                            conversation_id: context.conversation_id,
+                            branch_id: settled.branch_id,
+                            turn_id,
+                            attempt_id,
+                            usage_event_id,
+                            used_memory_revision_ids: memory_revision_ids(&settled),
+                            at: context.now,
+                        },
+                    }],
                 })
             },
             |transaction, operation| {
-                replayed_settlement(transaction, conversation_id, operation, turn_id)
+                let turn = replayed_settlement(transaction, conversation_id, operation, turn_id)?;
+                let recorded = recorded_events(transaction, conversation_id, operation)?;
+                if !matches!(
+                    recorded.as_slice(),
+                    [ConversationOutboxEvent::TurnInterrupted {
+                        conversation_id: event_conversation_id,
+                        branch_id,
+                        turn_id: event_turn_id,
+                        attempt_id: event_attempt_id,
+                        usage_event_id: event_usage_event_id,
+                        ..
+                    }] if *event_conversation_id == conversation_id
+                        && *branch_id == turn.branch_id
+                        && *event_turn_id == turn_id
+                        && *event_attempt_id == attempt_id
+                        && *event_usage_event_id == usage_event_id
+                ) {
+                    return Err(ConversationRepositoryError::Conflict);
+                }
+                Ok(turn)
             },
         )
     }
@@ -2924,15 +2957,28 @@ impl ConversationRepository for Database {
                     Some(GenerationTurnStatus::Recovering),
                     context.now,
                 )?;
-                kernel::bump_conversation(transaction, context.conversation_id, context.now)?;
+                let revision =
+                    kernel::bump_conversation(transaction, context.conversation_id, context.now)?;
                 let value = recovery_value(transaction, context.conversation_id, turn_id)?;
                 value
                     .validate_against(&previous, &interrupted)
                     .map_err(ConversationRepositoryError::Invalid)?;
+                let child_attempt_id = value.attempt.id;
                 Ok(kernel::Staged {
                     value,
                     result: OperationResultRef::Turn(turn_id),
-                    events: Vec::new(),
+                    events: vec![kernel::StagedEvent {
+                        conversation_revision: revision,
+                        at: context.now,
+                        event: ConversationOutboxEvent::TurnRecovering {
+                            conversation_id: context.conversation_id,
+                            branch_id: interrupted.branch_id,
+                            turn_id,
+                            previous_attempt_id: previous.id,
+                            attempt_id: child_attempt_id,
+                            at: context.now,
+                        },
+                    }],
                 })
             },
             |transaction, operation| {
@@ -2940,7 +2986,30 @@ impl ConversationRepository for Database {
                 if replayed != turn_id {
                     return Err(ConversationRepositoryError::Conflict);
                 }
-                recovery_value(transaction, conversation_id, turn_id)
+                let turn = load_turn(transaction, conversation_id, turn_id)?;
+                let recorded = recorded_events(transaction, conversation_id, operation)?;
+                let event_attempt_id = match recorded.as_slice() {
+                    [
+                        ConversationOutboxEvent::TurnRecovering {
+                            conversation_id: event_conversation_id,
+                            branch_id,
+                            turn_id: event_turn_id,
+                            previous_attempt_id: event_previous_attempt_id,
+                            attempt_id: event_attempt_id,
+                            ..
+                        },
+                    ] if *event_conversation_id == conversation_id
+                        && *branch_id == turn.branch_id
+                        && *event_turn_id == turn_id
+                        && *event_previous_attempt_id == attempt_id =>
+                    {
+                        *event_attempt_id
+                    }
+                    _ => return Err(ConversationRepositoryError::Conflict),
+                };
+                let attempt =
+                    load_attempt(transaction, conversation_id, turn_id, event_attempt_id)?;
+                Ok(GenerationRecovery { turn, attempt })
             },
         )
     }
@@ -6283,15 +6352,18 @@ mod tests {
             "drive-recovery",
             21,
         );
+        let interrupt_operation = token("interrupt", "cd");
+        let interrupt_usage_event_id = UsageEventId::new();
+        let interrupt_revision = conversation_revision(&fixture);
         let interrupted = fixture
             .database
             .interrupt_generation(
                 turn_id,
                 first_attempt,
-                conversation_revision(&fixture),
+                interrupt_revision,
                 revision,
-                &token("interrupt", "cd"),
-                UsageEventId::new(),
+                &interrupt_operation,
+                interrupt_usage_event_id,
                 TimestampMillis::new(30),
             )
             .expect("interrupt");
@@ -6300,16 +6372,49 @@ mod tests {
             interrupted.value.attempts[0].status,
             GenerationAttemptStatus::Interrupted
         );
-        assert!(interrupted.outbox.is_empty());
+        assert_eq!(interrupted.outbox.len(), 1);
+        assert_eq!(
+            interrupted.outbox[0].conversation_revision,
+            Revision::new(interrupt_revision.get() + 1)
+        );
+        assert_eq!(interrupted.outbox[0].sequence, 3);
+        assert_eq!(
+            interrupted.outbox[0].event,
+            ConversationOutboxEvent::TurnInterrupted {
+                conversation_id: fixture.conversation_id,
+                branch_id: fixture.branch_id,
+                turn_id,
+                attempt_id: first_attempt,
+                usage_event_id: interrupt_usage_event_id,
+                used_memory_revision_ids: Vec::new(),
+                at: TimestampMillis::new(30),
+            }
+        );
+        let interrupted_replay = fixture
+            .database
+            .interrupt_generation(
+                turn_id,
+                first_attempt,
+                Revision::new(99),
+                Revision::new(99),
+                &interrupt_operation,
+                interrupt_usage_event_id,
+                TimestampMillis::new(300),
+            )
+            .expect("replay interrupt");
+        assert_eq!(interrupted_replay.value, interrupted.value);
+        assert_eq!(interrupted_replay.outbox, interrupted.outbox);
 
+        let recover_operation = token("recover", "cd");
+        let recover_revision = conversation_revision(&fixture);
         let recovered = fixture
             .database
             .recover_generation(
                 turn_id,
                 first_attempt,
-                conversation_revision(&fixture),
+                recover_revision,
                 interrupted.value.revision,
-                &token("recover", "cd"),
+                &recover_operation,
                 TimestampMillis::new(31),
             )
             .expect("recover");
@@ -6331,10 +6436,39 @@ mod tests {
             recovered.value.attempt.job_idempotency_key,
             attempt_job_idempotency_key(turn_id, recovered.value.attempt.id)
         );
-        assert!(recovered.outbox.is_empty());
+        assert_eq!(recovered.outbox.len(), 1);
+        assert_eq!(
+            recovered.outbox[0].conversation_revision,
+            Revision::new(recover_revision.get() + 1)
+        );
+        assert_eq!(recovered.outbox[0].sequence, 4);
+        assert_eq!(
+            recovered.outbox[0].event,
+            ConversationOutboxEvent::TurnRecovering {
+                conversation_id: fixture.conversation_id,
+                branch_id: fixture.branch_id,
+                turn_id,
+                previous_attempt_id: first_attempt,
+                attempt_id: recovered.value.attempt.id,
+                at: TimestampMillis::new(31),
+            }
+        );
+        let recovered_replay = fixture
+            .database
+            .recover_generation(
+                turn_id,
+                first_attempt,
+                Revision::new(99),
+                Revision::new(99),
+                &recover_operation,
+                TimestampMillis::new(301),
+            )
+            .expect("replay recovery");
+        assert_eq!(recovered_replay.value, recovered.value);
+        assert_eq!(recovered_replay.outbox, recovered.outbox);
 
         let child = recovered.value.attempt.id;
-        let revision = drive(
+        let child_revision = drive(
             &fixture,
             turn_id,
             child,
@@ -6342,11 +6476,58 @@ mod tests {
             "drive-child",
             32,
         );
+        let child_interrupted = fixture
+            .database
+            .interrupt_generation(
+                turn_id,
+                child,
+                conversation_revision(&fixture),
+                child_revision,
+                &token("interrupt-child", "cd"),
+                UsageEventId::new(),
+                TimestampMillis::new(33),
+            )
+            .expect("interrupt child");
+        let child_recovered = fixture
+            .database
+            .recover_generation(
+                turn_id,
+                child,
+                conversation_revision(&fixture),
+                child_interrupted.value.revision,
+                &token("recover-child", "cd"),
+                TimestampMillis::new(34),
+            )
+            .expect("recover child");
+        let first_recovery_replay = fixture
+            .database
+            .recover_generation(
+                turn_id,
+                first_attempt,
+                Revision::new(99),
+                Revision::new(99),
+                &recover_operation,
+                TimestampMillis::new(301),
+            )
+            .expect("replay first recovery after nested recovery");
+        assert_eq!(first_recovery_replay.value.turn, child_recovered.value.turn);
+        assert_eq!(first_recovery_replay.value.attempt.id, child);
+        assert_eq!(first_recovery_replay.outbox, recovered.outbox);
+
+        let final_attempt = child_recovered.value.attempt.id;
+        let revision = drive(
+            &fixture,
+            turn_id,
+            final_attempt,
+            &[GenerationTurnStatus::Running],
+            "drive-final-child",
+            35,
+        );
         let finalized = fixture
             .database
             .finalize_generation(
                 turn_id,
-                child,
+                final_attempt,
                 conversation_revision(&fixture),
                 revision,
                 &token("finalize-recovered", "cd"),
@@ -6356,8 +6537,8 @@ mod tests {
             )
             .expect("finalize the recovered attempt");
         assert_eq!(finalized.value.turn.status, GenerationTurnStatus::Succeeded);
-        assert_eq!(finalized.value.candidate.attempt_id, child);
-        assert_eq!(finalized.value.turn.attempts.len(), 2);
+        assert_eq!(finalized.value.candidate.attempt_id, final_attempt);
+        assert_eq!(finalized.value.turn.attempts.len(), 3);
         fixture.revision = conversation_revision(&fixture);
         ConversationReader::get(fixture.database.as_ref(), fixture.conversation_id)
             .expect("aggregate");

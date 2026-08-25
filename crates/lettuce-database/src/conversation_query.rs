@@ -593,6 +593,12 @@ pub(crate) fn validate_outbox_event_exact(
             attempt_id,
             ..
         }
+        | ConversationOutboxEvent::TurnInterrupted {
+            branch_id,
+            turn_id,
+            attempt_id,
+            ..
+        }
         | ConversationOutboxEvent::TurnCancellationRequested {
             branch_id,
             turn_id,
@@ -621,6 +627,44 @@ pub(crate) fn validate_outbox_event_exact(
                     conversation_id.to_string(),
                     attempt_id.to_string(),
                     turn_id.to_string(),
+                    branch_id.to_string()
+                ],
+            )?;
+        }
+        ConversationOutboxEvent::TurnRecovering {
+            branch_id,
+            turn_id,
+            previous_attempt_id,
+            attempt_id,
+            ..
+        } => {
+            require_exists(
+                transaction,
+                "SELECT EXISTS(SELECT 1 FROM conversation_turns WHERE conversation_id = ?1 AND id = ?2 AND branch_id = ?3)",
+                params![
+                    conversation_id.to_string(),
+                    turn_id.to_string(),
+                    branch_id.to_string()
+                ],
+            )?;
+            require_exists(
+                transaction,
+                "SELECT EXISTS(SELECT 1 FROM generation_attempts AS attempt JOIN conversation_turns AS turn ON turn.conversation_id = attempt.conversation_id AND turn.id = attempt.turn_id WHERE attempt.conversation_id = ?1 AND attempt.id = ?2 AND attempt.turn_id = ?3 AND turn.branch_id = ?4)",
+                params![
+                    conversation_id.to_string(),
+                    previous_attempt_id.to_string(),
+                    turn_id.to_string(),
+                    branch_id.to_string()
+                ],
+            )?;
+            require_exists(
+                transaction,
+                "SELECT EXISTS(SELECT 1 FROM generation_attempts AS attempt JOIN conversation_turns AS turn ON turn.conversation_id = attempt.conversation_id AND turn.id = attempt.turn_id WHERE attempt.conversation_id = ?1 AND attempt.id = ?2 AND attempt.turn_id = ?3 AND attempt.parent_attempt_id = ?4 AND turn.branch_id = ?5)",
+                params![
+                    conversation_id.to_string(),
+                    attempt_id.to_string(),
+                    turn_id.to_string(),
+                    previous_attempt_id.to_string(),
                     branch_id.to_string()
                 ],
             )?;
@@ -1783,6 +1827,8 @@ pub(crate) fn validate_outbox_event_timestamp(
         | ConversationOutboxEvent::MessageRevised { at, .. }
         | ConversationOutboxEvent::MessageTombstoned { at, .. }
         | ConversationOutboxEvent::TurnFailed { at, .. }
+        | ConversationOutboxEvent::TurnInterrupted { at, .. }
+        | ConversationOutboxEvent::TurnRecovering { at, .. }
         | ConversationOutboxEvent::TurnCancellationRequested { at, .. }
         | ConversationOutboxEvent::TurnCancelled { at, .. }
         | ConversationOutboxEvent::BranchForked { at, .. }
@@ -1999,6 +2045,12 @@ pub(crate) fn validate_outbox_event(
             attempt_id,
             ..
         }
+        | ConversationOutboxEvent::TurnInterrupted {
+            branch_id,
+            turn_id,
+            attempt_id,
+            ..
+        }
         | ConversationOutboxEvent::TurnCancellationRequested {
             branch_id,
             turn_id,
@@ -2031,6 +2083,52 @@ pub(crate) fn validate_outbox_event(
                 "id",
                 conversation_id,
                 attempt_id,
+            )?;
+        }
+        ConversationOutboxEvent::TurnRecovering {
+            branch_id,
+            turn_id,
+            previous_attempt_id,
+            attempt_id,
+            ..
+        } => {
+            owned_ref(
+                transaction,
+                "conversation_branches",
+                "id",
+                conversation_id,
+                branch_id,
+            )?;
+            owned_ref(
+                transaction,
+                "conversation_turns",
+                "id",
+                conversation_id,
+                turn_id,
+            )?;
+            owned_ref(
+                transaction,
+                "generation_attempts",
+                "id",
+                conversation_id,
+                previous_attempt_id,
+            )?;
+            owned_ref(
+                transaction,
+                "generation_attempts",
+                "id",
+                conversation_id,
+                attempt_id,
+            )?;
+            require_exists(
+                transaction,
+                "SELECT EXISTS(SELECT 1 FROM generation_attempts WHERE conversation_id = ?1 AND turn_id = ?2 AND id = ?3 AND parent_attempt_id = ?4)",
+                params![
+                    conversation_id.to_string(),
+                    turn_id.to_string(),
+                    attempt_id.to_string(),
+                    previous_attempt_id.to_string()
+                ],
             )?;
         }
         ConversationOutboxEvent::BranchForked { branch_id, .. }
