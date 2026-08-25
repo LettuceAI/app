@@ -15,6 +15,7 @@ mod model;
 mod ports;
 mod service;
 mod snapshot;
+mod speaker_policy;
 mod validation;
 
 pub use artifact::*;
@@ -27,6 +28,7 @@ pub use model::*;
 pub use ports::*;
 pub use service::*;
 pub use snapshot::*;
+pub use speaker_policy::*;
 
 #[cfg(test)]
 mod tests {
