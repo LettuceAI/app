@@ -586,6 +586,13 @@ impl GroupLaunchSnapshot {
         self.memory.validate("group.memory")?;
         self.persona.validate("group.persona")?;
         self.scene.validate("group.scene")?;
+        if self.chat_mode == GroupChatModeSnapshot::Conversation
+            && !matches!(self.scene, SnapshotSelection::Disabled)
+        {
+            return Err(ValidationError::InvalidReference {
+                field: "group.scene.chat_mode",
+            });
+        }
         self.prompt.validate("group.prompt")?;
         self.model.validate("group.model")?;
         validate_lorebooks(&self.lorebooks, "group.lorebooks")
