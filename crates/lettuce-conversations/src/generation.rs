@@ -170,6 +170,23 @@ pub struct SelectedSpeakerDecision {
     pub usage_event_id: Option<UsageEventId>,
 }
 
+impl SelectedSpeakerDecision {
+    pub fn validate_for_persistence(&self) -> Result<(), ValidationError> {
+        if let Some(rationale) = &self.rationale_summary {
+            validate_text(
+                "selected_speaker.rationale_summary",
+                rationale,
+                MAX_REASONING_BYTES,
+                false,
+            )?;
+        }
+        if let Some(model) = &self.decision_model {
+            model.validate_snapshot("selected_speaker.decision_model")?;
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SpeakerDecisionMethod {
@@ -528,6 +545,9 @@ impl GenerationTurn {
             return Err(ValidationError::InvalidReference {
                 field: "generation_turn.direct_speaker",
             });
+        }
+        if let Some(selected_speaker) = &self.selected_speaker {
+            selected_speaker.validate_for_persistence()?;
         }
         if let Some(guidance) = &self.guidance {
             validate_text(

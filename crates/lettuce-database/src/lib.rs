@@ -1920,7 +1920,7 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("operation table sql");
-        for kind in ["'interrupt'", "'flags'"] {
+        for kind in ["'interrupt'", "'flags'", "'resolve_speaker'"] {
             assert!(
                 operation_table.contains(kind),
                 "missing operation kind {kind}"

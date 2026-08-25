@@ -300,6 +300,23 @@ mod tests {
         mismatched = turn.clone();
         mismatched.retry_of_turn_id = Some(mismatched.id);
         assert!(mismatched.validate(false).is_err());
+
+        let mut invalid_speaker = turn;
+        invalid_speaker.selected_speaker = Some(SelectedSpeakerDecision {
+            participant_id: ConversationParticipantId::new(),
+            method: SpeakerDecisionMethod::Explicit,
+            fallback: SpeakerFallback::None,
+            reference: None,
+            rationale_summary: Some("   ".into()),
+            decision_model: None,
+            usage_event_id: None,
+        });
+        assert_eq!(
+            invalid_speaker.validate(true),
+            Err(ValidationError::Blank {
+                field: "selected_speaker.rationale_summary",
+            })
+        );
     }
 
     #[test]

@@ -142,6 +142,7 @@ pub(crate) fn operation_kind(value: &str) -> Result<OperationKind, ConversationR
         "participant_policy" => OperationKind::ParticipantPolicy,
         "settings" => OperationKind::Settings,
         "attach_job" => OperationKind::AttachJob,
+        "resolve_speaker" => OperationKind::ResolveSpeaker,
         _ => return Err(ConversationRepositoryError::Storage),
     })
 }

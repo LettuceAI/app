@@ -23,13 +23,13 @@ use lettuce_conversations::{
     GenerationOperation, GenerationRecovery, GenerationRecoveryResult, GenerationTarget,
     GenerationTurn, GenerationTurnStatus, Message, MessageCandidate, MessagePart, OperationKind,
     OperationResultRef, OperationToken, ParticipantPolicyResult, RegenerateCandidate,
-    RegenerateCandidateResult, RequestCancellationResult, RestoreConversation,
-    RestoreConversationResult, RetryGeneration, RetryGenerationResult, SelectBranch,
-    SelectBranchResult, SendConversation, SendConversationResult, SettingsCasRequirement,
-    SettingsResult, SettleCancellation, SettleCancellationResult, SnapshotSelection,
-    TombstoneMessage, TombstoneMessageResult, TombstoneResult, UpdateConversationSettings,
-    UpdateMessageFlags, UpdateMessageFlagsResult, UpdateParticipantPolicy,
-    attempt_job_idempotency_key,
+    RegenerateCandidateResult, RequestCancellationResult, ResolveGroupSpeaker,
+    ResolveGroupSpeakerResult, RestoreConversation, RestoreConversationResult, RetryGeneration,
+    RetryGenerationResult, SelectBranch, SelectBranchResult, SelectedSpeakerDecision,
+    SendConversation, SendConversationResult, SettingsCasRequirement, SettingsResult,
+    SettleCancellation, SettleCancellationResult, SnapshotSelection, TombstoneMessage,
+    TombstoneMessageResult, TombstoneResult, UpdateConversationSettings, UpdateMessageFlags,
+    UpdateMessageFlagsResult, UpdateParticipantPolicy, attempt_job_idempotency_key,
 };
 use lettuce_types::{
     AssetId, ConversationBranchId, ConversationId, ConversationParticipantId, GenerationAttemptId,
@@ -37,6 +37,7 @@ use lettuce_types::{
     UsageEventId,
 };
 use rusqlite::{OptionalExtension, Transaction, params};
+use serde::Serialize;
 
 use super::{
     Database, conversation_artifact_adapter, conversation_creator,
@@ -1446,6 +1447,88 @@ fn replayed_turn(
         OperationResultRef::Turn(turn_id) => Ok(turn_id),
         _ => Err(ConversationRepositoryError::Storage),
     }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(deny_unknown_fields)]
+struct StoredSpeakerDetails {
+    method: lettuce_conversations::SpeakerDecisionMethod,
+    fallback: lettuce_conversations::SpeakerFallback,
+    reference: Option<lettuce_conversations::SpeakerDecisionReference>,
+    rationale_summary: Option<String>,
+    decision_model: Option<lettuce_conversations::ModelSelectionSnapshot>,
+    usage_event_id: Option<lettuce_types::UsageEventId>,
+}
+
+fn encode_speaker_details(
+    decision: &SelectedSpeakerDecision,
+) -> Result<String, ConversationRepositoryError> {
+    slice::encode(&StoredSpeakerDetails {
+        method: decision.method,
+        fallback: decision.fallback,
+        reference: decision.reference,
+        rationale_summary: decision.rationale_summary.clone(),
+        decision_model: decision.decision_model.clone(),
+        usage_event_id: decision.usage_event_id,
+    })
+}
+
+fn validate_resolved_speaker(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    turn: &GenerationTurn,
+    decision: &SelectedSpeakerDecision,
+) -> Result<(), ConversationRepositoryError> {
+    let participant: Option<(String, bool, bool)> = transaction
+        .query_row(
+            "SELECT role, enabled, muted FROM conversation_participants WHERE conversation_id = ?1 AND id = ?2",
+            params![conversation_id.to_string(), decision.participant_id.to_string()],
+            |row| Ok((row.get(0)?, row.get::<_, i64>(1)? != 0, row.get::<_, i64>(2)? != 0)),
+        )
+        .optional()
+        .map_err(slice::db)?;
+    let Some((role, enabled, muted)) = participant else {
+        return Err(ConversationRepositoryError::Conflict);
+    };
+    if role != "character" || !enabled {
+        return Err(ConversationRepositoryError::Conflict);
+    }
+    if decision.method != lettuce_conversations::SpeakerDecisionMethod::Explicit && muted {
+        return Err(ConversationRepositoryError::Conflict);
+    }
+    if turn.forced_speaker != Some(decision.participant_id) && turn.forced_speaker.is_some() {
+        return Err(ConversationRepositoryError::Invalid(
+            lettuce_conversations::ValidationError::InvalidReference {
+                field: "resolve_group_speaker.forced_speaker",
+            },
+        ));
+    }
+    if matches!(turn.operation, GenerationOperation::Regenerate) && turn.forced_speaker.is_none() {
+        let GenerationTarget::ExistingCandidate {
+            message_id,
+            prior_candidate_id,
+        } = turn.target
+        else {
+            return Err(ConversationRepositoryError::Conflict);
+        };
+        let target_author: String = transaction
+            .query_row(
+                "SELECT author_participant_id FROM conversation_message_candidates WHERE conversation_id = ?1 AND id = ?2 AND message_id = ?3",
+                params![
+                    conversation_id.to_string(),
+                    prior_candidate_id.to_string(),
+                    message_id.to_string(),
+                ],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(slice::db)?
+            .ok_or(ConversationRepositoryError::NotFound)?;
+        let target_author = slice::parse_id(target_author)?;
+        turn.validate_regeneration_speaker(Some(target_author), Some(decision.participant_id))
+            .map_err(ConversationRepositoryError::Invalid)?;
+    }
+    Ok(())
 }
 
 fn allocate_timeline_ordinal(
@@ -3014,6 +3097,82 @@ impl ConversationRepository for Database {
         )
     }
 
+    fn resolve_group_speaker(
+        &self,
+        command: &ResolveGroupSpeaker,
+        now: TimestampMillis,
+    ) -> Result<ResolveGroupSpeakerResult, ConversationRepositoryError> {
+        command
+            .validate()
+            .map_err(ConversationRepositoryError::Invalid)?;
+        kernel::run_mutation(
+            self,
+            command.conversation_id,
+            OperationKind::ResolveSpeaker,
+            &command.operation,
+            now,
+            |transaction, context| {
+                require_settleable_conversation(transaction, context.conversation_id)?;
+                if !is_group(transaction, context.conversation_id)? {
+                    return Err(ConversationRepositoryError::Conflict);
+                }
+                cas_turn(
+                    transaction,
+                    context.conversation_id,
+                    command.turn_id,
+                    command.expected_turn_revision,
+                )?;
+                let turn = load_turn(transaction, context.conversation_id, command.turn_id)?;
+                if turn.status != GenerationTurnStatus::SelectingSpeaker
+                    || turn.selected_speaker.is_some()
+                {
+                    return Err(ConversationRepositoryError::Conflict);
+                }
+                validate_resolved_speaker(
+                    transaction,
+                    context.conversation_id,
+                    &turn,
+                    &command.selected_speaker,
+                )?;
+                let details = encode_speaker_details(&command.selected_speaker)?;
+                let expected_revision = slice::sql_revision(command.expected_turn_revision)?;
+                let changed = transaction
+                    .execute(
+                        "UPDATE conversation_turns SET selected_speaker_participant_id = ?3, selected_speaker_details_json = ?4, revision = revision + 1, updated_at = ?5 WHERE conversation_id = ?1 AND id = ?2 AND revision = ?6 AND status = 'selecting_speaker' AND selected_speaker_participant_id IS NULL AND selected_speaker_details_json IS NULL",
+                        params![
+                            context.conversation_id.to_string(),
+                            command.turn_id.to_string(),
+                            command.selected_speaker.participant_id.to_string(),
+                            details,
+                            context.now.get(),
+                            expected_revision,
+                        ],
+                    )
+                    .map_err(kernel::map_constraint)?;
+                if changed == 0 {
+                    return Err(ConversationRepositoryError::Conflict);
+                }
+                let value = load_turn(transaction, context.conversation_id, command.turn_id)?;
+                Ok(kernel::Staged {
+                    value,
+                    result: OperationResultRef::Turn(command.turn_id),
+                    events: Vec::new(),
+                })
+            },
+            |transaction, operation| {
+                let replayed = replayed_turn(operation)?;
+                if replayed != command.turn_id {
+                    return Err(ConversationRepositoryError::Conflict);
+                }
+                let turn = load_turn(transaction, command.conversation_id, command.turn_id)?;
+                if turn.selected_speaker.as_ref() != Some(&command.selected_speaker) {
+                    return Err(ConversationRepositoryError::Conflict);
+                }
+                Ok(turn)
+            },
+        )
+    }
+
     fn choose_candidate(
         &self,
         command: &ChooseCandidate,
@@ -3985,7 +4144,8 @@ mod tests {
         ProtectedSnapshotRef, SnapshotArtifactDraft, SnapshotSelection, SnapshotSource,
     };
     use lettuce_conversations::{
-        CurrentConversationSettingsPatch, PatchValue, RestoreConversation, SelectBranch,
+        CurrentConversationSettingsPatch, PatchValue, ResolveGroupSpeaker, RestoreConversation,
+        SelectBranch, SelectedSpeakerDecision, SpeakerDecisionMethod, SpeakerFallback,
         TombstoneMessage, UpdateConversationSettings, UpdateMessageFlags, UpdateParticipantPolicy,
     };
     use lettuce_types::{
@@ -4293,6 +4453,60 @@ mod tests {
             },
             swap_roles: false,
         }
+    }
+
+    fn speaker_decision(
+        participant_id: ConversationParticipantId,
+        method: SpeakerDecisionMethod,
+    ) -> SelectedSpeakerDecision {
+        SelectedSpeakerDecision {
+            participant_id,
+            method,
+            fallback: SpeakerFallback::None,
+            reference: None,
+            rationale_summary: None,
+            decision_model: None,
+            usage_event_id: None,
+        }
+    }
+
+    fn resolve_speaker_command(
+        fixture: &Fixture,
+        turn_id: GenerationTurnId,
+        expected_turn_revision: Revision,
+        participant_id: ConversationParticipantId,
+        method: SpeakerDecisionMethod,
+        key: &str,
+    ) -> ResolveGroupSpeaker {
+        ResolveGroupSpeaker {
+            conversation_id: fixture.conversation_id,
+            turn_id,
+            expected_turn_revision,
+            operation: token(key, "cd"),
+            selected_speaker: speaker_decision(participant_id, method),
+        }
+    }
+
+    fn group_selecting_turn(fixture: &Fixture, key: &str) -> (GenerationTurn, Revision) {
+        let started = fixture
+            .database
+            .begin_send(
+                &send_command(fixture, key, "cd", text("hello")),
+                TimestampMillis::new(20),
+            )
+            .expect("group send");
+        let revision = drive(
+            fixture,
+            started.value.turn.id,
+            started.value.attempt.id,
+            &[
+                GenerationTurnStatus::Preparing,
+                GenerationTurnStatus::SelectingSpeaker,
+            ],
+            &format!("drive-{key}"),
+            21,
+        );
+        (started.value.turn, revision)
     }
 
     fn text(value: &str) -> Vec<MessagePart> {
@@ -5387,6 +5601,411 @@ mod tests {
                 TimestampMillis::new(22)
             ),
             Err(invalid("generation_turn.direct_speaker"))
+        );
+    }
+
+    #[test]
+    fn resolving_group_speaker_persists_only_the_turn_decision() {
+        let fixture = group_fixture();
+        let (turn, selecting_revision) = group_selecting_turn(&fixture, "resolve-persist");
+        let command = resolve_speaker_command(
+            &fixture,
+            turn.id,
+            selecting_revision,
+            fixture.characters[0],
+            SpeakerDecisionMethod::Heuristic,
+            "resolve-persist-decision",
+        );
+        let initial_conversation_revision = conversation_revision(&fixture);
+        let result = fixture
+            .database
+            .resolve_group_speaker(&command, TimestampMillis::new(30))
+            .expect("resolve speaker");
+        assert_eq!(result.value.status, GenerationTurnStatus::SelectingSpeaker);
+        assert_eq!(
+            result.value.revision,
+            selecting_revision.next().expect("turn revision")
+        );
+        assert_eq!(
+            result.value.selected_speaker,
+            Some(command.selected_speaker.clone())
+        );
+        assert_eq!(
+            conversation_revision(&fixture),
+            initial_conversation_revision
+        );
+        assert!(result.outbox.is_empty());
+        let second_decision = ResolveGroupSpeaker {
+            expected_turn_revision: result.value.revision,
+            operation: token("resolve-persist-second", "cd"),
+            ..command.clone()
+        };
+        assert_eq!(
+            fixture
+                .database
+                .resolve_group_speaker(&second_decision, TimestampMillis::new(30)),
+            Err(ConversationRepositoryError::Conflict)
+        );
+        let details: String = fixture
+            .database
+            .connection()
+            .expect("connection")
+            .query_row(
+                "SELECT selected_speaker_details_json FROM conversation_turns WHERE conversation_id = ?1 AND id = ?2",
+                params![fixture.conversation_id.to_string(), turn.id.to_string()],
+                |row| row.get(0),
+            )
+            .expect("speaker details");
+        assert!(!details.contains(&command.selected_speaker.participant_id.to_string()));
+
+        let later = fixture
+            .database
+            .append_event(
+                turn.id,
+                result.value.revision,
+                &token("resolve-persist-checkpoint", "cd"),
+                GenerationCheckpointEnvelope {
+                    turn_id: turn.id,
+                    attempt_id: turn.attempts[0].id,
+                    job_id: None,
+                    correlation_id: None,
+                    sequence: 3,
+                    event: GenerationCheckpointEvent::Stage {
+                        status: GenerationTurnStatus::ContextPrepared,
+                    },
+                },
+                TimestampMillis::new(31),
+            )
+            .expect("later checkpoint");
+        let replay = fixture
+            .database
+            .resolve_group_speaker(&command, TimestampMillis::new(32))
+            .expect("resolve replay");
+        assert_eq!(replay.value, later.value);
+        assert_eq!(replay.operation, result.operation);
+        assert!(replay.outbox.is_empty());
+    }
+
+    #[test]
+    fn resolving_group_speaker_rejects_admission_and_participant_mismatches() {
+        let fixture = group_fixture();
+        let (turn, selecting_revision) = group_selecting_turn(&fixture, "resolve-reject");
+        let stale = resolve_speaker_command(
+            &fixture,
+            turn.id,
+            Revision::INITIAL,
+            fixture.characters[0],
+            SpeakerDecisionMethod::Heuristic,
+            "resolve-stale",
+        );
+        assert!(matches!(
+            fixture
+                .database
+                .resolve_group_speaker(&stale, TimestampMillis::new(30)),
+            Err(ConversationRepositoryError::StaleRevision { .. })
+        ));
+
+        let wrong_status = resolve_speaker_command(
+            &fixture,
+            turn.id,
+            selecting_revision,
+            fixture.characters[1],
+            SpeakerDecisionMethod::RoundRobin,
+            "resolve-wrong-status",
+        );
+        let direct = direct_fixture();
+        let direct_turn = direct
+            .database
+            .begin_send(
+                &send_command(&direct, "resolve-direct", "cd", text("hello")),
+                TimestampMillis::new(20),
+            )
+            .expect("direct send");
+        let direct_revision = drive(
+            &direct,
+            direct_turn.value.turn.id,
+            direct_turn.value.attempt.id,
+            &[
+                GenerationTurnStatus::Preparing,
+                GenerationTurnStatus::SelectingSpeaker,
+            ],
+            "drive-resolve-direct",
+            21,
+        );
+        let direct_command = resolve_speaker_command(
+            &direct,
+            direct_turn.value.turn.id,
+            direct_revision,
+            direct.characters[0],
+            SpeakerDecisionMethod::Explicit,
+            "resolve-direct-decision",
+        );
+        assert_eq!(
+            direct
+                .database
+                .resolve_group_speaker(&direct_command, TimestampMillis::new(30)),
+            Err(ConversationRepositoryError::Conflict)
+        );
+
+        let not_ready = group_fixture();
+        let not_ready_turn = not_ready
+            .database
+            .begin_send(
+                &send_command(&not_ready, "resolve-not-ready", "cd", text("hello")),
+                TimestampMillis::new(20),
+            )
+            .expect("group send");
+        let not_ready_command = resolve_speaker_command(
+            &not_ready,
+            not_ready_turn.value.turn.id,
+            not_ready_turn.value.turn.revision,
+            not_ready.characters[0],
+            SpeakerDecisionMethod::Heuristic,
+            "resolve-not-ready-decision",
+        );
+        assert_eq!(
+            not_ready
+                .database
+                .resolve_group_speaker(&not_ready_command, TimestampMillis::new(30)),
+            Err(ConversationRepositoryError::Conflict)
+        );
+
+        fixture
+            .database
+            .connection()
+            .expect("connection")
+            .execute(
+                "UPDATE conversation_participants SET enabled = 0 WHERE conversation_id = ?1 AND id = ?2",
+                params![fixture.conversation_id.to_string(), fixture.characters[0].to_string()],
+            )
+            .expect("disable participant");
+        assert_eq!(
+            fixture.database.resolve_group_speaker(
+                &resolve_speaker_command(
+                    &fixture,
+                    turn.id,
+                    selecting_revision,
+                    fixture.characters[0],
+                    SpeakerDecisionMethod::Heuristic,
+                    "resolve-disabled",
+                ),
+                TimestampMillis::new(30),
+            ),
+            Err(ConversationRepositoryError::Conflict)
+        );
+        assert_eq!(
+            fixture.database.resolve_group_speaker(
+                &resolve_speaker_command(
+                    &fixture,
+                    turn.id,
+                    selecting_revision,
+                    fixture.user_participant,
+                    SpeakerDecisionMethod::Explicit,
+                    "resolve-non-character",
+                ),
+                TimestampMillis::new(30),
+            ),
+            Err(ConversationRepositoryError::Conflict)
+        );
+
+        fixture
+            .database
+            .connection()
+            .expect("connection")
+            .execute(
+                "UPDATE conversation_participants SET muted = 1 WHERE conversation_id = ?1 AND id = ?2",
+                params![fixture.conversation_id.to_string(), fixture.characters[1].to_string()],
+            )
+            .expect("mute participant");
+        assert_eq!(
+            fixture
+                .database
+                .resolve_group_speaker(&wrong_status, TimestampMillis::new(30),),
+            Err(ConversationRepositoryError::Conflict)
+        );
+        let explicit_muted = resolve_speaker_command(
+            &fixture,
+            turn.id,
+            selecting_revision,
+            fixture.characters[1],
+            SpeakerDecisionMethod::Explicit,
+            "resolve-explicit-muted",
+        );
+        assert!(
+            fixture
+                .database
+                .resolve_group_speaker(&explicit_muted, TimestampMillis::new(31))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn resolving_group_speaker_honors_forced_and_regenerate_authors() {
+        let mut fixture = group_fixture();
+        let first_speaker = fixture.characters[0];
+        let second_speaker = fixture.characters[1];
+        let initial = fixture
+            .database
+            .begin_send(
+                &send_command(&fixture, "resolve-forced-seed", "cd", text("hello")),
+                TimestampMillis::new(20),
+            )
+            .expect("seed send");
+        settle_cancelled(&fixture, &initial.value.turn, 21);
+        fixture.revision = conversation_revision(&fixture);
+        let continued = fixture
+            .database
+            .begin_continue(
+                &ContinueConversation {
+                    conversation_id: fixture.conversation_id,
+                    branch_id: fixture.branch_id,
+                    expected_revision: fixture.revision,
+                    forced_speaker: Some(first_speaker),
+                    swap_roles: false,
+                    operation: token("resolve-forced-continue", "cd"),
+                },
+                TimestampMillis::new(30),
+            )
+            .expect("forced continue");
+        let selecting_revision = drive(
+            &fixture,
+            continued.value.turn.id,
+            continued.value.attempt.id,
+            &[
+                GenerationTurnStatus::Preparing,
+                GenerationTurnStatus::SelectingSpeaker,
+            ],
+            "drive-resolve-forced",
+            31,
+        );
+        let forced_mismatch = resolve_speaker_command(
+            &fixture,
+            continued.value.turn.id,
+            selecting_revision,
+            second_speaker,
+            SpeakerDecisionMethod::Explicit,
+            "resolve-forced-mismatch",
+        );
+        assert!(matches!(
+            fixture
+                .database
+                .resolve_group_speaker(&forced_mismatch, TimestampMillis::new(40)),
+            Err(ConversationRepositoryError::Invalid(_))
+        ));
+
+        let mut authored_fixture = group_fixture();
+        let authored_first_speaker = authored_fixture.characters[0];
+        let authored_second_speaker = authored_fixture.characters[1];
+        let seed = authored_fixture
+            .database
+            .begin_send(
+                &send_command(&authored_fixture, "resolve-regen-seed", "cd", text("hello")),
+                TimestampMillis::new(20),
+            )
+            .expect("seed send");
+        settle_cancelled(&authored_fixture, &seed.value.turn, 21);
+        authored_fixture.revision = conversation_revision(&authored_fixture);
+        let authored = authored_fixture
+            .database
+            .begin_continue(
+                &ContinueConversation {
+                    conversation_id: authored_fixture.conversation_id,
+                    branch_id: authored_fixture.branch_id,
+                    expected_revision: authored_fixture.revision,
+                    forced_speaker: Some(authored_first_speaker),
+                    swap_roles: false,
+                    operation: token("resolve-regen-continue", "cd"),
+                },
+                TimestampMillis::new(30),
+            )
+            .expect("authored continue");
+        let authored_revision = drive(
+            &authored_fixture,
+            authored.value.turn.id,
+            authored.value.attempt.id,
+            &[
+                GenerationTurnStatus::Preparing,
+                GenerationTurnStatus::ContextPrepared,
+                GenerationTurnStatus::Running,
+            ],
+            "drive-resolve-regen-source",
+            31,
+        );
+        let finalized = authored_fixture
+            .database
+            .finalize_generation(
+                authored.value.turn.id,
+                authored.value.attempt.id,
+                conversation_revision(&authored_fixture),
+                authored_revision,
+                &token("resolve-regen-finalize", "cd"),
+                finalization_draft(text("first"), 0),
+                UsageEventId::new(),
+                TimestampMillis::new(40),
+            )
+            .expect("authored finalize");
+        authored_fixture.revision = conversation_revision(&authored_fixture);
+        let regenerate = authored_fixture
+            .database
+            .begin_regenerate(
+                &RegenerateCandidate {
+                    conversation_id: authored_fixture.conversation_id,
+                    branch_id: authored_fixture.branch_id,
+                    message_id: finalized.value.assistant_message.id,
+                    turn_id: authored.value.turn.id,
+                    expected_revision: authored_fixture.revision,
+                    expected_turn_revision: turn_revision(
+                        &authored_fixture,
+                        authored.value.turn.id,
+                    ),
+                    operation: token("resolve-regen-begin", "cd"),
+                    active_candidate_id: finalized.value.candidate.id,
+                    guidance: None,
+                    model_override: None,
+                    forced_speaker: None,
+                    swap_roles: false,
+                },
+                TimestampMillis::new(50),
+            )
+            .expect("regenerate");
+        let regenerate_revision = drive(
+            &authored_fixture,
+            regenerate.value.turn.id,
+            regenerate.value.attempt.id,
+            &[
+                GenerationTurnStatus::Preparing,
+                GenerationTurnStatus::SelectingSpeaker,
+            ],
+            "drive-resolve-regen",
+            51,
+        );
+        let wrong_author = resolve_speaker_command(
+            &authored_fixture,
+            regenerate.value.turn.id,
+            regenerate_revision,
+            authored_second_speaker,
+            SpeakerDecisionMethod::Heuristic,
+            "resolve-regen-wrong-author",
+        );
+        assert!(matches!(
+            authored_fixture
+                .database
+                .resolve_group_speaker(&wrong_author, TimestampMillis::new(60)),
+            Err(ConversationRepositoryError::Invalid(_))
+        ));
+        let right_author = resolve_speaker_command(
+            &authored_fixture,
+            regenerate.value.turn.id,
+            regenerate_revision,
+            authored_first_speaker,
+            SpeakerDecisionMethod::Heuristic,
+            "resolve-regen-right-author",
+        );
+        assert!(
+            authored_fixture
+                .database
+                .resolve_group_speaker(&right_author, TimestampMillis::new(60))
+                .is_ok()
         );
     }
 

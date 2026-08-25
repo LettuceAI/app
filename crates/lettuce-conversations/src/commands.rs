@@ -595,12 +595,31 @@ pub struct SettleCancellation {
     pub usage_event_id: lettuce_types::UsageEventId,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ResolveGroupSpeaker {
+    pub conversation_id: ConversationId,
+    pub turn_id: GenerationTurnId,
+    pub expected_turn_revision: Revision,
+    pub operation: OperationToken,
+    pub selected_speaker: crate::generation::SelectedSpeakerDecision,
+}
+
 impl SettleCancellation {
     pub fn validate(&self) -> Result<(), ValidationError> {
         if self.expected_revision.get() == 0 || self.expected_turn_revision.get() == 0 {
             return Err(ValidationError::ZeroRevision);
         }
         Ok(())
+    }
+}
+
+impl ResolveGroupSpeaker {
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        if self.expected_turn_revision.get() == 0 {
+            return Err(ValidationError::ZeroRevision);
+        }
+        self.selected_speaker.validate_for_persistence()
     }
 }
 

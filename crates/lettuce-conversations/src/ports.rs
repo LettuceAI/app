@@ -297,6 +297,7 @@ pub type SendConversationResult = MutationCommit<BeginGeneration>;
 pub type ContinueConversationResult = MutationCommit<BeginGeneration>;
 pub type RegenerateCandidateResult = MutationCommit<BeginGeneration>;
 pub type RetryGenerationResult = MutationCommit<BeginGeneration>;
+pub type ResolveGroupSpeakerResult = MutationCommit<GenerationTurn>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GenerationFinalization {
@@ -819,6 +820,7 @@ pub enum OperationKind {
     ParticipantPolicy,
     Settings,
     AttachJob,
+    ResolveSpeaker,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1075,6 +1077,12 @@ pub trait ConversationRepository: ConversationCreator {
         operation: &crate::commands::OperationToken,
         now: TimestampMillis,
     ) -> Result<GenerationRecoveryResult, ConversationRepositoryError>;
+
+    fn resolve_group_speaker(
+        &self,
+        command: &crate::commands::ResolveGroupSpeaker,
+        now: TimestampMillis,
+    ) -> Result<ResolveGroupSpeakerResult, ConversationRepositoryError>;
 
     fn choose_candidate(
         &self,
