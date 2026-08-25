@@ -936,6 +936,7 @@ pub enum PatchValue<T> {
     Keep,
     Set(T),
     Clear,
+    UseLaunchDefault,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -971,7 +972,8 @@ impl CurrentConversationSettingsPatch {
 
     /// Materializes the repository-owned settings state and applies the
     /// command's optimistic-concurrency requirement.  Callers can only
-    /// choose Keep/Set/Clear; provenance is derived here and cannot be forged.
+    /// choose Keep/Set/Clear/UseLaunchDefault; provenance is derived here and
+    /// cannot be forged.
     pub fn apply(
         &self,
         current: Option<&crate::model::CurrentConversationSettings>,
@@ -1020,6 +1022,7 @@ impl CurrentConversationSettingsPatch {
                 ),
                 PatchValue::Set(value) => (Some(value.clone()), SettingProvenance::CurrentOverride),
                 PatchValue::Clear => (None, SettingProvenance::Disabled),
+                PatchValue::UseLaunchDefault => (None, SettingProvenance::LaunchInherited),
             }
         }
         let empty = crate::model::CurrentConversationSettings {

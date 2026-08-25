@@ -2416,6 +2416,128 @@ mod tests {
     }
 
     #[test]
+    fn settings_patch_distinguishes_clear_from_launch_default() {
+        let model = contract_model();
+        let memory = MemorySettingsSnapshot {
+            policy_ref: None,
+            mode: MemoryModeSnapshot::Manual,
+            selected_revision_ids: Vec::new(),
+        };
+        let voice_id = lettuce_types::VoiceProfileId::new();
+        let voice = VoiceSettingsSnapshot {
+            snapshot_ref: snapshot_ref(SnapshotSource::Voice(voice_id)),
+            source_id: voice_id,
+            source_revision: Revision::INITIAL,
+            display_name: "Voice".into(),
+            autoplay: false,
+        };
+        let set = CurrentConversationSettingsPatch {
+            author_note: PatchValue::Set("note".into()),
+            memory: PatchValue::Set(memory.clone()),
+            model_override: PatchValue::Set(model.clone()),
+            voice: PatchValue::Set(voice.clone()),
+        };
+        let created = set.apply(None, None).expect("create settings");
+        assert_eq!(created.revision, Revision::INITIAL);
+        assert_eq!(
+            created.author_note_provenance,
+            SettingProvenance::CurrentOverride
+        );
+        assert_eq!(
+            created.memory_provenance,
+            SettingProvenance::CurrentOverride
+        );
+        assert_eq!(created.model_provenance, SettingProvenance::CurrentOverride);
+        assert_eq!(created.voice_provenance, SettingProvenance::CurrentOverride);
+
+        let use_launch_default = CurrentConversationSettingsPatch {
+            author_note: PatchValue::UseLaunchDefault,
+            memory: PatchValue::UseLaunchDefault,
+            model_override: PatchValue::UseLaunchDefault,
+            voice: PatchValue::UseLaunchDefault,
+        };
+        let inherited = use_launch_default
+            .apply(Some(&created), Some(Revision::INITIAL))
+            .expect("use launch defaults");
+        assert_eq!(inherited.revision, Revision::new(2));
+        assert_eq!(inherited.author_note, None);
+        assert_eq!(
+            inherited.author_note_provenance,
+            SettingProvenance::LaunchInherited
+        );
+        assert_eq!(inherited.memory, None);
+        assert_eq!(
+            inherited.memory_provenance,
+            SettingProvenance::LaunchInherited
+        );
+        assert_eq!(inherited.model_override, None);
+        assert_eq!(
+            inherited.model_provenance,
+            SettingProvenance::LaunchInherited
+        );
+        assert_eq!(inherited.voice, None);
+        assert_eq!(
+            inherited.voice_provenance,
+            SettingProvenance::LaunchInherited
+        );
+
+        let clear = CurrentConversationSettingsPatch {
+            author_note: PatchValue::Clear,
+            memory: PatchValue::Clear,
+            model_override: PatchValue::Clear,
+            voice: PatchValue::Clear,
+        };
+        let disabled = clear
+            .apply(Some(&created), Some(Revision::INITIAL))
+            .expect("clear settings");
+        assert_eq!(disabled.revision, Revision::new(2));
+        assert_eq!(disabled.author_note, None);
+        assert_eq!(disabled.author_note_provenance, SettingProvenance::Disabled);
+        assert_eq!(disabled.memory, None);
+        assert_eq!(disabled.memory_provenance, SettingProvenance::Disabled);
+        assert_eq!(disabled.model_override, None);
+        assert_eq!(disabled.model_provenance, SettingProvenance::Disabled);
+        assert_eq!(disabled.voice, None);
+        assert_eq!(disabled.voice_provenance, SettingProvenance::Disabled);
+
+        let first_inherited = use_launch_default
+            .apply(None, None)
+            .expect("materialize launch defaults");
+        assert_eq!(first_inherited.revision, Revision::INITIAL);
+        assert_eq!(
+            first_inherited.author_note_provenance,
+            SettingProvenance::LaunchInherited
+        );
+        assert_eq!(
+            first_inherited.memory_provenance,
+            SettingProvenance::LaunchInherited
+        );
+        assert_eq!(
+            first_inherited.model_provenance,
+            SettingProvenance::LaunchInherited
+        );
+        assert_eq!(
+            first_inherited.voice_provenance,
+            SettingProvenance::LaunchInherited
+        );
+
+        let first_disabled = clear
+            .apply(None, None)
+            .expect("materialize disabled settings");
+        assert_eq!(first_disabled.revision, Revision::INITIAL);
+        assert_eq!(
+            first_disabled.author_note_provenance,
+            SettingProvenance::Disabled
+        );
+        assert_eq!(
+            first_disabled.memory_provenance,
+            SettingProvenance::Disabled
+        );
+        assert_eq!(first_disabled.model_provenance, SettingProvenance::Disabled);
+        assert_eq!(first_disabled.voice_provenance, SettingProvenance::Disabled);
+    }
+
+    #[test]
     fn persisted_settings_require_a_revision_and_validate_resolved_values() {
         let mut settings = CurrentConversationSettings {
             revision: Revision::INITIAL,
