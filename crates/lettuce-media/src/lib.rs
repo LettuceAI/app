@@ -8,6 +8,7 @@
 
 mod asset;
 mod blob;
+mod local;
 mod repository;
 
 pub use asset::{
@@ -19,5 +20,9 @@ pub use asset::{
 pub use blob::{
     BlobState, MediaBlob, MediaBlobRepository, MediaBlobRepositoryError, MediaBlobValidationError,
     MediaKind,
+};
+pub use local::{
+    IngestRequest, IngestedMedia, LocalMediaBlobStore, MAX_MEDIA_BLOB_BYTES, MediaStoreError,
+    OpenedMediaAsset,
 };
 pub use repository::{MediaAssetRepository, MediaAssetRepositoryError};

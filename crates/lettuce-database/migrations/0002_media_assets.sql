@@ -42,3 +42,13 @@ CREATE INDEX media_assets_library_order_idx
 CREATE INDEX media_assets_temporary_expiry_idx
     ON media_assets(expires_at, id ASC)
     WHERE retention = 'temporary';
+
+CREATE TRIGGER media_assets_require_ready_blob
+BEFORE INSERT ON media_assets
+WHEN COALESCE(
+    (SELECT state FROM media_blobs WHERE id = NEW.blob_id AND kind = NEW.blob_kind),
+    ''
+) <> 'ready'
+BEGIN
+    SELECT RAISE(ABORT, 'media asset requires a ready blob');
+END;

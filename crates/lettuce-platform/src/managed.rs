@@ -258,14 +258,25 @@ pub(crate) fn target_parent_segments(key: &ObjectKey) -> Vec<String> {
 pub(crate) fn sync_directory(directory: &Dir) -> crate::model::ParentSyncStatus {
     #[cfg(unix)]
     {
-        if directory
+        match directory
             .try_clone()
             .and_then(|directory| directory.into_std_file().sync_all())
-            .is_ok()
         {
-            crate::model::ParentSyncStatus::Synced
-        } else {
-            crate::model::ParentSyncStatus::Failed
+            Ok(()) => crate::model::ParentSyncStatus::Synced,
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::InvalidInput | io::ErrorKind::Unsupported
+                ) =>
+            {
+                crate::model::ParentSyncStatus::Unsupported
+            }
+            // The descriptor-backed directory handle used by cap-std can
+            // reject fsync with EBADF even though directory operations work.
+            Err(error) if error.raw_os_error() == Some(9) => {
+                crate::model::ParentSyncStatus::Unsupported
+            }
+            Err(_) => crate::model::ParentSyncStatus::Failed,
         }
     }
     #[cfg(not(unix))]

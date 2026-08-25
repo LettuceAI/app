@@ -4240,11 +4240,13 @@ mod tests {
             height: Some(1),
             duration_ms: None,
             validation_version: 1,
-            state: BlobState::Ready,
+            state: BlobState::Staged,
             created_at: TimestampMillis::new(1),
             updated_at: TimestampMillis::new(1),
         };
-        MediaBlobRepository::register(&database, blob).expect("blob");
+        let blob = MediaBlobRepository::register(&database, blob).expect("blob");
+        MediaBlobRepository::finalize_staged_to_ready(&database, blob.id, TimestampMillis::new(1))
+            .expect("ready blob");
         let asset_id = AssetId::new();
         let asset = MediaAsset::new(
             asset_id,

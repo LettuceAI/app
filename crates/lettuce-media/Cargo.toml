@@ -14,7 +14,9 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+blake3.workspace = true
 lettuce-types.workspace = true
+lettuce-platform.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 

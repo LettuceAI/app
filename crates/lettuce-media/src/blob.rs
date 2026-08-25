@@ -98,13 +98,25 @@ pub enum MediaBlobRepositoryError {
     NotFound,
     #[error("stored media metadata are invalid")]
     InvalidData,
+    #[error("media blob is not in a finalizable state")]
+    InvalidState,
     #[error("media storage failed")]
     Storage,
 }
 
 pub trait MediaBlobRepository: Send + Sync {
-    /// Inserts metadata or returns the existing blob with the same content hash.
+    /// Inserts staged metadata or returns the existing blob with the same
+    /// content hash. Ready rows are produced by the byte-store workflow and
+    /// [`Self::finalize_staged_to_ready`].
     fn register(&self, blob: MediaBlob) -> Result<MediaBlob, MediaBlobRepositoryError>;
+    /// Finalizes a staged row after its content-addressed file has been
+    /// atomically committed. Calling this for an already-ready row is
+    /// idempotent; repository holders are trusted infrastructure.
+    fn finalize_staged_to_ready(
+        &self,
+        id: MediaBlobId,
+        updated_at: TimestampMillis,
+    ) -> Result<MediaBlob, MediaBlobRepositoryError>;
     fn get(&self, id: MediaBlobId) -> Result<Option<MediaBlob>, MediaBlobRepositoryError>;
     fn find_by_hash(
         &self,

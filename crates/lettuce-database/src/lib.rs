@@ -918,6 +918,9 @@ fn media_error(error: rusqlite::Error) -> MediaBlobRepositoryError {
 
 impl MediaBlobRepository for Database {
     fn register(&self, blob: MediaBlob) -> Result<MediaBlob, MediaBlobRepositoryError> {
+        if blob.state != BlobState::Staged {
+            return Err(MediaBlobRepositoryError::InvalidState);
+        }
         blob.validate()
             .map_err(|_| MediaBlobRepositoryError::InvalidData)?;
         let mut connection = self
@@ -998,6 +1001,48 @@ impl MediaBlobRepository for Database {
             .map_err(media_error)?;
         transaction.commit().map_err(media_error)?;
         Ok(stored)
+    }
+    fn finalize_staged_to_ready(
+        &self,
+        id: MediaBlobId,
+        updated_at: TimestampMillis,
+    ) -> Result<MediaBlob, MediaBlobRepositoryError> {
+        let mut connection = self
+            .connection()
+            .map_err(|_| MediaBlobRepositoryError::Storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(media_error)?;
+        let current = transaction
+            .query_row(
+                &format!("SELECT {MEDIA_BLOB_COLUMNS} FROM media_blobs WHERE id=?1"),
+                [id.to_string()],
+                media_from_row,
+            )
+            .optional()
+            .map_err(media_error)?
+            .ok_or(MediaBlobRepositoryError::NotFound)?;
+        if current.state == BlobState::Ready {
+            return Ok(current);
+        }
+        if current.state != BlobState::Staged {
+            return Err(MediaBlobRepositoryError::InvalidState);
+        }
+        transaction
+            .execute(
+                "UPDATE media_blobs SET state='ready', updated_at=?2 WHERE id=?1 AND state='staged'",
+                params![id.to_string(), updated_at.get()],
+            )
+            .map_err(media_error)?;
+        let finalized = transaction
+            .query_row(
+                &format!("SELECT {MEDIA_BLOB_COLUMNS} FROM media_blobs WHERE id=?1"),
+                [id.to_string()],
+                media_from_row,
+            )
+            .map_err(media_error)?;
+        transaction.commit().map_err(media_error)?;
+        Ok(finalized)
     }
     fn get(&self, id: MediaBlobId) -> Result<Option<MediaBlob>, MediaBlobRepositoryError> {
         self.connection()
@@ -1260,6 +1305,9 @@ impl MediaAssetRepository for Database {
         let Some(blob) = blob else {
             return Err(MediaAssetRepositoryError::BlobMissing);
         };
+        if blob.state != BlobState::Ready {
+            return Err(MediaAssetRepositoryError::BlobNotReady);
+        }
         if blob.kind != asset.kind.blob_kind() {
             return Err(MediaAssetRepositoryError::InvalidData);
         }
@@ -1497,10 +1545,17 @@ mod tests {
             height: None,
             duration_ms: None,
             validation_version: 1,
-            state: BlobState::Ready,
+            state: BlobState::Staged,
             created_at: TimestampMillis::new(10),
             updated_at: TimestampMillis::new(10),
         }
+    }
+
+    fn ready_blob(database: &Database, hash_byte: char, kind: MediaKind) -> MediaBlob {
+        let blob = MediaBlobRepository::register(database, media_blob(hash_byte, kind))
+            .expect("register blob");
+        MediaBlobRepository::finalize_staged_to_ready(database, blob.id, blob.updated_at)
+            .expect("ready blob")
     }
 
     fn media_asset(id: AssetId, blob_id: MediaBlobId, kind: AssetKind) -> MediaAsset {
@@ -2417,7 +2472,7 @@ mod tests {
             height: Some(5),
             duration_ms: None,
             validation_version: 1,
-            state: BlobState::Ready,
+            state: BlobState::Staged,
             created_at: TimestampMillis::new(30),
             updated_at: TimestampMillis::new(30),
         };
@@ -2425,7 +2480,7 @@ mod tests {
             MediaBlobRepository::register(&database, first.clone()).expect("register first");
         let mut duplicate = first;
         duplicate.id = MediaBlobId::new();
-        duplicate.state = BlobState::Missing;
+        duplicate.state = BlobState::Staged;
         duplicate.created_at = TimestampMillis::new(31);
         duplicate.updated_at = TimestampMillis::new(32);
         let deduplicated =
@@ -2451,7 +2506,7 @@ mod tests {
             height: Some(2),
             duration_ms: None,
             validation_version: 1,
-            state: BlobState::Ready,
+            state: BlobState::Staged,
             created_at: TimestampMillis::new(31),
             updated_at: TimestampMillis::new(31),
         };
@@ -2464,6 +2519,12 @@ mod tests {
     #[test]
     fn media_blob_registration_rejects_invalid_metadata_and_each_immutable_conflict() {
         let database = Database::open_in_memory().expect("open database");
+        let mut ready = media_blob('0', MediaKind::Image);
+        ready.state = BlobState::Ready;
+        assert_eq!(
+            MediaBlobRepository::register(&database, ready),
+            Err(lettuce_media::MediaBlobRepositoryError::InvalidState)
+        );
         let invalids = [
             {
                 let mut blob = media_blob('a', MediaKind::Image);
@@ -2544,8 +2605,7 @@ mod tests {
     #[test]
     fn media_assets_round_trip_share_blobs_and_distinguish_create_errors() {
         let database = Database::open_in_memory().expect("open database");
-        let blob = MediaBlobRepository::register(&database, media_blob('1', MediaKind::Image))
-            .expect("register blob");
+        let blob = ready_blob(&database, '1', MediaKind::Image);
         let first = media_asset(AssetId::new(), blob.id, AssetKind::Illustration);
         let second = media_asset(AssetId::new(), blob.id, AssetKind::AvatarOriginal);
         assert_eq!(
@@ -2582,10 +2642,31 @@ mod tests {
     }
 
     #[test]
+    fn media_asset_creation_rejects_staged_blobs_until_finalized() {
+        let database = Database::open_in_memory().expect("open database");
+        let staged = MediaBlobRepository::register(&database, media_blob('7', MediaKind::Image))
+            .expect("register staged blob");
+        assert_eq!(
+            MediaAssetRepository::create(
+                &database,
+                media_asset(AssetId::new(), staged.id, AssetKind::Illustration),
+            ),
+            Err(MediaAssetRepositoryError::BlobNotReady)
+        );
+        let ready =
+            MediaBlobRepository::finalize_staged_to_ready(&database, staged.id, staged.updated_at)
+                .expect("finalize blob");
+        MediaAssetRepository::create(
+            &database,
+            media_asset(AssetId::new(), ready.id, AssetKind::Illustration),
+        )
+        .expect("create ready asset");
+    }
+
+    #[test]
     fn media_asset_retention_cas_and_expiry_representation_are_atomic() {
         let database = Database::open_in_memory().expect("open database");
-        let blob = MediaBlobRepository::register(&database, media_blob('2', MediaKind::Image))
-            .expect("register blob");
+        let blob = ready_blob(&database, '2', MediaKind::Image);
         let asset = MediaAssetRepository::create(
             &database,
             media_asset(AssetId::new(), blob.id, AssetKind::Illustration),
@@ -2642,8 +2723,7 @@ mod tests {
     #[test]
     fn failed_m2_write_rolls_back_without_changing_asset_revision() {
         let database = Database::open_in_memory().expect("open database");
-        let blob = MediaBlobRepository::register(&database, media_blob('6', MediaKind::Image))
-            .expect("register blob");
+        let blob = ready_blob(&database, '6', MediaKind::Image);
         let asset = MediaAssetRepository::create(
             &database,
             media_asset(AssetId::new(), blob.id, AssetKind::Illustration),
@@ -2678,8 +2758,7 @@ mod tests {
     #[test]
     fn library_keyset_pagination_is_deterministic_and_cursor_is_strict() {
         let database = Database::open_in_memory().expect("open database");
-        let blob = MediaBlobRepository::register(&database, media_blob('3', MediaKind::Image))
-            .expect("register blob");
+        let blob = ready_blob(&database, '3', MediaKind::Image);
         let mut ids = (0..5).map(|_| AssetId::new()).collect::<Vec<_>>();
         ids.sort();
         for id in ids.iter().copied() {
@@ -2752,8 +2831,7 @@ mod tests {
     #[test]
     fn asset_provenance_corruption_is_rejected_strictly() {
         let database = Database::open_in_memory().expect("open database");
-        let blob = MediaBlobRepository::register(&database, media_blob('4', MediaKind::Image))
-            .expect("register blob");
+        let blob = ready_blob(&database, '4', MediaKind::Image);
         let asset = MediaAssetRepository::create(
             &database,
             media_asset(AssetId::new(), blob.id, AssetKind::Illustration),
@@ -2784,6 +2862,9 @@ mod tests {
         let database = Database::open_in_memory().expect("open database");
         let blob = MediaBlobRepository::register(&database, media_blob('5', MediaKind::Image))
             .expect("register blob");
+        let blob =
+            MediaBlobRepository::finalize_staged_to_ready(&database, blob.id, blob.updated_at)
+                .expect("ready blob");
         let connection = database.connection().expect("database lock");
         let insert = |blob_id: &str,
                       blob_kind: &str,
@@ -3221,6 +3302,14 @@ mod tests {
         let first_blob = first_blob.expect("first registration");
         let second_blob = second_blob.expect("second registration");
         assert_eq!(first_blob.id, second_blob.id);
+        let finalizer = Database::open(&path).expect("open finalizer");
+        let first_blob = MediaBlobRepository::finalize_staged_to_ready(
+            &finalizer,
+            first_blob.id,
+            first_blob.updated_at,
+        )
+        .expect("ready blob");
+        drop(finalizer);
 
         let conflict_path = path.clone();
         let first = Database::open(&conflict_path).expect("open conflict first handle");
@@ -3368,9 +3457,7 @@ mod tests {
     #[test]
     fn group_schema_enforces_composite_graph_and_image_foreign_keys() {
         let database = Database::open_in_memory().expect("open database");
-        let audio_blob =
-            MediaBlobRepository::register(&database, media_blob('b', MediaKind::Audio))
-                .expect("register audio blob");
+        let audio_blob = ready_blob(&database, 'b', MediaKind::Audio);
         let audio_asset_id = AssetId::new();
         MediaAssetRepository::create(
             &database,

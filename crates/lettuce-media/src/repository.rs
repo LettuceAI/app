@@ -17,14 +17,17 @@ pub enum MediaAssetRepositoryError {
     InvalidData,
     #[error("the referenced media blob was not found")]
     BlobMissing,
+    #[error("the referenced media blob is not ready")]
+    BlobNotReady,
     #[error("media asset storage failed")]
     Storage,
 }
 
 /// Persistence port for logical media records.
 pub trait MediaAssetRepository: Send + Sync {
-    /// Creates an asset. The adapter must verify that `blob_id` exists and
-    /// that its physical kind matches `asset.kind` before committing.
+    /// Creates an asset. Trusted infrastructure must verify that `blob_id`
+    /// exists, is ready, and has a physical kind matching `asset.kind` before
+    /// committing.
     fn create(&self, asset: MediaAsset) -> Result<MediaAsset, MediaAssetRepositoryError>;
 
     fn get(&self, id: AssetId) -> Result<Option<MediaAsset>, MediaAssetRepositoryError>;

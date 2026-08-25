@@ -108,11 +108,17 @@ mod tests {
             height: Some(2),
             duration_ms: None,
             validation_version: 1,
-            state: BlobState::Ready,
+            state: BlobState::Staged,
             created_at: TimestampMillis::new(3),
             updated_at: TimestampMillis::new(3),
         };
         let blob = MediaBlobRepository::register(&database, blob).expect("register blob");
+        let blob = MediaBlobRepository::finalize_staged_to_ready(
+            &database,
+            blob.id,
+            TimestampMillis::new(3),
+        )
+        .expect("ready blob");
         let asset = MediaAsset::new(
             lettuce_types::AssetId::new(),
             blob.id,

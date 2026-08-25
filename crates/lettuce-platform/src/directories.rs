@@ -14,6 +14,7 @@ pub enum ManagedRoot {
     Diagnostics,
     ImportStaging,
     JobStaging,
+    MediaBlobs,
     Quarantine,
     Trash,
     PrivatePersistent,
@@ -22,10 +23,11 @@ pub enum ManagedRoot {
 pub use ManagedRoot as RootKind;
 
 impl ManagedRoot {
-    pub(crate) const ALL: [Self; 6] = [
+    pub(crate) const ALL: [Self; 7] = [
         Self::Diagnostics,
         Self::ImportStaging,
         Self::JobStaging,
+        Self::MediaBlobs,
         Self::Quarantine,
         Self::Trash,
         Self::PrivatePersistent,
@@ -36,6 +38,7 @@ impl ManagedRoot {
             Self::Diagnostics => "diagnostics",
             Self::ImportStaging => "import-staging",
             Self::JobStaging => "job-staging",
+            Self::MediaBlobs => "media-blobs",
             Self::Quarantine => "quarantine",
             Self::Trash => "trash",
             Self::PrivatePersistent => "private-persistent-v2",

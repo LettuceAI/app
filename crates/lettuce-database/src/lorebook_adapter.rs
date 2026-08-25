@@ -1378,11 +1378,17 @@ mod tests {
             height: Some(1),
             duration_ms: None,
             validation_version: 1,
-            state: BlobState::Ready,
+            state: BlobState::Staged,
             created_at: TimestampMillis::new(1),
             updated_at: TimestampMillis::new(1),
         };
         let blob = MediaBlobRepository::register(database, blob).expect("blob");
+        let blob = MediaBlobRepository::finalize_staged_to_ready(
+            database,
+            blob.id,
+            TimestampMillis::new(1),
+        )
+        .expect("ready blob");
         let asset = MediaAsset::new(
             lettuce_types::AssetId::new(),
             blob.id,
@@ -1412,11 +1418,17 @@ mod tests {
             height: None,
             duration_ms: Some(1),
             validation_version: 1,
-            state: BlobState::Ready,
+            state: BlobState::Staged,
             created_at: TimestampMillis::new(1),
             updated_at: TimestampMillis::new(1),
         };
         let blob = MediaBlobRepository::register(database, blob).expect("blob");
+        let blob = MediaBlobRepository::finalize_staged_to_ready(
+            database,
+            blob.id,
+            TimestampMillis::new(1),
+        )
+        .expect("ready blob");
         let asset = MediaAsset::new(
             lettuce_types::AssetId::new(),
             blob.id,

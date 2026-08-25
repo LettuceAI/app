@@ -429,6 +429,8 @@ dependencies = [
 name = "lettuce-media"
 version = "0.1.0"
 dependencies = [
+ "blake3",
+ "lettuce-platform",
  "lettuce-types",
  "serde",
  "serde_json",
