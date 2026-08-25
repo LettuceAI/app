@@ -14,6 +14,7 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+async-trait.workspace = true
 lettuce-types.workspace = true
 lettuce-contracts.workspace = true
 lettuce-settings.workspace = true

@@ -1235,6 +1235,7 @@ pub struct ContextRequest {
     pub capabilities: CapabilitySet,
     pub safety: SafetyContext,
     pub prompt_runtime: PromptRuntimeFacts,
+    pub prompt_values: PromptRuntimeValues,
     pub memory: Option<MemoryContribution>,
     pub timeline: Vec<TimelineItem>,
 }
@@ -1261,6 +1262,7 @@ impl ContextRequest {
         )?;
         self.window.validate()?;
         self.prompt_runtime.validate()?;
+        self.prompt_values.validate()?;
         if let Some(guidance) = &self.guidance {
             crate::validation::validate_text(
                 "context_request.guidance",
@@ -1382,6 +1384,105 @@ impl PromptRuntimeFacts {
                     "context_runtime.scope",
                     scope,
                     crate::validation::MAX_DISPLAY_CHARS,
+                    false,
+                )?;
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Pre-resolved authored/runtime strings which the pure prompt renderer cannot
+/// derive from booleans. `None` means the value is unavailable; the assembler
+/// must not manufacture a replacement.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct PromptRuntimeValues {
+    pub content_rules: Option<String>,
+    pub companion_state: Option<String>,
+    pub scheduled_notes: Option<String>,
+    pub date: Option<String>,
+    pub date_full: Option<String>,
+    pub weekday: Option<String>,
+    pub time_hour: Option<String>,
+    pub time_minute: Option<String>,
+    pub time_second: Option<String>,
+    pub time_full: Option<String>,
+    pub time_12hour_format: Option<String>,
+    pub time_timezone: Option<String>,
+    pub time_timezone_name: Option<String>,
+    pub datetime_iso: Option<String>,
+}
+
+impl PromptRuntimeValues {
+    fn validate(&self) -> Result<(), crate::ValidationError> {
+        for (field, value) in [
+            (
+                "context_runtime_values.content_rules",
+                self.content_rules.as_deref(),
+            ),
+            (
+                "context_runtime_values.companion_state",
+                self.companion_state.as_deref(),
+            ),
+            (
+                "context_runtime_values.scheduled_notes",
+                self.scheduled_notes.as_deref(),
+            ),
+        ] {
+            if let Some(value) = value {
+                crate::validation::validate_text(
+                    field,
+                    value,
+                    crate::validation::MAX_AUTHORED_TEXT_BYTES,
+                    false,
+                )?;
+            }
+        }
+        for (field, value) in [
+            ("context_runtime_values.date", self.date.as_deref()),
+            (
+                "context_runtime_values.date_full",
+                self.date_full.as_deref(),
+            ),
+            ("context_runtime_values.weekday", self.weekday.as_deref()),
+            (
+                "context_runtime_values.time_hour",
+                self.time_hour.as_deref(),
+            ),
+            (
+                "context_runtime_values.time_minute",
+                self.time_minute.as_deref(),
+            ),
+            (
+                "context_runtime_values.time_second",
+                self.time_second.as_deref(),
+            ),
+            (
+                "context_runtime_values.time_full",
+                self.time_full.as_deref(),
+            ),
+            (
+                "context_runtime_values.time_12hour_format",
+                self.time_12hour_format.as_deref(),
+            ),
+            (
+                "context_runtime_values.time_timezone",
+                self.time_timezone.as_deref(),
+            ),
+            (
+                "context_runtime_values.time_timezone_name",
+                self.time_timezone_name.as_deref(),
+            ),
+            (
+                "context_runtime_values.datetime_iso",
+                self.datetime_iso.as_deref(),
+            ),
+        ] {
+            if let Some(value) = value {
+                crate::validation::validate_text(
+                    field,
+                    value,
+                    crate::validation::MAX_DISPLAY_CHARS * 4,
                     false,
                 )?;
             }
@@ -1936,6 +2037,7 @@ mod tests {
             capabilities: CapabilitySet::default(),
             safety: SafetyContext::Standard,
             prompt_runtime: PromptRuntimeFacts::default(),
+            prompt_values: PromptRuntimeValues::default(),
             memory: None,
             timeline: Vec::new(),
         };
@@ -1990,6 +2092,21 @@ mod tests {
             key_memories: vec!["a durable fact".into()],
         };
         assert!(memory.validate().is_ok());
+    }
+
+    #[test]
+    fn pre_resolved_prompt_runtime_values_are_bounded_and_optional() {
+        let values = PromptRuntimeValues {
+            content_rules: Some("keep replies concise".into()),
+            date: Some("2026-08-25".into()),
+            ..PromptRuntimeValues::default()
+        };
+        assert!(values.validate().is_ok());
+        let oversized = PromptRuntimeValues {
+            companion_state: Some("x".repeat(crate::validation::MAX_AUTHORED_TEXT_BYTES + 1)),
+            ..PromptRuntimeValues::default()
+        };
+        assert!(oversized.validate().is_err());
     }
 
     #[test]

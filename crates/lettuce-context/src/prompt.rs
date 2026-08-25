@@ -384,6 +384,51 @@ pub struct PromptDocument {
     pub updated_at: TimestampMillis,
 }
 
+/// Immutable prompt input carried by a conversation launch snapshot.
+///
+/// Unlike [`PromptDocument`], this type has no lifecycle, provenance, or live
+/// timestamps. It is the complete snapshot-native input needed by the pure
+/// renderer and therefore cannot imply a live prompt-library row.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PromptSnapshot {
+    pub id: PromptDocumentId,
+    pub revision: Revision,
+    pub purpose: PromptPurpose,
+    pub behavior_version: PromptBehaviorVersion,
+    pub condense: bool,
+    pub entries: Vec<PromptEntry>,
+}
+
+impl PromptSnapshot {
+    pub fn validate(&self) -> Result<(), PromptValidationError> {
+        if self.revision.get() == 0 {
+            return Err(PromptValidationError::ZeroRevision);
+        }
+        if self.entries.len() > MAX_PROMPT_ENTRIES {
+            return Err(PromptValidationError::TooManyEntries);
+        }
+        let mut ids = std::collections::HashSet::with_capacity(self.entries.len());
+        let mut built_in_keys = std::collections::HashSet::with_capacity(self.entries.len());
+        for entry in &self.entries {
+            if !ids.insert(entry.id) {
+                return Err(PromptValidationError::DuplicateEntry(entry.id));
+            }
+            if let Some(key) = &entry.built_in_entry_key {
+                if !built_in_keys.insert(key.clone()) {
+                    return Err(PromptValidationError::DuplicateBuiltInEntryKey(key.clone()));
+                }
+            }
+            entry.validate()?;
+        }
+        let encoded = serde_json::to_vec(self).map_err(|_| PromptValidationError::Serialization)?;
+        if encoded.len() > MAX_AUTHORED_BYTES {
+            return Err(PromptValidationError::AuthoredPayloadTooLarge);
+        }
+        Ok(())
+    }
+}
+
 /// Adapter-owned fields are intentionally absent. A repository validates this
 /// draft, allocates the document and entry identities, and stamps provenance,
 /// ordering, revision, and timestamps.
@@ -1401,16 +1446,52 @@ pub fn render_prompt(
     context: &PromptRenderContext,
 ) -> Result<RenderedPrompt, PromptRenderError> {
     document.validate()?;
+    render_prompt_input(
+        document.id,
+        document.revision,
+        document.purpose,
+        document.behavior_version,
+        &document.entries,
+        context,
+    )
+}
+
+/// Render a prompt directly from an immutable conversation snapshot input.
+/// This shares the exact entry selection and rendering implementation used by
+/// live prompt documents without manufacturing library metadata.
+pub fn render_prompt_snapshot(
+    snapshot: &PromptSnapshot,
+    context: &PromptRenderContext,
+) -> Result<RenderedPrompt, PromptRenderError> {
+    snapshot.validate()?;
+    render_prompt_input(
+        snapshot.id,
+        snapshot.revision,
+        snapshot.purpose,
+        snapshot.behavior_version,
+        &snapshot.entries,
+        context,
+    )
+}
+
+fn render_prompt_input(
+    document_id: PromptDocumentId,
+    document_revision: Revision,
+    purpose: PromptPurpose,
+    behavior_version: PromptBehaviorVersion,
+    entries: &[PromptEntry],
+    context: &PromptRenderContext,
+) -> Result<RenderedPrompt, PromptRenderError> {
     crate::lorebook::validate_match_context(&context.conditions.recent_text)
         .map_err(|_| PromptValidationError::MatchContextTooLarge)?;
-    validate_render_values(document.purpose, &context.values)?;
+    validate_render_values(purpose, &context.values)?;
     let mut rendered = RenderedPrompt {
-        document_id: document.id,
-        document_revision: document.revision,
+        document_id,
+        document_revision,
         ..RenderedPrompt::default()
     };
-    for entry in &document.entries {
-        if !entry_selected(document.behavior_version, entry, context) {
+    for entry in entries {
+        if !entry_selected(behavior_version, entry, context) {
             continue;
         }
         let message = render_entry(entry, &context.values)?;
@@ -1952,6 +2033,30 @@ mod tests {
                 .relative
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn snapshot_renderer_uses_only_snapshot_identity_and_entries() {
+        let entry = PromptEntry {
+            id: PromptEntryId::new(),
+            name: "snapshot".into(),
+            content: "{{char}}".into(),
+            ..PromptEntry::default()
+        };
+        let snapshot = PromptSnapshot {
+            id: PromptDocumentId::new(),
+            revision: Revision::INITIAL,
+            purpose: PromptPurpose::DirectChat,
+            behavior_version: PromptBehaviorVersion::LegacyV1,
+            condense: false,
+            entries: vec![entry],
+        };
+        let mut context = PromptRenderContext::default();
+        context.values.character_name = "Ada".into();
+        let rendered = render_prompt_snapshot(&snapshot, &context).expect("snapshot prompt");
+        assert_eq!(rendered.document_id, snapshot.id);
+        assert_eq!(rendered.document_revision, snapshot.revision);
+        assert_eq!(rendered.relative[0].content, "Ada");
     }
 
     #[test]

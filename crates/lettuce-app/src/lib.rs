@@ -8,10 +8,12 @@
 
 mod built_in_prompts;
 mod composition;
+mod context_assembler;
 mod launch;
 
 pub use built_in_prompts::*;
 pub use composition::*;
+pub use context_assembler::*;
 pub use launch::*;
 
 #[cfg(test)]
