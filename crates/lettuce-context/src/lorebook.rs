@@ -752,6 +752,234 @@ pub struct MultiLorebookActivation {
     pub skipped: Vec<SkippedLorebookSource>,
 }
 
+/// The immutable entry shape carried by a conversation lorebook snapshot.
+///
+/// Snapshot entries intentionally do not contain a live entry revision or
+/// timestamps: the snapshot envelope's root revision is the only revision
+/// available for this document.  The fields mirror `LorebookEntryV1` in the
+/// conversations crate so context can remain independent of that crate.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LorebookSnapshotActivationEntry {
+    pub entry_id: LorebookEntryId,
+    pub title: String,
+    pub enabled: bool,
+    pub always_active: bool,
+    pub keywords: Vec<String>,
+    pub case_sensitive: bool,
+    pub match_mode: KeywordMatchMode,
+    pub content: String,
+    pub priority: i32,
+    pub ordinal: u32,
+}
+
+/// One ordered lorebook document supplied by a conversation snapshot.
+///
+/// `source_order` is supplied by the binding resolver.  It is deliberately
+/// not inferred from the vector position because an application may combine
+/// ordered sources from more than one snapshot selection.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LorebookSnapshotActivationSource {
+    pub lorebook_id: LorebookId,
+    pub root_revision: Revision,
+    pub source_order: usize,
+    pub detection_policy: DetectionPolicy,
+    pub behavior_version: LorebookBehaviorVersion,
+    pub entries: Vec<LorebookSnapshotActivationEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedLorebookSnapshotSource {
+    pub lorebook_id: LorebookId,
+    pub root_revision: Revision,
+    pub source_order: usize,
+    pub detection_policy: DetectionPolicy,
+    pub behavior_version: LorebookBehaviorVersion,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedLorebookSnapshotEntry {
+    pub entry: LorebookSnapshotActivationEntry,
+    pub source: ResolvedLorebookSnapshotSource,
+    pub matched_keywords: Vec<String>,
+    pub always_active: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MultiLorebookSnapshotActivation {
+    pub entries: Vec<ResolvedLorebookSnapshotEntry>,
+    pub sources: Vec<ResolvedLorebookSnapshotSource>,
+    /// IDs of books which contributed at least one activated entry, in the
+    /// same deterministic order as `entries`.
+    pub activated_lorebook_ids: Vec<LorebookId>,
+    /// Exact snapshot entry IDs which contributed to this activation.
+    pub activated_entry_ids: Vec<LorebookEntryId>,
+}
+
+fn validate_snapshot_entry(
+    entry: &LorebookSnapshotActivationEntry,
+) -> Result<(), LorebookValidationError> {
+    validate_entry_fields(
+        &entry.title,
+        &entry.keywords,
+        entry.match_mode,
+        entry.case_sensitive,
+        &entry.content,
+    )
+}
+
+fn validate_snapshot_source(
+    source: &LorebookSnapshotActivationSource,
+) -> Result<(), LorebookValidationError> {
+    if source.root_revision.get() == 0 {
+        return Err(LorebookValidationError::ZeroRevision);
+    }
+    if source.entries.len() > MAX_LOREBOOK_ENTRIES {
+        return Err(LorebookValidationError::TooManyEntries);
+    }
+    let mut ids = std::collections::HashSet::with_capacity(source.entries.len());
+    let mut authored_bytes = 0_usize;
+    let mut regex_keywords = 0_usize;
+    for (ordinal, entry) in source.entries.iter().enumerate() {
+        validate_snapshot_entry(entry)?;
+        if !ids.insert(entry.entry_id) {
+            return Err(LorebookValidationError::DuplicateEntry);
+        }
+        if entry.ordinal as usize != ordinal {
+            return Err(LorebookValidationError::InvalidOrdering);
+        }
+        authored_bytes = authored_bytes
+            .checked_add(entry.title.len())
+            .and_then(|value| value.checked_add(entry.content.len()))
+            .and_then(|value| {
+                entry
+                    .keywords
+                    .iter()
+                    .try_fold(value, |total, keyword| total.checked_add(keyword.len()))
+            })
+            .ok_or(LorebookValidationError::AuthoredPayloadTooLarge)?;
+        if authored_bytes > MAX_AUTHORED_BYTES {
+            return Err(LorebookValidationError::AuthoredPayloadTooLarge);
+        }
+        if entry.match_mode == KeywordMatchMode::Regex {
+            regex_keywords = regex_keywords
+                .checked_add(entry.keywords.len())
+                .ok_or(LorebookValidationError::TooManyRegexKeywords)?;
+            if regex_keywords > MAX_REGEX_KEYWORDS_PER_BOOK {
+                return Err(LorebookValidationError::TooManyRegexKeywords);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Resolve lorebook activation directly from frozen conversation documents.
+///
+/// This is intentionally separate from `resolve_lorebook_activation`: a
+/// conversation document has no entry timestamps or live lifecycle state, so
+/// manufacturing `Lorebook`/`LorebookEntry` values would make replay depend on
+/// data which was not actually captured.  Matching itself still goes through
+/// the same legacy keyword helper and context-window rules.
+pub fn resolve_lorebook_snapshot_activation(
+    sources: &[LorebookSnapshotActivationSource],
+    recent_messages: &[String],
+    latest_user_message: Option<&str>,
+) -> Result<MultiLorebookSnapshotActivation, MultiLorebookActivationError> {
+    if sources.len() > MAX_LOREBOOK_SOURCES {
+        return Err(MultiLorebookActivationError::TooManySources);
+    }
+
+    let mut seen_books = std::collections::HashSet::with_capacity(sources.len());
+    let mut resolved_sources = Vec::new();
+    let mut active_entries = Vec::new();
+    let mut active_content_bytes = 0_usize;
+    for source in sources {
+        if !seen_books.insert(source.lorebook_id) {
+            continue;
+        }
+        validate_snapshot_source(source)?;
+        let resolved_source = ResolvedLorebookSnapshotSource {
+            lorebook_id: source.lorebook_id,
+            root_revision: source.root_revision,
+            source_order: source.source_order,
+            detection_policy: source.detection_policy,
+            behavior_version: source.behavior_version,
+        };
+        let context = context_owned(
+            source.detection_policy,
+            recent_messages,
+            latest_user_message,
+        )?;
+        for entry in source.entries.iter().filter(|entry| entry.enabled) {
+            let matched_keywords = entry
+                .keywords
+                .iter()
+                .filter(|keyword| {
+                    keyword_matches_with_mode(
+                        keyword,
+                        &context,
+                        entry.case_sensitive,
+                        entry.match_mode,
+                    )
+                    .unwrap_or(false)
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            if !entry.always_active && (matched_keywords.is_empty() || entry.keywords.is_empty()) {
+                continue;
+            }
+            if active_entries.len() >= MAX_ACTIVE_LOREBOOK_ENTRIES {
+                return Err(MultiLorebookActivationError::TooManyActiveEntries);
+            }
+            if active_content_bytes.saturating_add(entry.content.len())
+                > MAX_ACTIVE_LOREBOOK_CONTENT_BYTES
+            {
+                return Err(MultiLorebookActivationError::ActiveContentTooLarge);
+            }
+            active_content_bytes += entry.content.len();
+            active_entries.push((
+                resolved_source.clone(),
+                ResolvedLorebookSnapshotEntry {
+                    entry: entry.clone(),
+                    source: resolved_source.clone(),
+                    matched_keywords,
+                    always_active: entry.always_active,
+                },
+            ));
+        }
+        resolved_sources.push(resolved_source);
+    }
+
+    // Snapshot entries have no created_at. Source order is the binding order;
+    // ordinal is the stable order captured inside each book. IDs only break a
+    // malformed-but-accepted source-order tie deterministically.
+    active_entries.sort_by(|left, right| {
+        left.0
+            .source_order
+            .cmp(&right.0.source_order)
+            .then_with(|| left.1.entry.ordinal.cmp(&right.1.entry.ordinal))
+            .then_with(|| left.0.lorebook_id.cmp(&right.0.lorebook_id))
+            .then_with(|| left.1.entry.entry_id.cmp(&right.1.entry.entry_id))
+    });
+    let entries = active_entries
+        .into_iter()
+        .map(|(_, entry)| entry)
+        .collect::<Vec<_>>();
+    let mut activated_lorebook_ids = Vec::new();
+    let mut activated_entry_ids = Vec::with_capacity(entries.len());
+    for entry in &entries {
+        activated_entry_ids.push(entry.entry.entry_id);
+        if activated_lorebook_ids.last() != Some(&entry.source.lorebook_id) {
+            activated_lorebook_ids.push(entry.source.lorebook_id);
+        }
+    }
+    Ok(MultiLorebookSnapshotActivation {
+        entries,
+        sources: resolved_sources,
+        activated_lorebook_ids,
+        activated_entry_ids,
+    })
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum MultiLorebookActivationError {
     #[error("too many lorebook sources")]
@@ -1048,6 +1276,38 @@ mod tests {
         }
     }
 
+    fn snapshot_entry(ordinal: u32, keyword: &str) -> LorebookSnapshotActivationEntry {
+        LorebookSnapshotActivationEntry {
+            entry_id: LorebookEntryId::new(),
+            title: "Entry".into(),
+            enabled: true,
+            always_active: false,
+            keywords: vec![keyword.into()],
+            case_sensitive: false,
+            match_mode: KeywordMatchMode::Literal,
+            content: "Lore".into(),
+            priority: 100,
+            ordinal,
+        }
+    }
+
+    fn snapshot_source(
+        lorebook_id: LorebookId,
+        root_revision: Revision,
+        source_order: usize,
+        detection_policy: DetectionPolicy,
+        entries: Vec<LorebookSnapshotActivationEntry>,
+    ) -> LorebookSnapshotActivationSource {
+        LorebookSnapshotActivationSource {
+            lorebook_id,
+            root_revision,
+            source_order,
+            detection_policy,
+            behavior_version: LorebookBehaviorVersion::LegacyV1,
+            entries,
+        }
+    }
+
     #[test]
     fn legacy_literal_matching_preserves_boundaries_and_scripts() {
         assert!(!keyword_matches("art", "party", false).expect("bounded match"));
@@ -1093,6 +1353,187 @@ mod tests {
             .activate(&book, &[active, matched], &["no".into()], Some("needle"))
             .expect("valid lorebook");
         assert_eq!(result.entries.len(), 2);
+    }
+
+    #[test]
+    fn snapshot_activation_preserves_recent_ten_and_latest_user_detection() {
+        let recent_id = LorebookId::new();
+        let latest_id = LorebookId::new();
+        let recent_entry = snapshot_entry(0, "needle");
+        let latest_entry = snapshot_entry(0, "needle");
+        let sources = vec![
+            snapshot_source(
+                recent_id,
+                Revision::new(7),
+                0,
+                DetectionPolicy::RecentMessageWindow,
+                vec![recent_entry.clone()],
+            ),
+            snapshot_source(
+                latest_id,
+                Revision::new(8),
+                1,
+                DetectionPolicy::LatestUserMessage,
+                vec![latest_entry.clone()],
+            ),
+        ];
+        let mut messages = (0..11).map(|n| format!("message {n}")).collect::<Vec<_>>();
+        messages[0] = "needle".into();
+        let result = resolve_lorebook_snapshot_activation(&sources, &messages, Some("other"))
+            .expect("valid snapshot sources");
+        assert!(result.entries.is_empty());
+
+        messages[1] = "needle".into();
+        let result = resolve_lorebook_snapshot_activation(&sources, &messages, Some("other"))
+            .expect("valid snapshot sources");
+        assert_eq!(result.activated_lorebook_ids, vec![recent_id]);
+        assert_eq!(result.activated_entry_ids, vec![recent_entry.entry_id]);
+
+        let result = resolve_lorebook_snapshot_activation(&sources, &[], Some("needle"))
+            .expect("valid snapshot sources");
+        assert_eq!(
+            result.activated_lorebook_ids,
+            vec![latest_id],
+            "latest-user detection does not inspect recent-message context"
+        );
+        assert_eq!(result.activated_entry_ids, vec![latest_entry.entry_id]);
+    }
+
+    #[test]
+    fn snapshot_activation_keeps_always_active_and_skips_disabled_entries() {
+        let lorebook_id = LorebookId::new();
+        let mut always_active = snapshot_entry(0, "");
+        always_active.always_active = true;
+        let mut disabled = snapshot_entry(1, "needle");
+        disabled.enabled = false;
+        let ordinary = snapshot_entry(2, "needle");
+        let result = resolve_lorebook_snapshot_activation(
+            &[snapshot_source(
+                lorebook_id,
+                Revision::INITIAL,
+                0,
+                DetectionPolicy::LatestUserMessage,
+                vec![always_active.clone(), disabled, ordinary.clone()],
+            )],
+            &[],
+            Some("needle"),
+        )
+        .expect("valid snapshot source");
+        assert_eq!(result.activated_lorebook_ids, vec![lorebook_id]);
+        assert_eq!(
+            result.activated_entry_ids,
+            vec![always_active.entry_id, ordinary.entry_id]
+        );
+    }
+
+    #[test]
+    fn snapshot_activation_deduplicates_books_and_orders_by_source_then_ordinal() {
+        let first_id = LorebookId::new();
+        let second_id = LorebookId::new();
+        let first_entry = snapshot_entry(0, "needle");
+        let mut second_entry = snapshot_entry(0, "needle");
+        second_entry.content = "Second".into();
+        let duplicate_entry = snapshot_entry(0, "needle");
+        let sources = vec![
+            snapshot_source(
+                first_id,
+                Revision::new(11),
+                9,
+                DetectionPolicy::LatestUserMessage,
+                vec![first_entry.clone()],
+            ),
+            snapshot_source(
+                second_id,
+                Revision::new(12),
+                2,
+                DetectionPolicy::LatestUserMessage,
+                vec![second_entry.clone()],
+            ),
+            snapshot_source(
+                first_id,
+                Revision::new(99),
+                0,
+                DetectionPolicy::LatestUserMessage,
+                vec![duplicate_entry],
+            ),
+        ];
+        let result = resolve_lorebook_snapshot_activation(&sources, &[], Some("needle"))
+            .expect("valid snapshot sources");
+        assert_eq!(result.sources.len(), 2);
+        assert_eq!(
+            result.entries[0].source.root_revision,
+            Revision::new(12),
+            "the first source is ordered by its supplied binding order"
+        );
+        assert_eq!(
+            result.activated_lorebook_ids,
+            vec![second_id, first_id],
+            "duplicate book IDs do not contribute a second activation"
+        );
+        assert_eq!(
+            result.activated_entry_ids,
+            vec![second_entry.entry_id, first_entry.entry_id]
+        );
+    }
+
+    #[test]
+    fn snapshot_activation_enforces_active_entry_and_content_bounds() {
+        let first_id = LorebookId::new();
+        let second_id = LorebookId::new();
+        let first_entries = (0..MAX_LOREBOOK_ENTRIES)
+            .map(|ordinal| snapshot_entry(ordinal as u32, "needle"))
+            .collect::<Vec<_>>();
+        let second_entries = (0..MAX_LOREBOOK_ENTRIES)
+            .map(|ordinal| snapshot_entry(ordinal as u32, "needle"))
+            .collect::<Vec<_>>();
+        let result = resolve_lorebook_snapshot_activation(
+            &[
+                snapshot_source(
+                    first_id,
+                    Revision::INITIAL,
+                    0,
+                    DetectionPolicy::LatestUserMessage,
+                    first_entries,
+                ),
+                snapshot_source(
+                    second_id,
+                    Revision::INITIAL,
+                    1,
+                    DetectionPolicy::LatestUserMessage,
+                    second_entries,
+                ),
+            ],
+            &[],
+            Some("needle"),
+        );
+        assert_eq!(
+            result,
+            Err(MultiLorebookActivationError::TooManyActiveEntries)
+        );
+
+        let oversized = (0..5)
+            .map(|ordinal| {
+                let mut entry = snapshot_entry(ordinal, "");
+                entry.always_active = true;
+                entry.content = "x".repeat(crate::MAX_PROSE_BYTES);
+                entry
+            })
+            .collect::<Vec<_>>();
+        let result = resolve_lorebook_snapshot_activation(
+            &[snapshot_source(
+                LorebookId::new(),
+                Revision::INITIAL,
+                0,
+                DetectionPolicy::LatestUserMessage,
+                oversized,
+            )],
+            &[],
+            None,
+        );
+        assert_eq!(
+            result,
+            Err(MultiLorebookActivationError::ActiveContentTooLarge)
+        );
     }
 
     #[test]
