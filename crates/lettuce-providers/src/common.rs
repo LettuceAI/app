@@ -210,15 +210,25 @@ pub(crate) fn reject_unsupported_features(
     if parameters.reasoning_mode == Some(ReasoningMode::Enabled)
         || parameters.reasoning_effort.is_some()
         || parameters.reasoning_budget_tokens.is_some()
-        || matches!(
-            parameters.prompt_caching,
-            Some(PromptCaching::Enabled { .. })
-        )
         || parameters.total_completion_allowance != parameters.visible_max_output_tokens
     {
         return Err(AdapterError::Rejected);
     }
     Ok(())
+}
+
+pub(crate) fn validate_prompt_caching(
+    support: crate::descriptor::PromptCachingSupport,
+    parameters: &ResolvedChatParameters,
+) -> Result<(), AdapterError> {
+    let Some(PromptCaching::Enabled { retention }) = parameters.prompt_caching else {
+        return Ok(());
+    };
+    if support.retentions().contains(&retention) {
+        Ok(())
+    } else {
+        Err(AdapterError::Rejected)
+    }
 }
 
 pub(crate) fn max_output_tokens(parameters: &ResolvedChatParameters) -> u32 {

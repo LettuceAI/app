@@ -33,7 +33,15 @@ support, extra-body allowlist) served through `provider_descriptors()`.
 
 Deferred horizontals: streaming, tools, media input, reasoning fields
 (`enable_thinking`, `reasoning_effort`, Gemini thinking config, Ollama `think`,
-`chat_template_kwargs`), prompt-cache controls, and structured output.
+`chat_template_kwargs`), structured output, and Gemini's explicit
+`cachedContents` resource lifecycle.
+
+Explicit prompt caching is executable for Anthropic, custom Anthropic, and
+OpenRouter through typed cache-control annotations, and for OpenAI through its
+typed request-retention field. Catalog descriptors expose the exact supported
+retention choices. Groq and Gemini Express remain automatic and emit no
+app-side cache controls. Standard Gemini is temporarily advertised as not
+configurable until its separate create/reuse/expiry lifecycle is implemented.
 
 Normalized outcomes retain the provider's raw finish reason and bounded
 header request ID. Non-success responses carry a typed status/category plus

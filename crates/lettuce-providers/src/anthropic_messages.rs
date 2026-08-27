@@ -5,7 +5,8 @@ use lettuce_conversations::{
     InferenceWarningCode, MessagePart, MessageRole, ProviderContextPart, ProviderNeutralContext,
 };
 use lettuce_models::{
-    ProviderAccount, ProviderConfig, ResolvedChatParameters, ResolvedChatProfile,
+    PromptCacheRetention, PromptCaching, ProviderAccount, ProviderConfig, ResolvedChatParameters,
+    ResolvedChatProfile,
 };
 use lettuce_network::{JsonClient, JsonResponse, JsonStaticHeader, MAX_REQUEST_BYTES};
 use lettuce_settings::SecretStore;
@@ -14,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use crate::common::{
     AdapterError, AuthPlan, Credentials, RemoteModel, decode_json, generation_policy, load_auth,
     load_secret_headers, max_output_tokens, reject_unsupported_features, validate_common_request,
+    validate_prompt_caching,
 };
 use crate::descriptor::ProviderDescriptor;
 
@@ -114,7 +116,8 @@ pub(crate) trait AnthropicWireProvider: Sync {
     }
 
     fn validate_parameters(&self, parameters: &ResolvedChatParameters) -> Result<(), AdapterError> {
-        reject_unsupported_features(parameters)
+        reject_unsupported_features(parameters)?;
+        validate_prompt_caching(self.descriptor().prompt_caching, parameters)
     }
 }
 
@@ -234,7 +237,7 @@ fn encode_request(
             }
         }
     }
-    let messages = turns
+    let mut messages = turns
         .into_iter()
         .filter(|turn| !turn.text.trim().is_empty())
         .map(|turn| WireMessage {
@@ -246,6 +249,7 @@ fn encode_request(
             content: vec![WireTextBlock {
                 kind: "text",
                 text: turn.text,
+                cache_control: None,
             }],
         })
         .collect::<Vec<_>>();
@@ -253,10 +257,38 @@ fn encode_request(
         return Err(AdapterError::Rejected);
     }
     let parameters = &profile.parameters;
+    let cache_control = match parameters.prompt_caching {
+        Some(PromptCaching::Enabled { retention }) => Some(WireCacheControl {
+            kind: "ephemeral",
+            ttl: (retention == PromptCacheRetention::OneHour).then_some("1h"),
+        }),
+        Some(PromptCaching::Disabled) | None => None,
+    };
+    if let (Some(control), Some(last_user)) = (
+        cache_control,
+        messages
+            .iter_mut()
+            .rev()
+            .find(|message| message.role == user_role),
+    ) {
+        if let Some(last_text) = last_user.content.last_mut() {
+            last_text.cache_control = Some(control);
+        }
+    }
+    let system = (!system_parts.is_empty()).then(|| {
+        let text = system_parts.join("\n\n");
+        cache_control.map_or(WireSystem::Text(text.clone()), |control| {
+            WireSystem::Blocks(vec![WireTextBlock {
+                kind: "text",
+                text,
+                cache_control: Some(control),
+            }])
+        })
+    });
     let request = MessagesRequest {
         model: profile.external_model_id.clone(),
         messages,
-        system: (!system_parts.is_empty()).then(|| system_parts.join("\n\n")),
+        system,
         max_tokens: max_output_tokens(parameters),
         stream: false,
         temperature: parameters.temperature,
@@ -343,7 +375,7 @@ struct MessagesRequest {
     model: String,
     messages: Vec<WireMessage>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    system: Option<String>,
+    system: Option<WireSystem>,
     max_tokens: u32,
     stream: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -361,10 +393,27 @@ struct WireMessage {
 }
 
 #[derive(Serialize)]
+#[serde(untagged)]
+enum WireSystem {
+    Text(String),
+    Blocks(Vec<WireTextBlock>),
+}
+
+#[derive(Serialize)]
 struct WireTextBlock {
     #[serde(rename = "type")]
     kind: &'static str,
     text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cache_control: Option<WireCacheControl>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+struct WireCacheControl {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ttl: Option<&'static str>,
 }
 
 #[derive(Deserialize)]

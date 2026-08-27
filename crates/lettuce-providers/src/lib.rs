@@ -448,6 +448,28 @@ mod integration_tests {
             Err(lettuce_conversations::PortError::Rejected)
         );
         assert!(store.take_loads().is_empty());
+
+        for (kind, retention) in [
+            ("openai", lettuce_models::PromptCacheRetention::OneHour),
+            ("groq", lettuce_models::PromptCacheRetention::FiveMinutes),
+            ("gemini", lettuce_models::PromptCacheRetention::FiveMinutes),
+        ] {
+            let mut inference = request(profile(
+                kind,
+                "https://example.invalid".to_owned(),
+                ProviderConfig::Standard,
+                Some(SecretRef::new()),
+                owner,
+            ));
+            inference.profile.chat_profile.parameters.prompt_caching =
+                Some(lettuce_models::PromptCaching::Enabled { retention });
+            assert_eq!(
+                adapter.run(inference).await,
+                Err(lettuce_conversations::PortError::Rejected),
+                "{kind} must reject unsupported cache policy before secret loading"
+            );
+            assert!(store.take_loads().is_empty());
+        }
     }
 
     #[tokio::test]
@@ -647,6 +669,60 @@ mod integration_tests {
         }
     }
 
+    async fn capture_cached(
+        kind: &str,
+        protocol: ProviderProtocol,
+        retention: lettuce_models::PromptCacheRetention,
+        response: String,
+    ) -> Captured {
+        let store = Arc::new(RecordingSecretStore::default());
+        let owner = lettuce_settings::SecretOwnerId::new();
+        let key_ref = SecretRef::new();
+        store
+            .put(
+                SecretRecord::new(key_ref, SecretPurpose::ProviderApiKey { owner }),
+                SecretValue::new("key-canary").expect("secret"),
+                None,
+            )
+            .await
+            .expect("store key");
+        let (endpoint, request_receiver) = test_server(response).await;
+        let adapter = RemoteProviders::new(
+            Arc::clone(&store),
+            Arc::new(JsonClient::new().expect("client")),
+        );
+        let config = if kind == "custom-anthropic" {
+            ProviderConfig::Custom(CustomProviderConfig {
+                chat_path: "/v1/messages".to_owned(),
+                models_path: None,
+                streaming: false,
+                auth: CustomAuth::Bearer,
+                ..Default::default()
+            })
+        } else {
+            ProviderConfig::Standard
+        };
+        let mut resolved = profile(kind, endpoint, config, Some(key_ref), owner);
+        resolved.chat_profile.provider_protocol = protocol;
+        resolved.chat_profile.parameters.prompt_caching =
+            Some(lettuce_models::PromptCaching::Enabled { retention });
+        if kind == "openrouter" {
+            resolved.chat_profile.parameters.openrouter.pinned_provider =
+                Some("provider/tag".to_owned());
+        }
+        adapter
+            .run(request(resolved))
+            .await
+            .unwrap_or_else(|error| panic!("{kind}: {error:?}"));
+        let raw = String::from_utf8(request_receiver.await.expect("request")).expect("HTTP");
+        let body_start = raw.find("\r\n\r\n").expect("body boundary") + 4;
+        Captured {
+            request_line: raw.lines().next().expect("request line").to_owned(),
+            headers: raw[..body_start].to_ascii_lowercase(),
+            body: serde_json::from_str(&raw[body_start..]).expect("JSON body"),
+        }
+    }
+
     fn roles(body: &serde_json::Value) -> Vec<&str> {
         body["messages"]
             .as_array()
@@ -709,6 +785,81 @@ mod integration_tests {
             );
             assert_eq!(captured.body["stream"], serde_json::json!(false), "{kind}");
             assert!(captured.body.get("top_k").is_none(), "{kind}");
+        }
+    }
+
+    #[tokio::test]
+    async fn explicit_prompt_caching_uses_each_provider_native_shape() {
+        let uncached_openai = capture("openai", "", true).await;
+        assert!(uncached_openai.body.get("prompt_cache_retention").is_none());
+
+        let openai = capture_cached(
+            "openai",
+            ProviderProtocol::OpenAiCompatible,
+            lettuce_models::PromptCacheRetention::InMemory,
+            response_body(),
+        )
+        .await;
+        assert_eq!(
+            openai.body["prompt_cache_retention"],
+            serde_json::json!("in_memory")
+        );
+
+        let openai = capture_cached(
+            "openai",
+            ProviderProtocol::OpenAiCompatible,
+            lettuce_models::PromptCacheRetention::TwentyFourHours,
+            response_body(),
+        )
+        .await;
+        assert_eq!(
+            openai.body["prompt_cache_retention"],
+            serde_json::json!("24h")
+        );
+        assert!(openai.body.to_string().find("promptCachingTtl").is_none());
+
+        let openrouter = capture_cached(
+            "openrouter",
+            ProviderProtocol::OpenAiCompatible,
+            lettuce_models::PromptCacheRetention::OneHour,
+            response_body(),
+        )
+        .await;
+        let messages = openrouter.body["messages"].as_array().expect("messages");
+        assert_eq!(
+            messages[0]["content"][0]["cache_control"],
+            serde_json::json!({"type":"ephemeral","ttl":"1h"})
+        );
+        assert!(messages[1]["content"].is_string());
+        assert_eq!(
+            messages[2]["content"][0]["cache_control"],
+            serde_json::json!({"type":"ephemeral","ttl":"1h"})
+        );
+        assert_eq!(
+            openrouter.body["provider"],
+            serde_json::json!({"order":["provider/tag"],"allow_fallbacks":false})
+        );
+
+        let anthropic_response =
+            http_json(r#"{"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn"}"#);
+        for kind in ["anthropic", "custom-anthropic"] {
+            let captured = capture_cached(
+                kind,
+                ProviderProtocol::Anthropic,
+                lettuce_models::PromptCacheRetention::FiveMinutes,
+                anthropic_response.clone(),
+            )
+            .await;
+            assert_eq!(
+                captured.body["system"][0]["cache_control"],
+                serde_json::json!({"type":"ephemeral"}),
+                "{kind}"
+            );
+            assert_eq!(
+                captured.body["messages"][0]["content"][0]["cache_control"],
+                serde_json::json!({"type":"ephemeral"}),
+                "{kind}"
+            );
         }
     }
 

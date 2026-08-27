@@ -534,7 +534,11 @@ fn resolve_parameters(
         reasoning_mode,
         reasoning_effort,
         reasoning_budget_tokens,
-        prompt_caching: profile.prompt_caching,
+        prompt_caching: resolve_model_only(
+            &operation.prompt_caching,
+            &session.prompt_caching,
+            profile.prompt_caching,
+        ),
         total_completion_allowance: total,
         ollama: resolve_ollama(profile, input),
         openrouter: crate::OpenRouterOptions {
@@ -718,14 +722,10 @@ fn validate_configured_capabilities(
     {
         require_capability(RequiredCapability::Reasoning, capabilities.reasoning)?;
     }
-    if parameters.prompt_caching == Some(PromptCaching::Enabled { ttl_seconds: None })
-        || matches!(
-            parameters.prompt_caching,
-            Some(PromptCaching::Enabled {
-                ttl_seconds: Some(_)
-            })
-        )
-    {
+    if matches!(
+        parameters.prompt_caching,
+        Some(PromptCaching::Enabled { .. })
+    ) {
         require_capability(RequiredCapability::PromptCache, capabilities.prompt_cache)?;
     }
     Ok(())
@@ -1145,6 +1145,67 @@ mod tests {
     }
 
     #[test]
+    fn prompt_cache_resolves_operation_then_session_then_model_without_global_default() {
+        let (expected, mut profile, account) = fixture();
+        profile.config.chat_parameters.prompt_caching = Some(PromptCaching::Enabled {
+            retention: crate::PromptCacheRetention::FiveMinutes,
+        });
+        let mut input = ChatParameterResolutionInput {
+            global: ChatParameterProfile {
+                prompt_caching: Some(PromptCaching::Enabled {
+                    retention: crate::PromptCacheRetention::TwentyFourHours,
+                }),
+                ..Default::default()
+            },
+            session: ChatParameterOverrides {
+                prompt_caching: ParameterOverride::Set(PromptCaching::Enabled {
+                    retention: crate::PromptCacheRetention::OneHour,
+                }),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let resolved = resolve_chat_profile(
+            &expected,
+            &profile,
+            &account,
+            &input,
+            &ChatRequirements::default(),
+        )
+        .expect("cache policy resolves");
+        assert_eq!(
+            resolved.parameters.prompt_caching,
+            Some(PromptCaching::Enabled {
+                retention: crate::PromptCacheRetention::OneHour
+            })
+        );
+
+        input.operation.prompt_caching = ParameterOverride::Clear;
+        let resolved = resolve_chat_profile(
+            &expected,
+            &profile,
+            &account,
+            &input,
+            &ChatRequirements::default(),
+        )
+        .expect("operation disables caching");
+        assert_eq!(resolved.parameters.prompt_caching, None);
+
+        profile.config.chat_parameters.prompt_caching = None;
+        input.session.prompt_caching = ParameterOverride::Inherit;
+        input.operation.prompt_caching = ParameterOverride::Inherit;
+        let resolved = resolve_chat_profile(
+            &expected,
+            &profile,
+            &account,
+            &input,
+            &ChatRequirements::default(),
+        )
+        .expect("global cache is intentionally ignored");
+        assert_eq!(resolved.parameters.prompt_caching, None);
+    }
+
+    #[test]
     fn authored_reasoning_and_prompt_cache_require_supported_capabilities() {
         let (expected, mut profile, account) = fixture();
         profile.config.chat_parameters.reasoning_mode = Some(ReasoningMode::Enabled);
@@ -1164,7 +1225,7 @@ mod tests {
 
         profile.config.chat_parameters.reasoning_mode = None;
         profile.config.chat_parameters.prompt_caching = Some(PromptCaching::Enabled {
-            ttl_seconds: Some(60),
+            retention: crate::PromptCacheRetention::FiveMinutes,
         });
         profile.config.capabilities.reasoning = CapabilityStatus::Supported;
         profile.config.capabilities.prompt_cache = CapabilityStatus::Unsupported;

@@ -5,7 +5,8 @@ use lettuce_conversations::{
     InferenceWarningCode, MessagePart, MessageRole, ProviderContextPart, ProviderNeutralContext,
 };
 use lettuce_models::{
-    ProviderAccount, ProviderConfig, ResolvedChatParameters, ResolvedChatProfile,
+    PromptCacheRetention, PromptCaching, ProviderAccount, ProviderConfig, ResolvedChatParameters,
+    ResolvedChatProfile,
 };
 use lettuce_network::{JsonClient, JsonResponse, JsonStaticHeader, MAX_REQUEST_BYTES};
 use lettuce_settings::SecretStore;
@@ -15,7 +16,7 @@ pub(crate) use crate::common::{ACCEPT_ONLY, AdapterError, AuthPlan, NO_HEADERS, 
 use crate::common::{
     Credentials, RemoteModel, decode_json, generation_policy, load_auth, load_secret_headers,
     max_output_tokens, parse_openai_model_list, reject_unsupported_features, skip_image_data,
-    validate_common_request,
+    validate_common_request, validate_prompt_caching,
 };
 use crate::descriptor::ProviderDescriptor;
 
@@ -84,7 +85,8 @@ pub(crate) trait OpenAiWireProvider: Sync {
     }
 
     fn validate_parameters(&self, parameters: &ResolvedChatParameters) -> Result<(), AdapterError> {
-        reject_unsupported_features(parameters)
+        reject_unsupported_features(parameters)?;
+        validate_prompt_caching(self.descriptor().prompt_caching, parameters)
     }
 
     fn wire_parameters(&self, parameters: &ResolvedChatParameters) -> WireParameters {
@@ -221,7 +223,11 @@ fn wire_messages(
                     ProviderContextPart::MediaAsset { .. } => return Err(AdapterError::Rejected),
                 }
             }
-            Ok(WireMessage { role, content })
+            Ok(WireMessage {
+                role,
+                content,
+                cache_control: None,
+            })
         })
         .collect()
 }
@@ -245,8 +251,12 @@ fn merge_same_role(messages: Vec<WireMessage>) -> Vec<WireMessage> {
 fn encode_request(
     provider: &dyn OpenAiWireProvider,
     profile: &ResolvedChatProfile,
-    messages: Vec<WireMessage>,
+    mut messages: Vec<WireMessage>,
 ) -> Result<Vec<u8>, AdapterError> {
+    if provider.descriptor().prompt_caching == crate::descriptor::PromptCachingSupport::CacheControl
+    {
+        apply_cache_control(&profile.parameters, &mut messages);
+    }
     let parameters = provider.wire_parameters(&profile.parameters);
     let request = OpenAiRequest {
         model: profile.external_model_id.clone(),
@@ -267,6 +277,29 @@ fn encode_request(
         return Err(AdapterError::Rejected);
     }
     Ok(body)
+}
+
+fn apply_cache_control(parameters: &ResolvedChatParameters, messages: &mut [WireMessage]) {
+    let Some(PromptCaching::Enabled { retention }) = parameters.prompt_caching else {
+        return;
+    };
+    let control = WireCacheControl {
+        kind: "ephemeral",
+        ttl: (retention == PromptCacheRetention::OneHour).then_some("1h"),
+    };
+    if let Some(system) = messages
+        .iter_mut()
+        .find(|message| matches!(message.role.as_ref(), "system" | "developer"))
+    {
+        system.cache_control = Some(control);
+    }
+    if let Some(user) = messages
+        .iter_mut()
+        .rev()
+        .find(|message| message.role == "user")
+    {
+        user.cache_control = Some(control);
+    }
 }
 
 fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterError> {
@@ -355,6 +388,23 @@ fn push_warning(warnings: &mut Vec<InferenceWarningCode>, warning: InferenceWarn
 pub(crate) struct WireMessage {
     role: Cow<'static, str>,
     content: String,
+    cache_control: Option<WireCacheControl>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+struct WireCacheControl {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ttl: Option<&'static str>,
+}
+
+#[derive(Serialize)]
+struct CachedTextContent<'a> {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    text: &'a str,
+    cache_control: WireCacheControl,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -394,7 +444,18 @@ impl Serialize for WireMessage {
         use serde::ser::SerializeStruct;
         let mut state = serializer.serialize_struct("OpenAiMessage", 2)?;
         state.serialize_field("role", self.role.as_ref())?;
-        state.serialize_field("content", &self.content)?;
+        if let Some(cache_control) = self.cache_control {
+            state.serialize_field(
+                "content",
+                &[CachedTextContent {
+                    kind: "text",
+                    text: &self.content,
+                    cache_control,
+                }],
+            )?;
+        } else {
+            state.serialize_field("content", &self.content)?;
+        }
         state.end()
     }
 }
@@ -581,26 +642,32 @@ mod tests {
             WireMessage {
                 role: Cow::Borrowed("system"),
                 content: "a".to_owned(),
+                cache_control: None,
             },
             WireMessage {
                 role: Cow::Borrowed("system"),
                 content: String::new(),
+                cache_control: None,
             },
             WireMessage {
                 role: Cow::Borrowed("system"),
                 content: "b".to_owned(),
+                cache_control: None,
             },
             WireMessage {
                 role: Cow::Borrowed("user"),
                 content: "c".to_owned(),
+                cache_control: None,
             },
             WireMessage {
                 role: Cow::Borrowed("assistant"),
                 content: String::new(),
+                cache_control: None,
             },
             WireMessage {
                 role: Cow::Borrowed("assistant"),
                 content: "d".to_owned(),
+                cache_control: None,
             },
         ]);
         let rendered: Vec<(&str, &str)> = merged

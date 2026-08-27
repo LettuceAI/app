@@ -38,6 +38,11 @@ controls, tail-free/typical/min-p sampling, mirostat, seed, and stop strings).
 This keeps provider-specific wire details typed without duplicating ordinary
 chat settings.
 
+Prompt caching uses a closed retention policy rather than arbitrary seconds or
+provider wire strings. It resolves `operation -> session -> model` with no
+global fallback, so ordinary sessions inherit the model while specialized
+operations can explicitly disable caching.
+
 OpenRouter routing stores only an optional endpoint tag. A model-level pin
 wins over the global default, is rejected for other provider kinds, and never
 stores endpoint display names, logos, or pricing cache data.

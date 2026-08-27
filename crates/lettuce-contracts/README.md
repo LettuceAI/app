@@ -14,3 +14,6 @@ The first provider contracts are active: the provider catalog and capability
 metadata, account-scoped model discovery, and key-verification results. These
 owned serde DTOs keep domain/provider implementation types out of the IPC and
 future generated frontend boundary.
+
+Prompt-cache catalog metadata includes the exact typed retention choices for
+each configurable provider; frontend code does not infer provider wire values.

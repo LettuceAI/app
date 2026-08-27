@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::common::{
     AdapterError, AuthPlan, Credentials, RemoteModel, STANDARD_HEADERS, decode_json,
     generation_policy, load_auth, load_secret_headers, max_output_tokens,
-    reject_unsupported_features, validate_common_request,
+    reject_unsupported_features, validate_common_request, validate_prompt_caching,
 };
 use crate::descriptor::{
     ApiKeyRequirement, ParameterFlags, PromptCachingSupport, ProviderDescriptor, ReasoningSupport,
@@ -46,6 +46,7 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
         return Err(AdapterError::Rejected);
     }
     reject_unsupported_features(&profile.parameters)?;
+    validate_prompt_caching(DESCRIPTOR.prompt_caching, &profile.parameters)?;
     let base = api_base(profile.endpoint.as_deref().unwrap_or(DEFAULT_ENDPOINT));
     let body = encode_request(profile, &request.context)?;
     let credentials = Credentials::from(profile);

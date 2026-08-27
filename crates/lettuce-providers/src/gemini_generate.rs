@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use crate::common::{
     AdapterError, AuthPlan, Credentials, RemoteModel, decode_json, generation_policy, load_auth,
     load_secret_headers, max_output_tokens, reject_unsupported_features, validate_common_request,
+    validate_prompt_caching,
 };
 use crate::descriptor::ProviderDescriptor;
 
@@ -84,7 +85,8 @@ pub(crate) trait GeminiWireProvider: Sync {
     }
 
     fn validate_parameters(&self, parameters: &ResolvedChatParameters) -> Result<(), AdapterError> {
-        reject_unsupported_features(parameters)
+        reject_unsupported_features(parameters)?;
+        validate_prompt_caching(self.descriptor().prompt_caching, parameters)
     }
 }
 

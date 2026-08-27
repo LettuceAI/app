@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use lettuce_conversations::MessageRole;
-use lettuce_models::{ProviderConfig, ResolvedChatParameters};
+use lettuce_models::{PromptCacheRetention, PromptCaching, ProviderConfig, ResolvedChatParameters};
 
 use crate::descriptor::{
     ApiKeyRequirement, ParameterFlags, PromptCachingSupport, ProviderDescriptor, ReasoningSupport,
@@ -29,6 +29,25 @@ impl OpenAiWireProvider for OpenAi {
             ..standard_parameters(parameters)
         }
     }
+
+    fn extend_body(
+        &self,
+        parameters: &ResolvedChatParameters,
+        body: &mut serde_json::Map<String, serde_json::Value>,
+    ) {
+        let Some(PromptCaching::Enabled { retention }) = parameters.prompt_caching else {
+            return;
+        };
+        let retention = match retention {
+            PromptCacheRetention::InMemory => "in_memory",
+            PromptCacheRetention::TwentyFourHours => "24h",
+            PromptCacheRetention::FiveMinutes | PromptCacheRetention::OneHour => return,
+        };
+        body.insert(
+            "prompt_cache_retention".to_owned(),
+            serde_json::Value::String(retention.to_owned()),
+        );
+    }
 }
 
 pub(crate) const DESCRIPTOR: ProviderDescriptor = ProviderDescriptor {
@@ -44,7 +63,7 @@ pub(crate) const DESCRIPTOR: ProviderDescriptor = ProviderDescriptor {
     lists_models: true,
     verifies_key: true,
     reasoning: ReasoningSupport::Effort,
-    prompt_caching: PromptCachingSupport::Supported,
+    prompt_caching: PromptCachingSupport::RequestRetention,
     parameters: ParameterFlags::PENALTIES_BUDGET,
-    extra_body_keys: &["promptCachingTtl"],
+    extra_body_keys: &[],
 };

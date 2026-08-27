@@ -1,4 +1,4 @@
-use lettuce_models::{CapabilityStatus, ParameterSupport, ProviderProtocol};
+use lettuce_models::{CapabilityStatus, ParameterSupport, PromptCacheRetention, ProviderProtocol};
 
 /// Static, user-facing facts about one provider kind. This is the
 /// replacement for the legacy `get_provider_configs` catalog and the
@@ -46,8 +46,25 @@ pub enum ReasoningSupport {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PromptCachingSupport {
     None,
-    Supported,
     Automatic,
+    CacheControl,
+    RequestRetention,
+}
+
+impl PromptCachingSupport {
+    pub const fn retentions(self) -> &'static [PromptCacheRetention] {
+        match self {
+            Self::None | Self::Automatic => &[],
+            Self::CacheControl => &[
+                PromptCacheRetention::FiveMinutes,
+                PromptCacheRetention::OneHour,
+            ],
+            Self::RequestRetention => &[
+                PromptCacheRetention::InMemory,
+                PromptCacheRetention::TwentyFourHours,
+            ],
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

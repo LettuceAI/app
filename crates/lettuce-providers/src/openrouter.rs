@@ -57,12 +57,12 @@ pub(crate) const DESCRIPTOR: ProviderDescriptor = ProviderDescriptor {
     lists_models: true,
     verifies_key: true,
     reasoning: ReasoningSupport::Dynamic,
-    prompt_caching: PromptCachingSupport::Supported,
+    prompt_caching: PromptCachingSupport::CacheControl,
     parameters: ParameterFlags {
         context_length: true,
         ..ParameterFlags::PENALTIES_TOP_K_BUDGET
     },
-    extra_body_keys: &["promptCachingTtl", "provider"],
+    extra_body_keys: &["provider"],
 };
 
 #[cfg(test)]

@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 use lettuce_contracts::{
-    ApiKeyRequirementContract, KeyVerificationContract, PromptCachingSupportContract,
-    ProviderAccountRequest, ProviderCatalogContract, ProviderDescriptorContract,
-    ProviderModelsContract, ProviderParameterSupportContract, ProviderProtocolContract,
-    ReasoningSupportContract, RemoteModelContract,
+    ApiKeyRequirementContract, KeyVerificationContract, PromptCacheRetentionContract,
+    PromptCachingSupportContract, ProviderAccountRequest, ProviderCatalogContract,
+    ProviderDescriptorContract, ProviderModelsContract, ProviderParameterSupportContract,
+    ProviderProtocolContract, ReasoningSupportContract, RemoteModelContract,
 };
 use lettuce_database::Database;
 use lettuce_models::{ModelRepositoryError, ProviderAccountRepository, ProviderProtocol};
@@ -77,9 +77,31 @@ impl<S: SecretStore + ?Sized> ProviderRuntime<S> {
                     },
                     prompt_caching: match descriptor.prompt_caching {
                         PromptCachingSupport::None => PromptCachingSupportContract::None,
-                        PromptCachingSupport::Supported => PromptCachingSupportContract::Supported,
                         PromptCachingSupport::Automatic => PromptCachingSupportContract::Automatic,
+                        PromptCachingSupport::CacheControl
+                        | PromptCachingSupport::RequestRetention => {
+                            PromptCachingSupportContract::Supported
+                        }
                     },
+                    prompt_cache_retentions: descriptor
+                        .prompt_caching
+                        .retentions()
+                        .iter()
+                        .map(|retention| match retention {
+                            lettuce_models::PromptCacheRetention::InMemory => {
+                                PromptCacheRetentionContract::InMemory
+                            }
+                            lettuce_models::PromptCacheRetention::FiveMinutes => {
+                                PromptCacheRetentionContract::FiveMinutes
+                            }
+                            lettuce_models::PromptCacheRetention::OneHour => {
+                                PromptCacheRetentionContract::OneHour
+                            }
+                            lettuce_models::PromptCacheRetention::TwentyFourHours => {
+                                PromptCacheRetentionContract::TwentyFourHours
+                            }
+                        })
+                        .collect(),
                     parameters: ProviderParameterSupportContract {
                         temperature: descriptor.parameters.temperature,
                         top_p: descriptor.parameters.top_p,
@@ -214,6 +236,18 @@ mod tests {
         );
         assert!(openrouter.parameters.context_length);
         assert!(openrouter.extra_body_keys.contains(&"provider".to_owned()));
+        assert_eq!(
+            openrouter.prompt_cache_retentions,
+            vec![
+                PromptCacheRetentionContract::FiveMinutes,
+                PromptCacheRetentionContract::OneHour,
+            ]
+        );
+        assert!(catalog.providers.iter().all(|provider| {
+            !provider
+                .extra_body_keys
+                .contains(&"promptCachingTtl".to_owned())
+        }));
         assert!(
             catalog
                 .providers

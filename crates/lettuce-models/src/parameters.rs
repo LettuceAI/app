@@ -41,9 +41,6 @@ impl ChatParameterProfile {
         {
             return Err(ParameterValidationError::InvalidValue("reasoning"));
         }
-        if let Some(cache) = self.prompt_caching {
-            cache.validate()?;
-        }
         self.ollama.validate()?;
         self.openrouter.validate()?;
         Ok(())
@@ -129,21 +126,18 @@ pub enum ReasoningEffort {
 #[serde(rename_all = "snake_case")]
 pub enum PromptCaching {
     Disabled,
-    Enabled { ttl_seconds: Option<u32> },
+    Enabled { retention: PromptCacheRetention },
 }
 
-impl PromptCaching {
-    fn validate(self) -> Result<(), ParameterValidationError> {
-        if matches!(
-            self,
-            Self::Enabled {
-                ttl_seconds: Some(0)
-            }
-        ) {
-            return Err(ParameterValidationError::InvalidValue("prompt_cache_ttl"));
-        }
-        Ok(())
-    }
+/// User-facing retention intent. Provider adapters translate these values to
+/// their own wire representation and reject unsupported combinations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PromptCacheRetention {
+    InMemory,
+    FiveMinutes,
+    OneHour,
+    TwentyFourHours,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
@@ -181,6 +175,8 @@ pub struct ChatParameterOverrides {
     #[serde(default)]
     pub reasoning_budget_tokens: ParameterOverride<u32>,
     #[serde(default)]
+    pub prompt_caching: ParameterOverride<PromptCaching>,
+    #[serde(default)]
     pub ollama: OllamaOptionOverrides,
 }
 
@@ -198,6 +194,7 @@ impl Default for ChatParameterOverrides {
             reasoning_mode: ParameterOverride::Inherit,
             reasoning_effort: ParameterOverride::Inherit,
             reasoning_budget_tokens: ParameterOverride::Inherit,
+            prompt_caching: ParameterOverride::Inherit,
             ollama: OllamaOptionOverrides::default(),
         }
     }

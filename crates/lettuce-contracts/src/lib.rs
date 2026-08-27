@@ -42,6 +42,15 @@ pub enum PromptCachingSupportContract {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PromptCacheRetentionContract {
+    InMemory,
+    FiveMinutes,
+    OneHour,
+    TwentyFourHours,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProviderParameterSupportContract {
     pub temperature: bool,
@@ -72,6 +81,7 @@ pub struct ProviderDescriptorContract {
     pub verifies_key: bool,
     pub reasoning: ReasoningSupportContract,
     pub prompt_caching: PromptCachingSupportContract,
+    pub prompt_cache_retentions: Vec<PromptCacheRetentionContract>,
     pub parameters: ProviderParameterSupportContract,
     pub extra_body_keys: Vec<String>,
 }
