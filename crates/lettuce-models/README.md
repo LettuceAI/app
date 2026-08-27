@@ -37,3 +37,7 @@ reserved for its twelve native controls (`num_keep`, batching/device/thread
 controls, tail-free/typical/min-p sampling, mirostat, seed, and stop strings).
 This keeps provider-specific wire details typed without duplicating ordinary
 chat settings.
+
+OpenRouter routing stores only an optional endpoint tag. A model-level pin
+wins over the global default, is rejected for other provider kinds, and never
+stores endpoint display names, logos, or pricing cache data.

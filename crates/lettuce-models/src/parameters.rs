@@ -17,6 +17,8 @@ pub struct ChatParameterProfile {
     pub prompt_caching: Option<PromptCaching>,
     #[serde(default)]
     pub ollama: OllamaOptions,
+    #[serde(default)]
+    pub openrouter: OpenRouterOptions,
 }
 
 impl ChatParameterProfile {
@@ -43,7 +45,32 @@ impl ChatParameterProfile {
             cache.validate()?;
         }
         self.ollama.validate()?;
+        self.openrouter.validate()?;
         Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct OpenRouterOptions {
+    /// OpenRouter endpoint tag. Display metadata is fetched, not persisted.
+    pub pinned_provider: Option<String>,
+}
+
+impl OpenRouterOptions {
+    pub fn validate(&self) -> Result<(), ParameterValidationError> {
+        if self.pinned_provider.as_ref().is_some_and(|provider| {
+            provider.trim() != provider
+                || provider.is_empty()
+                || provider.len() > 256
+                || provider.chars().any(char::is_control)
+        }) {
+            Err(ParameterValidationError::InvalidValue(
+                "openrouter_pinned_provider",
+            ))
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -452,6 +479,26 @@ mod tests {
         assert_eq!(
             invalid.validate(),
             Err(ParameterValidationError::InvalidValue("ollama_stop"))
+        );
+    }
+
+    #[test]
+    fn openrouter_pin_is_trimmed_and_bounded() {
+        assert_eq!(
+            OpenRouterOptions {
+                pinned_provider: Some("provider/tag".to_owned())
+            }
+            .validate(),
+            Ok(())
+        );
+        assert_eq!(
+            OpenRouterOptions {
+                pinned_provider: Some(" provider/tag".to_owned())
+            }
+            .validate(),
+            Err(ParameterValidationError::InvalidValue(
+                "openrouter_pinned_provider"
+            ))
         );
     }
 }

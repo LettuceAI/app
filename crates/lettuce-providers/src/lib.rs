@@ -334,6 +334,7 @@ mod integration_tests {
             prompt_caching: None,
             total_completion_allowance: None,
             ollama: Default::default(),
+            openrouter: Default::default(),
         }
     }
 

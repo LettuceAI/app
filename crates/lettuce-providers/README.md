@@ -41,11 +41,10 @@ bounded provider code and message; debug formatting redacts the message.
 
 Legacy data still without a destination, owned by named later slices:
 
-- model-parameters slice (`lettuce-models` profile config): the OpenRouter
-  pinned endpoint (`provider: {order, allow_fallbacks}`) plus the generic
-  extra-body passthrough behind `extra_body_keys`. Ollama's twelve native
-  options are implemented; its duplicate legacy context/output/repetition
-  fields map to the provider-neutral settings.
+- model-parameters slice (`lettuce-models` profile config): generic extra-body
+  passthrough behind `extra_body_keys`. Ollama's twelve native options and the
+  OpenRouter pinned endpoint are implemented; duplicate legacy
+  context/output/repetition fields map to provider-neutral settings.
 - composition root (`lettuce-app`): constructing `JsonClient::with_tls` from
   the settings' trusted certificates and exposing catalog, listing and
   verification commands.

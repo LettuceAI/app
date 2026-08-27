@@ -90,6 +90,7 @@ pub struct ResolvedChatParameters {
     pub prompt_caching: Option<PromptCaching>,
     pub total_completion_allowance: Option<u32>,
     pub ollama: OllamaOptions,
+    pub openrouter: crate::OpenRouterOptions,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -193,6 +194,8 @@ pub enum ChatProfileResolutionError {
     ContradictoryReasoning,
     #[error("chat parameter is invalid: {field}")]
     InvalidParameter { field: &'static str },
+    #[error("provider-specific model options do not match the selected provider")]
+    ProviderOptionMismatch,
     #[error("model capabilities are invalid")]
     InvalidCapabilities,
     #[error("provider connection metadata is invalid")]
@@ -229,10 +232,20 @@ pub fn resolve_chat_profile(
     let capabilities = &profile.config.capabilities;
     validate_modalities(capabilities, requirements)?;
     validate_required_capabilities(capabilities, requirements)?;
+    profile
+        .config
+        .chat_parameters
+        .validate()
+        .map_err(parameter_error)?;
     input.global.validate().map_err(parameter_error)?;
     input.session.validate().map_err(parameter_error)?;
     input.operation.validate().map_err(parameter_error)?;
     let parameters = resolve_parameters(&profile.config.chat_parameters, input)?;
+    if parameters.openrouter.pinned_provider.is_some()
+        && !account.provider_kind.eq_ignore_ascii_case("openrouter")
+    {
+        return Err(ChatProfileResolutionError::ProviderOptionMismatch);
+    }
     validate_parameter_support(capabilities.parameter_support, &parameters)?;
     validate_configured_capabilities(capabilities, &parameters)?;
     let mut warnings = Vec::new();
@@ -524,6 +537,13 @@ fn resolve_parameters(
         prompt_caching: profile.prompt_caching,
         total_completion_allowance: total,
         ollama: resolve_ollama(profile, input),
+        openrouter: crate::OpenRouterOptions {
+            pinned_provider: profile
+                .openrouter
+                .pinned_provider
+                .clone()
+                .or_else(|| input.global.openrouter.pinned_provider.clone()),
+        },
     })
 }
 
@@ -1203,6 +1223,46 @@ mod tests {
         assert_eq!(
             resolved.parameters.ollama.stop,
             Some(vec!["SESSION".to_owned()])
+        );
+    }
+
+    #[test]
+    fn openrouter_pin_is_model_first_and_rejected_for_other_providers() {
+        let (expected, mut profile, mut account) = fixture();
+        profile.config.chat_parameters.openrouter.pinned_provider =
+            Some("provider/model-choice".to_owned());
+        let input = ChatParameterResolutionInput {
+            global: ChatParameterProfile {
+                openrouter: crate::OpenRouterOptions {
+                    pinned_provider: Some("provider/global-choice".to_owned()),
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_chat_profile(
+                &expected,
+                &profile,
+                &account,
+                &input,
+                &ChatRequirements::default()
+            ),
+            Err(ChatProfileResolutionError::ProviderOptionMismatch)
+        );
+
+        account.provider_kind = "openrouter".to_owned();
+        let resolved = resolve_chat_profile(
+            &expected,
+            &profile,
+            &account,
+            &input,
+            &ChatRequirements::default(),
+        )
+        .expect("OpenRouter pin resolves");
+        assert_eq!(
+            resolved.parameters.openrouter.pinned_provider.as_deref(),
+            Some("provider/model-choice")
         );
     }
 }
