@@ -10,4 +10,7 @@ The public surface is intentionally small. Business invariants belong in domain 
 
 ## Status
 
-Foundation scaffolding is active. Implement behavior with tests before exposing new public APIs, and keep compatibility code at explicit application or migration boundaries.
+The first provider contracts are active: the provider catalog and capability
+metadata, account-scoped model discovery, and key-verification results. These
+owned serde DTOs keep domain/provider implementation types out of the IPC and
+future generated frontend boundary.

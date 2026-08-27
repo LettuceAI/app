@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{path::Path, sync::Arc};
 
 use lettuce_database::{Database, DatabaseError};
 
@@ -12,7 +12,7 @@ use crate::{
 /// catalog before any caller can use the database.
 #[derive(Debug)]
 pub struct AppBackend {
-    database: Database,
+    database: Arc<Database>,
     built_in_prompt_ids: BuiltInPromptIds,
 }
 
@@ -42,14 +42,14 @@ impl AppBackend {
             .bootstrap(now)
             .map_err(AppInitializationError::BuiltInPrompts)?;
         Ok(Self {
-            database,
+            database: Arc::new(database),
             built_in_prompt_ids,
         })
     }
 
     #[must_use]
-    pub const fn database(&self) -> &Database {
-        &self.database
+    pub fn database(&self) -> &Database {
+        self.database.as_ref()
     }
 
     #[must_use]
@@ -58,7 +58,7 @@ impl AppBackend {
     }
 
     #[must_use]
-    pub const fn conversation_launch_planner(&self) -> ConversationLaunchPlanner<'_, Database> {
+    pub fn conversation_launch_planner(&self) -> ConversationLaunchPlanner<'_, Database> {
         ConversationLaunchPlanner::new(&self.database)
     }
 
@@ -78,6 +78,17 @@ impl AppBackend {
     ) -> Result<lettuce_conversations::CreateConversationResult, ConversationLaunchError> {
         self.conversation_launch_planner()
             .launch_group(request, now)
+    }
+
+    /// Builds the reusable remote-provider application service with the
+    /// host's real secret backend and current TLS trust policy. No in-memory
+    /// credential fallback is created here.
+    pub fn provider_runtime<S: lettuce_settings::SecretStore + ?Sized>(
+        &self,
+        secret_store: Arc<S>,
+        tls_policy: &lettuce_network::TlsPolicy,
+    ) -> Result<crate::ProviderRuntime<S>, crate::ProviderRuntimeInitializationError> {
+        crate::ProviderRuntime::new(Arc::clone(&self.database), secret_store, tls_policy)
     }
 }
 

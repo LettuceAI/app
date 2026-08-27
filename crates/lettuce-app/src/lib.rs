@@ -10,11 +10,13 @@ mod built_in_prompts;
 mod composition;
 mod context_assembler;
 mod launch;
+mod provider_runtime;
 
 pub use built_in_prompts::*;
 pub use composition::*;
 pub use context_assembler::*;
 pub use launch::*;
+pub use provider_runtime::*;
 
 #[cfg(test)]
 mod tests {

@@ -12,7 +12,13 @@ The public surface is intentionally small. Business invariants belong in domain 
 
 ## Status
 
-Foundation scaffolding is active. Implement behavior with tests before exposing new public APIs, and keep compatibility code at explicit application or migration boundaries.
+The composition root initializes storage and built-in prompts, plans direct and
+group conversation launches, assembles provider-neutral context, and can build
+a reusable remote-provider runtime. Provider composition requires the host to
+supply its real `SecretStore` and current TLS policy; the app never substitutes
+an in-memory credential store in production. The runtime loads provider
+accounts through `lettuce-database` repositories and exposes catalog, model
+discovery, and key verification through `lettuce-contracts` DTOs.
 
 ## Bundled prompts
 
