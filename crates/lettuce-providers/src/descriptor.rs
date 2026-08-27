@@ -48,6 +48,7 @@ pub enum PromptCachingSupport {
     None,
     Automatic,
     CacheControl,
+    ExplicitResource,
     RequestRetention,
 }
 
@@ -55,7 +56,7 @@ impl PromptCachingSupport {
     pub const fn retentions(self) -> &'static [PromptCacheRetention] {
         match self {
             Self::None | Self::Automatic => &[],
-            Self::CacheControl => &[
+            Self::CacheControl | Self::ExplicitResource => &[
                 PromptCacheRetention::FiveMinutes,
                 PromptCacheRetention::OneHour,
             ],

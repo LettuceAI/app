@@ -15,14 +15,17 @@ workspace = true
 
 [dependencies]
 async-trait.workspace = true
+blake3.workspace = true
 lettuce-conversations.workspace = true
 lettuce-models.workspace = true
 lettuce-network.workspace = true
 lettuce-settings.workspace = true
+lettuce-types.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
-lettuce-types.workspace = true
 tokio = { workspace = true, features = ["net", "io-util"] }

@@ -79,6 +79,7 @@ impl<S: SecretStore + ?Sized> ProviderRuntime<S> {
                         PromptCachingSupport::None => PromptCachingSupportContract::None,
                         PromptCachingSupport::Automatic => PromptCachingSupportContract::Automatic,
                         PromptCachingSupport::CacheControl
+                        | PromptCachingSupport::ExplicitResource
                         | PromptCachingSupport::RequestRetention => {
                             PromptCachingSupportContract::Supported
                         }
@@ -238,6 +239,18 @@ mod tests {
         assert!(openrouter.extra_body_keys.contains(&"provider".to_owned()));
         assert_eq!(
             openrouter.prompt_cache_retentions,
+            vec![
+                PromptCacheRetentionContract::FiveMinutes,
+                PromptCacheRetentionContract::OneHour,
+            ]
+        );
+        let gemini = catalog
+            .providers
+            .iter()
+            .find(|provider| provider.kind == "gemini")
+            .expect("gemini");
+        assert_eq!(
+            gemini.prompt_cache_retentions,
             vec![
                 PromptCacheRetentionContract::FiveMinutes,
                 PromptCacheRetentionContract::OneHour,

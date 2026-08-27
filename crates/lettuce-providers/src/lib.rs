@@ -15,6 +15,7 @@ mod deepseek;
 mod descriptor;
 mod featherless;
 mod gemini;
+mod gemini_cache;
 mod gemini_express;
 mod gemini_generate;
 mod groq;
@@ -58,6 +59,7 @@ use openai_compatible::OpenAiWireProvider;
 pub struct RemoteProviders<S: ?Sized> {
     secret_store: Arc<S>,
     network: Arc<JsonClient>,
+    gemini_cache: gemini_cache::GeminiCache,
 }
 
 impl<S: SecretStore + ?Sized> RemoteProviders<S> {
@@ -157,6 +159,7 @@ impl<S: SecretStore + ?Sized> RemoteProviders<S> {
         Self {
             secret_store,
             network,
+            gemini_cache: gemini_cache::GeminiCache::default(),
         }
     }
 }
@@ -177,7 +180,14 @@ impl<S: SecretStore + ?Sized> InferencePort for RemoteProviders<S> {
             }
             ProviderProtocol::Gemini => {
                 let provider = gemini_provider_for(kind).ok_or(PortError::Rejected)?;
-                gemini_generate::run(provider, &*self.secret_store, &self.network, request).await
+                gemini_generate::run(
+                    provider,
+                    &self.gemini_cache,
+                    &*self.secret_store,
+                    &self.network,
+                    request,
+                )
+                .await
             }
             ProviderProtocol::Ollama if kind.eq_ignore_ascii_case("ollama") => {
                 ollama::run(&*self.secret_store, &self.network, request).await
@@ -216,7 +226,7 @@ mod integration_tests {
     };
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
-        net::TcpListener,
+        net::{TcpListener, TcpStream},
         sync::oneshot,
     };
 
@@ -272,48 +282,71 @@ mod integration_tests {
         }
     }
 
+    async fn read_test_request(stream: &mut TcpStream) -> Vec<u8> {
+        let mut request = Vec::new();
+        let mut buffer = [0_u8; 4096];
+        let body_start = loop {
+            let read = stream.read(&mut buffer).await.expect("read request");
+            if read == 0 {
+                break None;
+            }
+            request.extend_from_slice(&buffer[..read]);
+            if let Some(position) = request.windows(4).position(|window| window == b"\r\n\r\n") {
+                break Some(position + 4);
+            }
+        };
+        if let Some(body_start) = body_start {
+            let headers = String::from_utf8_lossy(&request[..body_start]);
+            let content_length = headers
+                .lines()
+                .find_map(|line| {
+                    line.strip_prefix("Content-Length:")
+                        .or_else(|| line.strip_prefix("content-length:"))
+                })
+                .and_then(|value| value.trim().parse::<usize>().ok())
+                .unwrap_or(0);
+            while request.len() < body_start + content_length {
+                let read = stream.read(&mut buffer).await.expect("read body");
+                if read == 0 {
+                    break;
+                }
+                request.extend_from_slice(&buffer[..read]);
+            }
+        }
+        request
+    }
+
     async fn test_server(response: String) -> (String, oneshot::Receiver<Vec<u8>>) {
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind server");
         let address = listener.local_addr().expect("server address");
         let (sender, receiver) = oneshot::channel();
         tokio::spawn(async move {
             let (mut stream, _) = listener.accept().await.expect("accept request");
-            let mut request = Vec::new();
-            let mut buffer = [0_u8; 4096];
-            let body_start = loop {
-                let read = stream.read(&mut buffer).await.expect("read request");
-                if read == 0 {
-                    break None;
-                }
-                request.extend_from_slice(&buffer[..read]);
-                if let Some(position) = request.windows(4).position(|window| window == b"\r\n\r\n")
-                {
-                    break Some(position + 4);
-                }
-            };
-            if let Some(body_start) = body_start {
-                let headers = String::from_utf8_lossy(&request[..body_start]);
-                let content_length = headers
-                    .lines()
-                    .find_map(|line| {
-                        line.strip_prefix("Content-Length:")
-                            .or_else(|| line.strip_prefix("content-length:"))
-                    })
-                    .and_then(|value| value.trim().parse::<usize>().ok())
-                    .unwrap_or(0);
-                while request.len() < body_start + content_length {
-                    let read = stream.read(&mut buffer).await.expect("read body");
-                    if read == 0 {
-                        break;
-                    }
-                    request.extend_from_slice(&buffer[..read]);
-                }
-            }
+            let request = read_test_request(&mut stream).await;
             let _ = sender.send(request);
             stream
                 .write_all(response.as_bytes())
                 .await
                 .expect("write response");
+        });
+        (format!("http://{address}"), receiver)
+    }
+
+    async fn test_server_many(responses: Vec<String>) -> (String, oneshot::Receiver<Vec<Vec<u8>>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind server");
+        let address = listener.local_addr().expect("server address");
+        let (sender, receiver) = oneshot::channel();
+        tokio::spawn(async move {
+            let mut requests = Vec::with_capacity(responses.len());
+            for response in responses {
+                let (mut stream, _) = listener.accept().await.expect("accept request");
+                requests.push(read_test_request(&mut stream).await);
+                stream
+                    .write_all(response.as_bytes())
+                    .await
+                    .expect("write response");
+            }
+            let _ = sender.send(requests);
         });
         (format!("http://{address}"), receiver)
     }
@@ -357,6 +390,33 @@ mod integration_tests {
                     role: MessageRole::User,
                     parts: vec![ProviderContextPart::Text {
                         text: "user text".to_owned(),
+                    }],
+                },
+            ],
+            attributions: ContextAttributions::default(),
+            budget: ContextBudgetReport::default(),
+        }
+    }
+
+    fn cache_context() -> ProviderNeutralContext {
+        ProviderNeutralContext {
+            messages: vec![
+                ProviderNeutralMessage {
+                    role: MessageRole::System,
+                    parts: vec![ProviderContextPart::Text {
+                        text: "system text".to_owned(),
+                    }],
+                },
+                ProviderNeutralMessage {
+                    role: MessageRole::Assistant,
+                    parts: vec![ProviderContextPart::Text {
+                        text: "prefix text".to_owned(),
+                    }],
+                },
+                ProviderNeutralMessage {
+                    role: MessageRole::User,
+                    parts: vec![ProviderContextPart::Text {
+                        text: "live text".to_owned(),
                     }],
                 },
             ],
@@ -412,6 +472,15 @@ mod integration_tests {
         }
     }
 
+    fn request_with_context(
+        profile: ResolvedInferenceProfile,
+        context: ProviderNeutralContext,
+    ) -> InferenceRequest {
+        let mut request = request(profile);
+        request.context = context;
+        request
+    }
+
     fn response_body() -> String {
         let body = r#"{"id":"response-id","choices":[{"index":7,"message":{"content":"ok"},"finish_reason":"stop"}]}"#;
         format!(
@@ -449,10 +518,27 @@ mod integration_tests {
         );
         assert!(store.take_loads().is_empty());
 
-        for (kind, retention) in [
-            ("openai", lettuce_models::PromptCacheRetention::OneHour),
-            ("groq", lettuce_models::PromptCacheRetention::FiveMinutes),
-            ("gemini", lettuce_models::PromptCacheRetention::FiveMinutes),
+        for (kind, protocol, retention) in [
+            (
+                "openai",
+                ProviderProtocol::OpenAiCompatible,
+                lettuce_models::PromptCacheRetention::OneHour,
+            ),
+            (
+                "groq",
+                ProviderProtocol::OpenAiCompatible,
+                lettuce_models::PromptCacheRetention::FiveMinutes,
+            ),
+            (
+                "gemini",
+                ProviderProtocol::Gemini,
+                lettuce_models::PromptCacheRetention::InMemory,
+            ),
+            (
+                "gemini-agent-platform-express",
+                ProviderProtocol::Gemini,
+                lettuce_models::PromptCacheRetention::FiveMinutes,
+            ),
         ] {
             let mut inference = request(profile(
                 kind,
@@ -461,6 +547,7 @@ mod integration_tests {
                 Some(SecretRef::new()),
                 owner,
             ));
+            inference.profile.chat_profile.provider_protocol = protocol;
             inference.profile.chat_profile.parameters.prompt_caching =
                 Some(lettuce_models::PromptCaching::Enabled { retention });
             assert_eq!(
@@ -610,6 +697,16 @@ mod integration_tests {
         body: serde_json::Value,
     }
 
+    fn captured_request(raw: Vec<u8>) -> Captured {
+        let raw = String::from_utf8(raw).expect("HTTP");
+        let body_start = raw.find("\r\n\r\n").expect("body boundary") + 4;
+        Captured {
+            request_line: raw.lines().next().expect("request line").to_owned(),
+            headers: raw[..body_start].to_ascii_lowercase(),
+            body: serde_json::from_str(&raw[body_start..]).expect("JSON body"),
+        }
+    }
+
     async fn capture(kind: &str, endpoint_suffix: &str, with_key: bool) -> Captured {
         capture_with(
             kind,
@@ -660,13 +757,7 @@ mod integration_tests {
             .run(request(profile))
             .await
             .unwrap_or_else(|error| panic!("{kind}: {error:?}"));
-        let raw = String::from_utf8(request_receiver.await.expect("request")).expect("HTTP");
-        let body_start = raw.find("\r\n\r\n").expect("body boundary") + 4;
-        Captured {
-            request_line: raw.lines().next().expect("request line").to_owned(),
-            headers: raw[..body_start].to_ascii_lowercase(),
-            body: serde_json::from_str(&raw[body_start..]).expect("JSON body"),
-        }
+        captured_request(request_receiver.await.expect("request"))
     }
 
     async fn capture_cached(
@@ -714,13 +805,7 @@ mod integration_tests {
             .run(request(resolved))
             .await
             .unwrap_or_else(|error| panic!("{kind}: {error:?}"));
-        let raw = String::from_utf8(request_receiver.await.expect("request")).expect("HTTP");
-        let body_start = raw.find("\r\n\r\n").expect("body boundary") + 4;
-        Captured {
-            request_line: raw.lines().next().expect("request line").to_owned(),
-            headers: raw[..body_start].to_ascii_lowercase(),
-            body: serde_json::from_str(&raw[body_start..]).expect("JSON body"),
-        }
+        captured_request(request_receiver.await.expect("request"))
     }
 
     fn roles(body: &serde_json::Value) -> Vec<&str> {
@@ -934,6 +1019,45 @@ mod integration_tests {
         )
     }
 
+    async fn cached_gemini_fixture(
+        responses: Vec<String>,
+        retention: lettuce_models::PromptCacheRetention,
+    ) -> (
+        RemoteProviders<RecordingSecretStore>,
+        ResolvedInferenceProfile,
+        oneshot::Receiver<Vec<Vec<u8>>>,
+        Arc<RecordingSecretStore>,
+        SecretRef,
+    ) {
+        let store = Arc::new(RecordingSecretStore::default());
+        let owner = lettuce_settings::SecretOwnerId::new();
+        let key_ref = SecretRef::new();
+        store
+            .put(
+                SecretRecord::new(key_ref, SecretPurpose::ProviderApiKey { owner }),
+                SecretValue::new("key-canary").expect("secret"),
+                None,
+            )
+            .await
+            .expect("store key");
+        let (endpoint, requests) = test_server_many(responses).await;
+        let adapter = RemoteProviders::new(
+            Arc::clone(&store),
+            Arc::new(JsonClient::new().expect("client")),
+        );
+        let mut resolved = profile(
+            "gemini",
+            format!("{endpoint}/v1"),
+            ProviderConfig::Standard,
+            Some(key_ref),
+            owner,
+        );
+        resolved.chat_profile.provider_protocol = ProviderProtocol::Gemini;
+        resolved.chat_profile.parameters.prompt_caching =
+            Some(lettuce_models::PromptCaching::Enabled { retention });
+        (adapter, resolved, requests, store, key_ref)
+    }
+
     #[tokio::test]
     async fn anthropic_family_sends_messages_requests_like_legacy() {
         let anthropic_reply = http_json(
@@ -1067,6 +1191,251 @@ mod integration_tests {
             );
             assert!(captured.body.get("model").is_none(), "{kind}");
         }
+    }
+
+    #[tokio::test]
+    async fn gemini_explicit_cache_creates_once_and_reuses_the_resource() {
+        let store = Arc::new(RecordingSecretStore::default());
+        let owner = lettuce_settings::SecretOwnerId::new();
+        let key_ref = SecretRef::new();
+        store
+            .put(
+                SecretRecord::new(key_ref, SecretPurpose::ProviderApiKey { owner }),
+                SecretValue::new("key-canary").expect("secret"),
+                None,
+            )
+            .await
+            .expect("store key");
+        let generate_response = http_json(
+            r#"{"candidates":[{"content":{"parts":[{"text":"ok"}],"role":"model"},"finishReason":"STOP"}]}"#,
+        );
+        let (endpoint, request_receiver) = test_server_many(vec![
+            http_json(r#"{"name":"cachedContents/test-resource"}"#),
+            generate_response.clone(),
+            generate_response,
+        ])
+        .await;
+        let adapter = RemoteProviders::new(
+            Arc::clone(&store),
+            Arc::new(JsonClient::new().expect("client")),
+        );
+        let mut resolved = profile(
+            "gemini",
+            format!("{endpoint}/v1"),
+            ProviderConfig::Standard,
+            Some(key_ref),
+            owner,
+        );
+        resolved.chat_profile.provider_protocol = ProviderProtocol::Gemini;
+        resolved.chat_profile.parameters.prompt_caching =
+            Some(lettuce_models::PromptCaching::Enabled {
+                retention: lettuce_models::PromptCacheRetention::FiveMinutes,
+            });
+        let first = request_with_context(resolved.clone(), cache_context());
+        let second = request_with_context(resolved, cache_context());
+        let (first, second) = tokio::join!(adapter.run(first), adapter.run(second));
+        first.expect("first Gemini response");
+        second.expect("reused Gemini response");
+
+        let requests = request_receiver.await.expect("requests");
+        assert_eq!(requests.len(), 3);
+        let create = captured_request(requests[0].clone());
+        assert_eq!(create.request_line, "POST /v1beta/cachedContents HTTP/1.1");
+        assert!(!create.request_line.contains('?'));
+        assert!(create.headers.contains("x-goog-api-key: key-canary\r\n"));
+        assert_eq!(
+            create.body,
+            serde_json::json!({
+                "model": "models/test-model",
+                "contents": [{"role":"model","parts":[{"text":"prefix text"}]}],
+                "systemInstruction": {"role":"user","parts":[{"text":"system text"}]},
+                "ttl": "300s"
+            })
+        );
+
+        for raw in &requests[1..] {
+            let generation = captured_request(raw.clone());
+            assert_eq!(
+                generation.request_line,
+                "POST /v1beta/models/test-model:generateContent HTTP/1.1"
+            );
+            assert!(
+                generation
+                    .headers
+                    .contains("x-goog-api-key: key-canary\r\n")
+            );
+            assert_eq!(
+                generation.body,
+                serde_json::json!({
+                    "contents": [{"role":"user","parts":[{"text":"live text"}]}],
+                    "generationConfig": {"maxOutputTokens":4096,"topK":40},
+                    "cachedContent": "cachedContents/test-resource"
+                })
+            );
+            assert!(generation.body.get("systemInstruction").is_none());
+        }
+    }
+
+    #[tokio::test]
+    async fn gemini_cache_skips_short_context_and_falls_back_cleanly() {
+        let generate_response = http_json(
+            r#"{"candidates":[{"content":{"parts":[{"text":"ok"}],"role":"model"},"finishReason":"STOP"}]}"#,
+        );
+        let (adapter, resolved, requests, _, _) = cached_gemini_fixture(
+            vec![generate_response.clone()],
+            lettuce_models::PromptCacheRetention::OneHour,
+        )
+        .await;
+        adapter
+            .run(request(resolved))
+            .await
+            .expect("short context remains usable");
+        let requests = requests.await.expect("short request");
+        assert_eq!(requests.len(), 1);
+        let generation = captured_request(requests[0].clone());
+        assert!(generation.request_line.contains(":generateContent"));
+        assert!(generation.body.get("cachedContent").is_none());
+        assert!(
+            generation
+                .body
+                .get("_lettucePromptCachingEnabled")
+                .is_none()
+        );
+        assert!(generation.body.get("_lettucePromptCachingTtl").is_none());
+
+        let rejected = "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n".to_owned();
+        let (adapter, resolved, requests, _, _) = cached_gemini_fixture(
+            vec![rejected, generate_response],
+            lettuce_models::PromptCacheRetention::OneHour,
+        )
+        .await;
+        adapter
+            .run(request_with_context(resolved, cache_context()))
+            .await
+            .expect("cache create failure falls back");
+        let requests = requests.await.expect("fallback requests");
+        assert_eq!(requests.len(), 2);
+        assert!(
+            captured_request(requests[0].clone())
+                .request_line
+                .contains("/cachedContents")
+        );
+        let generation = captured_request(requests[1].clone());
+        assert_eq!(
+            generation.body["contents"],
+            serde_json::json!([
+                {"role":"model","parts":[{"text":"prefix text"}]},
+                {"role":"user","parts":[{"text":"live text"}]}
+            ])
+        );
+        assert_eq!(
+            generation.body["systemInstruction"]["parts"][0]["text"],
+            serde_json::json!("system text")
+        );
+        assert!(generation.body.get("cachedContent").is_none());
+        assert!(
+            generation
+                .body
+                .get("_lettucePromptCachingEnabled")
+                .is_none()
+        );
+        assert!(generation.body.get("_lettucePromptCachingTtl").is_none());
+    }
+
+    #[tokio::test]
+    async fn missing_gemini_cache_retries_the_clean_request_once() {
+        let not_found = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n".to_owned();
+        let generate_response = http_json(
+            r#"{"candidates":[{"content":{"parts":[{"text":"ok"}],"role":"model"},"finishReason":"STOP"}]}"#,
+        );
+        let (adapter, resolved, requests, _, _) = cached_gemini_fixture(
+            vec![
+                http_json(r#"{"name":"cachedContents/stale"}"#),
+                not_found,
+                generate_response,
+            ],
+            lettuce_models::PromptCacheRetention::FiveMinutes,
+        )
+        .await;
+        adapter
+            .run(request_with_context(resolved, cache_context()))
+            .await
+            .expect("missing cache retries uncached");
+        let requests = requests.await.expect("retry requests");
+        assert_eq!(requests.len(), 3);
+        let cached = captured_request(requests[1].clone());
+        assert_eq!(
+            cached.body["cachedContent"],
+            serde_json::json!("cachedContents/stale")
+        );
+        let retry = captured_request(requests[2].clone());
+        assert!(retry.body.get("cachedContent").is_none());
+        assert_eq!(retry.body["contents"].as_array().map(Vec::len), Some(2));
+        assert!(retry.body.get("systemInstruction").is_some());
+    }
+
+    #[tokio::test]
+    async fn rotating_the_gemini_key_creates_a_new_cache_resource() {
+        let generate_response = http_json(
+            r#"{"candidates":[{"content":{"parts":[{"text":"ok"}],"role":"model"},"finishReason":"STOP"}]}"#,
+        );
+        let (adapter, resolved, requests, store, key_ref) = cached_gemini_fixture(
+            vec![
+                http_json(r#"{"name":"cachedContents/first"}"#),
+                generate_response.clone(),
+                http_json(r#"{"name":"cachedContents/second"}"#),
+                generate_response,
+            ],
+            lettuce_models::PromptCacheRetention::FiveMinutes,
+        )
+        .await;
+        adapter
+            .run(request_with_context(resolved.clone(), cache_context()))
+            .await
+            .expect("first cached generation");
+        let purpose = SecretPurpose::ProviderApiKey {
+            owner: resolved.chat_profile.secret_owner_id,
+        };
+        let generation = store
+            .status(&key_ref, &purpose)
+            .await
+            .expect("key status")
+            .generation;
+        store
+            .put(
+                SecretRecord::new(key_ref, purpose),
+                SecretValue::new("rotated-key").expect("rotated secret"),
+                Some(generation),
+            )
+            .await
+            .expect("rotate key");
+        adapter
+            .run(request_with_context(resolved, cache_context()))
+            .await
+            .expect("generation after rotation");
+
+        let requests = requests.await.expect("rotation requests");
+        assert_eq!(requests.len(), 4);
+        assert!(
+            captured_request(requests[0].clone())
+                .request_line
+                .contains("/cachedContents")
+        );
+        assert!(
+            captured_request(requests[2].clone())
+                .request_line
+                .contains("/cachedContents")
+        );
+        assert_eq!(
+            captured_request(requests[1].clone()).body["cachedContent"],
+            serde_json::json!("cachedContents/first")
+        );
+        let rotated = captured_request(requests[3].clone());
+        assert!(rotated.headers.contains("x-goog-api-key: rotated-key\r\n"));
+        assert_eq!(
+            rotated.body["cachedContent"],
+            serde_json::json!("cachedContents/second")
+        );
     }
 
     #[tokio::test]

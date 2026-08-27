@@ -46,7 +46,7 @@ pub(crate) const DESCRIPTOR: ProviderDescriptor = ProviderDescriptor {
     lists_models: true,
     verifies_key: true,
     reasoning: ReasoningSupport::Effort,
-    prompt_caching: PromptCachingSupport::None,
+    prompt_caching: PromptCachingSupport::ExplicitResource,
     parameters: ParameterFlags {
         top_k: true,
         reasoning_budget: true,

@@ -17,6 +17,7 @@ use crate::common::{
     validate_prompt_caching,
 };
 use crate::descriptor::ProviderDescriptor;
+use crate::gemini_cache::{GeminiCache, PreparedCache};
 
 pub(crate) const GEMINI_HEADERS: [JsonStaticHeader; 2] = [
     JsonStaticHeader {
@@ -104,6 +105,7 @@ pub(crate) fn validate_model_id(model: &str) -> Result<&str, AdapterError> {
 
 pub(crate) async fn run<S: SecretStore + ?Sized>(
     provider: &dyn GeminiWireProvider,
+    cache: &GeminiCache,
     secret_store: &S,
     network: &JsonClient,
     request: InferenceRequest,
@@ -121,7 +123,48 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
         .ok_or(AdapterError::Rejected)?;
     let base = provider.api_base(endpoint);
     let path = provider.generate_path(&profile.external_model_id)?;
-    let body = encode_request(profile, &request.context)?;
+    let uncached = build_request(profile, &request.context)?;
+    let prepared = cache
+        .prepare(provider, secret_store, network, profile, &base, &uncached)
+        .await?;
+    let body = match &prepared {
+        Some(prepared) => encode_request(&uncached.with_cache(prepared.name.clone())?)?,
+        None => encode_request(&uncached)?,
+    };
+    let mut response =
+        send_generate(provider, secret_store, network, profile, &base, &path, body).await?;
+    if let Some(PreparedCache { key, .. }) = prepared
+        && response.status == 404
+    {
+        cache.evict(key);
+        tracing::warn!(
+            provider = "gemini",
+            cache_result = "resource_not_found",
+            "cached Gemini resource disappeared; retrying the full request"
+        );
+        response = send_generate(
+            provider,
+            secret_store,
+            network,
+            profile,
+            &base,
+            &path,
+            encode_request(&uncached)?,
+        )
+        .await?;
+    }
+    parse_response(response)
+}
+
+async fn send_generate<S: SecretStore + ?Sized>(
+    provider: &dyn GeminiWireProvider,
+    secret_store: &S,
+    network: &JsonClient,
+    profile: &ResolvedChatProfile,
+    base: &str,
+    path: &str,
+    body: Vec<u8>,
+) -> Result<JsonResponse, AdapterError> {
     let credentials = Credentials::from(profile);
     let auth = load_auth(
         provider.auth(&profile.provider_config)?,
@@ -130,18 +173,18 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
     )
     .await?;
     let secret_headers = load_secret_headers(secret_store, &credentials).await?;
-    let response = network
+    network
         .post_json(
-            &base,
-            &path,
+            base,
+            path,
             body,
             provider.static_headers(),
             auth,
             secret_headers,
             generation_policy(&credentials),
         )
-        .await?;
-    parse_response(response)
+        .await
+        .map_err(Into::into)
 }
 
 pub(crate) async fn list_models<S: SecretStore + ?Sized>(
@@ -176,10 +219,10 @@ pub(crate) async fn list_models<S: SecretStore + ?Sized>(
     Ok(provider.parse_models(&decode_json(&response)?))
 }
 
-fn encode_request(
+fn build_request(
     profile: &ResolvedChatProfile,
     context: &ProviderNeutralContext,
-) -> Result<Vec<u8>, AdapterError> {
+) -> Result<GenerateRequest, AdapterError> {
     let mut system_chunks: Vec<String> = Vec::new();
     let mut contents: Vec<Content> = Vec::new();
     for message in &context.messages {
@@ -224,7 +267,12 @@ fn encode_request(
             max_output_tokens: max_output_tokens(parameters),
             top_k: parameters.top_k,
         },
+        cached_content: None,
     };
+    Ok(request)
+}
+
+fn encode_request(request: &GenerateRequest) -> Result<Vec<u8>, AdapterError> {
     let body = serde_json::to_vec(&request).map_err(|_| AdapterError::Rejected)?;
     if body.len() > MAX_REQUEST_BYTES {
         return Err(AdapterError::Rejected);
@@ -338,27 +386,46 @@ fn push(warnings: &mut Vec<InferenceWarningCode>, warning: InferenceWarningCode)
     }
 }
 
-#[derive(Serialize)]
-struct GenerateRequest {
-    contents: Vec<Content>,
+#[derive(Clone, Serialize)]
+pub(crate) struct GenerateRequest {
+    pub(crate) contents: Vec<Content>,
     #[serde(rename = "systemInstruction", skip_serializing_if = "Option::is_none")]
-    system_instruction: Option<Content>,
+    pub(crate) system_instruction: Option<Content>,
     #[serde(rename = "generationConfig")]
     generation_config: GenerationConfig,
+    #[serde(rename = "cachedContent", skip_serializing_if = "Option::is_none")]
+    cached_content: Option<String>,
 }
 
-#[derive(Serialize)]
-struct Content {
+impl GenerateRequest {
+    pub(crate) fn cache_partition(&self) -> Option<(&[Content], &Content)> {
+        let (live, prefix) = self.contents.split_last()?;
+        (!prefix.is_empty()).then_some((prefix, live))
+    }
+
+    fn with_cache(&self, name: String) -> Result<Self, AdapterError> {
+        let (_, live) = self.cache_partition().ok_or(AdapterError::Rejected)?;
+        Ok(Self {
+            contents: vec![live.clone()],
+            system_instruction: None,
+            generation_config: self.generation_config.clone(),
+            cached_content: Some(name),
+        })
+    }
+}
+
+#[derive(Clone, Serialize)]
+pub(crate) struct Content {
     role: &'static str,
     parts: Vec<TextPart>,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 struct TextPart {
     text: String,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 struct GenerationConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     temperature: Option<f64>,
