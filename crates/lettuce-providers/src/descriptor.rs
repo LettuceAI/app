@@ -149,12 +149,17 @@ impl From<crate::common::AdapterError> for ProviderRequestError {
     fn from(error: crate::common::AdapterError) -> Self {
         use crate::common::AdapterError;
         match error {
-            AdapterError::Rejected | AdapterError::ProviderRejected => Self::Rejected,
+            AdapterError::Rejected => Self::Rejected,
             AdapterError::CredentialRejected => Self::CredentialRejected,
-            AdapterError::SecretUnavailable
-            | AdapterError::ProviderUnavailable
-            | AdapterError::Transport => Self::Unavailable,
+            AdapterError::SecretUnavailable | AdapterError::Transport => Self::Unavailable,
             AdapterError::MalformedResponse | AdapterError::EmptyResponse => Self::Malformed,
+            AdapterError::Provider(failure) => match failure.kind {
+                lettuce_conversations::ProviderFailureKind::CredentialRejected => {
+                    Self::CredentialRejected
+                }
+                lettuce_conversations::ProviderFailureKind::RequestRejected => Self::Rejected,
+                lettuce_conversations::ProviderFailureKind::Unavailable => Self::Unavailable,
+            },
         }
     }
 }

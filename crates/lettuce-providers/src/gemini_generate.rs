@@ -231,9 +231,10 @@ fn encode_request(
 }
 
 fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterError> {
-    if let Some(error) = AdapterError::from_status(response.status) {
+    if let Some(error) = AdapterError::from_response(&response) {
         return Err(error);
     }
+    let provider_request_id = response.request_id.clone();
     let parsed: GenerateResponse =
         serde_json::from_slice(&response.body).map_err(|_| AdapterError::MalformedResponse)?;
     let mut warnings = Vec::new();
@@ -246,8 +247,12 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
     }
     let mut candidates = Vec::with_capacity(parsed.candidates.len());
     let mut finish_reason = FinishReason::Stop;
+    let mut provider_finish_reason = None;
     let mut has_content = false;
     for (position, candidate) in parsed.candidates.into_iter().enumerate() {
+        if position == 0 {
+            provider_finish_reason.clone_from(&candidate.finish_reason);
+        }
         let ordinal = u16::try_from(candidate.index.unwrap_or(position as u64))
             .map_err(|_| AdapterError::MalformedResponse)?;
         let mut text = String::new();
@@ -319,7 +324,8 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
             })
         }),
         finish_reason,
-        provider_request_ref: None,
+        provider_finish_reason,
+        provider_request_id,
         warning_codes: warnings,
     })
 }

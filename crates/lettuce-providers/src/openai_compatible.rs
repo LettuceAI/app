@@ -270,9 +270,10 @@ fn encode_request(
 }
 
 fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterError> {
-    if let Some(error) = AdapterError::from_status(response.status) {
+    if let Some(error) = AdapterError::from_response(&response) {
         return Err(error);
     }
+    let header_request_id = response.request_id.clone();
     let parsed: OpenAiResponse =
         serde_json::from_slice(&response.body).map_err(|_| AdapterError::MalformedResponse)?;
     if parsed.choices.is_empty() {
@@ -282,9 +283,13 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
     let mut candidates = Vec::with_capacity(parsed.choices.len());
     let mut warnings = Vec::new();
     let mut finish_reason = FinishReason::Stop;
+    let mut provider_finish_reason = None;
     let mut has_content = false;
     let mut ordinals = HashSet::with_capacity(parsed.choices.len());
     for (position, choice) in parsed.choices.into_iter().enumerate() {
+        if position == 0 {
+            provider_finish_reason.clone_from(&choice.finish_reason);
+        }
         let index = choice.index.unwrap_or(position as u64);
         let ordinal = u16::try_from(index).map_err(|_| AdapterError::MalformedResponse)?;
         if !ordinals.insert(ordinal) {
@@ -335,7 +340,8 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
             })
         }),
         finish_reason,
-        provider_request_ref: None,
+        provider_finish_reason,
+        provider_request_id: header_request_id,
         warning_codes: warnings,
     })
 }
@@ -468,6 +474,7 @@ impl OpenAiUsage {
 mod tests {
     use super::*;
     use lettuce_conversations::PortError;
+    use lettuce_conversations::{ProviderFailure, ProviderFailureKind};
 
     fn response(body: &str) -> JsonResponse {
         JsonResponse {
@@ -509,7 +516,21 @@ mod tests {
             })
         );
         assert_eq!(outcome.warning_codes, vec![InferenceWarningCode::Truncated]);
-        assert!(outcome.provider_request_ref.is_none());
+        assert_eq!(outcome.provider_finish_reason.as_deref(), Some("stop"));
+        assert!(outcome.provider_request_id.is_none());
+    }
+
+    #[test]
+    fn preserves_header_request_id_separately_from_response_body_id() {
+        let outcome = parse_response(JsonResponse {
+            status: 200,
+            body: br#"{"id":"response-id","choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}"#.to_vec(),
+            request_id: Some("request-id".to_owned()),
+            retry_after: None,
+        })
+        .expect("valid response");
+        assert_eq!(outcome.provider_request_id.as_deref(), Some("request-id"));
+        assert_eq!(outcome.provider_finish_reason.as_deref(), Some("stop"));
     }
 
     #[test]
@@ -620,9 +641,33 @@ mod tests {
             retry_after: None,
         })
         .expect_err("provider rejection");
-        assert_eq!(error, AdapterError::CredentialRejected);
+        assert!(matches!(
+            error,
+            AdapterError::Provider(ProviderFailure {
+                kind: ProviderFailureKind::CredentialRejected,
+                status: 401,
+                ..
+            })
+        ));
         assert!(!format!("{error:?}").contains("secret-prompt-canary"));
-        assert_eq!(PortError::from(error), PortError::Rejected);
+        assert!(matches!(PortError::from(error), PortError::Provider(_)));
+
+        let error = parse_response(JsonResponse {
+            status: 429,
+            body: br#"{"error":{"code":"rate_limit","message":"try later"}}"#.to_vec(),
+            request_id: Some("request-id".to_owned()),
+            retry_after: None,
+        })
+        .expect_err("provider rejection");
+        let AdapterError::Provider(failure) = &error else {
+            panic!("expected provider failure");
+        };
+        assert_eq!(failure.kind, ProviderFailureKind::Unavailable);
+        assert_eq!(failure.status, 429);
+        assert_eq!(failure.code.as_deref(), Some("rate_limit"));
+        assert_eq!(failure.message.as_deref(), Some("try later"));
+        assert_eq!(failure.request_id.as_deref(), Some("request-id"));
+        assert!(!format!("{error:?}").contains("try later"));
     }
 
     #[test]
@@ -636,20 +681,12 @@ mod tests {
                 Err(AdapterError::MalformedResponse)
             );
         }
-        for (status, error, port_error) in [
-            (401, AdapterError::CredentialRejected, PortError::Rejected),
-            (403, AdapterError::CredentialRejected, PortError::Rejected),
-            (
-                408,
-                AdapterError::ProviderUnavailable,
-                PortError::Unavailable,
-            ),
-            (
-                429,
-                AdapterError::ProviderUnavailable,
-                PortError::Unavailable,
-            ),
-            (422, AdapterError::ProviderRejected, PortError::Rejected),
+        for (status, kind) in [
+            (401, ProviderFailureKind::CredentialRejected),
+            (403, ProviderFailureKind::CredentialRejected),
+            (408, ProviderFailureKind::Unavailable),
+            (429, ProviderFailureKind::Unavailable),
+            (422, ProviderFailureKind::RequestRejected),
         ] {
             let actual = parse_response(JsonResponse {
                 status,
@@ -658,8 +695,15 @@ mod tests {
                 retry_after: None,
             })
             .expect_err("status must be classified");
-            assert_eq!(actual, error);
-            assert_eq!(PortError::from(actual), port_error);
+            assert!(matches!(
+                &actual,
+                AdapterError::Provider(ProviderFailure {
+                    kind: actual_kind,
+                    status: actual_status,
+                    ..
+                }) if *actual_kind == kind && *actual_status == status
+            ));
+            assert!(matches!(PortError::from(actual), PortError::Provider(_)));
         }
     }
 }

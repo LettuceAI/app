@@ -1,4 +1,4 @@
-use lettuce_conversations::{InferenceRequest, PortError};
+use lettuce_conversations::{InferenceRequest, PortError, ProviderFailure, ProviderFailureKind};
 use lettuce_models::{
     PromptCaching, ProviderAccount, ReasoningMode, ResolvedChatParameters, ResolvedChatProfile,
     SecretHeader,
@@ -27,13 +27,12 @@ pub(crate) const STANDARD_HEADERS: [JsonStaticHeader; 2] = [
     },
 ];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum AdapterError {
     Rejected,
     CredentialRejected,
     SecretUnavailable,
-    ProviderRejected,
-    ProviderUnavailable,
+    Provider(ProviderFailure),
     MalformedResponse,
     EmptyResponse,
     Transport,
@@ -52,17 +51,71 @@ impl AdapterError {
         }
     }
 
-    pub(crate) fn from_status(status: u16) -> Option<Self> {
-        if (200..300).contains(&status) {
+    pub(crate) fn from_response(response: &lettuce_network::JsonResponse) -> Option<Self> {
+        if (200..300).contains(&response.status) {
             return None;
         }
-        Some(match status {
-            401 | 403 => Self::CredentialRejected,
-            408 | 429 => Self::ProviderUnavailable,
-            400..=499 => Self::ProviderRejected,
-            _ => Self::ProviderUnavailable,
-        })
+        let (code, message) = provider_error_details(&response.body);
+        let kind = match response.status {
+            401 | 403 => ProviderFailureKind::CredentialRejected,
+            408 | 429 | 500..=599 => ProviderFailureKind::Unavailable,
+            _ => ProviderFailureKind::RequestRejected,
+        };
+        Some(Self::Provider(ProviderFailure {
+            kind,
+            status: response.status,
+            code,
+            message,
+            request_id: response.request_id.clone(),
+        }))
     }
+}
+
+fn provider_error_details(body: &[u8]) -> (Option<String>, Option<String>) {
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(body) else {
+        return (None, None);
+    };
+    let error = value.get("error").unwrap_or(&value);
+    let message = error
+        .as_str()
+        .or_else(|| error.get("message").and_then(serde_json::Value::as_str))
+        .or_else(|| value.get("message").and_then(serde_json::Value::as_str))
+        .and_then(|value| bounded_diagnostic(value, 2_048));
+    let code = error
+        .get("code")
+        .or_else(|| error.get("type"))
+        .or_else(|| error.get("status"))
+        .and_then(|value| {
+            value
+                .as_str()
+                .map(str::to_owned)
+                .or_else(|| value.as_i64().map(|number| number.to_string()))
+        })
+        .and_then(|value| bounded_diagnostic(&value, 128));
+    (code, message)
+}
+
+fn bounded_diagnostic(value: &str, max_bytes: usize) -> Option<String> {
+    let clean: String = value
+        .chars()
+        .filter(|character| !character.is_control() || matches!(character, '\n' | '\t'))
+        .collect();
+    let clean = clean.trim();
+    if clean.is_empty() {
+        return None;
+    }
+    let boundary = clean
+        .char_indices()
+        .map(|(index, _)| index)
+        .take_while(|index| *index <= max_bytes)
+        .last()
+        .unwrap_or(0);
+    let end = if clean.len() <= max_bytes {
+        clean.len()
+    } else {
+        boundary
+    };
+    Some(clean[..end].to_owned())
 }
 
 impl From<JsonClientError> for AdapterError {
@@ -81,12 +134,9 @@ impl From<AdapterError> for PortError {
     fn from(error: AdapterError) -> Self {
         match error {
             AdapterError::MalformedResponse | AdapterError::EmptyResponse => PortError::Empty,
-            AdapterError::Rejected
-            | AdapterError::CredentialRejected
-            | AdapterError::ProviderRejected => PortError::Rejected,
-            AdapterError::SecretUnavailable
-            | AdapterError::ProviderUnavailable
-            | AdapterError::Transport => PortError::Unavailable,
+            AdapterError::Rejected | AdapterError::CredentialRejected => PortError::Rejected,
+            AdapterError::SecretUnavailable | AdapterError::Transport => PortError::Unavailable,
+            AdapterError::Provider(failure) => PortError::Provider(failure),
         }
     }
 }
@@ -427,7 +477,7 @@ pub(crate) fn parse_custom_model_list(
 pub(crate) fn decode_json(
     response: &lettuce_network::JsonResponse,
 ) -> Result<serde_json::Value, AdapterError> {
-    if let Some(error) = AdapterError::from_status(response.status) {
+    if let Some(error) = AdapterError::from_response(response) {
         return Err(error);
     }
     serde_json::from_slice(&response.body).map_err(|_| AdapterError::MalformedResponse)

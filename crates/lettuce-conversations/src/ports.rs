@@ -2,9 +2,9 @@ use async_trait::async_trait;
 use lettuce_media::AssetRetainer;
 use lettuce_models::ModelCapabilities;
 use lettuce_types::{
-    AssetId, ContentHash, ConversationBranchId, ConversationId, ConversationParticipantId,
-    GenerationAttemptId, GenerationTurnId, JobId, MessageCandidateId, MessageId, MessageRevisionId,
-    OperationRecordId, Page, PageRequest, TimestampMillis, UsageEventId,
+    AssetId, ConversationBranchId, ConversationId, ConversationParticipantId, GenerationAttemptId,
+    GenerationTurnId, JobId, MessageCandidateId, MessageId, MessageRevisionId, OperationRecordId,
+    Page, PageRequest, TimestampMillis, UsageEventId,
 };
 use serde::{Deserialize, Serialize};
 
@@ -1730,7 +1730,10 @@ pub struct InferenceOutcome {
     pub candidates: Vec<InferenceCandidate>,
     pub usage: Option<InferenceUsage>,
     pub finish_reason: FinishReason,
-    pub provider_request_ref: Option<ContentHash>,
+    /// Provider-native finish reason for diagnostics and compatibility.
+    pub provider_finish_reason: Option<String>,
+    /// Bounded request identifier returned in the provider's response headers.
+    pub provider_request_id: Option<String>,
     pub warning_codes: Vec<InferenceWarningCode>,
 }
 
@@ -1848,7 +1851,36 @@ pub enum UsageOutcome {
     Interrupted,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProviderFailureKind {
+    CredentialRejected,
+    RequestRejected,
+    Unavailable,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct ProviderFailure {
+    pub kind: ProviderFailureKind,
+    pub status: u16,
+    pub code: Option<String>,
+    pub message: Option<String>,
+    pub request_id: Option<String>,
+}
+
+impl std::fmt::Debug for ProviderFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ProviderFailure")
+            .field("kind", &self.kind)
+            .field("status", &self.status)
+            .field("code", &self.code)
+            .field("message", &self.message.as_ref().map(|_| "[REDACTED]"))
+            .field("request_id", &self.request_id)
+            .finish()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum PortError {
     #[error("conversation dependency is unavailable")]
     Unavailable,
@@ -1856,6 +1888,8 @@ pub enum PortError {
     Rejected,
     #[error("conversation dependency returned no result")]
     Empty,
+    #[error("provider request failed")]
+    Provider(ProviderFailure),
 }
 
 /// Redacted failures emitted while assembling provider-neutral context.

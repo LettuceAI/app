@@ -271,9 +271,10 @@ fn encode_request(
 }
 
 fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterError> {
-    if let Some(error) = AdapterError::from_status(response.status) {
+    if let Some(error) = AdapterError::from_response(&response) {
         return Err(error);
     }
+    let header_request_id = response.request_id.clone();
     let parsed: MessagesResponse =
         serde_json::from_slice(&response.body).map_err(|_| AdapterError::MalformedResponse)?;
     let mut text = String::new();
@@ -325,7 +326,8 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
             })
         }),
         finish_reason,
-        provider_request_ref: None,
+        provider_finish_reason: parsed.stop_reason,
+        provider_request_id: header_request_id,
         warning_codes: warnings,
     })
 }
@@ -389,6 +391,7 @@ struct Usage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lettuce_conversations::{ProviderFailure, ProviderFailureKind};
 
     fn response(body: &str) -> JsonResponse {
         JsonResponse {
@@ -437,14 +440,18 @@ mod tests {
             )),
             Err(AdapterError::EmptyResponse)
         );
-        assert_eq!(
+        assert!(matches!(
             parse_response(JsonResponse {
                 status: 401,
                 body: b"key-canary".to_vec(),
                 request_id: None,
                 retry_after: None,
             }),
-            Err(AdapterError::CredentialRejected)
-        );
+            Err(AdapterError::Provider(ProviderFailure {
+                kind: ProviderFailureKind::CredentialRejected,
+                status: 401,
+                ..
+            }))
+        ));
     }
 }

@@ -258,9 +258,10 @@ fn encode_request(
 }
 
 fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterError> {
-    if let Some(error) = AdapterError::from_status(response.status) {
+    if let Some(error) = AdapterError::from_response(&response) {
         return Err(error);
     }
+    let provider_request_id = response.request_id.clone();
     let parsed: ChatResponse =
         serde_json::from_slice(&response.body).map_err(|_| AdapterError::MalformedResponse)?;
     let text = parsed
@@ -292,7 +293,8 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
             _ => None,
         },
         finish_reason,
-        provider_request_ref: None,
+        provider_finish_reason: parsed.done_reason,
+        provider_request_id,
         warning_codes: warnings,
     })
 }
