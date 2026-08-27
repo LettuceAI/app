@@ -5,6 +5,8 @@ CREATE TABLE provider_accounts (
     label TEXT NOT NULL CHECK (length(trim(label)) > 0),
     endpoint TEXT,
     enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
+    streaming_enabled INTEGER NOT NULL CHECK (streaming_enabled IN (0, 1)),
+    allow_invalid_tls INTEGER NOT NULL CHECK (allow_invalid_tls IN (0, 1)),
     api_key_secret_ref TEXT,
     secret_owner_id TEXT NOT NULL UNIQUE,
     secret_headers_json TEXT NOT NULL,

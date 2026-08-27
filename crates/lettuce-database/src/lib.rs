@@ -111,9 +111,18 @@ fn decode_provider_config(payload: &str) -> Result<ProviderConfig, ()> {
     let config = serde_json::from_value::<ProviderConfig>(value.clone()).map_err(|_| ())?;
     let allowed_fields = match config {
         ProviderConfig::Standard => &["kind"][..],
-        ProviderConfig::Custom { .. } => {
-            &["kind", "chat_path", "models_path", "streaming", "auth"][..]
-        }
+        ProviderConfig::Custom(_) => &[
+            "kind",
+            "chat_path",
+            "models_path",
+            "model_list",
+            "streaming",
+            "auth",
+            "roles",
+            "merge_same_role_messages",
+            "send_chat_template_kwargs",
+            "tool_choice_mode",
+        ][..],
     };
     let object = value.as_object().ok_or(())?;
     if object
@@ -430,6 +439,8 @@ fn provider_from_row(row: &Row<'_>) -> rusqlite::Result<ProviderAccount> {
         label: row.get(3)?,
         endpoint: row.get(4)?,
         enabled: row.get(5)?,
+        streaming_enabled: row.get(13)?,
+        allow_invalid_tls: row.get(14)?,
         api_key_ref: row
             .get::<_, Option<String>>(6)?
             .map(secret_ref_from_text)
@@ -552,22 +563,25 @@ impl ProviderAccountRepository for Database {
             connection.execute(
                 "UPDATE provider_accounts SET provider_kind=?2, protocol=?3, label=?4, endpoint=?5, \
                  enabled=?6, api_key_secret_ref=?7, secret_headers_json=?8, config_json=?9, \
-                 revision=?10, updated_at=?11 WHERE id=?1 AND revision=?12",
+                 revision=?10, updated_at=?11, streaming_enabled=?13, allow_invalid_tls=?14 \
+                 WHERE id=?1 AND revision=?12",
                 params![account.id.to_string(), account.provider_kind, provider_protocol_name(account.protocol),
                     account.label, account.endpoint, account.enabled, account.api_key_ref.map(|v| v.to_string()),
                     headers, config, to_i64(next.get()).map_err(model_error)?, account.updated_at.get(),
-                    to_i64(expected.get()).map_err(model_error)?],
+                    to_i64(expected.get()).map_err(model_error)?, account.streaming_enabled,
+                    account.allow_invalid_tls],
             ).map_err(model_error)?
         } else {
             connection.execute(
                 "INSERT INTO provider_accounts (id, provider_kind, protocol, label, endpoint, enabled, \
-                 api_key_secret_ref, secret_owner_id, secret_headers_json, config_json, revision, created_at, updated_at) \
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
+                 api_key_secret_ref, secret_owner_id, secret_headers_json, config_json, revision, created_at, updated_at, \
+                 streaming_enabled, allow_invalid_tls) \
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)",
                 params![account.id.to_string(), account.provider_kind, provider_protocol_name(account.protocol),
                     account.label, account.endpoint, account.enabled, account.api_key_ref.map(|v| v.to_string()),
                     account.secret_owner_id.as_uuid().to_string(), headers, config,
                     to_i64(account.revision.get()).map_err(model_error)?, account.created_at.get(),
-                    account.updated_at.get()],
+                    account.updated_at.get(), account.streaming_enabled, account.allow_invalid_tls],
             ).map_err(model_error)?
         };
         if changed == 0 {
@@ -576,7 +590,8 @@ impl ProviderAccountRepository for Database {
         connection
             .query_row(
                 "SELECT id, provider_kind, protocol, label, endpoint, enabled, api_key_secret_ref, \
-                 secret_owner_id, secret_headers_json, config_json, revision, created_at, updated_at \
+                 secret_owner_id, secret_headers_json, config_json, revision, created_at, updated_at, \
+                 streaming_enabled, allow_invalid_tls \
                  FROM provider_accounts WHERE id=?1",
                 [account.id.to_string()],
                 provider_from_row,
@@ -591,7 +606,8 @@ impl ProviderAccountRepository for Database {
             .map_err(|_| ModelRepositoryError::Storage)?
             .query_row(
                 "SELECT id, provider_kind, protocol, label, endpoint, enabled, api_key_secret_ref, \
-                 secret_owner_id, secret_headers_json, config_json, revision, created_at, updated_at \
+                 secret_owner_id, secret_headers_json, config_json, revision, created_at, updated_at, \
+                 streaming_enabled, allow_invalid_tls \
                  FROM provider_accounts WHERE id=?1",
                 [id.to_string()],
                 provider_from_row,
@@ -1491,8 +1507,8 @@ mod tests {
         MediaAssetRepositoryError, MediaBlob, MediaBlobRepository, MediaKind, RetentionClass,
     };
     use lettuce_models::{
-        CapabilityEvidence, CapabilityEvidenceSource, CustomAuth, ModelCapabilities,
-        ModelDependencyReference, ModelKind, ModelProfile, ModelProfileConfig,
+        CapabilityEvidence, CapabilityEvidenceSource, CustomAuth, CustomProviderConfig,
+        ModelCapabilities, ModelDependencyReference, ModelKind, ModelProfile, ModelProfileConfig,
         ModelProfileRepository, ModelRepositoryError, ProviderAccount, ProviderAccountRepository,
         ProviderConfig, ProviderProtocol, QueryParameterName, SecretHeader,
     };
@@ -1520,17 +1536,20 @@ mod tests {
             label: "OpenRouter".into(),
             endpoint: Some("https://openrouter.ai/api/v1".into()),
             enabled: true,
+            streaming_enabled: false,
+            allow_invalid_tls: true,
             api_key_ref: Some(SecretRef::new()),
             secret_headers: vec![SecretHeader {
                 name: HeaderName::new("X-Private").expect("valid header"),
                 secret_ref: SecretRef::new(),
             }],
-            config: ProviderConfig::Custom {
+            config: ProviderConfig::Custom(CustomProviderConfig {
                 chat_path: "/chat/completions".into(),
                 models_path: Some("/models".into()),
                 streaming: true,
                 auth: CustomAuth::Bearer,
-            },
+                ..Default::default()
+            }),
             revision: Revision::INITIAL,
             created_at: TimestampMillis::new(10),
             updated_at: TimestampMillis::new(10),
@@ -2366,14 +2385,15 @@ mod tests {
         let database = Database::open_in_memory().expect("open database");
 
         let mut header = provider();
-        header.config = ProviderConfig::Custom {
+        header.config = ProviderConfig::Custom(CustomProviderConfig {
             chat_path: "/chat".into(),
             models_path: Some("/models".into()),
             streaming: true,
             auth: CustomAuth::Header {
                 name: HeaderName::new("X-API-Key").expect("header name"),
             },
-        };
+            ..Default::default()
+        });
         let stored = ProviderAccountRepository::upsert(&database, header.clone(), None)
             .expect("custom header account writes");
         assert_eq!(
@@ -2385,24 +2405,26 @@ mod tests {
         );
 
         let mut query = provider();
-        query.config = ProviderConfig::Custom {
+        query.config = ProviderConfig::Custom(CustomProviderConfig {
             chat_path: "/chat".into(),
             models_path: None,
             streaming: false,
             auth: CustomAuth::Query {
                 name: QueryParameterName::new("api_key").expect("query name"),
             },
-        };
+            ..Default::default()
+        });
         assert!(ProviderAccountRepository::upsert(&database, query, None).is_ok());
 
         let mut none = provider();
         none.api_key_ref = None;
-        none.config = ProviderConfig::Custom {
+        none.config = ProviderConfig::Custom(CustomProviderConfig {
             chat_path: "/chat".into(),
             models_path: None,
             streaming: false,
             auth: CustomAuth::None,
-        };
+            ..Default::default()
+        });
         assert!(ProviderAccountRepository::upsert(&database, none, None).is_ok());
 
         for auth in [
@@ -2415,12 +2437,13 @@ mod tests {
             },
         ] {
             let mut invalid = provider();
-            invalid.config = ProviderConfig::Custom {
+            invalid.config = ProviderConfig::Custom(CustomProviderConfig {
                 chat_path: "/chat".into(),
                 models_path: None,
                 streaming: false,
                 auth,
-            };
+                ..Default::default()
+            });
             invalid.api_key_ref = None;
             assert_eq!(
                 ProviderAccountRepository::upsert(&database, invalid, None),
@@ -2430,12 +2453,13 @@ mod tests {
 
         let mut no_endpoint = provider();
         no_endpoint.endpoint = None;
-        no_endpoint.config = ProviderConfig::Custom {
+        no_endpoint.config = ProviderConfig::Custom(CustomProviderConfig {
             chat_path: "/chat".into(),
             models_path: None,
             streaming: false,
             auth: CustomAuth::None,
-        };
+            ..Default::default()
+        });
         assert_eq!(
             ProviderAccountRepository::upsert(&database, no_endpoint, None),
             Err(ModelRepositoryError::InvalidData)

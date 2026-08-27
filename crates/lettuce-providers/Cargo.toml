@@ -1,7 +1,7 @@
 [package]
 name = "lettuce-providers"
 readme = "README.md"
-description = "Remote AI provider adapters."
+description = "Remote text inference provider adapters."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -14,4 +14,15 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+async-trait.workspace = true
+lettuce-conversations.workspace = true
+lettuce-models.workspace = true
+lettuce-network.workspace = true
+lettuce-settings.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
 lettuce-types.workspace = true
+tokio = { workspace = true, features = ["net", "io-util"] }

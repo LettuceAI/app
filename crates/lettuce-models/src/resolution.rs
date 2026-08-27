@@ -3,10 +3,10 @@ use serde::{Deserialize, Serialize};
 use lettuce_types::{ModelProfileId, ProviderAccountId, Revision};
 
 use crate::{
-    CapabilityStatus, ChatParameterOverrides, ChatParameterProfile, ModelCapabilities, ModelKind,
-    ModelProfile, ParameterOverride, ParameterSupport, ParameterValidationError, PromptCaching,
-    ProviderAccount, ProviderConfig, ProviderProtocol, ReasoningEffort, ReasoningMode,
-    SecretHeader, validate_provider_connection,
+    CapabilityStatus, ChatParameterOverrides, ChatParameterProfile, CustomProviderConfig,
+    ModelCapabilities, ModelKind, ModelProfile, ParameterOverride, ParameterSupport,
+    ParameterValidationError, PromptCaching, ProviderAccount, ProviderConfig, ProviderProtocol,
+    ReasoningEffort, ReasoningMode, SecretHeader, validate_provider_connection,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -112,6 +112,8 @@ pub struct ResolvedChatProfile {
     pub provider_protocol: ProviderProtocol,
     pub endpoint: Option<String>,
     pub provider_config: ProviderConfig,
+    pub streaming_enabled: bool,
+    pub allow_invalid_tls: bool,
     pub capabilities: ModelCapabilities,
     pub parameters: ResolvedChatParameters,
     pub api_key_ref: Option<lettuce_settings::SecretRef>,
@@ -245,6 +247,8 @@ pub fn resolve_chat_profile(
         provider_protocol: account.protocol,
         endpoint: account.endpoint.clone(),
         provider_config: account.config.clone(),
+        streaming_enabled: account.streaming_enabled,
+        allow_invalid_tls: account.allow_invalid_tls,
         capabilities: capabilities.clone(),
         parameters,
         api_key_ref: account.api_key_ref,
@@ -313,7 +317,7 @@ fn validate_credentials(account: &ProviderAccount) -> Result<(), ChatProfileReso
                 | ProviderProtocol::Gemini
         )
         .then_some(CredentialRequirement::ApiKey),
-        ProviderConfig::Custom { auth, .. } => match auth {
+        ProviderConfig::Custom(CustomProviderConfig { auth, .. }) => match auth {
             crate::CustomAuth::None => None,
             crate::CustomAuth::Bearer
             | crate::CustomAuth::Query { .. }
@@ -761,6 +765,8 @@ mod tests {
             label: "Test account".into(),
             endpoint: Some("https://example.invalid".into()),
             enabled: true,
+            streaming_enabled: true,
+            allow_invalid_tls: false,
             api_key_ref: Some(SecretRef::new()),
             secret_headers: vec![SecretHeader {
                 name: HeaderName::new("x-test").expect("header"),
@@ -927,12 +933,13 @@ mod tests {
             )
             .is_ok()
         );
-        accepted.config = ProviderConfig::Custom {
+        accepted.config = ProviderConfig::Custom(CustomProviderConfig {
             chat_path: "/v1/users/@me".into(),
             models_path: Some("/models/@all".into()),
             streaming: true,
             auth: crate::CustomAuth::Bearer,
-        };
+            ..Default::default()
+        });
         assert!(
             resolve_chat_profile(
                 &expected,
@@ -952,12 +959,13 @@ mod tests {
             },
             crate::CustomAuth::None,
         ] {
-            accepted.config = ProviderConfig::Custom {
+            accepted.config = ProviderConfig::Custom(CustomProviderConfig {
                 chat_path: "/chat/completions".into(),
                 models_path: Some("/models".into()),
                 streaming: true,
                 auth,
-            };
+                ..Default::default()
+            });
             assert!(
                 resolve_chat_profile(
                     &expected,
@@ -971,12 +979,13 @@ mod tests {
         }
 
         let mut invalid = account;
-        invalid.config = ProviderConfig::Custom {
+        invalid.config = ProviderConfig::Custom(CustomProviderConfig {
             chat_path: "/chat/completions?token=canary-secret-value".into(),
             models_path: Some("/models".into()),
             streaming: true,
             auth: crate::CustomAuth::Bearer,
-        };
+            ..Default::default()
+        });
         let error = resolve_chat_profile(
             &expected,
             &profile,

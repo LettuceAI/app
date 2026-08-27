@@ -241,6 +241,8 @@ fn seed_model_with(
             label: "Account".into(),
             endpoint: None,
             enabled,
+            streaming_enabled: true,
+            allow_invalid_tls: false,
             api_key_ref: None,
             secret_headers: Vec::new(),
             config: ProviderConfig::Standard,

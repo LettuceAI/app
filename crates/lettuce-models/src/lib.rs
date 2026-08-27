@@ -22,6 +22,8 @@ const MAX_PROVIDER_ENDPOINT_BYTES: usize = 4096;
 const MAX_PROVIDER_PATH_BYTES: usize = 1024;
 const MAX_PROVIDER_QUERY_PARAMETER_BYTES: usize = 128;
 const MAX_PROVIDER_SECRET_HEADERS: usize = 16;
+const MAX_WIRE_ROLE_BYTES: usize = 64;
+const MAX_JSON_PATH_BYTES: usize = 256;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -43,14 +45,183 @@ pub struct SecretHeader {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "accounts are few and read whole; boxing would break the struct patterns"
+)]
 pub enum ProviderConfig {
     Standard,
-    Custom {
-        chat_path: String,
-        models_path: Option<String>,
-        streaming: bool,
-        auth: CustomAuth,
-    },
+    Custom(CustomProviderConfig),
+}
+
+/// The legacy custom (OpenAI- or Anthropic-format) provider settings.
+/// `models_path` being `None` means model fetching is disabled.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CustomProviderConfig {
+    pub chat_path: String,
+    pub models_path: Option<String>,
+    #[serde(default)]
+    pub model_list: CustomModelList,
+    pub streaming: bool,
+    pub auth: CustomAuth,
+    #[serde(default)]
+    pub roles: CustomRoles,
+    #[serde(default = "default_true")]
+    pub merge_same_role_messages: bool,
+    #[serde(default)]
+    pub send_chat_template_kwargs: bool,
+    #[serde(default)]
+    pub tool_choice_mode: CustomToolChoiceMode,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for CustomProviderConfig {
+    fn default() -> Self {
+        Self {
+            chat_path: "/v1/chat/completions".to_owned(),
+            models_path: None,
+            model_list: CustomModelList::default(),
+            streaming: true,
+            auth: CustomAuth::Header {
+                name: HeaderName::new("x-api-key").expect("static header name"),
+            },
+            roles: CustomRoles::default(),
+            merge_same_role_messages: true,
+            send_chat_template_kwargs: false,
+            tool_choice_mode: CustomToolChoiceMode::Auto,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct CustomRoles {
+    pub system: Option<WireRole>,
+    pub user: Option<WireRole>,
+    pub assistant: Option<WireRole>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum CustomToolChoiceMode {
+    #[default]
+    Auto,
+    Required,
+    None,
+    Omit,
+    Passthrough,
+}
+
+/// Dotted JSON paths used to read a custom provider's model list response.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CustomModelList {
+    pub list_path: JsonPath,
+    pub id_path: JsonPath,
+    pub display_name_path: Option<JsonPath>,
+    pub description_path: Option<JsonPath>,
+    pub context_length_path: Option<JsonPath>,
+}
+
+impl Default for CustomModelList {
+    fn default() -> Self {
+        Self {
+            list_path: JsonPath::new("data").expect("static path"),
+            id_path: JsonPath::new("id").expect("static path"),
+            display_name_path: Some(JsonPath::new("name").expect("static path")),
+            description_path: Some(JsonPath::new("description").expect("static path")),
+            context_length_path: None,
+        }
+    }
+}
+
+/// A bounded wire role name for custom provider role remapping.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[serde(transparent)]
+pub struct WireRole(String);
+
+impl WireRole {
+    pub fn new(value: impl Into<String>) -> Result<Self, WireRoleError> {
+        let value = value.into();
+        if value.is_empty() || value.len() > MAX_WIRE_ROLE_BYTES {
+            return Err(WireRoleError::InvalidLength);
+        }
+        if !value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.'))
+        {
+            return Err(WireRoleError::InvalidCharacter);
+        }
+        Ok(Self(value))
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for WireRole {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Self::new(String::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum WireRoleError {
+    #[error("wire role has an invalid length")]
+    InvalidLength,
+    #[error("wire role contains an invalid character")]
+    InvalidCharacter,
+}
+
+/// A bounded dotted JSON path such as `data`, `models[0].id`, or `result.items`.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[serde(transparent)]
+pub struct JsonPath(String);
+
+impl JsonPath {
+    pub fn new(value: impl Into<String>) -> Result<Self, JsonPathError> {
+        let value = value.into();
+        if value.is_empty() || value.len() > MAX_JSON_PATH_BYTES {
+            return Err(JsonPathError::InvalidLength);
+        }
+        if !value.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.' | b'[' | b']')
+        }) {
+            return Err(JsonPathError::InvalidCharacter);
+        }
+        Ok(Self(value))
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for JsonPath {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Self::new(String::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum JsonPathError {
+    #[error("JSON path has an invalid length")]
+    InvalidLength,
+    #[error("JSON path contains an invalid character")]
+    InvalidCharacter,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -115,6 +286,8 @@ pub struct ProviderAccount {
     pub label: String,
     pub endpoint: Option<String>,
     pub enabled: bool,
+    pub streaming_enabled: bool,
+    pub allow_invalid_tls: bool,
     pub api_key_ref: Option<SecretRef>,
     pub secret_headers: Vec<SecretHeader>,
     pub config: ProviderConfig,
@@ -145,12 +318,12 @@ pub fn validate_provider_connection(
     if let Some(endpoint) = account.endpoint.as_deref() {
         validate_endpoint(endpoint)?;
     }
-    if let ProviderConfig::Custom {
+    if let ProviderConfig::Custom(CustomProviderConfig {
         chat_path,
         models_path,
         auth,
         ..
-    } = &account.config
+    }) = &account.config
     {
         if account.endpoint.is_none() {
             return Err(ProviderConnectionValidationError::Endpoint);
@@ -191,19 +364,19 @@ fn validate_secret_headers(
     let mut names = HashSet::with_capacity(account.secret_headers.len());
     let mut refs = HashSet::with_capacity(account.secret_headers.len());
     let auth_header_name = match &account.config {
-        ProviderConfig::Custom {
+        ProviderConfig::Custom(CustomProviderConfig {
             auth: CustomAuth::Header { name },
             ..
-        } => Some(name.as_str()),
+        }) => Some(name.as_str()),
         _ => None,
     };
     let standard_or_bearer = matches!(
         &account.config,
         ProviderConfig::Standard
-            | ProviderConfig::Custom {
+            | ProviderConfig::Custom(CustomProviderConfig {
                 auth: CustomAuth::Bearer,
                 ..
-            }
+            })
     );
     for header in &account.secret_headers {
         let normalized_name = header.name.as_str().to_ascii_lowercase();
@@ -399,9 +572,9 @@ pub trait ModelProfileRepository: Send + Sync {
 #[cfg(test)]
 mod tests {
     use super::{
-        CustomAuth, ModelDependencyReference, ModelRepositoryError, ProviderAccount,
-        ProviderConfig, ProviderConnectionValidationError, ProviderProtocol, QueryParameterName,
-        SecretHeader, validate_provider_connection,
+        CustomAuth, CustomProviderConfig, ModelDependencyReference, ModelRepositoryError,
+        ProviderAccount, ProviderConfig, ProviderConnectionValidationError, ProviderProtocol,
+        QueryParameterName, SecretHeader, validate_provider_connection,
     };
     use lettuce_settings::{HeaderName, SecretOwnerId, SecretRef};
     use lettuce_types::CharacterId;
@@ -416,6 +589,8 @@ mod tests {
             label: "Test".into(),
             endpoint: Some("https://example.invalid".into()),
             enabled: true,
+            streaming_enabled: true,
+            allow_invalid_tls: false,
             api_key_ref: Some(SecretRef::new()),
             secret_headers: Vec::new(),
             config: ProviderConfig::Standard,
@@ -495,14 +670,15 @@ mod tests {
     #[test]
     fn provider_connection_validates_custom_auth_and_secret_header_metadata() {
         let mut account = account();
-        account.config = ProviderConfig::Custom {
+        account.config = ProviderConfig::Custom(CustomProviderConfig {
             chat_path: "/chat".into(),
             models_path: Some("/models".into()),
             streaming: true,
             auth: CustomAuth::Header {
                 name: HeaderName::new("X-API-Key").expect("header name"),
             },
-        };
+            ..Default::default()
+        });
         assert!(validate_provider_connection(&account).is_ok());
 
         account.api_key_ref = None;
@@ -543,12 +719,13 @@ mod tests {
         );
 
         account.secret_headers[0].secret_ref = SecretRef::new();
-        account.config = ProviderConfig::Custom {
+        account.config = ProviderConfig::Custom(CustomProviderConfig {
             chat_path: "/chat".into(),
             models_path: None,
             streaming: false,
             auth: CustomAuth::Bearer,
-        };
+            ..Default::default()
+        });
         account.secret_headers[0].name = HeaderName::new("AUTHORIZATION").expect("header name");
         assert_eq!(
             validate_provider_connection(&account),
@@ -560,12 +737,13 @@ mod tests {
     fn custom_none_allows_missing_api_key_and_custom_paths_remain_required() {
         let mut account = account();
         account.api_key_ref = None;
-        account.config = ProviderConfig::Custom {
+        account.config = ProviderConfig::Custom(CustomProviderConfig {
             chat_path: "/chat".into(),
             models_path: None,
             streaming: false,
             auth: CustomAuth::None,
-        };
+            ..Default::default()
+        });
         assert!(validate_provider_connection(&account).is_ok());
 
         account.endpoint = None;
@@ -574,12 +752,13 @@ mod tests {
             Err(ProviderConnectionValidationError::Endpoint)
         );
         account.endpoint = Some("https://example.invalid".into());
-        account.config = ProviderConfig::Custom {
+        account.config = ProviderConfig::Custom(CustomProviderConfig {
             chat_path: "chat".into(),
             models_path: None,
             streaming: false,
             auth: CustomAuth::None,
-        };
+            ..Default::default()
+        });
         assert_eq!(
             validate_provider_connection(&account),
             Err(ProviderConnectionValidationError::Path)

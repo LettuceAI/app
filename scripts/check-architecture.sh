@@ -31,7 +31,7 @@ check_dependency_owner() {
       echo "$dependency is restricted to $owner: $match" >&2
       exit 1
     fi
-  done < <(rg -n "^${dependency//-/-}[[:space:]]*=" "$crate_root"/*/Cargo.toml || true)
+  done < <(rg -n "^${dependency//-/-}(\.workspace)?[[:space:]]*=" "$crate_root"/*/Cargo.toml || true)
 }
 
 check_dependency_owner rusqlite lettuce-database

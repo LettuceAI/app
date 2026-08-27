@@ -48,6 +48,8 @@ mod tests {
             label: "OpenRouter".into(),
             endpoint: Some("https://openrouter.ai/api/v1".into()),
             enabled: true,
+            streaming_enabled: true,
+            allow_invalid_tls: false,
             api_key_ref: Some(SecretRef::new()),
             secret_headers: vec![lettuce_models::SecretHeader {
                 name: HeaderName::new("X-Private").expect("valid header"),

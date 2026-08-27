@@ -65,3 +65,4 @@ uuid = { version = "1", features = ["serde", "v4", "v5"] }
 unicode-normalization = "0.1"
 zeroize = "1"
 rusqlite = { version = "0.40.2", default-features = false, features = ["bundled", "backup"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "rustls-tls-native-roots"] }
