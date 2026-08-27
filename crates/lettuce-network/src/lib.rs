@@ -74,6 +74,52 @@ pub struct JsonResponse {
     pub retry_after: Option<String>,
 }
 
+/// Bounded ownership of an HTTP response body. Dropping this value closes the
+/// request; callers pull one transport chunk at a time so backpressure reaches
+/// the socket instead of an unbounded task or channel.
+pub struct JsonResponseStream {
+    response: reqwest::Response,
+    pub status: u16,
+    pub request_id: Option<String>,
+    pub retry_after: Option<String>,
+    received_bytes: usize,
+    idle_timeout: Duration,
+}
+
+impl fmt::Debug for JsonResponseStream {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("JsonResponseStream")
+            .field("status", &self.status)
+            .field("request_id", &"[REDACTED]")
+            .field("retry_after", &"[REDACTED]")
+            .field("received_bytes", &self.received_bytes)
+            .finish()
+    }
+}
+
+impl JsonResponseStream {
+    /// Reads the next response chunk with an idle timeout and a cumulative
+    /// response-size bound. `None` is a clean end of stream.
+    pub async fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, JsonClientError> {
+        let chunk = tokio::time::timeout(self.idle_timeout, self.response.chunk())
+            .await
+            .map_err(|_| JsonClientError::Transport)?
+            .map_err(|_| JsonClientError::Transport)?;
+        let Some(chunk) = chunk else {
+            return Ok(None);
+        };
+        self.received_bytes = self
+            .received_bytes
+            .checked_add(chunk.len())
+            .ok_or(JsonClientError::ResponseTooLarge)?;
+        if self.received_bytes > MAX_RESPONSE_BYTES {
+            return Err(JsonClientError::ResponseTooLarge);
+        }
+        Ok(Some(chunk.to_vec()))
+    }
+}
+
 impl fmt::Debug for JsonResponse {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -229,6 +275,40 @@ impl JsonClient {
             .await
     }
 
+    /// Starts a JSON POST while leaving the response body attached to the
+    /// caller. Retries only happen before any body bytes become observable.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each argument is a distinct transport concern; bundling them hides the policy"
+    )]
+    pub async fn post_json_stream(
+        &self,
+        endpoint: &str,
+        path: &str,
+        body: Vec<u8>,
+        static_headers: &[JsonStaticHeader],
+        auth: JsonAuth,
+        secret_headers: Vec<JsonSecretHeader>,
+        policy: RequestPolicy,
+    ) -> Result<JsonResponseStream, JsonClientError> {
+        if body.len() > MAX_REQUEST_BYTES {
+            return Err(JsonClientError::RequestTooLarge);
+        }
+        let url = build_url(endpoint, path)?;
+        validate_header_collection(static_headers, &auth, &secret_headers)?;
+        let request = self
+            .client(policy)
+            .post(url)
+            .timeout(timeout_for(policy))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(body);
+        let request = apply_static_headers(request, static_headers)?;
+        let request = apply_auth(request, auth)?;
+        let request = apply_secret_headers(request, secret_headers)?;
+        self.send_stream(request, retries_for(policy), timeout_for(policy))
+            .await
+    }
+
     async fn send(
         &self,
         request: reqwest::RequestBuilder,
@@ -261,23 +341,84 @@ impl JsonClient {
             }
         }
     }
+
+    async fn send_stream(
+        &self,
+        request: reqwest::RequestBuilder,
+        max_retries: u32,
+        idle_timeout: Duration,
+    ) -> Result<JsonResponseStream, JsonClientError> {
+        let mut attempt = 0_u32;
+        loop {
+            let current = request.try_clone().ok_or(JsonClientError::InvalidRequest)?;
+            match current.send().await {
+                Ok(response) => {
+                    let delay = (attempt < max_retries)
+                        .then(|| retry_delay_for_status(&response, attempt + 1))
+                        .flatten();
+                    if let Some(delay) = delay {
+                        attempt += 1;
+                        sleep(delay).await;
+                        continue;
+                    }
+                    return response_stream(response, idle_timeout);
+                }
+                Err(error) => {
+                    if attempt < max_retries && (error.is_timeout() || error.is_request()) {
+                        attempt += 1;
+                        sleep(backoff_delay(attempt)).await;
+                    } else {
+                        return Err(JsonClientError::Transport);
+                    }
+                }
+            }
+        }
+    }
     async fn send_with_headers(
         &self,
         request: reqwest::RequestBuilder,
         secret_headers: Vec<JsonSecretHeader>,
         max_retries: u32,
     ) -> Result<JsonResponse, JsonClientError> {
-        let mut request = request;
-        for secret_header in secret_headers {
-            let header_name = to_header_name(&secret_header.name)?;
-            let header_value = secret_header
-                .value
-                .with(header::HeaderValue::from_str)
-                .map_err(|_| JsonClientError::InvalidRequest)?;
-            request = sensitive_header(request, header_name, header_value);
-        }
+        let request = apply_secret_headers(request, secret_headers)?;
         self.send(request, max_retries).await
     }
+}
+
+fn response_stream(
+    response: reqwest::Response,
+    idle_timeout: Duration,
+) -> Result<JsonResponseStream, JsonClientError> {
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_RESPONSE_BYTES as u64)
+    {
+        return Err(JsonClientError::ResponseTooLarge);
+    }
+    Ok(JsonResponseStream {
+        status: response.status().as_u16(),
+        request_id: bounded_header(&response, "x-request-id")
+            .or_else(|| bounded_header(&response, "request-id")),
+        retry_after: bounded_header(&response, "retry-after"),
+        response,
+        received_bytes: 0,
+        idle_timeout,
+    })
+}
+
+fn apply_secret_headers(
+    mut request: reqwest::RequestBuilder,
+    secret_headers: Vec<JsonSecretHeader>,
+) -> Result<reqwest::RequestBuilder, JsonClientError> {
+    for secret_header in secret_headers {
+        let header_name = to_header_name(&secret_header.name)?;
+        let header_value = secret_header
+            .value
+            .with(header::HeaderValue::from_str)
+            .map_err(|_| JsonClientError::InvalidRequest)?;
+        request = sensitive_header(request, header_name, header_value);
+    }
+    Ok(request)
 }
 
 fn build_client(
@@ -683,6 +824,54 @@ mod tests {
 
     fn client() -> JsonClient {
         JsonClient::new().expect("client")
+    }
+
+    #[tokio::test]
+    async fn streaming_post_preserves_metadata_and_bounds_pull_based_chunks() {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind stream server");
+        let endpoint = format!("http://{}", listener.local_addr().expect("address"));
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.expect("accept request");
+            let mut request = vec![0_u8; 2_048];
+            let _ = socket.read(&mut request).await.expect("read request");
+            socket
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nX-Request-Id: stream-canary\r\nTransfer-Encoding: chunked\r\n\r\n",
+                )
+                .await
+                .expect("headers");
+            for chunk in [
+                b"D\r\ndata: first\n\n\r\n".as_slice(),
+                b"E\r\ndata: second\n\n\r\n".as_slice(),
+            ] {
+                socket.write_all(chunk).await.expect("stream chunk");
+                tokio::task::yield_now().await;
+            }
+            socket.write_all(b"0\r\n\r\n").await.expect("stream end");
+        });
+
+        let mut response = client()
+            .post_json_stream(
+                &endpoint,
+                "/chat",
+                b"{}".to_vec(),
+                &[],
+                JsonAuth::None,
+                Vec::new(),
+                RequestPolicy::GENERATION,
+            )
+            .await
+            .expect("stream response");
+        assert_eq!(response.status, 200);
+        assert_eq!(response.request_id.as_deref(), Some("stream-canary"));
+        let mut body = Vec::new();
+        while let Some(chunk) = response.next_chunk().await.expect("next chunk") {
+            body.extend_from_slice(&chunk);
+        }
+        assert_eq!(body, b"data: first\n\ndata: second\n\n");
+        server.await.expect("server task");
     }
 
     #[tokio::test]
