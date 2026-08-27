@@ -318,7 +318,7 @@ mod integration_tests {
         (format!("http://{address}"), receiver)
     }
 
-    fn parameters() -> ResolvedChatParameters {
+    pub(crate) fn parameters() -> ResolvedChatParameters {
         ResolvedChatParameters {
             temperature: None,
             top_p: None,
@@ -333,6 +333,7 @@ mod integration_tests {
             reasoning_budget_tokens: None,
             prompt_caching: None,
             total_completion_allowance: None,
+            ollama: Default::default(),
         }
     }
 

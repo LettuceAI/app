@@ -139,7 +139,10 @@ pub(crate) const DESCRIPTOR: ProviderDescriptor = ProviderDescriptor {
     verifies_key: false,
     reasoning: ReasoningSupport::Effort,
     prompt_caching: PromptCachingSupport::None,
-    parameters: ParameterFlags::PENALTIES_TOP_K_BUDGET,
+    parameters: ParameterFlags {
+        repetition_penalty: true,
+        ..ParameterFlags::PENALTIES_TOP_K_BUDGET
+    },
     extra_body_keys: &["options"],
 };
 
@@ -240,21 +243,38 @@ fn encode_request(
         model: profile.external_model_id.clone(),
         messages: normalize_system_messages(wire_messages(context)?),
         stream: false,
-        options: Options {
-            temperature: parameters.temperature,
-            top_p: parameters.top_p,
-            top_k: parameters.top_k,
-            frequency_penalty: parameters.frequency_penalty,
-            presence_penalty: parameters.presence_penalty,
-            num_ctx: parameters.context_length,
-            num_predict: max_output_tokens(parameters),
-        },
+        options: options(parameters),
     };
     let body = serde_json::to_vec(&request).map_err(|_| AdapterError::Rejected)?;
     if body.len() > MAX_REQUEST_BYTES {
         return Err(AdapterError::Rejected);
     }
     Ok(body)
+}
+
+fn options(parameters: &lettuce_models::ResolvedChatParameters) -> Options {
+    Options {
+        temperature: parameters.temperature,
+        top_p: parameters.top_p,
+        top_k: parameters.top_k,
+        frequency_penalty: parameters.frequency_penalty,
+        presence_penalty: parameters.presence_penalty,
+        num_ctx: parameters.context_length,
+        num_predict: max_output_tokens(parameters),
+        num_keep: parameters.ollama.num_keep,
+        num_batch: parameters.ollama.num_batch,
+        num_gpu: parameters.ollama.num_gpu,
+        num_thread: parameters.ollama.num_thread,
+        tfs_z: parameters.ollama.tfs_z,
+        typical_p: parameters.ollama.typical_p,
+        min_p: parameters.ollama.min_p,
+        mirostat: parameters.ollama.mirostat,
+        mirostat_tau: parameters.ollama.mirostat_tau,
+        mirostat_eta: parameters.ollama.mirostat_eta,
+        repeat_penalty: parameters.repetition_penalty,
+        seed: parameters.ollama.seed,
+        stop: parameters.ollama.stop.clone(),
+    }
 }
 
 fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterError> {
@@ -322,6 +342,32 @@ struct Options {
     #[serde(skip_serializing_if = "Option::is_none")]
     num_ctx: Option<u32>,
     num_predict: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    num_keep: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    num_batch: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    num_gpu: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    num_thread: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tfs_z: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    typical_p: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    min_p: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mirostat: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mirostat_tau: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mirostat_eta: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    repeat_penalty: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    seed: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stop: Option<Vec<String>>,
 }
 
 #[derive(Deserialize)]
@@ -423,5 +469,31 @@ mod tests {
             }),
             Err(AdapterError::EmptyResponse)
         );
+    }
+
+    #[test]
+    fn encodes_all_legacy_ollama_options_with_specific_fallbacks() {
+        let mut parameters = crate::integration_tests::parameters();
+        parameters.repetition_penalty = Some(1.1);
+        parameters.ollama = lettuce_models::OllamaOptions {
+            num_keep: Some(32),
+            num_batch: Some(128),
+            num_gpu: Some(2),
+            num_thread: Some(8),
+            tfs_z: Some(0.9),
+            typical_p: Some(0.8),
+            min_p: Some(0.05),
+            mirostat: Some(2),
+            mirostat_tau: Some(5.0),
+            mirostat_eta: Some(0.1),
+            seed: Some(42),
+            stop: Some(vec!["END".to_owned()]),
+        };
+        let options = serde_json::to_value(options(&parameters)).expect("options json");
+        assert_eq!(options["num_ctx"], serde_json::json!(4096));
+        assert_eq!(options["num_predict"], serde_json::json!(4096));
+        assert_eq!(options["repeat_penalty"], serde_json::json!(1.1));
+        assert_eq!(options["stop"], serde_json::json!(["END"]));
+        assert_eq!(options.as_object().expect("options").len(), 16);
     }
 }

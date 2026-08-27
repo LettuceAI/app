@@ -59,6 +59,7 @@ pub struct ParameterFlags {
     pub frequency_penalty: bool,
     pub presence_penalty: bool,
     pub top_k: bool,
+    pub repetition_penalty: bool,
     pub reasoning_budget: bool,
 }
 
@@ -71,6 +72,7 @@ impl ParameterFlags {
         frequency_penalty: false,
         presence_penalty: false,
         top_k: false,
+        repetition_penalty: false,
         reasoning_budget: false,
     };
     pub const PENALTIES: Self = Self {
@@ -103,7 +105,7 @@ impl ParameterFlags {
             top_k: status(self.top_k),
             frequency_penalty: status(self.frequency_penalty),
             presence_penalty: status(self.presence_penalty),
-            repetition_penalty: CapabilityStatus::Unsupported,
+            repetition_penalty: status(self.repetition_penalty),
         }
     }
 }

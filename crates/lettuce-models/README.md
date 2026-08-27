@@ -28,3 +28,12 @@ model-profile deletion and provider-account-with-profiles deletion before
 removing the referenced profile or account. The current character/group
 persistence slice is not yet responsible for the group SQL; it must add those
 typed references when that slice is implemented.
+
+Chat parameters resolve per field in `operation -> session -> model -> global`
+order. Provider-neutral controls have one canonical field: legacy Ollama
+`num_ctx`, `num_predict`, and `repeat_penalty` import into `context_length`,
+`max_output_tokens`, and `repetition_penalty`. The nested `ollama` profile is
+reserved for its twelve native controls (`num_keep`, batching/device/thread
+controls, tail-free/typical/min-p sampling, mirostat, seed, and stop strings).
+This keeps provider-specific wire details typed without duplicating ordinary
+chat settings.

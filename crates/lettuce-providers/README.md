@@ -33,19 +33,19 @@ support, extra-body allowlist) served through `provider_descriptors()`.
 
 Deferred horizontals: streaming, tools, media input, reasoning fields
 (`enable_thinking`, `reasoning_effort`, Gemini thinking config, Ollama `think`,
-`chat_template_kwargs`), prompt-cache controls, structured output, and the
-provider error message body (needs a `PortError` payload).
+`chat_template_kwargs`), prompt-cache controls, and structured output.
+
+Normalized outcomes retain the provider's raw finish reason and bounded
+header request ID. Non-success responses carry a typed status/category plus
+bounded provider code and message; debug formatting redacts the message.
 
 Legacy data still without a destination, owned by named later slices:
 
-- model-parameters slice (`lettuce-models` profile config): Ollama-only
-  `options` (`num_keep`, `num_batch`, `num_gpu`, `num_thread`, `tfs_z`,
-  `typical_p`, `min_p`, `mirostat*`, `repeat_penalty`, `seed`, `stop`) and the
-  OpenRouter pinned endpoint (`provider: {order, allow_fallbacks}`) plus the
-  generic extra-body passthrough behind `extra_body_keys`.
-- inference-contract slice (`lettuce-conversations` `InferenceOutcome`): the
-  raw provider finish reason string and provider request ids as bounded
-  diagnostic metadata.
+- model-parameters slice (`lettuce-models` profile config): the OpenRouter
+  pinned endpoint (`provider: {order, allow_fallbacks}`) plus the generic
+  extra-body passthrough behind `extra_body_keys`. Ollama's twelve native
+  options are implemented; its duplicate legacy context/output/repetition
+  fields map to the provider-neutral settings.
 - composition root (`lettuce-app`): constructing `JsonClient::with_tls` from
   the settings' trusted certificates and exposing catalog, listing and
   verification commands.

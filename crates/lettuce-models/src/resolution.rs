@@ -4,7 +4,7 @@ use lettuce_types::{ModelProfileId, ProviderAccountId, Revision};
 
 use crate::{
     CapabilityStatus, ChatParameterOverrides, ChatParameterProfile, CustomProviderConfig,
-    ModelCapabilities, ModelKind, ModelProfile, ParameterOverride, ParameterSupport,
+    ModelCapabilities, ModelKind, ModelProfile, OllamaOptions, ParameterOverride, ParameterSupport,
     ParameterValidationError, PromptCaching, ProviderAccount, ProviderConfig, ProviderProtocol,
     ReasoningEffort, ReasoningMode, SecretHeader, validate_provider_connection,
 };
@@ -89,6 +89,7 @@ pub struct ResolvedChatParameters {
     pub reasoning_budget_tokens: Option<u32>,
     pub prompt_caching: Option<PromptCaching>,
     pub total_completion_allowance: Option<u32>,
+    pub ollama: OllamaOptions,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -522,7 +523,77 @@ fn resolve_parameters(
         reasoning_budget_tokens,
         prompt_caching: profile.prompt_caching,
         total_completion_allowance: total,
+        ollama: resolve_ollama(profile, input),
     })
+}
+
+fn resolve_ollama(
+    profile: &ChatParameterProfile,
+    input: &ChatParameterResolutionInput,
+) -> OllamaOptions {
+    let global = &input.global.ollama;
+    let session = &input.session.ollama;
+    let operation = &input.operation.ollama;
+    let model = &profile.ollama;
+    OllamaOptions {
+        num_keep: resolve_common(
+            &operation.num_keep,
+            &session.num_keep,
+            model.num_keep,
+            global.num_keep,
+        ),
+        num_batch: resolve_common(
+            &operation.num_batch,
+            &session.num_batch,
+            model.num_batch,
+            global.num_batch,
+        ),
+        num_gpu: resolve_common(
+            &operation.num_gpu,
+            &session.num_gpu,
+            model.num_gpu,
+            global.num_gpu,
+        ),
+        num_thread: resolve_common(
+            &operation.num_thread,
+            &session.num_thread,
+            model.num_thread,
+            global.num_thread,
+        ),
+        tfs_z: resolve_common(&operation.tfs_z, &session.tfs_z, model.tfs_z, global.tfs_z),
+        typical_p: resolve_common(
+            &operation.typical_p,
+            &session.typical_p,
+            model.typical_p,
+            global.typical_p,
+        ),
+        min_p: resolve_common(&operation.min_p, &session.min_p, model.min_p, global.min_p),
+        mirostat: resolve_common(
+            &operation.mirostat,
+            &session.mirostat,
+            model.mirostat,
+            global.mirostat,
+        ),
+        mirostat_tau: resolve_common(
+            &operation.mirostat_tau,
+            &session.mirostat_tau,
+            model.mirostat_tau,
+            global.mirostat_tau,
+        ),
+        mirostat_eta: resolve_common(
+            &operation.mirostat_eta,
+            &session.mirostat_eta,
+            model.mirostat_eta,
+            global.mirostat_eta,
+        ),
+        seed: resolve_common(&operation.seed, &session.seed, model.seed, global.seed),
+        stop: resolve_common(
+            &operation.stop,
+            &session.stop,
+            model.stop.clone(),
+            global.stop.clone(),
+        ),
+    }
 }
 
 fn resolve_common<T: Clone>(
@@ -1089,5 +1160,49 @@ mod tests {
                 capability: RequiredCapability::PromptCache
             })
         ));
+    }
+
+    #[test]
+    fn ollama_options_resolve_per_field_across_all_authored_layers() {
+        let (expected, mut profile, account) = fixture();
+        profile.config.chat_parameters.ollama.num_gpu = Some(2);
+        let input = ChatParameterResolutionInput {
+            global: ChatParameterProfile {
+                ollama: OllamaOptions {
+                    num_batch: Some(128),
+                    stop: Some(vec!["GLOBAL".to_owned()]),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            session: ChatParameterOverrides {
+                ollama: crate::OllamaOptionOverrides {
+                    stop: ParameterOverride::Set(vec!["SESSION".to_owned()]),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            operation: ChatParameterOverrides {
+                ollama: crate::OllamaOptionOverrides {
+                    num_gpu: ParameterOverride::Clear,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        };
+        let resolved = resolve_chat_profile(
+            &expected,
+            &profile,
+            &account,
+            &input,
+            &ChatRequirements::default(),
+        )
+        .expect("profile resolves");
+        assert_eq!(resolved.parameters.ollama.num_batch, Some(128));
+        assert_eq!(resolved.parameters.ollama.num_gpu, None);
+        assert_eq!(
+            resolved.parameters.ollama.stop,
+            Some(vec!["SESSION".to_owned()])
+        );
     }
 }
