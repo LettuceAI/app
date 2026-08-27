@@ -14,4 +14,9 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+async-trait.workspace = true
+lettuce-conversations.workspace = true
+lettuce-jobs.workspace = true
 lettuce-types.workspace = true
+thiserror.workspace = true
+tokio.workspace = true

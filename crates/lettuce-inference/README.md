@@ -13,4 +13,10 @@ The public surface is intentionally small. Business invariants belong in domain 
 
 ## Status
 
-Foundation scaffolding is active. Implement behavior with tests before exposing new public APIs, and keep compatibility code at explicit application or migration boundaries.
+The runtime foundation provides a bounded in-process stream registry and
+cooperative cancellation lookup. Stream delivery validates the conversation
+operation/turn/attempt identity and monotonic sequence before applying channel
+backpressure; no detached fan-out task or durable payload store is involved.
+Job and conversation domains remain authoritative for persisted lifecycle
+state. Provider normalization, outcome assembly, tools, and safety remain later
+horizontal slices.
