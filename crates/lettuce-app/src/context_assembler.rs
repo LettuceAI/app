@@ -1768,21 +1768,7 @@ fn provider_message(
         }
         (_, role) => role,
     };
-    let mut context_parts = Vec::new();
-    for part in parts(item) {
-        match part {
-            MessagePart::Text { text } => context_parts.push(ProviderContextPart::Text { text }),
-            MessagePart::MediaAsset { asset_id, role } => {
-                context_parts.push(ProviderContextPart::MediaAsset { asset_id, role })
-            }
-            MessagePart::Annotation { annotation }
-                if matches!(annotation.payload, AnnotationPayload::SceneEdited { .. }) => {}
-            MessagePart::ReasoningSummary { .. }
-            | MessagePart::ToolCall { .. }
-            | MessagePart::ToolResult { .. }
-            | MessagePart::Annotation { .. } => return Err(ContextAssemblyError::UnsupportedPart),
-        }
-    }
+    let mut context_parts = provider_context_parts(parts(item))?;
     if matches!(aggregate.conversation.kind, ConversationKind::Group(_))
         && role == MessageRole::User
         && item
@@ -1811,6 +1797,27 @@ fn provider_message(
         role,
         parts: context_parts,
     }))
+}
+
+fn provider_context_parts(
+    parts: Vec<MessagePart>,
+) -> Result<Vec<ProviderContextPart>, ContextAssemblyError> {
+    let mut context_parts = Vec::new();
+    for part in parts {
+        match part {
+            MessagePart::Text { text } => context_parts.push(ProviderContextPart::Text { text }),
+            MessagePart::MediaAsset { asset_id, role } => {
+                context_parts.push(ProviderContextPart::MediaAsset { asset_id, role })
+            }
+            MessagePart::ReasoningSummary { .. } => {}
+            MessagePart::Annotation { annotation }
+                if matches!(annotation.payload, AnnotationPayload::SceneEdited { .. }) => {}
+            MessagePart::ToolCall { .. }
+            | MessagePart::ToolResult { .. }
+            | MessagePart::Annotation { .. } => return Err(ContextAssemblyError::UnsupportedPart),
+        }
+    }
+    Ok(context_parts)
 }
 
 fn parts(item: &TimelineItem) -> Vec<MessagePart> {
@@ -1899,6 +1906,29 @@ mod tests {
     use super::*;
     use lettuce_context::{PromptEntryImageSlot, PromptEntryPayload, RenderedPrompt};
     use lettuce_types::{CharacterId, LorebookEntryId, LorebookId, PromptEntryId, SceneId};
+
+    #[test]
+    fn provider_history_omits_reasoning_without_dropping_visible_text() {
+        assert_eq!(
+            provider_context_parts(vec![
+                MessagePart::ReasoningSummary {
+                    text: "private chain".into(),
+                },
+                MessagePart::Text {
+                    text: "visible answer".into(),
+                },
+            ]),
+            Ok(vec![ProviderContextPart::Text {
+                text: "visible answer".into(),
+            }])
+        );
+        assert_eq!(
+            provider_context_parts(vec![MessagePart::ReasoningSummary {
+                text: "private chain".into(),
+            }]),
+            Ok(Vec::new())
+        );
+    }
 
     #[test]
     fn in_chat_entries_are_inserted_by_depth_with_stable_order() {

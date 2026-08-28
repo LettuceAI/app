@@ -6,7 +6,8 @@ use lettuce_conversations::{
 };
 use lettuce_inference::InferenceRuntimePort;
 use lettuce_models::{
-    ProviderAccount, ProviderConfig, ResolvedChatParameters, ResolvedChatProfile,
+    ProviderAccount, ProviderConfig, ReasoningEffort, ReasoningMode, ResolvedChatParameters,
+    ResolvedChatProfile,
 };
 use lettuce_network::{
     JsonClient, JsonQueryParameter, JsonResponse, JsonResponseStream, JsonStaticHeader,
@@ -18,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use crate::common::{
     AdapterError, AuthPlan, Credentials, RemoteModel, decode_json, generation_policy, load_auth,
     load_secret_headers, max_output_tokens, reject_unsupported_features, validate_common_request,
-    validate_prompt_caching,
+    validate_prompt_caching, validate_supported_reasoning,
 };
 use crate::descriptor::ProviderDescriptor;
 use crate::gemini_cache::{GeminiCache, PreparedCache};
@@ -90,7 +91,12 @@ pub(crate) trait GeminiWireProvider: Sync {
     }
 
     fn validate_parameters(&self, parameters: &ResolvedChatParameters) -> Result<(), AdapterError> {
-        reject_unsupported_features(parameters)?;
+        validate_supported_reasoning(parameters)?;
+        if parameters.reasoning_mode != Some(ReasoningMode::Enabled) {
+            reject_unsupported_features(parameters)?;
+        } else if parameters.reasoning_budget_tokens > Some(i32::MAX as u32) {
+            return Err(AdapterError::Rejected);
+        }
         validate_prompt_caching(self.descriptor().prompt_caching, parameters)
     }
 }
@@ -374,6 +380,7 @@ fn build_request(
             top_p: parameters.top_p,
             max_output_tokens: max_output_tokens(parameters),
             top_k: parameters.top_k,
+            thinking_config: gemini_thinking_config(&profile.external_model_id, parameters),
         },
         cached_content: None,
     };
@@ -414,15 +421,15 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
         let ordinal = u16::try_from(candidate.index.unwrap_or(position as u64))
             .map_err(|_| AdapterError::MalformedResponse)?;
         let mut text = String::new();
+        let mut reasoning = String::new();
         for part in candidate
             .content
             .map(|content| content.parts)
             .unwrap_or_default()
         {
             if part.thought.unwrap_or(false) {
-                continue;
-            }
-            if let Some(fragment) = part.text {
+                reasoning.push_str(part.text.as_deref().unwrap_or_default());
+            } else if let Some(fragment) = part.text {
                 text.push_str(&fragment);
             }
         }
@@ -449,13 +456,18 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
             ) => push(&mut warnings, InferenceWarningCode::SafetyTransformed),
             Some(_) => push(&mut warnings, InferenceWarningCode::ProviderDegraded),
         }
-        has_content |= !text.trim().is_empty();
+        has_content |= !text.trim().is_empty() || !reasoning.trim().is_empty();
         candidates.push(InferenceCandidate {
             ordinal,
-            parts: if text.is_empty() {
-                Vec::new()
-            } else {
-                vec![MessagePart::Text { text }]
+            parts: {
+                let mut parts = Vec::new();
+                if !reasoning.is_empty() {
+                    parts.push(MessagePart::ReasoningSummary { text: reasoning });
+                }
+                if !text.is_empty() {
+                    parts.push(MessagePart::Text { text });
+                }
+                parts
             },
             provider_replay: None,
         });
@@ -543,6 +555,49 @@ struct GenerationConfig {
     max_output_tokens: u32,
     #[serde(rename = "topK", skip_serializing_if = "Option::is_none")]
     top_k: Option<u32>,
+    #[serde(rename = "thinkingConfig", skip_serializing_if = "Option::is_none")]
+    thinking_config: Option<ThinkingConfig>,
+}
+
+#[derive(Clone, Serialize)]
+struct ThinkingConfig {
+    #[serde(rename = "includeThoughts")]
+    include_thoughts: bool,
+    #[serde(rename = "thinkingBudget", skip_serializing_if = "Option::is_none")]
+    thinking_budget: Option<i32>,
+    #[serde(rename = "thinkingLevel", skip_serializing_if = "Option::is_none")]
+    thinking_level: Option<&'static str>,
+}
+
+fn gemini_thinking_config(
+    model: &str,
+    parameters: &ResolvedChatParameters,
+) -> Option<ThinkingConfig> {
+    if parameters.reasoning_mode != Some(ReasoningMode::Enabled) {
+        return None;
+    }
+    let normalized = model.trim().to_ascii_lowercase();
+    let budget_model = normalized.contains("gemini-2.5") || normalized.contains("robotics-er-1.5");
+    let level_model = normalized.contains("gemini-3");
+    Some(ThinkingConfig {
+        include_thoughts: true,
+        thinking_budget: budget_model.then(|| {
+            parameters
+                .reasoning_budget_tokens
+                .map_or(-1, |budget| budget as i32)
+        }),
+        thinking_level: level_model
+            .then(|| parameters.reasoning_effort.map(gemini_reasoning_level))
+            .flatten(),
+    })
+}
+
+const fn gemini_reasoning_level(effort: ReasoningEffort) -> &'static str {
+    match effort {
+        ReasoningEffort::Low => "LOW",
+        ReasoningEffort::Medium => "MEDIUM",
+        ReasoningEffort::High => "HIGH",
+    }
 }
 
 #[derive(Deserialize)]
@@ -602,17 +657,81 @@ mod tests {
         }
     }
 
+    fn reasoning_parameters() -> ResolvedChatParameters {
+        ResolvedChatParameters {
+            reasoning_mode: Some(ReasoningMode::Enabled),
+            reasoning_effort: Some(ReasoningEffort::Medium),
+            reasoning_budget_tokens: Some(8192),
+            ..crate::integration_tests::parameters()
+        }
+    }
+
     #[test]
-    fn skips_thought_parts_and_reads_native_usage() {
+    fn maps_reasoning_by_gemini_model_family() {
+        let parameters = reasoning_parameters();
+        assert_eq!(
+            serde_json::to_value(
+                gemini_thinking_config("gemini-2.5-pro", &parameters).expect("2.5 config")
+            )
+            .expect("serialize"),
+            serde_json::json!({
+                "includeThoughts": true,
+                "thinkingBudget": 8192,
+            })
+        );
+        assert_eq!(
+            serde_json::to_value(
+                gemini_thinking_config("gemini-3-pro", &parameters).expect("3 config")
+            )
+            .expect("serialize"),
+            serde_json::json!({
+                "includeThoughts": true,
+                "thinkingLevel": "MEDIUM",
+            })
+        );
+        assert_eq!(
+            serde_json::to_value(
+                gemini_thinking_config("future-gemini", &parameters).expect("unknown config")
+            )
+            .expect("serialize"),
+            serde_json::json!({ "includeThoughts": true })
+        );
+    }
+
+    #[test]
+    fn gemini_budget_models_request_provider_auto_budget_when_unspecified() {
+        let mut parameters = reasoning_parameters();
+        parameters.reasoning_effort = None;
+        parameters.reasoning_budget_tokens = None;
+        assert_eq!(
+            serde_json::to_value(
+                gemini_thinking_config("robotics-er-1.5-preview", &parameters)
+                    .expect("robotics config")
+            )
+            .expect("serialize"),
+            serde_json::json!({
+                "includeThoughts": true,
+                "thinkingBudget": -1,
+            })
+        );
+    }
+
+    #[test]
+    fn preserves_thought_parts_and_reads_native_usage() {
         let outcome = parse_response(response(
             r#"{"candidates":[{"content":{"parts":[{"text":"hidden","thought":true},{"text":"vis"},{"text":"ible"}],"role":"model"},"finishReason":"MAX_TOKENS"}],"usageMetadata":{"promptTokenCount":9,"candidatesTokenCount":4,"totalTokenCount":13}}"#,
         ))
         .expect("response");
         assert_eq!(
             outcome.candidates[0].parts,
-            vec![MessagePart::Text {
-                text: "visible".to_owned()
-            }]
+            vec![
+                MessagePart::ReasoningSummary {
+                    text: "hidden".to_owned()
+                },
+                MessagePart::Text {
+                    text: "visible".to_owned()
+                }
+            ]
         );
         assert_eq!(outcome.finish_reason, FinishReason::Length);
         assert_eq!(

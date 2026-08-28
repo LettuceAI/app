@@ -4,7 +4,7 @@ use crate::descriptor::{
     ApiKeyRequirement, ParameterFlags, PromptCachingSupport, ProviderDescriptor, ReasoningSupport,
 };
 use crate::openai::OpenAi;
-use crate::openai_compatible::{OpenAiWireProvider, WireParameters};
+use crate::openai_compatible::{OpenAiWireProvider, ReasoningWirePolicy, WireParameters};
 
 pub(crate) struct Nvidia;
 
@@ -15,6 +15,10 @@ impl OpenAiWireProvider for Nvidia {
 
     fn wire_parameters(&self, parameters: &ResolvedChatParameters) -> WireParameters {
         OpenAi.wire_parameters(parameters)
+    }
+
+    fn reasoning_policy(&self) -> ReasoningWirePolicy {
+        OpenAi.reasoning_policy()
     }
 }
 

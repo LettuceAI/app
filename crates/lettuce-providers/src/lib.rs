@@ -1133,6 +1133,154 @@ mod integration_tests {
         captured_request(request_receiver.await.expect("request"))
     }
 
+    async fn capture_reasoning(
+        kind: &str,
+        protocol: ProviderProtocol,
+        model: &str,
+        response: String,
+    ) -> Captured {
+        capture_reasoning_with_config(kind, protocol, model, ProviderConfig::Standard, response)
+            .await
+    }
+
+    async fn capture_reasoning_with_config(
+        kind: &str,
+        protocol: ProviderProtocol,
+        model: &str,
+        config: ProviderConfig,
+        response: String,
+    ) -> Captured {
+        let store = Arc::new(RecordingSecretStore::default());
+        let owner = lettuce_settings::SecretOwnerId::new();
+        let key_ref = SecretRef::new();
+        store
+            .put(
+                SecretRecord::new(key_ref, SecretPurpose::ProviderApiKey { owner }),
+                SecretValue::new("key-canary").expect("secret"),
+                None,
+            )
+            .await
+            .expect("store key");
+        let (endpoint, request_receiver) = test_server(response).await;
+        let adapter = RemoteProviders::new(store, Arc::new(JsonClient::new().expect("client")));
+        let mut profile = profile(kind, endpoint, config, Some(key_ref), owner);
+        profile.chat_profile.provider_protocol = protocol;
+        profile.chat_profile.external_model_id = model.to_owned();
+        profile.chat_profile.parameters.visible_max_output_tokens = Some(100);
+        profile.chat_profile.parameters.reasoning_mode =
+            Some(lettuce_models::ReasoningMode::Enabled);
+        profile.chat_profile.parameters.reasoning_effort =
+            Some(lettuce_models::ReasoningEffort::Medium);
+        profile.chat_profile.parameters.reasoning_budget_tokens = Some(20);
+        profile.chat_profile.parameters.total_completion_allowance = Some(120);
+        adapter
+            .run(request(profile))
+            .await
+            .unwrap_or_else(|error| panic!("{kind}: {error:?}"));
+        captured_request(request_receiver.await.expect("request"))
+    }
+
+    #[tokio::test]
+    async fn reasoning_requests_use_each_protocols_native_wire_shape() {
+        let openai = capture_reasoning(
+            "openai",
+            ProviderProtocol::OpenAiCompatible,
+            "o3",
+            response_body(),
+        )
+        .await;
+        assert_eq!(openai.body["max_completion_tokens"], serde_json::json!(120));
+        assert_eq!(openai.body["reasoning_effort"], serde_json::json!("medium"));
+        assert!(openai.body.get("max_tokens").is_none());
+
+        let anthropic = capture_reasoning(
+            "anthropic",
+            ProviderProtocol::Anthropic,
+            "claude-sonnet",
+            http_json(r#"{"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn"}"#),
+        )
+        .await;
+        assert_eq!(anthropic.body["max_tokens"], serde_json::json!(120));
+        assert_eq!(anthropic.body["temperature"], serde_json::json!(1.0));
+        assert_eq!(
+            anthropic.body["thinking"],
+            serde_json::json!({ "type": "enabled", "budget_tokens": 20 })
+        );
+
+        let custom_anthropic = capture_reasoning_with_config(
+            "custom-anthropic",
+            ProviderProtocol::Anthropic,
+            "claude-proxy",
+            ProviderConfig::Custom(CustomProviderConfig {
+                chat_path: "/proxy/messages".to_owned(),
+                models_path: None,
+                streaming: false,
+                auth: CustomAuth::Bearer,
+                ..Default::default()
+            }),
+            http_json(r#"{"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn"}"#),
+        )
+        .await;
+        assert_eq!(
+            custom_anthropic.request_line,
+            "POST /proxy/messages HTTP/1.1"
+        );
+        assert_eq!(
+            custom_anthropic.body["thinking"],
+            serde_json::json!({ "type": "enabled", "budget_tokens": 20 })
+        );
+
+        let gemini = capture_reasoning(
+            "gemini",
+            ProviderProtocol::Gemini,
+            "gemini-2.5-pro",
+            http_json(
+                r#"{"candidates":[{"content":{"parts":[{"text":"ok"}]},"finishReason":"STOP"}]}"#,
+            ),
+        )
+        .await;
+        assert_eq!(
+            gemini.body["generationConfig"]["maxOutputTokens"],
+            serde_json::json!(100)
+        );
+        assert_eq!(
+            gemini.body["generationConfig"]["thinkingConfig"],
+            serde_json::json!({ "includeThoughts": true, "thinkingBudget": 20 })
+        );
+
+        let express = capture_reasoning(
+            "gemini-agent-platform-express",
+            ProviderProtocol::Gemini,
+            "publishers/google/models/gemini-3-pro",
+            http_json(
+                r#"{"candidates":[{"content":{"parts":[{"text":"ok"}]},"finishReason":"STOP"}]}"#,
+            ),
+        )
+        .await;
+        assert_eq!(
+            express.request_line,
+            "POST /v1beta1/publishers/google/models/gemini-3-pro:generateContent HTTP/1.1"
+        );
+        assert_eq!(
+            express.body["generationConfig"]["thinkingConfig"],
+            serde_json::json!({ "includeThoughts": true, "thinkingLevel": "MEDIUM" })
+        );
+
+        let ollama = capture_reasoning(
+            "ollama",
+            ProviderProtocol::Ollama,
+            "qwen3",
+            http_json(r#"{"message":{"content":"ok"},"done":true}"#),
+        )
+        .await;
+        assert_eq!(ollama.body["think"], serde_json::json!("medium"));
+        assert_eq!(
+            ollama.body["options"]["num_predict"],
+            serde_json::json!(100)
+        );
+        assert!(ollama.body.get("chat_template_kwargs").is_none());
+    }
+
     async fn capture_cached(
         kind: &str,
         protocol: ProviderProtocol,

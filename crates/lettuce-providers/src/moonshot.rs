@@ -1,13 +1,17 @@
 use crate::descriptor::{
     ApiKeyRequirement, ParameterFlags, PromptCachingSupport, ProviderDescriptor, ReasoningSupport,
 };
-use crate::openai_compatible::OpenAiWireProvider;
+use crate::openai_compatible::{OpenAiWireProvider, ReasoningWirePolicy};
 
 pub(crate) struct Moonshot;
 
 impl OpenAiWireProvider for Moonshot {
     fn descriptor(&self) -> &'static ProviderDescriptor {
         &DESCRIPTOR
+    }
+
+    fn reasoning_policy(&self) -> ReasoningWirePolicy {
+        ReasoningWirePolicy::EnableThinking
     }
 }
 

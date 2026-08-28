@@ -3,7 +3,7 @@ use lettuce_network::JsonStaticHeader;
 use crate::descriptor::{
     ApiKeyRequirement, ParameterFlags, PromptCachingSupport, ProviderDescriptor, ReasoningSupport,
 };
-use crate::openai_compatible::{ACCEPT_ONLY, OpenAiWireProvider};
+use crate::openai_compatible::{ACCEPT_ONLY, OpenAiWireProvider, ReasoningWirePolicy};
 
 pub(crate) struct Qwen;
 
@@ -14,6 +14,10 @@ impl OpenAiWireProvider for Qwen {
 
     fn static_headers(&self) -> &'static [JsonStaticHeader] {
         &ACCEPT_ONLY
+    }
+
+    fn reasoning_policy(&self) -> ReasoningWirePolicy {
+        ReasoningWirePolicy::EnableThinking
     }
 }
 

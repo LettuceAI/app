@@ -6,8 +6,8 @@ use lettuce_conversations::{
 };
 use lettuce_inference::InferenceRuntimePort;
 use lettuce_models::{
-    PromptCacheRetention, PromptCaching, ProviderAccount, ProviderConfig, ResolvedChatParameters,
-    ResolvedChatProfile,
+    PromptCacheRetention, PromptCaching, ProviderAccount, ProviderConfig, ReasoningEffort,
+    ReasoningMode, ResolvedChatParameters, ResolvedChatProfile,
 };
 use lettuce_network::{JsonClient, JsonResponse, JsonStaticHeader, MAX_REQUEST_BYTES};
 use lettuce_settings::SecretStore;
@@ -17,7 +17,7 @@ pub(crate) use crate::common::{ACCEPT_ONLY, AdapterError, AuthPlan, NO_HEADERS, 
 use crate::common::{
     Credentials, RemoteModel, decode_json, generation_policy, load_auth, load_secret_headers,
     max_output_tokens, parse_openai_model_list, reject_unsupported_features, skip_image_data,
-    validate_common_request, validate_prompt_caching,
+    validate_common_request, validate_prompt_caching, validate_supported_reasoning,
 };
 use crate::descriptor::ProviderDescriptor;
 
@@ -86,8 +86,16 @@ pub(crate) trait OpenAiWireProvider: Sync {
     }
 
     fn validate_parameters(&self, parameters: &ResolvedChatParameters) -> Result<(), AdapterError> {
-        reject_unsupported_features(parameters)?;
+        if self.reasoning_policy() == ReasoningWirePolicy::Unsupported {
+            reject_unsupported_features(parameters)?;
+        } else {
+            validate_supported_reasoning(parameters)?;
+        }
         validate_prompt_caching(self.descriptor().prompt_caching, parameters)
+    }
+
+    fn reasoning_policy(&self) -> ReasoningWirePolicy {
+        ReasoningWirePolicy::Unsupported
     }
 
     fn wire_parameters(&self, parameters: &ResolvedChatParameters) -> WireParameters {
@@ -135,6 +143,16 @@ pub(crate) fn standard_parameters(parameters: &ResolvedChatParameters) -> WirePa
         frequency_penalty: parameters.frequency_penalty,
         presence_penalty: parameters.presence_penalty,
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ReasoningWirePolicy {
+    Unsupported,
+    MaxCompletionTokens,
+    MaxTokens,
+    OpenRouter,
+    EnableThinking,
+    Zai,
 }
 
 pub(crate) async fn run<S: SecretStore + ?Sized>(
@@ -319,12 +337,97 @@ fn encode_request(
     };
     let mut value = serde_json::to_value(&request).map_err(|_| AdapterError::Rejected)?;
     let object = value.as_object_mut().ok_or(AdapterError::Rejected)?;
+    apply_reasoning(provider.reasoning_policy(), &profile.parameters, object)?;
     provider.extend_body(&profile.parameters, object);
     let body = serde_json::to_vec(&value).map_err(|_| AdapterError::Rejected)?;
     if body.len() > MAX_REQUEST_BYTES {
         return Err(AdapterError::Rejected);
     }
     Ok(body)
+}
+
+fn apply_reasoning(
+    policy: ReasoningWirePolicy,
+    parameters: &ResolvedChatParameters,
+    body: &mut serde_json::Map<String, serde_json::Value>,
+) -> Result<(), AdapterError> {
+    let enabled = parameters.reasoning_mode == Some(ReasoningMode::Enabled);
+    if !enabled {
+        if policy == ReasoningWirePolicy::Zai {
+            body.insert(
+                "thinking".to_owned(),
+                serde_json::json!({ "type": "disabled" }),
+            );
+        }
+        return Ok(());
+    }
+
+    let total = parameters.total_completion_allowance.map_or_else(
+        || {
+            max_output_tokens(parameters)
+                .checked_add(parameters.reasoning_budget_tokens.unwrap_or(0))
+                .ok_or(AdapterError::Rejected)
+        },
+        Ok,
+    )?;
+    let effort = parameters.reasoning_effort.map(reasoning_effort);
+    match policy {
+        ReasoningWirePolicy::Unsupported => {}
+        ReasoningWirePolicy::MaxCompletionTokens => {
+            body.remove("max_tokens");
+            body.insert("max_completion_tokens".to_owned(), total.into());
+            if let Some(effort) = effort {
+                body.insert("reasoning_effort".to_owned(), effort.into());
+            }
+        }
+        ReasoningWirePolicy::MaxTokens => {
+            body.insert("max_tokens".to_owned(), total.into());
+            if let Some(effort) = effort {
+                body.insert("reasoning_effort".to_owned(), effort.into());
+            }
+        }
+        ReasoningWirePolicy::OpenRouter => {
+            body.remove("max_tokens");
+            body.insert("max_completion_tokens".to_owned(), total.into());
+            let reasoning = if let Some(effort) = effort {
+                serde_json::json!({ "effort": effort })
+            } else if let Some(budget) = parameters.reasoning_budget_tokens {
+                serde_json::json!({ "max_tokens": budget })
+            } else {
+                serde_json::json!({ "enabled": true })
+            };
+            body.insert("reasoning".to_owned(), reasoning);
+        }
+        ReasoningWirePolicy::EnableThinking => {
+            body.insert("max_tokens".to_owned(), total.into());
+            if let Some(effort) = effort {
+                body.insert("reasoning_effort".to_owned(), effort.into());
+            }
+            body.insert("enable_thinking".to_owned(), true.into());
+            if let Some(budget) = parameters.reasoning_budget_tokens {
+                body.insert("thinking_budget".to_owned(), budget.into());
+            }
+        }
+        ReasoningWirePolicy::Zai => {
+            body.insert("max_tokens".to_owned(), total.into());
+            body.insert(
+                "thinking".to_owned(),
+                serde_json::json!({ "type": "enabled" }),
+            );
+            if let Some(effort) = effort {
+                body.insert("reasoning_effort".to_owned(), effort.into());
+            }
+        }
+    }
+    Ok(())
+}
+
+const fn reasoning_effort(effort: ReasoningEffort) -> &'static str {
+    match effort {
+        ReasoningEffort::Low => "low",
+        ReasoningEffort::Medium => "medium",
+        ReasoningEffort::High => "high",
+    }
 }
 
 fn apply_cache_control(parameters: &ResolvedChatParameters, messages: &mut [WireMessage]) {
@@ -377,13 +480,28 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
             return Err(AdapterError::MalformedResponse);
         }
         let message = choice.message.ok_or(AdapterError::MalformedResponse)?;
-        let parts = match message.content.map(MessageContent::into_text) {
-            Some(text) => {
-                has_content |= !text.trim().is_empty();
-                vec![MessagePart::Text { text }]
-            }
-            None => Vec::new(),
-        };
+        let raw_text = message
+            .content
+            .map(MessageContent::into_text)
+            .unwrap_or_default();
+        let (text, tagged_reasoning) = crate::stream_normalize::split_complete_thinking(&raw_text);
+        let explicit_reasoning = [message.reasoning, message.reasoning_content]
+            .into_iter()
+            .flatten()
+            .filter_map(|value| value.as_str().map(str::to_owned))
+            .collect::<Vec<_>>();
+        let reasoning = crate::stream_normalize::merge_complete_reasoning(
+            tagged_reasoning,
+            explicit_reasoning.iter().map(String::as_str),
+        );
+        has_content |= !text.trim().is_empty() || !reasoning.trim().is_empty();
+        let mut parts = Vec::new();
+        if !reasoning.is_empty() {
+            parts.push(MessagePart::ReasoningSummary { text: reasoning });
+        }
+        if !text.is_empty() {
+            parts.push(MessagePart::Text { text });
+        }
         if position == 0 && choice.finish_reason.as_deref() == Some("length") {
             finish_reason = FinishReason::Length;
         }
@@ -531,6 +649,8 @@ struct OpenAiChoice {
 #[derive(Deserialize)]
 struct OpenAiResponseMessage {
     content: Option<MessageContent>,
+    reasoning: Option<serde_json::Value>,
+    reasoning_content: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize)]
@@ -591,6 +711,117 @@ mod tests {
     use super::*;
     use lettuce_conversations::PortError;
     use lettuce_conversations::{ProviderFailure, ProviderFailureKind};
+    use lettuce_models::{ReasoningEffort, ReasoningMode};
+
+    fn reasoning_parameters() -> ResolvedChatParameters {
+        ResolvedChatParameters {
+            visible_max_output_tokens: Some(100),
+            reasoning_mode: Some(ReasoningMode::Enabled),
+            reasoning_effort: Some(ReasoningEffort::Medium),
+            reasoning_budget_tokens: Some(20),
+            total_completion_allowance: Some(120),
+            ..crate::integration_tests::parameters()
+        }
+    }
+
+    fn base_body() -> serde_json::Map<String, serde_json::Value> {
+        serde_json::json!({ "max_tokens": 100 })
+            .as_object()
+            .expect("object")
+            .clone()
+    }
+
+    #[test]
+    fn openai_reasoning_switches_to_total_completion_allowance() {
+        let mut body = base_body();
+        apply_reasoning(
+            ReasoningWirePolicy::MaxCompletionTokens,
+            &reasoning_parameters(),
+            &mut body,
+        )
+        .expect("reasoning wire");
+        assert_eq!(
+            serde_json::Value::Object(body),
+            serde_json::json!({
+                "max_completion_tokens": 120,
+                "reasoning_effort": "medium",
+            })
+        );
+    }
+
+    #[test]
+    fn openrouter_uses_one_nested_reasoning_control() {
+        let mut body = base_body();
+        apply_reasoning(
+            ReasoningWirePolicy::OpenRouter,
+            &reasoning_parameters(),
+            &mut body,
+        )
+        .expect("reasoning wire");
+        assert_eq!(
+            serde_json::Value::Object(body),
+            serde_json::json!({
+                "max_completion_tokens": 120,
+                "reasoning": { "effort": "medium" },
+            })
+        );
+
+        let mut parameters = reasoning_parameters();
+        parameters.reasoning_effort = None;
+        let mut body = base_body();
+        apply_reasoning(ReasoningWirePolicy::OpenRouter, &parameters, &mut body)
+            .expect("reasoning wire");
+        assert_eq!(body["reasoning"], serde_json::json!({ "max_tokens": 20 }));
+    }
+
+    #[test]
+    fn qwen_and_moonshot_emit_explicit_thinking_fields() {
+        let mut body = base_body();
+        apply_reasoning(
+            ReasoningWirePolicy::EnableThinking,
+            &reasoning_parameters(),
+            &mut body,
+        )
+        .expect("reasoning wire");
+        assert_eq!(body["max_tokens"], 120);
+        assert_eq!(body["enable_thinking"], true);
+        assert_eq!(body["thinking_budget"], 20);
+        assert_eq!(body["reasoning_effort"], "medium");
+    }
+
+    #[test]
+    fn zai_always_emits_an_explicit_thinking_state() {
+        let mut enabled = base_body();
+        apply_reasoning(
+            ReasoningWirePolicy::Zai,
+            &reasoning_parameters(),
+            &mut enabled,
+        )
+        .expect("reasoning wire");
+        assert_eq!(
+            enabled["thinking"],
+            serde_json::json!({ "type": "enabled" })
+        );
+        assert_eq!(enabled["max_tokens"], 120);
+
+        let mut disabled_parameters = reasoning_parameters();
+        disabled_parameters.reasoning_mode = Some(ReasoningMode::Disabled);
+        disabled_parameters.reasoning_effort = None;
+        disabled_parameters.reasoning_budget_tokens = None;
+        disabled_parameters.total_completion_allowance = Some(100);
+        let mut disabled = base_body();
+        apply_reasoning(
+            ReasoningWirePolicy::Zai,
+            &disabled_parameters,
+            &mut disabled,
+        )
+        .expect("reasoning wire");
+        assert_eq!(
+            disabled["thinking"],
+            serde_json::json!({ "type": "disabled" })
+        );
+        assert!(disabled.get("reasoning_effort").is_none());
+    }
 
     fn response(body: &str) -> JsonResponse {
         JsonResponse {
@@ -748,6 +979,25 @@ mod tests {
             vec![InferenceWarningCode::ProviderDegraded]
         );
         assert!(outcome.usage.is_none());
+    }
+
+    #[test]
+    fn buffered_openai_preserves_native_and_tagged_reasoning() {
+        let outcome = parse_response(response(
+            r#"{"choices":[{"index":0,"message":{"content":"<think>tagged</think>visible","reasoning_content":"native"},"finish_reason":"stop"}]}"#,
+        ))
+        .expect("reasoning response");
+        assert_eq!(
+            outcome.candidates[0].parts,
+            vec![
+                MessagePart::ReasoningSummary {
+                    text: "tagged\n\nnative".to_owned()
+                },
+                MessagePart::Text {
+                    text: "visible".to_owned()
+                }
+            ]
+        );
     }
 
     #[test]

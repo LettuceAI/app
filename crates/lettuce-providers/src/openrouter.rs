@@ -3,7 +3,7 @@ use lettuce_network::JsonStaticHeader;
 use crate::descriptor::{
     ApiKeyRequirement, ParameterFlags, PromptCachingSupport, ProviderDescriptor, ReasoningSupport,
 };
-use crate::openai_compatible::OpenAiWireProvider;
+use crate::openai_compatible::{OpenAiWireProvider, ReasoningWirePolicy};
 
 const OPENROUTER_HEADERS: [JsonStaticHeader; 2] = [
     JsonStaticHeader {
@@ -25,6 +25,10 @@ impl OpenAiWireProvider for OpenRouter {
 
     fn static_headers(&self) -> &'static [JsonStaticHeader] {
         &OPENROUTER_HEADERS
+    }
+
+    fn reasoning_policy(&self) -> ReasoningWirePolicy {
+        ReasoningWirePolicy::OpenRouter
     }
 
     fn extend_body(

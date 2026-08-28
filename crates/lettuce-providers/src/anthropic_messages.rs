@@ -6,8 +6,8 @@ use lettuce_conversations::{
 };
 use lettuce_inference::InferenceRuntimePort;
 use lettuce_models::{
-    PromptCacheRetention, PromptCaching, ProviderAccount, ProviderConfig, ResolvedChatParameters,
-    ResolvedChatProfile,
+    PromptCacheRetention, PromptCaching, ProviderAccount, ProviderConfig, ReasoningMode,
+    ResolvedChatParameters, ResolvedChatProfile,
 };
 use lettuce_network::{JsonClient, JsonResponse, JsonStaticHeader, MAX_REQUEST_BYTES};
 use lettuce_settings::SecretStore;
@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use crate::common::{
     AdapterError, AuthPlan, Credentials, RemoteModel, decode_json, generation_policy, load_auth,
     load_secret_headers, max_output_tokens, reject_unsupported_features, validate_common_request,
-    validate_prompt_caching,
+    validate_prompt_caching, validate_supported_reasoning,
 };
 use crate::descriptor::ProviderDescriptor;
 
@@ -132,7 +132,22 @@ pub(crate) trait AnthropicWireProvider: Sync {
     }
 
     fn validate_parameters(&self, parameters: &ResolvedChatParameters) -> Result<(), AdapterError> {
-        reject_unsupported_features(parameters)?;
+        validate_supported_reasoning(parameters)?;
+        match parameters.reasoning_mode {
+            Some(ReasoningMode::Enabled) if parameters.reasoning_budget_tokens.is_none() => {
+                return Err(AdapterError::Rejected);
+            }
+            Some(ReasoningMode::Enabled)
+                if parameters.total_completion_allowance.is_none()
+                    && max_output_tokens(parameters)
+                        .checked_add(parameters.reasoning_budget_tokens.unwrap_or_default())
+                        .is_none() =>
+            {
+                return Err(AdapterError::Rejected);
+            }
+            Some(ReasoningMode::Enabled) => {}
+            Some(ReasoningMode::Disabled) | None => reject_unsupported_features(parameters)?,
+        }
         validate_prompt_caching(self.descriptor().prompt_caching, parameters)
     }
 
@@ -346,17 +361,43 @@ fn encode_request(
         model: profile.external_model_id.clone(),
         messages,
         system,
-        max_tokens: max_output_tokens(parameters),
+        max_tokens: anthropic_max_tokens(parameters),
         stream: streaming,
-        temperature: parameters.temperature,
+        temperature: anthropic_temperature(parameters),
         top_p: parameters.top_p,
         top_k: parameters.top_k,
+        thinking: anthropic_thinking(parameters),
     };
     let body = serde_json::to_vec(&request).map_err(|_| AdapterError::Rejected)?;
     if body.len() > MAX_REQUEST_BYTES {
         return Err(AdapterError::Rejected);
     }
     Ok(body)
+}
+
+fn anthropic_max_tokens(parameters: &ResolvedChatParameters) -> u32 {
+    parameters.total_completion_allowance.unwrap_or_else(|| {
+        max_output_tokens(parameters) + parameters.reasoning_budget_tokens.unwrap_or(0)
+    })
+}
+
+fn anthropic_temperature(parameters: &ResolvedChatParameters) -> Option<f64> {
+    if parameters.reasoning_mode == Some(ReasoningMode::Enabled) {
+        Some(1.0)
+    } else {
+        parameters.temperature
+    }
+}
+
+fn anthropic_thinking(parameters: &ResolvedChatParameters) -> Option<ThinkingConfig> {
+    parameters
+        .reasoning_budget_tokens
+        .and_then(|budget_tokens| {
+            (parameters.reasoning_mode == Some(ReasoningMode::Enabled)).then_some(ThinkingConfig {
+                kind: "enabled",
+                budget_tokens,
+            })
+        })
 }
 
 fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterError> {
@@ -367,10 +408,12 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
     let parsed: MessagesResponse =
         serde_json::from_slice(&response.body).map_err(|_| AdapterError::MalformedResponse)?;
     let mut text = String::new();
+    let mut reasoning = String::new();
     let mut warnings = Vec::new();
     for block in parsed.content {
         match block.kind.as_str() {
             "text" => text.push_str(block.text.as_deref().unwrap_or_default()),
+            "thinking" => reasoning.push_str(block.thinking.as_deref().unwrap_or_default()),
             "tool_use" | "server_tool_use" => {
                 push(&mut warnings, InferenceWarningCode::ProviderDegraded)
             }
@@ -393,6 +436,7 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
         _ => FinishReason::Stop,
     };
     if text.trim().is_empty()
+        && reasoning.trim().is_empty()
         && !warnings.contains(&InferenceWarningCode::SafetyTransformed)
         && !warnings.contains(&InferenceWarningCode::ProviderDegraded)
     {
@@ -401,10 +445,15 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
     Ok(InferenceOutcome {
         candidates: vec![InferenceCandidate {
             ordinal: 0,
-            parts: if text.is_empty() {
-                Vec::new()
-            } else {
-                vec![MessagePart::Text { text }]
+            parts: {
+                let mut parts = Vec::new();
+                if !reasoning.is_empty() {
+                    parts.push(MessagePart::ReasoningSummary { text: reasoning });
+                }
+                if !text.is_empty() {
+                    parts.push(MessagePart::Text { text });
+                }
+                parts
             },
             provider_replay: None,
         }],
@@ -441,6 +490,15 @@ struct MessagesRequest {
     top_p: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     top_k: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    thinking: Option<ThinkingConfig>,
+}
+
+#[derive(Serialize)]
+struct ThinkingConfig {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    budget_tokens: u32,
 }
 
 #[derive(Serialize)]
@@ -486,6 +544,7 @@ struct ContentBlock {
     #[serde(rename = "type")]
     kind: String,
     text: Option<String>,
+    thinking: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -509,6 +568,42 @@ mod tests {
     }
 
     #[test]
+    fn enabled_reasoning_uses_native_thinking_total_tokens_and_fixed_temperature() {
+        let mut parameters = crate::integration_tests::parameters();
+        parameters.temperature = Some(0.4);
+        parameters.visible_max_output_tokens = Some(100);
+        parameters.reasoning_mode = Some(ReasoningMode::Enabled);
+        parameters.reasoning_budget_tokens = Some(20);
+        parameters.total_completion_allowance = Some(120);
+
+        assert_eq!(anthropic_max_tokens(&parameters), 120);
+        assert_eq!(anthropic_temperature(&parameters), Some(1.0));
+        assert_eq!(
+            serde_json::to_value(anthropic_thinking(&parameters)).expect("serialize"),
+            serde_json::json!({ "type": "enabled", "budget_tokens": 20 })
+        );
+
+        parameters.reasoning_mode = Some(ReasoningMode::Disabled);
+        parameters.reasoning_budget_tokens = None;
+        parameters.total_completion_allowance = Some(100);
+        assert_eq!(anthropic_temperature(&parameters), Some(0.4));
+        assert!(anthropic_thinking(&parameters).is_none());
+    }
+
+    #[test]
+    fn rejects_an_inconsistent_resolved_completion_allowance() {
+        let mut parameters = crate::integration_tests::parameters();
+        parameters.visible_max_output_tokens = Some(100);
+        parameters.reasoning_mode = Some(ReasoningMode::Enabled);
+        parameters.reasoning_budget_tokens = Some(20);
+        parameters.total_completion_allowance = Some(119);
+        assert_eq!(
+            crate::anthropic::Anthropic.validate_parameters(&parameters),
+            Err(AdapterError::Rejected)
+        );
+    }
+
+    #[test]
     fn joins_text_blocks_and_maps_stop_reasons() {
         let outcome = parse_response(response(
             r#"{"content":[{"type":"text","text":"a"},{"type":"thinking","thinking":"x"},{"type":"text","text":"b"}],"stop_reason":"max_tokens","usage":{"input_tokens":3,"output_tokens":5}}"#,
@@ -516,9 +611,14 @@ mod tests {
         .expect("response");
         assert_eq!(
             outcome.candidates[0].parts,
-            vec![MessagePart::Text {
-                text: "ab".to_owned()
-            }]
+            vec![
+                MessagePart::ReasoningSummary {
+                    text: "x".to_owned()
+                },
+                MessagePart::Text {
+                    text: "ab".to_owned()
+                }
+            ]
         );
         assert_eq!(outcome.finish_reason, FinishReason::Length);
         assert_eq!(

@@ -625,6 +625,33 @@ impl ThinkingTagParser {
     }
 }
 
+pub(crate) fn split_complete_thinking(text: &str) -> (String, String) {
+    let mut parser = ThinkingTagParser::default();
+    let mut split = parser.feed(text);
+    let tail = parser.finish();
+    split.content.push_str(&tail.content);
+    split.reasoning.push_str(&tail.reasoning);
+    (split.content, split.reasoning)
+}
+
+pub(crate) fn merge_complete_reasoning<'a>(
+    tagged: String,
+    explicit: impl IntoIterator<Item = &'a str>,
+) -> String {
+    let mut merged = tagged.trim().to_owned();
+    for value in explicit {
+        let value = value.trim();
+        if value.is_empty() || merged == value {
+            continue;
+        }
+        if !merged.is_empty() {
+            merged.push_str("\n\n");
+        }
+        merged.push_str(value);
+    }
+    merged
+}
+
 fn partial_suffix_len(buffer: &str, tag: &str) -> usize {
     let lower = buffer.to_ascii_lowercase();
     let max = lower.len().min(tag.len().saturating_sub(1));

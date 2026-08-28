@@ -39,9 +39,17 @@ cancellation. Malformed, oversized, incomplete, or contradictory protocol
 records fail closed. Provider request bodies opt into streaming only when a
 stream sink is present; cancellation alone does not change the wire protocol.
 
-Deferred horizontals: tools, media input, reasoning request fields
-(`enable_thinking`, `reasoning_effort`, Gemini thinking config, Ollama `think`,
-`chat_template_kwargs`), and structured output.
+Reasoning requests use explicit provider policies instead of treating
+"OpenAI-compatible" as one wire contract: OpenAI-style completion allowance,
+OpenRouter's nested reasoning object, Qwen/Moonshot thinking fields, zAI's
+thinking state, Anthropic's budgeted thinking block, Gemini's model-family
+thinking config, and Ollama HTTP's native `think` field. Buffered responses
+preserve native and tagged reasoning with the same normalized outcome shape as
+streaming. Custom OpenAI reasoning and embedded local runtimes remain deferred
+until their wire/runtime contracts are implemented explicitly.
+
+Deferred horizontals: tools, media input, custom-provider reasoning schema,
+and structured output.
 
 Explicit prompt caching is executable for Anthropic, custom Anthropic, and
 OpenRouter through typed cache-control annotations, and for OpenAI through its

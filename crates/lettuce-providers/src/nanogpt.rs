@@ -1,7 +1,7 @@
 use crate::descriptor::{
     ApiKeyRequirement, ParameterFlags, PromptCachingSupport, ProviderDescriptor, ReasoningSupport,
 };
-use crate::openai_compatible::OpenAiWireProvider;
+use crate::openai_compatible::{OpenAiWireProvider, ReasoningWirePolicy};
 
 pub(crate) struct NanoGpt;
 
@@ -12,6 +12,10 @@ impl OpenAiWireProvider for NanoGpt {
 
     fn includes_stream_usage(&self) -> bool {
         true
+    }
+
+    fn reasoning_policy(&self) -> ReasoningWirePolicy {
+        ReasoningWirePolicy::MaxTokens
     }
 }
 

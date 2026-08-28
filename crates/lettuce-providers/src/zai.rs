@@ -2,13 +2,14 @@ use std::borrow::Cow;
 
 use lettuce_models::{ProviderConfig, ResolvedChatParameters};
 use lettuce_network::JsonStaticHeader;
-use serde_json::{Map, Value, json};
+use serde_json::{Map, Value};
 
 use crate::descriptor::{
     ApiKeyRequirement, ParameterFlags, PromptCachingSupport, ProviderDescriptor, ReasoningSupport,
 };
 use crate::openai_compatible::{
-    AdapterError, NO_HEADERS, OpenAiWireProvider, WireParameters, standard_parameters,
+    AdapterError, NO_HEADERS, OpenAiWireProvider, ReasoningWirePolicy, WireParameters,
+    standard_parameters,
 };
 
 pub(crate) struct Zai;
@@ -48,9 +49,11 @@ impl OpenAiWireProvider for Zai {
         }
     }
 
-    fn extend_body(&self, _parameters: &ResolvedChatParameters, body: &mut Map<String, Value>) {
-        body.insert("thinking".to_owned(), json!({ "type": "disabled" }));
+    fn reasoning_policy(&self) -> ReasoningWirePolicy {
+        ReasoningWirePolicy::Zai
     }
+
+    fn extend_body(&self, _parameters: &ResolvedChatParameters, _body: &mut Map<String, Value>) {}
 }
 
 pub(crate) const DESCRIPTOR: ProviderDescriptor = ProviderDescriptor {

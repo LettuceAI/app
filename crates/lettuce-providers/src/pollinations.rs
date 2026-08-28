@@ -7,7 +7,7 @@ use crate::descriptor::{
     ApiKeyRequirement, ParameterFlags, PromptCachingSupport, ProviderDescriptor, ReasoningSupport,
 };
 use crate::openai::OpenAi;
-use crate::openai_compatible::OpenAiWireProvider;
+use crate::openai_compatible::{OpenAiWireProvider, ReasoningWirePolicy};
 
 pub(crate) struct Pollinations;
 
@@ -18,6 +18,10 @@ impl OpenAiWireProvider for Pollinations {
 
     fn role(&self, role: MessageRole, config: &ProviderConfig) -> Option<Cow<'static, str>> {
         OpenAi.role(role, config)
+    }
+
+    fn reasoning_policy(&self) -> ReasoningWirePolicy {
+        ReasoningWirePolicy::MaxCompletionTokens
     }
 }
 

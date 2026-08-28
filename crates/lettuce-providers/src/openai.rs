@@ -6,7 +6,9 @@ use lettuce_models::{PromptCacheRetention, PromptCaching, ProviderConfig, Resolv
 use crate::descriptor::{
     ApiKeyRequirement, ParameterFlags, PromptCachingSupport, ProviderDescriptor, ReasoningSupport,
 };
-use crate::openai_compatible::{OpenAiWireProvider, WireParameters, standard_parameters};
+use crate::openai_compatible::{
+    OpenAiWireProvider, ReasoningWirePolicy, WireParameters, standard_parameters,
+};
 
 pub(crate) struct OpenAi;
 
@@ -28,6 +30,10 @@ impl OpenAiWireProvider for OpenAi {
             context_length: None,
             ..standard_parameters(parameters)
         }
+    }
+
+    fn reasoning_policy(&self) -> ReasoningWirePolicy {
+        ReasoningWirePolicy::MaxCompletionTokens
     }
 
     fn extend_body(

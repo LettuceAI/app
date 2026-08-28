@@ -5,7 +5,9 @@ use lettuce_conversations::{
     InferenceWarningCode, MessagePart, MessageRole, ProviderContextPart, ProviderNeutralContext,
 };
 use lettuce_inference::InferenceRuntimePort;
-use lettuce_models::{ProviderAccount, ProviderConfig, ResolvedChatProfile};
+use lettuce_models::{
+    ProviderAccount, ProviderConfig, ReasoningEffort, ReasoningMode, ResolvedChatProfile,
+};
 use lettuce_network::{JsonClient, JsonResponse, MAX_REQUEST_BYTES};
 use lettuce_settings::SecretStore;
 use serde::{Deserialize, Serialize};
@@ -14,6 +16,7 @@ use crate::common::{
     AdapterError, AuthPlan, Credentials, RemoteModel, STANDARD_HEADERS, decode_json,
     generation_policy, load_auth, load_secret_headers, max_output_tokens,
     reject_unsupported_features, validate_common_request, validate_prompt_caching,
+    validate_supported_reasoning,
 };
 use crate::descriptor::{
     ApiKeyRequirement, ParameterFlags, PromptCachingSupport, ProviderDescriptor, ReasoningSupport,
@@ -47,7 +50,10 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
     if !matches!(profile.provider_config, ProviderConfig::Standard) {
         return Err(AdapterError::Rejected);
     }
-    reject_unsupported_features(&profile.parameters)?;
+    validate_supported_reasoning(&profile.parameters)?;
+    if profile.parameters.reasoning_mode != Some(ReasoningMode::Enabled) {
+        reject_unsupported_features(&profile.parameters)?;
+    }
     validate_prompt_caching(DESCRIPTOR.prompt_caching, &profile.parameters)?;
     let base = api_base(profile.endpoint.as_deref().unwrap_or(DEFAULT_ENDPOINT));
     let streaming = request.stream_sink.is_some();
@@ -281,6 +287,7 @@ fn encode_request(
         model: profile.external_model_id.clone(),
         messages: normalize_system_messages(wire_messages(context)?),
         stream: streaming,
+        think: ollama_think(parameters),
         options: options(parameters),
     };
     let body = serde_json::to_vec(&request).map_err(|_| AdapterError::Rejected)?;
@@ -322,10 +329,19 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
     let provider_request_id = response.request_id.clone();
     let parsed: ChatResponse =
         serde_json::from_slice(&response.body).map_err(|_| AdapterError::MalformedResponse)?;
-    let text = parsed
-        .message
-        .and_then(|message| message.content)
-        .unwrap_or_default();
+    let message = parsed.message.unwrap_or_default();
+    let (text, tagged_reasoning) = crate::stream_normalize::split_complete_thinking(
+        message.content.as_deref().unwrap_or_default(),
+    );
+    let explicit_reasoning = [
+        message.thinking.as_deref(),
+        message.reasoning.as_deref(),
+        message.reasoning_content.as_deref(),
+    ]
+    .into_iter()
+    .flatten();
+    let reasoning =
+        crate::stream_normalize::merge_complete_reasoning(tagged_reasoning, explicit_reasoning);
     let mut warnings = Vec::new();
     let finish_reason = match parsed.done_reason.as_deref() {
         Some("length") => {
@@ -334,13 +350,20 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
         }
         _ => FinishReason::Stop,
     };
-    if text.trim().is_empty() {
+    if text.trim().is_empty() && reasoning.trim().is_empty() {
         return Err(AdapterError::EmptyResponse);
+    }
+    let mut parts = Vec::new();
+    if !reasoning.is_empty() {
+        parts.push(MessagePart::ReasoningSummary { text: reasoning });
+    }
+    if !text.is_empty() {
+        parts.push(MessagePart::Text { text });
     }
     Ok(InferenceOutcome {
         candidates: vec![InferenceCandidate {
             ordinal: 0,
-            parts: vec![MessagePart::Text { text }],
+            parts,
             provider_replay: None,
         }],
         usage: match (parsed.prompt_eval_count, parsed.eval_count) {
@@ -362,7 +385,30 @@ struct ChatRequest {
     model: String,
     messages: Vec<WireMessage>,
     stream: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    think: Option<OllamaThink>,
     options: Options,
+}
+
+#[derive(Serialize)]
+#[serde(untagged)]
+enum OllamaThink {
+    Enabled(bool),
+    Effort(&'static str),
+}
+
+fn ollama_think(parameters: &lettuce_models::ResolvedChatParameters) -> Option<OllamaThink> {
+    if parameters.reasoning_mode != Some(ReasoningMode::Enabled) {
+        return None;
+    }
+    Some(match parameters.reasoning_effort {
+        Some(effort) => OllamaThink::Effort(match effort {
+            ReasoningEffort::Low => "low",
+            ReasoningEffort::Medium => "medium",
+            ReasoningEffort::High => "high",
+        }),
+        None => OllamaThink::Enabled(true),
+    })
 }
 
 #[derive(Serialize)]
@@ -416,9 +462,12 @@ struct ChatResponse {
     eval_count: Option<u64>,
 }
 
-#[derive(Deserialize)]
+#[derive(Default, Deserialize)]
 struct ResponseMessage {
     content: Option<String>,
+    thinking: Option<String>,
+    reasoning: Option<String>,
+    reasoning_content: Option<String>,
 }
 
 #[cfg(test)]
@@ -506,6 +555,62 @@ mod tests {
                 retry_after: None,
             }),
             Err(AdapterError::EmptyResponse)
+        );
+    }
+
+    #[test]
+    fn encodes_ollama_think_without_using_the_reasoning_budget() {
+        let mut parameters = crate::integration_tests::parameters();
+        parameters.reasoning_mode = Some(ReasoningMode::Enabled);
+        parameters.reasoning_budget_tokens = Some(8192);
+        assert_eq!(
+            serde_json::to_value(ollama_think(&parameters)).expect("think json"),
+            serde_json::json!(true)
+        );
+        assert_eq!(options(&parameters).num_predict, 4096);
+
+        parameters.reasoning_effort = Some(ReasoningEffort::High);
+        assert_eq!(
+            serde_json::to_value(ollama_think(&parameters)).expect("think json"),
+            serde_json::json!("high")
+        );
+        parameters.reasoning_mode = Some(ReasoningMode::Disabled);
+        assert!(ollama_think(&parameters).is_none());
+    }
+
+    #[test]
+    fn buffered_ollama_preserves_native_and_tagged_reasoning() {
+        let outcome = parse_response(JsonResponse {
+            status: 200,
+            body: br#"{"message":{"content":"<think>tagged</think>visible","thinking":"native"},"done":true}"#.to_vec(),
+            request_id: None,
+            retry_after: None,
+        })
+        .expect("response");
+        assert_eq!(
+            outcome.candidates[0].parts,
+            vec![
+                MessagePart::ReasoningSummary {
+                    text: "tagged\n\nnative".to_owned()
+                },
+                MessagePart::Text {
+                    text: "visible".to_owned()
+                }
+            ]
+        );
+
+        let outcome = parse_response(JsonResponse {
+            status: 200,
+            body: br#"{"message":{"content":"<think>same</think>visible","thinking":"same","reasoning":"second"},"done":true}"#.to_vec(),
+            request_id: None,
+            retry_after: None,
+        })
+        .expect("response");
+        assert_eq!(
+            outcome.candidates[0].parts[0],
+            MessagePart::ReasoningSummary {
+                text: "same\n\nsecond".to_owned()
+            }
         );
     }
 
