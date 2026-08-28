@@ -62,6 +62,8 @@ pub(crate) struct StreamNormalizer {
     openai_tool_calls: BTreeMap<u64, PendingOpenAiToolCall>,
     anthropic_tool_calls: BTreeMap<u64, PendingAnthropicToolCall>,
     anthropic_server_tool_blocks: BTreeSet<u64>,
+    gemini_tool_calls: Vec<ProposedToolCall>,
+    gemini_has_thought_signature: bool,
     requires_openai_tool_calls: bool,
     requires_anthropic_tool_calls: bool,
     terminal: bool,
@@ -99,6 +101,8 @@ impl StreamNormalizer {
             openai_tool_calls: BTreeMap::new(),
             anthropic_tool_calls: BTreeMap::new(),
             anthropic_server_tool_blocks: BTreeSet::new(),
+            gemini_tool_calls: Vec::new(),
+            gemini_has_thought_signature: false,
             requires_openai_tool_calls: false,
             requires_anthropic_tool_calls: false,
             terminal: false,
@@ -139,7 +143,21 @@ impl StreamNormalizer {
             StreamProtocol::Anthropic => {
                 finish_anthropic_tool_calls(std::mem::take(&mut self.anthropic_tool_calls))?
             }
-            StreamProtocol::Gemini | StreamProtocol::Ollama => Vec::new(),
+            StreamProtocol::Gemini => {
+                if self.gemini_has_thought_signature && !self.gemini_tool_calls.is_empty() {
+                    return Err(StreamNormalizeError::MalformedJson);
+                }
+                if self.gemini_tool_calls.len() > 1
+                    && self
+                        .gemini_tool_calls
+                        .iter()
+                        .any(|call| call.provider_call_id.is_none())
+                {
+                    return Err(StreamNormalizeError::MalformedJson);
+                }
+                std::mem::take(&mut self.gemini_tool_calls)
+            }
+            StreamProtocol::Ollama => Vec::new(),
         };
         if self.requires_openai_tool_calls && tool_calls.is_empty() {
             return Err(StreamNormalizeError::MalformedJson);
@@ -512,23 +530,82 @@ impl StreamNormalizer {
                 .and_then(Value::as_array)
             {
                 for part in parts {
-                    let Some(text) = part.get("text").and_then(Value::as_str) else {
-                        continue;
-                    };
-                    if part.get("thought").and_then(Value::as_bool) == Some(true) {
-                        self.append_reasoning(text, &mut deltas)?;
-                    } else {
-                        let split = self.thinking.feed(text);
-                        self.append_split(split, &mut deltas)?;
+                    if (part.get("text").is_some() && part.get("functionCall").is_some())
+                        || part.get("functionResponse").is_some()
+                        || part.get("toolCall").is_some()
+                        || part.get("toolResponse").is_some()
+                    {
+                        return Err(StreamNormalizeError::MalformedJson);
+                    }
+                    if part
+                        .get("thoughtSignature")
+                        .and_then(Value::as_str)
+                        .is_some_and(|signature| !signature.is_empty())
+                    {
+                        self.gemini_has_thought_signature = true;
+                    }
+                    if let Some(text) = part.get("text").and_then(Value::as_str) {
+                        if part.get("thought").and_then(Value::as_bool) == Some(true) {
+                            self.append_reasoning(text, &mut deltas)?;
+                        } else {
+                            let split = self.thinking.feed(text);
+                            self.append_split(split, &mut deltas)?;
+                        }
+                    }
+                    if let Some(call) = part.get("functionCall") {
+                        self.append_gemini_tool_call(call)?;
                     }
                 }
             }
             if let Some(reason) = candidate.get("finishReason").and_then(Value::as_str) {
+                if !self.gemini_tool_calls.is_empty()
+                    && !matches!(reason, "STOP" | "FINISH_REASON_UNSPECIFIED")
+                {
+                    return Err(StreamNormalizeError::MalformedJson);
+                }
                 self.set_finish_reason(reason, FinishFamily::Gemini);
                 self.terminal = true;
             }
         }
         Ok(deltas)
+    }
+
+    fn append_gemini_tool_call(&mut self, call: &Value) -> Result<(), StreamNormalizeError> {
+        if self.gemini_tool_calls.len() >= MAX_TOOL_CALLS_PER_RESPONSE {
+            return Err(StreamNormalizeError::OutputTooLarge {
+                field: "tool_calls",
+            });
+        }
+        let name = call
+            .get("name")
+            .and_then(Value::as_str)
+            .filter(|name| !name.is_empty())
+            .ok_or(StreamNormalizeError::MalformedJson)?;
+        let id = match call.get("id") {
+            Some(Value::String(id)) if !id.is_empty() => Some(id.clone()),
+            Some(_) => return Err(StreamNormalizeError::MalformedJson),
+            None => None,
+        };
+        let arguments = call
+            .get("args")
+            .cloned()
+            .unwrap_or_else(|| Value::Object(Default::default()));
+        if !arguments.is_object()
+            || serde_json::to_vec(&arguments)
+                .map_err(|_| StreamNormalizeError::MalformedJson)?
+                .len()
+                > MAX_TOOL_ARGUMENT_BYTES
+        {
+            return Err(StreamNormalizeError::MalformedJson);
+        }
+        self.gemini_tool_calls.push(ProposedToolCall {
+            provider_call_id: id,
+            name: name.to_owned(),
+            arguments,
+            raw_arguments: None,
+            provider_replay: None,
+        });
+        Ok(())
     }
 
     fn consume_ollama(
@@ -1260,6 +1337,54 @@ mod tests {
         assert!(!deltas.contains(&StreamDelta::Text("ignored".to_owned())));
         let (_, outcome) = normalizer.finish().unwrap();
         assert_eq!(outcome.usage.unwrap().output_tokens, 1);
+    }
+
+    #[test]
+    fn gemini_collects_unsigned_native_calls_across_chunks() {
+        let mut normalizer = StreamNormalizer::new(StreamProtocol::Gemini, None);
+        normalizer.consume(&record(r#"{"candidates":[{"content":{"parts":[{"text":"checking"},{"functionCall":{"id":"call-1","name":"lookup_weather","args":{"city":"Paris"}}}]}}]}"#)).unwrap();
+        normalizer.consume(&record(r#"{"candidates":[{"content":{"parts":[{"functionCall":{"id":"call-2","name":"lookup_weather","args":{"city":"London"}}}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":4,"candidatesTokenCount":2}}"#)).unwrap();
+        let (_, outcome) = normalizer.finish().expect("tool outcome");
+        let calls = &outcome.candidates[0].tool_calls;
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].provider_call_id.as_deref(), Some("call-1"));
+        assert_eq!(calls[1].provider_call_id.as_deref(), Some("call-2"));
+        assert_eq!(calls[1].arguments, serde_json::json!({"city":"London"}));
+    }
+
+    #[test]
+    fn gemini_rejects_signed_malformed_or_incompatible_stream_calls() {
+        let mut signed = StreamNormalizer::new(StreamProtocol::Gemini, None);
+        signed.consume(&record(r#"{"candidates":[{"content":{"parts":[{"functionCall":{"id":"call-1","name":"lookup_weather","args":{}},"thoughtSignature":"opaque"}]},"finishReason":"STOP"}]}"#)).unwrap();
+        assert_eq!(
+            signed.finish().unwrap_err(),
+            StreamNormalizeError::MalformedJson
+        );
+
+        let mut malformed = StreamNormalizer::new(StreamProtocol::Gemini, None);
+        assert_eq!(
+            malformed
+                .consume(&record(
+                    r#"{"candidates":[{"content":{"parts":[{"functionCall":{"name":"lookup_weather","args":[]}}]}}]}"#,
+                ))
+                .unwrap_err(),
+            StreamNormalizeError::MalformedJson
+        );
+
+        let mut incompatible = StreamNormalizer::new(StreamProtocol::Gemini, None);
+        assert_eq!(
+            incompatible
+                .consume(&record(r#"{"candidates":[{"content":{"parts":[{"functionCall":{"name":"lookup_weather","args":{}}}]},"finishReason":"MALFORMED_FUNCTION_CALL"}]}"#))
+                .unwrap_err(),
+            StreamNormalizeError::MalformedJson
+        );
+
+        let mut ambiguous = StreamNormalizer::new(StreamProtocol::Gemini, None);
+        ambiguous.consume(&record(r#"{"candidates":[{"content":{"parts":[{"functionCall":{"id":"call-1","name":"lookup_weather","args":{}}},{"functionCall":{"name":"lookup_weather","args":{}}}]},"finishReason":"STOP"}]}"#)).unwrap();
+        assert_eq!(
+            ambiguous.finish().unwrap_err(),
+            StreamNormalizeError::MalformedJson
+        );
     }
 
     #[test]

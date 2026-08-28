@@ -1717,6 +1717,142 @@ mod integration_tests {
     }
 
     #[tokio::test]
+    async fn gemini_tool_request_runs_through_standard_and_express_boundaries() {
+        let reply = http_json(
+            r#"{"candidates":[{"content":{"parts":[{"text":"checking"},{"functionCall":{"id":"call-1","name":"lookup_weather","args":{"city":"Istanbul"}}}],"role":"model"},"finishReason":"STOP"}]}"#,
+        );
+        for (kind, suffix, path) in [
+            ("gemini", "/v1", "/v1beta/models/test-model:generateContent"),
+            (
+                "gemini-agent-platform-express",
+                "/v1",
+                "/v1beta1/publishers/google/models/test-model:generateContent",
+            ),
+        ] {
+            let store = Arc::new(RecordingSecretStore::default());
+            let owner = lettuce_settings::SecretOwnerId::new();
+            let key_ref = SecretRef::new();
+            store
+                .put(
+                    SecretRecord::new(key_ref, SecretPurpose::ProviderApiKey { owner }),
+                    SecretValue::new("key-canary").expect("secret"),
+                    None,
+                )
+                .await
+                .expect("store key");
+            let (endpoint, captured) = test_server(reply.clone()).await;
+            let adapter = RemoteProviders::new(store, Arc::new(JsonClient::new().expect("client")));
+            let mut resolved = profile(
+                kind,
+                format!("{endpoint}{suffix}"),
+                ProviderConfig::Standard,
+                Some(key_ref),
+                owner,
+            );
+            resolved.chat_profile.provider_protocol = ProviderProtocol::Gemini;
+            resolved.chat_profile.capabilities.tools = CapabilityStatus::Supported;
+            resolved.tool_policy = ToolPolicy::Allowed;
+            let mut inference = request(resolved);
+            inference.tools = Some(ToolRequest {
+                definitions: vec![ToolDefinition {
+                    name: "lookup_weather".to_owned(),
+                    description: Some("Get current weather".to_owned()),
+                    parameters: serde_json::json!({
+                        "type":"object",
+                        "properties":{"city":{"type":"string"}}
+                    }),
+                    version: 1,
+                }],
+                choice: ToolChoice::Named {
+                    name: "lookup_weather".to_owned(),
+                },
+            });
+
+            let outcome = adapter.run(inference).await.expect("tool outcome");
+            let call = &outcome.candidates[0].tool_calls[0];
+            assert_eq!(call.provider_call_id.as_deref(), Some("call-1"));
+            assert_eq!(call.arguments, serde_json::json!({"city":"Istanbul"}));
+
+            let captured = captured_request(captured.await.expect("request"));
+            assert_eq!(captured.request_line, format!("POST {path} HTTP/1.1"));
+            assert_eq!(
+                captured.body["tools"],
+                serde_json::json!([{"functionDeclarations":[{
+                    "name":"lookup_weather",
+                    "description":"Get current weather",
+                    "parameters":{
+                        "type":"object",
+                        "properties":{"city":{"type":"string"}}
+                    }
+                }]}])
+            );
+            assert_eq!(
+                captured.body["toolConfig"],
+                serde_json::json!({"functionCallingConfig":{
+                    "mode":"ANY",
+                    "allowedFunctionNames":["lookup_weather"]
+                }})
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn gemini_explicit_cache_owns_tools_and_tool_config() {
+        let not_found = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n".to_owned();
+        let generate_response = http_json(
+            r#"{"candidates":[{"content":{"parts":[{"functionCall":{"name":"lookup_weather","args":{}}}],"role":"model"},"finishReason":"STOP"}]}"#,
+        );
+        let (adapter, mut resolved, requests, _, _) = cached_gemini_fixture(
+            vec![
+                http_json(r#"{"name":"cachedContents/tools"}"#),
+                not_found,
+                generate_response,
+            ],
+            lettuce_models::PromptCacheRetention::FiveMinutes,
+        )
+        .await;
+        resolved.chat_profile.capabilities.tools = CapabilityStatus::Supported;
+        resolved.tool_policy = ToolPolicy::Allowed;
+        let mut inference = request_with_context(resolved, cache_context());
+        inference.tools = Some(ToolRequest {
+            definitions: vec![ToolDefinition {
+                name: "lookup_weather".to_owned(),
+                description: None,
+                parameters: serde_json::json!({"type":"object"}),
+                version: 1,
+            }],
+            choice: ToolChoice::Required,
+        });
+        adapter.run(inference).await.expect("cached tool request");
+
+        let requests = requests.await.expect("requests");
+        assert_eq!(requests.len(), 3);
+        let create = captured_request(requests[0].clone());
+        assert_eq!(
+            create.body["tools"],
+            serde_json::json!([{"functionDeclarations":[{
+                "name":"lookup_weather",
+                "parameters":{"type":"object"}
+            }]}])
+        );
+        assert_eq!(
+            create.body["toolConfig"],
+            serde_json::json!({"functionCallingConfig":{"mode":"ANY"}})
+        );
+        let generation = captured_request(requests[1].clone());
+        assert_eq!(
+            generation.body["cachedContent"],
+            serde_json::json!("cachedContents/tools")
+        );
+        assert!(generation.body.get("tools").is_none());
+        assert!(generation.body.get("toolConfig").is_none());
+        let retry = captured_request(requests[2].clone());
+        assert!(retry.body.get("cachedContent").is_none());
+        assert_eq!(retry.body["tools"], create.body["tools"]);
+        assert_eq!(retry.body["toolConfig"], create.body["toolConfig"]);
+    }
+
+    #[tokio::test]
     async fn gemini_explicit_cache_creates_once_and_reuses_the_resource() {
         let store = Arc::new(RecordingSecretStore::default());
         let owner = lettuce_settings::SecretOwnerId::new();

@@ -63,8 +63,15 @@ declared Anthropic tools but replayed OpenAI-shaped calls and results that the
 Anthropic adapter then discarded. Prompt caching covers the system, final tool
 definition, and final user text. Extended thinking with tools remains rejected
 until signed thinking replay artifacts can be materialized without data loss.
-Gemini and Ollama tool wire formats remain explicitly rejected until their
-native adapters are implemented.
+Gemini and Gemini Express use native function declarations, AUTO/ANY/named
+choices, grouped `functionCall`/`functionResponse` transcript parts, buffered
+calls, and bounded SSE calls. Missing provider call IDs remain absent instead
+of being fabricated. Standard Gemini explicit-cache resources own both tool
+definitions and tool choice; a missing resource retry restores the clean
+uncached request. Gemini 3 tools, reasoning-plus-tools, signed call responses,
+and signed replay references remain rejected until replay artifact bytes can be
+materialized exactly. Ollama tool wire format remains explicitly rejected until
+its native adapter is implemented.
 
 Deferred horizontals: remaining native tool adapters, media input,
 custom-provider reasoning schema, and structured output.

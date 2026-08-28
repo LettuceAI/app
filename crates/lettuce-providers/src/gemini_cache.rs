@@ -71,6 +71,8 @@ impl GeminiCache {
             model: format!("models/{}", profile.external_model_id),
             contents: prefix,
             system_instruction: request.system_instruction.as_ref(),
+            tools: request.tools.as_deref(),
+            tool_config: request.tool_config.as_ref(),
             ttl,
         };
         let body = serde_json::to_vec(&create).map_err(|_| AdapterError::Rejected)?;
@@ -254,6 +256,8 @@ fn cache_key(
         model: &'a str,
         system_instruction: Option<&'a Content>,
         contents: &'a [Content],
+        tools: Option<&'a [crate::gemini_generate::GeminiTool]>,
+        tool_config: Option<&'a crate::gemini_generate::ToolConfig>,
         ttl: &'a str,
         credential_statuses: &'a [SecretStatus],
     }
@@ -265,6 +269,8 @@ fn cache_key(
         model: &profile.external_model_id,
         system_instruction: request.system_instruction.as_ref(),
         contents: prefix,
+        tools: request.tools.as_deref(),
+        tool_config: request.tool_config.as_ref(),
         ttl,
         credential_statuses,
     })
@@ -286,6 +292,10 @@ struct CachedContentRequest<'a> {
     contents: &'a [Content],
     #[serde(rename = "systemInstruction", skip_serializing_if = "Option::is_none")]
     system_instruction: Option<&'a Content>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tools: Option<&'a [crate::gemini_generate::GeminiTool]>,
+    #[serde(rename = "toolConfig", skip_serializing_if = "Option::is_none")]
+    tool_config: Option<&'a crate::gemini_generate::ToolConfig>,
     ttl: &'static str,
 }
 
