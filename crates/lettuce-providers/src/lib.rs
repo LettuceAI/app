@@ -239,13 +239,14 @@ mod integration_tests {
         ContextAttributions, ContextBudgetReport, GenerationOperation, GenerationStreamEvent,
         InferenceOutcome, InferencePort, InferenceRequest, MessagePart, MessageRole, OutputPolicy,
         ProviderContextPart, ProviderNeutralContext, ProviderNeutralMessage,
-        ResolvedInferenceProfile, SafetyContext, ToolPolicy,
+        ResolvedInferenceProfile, SafetyContext, ToolChoice, ToolDefinition, ToolPolicy,
+        ToolRequest,
     };
     use lettuce_inference::{InferenceRuntime, InferenceRuntimePort};
     use lettuce_jobs::handle::JobHandle;
     use lettuce_models::{
-        ChatProfileWarning, CustomAuth, CustomProviderConfig, ModelCapabilities, ProviderConfig,
-        ProviderProtocol, ResolvedChatParameters, ResolvedChatProfile,
+        CapabilityStatus, ChatProfileWarning, CustomAuth, CustomProviderConfig, ModelCapabilities,
+        ProviderConfig, ProviderProtocol, ResolvedChatParameters, ResolvedChatProfile,
     };
     use lettuce_network::JsonClient;
     use lettuce_settings::{
@@ -2081,6 +2082,63 @@ mod integration_tests {
             captured
                 .headers
                 .contains("authorization: bearer key-canary\r\n")
+        );
+    }
+
+    #[tokio::test]
+    async fn anthropic_tool_request_runs_through_the_remote_provider_boundary() {
+        let store = Arc::new(RecordingSecretStore::default());
+        let owner = lettuce_settings::SecretOwnerId::new();
+        let key_ref = SecretRef::new();
+        store
+            .put(
+                SecretRecord::new(key_ref, SecretPurpose::ProviderApiKey { owner }),
+                SecretValue::new("key-canary").expect("secret"),
+                None,
+            )
+            .await
+            .expect("store key");
+        let response = http_json(
+            r#"{"content":[{"type":"text","text":"saving"},{"type":"tool_use","id":"toolu-1","name":"create_memory","input":{"content":"one"}}],"stop_reason":"tool_use","usage":{"input_tokens":3,"output_tokens":5}}"#,
+        );
+        let (endpoint, captured) = test_server(response).await;
+        let adapter = RemoteProviders::new(store, Arc::new(JsonClient::new().expect("client")));
+        let mut resolved = profile(
+            "anthropic",
+            endpoint,
+            ProviderConfig::Standard,
+            Some(key_ref),
+            owner,
+        );
+        resolved.chat_profile.provider_protocol = ProviderProtocol::Anthropic;
+        resolved.chat_profile.capabilities.tools = CapabilityStatus::Supported;
+        resolved.tool_policy = ToolPolicy::Allowed;
+        let mut inference = request(resolved);
+        inference.tools = Some(ToolRequest {
+            definitions: vec![ToolDefinition {
+                name: "create_memory".to_owned(),
+                description: Some("Create memory".to_owned()),
+                parameters: serde_json::json!({
+                    "type": "object",
+                    "properties": {"content": {"type": "string"}}
+                }),
+                version: 1,
+            }],
+            choice: ToolChoice::Auto,
+        });
+
+        let outcome = adapter.run(inference).await.expect("tool outcome");
+        let call = &outcome.candidates[0].tool_calls[0];
+        assert_eq!(call.provider_call_id.as_deref(), Some("toolu-1"));
+        assert_eq!(call.arguments, serde_json::json!({"content": "one"}));
+
+        let captured = captured_request(captured.await.expect("request"));
+        assert_eq!(captured.request_line, "POST /v1/messages HTTP/1.1");
+        assert_eq!(captured.body["tools"][0]["name"], "create_memory");
+        assert_eq!(captured.body["tools"][0]["input_schema"]["type"], "object");
+        assert_eq!(
+            captured.body["tool_choice"],
+            serde_json::json!({"type": "auto"})
         );
     }
 

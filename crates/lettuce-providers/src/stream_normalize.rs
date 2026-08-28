@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use lettuce_conversations::{
     FinishReason, InferenceCandidate, InferenceOutcome, InferenceUsage, InferenceWarningCode,
@@ -60,7 +60,10 @@ pub(crate) struct StreamNormalizer {
     warning_codes: Vec<InferenceWarningCode>,
     provider_request_id: Option<String>,
     openai_tool_calls: BTreeMap<u64, PendingOpenAiToolCall>,
+    anthropic_tool_calls: BTreeMap<u64, PendingAnthropicToolCall>,
+    anthropic_server_tool_blocks: BTreeSet<u64>,
     requires_openai_tool_calls: bool,
+    requires_anthropic_tool_calls: bool,
     terminal: bool,
 }
 
@@ -69,6 +72,15 @@ struct PendingOpenAiToolCall {
     id: Option<String>,
     name: Option<String>,
     arguments: String,
+}
+
+#[derive(Debug)]
+struct PendingAnthropicToolCall {
+    id: String,
+    name: String,
+    initial_input: Value,
+    partial_json: String,
+    closed: bool,
 }
 
 impl StreamNormalizer {
@@ -85,7 +97,10 @@ impl StreamNormalizer {
             warning_codes: Vec::new(),
             provider_request_id,
             openai_tool_calls: BTreeMap::new(),
+            anthropic_tool_calls: BTreeMap::new(),
+            anthropic_server_tool_blocks: BTreeSet::new(),
             requires_openai_tool_calls: false,
+            requires_anthropic_tool_calls: false,
             terminal: false,
         }
     }
@@ -114,8 +129,28 @@ impl StreamNormalizer {
         let mut tail = Vec::new();
         let split = self.thinking.finish();
         self.append_split(split, &mut tail)?;
-        let tool_calls = finish_openai_tool_calls(std::mem::take(&mut self.openai_tool_calls))?;
+        if !self.anthropic_server_tool_blocks.is_empty() {
+            return Err(StreamNormalizeError::MalformedJson);
+        }
+        let tool_calls = match self.protocol {
+            StreamProtocol::OpenAi => {
+                finish_openai_tool_calls(std::mem::take(&mut self.openai_tool_calls))?
+            }
+            StreamProtocol::Anthropic => {
+                finish_anthropic_tool_calls(std::mem::take(&mut self.anthropic_tool_calls))?
+            }
+            StreamProtocol::Gemini | StreamProtocol::Ollama => Vec::new(),
+        };
         if self.requires_openai_tool_calls && tool_calls.is_empty() {
+            return Err(StreamNormalizeError::MalformedJson);
+        }
+        if self.requires_anthropic_tool_calls && tool_calls.is_empty() {
+            return Err(StreamNormalizeError::MalformedJson);
+        }
+        if self.protocol == StreamProtocol::Anthropic
+            && !tool_calls.is_empty()
+            && self.provider_finish_reason.as_deref() != Some("tool_use")
+        {
             return Err(StreamNormalizeError::MalformedJson);
         }
         if self.text.trim().is_empty()
@@ -331,7 +366,37 @@ impl StreamNormalizer {
                             self.append_reasoning(reasoning, &mut deltas)?;
                         }
                     }
-                    Some("input_json_delta") | Some("signature_delta") | None => {}
+                    Some("input_json_delta") => {
+                        let index = anthropic_index(&value)?;
+                        let partial = delta
+                            .and_then(|delta| delta.get("partial_json"))
+                            .and_then(Value::as_str)
+                            .ok_or(StreamNormalizeError::MalformedJson)?;
+                        let Some(pending) = self.anthropic_tool_calls.get_mut(&index) else {
+                            return if self.anthropic_server_tool_blocks.contains(&index) {
+                                Ok(deltas)
+                            } else {
+                                Err(StreamNormalizeError::MalformedJson)
+                            };
+                        };
+                        if pending.closed
+                            || pending
+                                .initial_input
+                                .as_object()
+                                .is_none_or(|v| !v.is_empty())
+                        {
+                            return Err(StreamNormalizeError::MalformedJson);
+                        }
+                        if pending.partial_json.len().saturating_add(partial.len())
+                            > MAX_TOOL_ARGUMENT_BYTES
+                        {
+                            return Err(StreamNormalizeError::OutputTooLarge {
+                                field: "tool_arguments",
+                            });
+                        }
+                        pending.partial_json.push_str(partial);
+                    }
+                    Some("signature_delta") | None => {}
                     Some(_) => self.push_warning(InferenceWarningCode::ProviderDegraded),
                 }
             }
@@ -341,6 +406,9 @@ impl StreamNormalizer {
                     .and_then(|delta| delta.get("stop_reason"))
                     .and_then(Value::as_str)
                 {
+                    if reason == "tool_use" {
+                        self.requires_anthropic_tool_calls = true;
+                    }
                     self.set_finish_reason(reason, FinishFamily::Anthropic);
                 }
                 if let Some(usage) = value.get("usage") {
@@ -348,7 +416,60 @@ impl StreamNormalizer {
                 }
             }
             Some("message_stop") => self.terminal = true,
-            Some("content_block_start") | Some("content_block_stop") | Some("ping") | None => {}
+            Some("content_block_start") => {
+                let Some(block) = value.get("content_block") else {
+                    return Err(StreamNormalizeError::MalformedJson);
+                };
+                if block.get("type").and_then(Value::as_str) == Some("tool_use") {
+                    let index = anthropic_index(&value)?;
+                    if self.anthropic_tool_calls.len() >= MAX_TOOL_CALLS_PER_RESPONSE
+                        || self.anthropic_tool_calls.contains_key(&index)
+                        || self.anthropic_server_tool_blocks.contains(&index)
+                    {
+                        return Err(StreamNormalizeError::MalformedJson);
+                    }
+                    let id = required_nonempty(block, "id")?;
+                    let name = required_nonempty(block, "name")?;
+                    let initial_input = block
+                        .get("input")
+                        .cloned()
+                        .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
+                    if !initial_input.is_object() {
+                        return Err(StreamNormalizeError::MalformedJson);
+                    }
+                    self.anthropic_tool_calls.insert(
+                        index,
+                        PendingAnthropicToolCall {
+                            id,
+                            name,
+                            initial_input,
+                            partial_json: String::new(),
+                            closed: false,
+                        },
+                    );
+                } else if block.get("type").and_then(Value::as_str) == Some("server_tool_use") {
+                    let index = anthropic_index(&value)?;
+                    if self.anthropic_server_tool_blocks.len() >= MAX_TOOL_CALLS_PER_RESPONSE
+                        || self.anthropic_tool_calls.contains_key(&index)
+                        || !self.anthropic_server_tool_blocks.insert(index)
+                    {
+                        return Err(StreamNormalizeError::MalformedJson);
+                    }
+                    self.push_warning(InferenceWarningCode::ProviderDegraded);
+                }
+            }
+            Some("content_block_stop") => {
+                let index = anthropic_index(&value)?;
+                if let Some(pending) = self.anthropic_tool_calls.get_mut(&index) {
+                    if pending.closed {
+                        return Err(StreamNormalizeError::MalformedJson);
+                    }
+                    pending.closed = true;
+                } else {
+                    self.anthropic_server_tool_blocks.remove(&index);
+                }
+            }
+            Some("ping") | None => {}
             Some(_) => {}
         }
         Ok(deltas)
@@ -489,7 +610,8 @@ impl StreamNormalizer {
                 "end_turn" | "stop_sequence" => {}
                 "max_tokens" | "model_context_window_exceeded" => self.mark_length(),
                 "refusal" => self.push_warning(InferenceWarningCode::SafetyTransformed),
-                "tool_use" | "pause_turn" => {
+                "tool_use" => {}
+                "pause_turn" => {
                     self.push_warning(InferenceWarningCode::ProviderDegraded);
                 }
                 _ => self.push_warning(InferenceWarningCode::ProviderDegraded),
@@ -573,6 +695,52 @@ fn finish_openai_tool_calls(
             Ok(call)
         })
         .collect()
+}
+
+fn finish_anthropic_tool_calls(
+    pending: BTreeMap<u64, PendingAnthropicToolCall>,
+) -> Result<Vec<ProposedToolCall>, StreamNormalizeError> {
+    pending
+        .into_values()
+        .map(|pending| {
+            if !pending.closed {
+                return Err(StreamNormalizeError::MalformedJson);
+            }
+            let (arguments, raw_arguments) = if pending.partial_json.is_empty() {
+                (pending.initial_input, None)
+            } else {
+                let arguments = serde_json::from_str(&pending.partial_json)
+                    .map_err(|_| StreamNormalizeError::MalformedJson)?;
+                (arguments, Some(pending.partial_json))
+            };
+            let call = ProposedToolCall {
+                provider_call_id: Some(pending.id),
+                name: pending.name,
+                arguments,
+                raw_arguments,
+                provider_replay: None,
+            };
+            call.validate()
+                .map_err(|_| StreamNormalizeError::MalformedJson)?;
+            Ok(call)
+        })
+        .collect()
+}
+
+fn anthropic_index(value: &Value) -> Result<u64, StreamNormalizeError> {
+    value
+        .get("index")
+        .and_then(Value::as_u64)
+        .ok_or(StreamNormalizeError::MalformedJson)
+}
+
+fn required_nonempty(value: &Value, field: &str) -> Result<String, StreamNormalizeError> {
+    value
+        .get(field)
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .map(str::to_owned)
+        .ok_or(StreamNormalizeError::MalformedJson)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -800,7 +968,10 @@ fn earliest_open_tag(buffer: &str) -> Option<(usize, &'static str, &'static str)
 mod tests {
     use lettuce_conversations::{FinishReason, InferenceWarningCode, MessagePart};
 
-    use super::{StreamDelta, StreamNormalizeError, StreamNormalizer, StreamProtocol};
+    use super::{
+        MAX_TOOL_CALLS_PER_RESPONSE, StreamDelta, StreamNormalizeError, StreamNormalizer,
+        StreamProtocol,
+    };
     use crate::stream_framing::StreamRecord;
 
     fn record(data: &str) -> StreamRecord {
@@ -950,6 +1121,135 @@ mod tests {
             outcome.candidates[0].parts[0],
             MessagePart::ReasoningSummary { .. }
         ));
+    }
+
+    #[test]
+    fn anthropic_accumulates_tool_input_only_after_block_stop() {
+        let mut normalizer = StreamNormalizer::new(StreamProtocol::Anthropic, None);
+        normalizer.consume(&event("message_start", r#"{"type":"message_start","message":{"usage":{"input_tokens":7,"output_tokens":0}}}"#)).unwrap();
+        normalizer.consume(&event("content_block_start", r#"{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu-1","name":"create_memory","input":{}}}"#)).unwrap();
+        normalizer.consume(&event("content_block_delta", r#"{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"content\":"}}"#)).unwrap();
+        normalizer.consume(&event("content_block_delta", r#"{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"\"one\"}"}}"#)).unwrap();
+        normalizer
+            .consume(&event(
+                "content_block_stop",
+                r#"{"type":"content_block_stop","index":1}"#,
+            ))
+            .unwrap();
+        normalizer.consume(&event("message_delta", r#"{"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":4}}"#)).unwrap();
+        normalizer
+            .consume(&event("message_stop", r#"{"type":"message_stop"}"#))
+            .unwrap();
+
+        let (_, outcome) = normalizer.finish().expect("tool outcome");
+        let call = &outcome.candidates[0].tool_calls[0];
+        assert_eq!(call.provider_call_id.as_deref(), Some("toolu-1"));
+        assert_eq!(call.arguments, serde_json::json!({"content": "one"}));
+        assert_eq!(call.raw_arguments.as_deref(), Some(r#"{"content":"one"}"#));
+        assert!(outcome.warning_codes.is_empty());
+        assert_eq!(outcome.usage.unwrap().output_tokens, 4);
+    }
+
+    #[test]
+    fn anthropic_rejects_incomplete_or_duplicate_tool_calls() {
+        let mut incomplete = StreamNormalizer::new(StreamProtocol::Anthropic, None);
+        incomplete.consume(&event("content_block_start", r#"{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu-1","name":"x","input":{}}}"#)).unwrap();
+        incomplete
+            .consume(&event(
+                "message_delta",
+                r#"{"type":"message_delta","delta":{"stop_reason":"tool_use"}}"#,
+            ))
+            .unwrap();
+        incomplete
+            .consume(&event("message_stop", r#"{"type":"message_stop"}"#))
+            .unwrap();
+        assert_eq!(
+            incomplete.finish().unwrap_err(),
+            StreamNormalizeError::MalformedJson
+        );
+
+        let mut duplicate = StreamNormalizer::new(StreamProtocol::Anthropic, None);
+        for index in [0, 1] {
+            duplicate.consume(&event("content_block_start", &format!(r#"{{"type":"content_block_start","index":{index},"content_block":{{"type":"tool_use","id":"same","name":"x","input":{{}}}}}}"#))).unwrap();
+            duplicate
+                .consume(&event(
+                    "content_block_stop",
+                    &format!(r#"{{"type":"content_block_stop","index":{index}}}"#),
+                ))
+                .unwrap();
+        }
+        duplicate
+            .consume(&event(
+                "message_delta",
+                r#"{"type":"message_delta","delta":{"stop_reason":"tool_use"}}"#,
+            ))
+            .unwrap();
+        duplicate
+            .consume(&event("message_stop", r#"{"type":"message_stop"}"#))
+            .unwrap();
+        assert_eq!(
+            duplicate.finish().unwrap_err(),
+            StreamNormalizeError::MalformedJson
+        );
+
+        let mut mismatched_stop = StreamNormalizer::new(StreamProtocol::Anthropic, None);
+        mismatched_stop.consume(&event("content_block_start", r#"{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu-1","name":"x","input":{}}}"#)).unwrap();
+        mismatched_stop
+            .consume(&event(
+                "content_block_stop",
+                r#"{"type":"content_block_stop","index":0}"#,
+            ))
+            .unwrap();
+        mismatched_stop
+            .consume(&event(
+                "message_delta",
+                r#"{"type":"message_delta","delta":{"stop_reason":"end_turn"}}"#,
+            ))
+            .unwrap();
+        mismatched_stop
+            .consume(&event("message_stop", r#"{"type":"message_stop"}"#))
+            .unwrap();
+        assert_eq!(
+            mismatched_stop.finish().unwrap_err(),
+            StreamNormalizeError::MalformedJson
+        );
+
+        let mut malformed_json = StreamNormalizer::new(StreamProtocol::Anthropic, None);
+        malformed_json.consume(&event("content_block_start", r#"{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu-1","name":"x","input":{}}}"#)).unwrap();
+        malformed_json.consume(&event("content_block_delta", r#"{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{"}}"#)).unwrap();
+        malformed_json
+            .consume(&event(
+                "content_block_stop",
+                r#"{"type":"content_block_stop","index":0}"#,
+            ))
+            .unwrap();
+        malformed_json
+            .consume(&event(
+                "message_delta",
+                r#"{"type":"message_delta","delta":{"stop_reason":"tool_use"}}"#,
+            ))
+            .unwrap();
+        malformed_json
+            .consume(&event("message_stop", r#"{"type":"message_stop"}"#))
+            .unwrap();
+        assert_eq!(
+            malformed_json.finish().unwrap_err(),
+            StreamNormalizeError::MalformedJson
+        );
+    }
+
+    #[test]
+    fn anthropic_bounds_server_tool_tracking() {
+        let mut normalizer = StreamNormalizer::new(StreamProtocol::Anthropic, None);
+        for index in 0..MAX_TOOL_CALLS_PER_RESPONSE {
+            normalizer.consume(&event("content_block_start", &format!(r#"{{"type":"content_block_start","index":{index},"content_block":{{"type":"server_tool_use"}}}}"#))).unwrap();
+        }
+        assert_eq!(
+            normalizer
+                .consume(&event("content_block_start", &format!(r#"{{"type":"content_block_start","index":{},"content_block":{{"type":"server_tool_use"}}}}"#, MAX_TOOL_CALLS_PER_RESPONSE)))
+                .unwrap_err(),
+            StreamNormalizeError::MalformedJson
+        );
     }
 
     #[test]

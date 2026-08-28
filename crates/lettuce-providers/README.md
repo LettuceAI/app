@@ -54,9 +54,17 @@ and bounded fragmented SSE calls. Mistral maps required choice to `any`; custom
 providers retain their configured choice mode and optional
 `chat_template_kwargs`; OpenRouter cache-controls the final tool definition.
 Provider adapters only translate and validate calls: durable execution and
-handler dispatch remain owned by `lettuce-conversations`. Anthropic, Gemini,
-and Ollama tool wire formats remain explicitly rejected until their native
-adapters are implemented.
+handler dispatch remain owned by `lettuce-conversations`.
+
+Anthropic and custom Anthropic use their native tool definitions, choices,
+`tool_use`/`tool_result` transcript blocks, buffered responses, and bounded SSE
+input fragments. This intentionally corrects the legacy follow-up path, which
+declared Anthropic tools but replayed OpenAI-shaped calls and results that the
+Anthropic adapter then discarded. Prompt caching covers the system, final tool
+definition, and final user text. Extended thinking with tools remains rejected
+until signed thinking replay artifacts can be materialized without data loss.
+Gemini and Ollama tool wire formats remain explicitly rejected until their
+native adapters are implemented.
 
 Deferred horizontals: remaining native tool adapters, media input,
 custom-provider reasoning schema, and structured output.
