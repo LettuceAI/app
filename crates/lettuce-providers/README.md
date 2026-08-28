@@ -10,9 +10,9 @@ The public surface is intentionally small. Business invariants belong in domain 
 
 ## Status
 
-Every remote chat provider the legacy app shipped is executable for text-only
-buffered and streaming generation, one file per provider on a family wire
-trait with legacy-style delegation:
+Every remote chat provider the legacy app shipped is executable for buffered
+and streaming generation, one file per provider on a family wire trait with
+legacy-style delegation:
 
 - OpenAI envelope (`OpenAiWireProvider`): `openai`, `openrouter`, `custom`,
   `cerebras`, `deepseek`, `groq`, `xai`, `mistral`, `qwen`, `featherless`,
@@ -48,8 +48,18 @@ preserve native and tagged reasoning with the same normalized outcome shape as
 streaming. Custom OpenAI reasoning and embedded local runtimes remain deferred
 until their wire/runtime contracts are implemented explicitly.
 
-Deferred horizontals: tools, media input, custom-provider reasoning schema,
-and structured output.
+OpenAI-envelope providers support typed function definitions, provider-specific
+tool-choice policies, assistant-call/result transcript replay, buffered calls,
+and bounded fragmented SSE calls. Mistral maps required choice to `any`; custom
+providers retain their configured choice mode and optional
+`chat_template_kwargs`; OpenRouter cache-controls the final tool definition.
+Provider adapters only translate and validate calls: durable execution and
+handler dispatch remain owned by `lettuce-conversations`. Anthropic, Gemini,
+and Ollama tool wire formats remain explicitly rejected until their native
+adapters are implemented.
+
+Deferred horizontals: remaining native tool adapters, media input,
+custom-provider reasoning schema, and structured output.
 
 Explicit prompt caching is executable for Anthropic, custom Anthropic, and
 OpenRouter through typed cache-control annotations, and for OpenAI through its

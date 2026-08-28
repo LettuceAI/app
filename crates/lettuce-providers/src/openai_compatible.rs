@@ -2,12 +2,13 @@ use std::{borrow::Cow, collections::HashSet};
 
 use lettuce_conversations::{
     FinishReason, InferenceCandidate, InferenceOutcome, InferenceRequest, InferenceUsage,
-    InferenceWarningCode, MessagePart, MessageRole, ProviderContextPart, ProviderNeutralContext,
+    InferenceWarningCode, MessagePart, MessageRole, ProposedToolCall, ProviderContextPart,
+    ProviderNeutralContext, ToolChoice, ToolRequest,
 };
 use lettuce_inference::InferenceRuntimePort;
 use lettuce_models::{
-    PromptCacheRetention, PromptCaching, ProviderAccount, ProviderConfig, ReasoningEffort,
-    ReasoningMode, ResolvedChatParameters, ResolvedChatProfile,
+    CapabilityStatus, PromptCacheRetention, PromptCaching, ProviderAccount, ProviderConfig,
+    ReasoningEffort, ReasoningMode, ResolvedChatParameters, ResolvedChatProfile,
 };
 use lettuce_network::{JsonClient, JsonResponse, JsonStaticHeader, MAX_REQUEST_BYTES};
 use lettuce_settings::SecretStore;
@@ -17,7 +18,7 @@ pub(crate) use crate::common::{ACCEPT_ONLY, AdapterError, AuthPlan, NO_HEADERS, 
 use crate::common::{
     Credentials, RemoteModel, decode_json, generation_policy, load_auth, load_secret_headers,
     max_output_tokens, parse_openai_model_list, reject_unsupported_features, skip_image_data,
-    validate_common_request, validate_prompt_caching, validate_supported_reasoning,
+    validate_common_request_with_tools, validate_prompt_caching, validate_supported_reasoning,
 };
 use crate::descriptor::ProviderDescriptor;
 
@@ -109,12 +110,28 @@ pub(crate) trait OpenAiWireProvider: Sync {
     ) {
     }
 
+    fn extend_config_body(
+        &self,
+        _config: &ProviderConfig,
+        _parameters: &ResolvedChatParameters,
+        _body: &mut serde_json::Map<String, serde_json::Value>,
+    ) {
+    }
+
     fn includes_stream_usage(&self) -> bool {
         false
     }
 
     fn supports_streaming(&self, _config: &ProviderConfig) -> bool {
         self.descriptor().streaming
+    }
+
+    fn tool_choice(
+        &self,
+        choice: &ToolChoice,
+        _config: &ProviderConfig,
+    ) -> Result<Option<serde_json::Value>, AdapterError> {
+        Ok(Some(standard_tool_choice(choice)))
     }
 }
 
@@ -162,13 +179,16 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
     runtime: &dyn InferenceRuntimePort,
     request: InferenceRequest,
 ) -> Result<InferenceOutcome, AdapterError> {
-    validate_common_request(&request)?;
+    validate_common_request_with_tools(&request)?;
     let profile = &request.profile.chat_profile;
     let config = &profile.provider_config;
     if !provider.accepts(config) {
         return Err(AdapterError::Rejected);
     }
     provider.validate_parameters(&profile.parameters)?;
+    if request.tools.is_some() && profile.capabilities.tools == CapabilityStatus::Unsupported {
+        return Err(AdapterError::Rejected);
+    }
     let endpoint = profile
         .endpoint
         .as_deref()
@@ -184,11 +204,18 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
     if streaming && (!profile.streaming_enabled || !provider.supports_streaming(config)) {
         return Err(AdapterError::Rejected);
     }
-    let body = encode_request(provider, profile, messages, streaming)?;
+    let body = encode_request(
+        provider,
+        profile,
+        config,
+        messages,
+        request.tools.as_ref(),
+        streaming,
+    )?;
     let credentials = Credentials::from(profile);
     let auth = load_auth(provider.auth(config)?, secret_store, &credentials).await?;
     let secret_headers = load_secret_headers(secret_store, &credentials).await?;
-    if streaming {
+    let outcome = if streaming {
         let response = crate::streaming::await_cancelable(runtime, request.cancellation, async {
             network
                 .post_json_stream(
@@ -211,7 +238,7 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
             runtime,
             &request,
         )
-        .await
+        .await?
     } else {
         let response = crate::streaming::await_cancelable(runtime, request.cancellation, async {
             network
@@ -228,8 +255,46 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
                 .map_err(Into::into)
         })
         .await?;
-        parse_response(response)
+        parse_response(response)?
+    };
+    validate_tool_outcome(&request, outcome)
+}
+
+fn validate_tool_outcome(
+    request: &InferenceRequest,
+    outcome: InferenceOutcome,
+) -> Result<InferenceOutcome, AdapterError> {
+    outcome
+        .validate()
+        .map_err(|_| AdapterError::MalformedResponse)?;
+    let calls = outcome
+        .candidates
+        .iter()
+        .flat_map(|candidate| candidate.tool_calls.iter())
+        .collect::<Vec<_>>();
+    let Some(tools) = &request.tools else {
+        return if calls.is_empty() {
+            Ok(outcome)
+        } else {
+            Err(AdapterError::MalformedResponse)
+        };
+    };
+    if request.profile.tool_policy == lettuce_conversations::ToolPolicy::Required
+        && calls.is_empty()
+    {
+        return Err(AdapterError::MalformedResponse);
     }
+    for call in calls {
+        if !tools
+            .definitions
+            .iter()
+            .any(|definition| definition.name == call.name)
+            || matches!(&tools.choice, ToolChoice::Named { name } if *name != call.name)
+        {
+            return Err(AdapterError::MalformedResponse);
+        }
+    }
+    Ok(outcome)
 }
 
 pub(crate) async fn list_models<S: SecretStore + ?Sized>(
@@ -271,40 +336,101 @@ fn wire_messages(
     provider: &dyn OpenAiWireProvider,
     config: &ProviderConfig,
 ) -> Result<Vec<WireMessage>, AdapterError> {
-    context
-        .messages
-        .iter()
-        .map(|message| {
-            let role = provider
-                .role(message.role, config)
-                .ok_or(AdapterError::Rejected)?;
-            let mut content = String::new();
-            for part in &message.parts {
-                match part {
-                    ProviderContextPart::Text { text } => content.push_str(text),
-                    ProviderContextPart::MediaAsset { .. }
-                    | ProviderContextPart::ToolCall(_)
-                    | ProviderContextPart::ToolResult(_) => return Err(AdapterError::Rejected),
+    let mut messages = Vec::new();
+    for message in &context.messages {
+        let results = message
+            .parts
+            .iter()
+            .filter_map(|part| match part {
+                ProviderContextPart::ToolResult(result) => Some(result),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        if !results.is_empty() {
+            if results.len() != message.parts.len() || message.role != MessageRole::User {
+                return Err(AdapterError::Rejected);
+            }
+            for result in results {
+                let provider_call_id = result
+                    .provider_call_id
+                    .as_deref()
+                    .ok_or(AdapterError::Rejected)?;
+                messages.push(WireMessage {
+                    role: Cow::Borrowed("tool"),
+                    content: Some(
+                        serde_json::to_string(&result.output.value)
+                            .map_err(|_| AdapterError::Rejected)?,
+                    ),
+                    tool_calls: Vec::new(),
+                    tool_call_id: Some(provider_call_id.to_owned()),
+                    cache_control: None,
+                });
+            }
+            continue;
+        }
+        let role = provider
+            .role(message.role, config)
+            .ok_or(AdapterError::Rejected)?;
+        let mut content = String::new();
+        let mut tool_calls = Vec::new();
+        for part in &message.parts {
+            match part {
+                ProviderContextPart::Text { text } => content.push_str(text),
+                ProviderContextPart::ToolCall(call) => {
+                    if message.role != MessageRole::Assistant {
+                        return Err(AdapterError::Rejected);
+                    }
+                    tool_calls.push(WireToolCall {
+                        id: call
+                            .provider_call_id
+                            .clone()
+                            .ok_or(AdapterError::Rejected)?,
+                        kind: "function",
+                        function: WireFunctionCall {
+                            name: call.name.clone(),
+                            arguments: call.raw_arguments.clone().unwrap_or(
+                                serde_json::to_string(&call.arguments)
+                                    .map_err(|_| AdapterError::Rejected)?,
+                            ),
+                        },
+                    });
+                }
+                ProviderContextPart::MediaAsset { .. } | ProviderContextPart::ToolResult(_) => {
+                    return Err(AdapterError::Rejected);
                 }
             }
-            Ok(WireMessage {
-                role,
-                content,
-                cache_control: None,
-            })
-        })
-        .collect()
+        }
+        messages.push(WireMessage {
+            role,
+            content: if tool_calls.is_empty() || !content.is_empty() {
+                Some(content)
+            } else {
+                None
+            },
+            tool_calls,
+            tool_call_id: None,
+            cache_control: None,
+        });
+    }
+    Ok(messages)
 }
 
 fn merge_same_role(messages: Vec<WireMessage>) -> Vec<WireMessage> {
     let mut merged: Vec<WireMessage> = Vec::with_capacity(messages.len());
     for message in messages {
         match merged.last_mut() {
-            Some(last) if last.role == message.role => {
-                if !last.content.is_empty() {
-                    last.content.push_str("\n\n");
+            Some(last)
+                if last.role == message.role
+                    && last.tool_calls.is_empty()
+                    && message.tool_calls.is_empty()
+                    && last.tool_call_id.is_none()
+                    && message.tool_call_id.is_none() =>
+            {
+                let last_content = last.content.get_or_insert_default();
+                if !last_content.is_empty() {
+                    last_content.push_str("\n\n");
                 }
-                last.content.push_str(&message.content);
+                last_content.push_str(message.content.as_deref().unwrap_or_default());
             }
             _ => merged.push(message),
         }
@@ -312,10 +438,23 @@ fn merge_same_role(messages: Vec<WireMessage>) -> Vec<WireMessage> {
     merged
 }
 
+fn standard_tool_choice(choice: &ToolChoice) -> serde_json::Value {
+    match choice {
+        ToolChoice::Auto => serde_json::Value::String("auto".to_owned()),
+        ToolChoice::Required => serde_json::Value::String("required".to_owned()),
+        ToolChoice::Named { name } => serde_json::json!({
+            "type": "function",
+            "function": { "name": name }
+        }),
+    }
+}
+
 fn encode_request(
     provider: &dyn OpenAiWireProvider,
     profile: &ResolvedChatProfile,
+    config: &ProviderConfig,
     mut messages: Vec<WireMessage>,
+    tools: Option<&ToolRequest>,
     streaming: bool,
 ) -> Result<Vec<u8>, AdapterError> {
     if provider.descriptor().prompt_caching == crate::descriptor::PromptCachingSupport::CacheControl
@@ -336,16 +475,66 @@ fn encode_request(
         context_length: parameters.context_length,
         frequency_penalty: parameters.frequency_penalty,
         presence_penalty: parameters.presence_penalty,
+        tools: tools.map(|request| {
+            request
+                .definitions
+                .iter()
+                .map(|definition| WireToolDefinition {
+                    kind: "function",
+                    function: WireFunctionDefinition {
+                        name: definition.name.clone(),
+                        description: definition.description.clone(),
+                        parameters: definition.parameters.clone(),
+                    },
+                })
+                .collect()
+        }),
+        tool_choice: tools
+            .map(|request| provider.tool_choice(&request.choice, config))
+            .transpose()?
+            .flatten(),
     };
     let mut value = serde_json::to_value(&request).map_err(|_| AdapterError::Rejected)?;
     let object = value.as_object_mut().ok_or(AdapterError::Rejected)?;
+    if tools.is_some()
+        && provider.descriptor().prompt_caching
+            == crate::descriptor::PromptCachingSupport::CacheControl
+    {
+        apply_tool_cache_control(&profile.parameters, object);
+    }
     apply_reasoning(provider.reasoning_policy(), &profile.parameters, object)?;
     provider.extend_body(&profile.parameters, object);
+    provider.extend_config_body(config, &profile.parameters, object);
     let body = serde_json::to_vec(&value).map_err(|_| AdapterError::Rejected)?;
     if body.len() > MAX_REQUEST_BYTES {
         return Err(AdapterError::Rejected);
     }
     Ok(body)
+}
+
+fn apply_tool_cache_control(
+    parameters: &ResolvedChatParameters,
+    body: &mut serde_json::Map<String, serde_json::Value>,
+) {
+    let Some(PromptCaching::Enabled { retention }) = parameters.prompt_caching else {
+        return;
+    };
+    let Some(last_tool) = body
+        .get_mut("tools")
+        .and_then(serde_json::Value::as_array_mut)
+        .and_then(|tools| tools.last_mut())
+        .and_then(serde_json::Value::as_object_mut)
+    else {
+        return;
+    };
+    let mut control = serde_json::Map::from_iter([(
+        "type".to_owned(),
+        serde_json::Value::String("ephemeral".to_owned()),
+    )]);
+    if retention == PromptCacheRetention::OneHour {
+        control.insert("ttl".to_owned(), "1h".into());
+    }
+    last_tool.insert("cache_control".to_owned(), control.into());
 }
 
 fn apply_reasoning(
@@ -449,7 +638,7 @@ fn apply_cache_control(parameters: &ResolvedChatParameters, messages: &mut [Wire
     if let Some(user) = messages
         .iter_mut()
         .rev()
-        .find(|message| message.role == "user")
+        .find(|message| message.role == "user" && message.tool_call_id.is_none())
     {
         user.cache_control = Some(control);
     }
@@ -482,6 +671,11 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
             return Err(AdapterError::MalformedResponse);
         }
         let message = choice.message.ok_or(AdapterError::MalformedResponse)?;
+        let tool_calls = message
+            .tool_calls
+            .into_iter()
+            .map(parse_tool_call)
+            .collect::<Result<Vec<_>, _>>()?;
         let raw_text = message
             .content
             .map(MessageContent::into_text)
@@ -496,7 +690,8 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
             tagged_reasoning,
             explicit_reasoning.iter().map(String::as_str),
         );
-        has_content |= !text.trim().is_empty() || !reasoning.trim().is_empty();
+        has_content |=
+            !text.trim().is_empty() || !reasoning.trim().is_empty() || !tool_calls.is_empty();
         let mut parts = Vec::new();
         if !reasoning.is_empty() {
             parts.push(MessagePart::ReasoningSummary { text: reasoning });
@@ -514,8 +709,9 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
             Some("content_filter") => {
                 push_warning(&mut warnings, InferenceWarningCode::SafetyTransformed);
             }
+            Some("tool_calls") if !tool_calls.is_empty() => {}
             Some("tool_calls") | Some("function_call") => {
-                push_warning(&mut warnings, InferenceWarningCode::ProviderDegraded);
+                return Err(AdapterError::MalformedResponse);
             }
             Some("stop") => {}
             _ => push_warning(&mut warnings, InferenceWarningCode::ProviderDegraded),
@@ -523,7 +719,7 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
         candidates.push(InferenceCandidate {
             ordinal,
             parts,
-            tool_calls: Vec::new(),
+            tool_calls,
             provider_replay: None,
         });
     }
@@ -533,7 +729,7 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
     {
         return Err(AdapterError::EmptyResponse);
     }
-    Ok(InferenceOutcome {
+    let outcome = InferenceOutcome {
         candidates,
         usage: parsed.usage.and_then(|usage| {
             Some(InferenceUsage {
@@ -545,7 +741,38 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
         provider_finish_reason,
         provider_request_id: header_request_id,
         warning_codes: warnings,
-    })
+    };
+    outcome
+        .validate()
+        .map_err(|_| AdapterError::MalformedResponse)?;
+    Ok(outcome)
+}
+
+fn parse_tool_call(call: OpenAiResponseToolCall) -> Result<ProposedToolCall, AdapterError> {
+    if call.kind.as_deref().is_some_and(|kind| kind != "function") {
+        return Err(AdapterError::MalformedResponse);
+    }
+    let id = call.id.ok_or(AdapterError::MalformedResponse)?;
+    let function = call.function.ok_or(AdapterError::MalformedResponse)?;
+    let (arguments, raw_arguments) = match function.arguments {
+        serde_json::Value::String(raw) => {
+            let arguments =
+                serde_json::from_str(&raw).map_err(|_| AdapterError::MalformedResponse)?;
+            (arguments, Some(raw))
+        }
+        value @ serde_json::Value::Object(_) => (value, None),
+        _ => return Err(AdapterError::MalformedResponse),
+    };
+    let call = ProposedToolCall {
+        provider_call_id: Some(id),
+        name: function.name,
+        arguments,
+        raw_arguments,
+        provider_replay: None,
+    };
+    call.validate()
+        .map_err(|_| AdapterError::MalformedResponse)?;
+    Ok(call)
 }
 
 fn push_warning(warnings: &mut Vec<InferenceWarningCode>, warning: InferenceWarningCode) {
@@ -556,8 +783,52 @@ fn push_warning(warnings: &mut Vec<InferenceWarningCode>, warning: InferenceWarn
 
 pub(crate) struct WireMessage {
     role: Cow<'static, str>,
-    content: String,
+    content: Option<String>,
+    tool_calls: Vec<WireToolCall>,
+    tool_call_id: Option<String>,
     cache_control: Option<WireCacheControl>,
+}
+
+impl WireMessage {
+    #[cfg(test)]
+    fn text(role: &'static str, content: impl Into<String>) -> Self {
+        Self {
+            role: Cow::Borrowed(role),
+            content: Some(content.into()),
+            tool_calls: Vec::new(),
+            tool_call_id: None,
+            cache_control: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct WireToolCall {
+    id: String,
+    #[serde(rename = "type")]
+    kind: &'static str,
+    function: WireFunctionCall,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct WireFunctionCall {
+    name: String,
+    arguments: String,
+}
+
+#[derive(Serialize)]
+struct WireToolDefinition {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    function: WireFunctionDefinition,
+}
+
+#[derive(Serialize)]
+struct WireFunctionDefinition {
+    name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    parameters: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -605,6 +876,10 @@ struct OpenAiRequest {
     frequency_penalty: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     presence_penalty: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tools: Option<Vec<WireToolDefinition>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_choice: Option<serde_json::Value>,
 }
 
 #[derive(Serialize)]
@@ -618,19 +893,26 @@ impl Serialize for WireMessage {
         S: serde::Serializer,
     {
         use serde::ser::SerializeStruct;
-        let mut state = serializer.serialize_struct("OpenAiMessage", 2)?;
+        let mut state = serializer.serialize_struct("OpenAiMessage", 4)?;
         state.serialize_field("role", self.role.as_ref())?;
         if let Some(cache_control) = self.cache_control {
+            let content = self.content.as_deref().unwrap_or_default();
             state.serialize_field(
                 "content",
                 &[CachedTextContent {
                     kind: "text",
-                    text: &self.content,
+                    text: content,
                     cache_control,
                 }],
             )?;
         } else {
             state.serialize_field("content", &self.content)?;
+        }
+        if !self.tool_calls.is_empty() {
+            state.serialize_field("tool_calls", &self.tool_calls)?;
+        }
+        if let Some(tool_call_id) = &self.tool_call_id {
+            state.serialize_field("tool_call_id", tool_call_id)?;
         }
         state.end()
     }
@@ -654,6 +936,22 @@ struct OpenAiResponseMessage {
     content: Option<MessageContent>,
     reasoning: Option<serde_json::Value>,
     reasoning_content: Option<serde_json::Value>,
+    #[serde(default)]
+    tool_calls: Vec<OpenAiResponseToolCall>,
+}
+
+#[derive(Deserialize)]
+struct OpenAiResponseToolCall {
+    id: Option<String>,
+    #[serde(rename = "type")]
+    kind: Option<String>,
+    function: Option<OpenAiResponseFunctionCall>,
+}
+
+#[derive(Deserialize)]
+struct OpenAiResponseFunctionCall {
+    name: String,
+    arguments: serde_json::Value,
 }
 
 #[derive(Deserialize)]
@@ -712,9 +1010,14 @@ impl OpenAiUsage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lettuce_conversations::PortError;
-    use lettuce_conversations::{ProviderFailure, ProviderFailureKind};
-    use lettuce_models::{ReasoningEffort, ReasoningMode};
+    use lettuce_conversations::{
+        ContextAttributions, ContextBudgetReport, PortError, ProviderFailure, ProviderFailureKind,
+        ProviderNeutralMessage, ToolDefinition, ToolOutput, TranscriptToolCall,
+        TranscriptToolResult,
+    };
+    use lettuce_models::{
+        ChatProfileWarning, ModelCapabilities, ProviderProtocol, ReasoningEffort, ReasoningMode,
+    };
 
     fn reasoning_parameters() -> ResolvedChatParameters {
         ResolvedChatParameters {
@@ -732,6 +1035,224 @@ mod tests {
             .as_object()
             .expect("object")
             .clone()
+    }
+
+    fn test_profile() -> ResolvedChatProfile {
+        ResolvedChatProfile {
+            model_profile_id: lettuce_types::ModelProfileId::new(),
+            model_revision: lettuce_types::Revision::INITIAL,
+            provider_account_id: lettuce_types::ProviderAccountId::new(),
+            provider_account_revision: lettuce_types::Revision::INITIAL,
+            secret_owner_id: lettuce_settings::SecretOwnerId::new(),
+            external_model_id: "test-model".to_owned(),
+            provider_kind: "openai".to_owned(),
+            provider_protocol: ProviderProtocol::OpenAiCompatible,
+            endpoint: Some("https://api.openai.com".to_owned()),
+            provider_config: ProviderConfig::Standard,
+            streaming_enabled: true,
+            allow_invalid_tls: false,
+            capabilities: ModelCapabilities::default(),
+            parameters: crate::integration_tests::parameters(),
+            api_key_ref: None,
+            secret_headers: Vec::new(),
+            warnings: Vec::<ChatProfileWarning>::new(),
+        }
+    }
+
+    #[test]
+    fn encodes_tool_definitions_choice_and_replay_messages_exactly() {
+        let execution_id = lettuce_types::ToolExecutionId::new();
+        let context = ProviderNeutralContext {
+            messages: vec![
+                ProviderNeutralMessage {
+                    role: MessageRole::Assistant,
+                    parts: vec![ProviderContextPart::ToolCall(TranscriptToolCall {
+                        execution_id,
+                        provider_call_id: Some("call-1".to_owned()),
+                        name: "create_memory".to_owned(),
+                        arguments: serde_json::json!({"content": "one"}),
+                        raw_arguments: Some(r#"{"content":"one"}"#.to_owned()),
+                        provider_replay: None,
+                    })],
+                },
+                ProviderNeutralMessage {
+                    role: MessageRole::User,
+                    parts: vec![ProviderContextPart::ToolResult(TranscriptToolResult {
+                        execution_id,
+                        provider_call_id: Some("call-1".to_owned()),
+                        name: "create_memory".to_owned(),
+                        output: ToolOutput {
+                            value: serde_json::json!({"ok": true}),
+                            is_error: false,
+                        },
+                    })],
+                },
+            ],
+            attributions: ContextAttributions::default(),
+            budget: ContextBudgetReport::default(),
+        };
+        context.validate().expect("tool transcript");
+        let tools = ToolRequest {
+            definitions: vec![ToolDefinition {
+                name: "create_memory".to_owned(),
+                description: Some("Create one memory".to_owned()),
+                parameters: serde_json::json!({
+                    "type": "object",
+                    "properties": {"content": {"type": "string"}},
+                    "required": ["content"]
+                }),
+                version: 1,
+            }],
+            choice: ToolChoice::Named {
+                name: "create_memory".to_owned(),
+            },
+        };
+        let profile = test_profile();
+        let messages = wire_messages(&context, &crate::openai::OpenAi, &ProviderConfig::Standard)
+            .expect("messages");
+        let body = encode_request(
+            &crate::openai::OpenAi,
+            &profile,
+            &ProviderConfig::Standard,
+            messages,
+            Some(&tools),
+            false,
+        )
+        .expect("request");
+        let body: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(
+            body["messages"],
+            serde_json::json!([
+                {
+                    "role": "assistant",
+                    "content": null,
+                    "tool_calls": [{
+                        "id": "call-1",
+                        "type": "function",
+                        "function": {
+                            "name": "create_memory",
+                            "arguments": "{\"content\":\"one\"}"
+                        }
+                    }]
+                },
+                {"role": "tool", "content": "{\"ok\":true}", "tool_call_id": "call-1"}
+            ])
+        );
+        assert_eq!(
+            body["tool_choice"],
+            serde_json::json!({
+                "type": "function",
+                "function": {"name": "create_memory"}
+            })
+        );
+        assert_eq!(body["tools"][0]["function"]["name"], "create_memory");
+        assert!(body["tools"][0]["function"].get("version").is_none());
+    }
+
+    #[test]
+    fn provider_tool_choice_policies_keep_their_legacy_wire_differences() {
+        assert_eq!(
+            crate::mistral::Mistral
+                .tool_choice(&ToolChoice::Required, &ProviderConfig::Standard)
+                .expect("mistral choice"),
+            Some("any".into())
+        );
+
+        let cases = [
+            (
+                lettuce_models::CustomToolChoiceMode::Auto,
+                Some("auto".into()),
+            ),
+            (
+                lettuce_models::CustomToolChoiceMode::Required,
+                Some("required".into()),
+            ),
+            (
+                lettuce_models::CustomToolChoiceMode::None,
+                Some("none".into()),
+            ),
+            (lettuce_models::CustomToolChoiceMode::Omit, None),
+        ];
+        for (mode, expected) in cases {
+            let config = ProviderConfig::Custom(lettuce_models::CustomProviderConfig {
+                tool_choice_mode: mode,
+                ..Default::default()
+            });
+            assert_eq!(
+                crate::custom::Custom
+                    .tool_choice(&ToolChoice::Required, &config)
+                    .expect("custom choice"),
+                expected
+            );
+        }
+        let passthrough = ProviderConfig::Custom(lettuce_models::CustomProviderConfig {
+            tool_choice_mode: lettuce_models::CustomToolChoiceMode::Passthrough,
+            ..Default::default()
+        });
+        assert_eq!(
+            crate::custom::Custom
+                .tool_choice(
+                    &ToolChoice::Named {
+                        name: "create_memory".to_owned(),
+                    },
+                    &passthrough,
+                )
+                .expect("passthrough"),
+            Some(serde_json::json!({
+                "type": "function",
+                "function": {"name": "create_memory"}
+            }))
+        );
+    }
+
+    #[test]
+    fn custom_provider_restores_opt_in_chat_template_kwargs() {
+        let config = ProviderConfig::Custom(lettuce_models::CustomProviderConfig {
+            send_chat_template_kwargs: true,
+            ..Default::default()
+        });
+        let mut profile = test_profile();
+        profile.provider_kind = "custom".to_owned();
+        profile.provider_config = config.clone();
+        let body = encode_request(
+            &crate::custom::Custom,
+            &profile,
+            &config,
+            vec![WireMessage::text("user", "hello")],
+            None,
+            false,
+        )
+        .expect("custom request");
+        let body: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(
+            body["chat_template_kwargs"],
+            serde_json::json!({"enable_thinking": false})
+        );
+    }
+
+    #[test]
+    fn cache_control_marks_only_the_final_tool_definition() {
+        let mut parameters = crate::integration_tests::parameters();
+        parameters.prompt_caching = Some(PromptCaching::Enabled {
+            retention: PromptCacheRetention::OneHour,
+        });
+        let mut body = serde_json::json!({
+            "tools": [
+                {"type": "function", "function": {"name": "first"}},
+                {"type": "function", "function": {"name": "last"}}
+            ]
+        })
+        .as_object()
+        .expect("object")
+        .clone();
+
+        apply_tool_cache_control(&parameters, &mut body);
+
+        assert!(body["tools"][0].get("cache_control").is_none());
+        assert_eq!(
+            body["tools"][1]["cache_control"],
+            serde_json::json!({"type": "ephemeral", "ttl": "1h"})
+        );
     }
 
     #[test]
@@ -928,40 +1449,21 @@ mod tests {
     #[test]
     fn merges_consecutive_same_role_messages_with_blank_lines() {
         let merged = merge_same_role(vec![
-            WireMessage {
-                role: Cow::Borrowed("system"),
-                content: "a".to_owned(),
-                cache_control: None,
-            },
-            WireMessage {
-                role: Cow::Borrowed("system"),
-                content: String::new(),
-                cache_control: None,
-            },
-            WireMessage {
-                role: Cow::Borrowed("system"),
-                content: "b".to_owned(),
-                cache_control: None,
-            },
-            WireMessage {
-                role: Cow::Borrowed("user"),
-                content: "c".to_owned(),
-                cache_control: None,
-            },
-            WireMessage {
-                role: Cow::Borrowed("assistant"),
-                content: String::new(),
-                cache_control: None,
-            },
-            WireMessage {
-                role: Cow::Borrowed("assistant"),
-                content: "d".to_owned(),
-                cache_control: None,
-            },
+            WireMessage::text("system", "a"),
+            WireMessage::text("system", ""),
+            WireMessage::text("system", "b"),
+            WireMessage::text("user", "c"),
+            WireMessage::text("assistant", ""),
+            WireMessage::text("assistant", "d"),
         ]);
         let rendered: Vec<(&str, &str)> = merged
             .iter()
-            .map(|message| (message.role.as_ref(), message.content.as_str()))
+            .map(|message| {
+                (
+                    message.role.as_ref(),
+                    message.content.as_deref().unwrap_or_default(),
+                )
+            })
             .collect();
         assert_eq!(
             rendered,
@@ -970,17 +1472,16 @@ mod tests {
     }
 
     #[test]
-    fn classifies_provider_degraded_finish_reasons_without_turning_a_response_into_error() {
+    fn buffered_tool_only_response_is_a_typed_outcome() {
         let outcome = parse_response(response(
-            r#"{"choices":[{"index":0,"message":{"content":null},"finish_reason":"tool_calls"}],"id":"id"}"#,
+            r#"{"choices":[{"index":0,"message":{"content":null,"tool_calls":[{"id":"call-1","type":"function","function":{"name":"create_memory","arguments":"{\"content\":\"remember\"}"}}]},"finish_reason":"tool_calls"}],"id":"id"}"#,
         ))
-        .expect("tool-call response remains an outcome");
+        .expect("tool-call outcome");
         assert_eq!(outcome.finish_reason, FinishReason::Stop);
         assert!(outcome.candidates[0].parts.is_empty());
-        assert_eq!(
-            outcome.warning_codes,
-            vec![InferenceWarningCode::ProviderDegraded]
-        );
+        assert_eq!(outcome.candidates[0].tool_calls.len(), 1);
+        assert_eq!(outcome.candidates[0].tool_calls[0].name, "create_memory");
+        assert!(outcome.warning_codes.is_empty());
         assert!(outcome.usage.is_none());
     }
 

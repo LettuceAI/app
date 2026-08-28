@@ -1,3 +1,4 @@
+use lettuce_conversations::ToolChoice;
 use lettuce_models::{ProviderConfig, ResolvedChatParameters};
 use lettuce_settings::HeaderName;
 
@@ -27,6 +28,21 @@ impl OpenAiWireProvider for Mistral {
             presence_penalty: None,
             ..standard_parameters(parameters)
         }
+    }
+
+    fn tool_choice(
+        &self,
+        choice: &ToolChoice,
+        _config: &ProviderConfig,
+    ) -> Result<Option<serde_json::Value>, AdapterError> {
+        Ok(Some(match choice {
+            ToolChoice::Auto => serde_json::Value::String("auto".to_owned()),
+            ToolChoice::Required => serde_json::Value::String("any".to_owned()),
+            ToolChoice::Named { name } => serde_json::json!({
+                "type": "function",
+                "function": { "name": name }
+            }),
+        }))
     }
 }
 
