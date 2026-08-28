@@ -10,9 +10,9 @@ The public surface is intentionally small. Business invariants belong in domain 
 
 ## Status
 
-Every remote chat provider the legacy app shipped is executable for text-only,
-non-streaming generation, one file per provider on a family wire trait with
-legacy-style delegation:
+Every remote chat provider the legacy app shipped is executable for text-only
+buffered and streaming generation, one file per provider on a family wire
+trait with legacy-style delegation:
 
 - OpenAI envelope (`OpenAiWireProvider`): `openai`, `openrouter`, `custom`,
   `cerebras`, `deepseek`, `groq`, `xai`, `mistral`, `qwen`, `featherless`,
@@ -31,7 +31,15 @@ rejected. `RemoteProviders` also exposes `list_models` (legacy
 `DESCRIPTOR` (catalog metadata, key requirement, parameter/reasoning/caching
 support, extra-body allowlist) served through `provider_descriptors()`.
 
-Deferred horizontals: streaming, tools, media input, reasoning fields
+Streaming uses bounded byte framing and provider-specific normalization for
+OpenAI SSE, Anthropic Messages SSE, Gemini SSE, and Ollama NDJSON. It preserves
+native reasoning plus legacy thinking tags, usage, finish reasons, safety
+outcomes, request IDs, socket/channel backpressure, and cooperative
+cancellation. Malformed, oversized, incomplete, or contradictory protocol
+records fail closed. Provider request bodies opt into streaming only when a
+stream sink is present; cancellation alone does not change the wire protocol.
+
+Deferred horizontals: tools, media input, reasoning request fields
 (`enable_thinking`, `reasoning_effort`, Gemini thinking config, Ollama `think`,
 `chat_template_kwargs`), and structured output.
 

@@ -55,6 +55,14 @@ pub struct JsonStaticHeader {
     pub value: &'static str,
 }
 
+/// A non-secret provider-owned query value. Secret query authentication stays
+/// in `JsonAuth::Query` so credentials cannot enter reusable URL strings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct JsonQueryParameter {
+    pub name: &'static str,
+    pub value: &'static str,
+}
+
 impl fmt::Debug for JsonSecretHeader {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -291,10 +299,45 @@ impl JsonClient {
         secret_headers: Vec<JsonSecretHeader>,
         policy: RequestPolicy,
     ) -> Result<JsonResponseStream, JsonClientError> {
+        self.post_json_stream_with_query(
+            endpoint,
+            path,
+            body,
+            &[],
+            static_headers,
+            auth,
+            secret_headers,
+            policy,
+        )
+        .await
+    }
+
+    /// Starts a streaming JSON POST with a bounded set of non-secret static
+    /// query parameters used by provider protocols such as Gemini SSE.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each argument is a distinct transport concern; bundling them hides the policy"
+    )]
+    pub async fn post_json_stream_with_query(
+        &self,
+        endpoint: &str,
+        path: &str,
+        body: Vec<u8>,
+        query: &[JsonQueryParameter],
+        static_headers: &[JsonStaticHeader],
+        auth: JsonAuth,
+        secret_headers: Vec<JsonSecretHeader>,
+        policy: RequestPolicy,
+    ) -> Result<JsonResponseStream, JsonClientError> {
         if body.len() > MAX_REQUEST_BYTES {
             return Err(JsonClientError::RequestTooLarge);
         }
-        let url = build_url(endpoint, path)?;
+        let mut url = build_url(endpoint, path)?;
+        validate_query(query)?;
+        if !query.is_empty() {
+            url.query_pairs_mut()
+                .extend_pairs(query.iter().map(|entry| (entry.name, entry.value)));
+        }
         validate_header_collection(static_headers, &auth, &secret_headers)?;
         let request = self
             .client(policy)
@@ -640,6 +683,25 @@ fn is_extra_reserved_header(name: &str) -> bool {
             name.to_ascii_lowercase().as_str(),
             "authorization" | "http-referer" | "x-title"
         )
+}
+
+fn validate_query(query: &[JsonQueryParameter]) -> Result<(), JsonClientError> {
+    if query.len() > 16 {
+        return Err(JsonClientError::InvalidRequest);
+    }
+    let mut names = HashSet::with_capacity(query.len());
+    for entry in query {
+        if entry.name.is_empty()
+            || entry.name.len() > 128
+            || entry.value.len() > 256
+            || entry.name.chars().any(char::is_control)
+            || entry.value.chars().any(char::is_control)
+            || !names.insert(entry.name)
+        {
+            return Err(JsonClientError::InvalidRequest);
+        }
+    }
+    Ok(())
 }
 
 fn build_url(endpoint: &str, path: &str) -> Result<Url, JsonClientError> {

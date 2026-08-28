@@ -7,6 +7,7 @@ use lettuce_types::JobId;
 #[derive(Debug, Clone)]
 pub struct CancellationToken {
     cancelled: Arc<std::sync::atomic::AtomicBool>,
+    notification: Arc<tokio::sync::Notify>,
 }
 
 impl Default for CancellationToken {
@@ -20,17 +21,28 @@ impl CancellationToken {
     pub fn new() -> Self {
         Self {
             cancelled: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            notification: Arc::new(tokio::sync::Notify::new()),
         }
     }
 
     pub fn cancel(&self) {
         self.cancelled
             .store(true, std::sync::atomic::Ordering::Release);
+        self.notification.notify_waiters();
     }
 
     #[must_use]
     pub fn is_cancelled(&self) -> bool {
         self.cancelled.load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    pub async fn cancelled(&self) {
+        let notified = self.notification.notified();
+        tokio::pin!(notified);
+        if self.is_cancelled() {
+            return;
+        }
+        notified.await;
     }
 }
 

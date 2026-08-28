@@ -4,6 +4,7 @@ use lettuce_conversations::{
     FinishReason, InferenceCandidate, InferenceOutcome, InferenceRequest, InferenceUsage,
     InferenceWarningCode, MessagePart, MessageRole, ProviderContextPart, ProviderNeutralContext,
 };
+use lettuce_inference::InferenceRuntimePort;
 use lettuce_models::{ProviderAccount, ProviderConfig, ResolvedChatProfile};
 use lettuce_network::{JsonClient, JsonResponse, MAX_REQUEST_BYTES};
 use lettuce_settings::SecretStore;
@@ -38,6 +39,7 @@ pub(crate) fn api_base(endpoint: &str) -> Cow<'_, str> {
 pub(crate) async fn run<S: SecretStore + ?Sized>(
     secret_store: &S,
     network: &JsonClient,
+    runtime: &dyn InferenceRuntimePort,
     request: InferenceRequest,
 ) -> Result<InferenceOutcome, AdapterError> {
     validate_common_request(&request)?;
@@ -48,22 +50,56 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
     reject_unsupported_features(&profile.parameters)?;
     validate_prompt_caching(DESCRIPTOR.prompt_caching, &profile.parameters)?;
     let base = api_base(profile.endpoint.as_deref().unwrap_or(DEFAULT_ENDPOINT));
-    let body = encode_request(profile, &request.context)?;
+    let streaming = request.stream_sink.is_some();
+    if streaming && (!profile.streaming_enabled || !DESCRIPTOR.streaming) {
+        return Err(AdapterError::Rejected);
+    }
+    let body = encode_request(profile, &request.context, streaming)?;
     let credentials = Credentials::from(profile);
     let auth = load_auth(AuthPlan::OptionalBearer, secret_store, &credentials).await?;
     let secret_headers = load_secret_headers(secret_store, &credentials).await?;
-    let response = network
-        .post_json(
-            &base,
-            "/api/chat",
-            body,
-            &STANDARD_HEADERS,
-            auth,
-            secret_headers,
-            generation_policy(&credentials),
-        )
+    if streaming {
+        let response = crate::streaming::await_cancelable(runtime, request.cancellation, async {
+            network
+                .post_json_stream(
+                    &base,
+                    "/api/chat",
+                    body,
+                    &STANDARD_HEADERS,
+                    auth,
+                    secret_headers,
+                    generation_policy(&credentials),
+                )
+                .await
+                .map_err(Into::into)
+        })
         .await?;
-    parse_response(response)
+        crate::streaming::consume_stream(
+            response,
+            crate::stream_framing::StreamFormat::Ndjson,
+            crate::stream_normalize::StreamProtocol::Ollama,
+            runtime,
+            &request,
+        )
+        .await
+    } else {
+        let response = crate::streaming::await_cancelable(runtime, request.cancellation, async {
+            network
+                .post_json(
+                    &base,
+                    "/api/chat",
+                    body,
+                    &STANDARD_HEADERS,
+                    auth,
+                    secret_headers,
+                    generation_policy(&credentials),
+                )
+                .await
+                .map_err(Into::into)
+        })
+        .await?;
+        parse_response(response)
+    }
 }
 
 pub(crate) async fn list_models<S: SecretStore + ?Sized>(
@@ -238,12 +274,13 @@ fn normalize_system_messages(messages: Vec<WireMessage>) -> Vec<WireMessage> {
 fn encode_request(
     profile: &ResolvedChatProfile,
     context: &ProviderNeutralContext,
+    streaming: bool,
 ) -> Result<Vec<u8>, AdapterError> {
     let parameters = &profile.parameters;
     let request = ChatRequest {
         model: profile.external_model_id.clone(),
         messages: normalize_system_messages(wire_messages(context)?),
-        stream: false,
+        stream: streaming,
         options: options(parameters),
     };
     let body = serde_json::to_vec(&request).map_err(|_| AdapterError::Rejected)?;

@@ -14,9 +14,11 @@ The public surface is intentionally small. Business invariants belong in domain 
 ## Status
 
 The runtime foundation provides a bounded in-process stream registry and
-cooperative cancellation lookup. Stream delivery validates the conversation
+notification-driven cooperative cancellation. Stream delivery validates the conversation
 operation/turn/attempt identity and monotonic sequence before applying channel
 backpressure; no detached fan-out task or durable payload store is involved.
-Job and conversation domains remain authoritative for persisted lifecycle
-state. Provider normalization, outcome assembly, tools, and safety remain later
-horizontal slices.
+Provider adapters race cancellation against connection setup, socket reads,
+buffered responses, and backpressured delivery. Job and conversation domains
+remain authoritative for persisted lifecycle state. Provider normalization and
+outcome assembly are implemented by `lettuce-providers`; tools and safety
+remain later horizontal slices.

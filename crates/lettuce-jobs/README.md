@@ -23,6 +23,10 @@ The crate now provides the domain-independent foundation:
 - policy, recovery, retention, handle and resource-admission vocabulary for
   later database/application adapters.
 
+Request handles expose a cloneable cancellation token with both an atomic
+instant check and an async notification, allowing executors to interrupt
+blocked I/O without polling.
+
 The store is deterministic when constructed with `FakeClock`. It is a test
 foundation, not a replacement for the planned SQLite adapter. Events have no
 structural slot for arbitrary JSON, provider response bodies, local paths,

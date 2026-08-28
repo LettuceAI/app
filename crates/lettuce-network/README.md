@@ -27,4 +27,6 @@ setting. Every request carries the legacy `HTTP-Referer` and `X-Title`
 attribution headers. Cookies remain outside this slice. A
 validated chat path is joined beneath the endpoint base path
 (`https://host/v1` plus `/chat` becomes `/v1/chat`); query, fragment, userinfo,
-and encoded separators are rejected.
+and encoded separators are rejected. Provider-owned non-secret query values
+use a bounded typed parameter list instead of being embedded in paths; secret
+query authentication remains a separate redacted credential type.

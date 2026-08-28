@@ -18,7 +18,10 @@ a reusable remote-provider runtime. Provider composition requires the host to
 supply its real `SecretStore` and current TLS policy; the app never substitutes
 an in-memory credential store in production. The runtime loads provider
 accounts through `lettuce-database` repositories and exposes catalog, model
-discovery, and key verification through `lettuce-contracts` DTOs.
+discovery, and key verification through `lettuce-contracts` DTOs. It also owns
+and exposes the matching `InferenceRuntime`, so later generation workflows can
+register bounded stream receivers and cancellation tokens against the same
+runtime used by the provider adapters.
 
 ## Bundled prompts
 

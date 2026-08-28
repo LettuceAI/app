@@ -4,6 +4,7 @@ use lettuce_conversations::{
     FinishReason, InferenceCandidate, InferenceOutcome, InferenceRequest, InferenceUsage,
     InferenceWarningCode, MessagePart, MessageRole, ProviderContextPart, ProviderNeutralContext,
 };
+use lettuce_inference::InferenceRuntimePort;
 use lettuce_models::{
     PromptCacheRetention, PromptCaching, ProviderAccount, ProviderConfig, ResolvedChatParameters,
     ResolvedChatProfile,
@@ -99,6 +100,14 @@ pub(crate) trait OpenAiWireProvider: Sync {
         _body: &mut serde_json::Map<String, serde_json::Value>,
     ) {
     }
+
+    fn includes_stream_usage(&self) -> bool {
+        false
+    }
+
+    fn supports_streaming(&self, _config: &ProviderConfig) -> bool {
+        self.descriptor().streaming
+    }
 }
 
 pub(crate) fn versioned_chat_path(endpoint: &str) -> &'static str {
@@ -132,6 +141,7 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
     provider: &dyn OpenAiWireProvider,
     secret_store: &S,
     network: &JsonClient,
+    runtime: &dyn InferenceRuntimePort,
     request: InferenceRequest,
 ) -> Result<InferenceOutcome, AdapterError> {
     validate_common_request(&request)?;
@@ -152,22 +162,56 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
     if provider.merges_same_role(config) {
         messages = merge_same_role(messages);
     }
-    let body = encode_request(provider, profile, messages)?;
+    let streaming = request.stream_sink.is_some();
+    if streaming && (!profile.streaming_enabled || !provider.supports_streaming(config)) {
+        return Err(AdapterError::Rejected);
+    }
+    let body = encode_request(provider, profile, messages, streaming)?;
     let credentials = Credentials::from(profile);
     let auth = load_auth(provider.auth(config)?, secret_store, &credentials).await?;
     let secret_headers = load_secret_headers(secret_store, &credentials).await?;
-    let response = network
-        .post_json(
-            &endpoint,
-            &path,
-            body,
-            provider.static_headers(),
-            auth,
-            secret_headers,
-            generation_policy(&credentials),
-        )
+    if streaming {
+        let response = crate::streaming::await_cancelable(runtime, request.cancellation, async {
+            network
+                .post_json_stream(
+                    &endpoint,
+                    &path,
+                    body,
+                    provider.static_headers(),
+                    auth,
+                    secret_headers,
+                    generation_policy(&credentials),
+                )
+                .await
+                .map_err(Into::into)
+        })
         .await?;
-    parse_response(response)
+        crate::streaming::consume_stream(
+            response,
+            crate::stream_framing::StreamFormat::Sse,
+            crate::stream_normalize::StreamProtocol::OpenAi,
+            runtime,
+            &request,
+        )
+        .await
+    } else {
+        let response = crate::streaming::await_cancelable(runtime, request.cancellation, async {
+            network
+                .post_json(
+                    &endpoint,
+                    &path,
+                    body,
+                    provider.static_headers(),
+                    auth,
+                    secret_headers,
+                    generation_policy(&credentials),
+                )
+                .await
+                .map_err(Into::into)
+        })
+        .await?;
+        parse_response(response)
+    }
 }
 
 pub(crate) async fn list_models<S: SecretStore + ?Sized>(
@@ -252,6 +296,7 @@ fn encode_request(
     provider: &dyn OpenAiWireProvider,
     profile: &ResolvedChatProfile,
     mut messages: Vec<WireMessage>,
+    streaming: bool,
 ) -> Result<Vec<u8>, AdapterError> {
     if provider.descriptor().prompt_caching == crate::descriptor::PromptCachingSupport::CacheControl
     {
@@ -261,7 +306,10 @@ fn encode_request(
     let request = OpenAiRequest {
         model: profile.external_model_id.clone(),
         messages,
-        stream: false,
+        stream: streaming,
+        stream_options: (streaming && provider.includes_stream_usage()).then_some(StreamOptions {
+            include_usage: true,
+        }),
         temperature: parameters.temperature,
         top_p: parameters.top_p,
         max_tokens: parameters.max_tokens,
@@ -423,6 +471,8 @@ struct OpenAiRequest {
     messages: Vec<WireMessage>,
     stream: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    stream_options: Option<StreamOptions>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     temperature: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     top_p: Option<f64>,
@@ -434,6 +484,11 @@ struct OpenAiRequest {
     frequency_penalty: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     presence_penalty: Option<f64>,
+}
+
+#[derive(Serialize)]
+struct StreamOptions {
+    include_usage: bool,
 }
 
 impl Serialize for WireMessage {

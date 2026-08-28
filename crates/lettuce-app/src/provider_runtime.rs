@@ -1,12 +1,15 @@
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use lettuce_contracts::{
     ApiKeyRequirementContract, KeyVerificationContract, PromptCacheRetentionContract,
     PromptCachingSupportContract, ProviderAccountRequest, ProviderCatalogContract,
     ProviderDescriptorContract, ProviderModelsContract, ProviderParameterSupportContract,
     ProviderProtocolContract, ReasoningSupportContract, RemoteModelContract,
 };
+use lettuce_conversations::{InferenceOutcome, InferencePort, InferenceRequest, PortError};
 use lettuce_database::Database;
+use lettuce_inference::{InferenceRuntime, InferenceRuntimePort};
 use lettuce_models::{ModelRepositoryError, ProviderAccountRepository, ProviderProtocol};
 use lettuce_network::{JsonClient, JsonClientError, TlsPolicy};
 use lettuce_providers::{
@@ -19,6 +22,7 @@ use lettuce_settings::SecretStore;
 /// and loads provider accounts through the typed repository boundary.
 pub struct ProviderRuntime<S: ?Sized> {
     database: Arc<Database>,
+    inference_runtime: Arc<InferenceRuntime>,
     remote: RemoteProviders<S>,
 }
 
@@ -38,10 +42,20 @@ impl<S: SecretStore + ?Sized> ProviderRuntime<S> {
             JsonClient::with_tls(tls_policy)
                 .map_err(ProviderRuntimeInitializationError::Network)?,
         );
+        let inference_runtime = Arc::new(InferenceRuntime::default());
+        let runtime_port: Arc<dyn InferenceRuntimePort> = inference_runtime.clone();
         Ok(Self {
             database,
-            remote: RemoteProviders::new(secret_store, network),
+            inference_runtime,
+            remote: RemoteProviders::with_runtime(secret_store, network, runtime_port),
         })
+    }
+
+    /// Runtime registry used by generation flows to attach a bounded stream
+    /// consumer or cancellation token before calling the inference port.
+    #[must_use]
+    pub fn inference_runtime(&self) -> Arc<InferenceRuntime> {
+        Arc::clone(&self.inference_runtime)
     }
 
     #[must_use]
@@ -176,6 +190,13 @@ impl<S: SecretStore + ?Sized> ProviderRuntime<S> {
         ProviderAccountRepository::get(self.database.as_ref(), id)
             .map_err(ProviderRuntimeError::Storage)?
             .ok_or(ProviderRuntimeError::AccountNotFound)
+    }
+}
+
+#[async_trait]
+impl<S: SecretStore + ?Sized> InferencePort for ProviderRuntime<S> {
+    async fn run(&self, request: InferenceRequest) -> Result<InferenceOutcome, PortError> {
+        self.remote.run(request).await
     }
 }
 

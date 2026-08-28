@@ -36,6 +36,7 @@ pub(crate) enum AdapterError {
     MalformedResponse,
     EmptyResponse,
     Transport,
+    Cancelled,
 }
 
 impl AdapterError {
@@ -136,6 +137,7 @@ impl From<AdapterError> for PortError {
             AdapterError::MalformedResponse | AdapterError::EmptyResponse => PortError::Empty,
             AdapterError::Rejected | AdapterError::CredentialRejected => PortError::Rejected,
             AdapterError::SecretUnavailable | AdapterError::Transport => PortError::Unavailable,
+            AdapterError::Cancelled => PortError::Cancelled,
             AdapterError::Provider(failure) => PortError::Provider(failure),
         }
     }
@@ -192,8 +194,6 @@ pub(crate) fn validate_common_request(request: &InferenceRequest) -> Result<(), 
     let profile = &request.profile;
     if profile.tool_policy != lettuce_conversations::ToolPolicy::Disabled
         || profile.output_policy != lettuce_conversations::OutputPolicy::Plain
-        || request.stream_sink.is_some()
-        || request.cancellation.is_some()
         || !request.media_grants.is_empty()
     {
         return Err(AdapterError::Rejected);

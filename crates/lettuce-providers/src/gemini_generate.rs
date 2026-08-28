@@ -4,10 +4,14 @@ use lettuce_conversations::{
     FinishReason, InferenceCandidate, InferenceOutcome, InferenceRequest, InferenceUsage,
     InferenceWarningCode, MessagePart, MessageRole, ProviderContextPart, ProviderNeutralContext,
 };
+use lettuce_inference::InferenceRuntimePort;
 use lettuce_models::{
     ProviderAccount, ProviderConfig, ResolvedChatParameters, ResolvedChatProfile,
 };
-use lettuce_network::{JsonClient, JsonResponse, JsonStaticHeader, MAX_REQUEST_BYTES};
+use lettuce_network::{
+    JsonClient, JsonQueryParameter, JsonResponse, JsonResponseStream, JsonStaticHeader,
+    MAX_REQUEST_BYTES,
+};
 use lettuce_settings::{HeaderName, SecretStore};
 use serde::{Deserialize, Serialize};
 
@@ -108,6 +112,7 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
     cache: &GeminiCache,
     secret_store: &S,
     network: &JsonClient,
+    runtime: &dyn InferenceRuntimePort,
     request: InferenceRequest,
 ) -> Result<InferenceOutcome, AdapterError> {
     validate_common_request(&request)?;
@@ -123,16 +128,79 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
         .ok_or(AdapterError::Rejected)?;
     let base = provider.api_base(endpoint);
     let path = provider.generate_path(&profile.external_model_id)?;
+    let streaming = request.stream_sink.is_some();
+    if streaming && (!profile.streaming_enabled || !provider.descriptor().streaming) {
+        return Err(AdapterError::Rejected);
+    }
     let uncached = build_request(profile, &request.context)?;
-    let prepared = cache
-        .prepare(provider, secret_store, network, profile, &base, &uncached)
-        .await?;
+    let prepared = crate::streaming::await_cancelable(
+        runtime,
+        request.cancellation,
+        cache.prepare(provider, secret_store, network, profile, &base, &uncached),
+    )
+    .await?;
     let body = match &prepared {
         Some(prepared) => encode_request(&uncached.with_cache(prepared.name.clone())?)?,
         None => encode_request(&uncached)?,
     };
-    let mut response =
-        send_generate(provider, secret_store, network, profile, &base, &path, body).await?;
+    if streaming {
+        let stream_path = path
+            .strip_suffix(":generateContent")
+            .map(|prefix| format!("{prefix}:streamGenerateContent"))
+            .ok_or(AdapterError::Rejected)?;
+        let mut response = crate::streaming::await_cancelable(
+            runtime,
+            request.cancellation,
+            send_generate_stream(
+                provider,
+                secret_store,
+                network,
+                profile,
+                &base,
+                &stream_path,
+                body,
+            ),
+        )
+        .await?;
+        if let Some(PreparedCache { key, .. }) = prepared
+            && response.status == 404
+        {
+            cache.evict(key);
+            tracing::warn!(
+                provider = "gemini",
+                cache_result = "resource_not_found",
+                "cached Gemini resource disappeared; retrying the full streaming request"
+            );
+            response = crate::streaming::await_cancelable(
+                runtime,
+                request.cancellation,
+                send_generate_stream(
+                    provider,
+                    secret_store,
+                    network,
+                    profile,
+                    &base,
+                    &stream_path,
+                    encode_request(&uncached)?,
+                ),
+            )
+            .await?;
+        }
+        return crate::streaming::consume_stream(
+            response,
+            crate::stream_framing::StreamFormat::Sse,
+            crate::stream_normalize::StreamProtocol::Gemini,
+            runtime,
+            &request,
+        )
+        .await;
+    }
+    let mut response = crate::streaming::await_cancelable(
+        runtime,
+        request.cancellation,
+        send_generate(provider, secret_store, network, profile, &base, &path, body),
+    )
+    .await?;
     if let Some(PreparedCache { key, .. }) = prepared
         && response.status == 404
     {
@@ -142,18 +210,58 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
             cache_result = "resource_not_found",
             "cached Gemini resource disappeared; retrying the full request"
         );
-        response = send_generate(
-            provider,
-            secret_store,
-            network,
-            profile,
-            &base,
-            &path,
-            encode_request(&uncached)?,
+        response = crate::streaming::await_cancelable(
+            runtime,
+            request.cancellation,
+            send_generate(
+                provider,
+                secret_store,
+                network,
+                profile,
+                &base,
+                &path,
+                encode_request(&uncached)?,
+            ),
         )
         .await?;
     }
     parse_response(response)
+}
+
+async fn send_generate_stream<S: SecretStore + ?Sized>(
+    provider: &dyn GeminiWireProvider,
+    secret_store: &S,
+    network: &JsonClient,
+    profile: &ResolvedChatProfile,
+    base: &str,
+    path: &str,
+    body: Vec<u8>,
+) -> Result<JsonResponseStream, AdapterError> {
+    const SSE_QUERY: [JsonQueryParameter; 1] = [JsonQueryParameter {
+        name: "alt",
+        value: "sse",
+    }];
+    let credentials = Credentials::from(profile);
+    let auth = load_auth(
+        provider.auth(&profile.provider_config)?,
+        secret_store,
+        &credentials,
+    )
+    .await?;
+    let secret_headers = load_secret_headers(secret_store, &credentials).await?;
+    network
+        .post_json_stream_with_query(
+            base,
+            path,
+            body,
+            &SSE_QUERY,
+            provider.static_headers(),
+            auth,
+            secret_headers,
+            generation_policy(&credentials),
+        )
+        .await
+        .map_err(Into::into)
 }
 
 async fn send_generate<S: SecretStore + ?Sized>(

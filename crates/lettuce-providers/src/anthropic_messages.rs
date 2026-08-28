@@ -4,6 +4,7 @@ use lettuce_conversations::{
     FinishReason, InferenceCandidate, InferenceOutcome, InferenceRequest, InferenceUsage,
     InferenceWarningCode, MessagePart, MessageRole, ProviderContextPart, ProviderNeutralContext,
 };
+use lettuce_inference::InferenceRuntimePort;
 use lettuce_models::{
     PromptCacheRetention, PromptCaching, ProviderAccount, ProviderConfig, ResolvedChatParameters,
     ResolvedChatProfile,
@@ -27,6 +28,21 @@ pub(crate) const ANTHROPIC_HEADERS: [JsonStaticHeader; 3] = [
     JsonStaticHeader {
         name: "accept",
         value: "application/json",
+    },
+    JsonStaticHeader {
+        name: "user-agent",
+        value: concat!("LettuceAI/", env!("CARGO_PKG_VERSION")),
+    },
+];
+
+const ANTHROPIC_STREAM_HEADERS: [JsonStaticHeader; 3] = [
+    JsonStaticHeader {
+        name: "anthropic-version",
+        value: "2023-06-01",
+    },
+    JsonStaticHeader {
+        name: "accept",
+        value: "text/event-stream",
     },
     JsonStaticHeader {
         name: "user-agent",
@@ -119,12 +135,17 @@ pub(crate) trait AnthropicWireProvider: Sync {
         reject_unsupported_features(parameters)?;
         validate_prompt_caching(self.descriptor().prompt_caching, parameters)
     }
+
+    fn supports_streaming(&self, _config: &ProviderConfig) -> bool {
+        self.descriptor().streaming
+    }
 }
 
 pub(crate) async fn run<S: SecretStore + ?Sized>(
     provider: &dyn AnthropicWireProvider,
     secret_store: &S,
     network: &JsonClient,
+    runtime: &dyn InferenceRuntimePort,
     request: InferenceRequest,
 ) -> Result<InferenceOutcome, AdapterError> {
     validate_common_request(&request)?;
@@ -140,27 +161,62 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
         .or_else(|| provider.default_endpoint())
         .ok_or(AdapterError::Rejected)?;
     let path = provider.chat_path(endpoint, config)?;
+    let streaming = request.stream_sink.is_some();
+    if streaming && (!profile.streaming_enabled || !provider.supports_streaming(config)) {
+        return Err(AdapterError::Rejected);
+    }
     let body = encode_request(
         profile,
         &request.context,
         provider.merges_same_role(config),
         provider.roles(config),
+        streaming,
     )?;
     let credentials = Credentials::from(profile);
     let auth = load_auth(provider.auth(config)?, secret_store, &credentials).await?;
     let secret_headers = load_secret_headers(secret_store, &credentials).await?;
-    let response = network
-        .post_json(
-            endpoint,
-            &path,
-            body,
-            provider.static_headers(),
-            auth,
-            secret_headers,
-            generation_policy(&credentials),
-        )
+    if streaming {
+        let response = crate::streaming::await_cancelable(runtime, request.cancellation, async {
+            network
+                .post_json_stream(
+                    endpoint,
+                    &path,
+                    body,
+                    &ANTHROPIC_STREAM_HEADERS,
+                    auth,
+                    secret_headers,
+                    generation_policy(&credentials),
+                )
+                .await
+                .map_err(Into::into)
+        })
         .await?;
-    parse_response(response)
+        crate::streaming::consume_stream(
+            response,
+            crate::stream_framing::StreamFormat::Sse,
+            crate::stream_normalize::StreamProtocol::Anthropic,
+            runtime,
+            &request,
+        )
+        .await
+    } else {
+        let response = crate::streaming::await_cancelable(runtime, request.cancellation, async {
+            network
+                .post_json(
+                    endpoint,
+                    &path,
+                    body,
+                    provider.static_headers(),
+                    auth,
+                    secret_headers,
+                    generation_policy(&credentials),
+                )
+                .await
+                .map_err(Into::into)
+        })
+        .await?;
+        parse_response(response)
+    }
 }
 
 pub(crate) async fn list_models<S: SecretStore + ?Sized>(
@@ -206,6 +262,7 @@ fn encode_request(
     context: &ProviderNeutralContext,
     merge_same_role: bool,
     (user_role, assistant_role): (Cow<'static, str>, Cow<'static, str>),
+    streaming: bool,
 ) -> Result<Vec<u8>, AdapterError> {
     let mut system_parts: Vec<String> = Vec::new();
     let mut turns: Vec<Turn> = Vec::new();
@@ -290,7 +347,7 @@ fn encode_request(
         messages,
         system,
         max_tokens: max_output_tokens(parameters),
-        stream: false,
+        stream: streaming,
         temperature: parameters.temperature,
         top_p: parameters.top_p,
         top_k: parameters.top_k,

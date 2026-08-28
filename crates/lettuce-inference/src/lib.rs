@@ -24,6 +24,8 @@ pub trait InferenceRuntimePort: Send + Sync {
     ) -> Result<(), InferenceRuntimeError>;
 
     fn is_cancelled(&self, job_id: JobId) -> bool;
+
+    async fn cancelled(&self, job_id: JobId) -> Result<(), InferenceRuntimeError>;
 }
 
 /// In-process bridge between a running inference request and its application
@@ -124,6 +126,18 @@ impl InferenceRuntimePort for InferenceRuntime {
             .ok()
             .and_then(|tokens| tokens.get(&job_id).cloned())
             .is_some_and(|token| token.is_cancelled())
+    }
+
+    async fn cancelled(&self, job_id: JobId) -> Result<(), InferenceRuntimeError> {
+        let token = self
+            .cancellations
+            .lock()
+            .map_err(|_| InferenceRuntimeError::Unavailable)?
+            .get(&job_id)
+            .cloned()
+            .ok_or(InferenceRuntimeError::NotRegistered)?;
+        token.cancelled().await;
+        Ok(())
     }
 }
 

@@ -9,6 +9,10 @@ impl OpenAiWireProvider for NanoGpt {
     fn descriptor(&self) -> &'static ProviderDescriptor {
         &DESCRIPTOR
     }
+
+    fn includes_stream_usage(&self) -> bool {
+        true
+    }
 }
 
 pub(crate) const DESCRIPTOR: ProviderDescriptor = ProviderDescriptor {

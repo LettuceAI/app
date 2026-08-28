@@ -1888,6 +1888,8 @@ pub enum PortError {
     Rejected,
     #[error("conversation dependency returned no result")]
     Empty,
+    #[error("conversation operation was cancelled")]
+    Cancelled,
     #[error("provider request failed")]
     Provider(ProviderFailure),
 }

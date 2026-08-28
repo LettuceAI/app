@@ -71,6 +71,10 @@ impl AnthropicWireProvider for CustomAnthropic {
     fn auth(&self, config: &ProviderConfig) -> Result<AuthPlan, AdapterError> {
         Ok(custom_auth_plan(&custom_config(config)?.auth))
     }
+
+    fn supports_streaming(&self, config: &ProviderConfig) -> bool {
+        custom_config(config).is_ok_and(|config| config.streaming)
+    }
 }
 
 pub(crate) const DESCRIPTOR: ProviderDescriptor = ProviderDescriptor {

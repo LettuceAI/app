@@ -721,6 +721,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+ "tokio",
  "uuid",
 ]
 
@@ -806,6 +807,8 @@ dependencies = [
  "async-trait",
  "blake3",
  "lettuce-conversations",
+ "lettuce-inference",
+ "lettuce-jobs",
  "lettuce-models",
  "lettuce-network",
  "lettuce-settings",

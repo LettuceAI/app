@@ -32,6 +32,9 @@ mod openai_compatible;
 mod openrouter;
 mod pollinations;
 mod qwen;
+mod stream_framing;
+mod stream_normalize;
+mod streaming;
 mod verify;
 mod xai;
 mod zai;
@@ -48,6 +51,7 @@ use anthropic_messages::AnthropicWireProvider;
 use async_trait::async_trait;
 use gemini_generate::GeminiWireProvider;
 use lettuce_conversations::{InferenceOutcome, InferencePort, InferenceRequest, PortError};
+use lettuce_inference::{InferenceRuntime, InferenceRuntimePort};
 use lettuce_models::{ProviderAccount, ProviderProtocol};
 use lettuce_network::JsonClient;
 use lettuce_settings::SecretStore;
@@ -59,6 +63,7 @@ use openai_compatible::OpenAiWireProvider;
 pub struct RemoteProviders<S: ?Sized> {
     secret_store: Arc<S>,
     network: Arc<JsonClient>,
+    runtime: Arc<dyn InferenceRuntimePort>,
     gemini_cache: gemini_cache::GeminiCache,
 }
 
@@ -156,9 +161,18 @@ impl<S: ?Sized> fmt::Debug for RemoteProviders<S> {
 
 impl<S: SecretStore + ?Sized> RemoteProviders<S> {
     pub fn new(secret_store: Arc<S>, network: Arc<JsonClient>) -> Self {
+        Self::with_runtime(secret_store, network, Arc::new(InferenceRuntime::default()))
+    }
+
+    pub fn with_runtime(
+        secret_store: Arc<S>,
+        network: Arc<JsonClient>,
+        runtime: Arc<dyn InferenceRuntimePort>,
+    ) -> Self {
         Self {
             secret_store,
             network,
+            runtime,
             gemini_cache: gemini_cache::GeminiCache::default(),
         }
     }
@@ -172,11 +186,25 @@ impl<S: SecretStore + ?Sized> InferencePort for RemoteProviders<S> {
         let result = match profile.provider_protocol {
             ProviderProtocol::OpenAiCompatible => {
                 let provider = provider_for(kind).ok_or(PortError::Rejected)?;
-                openai_compatible::run(provider, &*self.secret_store, &self.network, request).await
+                openai_compatible::run(
+                    provider,
+                    &*self.secret_store,
+                    &self.network,
+                    &*self.runtime,
+                    request,
+                )
+                .await
             }
             ProviderProtocol::Anthropic => {
                 let provider = anthropic_provider_for(kind).ok_or(PortError::Rejected)?;
-                anthropic_messages::run(provider, &*self.secret_store, &self.network, request).await
+                anthropic_messages::run(
+                    provider,
+                    &*self.secret_store,
+                    &self.network,
+                    &*self.runtime,
+                    request,
+                )
+                .await
             }
             ProviderProtocol::Gemini => {
                 let provider = gemini_provider_for(kind).ok_or(PortError::Rejected)?;
@@ -185,12 +213,13 @@ impl<S: SecretStore + ?Sized> InferencePort for RemoteProviders<S> {
                     &self.gemini_cache,
                     &*self.secret_store,
                     &self.network,
+                    &*self.runtime,
                     request,
                 )
                 .await
             }
             ProviderProtocol::Ollama if kind.eq_ignore_ascii_case("ollama") => {
-                ollama::run(&*self.secret_store, &self.network, request).await
+                ollama::run(&*self.secret_store, &self.network, &*self.runtime, request).await
             }
             ProviderProtocol::Ollama
             | ProviderProtocol::LlamaCpp
@@ -207,10 +236,13 @@ mod integration_tests {
     use crate::{KeyVerification, ProviderRequestError, RemoteProviders};
     use async_trait::async_trait;
     use lettuce_conversations::{
-        ContextAttributions, ContextBudgetReport, GenerationOperation, InferencePort,
-        InferenceRequest, MessageRole, OutputPolicy, ProviderContextPart, ProviderNeutralContext,
-        ProviderNeutralMessage, ResolvedInferenceProfile, SafetyContext, ToolPolicy,
+        ContextAttributions, ContextBudgetReport, GenerationOperation, GenerationStreamEvent,
+        InferenceOutcome, InferencePort, InferenceRequest, MessagePart, MessageRole, OutputPolicy,
+        ProviderContextPart, ProviderNeutralContext, ProviderNeutralMessage,
+        ResolvedInferenceProfile, SafetyContext, ToolPolicy,
     };
+    use lettuce_inference::{InferenceRuntime, InferenceRuntimePort};
+    use lettuce_jobs::handle::JobHandle;
     use lettuce_models::{
         ChatProfileWarning, CustomAuth, CustomProviderConfig, ModelCapabilities, ProviderConfig,
         ProviderProtocol, ResolvedChatParameters, ResolvedChatProfile,
@@ -221,7 +253,7 @@ mod integration_tests {
         SecretStore, SecretStoreError, SecretValue,
     };
     use lettuce_types::{
-        GenerationAttemptId, GenerationTurnId, ModelProfileId, ProviderAccountId, RequestId,
+        GenerationAttemptId, GenerationTurnId, JobId, ModelProfileId, ProviderAccountId, RequestId,
         Revision,
     };
     use tokio::{
@@ -349,6 +381,101 @@ mod integration_tests {
             let _ = sender.send(requests);
         });
         (format!("http://{address}"), receiver)
+    }
+
+    async fn fragmented_test_server(
+        response_parts: Vec<Vec<u8>>,
+    ) -> (String, oneshot::Receiver<Vec<u8>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind server");
+        let address = listener.local_addr().expect("server address");
+        let (sender, receiver) = oneshot::channel();
+        tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept request");
+            let request = read_test_request(&mut stream).await;
+            let _ = sender.send(request);
+            for part in response_parts {
+                stream.write_all(&part).await.expect("write response part");
+                tokio::task::yield_now().await;
+            }
+        });
+        (format!("http://{address}"), receiver)
+    }
+
+    async fn stalled_test_server() -> (String, oneshot::Receiver<Vec<u8>>, oneshot::Sender<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind server");
+        let address = listener.local_addr().expect("server address");
+        let (request_sender, request_receiver) = oneshot::channel();
+        let (release_sender, release_receiver) = oneshot::channel();
+        tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept request");
+            let request = read_test_request(&mut stream).await;
+            let _ = request_sender.send(request);
+            stream
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: 1024\r\n\r\n",
+                )
+                .await
+                .expect("write headers");
+            let _ = release_receiver.await;
+        });
+        (
+            format!("http://{address}"),
+            request_receiver,
+            release_sender,
+        )
+    }
+
+    async fn run_stream_fixture(
+        kind: &str,
+        protocol: ProviderProtocol,
+        endpoint_suffix: &str,
+        payload: &str,
+    ) -> (String, InferenceOutcome, Vec<GenerationStreamEvent>) {
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\n\r\n{payload}",
+            payload.len()
+        );
+        let (endpoint, captured) = test_server(response).await;
+        let store = Arc::new(RecordingSecretStore::default());
+        let owner = lettuce_settings::SecretOwnerId::new();
+        let key_ref = SecretRef::new();
+        store
+            .put(
+                SecretRecord::new(key_ref, SecretPurpose::ProviderApiKey { owner }),
+                SecretValue::new("key-canary").expect("secret"),
+                None,
+            )
+            .await
+            .expect("store key");
+        let runtime = Arc::new(InferenceRuntime::default());
+        let runtime_port: Arc<dyn InferenceRuntimePort> = runtime.clone();
+        let adapter = RemoteProviders::with_runtime(
+            store,
+            Arc::new(JsonClient::new().expect("client")),
+            runtime_port,
+        );
+        let sink_id = RequestId::new();
+        let mut receiver = runtime.register_stream(sink_id).expect("register stream");
+        let mut inference = request(profile(
+            kind,
+            format!("{endpoint}{endpoint_suffix}"),
+            ProviderConfig::Standard,
+            Some(key_ref),
+            owner,
+        ));
+        inference.profile.chat_profile.provider_protocol = protocol;
+        inference.stream_sink = Some(sink_id);
+        let outcome = adapter.run(inference).await.expect("stream outcome");
+        runtime
+            .unregister_stream(sink_id)
+            .expect("unregister stream");
+        let mut events = Vec::new();
+        while let Some(event) = receiver.recv().await {
+            events.push(event.event);
+        }
+        let request =
+            String::from_utf8(captured.await.expect("captured request")).expect("UTF-8 request");
+        (request, outcome, events)
     }
 
     pub(crate) fn parameters() -> ResolvedChatParameters {
@@ -557,6 +684,252 @@ mod integration_tests {
             );
             assert!(store.take_loads().is_empty());
         }
+    }
+
+    #[tokio::test]
+    async fn openai_stream_routes_bounded_deltas_and_returns_the_complete_outcome() {
+        let payload = concat!(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"Hi<th\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"ink>why</think>!\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+            "data: [DONE]\n\n",
+        );
+        let header = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nX-Request-Id: stream-request\r\n\r\n",
+            payload.len()
+        );
+        let split = payload.find("<th").expect("split marker") + 2;
+        let (endpoint, captured) = fragmented_test_server(vec![
+            header.into_bytes(),
+            payload.as_bytes()[..split].to_vec(),
+            payload.as_bytes()[split..].to_vec(),
+        ])
+        .await;
+
+        let store = Arc::new(RecordingSecretStore::default());
+        let owner = lettuce_settings::SecretOwnerId::new();
+        let key_ref = SecretRef::new();
+        store
+            .put(
+                SecretRecord::new(key_ref, SecretPurpose::ProviderApiKey { owner }),
+                SecretValue::new("key-canary").expect("secret"),
+                None,
+            )
+            .await
+            .expect("store key");
+        let runtime = Arc::new(InferenceRuntime::default());
+        let runtime_port: Arc<dyn InferenceRuntimePort> = runtime.clone();
+        let adapter = RemoteProviders::with_runtime(
+            Arc::clone(&store),
+            Arc::new(JsonClient::new().expect("client")),
+            runtime_port,
+        );
+        let sink_id = RequestId::new();
+        let mut receiver = runtime.register_stream(sink_id).expect("register stream");
+        let mut inference = request(profile(
+            "nanogpt",
+            endpoint,
+            ProviderConfig::Standard,
+            Some(key_ref),
+            owner,
+        ));
+        inference.stream_sink = Some(sink_id);
+
+        let outcome = adapter.run(inference).await.expect("stream outcome");
+        let request =
+            String::from_utf8(captured.await.expect("captured request")).expect("UTF-8 request");
+        assert!(request.contains(r#""stream":true"#));
+        assert!(request.contains(r#""stream_options":{"include_usage":true}"#));
+        assert_eq!(
+            outcome.provider_request_id.as_deref(),
+            Some("stream-request")
+        );
+        assert!(matches!(
+            &outcome.candidates[0].parts[..],
+            [MessagePart::ReasoningSummary { text: reasoning }, MessagePart::Text { text }]
+                if reasoning == "why" && text == "Hi!"
+        ));
+
+        let first = receiver.recv().await.expect("first delta");
+        let second = receiver.recv().await.expect("second delta");
+        let third = receiver.recv().await.expect("third delta");
+        assert_eq!((first.sequence, second.sequence, third.sequence), (1, 2, 3));
+        assert_eq!(
+            (first.event, second.event, third.event),
+            (
+                GenerationStreamEvent::TextDelta {
+                    text: "Hi".to_owned()
+                },
+                GenerationStreamEvent::TextDelta {
+                    text: "!".to_owned()
+                },
+                GenerationStreamEvent::ReasoningDelta {
+                    text: "why".to_owned()
+                },
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn anthropic_stream_uses_sse_headers_and_message_stop() {
+        let payload = concat!(
+            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":2,\"output_tokens\":0}}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"answer\"}}\n\n",
+            "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":1}}\n\n",
+            "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+        );
+        let (request, outcome, events) =
+            run_stream_fixture("anthropic", ProviderProtocol::Anthropic, "", payload).await;
+        assert!(
+            request.starts_with("POST /v1/messages HTTP/1.1\r\n"),
+            "unexpected request: {request:?}"
+        );
+        assert!(
+            request
+                .to_ascii_lowercase()
+                .contains("accept: text/event-stream\r\n")
+        );
+        assert_eq!(
+            events,
+            vec![GenerationStreamEvent::TextDelta {
+                text: "answer".to_owned()
+            }]
+        );
+        assert_eq!(outcome.usage.expect("usage").input_tokens, 2);
+    }
+
+    #[tokio::test]
+    async fn gemini_stream_uses_sse_query_and_preserves_thought_parts() {
+        let payload = "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"why\",\"thought\":true},{\"text\":\"answer\"}]},\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":2,\"candidatesTokenCount\":1}}\n\n";
+        let (request, outcome, events) =
+            run_stream_fixture("gemini", ProviderProtocol::Gemini, "/v1", payload).await;
+        assert!(request.starts_with(
+            "POST /v1beta/models/test-model:streamGenerateContent?alt=sse HTTP/1.1\r\n"
+        ));
+        assert_eq!(
+            events,
+            vec![
+                GenerationStreamEvent::ReasoningDelta {
+                    text: "why".to_owned()
+                },
+                GenerationStreamEvent::TextDelta {
+                    text: "answer".to_owned()
+                }
+            ]
+        );
+        assert_eq!(outcome.usage.expect("usage").output_tokens, 1);
+    }
+
+    #[tokio::test]
+    async fn ollama_stream_uses_ndjson_and_native_reasoning() {
+        let payload = concat!(
+            "{\"message\":{\"content\":\"answer\",\"thinking\":\"why\"},\"done\":false}\n",
+            "{\"message\":{},\"done\":true,\"done_reason\":\"stop\",\"prompt_eval_count\":2,\"eval_count\":1}\n",
+        );
+        let (request, outcome, events) =
+            run_stream_fixture("ollama", ProviderProtocol::Ollama, "", payload).await;
+        assert!(
+            request.starts_with("POST /api/chat HTTP/1.1\r\n"),
+            "unexpected request: {request:?}"
+        );
+        assert_eq!(
+            events,
+            vec![
+                GenerationStreamEvent::TextDelta {
+                    text: "answer".to_owned()
+                },
+                GenerationStreamEvent::ReasoningDelta {
+                    text: "why".to_owned()
+                }
+            ]
+        );
+        assert_eq!(outcome.usage.expect("usage").output_tokens, 1);
+    }
+
+    #[tokio::test]
+    async fn cancellation_interrupts_a_stalled_buffered_response_without_changing_wire_mode() {
+        let (endpoint, captured, release) = stalled_test_server().await;
+        let store = Arc::new(RecordingSecretStore::default());
+        let owner = lettuce_settings::SecretOwnerId::new();
+        let runtime = Arc::new(InferenceRuntime::default());
+        let runtime_port: Arc<dyn InferenceRuntimePort> = runtime.clone();
+        let adapter = RemoteProviders::with_runtime(
+            store,
+            Arc::new(JsonClient::new().expect("client")),
+            runtime_port,
+        );
+        let handle = JobHandle::new(JobId::new());
+        runtime
+            .register_cancellation(handle.id(), handle.cancellation_token())
+            .expect("register cancellation");
+        let mut inference = request(profile(
+            "lmstudio",
+            endpoint,
+            ProviderConfig::Standard,
+            None,
+            owner,
+        ));
+        inference.cancellation = Some(handle.id());
+        let task = tokio::spawn(async move { adapter.run(inference).await });
+        let captured = String::from_utf8(captured.await.expect("request reached server"))
+            .expect("UTF-8 request");
+        assert!(captured.contains(r#""stream":false"#));
+        handle.request_cancel();
+        let result = tokio::time::timeout(std::time::Duration::from_secs(1), task)
+            .await
+            .expect("cancellation deadline")
+            .expect("provider task");
+        assert_eq!(result, Err(lettuce_conversations::PortError::Cancelled));
+        let _ = release.send(());
+    }
+
+    #[tokio::test]
+    async fn cancellation_interrupts_a_backpressured_stream_sink() {
+        let mut payload = String::new();
+        for _ in 0..65 {
+            payload.push_str("data: {\"choices\":[{\"delta\":{\"content\":\"x\"}}]}\n\n");
+        }
+        payload.push_str(
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+        );
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\n\r\n{payload}",
+            payload.len()
+        );
+        let (endpoint, captured) = test_server(response).await;
+        let store = Arc::new(RecordingSecretStore::default());
+        let owner = lettuce_settings::SecretOwnerId::new();
+        let runtime = Arc::new(InferenceRuntime::default());
+        let runtime_port: Arc<dyn InferenceRuntimePort> = runtime.clone();
+        let adapter = RemoteProviders::with_runtime(
+            store,
+            Arc::new(JsonClient::new().expect("client")),
+            runtime_port,
+        );
+        let sink_id = RequestId::new();
+        let _receiver = runtime.register_stream(sink_id).expect("register stream");
+        let handle = JobHandle::new(JobId::new());
+        runtime
+            .register_cancellation(handle.id(), handle.cancellation_token())
+            .expect("register cancellation");
+        let mut inference = request(profile(
+            "lmstudio",
+            endpoint,
+            ProviderConfig::Standard,
+            None,
+            owner,
+        ));
+        inference.stream_sink = Some(sink_id);
+        inference.cancellation = Some(handle.id());
+        let task = tokio::spawn(async move { adapter.run(inference).await });
+        captured.await.expect("request reached server");
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        handle.request_cancel();
+        let result = tokio::time::timeout(std::time::Duration::from_secs(1), task)
+            .await
+            .expect("cancellation deadline")
+            .expect("provider task");
+        assert_eq!(result, Err(lettuce_conversations::PortError::Cancelled));
     }
 
     #[tokio::test]
@@ -1369,6 +1742,77 @@ mod integration_tests {
             serde_json::json!("cachedContents/stale")
         );
         let retry = captured_request(requests[2].clone());
+        assert!(retry.body.get("cachedContent").is_none());
+        assert_eq!(retry.body["contents"].as_array().map(Vec::len), Some(2));
+        assert!(retry.body.get("systemInstruction").is_some());
+    }
+
+    #[tokio::test]
+    async fn missing_gemini_cache_retries_the_clean_stream_once() {
+        let store = Arc::new(RecordingSecretStore::default());
+        let owner = lettuce_settings::SecretOwnerId::new();
+        let key_ref = SecretRef::new();
+        store
+            .put(
+                SecretRecord::new(key_ref, SecretPurpose::ProviderApiKey { owner }),
+                SecretValue::new("key-canary").expect("secret"),
+                None,
+            )
+            .await
+            .expect("store key");
+        let not_found = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n".to_owned();
+        let stream_payload = "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"ok\"}]},\"finishReason\":\"STOP\"}]}\n\n";
+        let stream_response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\n\r\n{stream_payload}",
+            stream_payload.len()
+        );
+        let (endpoint, requests) = test_server_many(vec![
+            http_json(r#"{"name":"cachedContents/stale"}"#),
+            not_found,
+            stream_response,
+        ])
+        .await;
+        let runtime = Arc::new(InferenceRuntime::default());
+        let runtime_port: Arc<dyn InferenceRuntimePort> = runtime.clone();
+        let adapter = RemoteProviders::with_runtime(
+            store,
+            Arc::new(JsonClient::new().expect("client")),
+            runtime_port,
+        );
+        let mut resolved = profile(
+            "gemini",
+            format!("{endpoint}/v1"),
+            ProviderConfig::Standard,
+            Some(key_ref),
+            owner,
+        );
+        resolved.chat_profile.provider_protocol = ProviderProtocol::Gemini;
+        resolved.chat_profile.parameters.prompt_caching =
+            Some(lettuce_models::PromptCaching::Enabled {
+                retention: lettuce_models::PromptCacheRetention::FiveMinutes,
+            });
+        let sink_id = RequestId::new();
+        let _receiver = runtime.register_stream(sink_id).expect("register stream");
+        let mut inference = request_with_context(resolved, cache_context());
+        inference.stream_sink = Some(sink_id);
+        adapter
+            .run(inference)
+            .await
+            .expect("missing cache retries uncached stream");
+
+        let requests = requests.await.expect("stream retry requests");
+        assert_eq!(requests.len(), 3);
+        let cached = captured_request(requests[1].clone());
+        let retry = captured_request(requests[2].clone());
+        assert_eq!(
+            cached.request_line,
+            "POST /v1beta/models/test-model:streamGenerateContent?alt=sse HTTP/1.1"
+        );
+        assert_eq!(retry.request_line, cached.request_line);
+        assert_eq!(
+            cached.body["cachedContent"],
+            serde_json::json!("cachedContents/stale")
+        );
         assert!(retry.body.get("cachedContent").is_none());
         assert_eq!(retry.body["contents"].as_array().map(Vec::len), Some(2));
         assert!(retry.body.get("systemInstruction").is_some());
