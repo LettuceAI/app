@@ -2,11 +2,13 @@ use std::borrow::Cow;
 
 use lettuce_conversations::{
     FinishReason, InferenceCandidate, InferenceOutcome, InferenceRequest, InferenceUsage,
-    InferenceWarningCode, MessagePart, MessageRole, ProviderContextPart, ProviderNeutralContext,
+    InferenceWarningCode, MessagePart, MessageRole, ProposedToolCall, ProviderContextPart,
+    ProviderNeutralContext, ToolChoice, ToolRequest,
 };
 use lettuce_inference::InferenceRuntimePort;
 use lettuce_models::{
-    ProviderAccount, ProviderConfig, ReasoningEffort, ReasoningMode, ResolvedChatProfile,
+    CapabilityStatus, ProviderAccount, ProviderConfig, ReasoningEffort, ReasoningMode,
+    ResolvedChatProfile,
 };
 use lettuce_network::{JsonClient, JsonResponse, MAX_REQUEST_BYTES};
 use lettuce_settings::SecretStore;
@@ -15,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use crate::common::{
     AdapterError, AuthPlan, Credentials, RemoteModel, STANDARD_HEADERS, decode_json,
     generation_policy, load_auth, load_secret_headers, max_output_tokens,
-    reject_unsupported_features, validate_common_request, validate_prompt_caching,
+    reject_unsupported_features, validate_common_request_with_tools, validate_prompt_caching,
     validate_supported_reasoning,
 };
 use crate::descriptor::{
@@ -45,12 +47,13 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
     runtime: &dyn InferenceRuntimePort,
     request: InferenceRequest,
 ) -> Result<InferenceOutcome, AdapterError> {
-    validate_common_request(&request)?;
+    validate_common_request_with_tools(&request)?;
     let profile = &request.profile.chat_profile;
     if !matches!(profile.provider_config, ProviderConfig::Standard) {
         return Err(AdapterError::Rejected);
     }
     validate_supported_reasoning(&profile.parameters)?;
+    validate_tool_features(profile, request.tools.as_ref())?;
     if profile.parameters.reasoning_mode != Some(ReasoningMode::Enabled) {
         reject_unsupported_features(&profile.parameters)?;
     }
@@ -60,7 +63,7 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
     if streaming && (!profile.streaming_enabled || !DESCRIPTOR.streaming) {
         return Err(AdapterError::Rejected);
     }
-    let body = encode_request(profile, &request.context, streaming)?;
+    let body = encode_request(profile, &request.context, request.tools.as_ref(), streaming)?;
     let credentials = Credentials::from(profile);
     let auth = load_auth(AuthPlan::OptionalBearer, secret_store, &credentials).await?;
     let secret_headers = load_secret_headers(secret_store, &credentials).await?;
@@ -80,14 +83,15 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
                 .map_err(Into::into)
         })
         .await?;
-        crate::streaming::consume_stream(
+        let outcome = crate::streaming::consume_stream(
             response,
             crate::stream_framing::StreamFormat::Ndjson,
             crate::stream_normalize::StreamProtocol::Ollama,
             runtime,
             &request,
         )
-        .await
+        .await?;
+        validate_tool_outcome(&request, outcome)
     } else {
         let response = crate::streaming::await_cancelable(runtime, request.cancellation, async {
             network
@@ -104,8 +108,64 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
                 .map_err(Into::into)
         })
         .await?;
-        parse_response(response)
+        validate_tool_outcome(&request, parse_response(response)?)
     }
+}
+
+fn validate_tool_features(
+    profile: &ResolvedChatProfile,
+    tools: Option<&ToolRequest>,
+) -> Result<(), AdapterError> {
+    let Some(tools) = tools else {
+        return Ok(());
+    };
+    if profile.capabilities.tools == CapabilityStatus::Unsupported
+        || !matches!(tools.choice, ToolChoice::Auto)
+        || profile.parameters.reasoning_mode == Some(ReasoningMode::Enabled)
+    {
+        return Err(AdapterError::Rejected);
+    }
+    Ok(())
+}
+
+fn validate_tool_outcome(
+    request: &InferenceRequest,
+    outcome: InferenceOutcome,
+) -> Result<InferenceOutcome, AdapterError> {
+    outcome
+        .validate()
+        .map_err(|_| AdapterError::MalformedResponse)?;
+    let calls = outcome
+        .candidates
+        .iter()
+        .flat_map(|candidate| candidate.tool_calls.iter())
+        .collect::<Vec<_>>();
+    if !calls.is_empty()
+        && outcome.candidates.iter().any(|candidate| {
+            candidate
+                .parts
+                .iter()
+                .any(|part| matches!(part, MessagePart::ReasoningSummary { .. }))
+        })
+    {
+        return Err(AdapterError::MalformedResponse);
+    }
+    let Some(tools) = &request.tools else {
+        return if calls.is_empty() {
+            Ok(outcome)
+        } else {
+            Err(AdapterError::MalformedResponse)
+        };
+    };
+    if calls.iter().any(|call| {
+        !tools
+            .definitions
+            .iter()
+            .any(|definition| definition.name == call.name)
+    }) {
+        return Err(AdapterError::MalformedResponse);
+    }
+    Ok(outcome)
 }
 
 pub(crate) async fn list_models<S: SecretStore + ?Sized>(
@@ -193,32 +253,106 @@ pub(crate) const DESCRIPTOR: ProviderDescriptor = ProviderDescriptor {
 struct WireMessage {
     role: &'static str,
     content: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    tool_calls: Vec<WireToolCall>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_name: Option<String>,
 }
 
 fn wire_messages(context: &ProviderNeutralContext) -> Result<Vec<WireMessage>, AdapterError> {
-    context
-        .messages
-        .iter()
-        .map(|message| {
-            let mut content = String::new();
-            for part in &message.parts {
-                match part {
-                    ProviderContextPart::Text { text } => content.push_str(text),
-                    ProviderContextPart::MediaAsset { .. }
-                    | ProviderContextPart::ToolCall(_)
-                    | ProviderContextPart::ToolResult(_) => return Err(AdapterError::Rejected),
-                }
+    let mut out = Vec::new();
+    let mut expected_results: Option<Vec<&lettuce_conversations::TranscriptToolCall>> = None;
+    for message in &context.messages {
+        let mut content = String::new();
+        let mut calls = Vec::new();
+        let mut results = Vec::new();
+        for part in &message.parts {
+            match part {
+                ProviderContextPart::Text { text } => content.push_str(text),
+                ProviderContextPart::ToolCall(call) => calls.push(call),
+                ProviderContextPart::ToolResult(result) => results.push(result),
+                ProviderContextPart::MediaAsset { .. } => return Err(AdapterError::Rejected),
             }
-            Ok(WireMessage {
-                role: match message.role {
-                    MessageRole::System | MessageRole::Scene => "system",
-                    MessageRole::User => "user",
-                    MessageRole::Assistant => "assistant",
-                },
+        }
+        if let Some(expected) = expected_results.take() {
+            if message.role != MessageRole::User || results.len() != expected.len() {
+                return Err(AdapterError::Rejected);
+            }
+            for (result, call) in results.iter().zip(expected) {
+                if result.execution_id != call.execution_id
+                    || result.name != call.name
+                    || result.provider_call_id != call.provider_call_id
+                {
+                    return Err(AdapterError::Rejected);
+                }
+                out.push(WireMessage {
+                    role: "tool",
+                    content: serde_json::to_string(&result.output.value)
+                        .map_err(|_| AdapterError::Rejected)?,
+                    tool_calls: Vec::new(),
+                    tool_name: Some(result.name.clone()),
+                });
+            }
+            if !calls.is_empty() {
+                return Err(AdapterError::Rejected);
+            }
+            if !content.is_empty() {
+                out.push(text_wire_message("user", content));
+            }
+            continue;
+        }
+        if !results.is_empty() {
+            return Err(AdapterError::Rejected);
+        }
+        if !calls.is_empty() {
+            if message.role != MessageRole::Assistant
+                || calls.iter().any(|call| call.provider_replay.is_some())
+            {
+                return Err(AdapterError::Rejected);
+            }
+            expected_results = Some(calls.clone());
+            out.push(WireMessage {
+                role: "assistant",
                 content,
-            })
-        })
-        .collect()
+                tool_calls: calls
+                    .iter()
+                    .enumerate()
+                    .map(|(index, call)| WireToolCall {
+                        id: call.provider_call_id.clone(),
+                        kind: "function".to_owned(),
+                        function: WireFunctionCall {
+                            index,
+                            name: call.name.clone(),
+                            arguments: call.arguments.clone(),
+                        },
+                    })
+                    .collect(),
+                tool_name: None,
+            });
+            continue;
+        }
+        out.push(text_wire_message(
+            match message.role {
+                MessageRole::System | MessageRole::Scene => "system",
+                MessageRole::User => "user",
+                MessageRole::Assistant => "assistant",
+            },
+            content,
+        ));
+    }
+    if expected_results.is_some() {
+        return Err(AdapterError::Rejected);
+    }
+    Ok(out)
+}
+
+fn text_wire_message(role: &'static str, content: String) -> WireMessage {
+    WireMessage {
+        role,
+        content,
+        tool_calls: Vec::new(),
+        tool_name: None,
+    }
 }
 
 fn normalize_system_messages(messages: Vec<WireMessage>) -> Vec<WireMessage> {
@@ -240,6 +374,8 @@ fn normalize_system_messages(messages: Vec<WireMessage>) -> Vec<WireMessage> {
             WireMessage {
                 role: "system",
                 content: merged,
+                tool_calls: Vec::new(),
+                tool_name: None,
             },
             false,
         ));
@@ -250,6 +386,8 @@ fn normalize_system_messages(messages: Vec<WireMessage>) -> Vec<WireMessage> {
                 WireMessage {
                     role: "user",
                     content: message.content,
+                    tool_calls: Vec::new(),
+                    tool_name: None,
                 },
                 true,
             ));
@@ -282,6 +420,7 @@ fn normalize_system_messages(messages: Vec<WireMessage>) -> Vec<WireMessage> {
 fn encode_request(
     profile: &ResolvedChatProfile,
     context: &ProviderNeutralContext,
+    tools: Option<&ToolRequest>,
     streaming: bool,
 ) -> Result<Vec<u8>, AdapterError> {
     let parameters = &profile.parameters;
@@ -291,6 +430,20 @@ fn encode_request(
         stream: streaming,
         think: ollama_think(parameters),
         options: options(parameters),
+        tools: tools.map(|request| {
+            request
+                .definitions
+                .iter()
+                .map(|definition| WireToolDefinition {
+                    kind: "function",
+                    function: WireTool {
+                        name: definition.name.clone(),
+                        description: definition.description.clone(),
+                        parameters: definition.parameters.clone(),
+                    },
+                })
+                .collect()
+        }),
     };
     let body = serde_json::to_vec(&request).map_err(|_| AdapterError::Rejected)?;
     if body.len() > MAX_REQUEST_BYTES {
@@ -350,9 +503,17 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
             warnings.push(InferenceWarningCode::Truncated);
             FinishReason::Length
         }
-        _ => FinishReason::Stop,
+        Some("stop") | None => FinishReason::Stop,
+        Some(_) => {
+            warnings.push(InferenceWarningCode::ProviderDegraded);
+            FinishReason::Stop
+        }
     };
-    if text.trim().is_empty() && reasoning.trim().is_empty() {
+    if parsed.done != Some(true) {
+        return Err(AdapterError::MalformedResponse);
+    }
+    let tool_calls = parse_tool_calls(message.tool_calls)?;
+    if text.trim().is_empty() && reasoning.trim().is_empty() && tool_calls.is_empty() {
         return Err(AdapterError::EmptyResponse);
     }
     let mut parts = Vec::new();
@@ -366,7 +527,7 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
         candidates: vec![InferenceCandidate {
             ordinal: 0,
             parts,
-            tool_calls: Vec::new(),
+            tool_calls,
             provider_replay: None,
         }],
         usage: match (parsed.prompt_eval_count, parsed.eval_count) {
@@ -391,6 +552,44 @@ struct ChatRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     think: Option<OllamaThink>,
     options: Options,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tools: Option<Vec<WireToolDefinition>>,
+}
+
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
+struct WireToolCall {
+    #[serde(skip_serializing)]
+    id: Option<String>,
+    #[serde(rename = "type", default = "function_kind")]
+    kind: String,
+    function: WireFunctionCall,
+}
+
+fn function_kind() -> String {
+    "function".to_owned()
+}
+
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
+struct WireFunctionCall {
+    #[serde(default)]
+    index: usize,
+    name: String,
+    arguments: serde_json::Value,
+}
+
+#[derive(Serialize)]
+struct WireToolDefinition {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    function: WireTool,
+}
+
+#[derive(Serialize)]
+struct WireTool {
+    name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    parameters: serde_json::Value,
 }
 
 #[derive(Serialize)]
@@ -460,6 +659,7 @@ struct Options {
 #[derive(Deserialize)]
 struct ChatResponse {
     message: Option<ResponseMessage>,
+    done: Option<bool>,
     done_reason: Option<String>,
     prompt_eval_count: Option<u64>,
     eval_count: Option<u64>,
@@ -471,16 +671,49 @@ struct ResponseMessage {
     thinking: Option<String>,
     reasoning: Option<String>,
     reasoning_content: Option<String>,
+    #[serde(default)]
+    tool_calls: Vec<WireToolCall>,
+}
+
+fn parse_tool_calls(calls: Vec<WireToolCall>) -> Result<Vec<ProposedToolCall>, AdapterError> {
+    if calls.len() > lettuce_conversations::MAX_TOOL_CALLS_PER_RESPONSE {
+        return Err(AdapterError::MalformedResponse);
+    }
+    calls
+        .into_iter()
+        .map(|call| {
+            if call.kind != "function" {
+                return Err(AdapterError::MalformedResponse);
+            }
+            let proposal = ProposedToolCall {
+                provider_call_id: call.id,
+                name: call.function.name,
+                arguments: call.function.arguments,
+                raw_arguments: None,
+                provider_replay: None,
+            };
+            proposal
+                .validate()
+                .map_err(|_| AdapterError::MalformedResponse)?;
+            Ok(proposal)
+        })
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lettuce_conversations::{
+        ContextAttributions, ContextBudgetReport, ProviderNeutralMessage, ToolOutput,
+        TranscriptToolCall, TranscriptToolResult,
+    };
 
     fn message(role: &'static str, content: &str) -> WireMessage {
         WireMessage {
             role,
             content: content.to_owned(),
+            tool_calls: Vec::new(),
+            tool_name: None,
         }
     }
 
@@ -641,5 +874,124 @@ mod tests {
         assert_eq!(options["repeat_penalty"], serde_json::json!(1.1));
         assert_eq!(options["stop"], serde_json::json!(["END"]));
         assert_eq!(options.as_object().expect("options").len(), 16);
+    }
+
+    #[test]
+    fn encodes_native_tool_replay_in_exact_call_order() {
+        let first = lettuce_types::ToolExecutionId::new();
+        let second = lettuce_types::ToolExecutionId::new();
+        let context = ProviderNeutralContext {
+            messages: vec![
+                ProviderNeutralMessage {
+                    role: MessageRole::Assistant,
+                    parts: vec![
+                        ProviderContextPart::Text {
+                            text: "checking".to_owned(),
+                        },
+                        ProviderContextPart::ToolCall(TranscriptToolCall {
+                            execution_id: first,
+                            provider_call_id: None,
+                            name: "lookup_weather".to_owned(),
+                            arguments: serde_json::json!({"city":"Paris"}),
+                            raw_arguments: None,
+                            provider_replay: None,
+                        }),
+                        ProviderContextPart::ToolCall(TranscriptToolCall {
+                            execution_id: second,
+                            provider_call_id: Some("call-2".to_owned()),
+                            name: "lookup_weather".to_owned(),
+                            arguments: serde_json::json!({"city":"London"}),
+                            raw_arguments: None,
+                            provider_replay: None,
+                        }),
+                    ],
+                },
+                ProviderNeutralMessage {
+                    role: MessageRole::User,
+                    parts: vec![
+                        ProviderContextPart::ToolResult(TranscriptToolResult {
+                            execution_id: first,
+                            provider_call_id: None,
+                            name: "lookup_weather".to_owned(),
+                            output: ToolOutput {
+                                value: serde_json::json!({"temperature":18}),
+                                is_error: false,
+                            },
+                        }),
+                        ProviderContextPart::ToolResult(TranscriptToolResult {
+                            execution_id: second,
+                            provider_call_id: Some("call-2".to_owned()),
+                            name: "lookup_weather".to_owned(),
+                            output: ToolOutput {
+                                value: serde_json::json!("offline"),
+                                is_error: true,
+                            },
+                        }),
+                        ProviderContextPart::Text {
+                            text: "Use Celsius".to_owned(),
+                        },
+                    ],
+                },
+            ],
+            attributions: ContextAttributions::default(),
+            budget: ContextBudgetReport::default(),
+        };
+        context.validate().expect("tool context");
+
+        let messages = serde_json::to_value(wire_messages(&context).expect("wire messages"))
+            .expect("message json");
+        assert_eq!(
+            messages,
+            serde_json::json!([
+                {"role":"assistant","content":"checking","tool_calls":[
+                    {"type":"function","function":{"index":0,"name":"lookup_weather","arguments":{"city":"Paris"}}},
+                    {"type":"function","function":{"index":1,"name":"lookup_weather","arguments":{"city":"London"}}}
+                ]},
+                {"role":"tool","content":"{\"temperature\":18}","tool_name":"lookup_weather"},
+                {"role":"tool","content":"\"offline\"","tool_name":"lookup_weather"},
+                {"role":"user","content":"Use Celsius"}
+            ])
+        );
+
+        let incomplete = ProviderNeutralContext {
+            messages: context.messages[..1].to_vec(),
+            attributions: ContextAttributions::default(),
+            budget: ContextBudgetReport::default(),
+        };
+        assert_eq!(wire_messages(&incomplete), Err(AdapterError::Rejected));
+    }
+
+    #[test]
+    fn parses_native_tool_calls_without_fabricating_ids() {
+        let outcome = parse_response(JsonResponse {
+            status: 200,
+            body: br#"{"message":{"content":"checking","tool_calls":[{"type":"function","function":{"index":0,"name":"lookup_weather","arguments":{"city":"Paris"}}},{"id":"call-2","type":"function","function":{"index":1,"name":"lookup_weather","arguments":{"city":"London"}}}]},"done":true,"done_reason":"stop"}"#.to_vec(),
+            request_id: None,
+            retry_after: None,
+        })
+        .expect("tool response");
+        assert_eq!(outcome.candidates[0].tool_calls.len(), 2);
+        assert_eq!(outcome.candidates[0].tool_calls[0].provider_call_id, None);
+        assert_eq!(
+            outcome.candidates[0].tool_calls[1]
+                .provider_call_id
+                .as_deref(),
+            Some("call-2")
+        );
+
+        for body in [
+            r#"{"message":{"tool_calls":[{"function":{"name":"lookup","arguments":[]}}]},"done":true}"#,
+            r#"{"message":{"tool_calls":[{"function":{"name":"lookup","arguments":{}}}]},"done":false}"#,
+        ] {
+            assert_eq!(
+                parse_response(JsonResponse {
+                    status: 200,
+                    body: body.as_bytes().to_vec(),
+                    request_id: None,
+                    retry_after: None,
+                }),
+                Err(AdapterError::MalformedResponse)
+            );
+        }
     }
 }

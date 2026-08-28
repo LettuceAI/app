@@ -70,10 +70,14 @@ of being fabricated. Standard Gemini explicit-cache resources own both tool
 definitions and tool choice; a missing resource retry restores the clean
 uncached request. Gemini 3 tools, reasoning-plus-tools, signed call responses,
 and signed replay references remain rejected until replay artifact bytes can be
-materialized exactly. Ollama tool wire format remains explicitly rejected until
-its native adapter is implemented.
+materialized exactly. Ollama HTTP uses native function definitions and ordered
+assistant-call/tool-result replay, parses buffered calls, and accumulates atomic
+calls across NDJSON chunks without fabricating missing provider IDs. Its native
+API has no tool-choice field, so only Auto is supported; Required/named choice
+and reasoning-plus-tools remain rejected rather than approximated or replayed
+lossily.
 
-Deferred horizontals: remaining native tool adapters, media input,
+Deferred horizontals: materialized replay artifacts, media input,
 custom-provider reasoning schema, and structured output.
 
 Explicit prompt caching is executable for Anthropic, custom Anthropic, and

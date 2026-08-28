@@ -190,14 +190,6 @@ pub(crate) enum AuthPlan {
     None,
 }
 
-pub(crate) fn validate_common_request(request: &InferenceRequest) -> Result<(), AdapterError> {
-    validate_common_request_with_tools(request)?;
-    if request.tools.is_some() {
-        return Err(AdapterError::Rejected);
-    }
-    Ok(())
-}
-
 pub(crate) fn validate_common_request_with_tools(
     request: &InferenceRequest,
 ) -> Result<(), AdapterError> {

@@ -63,6 +63,7 @@ pub(crate) struct StreamNormalizer {
     anthropic_tool_calls: BTreeMap<u64, PendingAnthropicToolCall>,
     anthropic_server_tool_blocks: BTreeSet<u64>,
     gemini_tool_calls: Vec<ProposedToolCall>,
+    ollama_tool_calls: Vec<ProposedToolCall>,
     gemini_has_thought_signature: bool,
     requires_openai_tool_calls: bool,
     requires_anthropic_tool_calls: bool,
@@ -102,6 +103,7 @@ impl StreamNormalizer {
             anthropic_tool_calls: BTreeMap::new(),
             anthropic_server_tool_blocks: BTreeSet::new(),
             gemini_tool_calls: Vec::new(),
+            ollama_tool_calls: Vec::new(),
             gemini_has_thought_signature: false,
             requires_openai_tool_calls: false,
             requires_anthropic_tool_calls: false,
@@ -157,7 +159,7 @@ impl StreamNormalizer {
                 }
                 std::mem::take(&mut self.gemini_tool_calls)
             }
-            StreamProtocol::Ollama => Vec::new(),
+            StreamProtocol::Ollama => std::mem::take(&mut self.ollama_tool_calls),
         };
         if self.requires_openai_tool_calls && tool_calls.is_empty() {
             return Err(StreamNormalizeError::MalformedJson);
@@ -627,6 +629,56 @@ impl StreamNormalizer {
                 .find_map(|field| message.get(field).and_then(Value::as_str))
             {
                 self.append_reasoning(reasoning, &mut deltas)?;
+            }
+            if let Some(calls) = message.get("tool_calls") {
+                let calls = calls
+                    .as_array()
+                    .ok_or(StreamNormalizeError::MalformedJson)?;
+                for call in calls {
+                    if self.ollama_tool_calls.len() >= MAX_TOOL_CALLS_PER_RESPONSE {
+                        return Err(StreamNormalizeError::OutputTooLarge {
+                            field: "tool_calls",
+                        });
+                    }
+                    let function = call
+                        .get("function")
+                        .and_then(Value::as_object)
+                        .ok_or(StreamNormalizeError::MalformedJson)?;
+                    if call
+                        .get("type")
+                        .is_some_and(|kind| kind.as_str() != Some("function"))
+                    {
+                        return Err(StreamNormalizeError::MalformedJson);
+                    }
+                    let name = function
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .ok_or(StreamNormalizeError::MalformedJson)?;
+                    let arguments = function
+                        .get("arguments")
+                        .filter(|value| value.is_object())
+                        .cloned()
+                        .ok_or(StreamNormalizeError::MalformedJson)?;
+                    let provider_call_id = match call.get("id") {
+                        Some(id) => Some(
+                            id.as_str()
+                                .ok_or(StreamNormalizeError::MalformedJson)?
+                                .to_owned(),
+                        ),
+                        None => None,
+                    };
+                    let proposal = ProposedToolCall {
+                        provider_call_id,
+                        name: name.to_owned(),
+                        arguments,
+                        raw_arguments: None,
+                        provider_replay: None,
+                    };
+                    proposal
+                        .validate()
+                        .map_err(|_| StreamNormalizeError::MalformedJson)?;
+                    self.ollama_tool_calls.push(proposal);
+                }
             }
         }
         if value.get("done").and_then(Value::as_bool) == Some(true) {
@@ -1427,6 +1479,25 @@ mod tests {
         let (_, outcome) = normalizer.finish().unwrap();
         assert!(
             matches!(&outcome.candidates[0].parts[1], MessagePart::Text { text } if text == "hello world")
+        );
+    }
+
+    #[test]
+    fn ollama_accumulates_atomic_tool_calls_across_ndjson_chunks() {
+        let mut normalizer = StreamNormalizer::new(StreamProtocol::Ollama, None);
+        normalizer.consume(&record(r#"{"message":{"thinking":"step","tool_calls":[{"function":{"index":0,"name":"lookup_weather","arguments":{"city":"Paris"}}}]},"done":false}"#)).unwrap();
+        normalizer.consume(&record(r#"{"message":{"content":"checking","tool_calls":[{"id":"call-2","type":"function","function":{"index":1,"name":"lookup_weather","arguments":{"city":"London"}}}]},"done":true,"done_reason":"stop"}"#)).unwrap();
+        let (_, outcome) = normalizer.finish().expect("tool outcome");
+        let calls = &outcome.candidates[0].tool_calls;
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].provider_call_id, None);
+        assert_eq!(calls[1].provider_call_id.as_deref(), Some("call-2"));
+        assert_eq!(calls[1].arguments, serde_json::json!({"city":"London"}));
+
+        let mut malformed = StreamNormalizer::new(StreamProtocol::Ollama, None);
+        assert_eq!(
+            malformed.consume(&record(r#"{"message":{"tool_calls":[{"function":{"name":"lookup","arguments":[]}}]},"done":true}"#)).unwrap_err(),
+            StreamNormalizeError::MalformedJson
         );
     }
 

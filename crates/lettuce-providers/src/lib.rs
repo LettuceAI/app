@@ -849,6 +849,179 @@ mod integration_tests {
     }
 
     #[tokio::test]
+    async fn ollama_tool_request_runs_through_the_native_http_boundary() {
+        let store = Arc::new(RecordingSecretStore::default());
+        let owner = lettuce_settings::SecretOwnerId::new();
+        let response = http_json(
+            r#"{"message":{"role":"assistant","content":"checking","tool_calls":[{"type":"function","function":{"index":0,"name":"lookup_weather","arguments":{"city":"Istanbul"}}}]},"done":true,"done_reason":"stop"}"#,
+        );
+        let (endpoint, captured) = test_server(response).await;
+        let adapter = RemoteProviders::new(store, Arc::new(JsonClient::new().expect("client")));
+        let mut resolved = profile("ollama", endpoint, ProviderConfig::Standard, None, owner);
+        resolved.chat_profile.provider_protocol = ProviderProtocol::Ollama;
+        resolved.chat_profile.capabilities.tools = CapabilityStatus::Supported;
+        resolved.tool_policy = ToolPolicy::Allowed;
+        let mut inference = request(resolved);
+        inference.tools = Some(ToolRequest {
+            definitions: vec![ToolDefinition {
+                name: "lookup_weather".to_owned(),
+                description: Some("Get current weather".to_owned()),
+                parameters: serde_json::json!({
+                    "type":"object",
+                    "properties":{"city":{"type":"string"}}
+                }),
+                version: 1,
+            }],
+            choice: ToolChoice::Auto,
+        });
+
+        let outcome = adapter.run(inference).await.expect("tool outcome");
+        let call = &outcome.candidates[0].tool_calls[0];
+        assert_eq!(call.provider_call_id, None);
+        assert_eq!(call.arguments, serde_json::json!({"city":"Istanbul"}));
+
+        let captured = captured_request(captured.await.expect("request"));
+        assert_eq!(captured.request_line, "POST /api/chat HTTP/1.1");
+        assert_eq!(
+            captured.body["tools"],
+            serde_json::json!([{"type":"function","function":{
+                "name":"lookup_weather",
+                "description":"Get current weather",
+                "parameters":{
+                    "type":"object",
+                    "properties":{"city":{"type":"string"}}
+                }
+            }}])
+        );
+        assert!(captured.body.get("tool_choice").is_none());
+    }
+
+    #[tokio::test]
+    async fn ollama_tool_stream_returns_calls_without_fabricating_ids() {
+        let payload = concat!(
+            "{\"message\":{\"content\":\"checking\",\"tool_calls\":[{\"function\":{\"index\":0,\"name\":\"lookup_weather\",\"arguments\":{\"city\":\"Istanbul\"}}}]},\"done\":false}\n",
+            "{\"message\":{},\"done\":true,\"done_reason\":\"stop\"}\n",
+        );
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/x-ndjson\r\nContent-Length: {}\r\n\r\n{payload}",
+            payload.len()
+        );
+        let (endpoint, captured) = test_server(response).await;
+        let store = Arc::new(RecordingSecretStore::default());
+        let runtime = Arc::new(InferenceRuntime::default());
+        let runtime_port: Arc<dyn InferenceRuntimePort> = runtime.clone();
+        let adapter = RemoteProviders::with_runtime(
+            store,
+            Arc::new(JsonClient::new().expect("client")),
+            runtime_port,
+        );
+        let owner = lettuce_settings::SecretOwnerId::new();
+        let mut resolved = profile(
+            "ollama",
+            endpoint,
+            ProviderConfig::Standard,
+            None,
+            owner,
+        );
+        resolved.chat_profile.provider_protocol = ProviderProtocol::Ollama;
+        resolved.chat_profile.capabilities.tools = CapabilityStatus::Supported;
+        resolved.tool_policy = ToolPolicy::Allowed;
+        let sink_id = RequestId::new();
+        let mut receiver = runtime.register_stream(sink_id).expect("register stream");
+        let mut inference = request(resolved);
+        inference.stream_sink = Some(sink_id);
+        inference.tools = Some(ToolRequest {
+            definitions: vec![ToolDefinition {
+                name: "lookup_weather".to_owned(),
+                description: None,
+                parameters: serde_json::json!({"type":"object"}),
+                version: 1,
+            }],
+            choice: ToolChoice::Auto,
+        });
+
+        let outcome = adapter.run(inference).await.expect("stream outcome");
+        runtime
+            .unregister_stream(sink_id)
+            .expect("unregister stream");
+        while receiver.recv().await.is_some() {}
+        let call = &outcome.candidates[0].tool_calls[0];
+        assert_eq!(call.provider_call_id, None);
+        assert_eq!(call.arguments, serde_json::json!({"city":"Istanbul"}));
+        let captured = captured_request(captured.await.expect("request"));
+        assert_eq!(captured.body["stream"], true);
+        assert_eq!(captured.body["tools"][0]["function"]["name"], "lookup_weather");
+    }
+
+    #[tokio::test]
+    async fn ollama_rejects_non_native_tool_modes_before_network_io() {
+        for (choice, policy, capability, reasoning) in [
+            (
+                ToolChoice::Named {
+                    name: "lookup_weather".to_owned(),
+                },
+                ToolPolicy::Allowed,
+                CapabilityStatus::Supported,
+                false,
+            ),
+            (
+                ToolChoice::Required,
+                ToolPolicy::Required,
+                CapabilityStatus::Supported,
+                false,
+            ),
+            (
+                ToolChoice::Auto,
+                ToolPolicy::Allowed,
+                CapabilityStatus::Unsupported,
+                false,
+            ),
+            (
+                ToolChoice::Auto,
+                ToolPolicy::Allowed,
+                CapabilityStatus::Supported,
+                true,
+            ),
+        ] {
+            let store = Arc::new(RecordingSecretStore::default());
+            let adapter = RemoteProviders::new(
+                Arc::clone(&store),
+                Arc::new(JsonClient::new().expect("client")),
+            );
+            let owner = lettuce_settings::SecretOwnerId::new();
+            let mut resolved = profile(
+                "ollama",
+                "http://127.0.0.1:9".to_owned(),
+                ProviderConfig::Standard,
+                None,
+                owner,
+            );
+            resolved.chat_profile.provider_protocol = ProviderProtocol::Ollama;
+            resolved.chat_profile.capabilities.tools = capability;
+            resolved.tool_policy = policy;
+            if reasoning {
+                resolved.chat_profile.parameters.reasoning_mode =
+                    Some(lettuce_models::ReasoningMode::Enabled);
+            }
+            let mut inference = request(resolved);
+            inference.tools = Some(ToolRequest {
+                definitions: vec![ToolDefinition {
+                    name: "lookup_weather".to_owned(),
+                    description: None,
+                    parameters: serde_json::json!({"type":"object"}),
+                    version: 1,
+                }],
+                choice,
+            });
+            assert_eq!(
+                adapter.run(inference).await,
+                Err(lettuce_conversations::PortError::Rejected)
+            );
+            assert!(store.take_loads().is_empty());
+        }
+    }
+
+    #[tokio::test]
     async fn cancellation_interrupts_a_stalled_buffered_response_without_changing_wire_mode() {
         let (endpoint, captured, release) = stalled_test_server().await;
         let store = Arc::new(RecordingSecretStore::default());
