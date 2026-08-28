@@ -135,6 +135,7 @@ impl StreamNormalizer {
                 candidates: vec![InferenceCandidate {
                     ordinal: 0,
                     parts,
+                    tool_calls: Vec::new(),
                     provider_replay: None,
                 }],
                 usage,

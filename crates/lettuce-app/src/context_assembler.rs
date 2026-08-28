@@ -1879,6 +1879,16 @@ fn budget_report(
         .map(|part| match part {
             ProviderContextPart::Text { text } => text.len(),
             ProviderContextPart::MediaAsset { .. } => 16,
+            ProviderContextPart::ToolCall(call) => {
+                call.name.len()
+                    + call.provider_call_id.as_ref().map_or(0, String::len)
+                    + serde_json::to_vec(&call.arguments).map_or(0, |value| value.len())
+            }
+            ProviderContextPart::ToolResult(result) => {
+                result.name.len()
+                    + result.provider_call_id.as_ref().map_or(0, String::len)
+                    + serde_json::to_vec(&result.output.value).map_or(0, |value| value.len())
+            }
         })
         .sum::<usize>();
     if input_bytes > 16 * 1024 * 1024 || input_bytes > u32::MAX as usize {
@@ -1973,6 +1983,8 @@ mod tests {
             .map(|message| match &message.parts[0] {
                 ProviderContextPart::Text { text } => text.clone(),
                 ProviderContextPart::MediaAsset { .. } => "media".into(),
+                ProviderContextPart::ToolCall(_) => "tool_call".into(),
+                ProviderContextPart::ToolResult(_) => "tool_result".into(),
             })
             .collect::<Vec<_>>();
         assert_eq!(texts, ["rules", "near", "head", "latest"]);

@@ -31,7 +31,12 @@ catalog refreshes, while ordinary user drafts cannot forge catalog keys.
 Migration 8 adds the normalized conversation ownership graph: participants and
 settings, durable branches/messages/turns, revisions/candidates, typed media
 associations, generation attempts/checkpoints, operation/outbox records, and
-usage references. Durable history is restrict-owned and composite foreign keys
+usage references. It also stores bounded tool executions under the exact
+conversation/turn/attempt that requested them. Tool request identity and input
+are immutable, provider call IDs are unique within an attempt, state changes use
+revision CAS, and terminal states cannot regress. Provider replay references use
+the existing protected replay-artifact store rather than leaking opaque replay
+data into ordinary rows. Durable history is restrict-owned and composite foreign keys
 keep every child scoped to its conversation and turn. Snapshot and provider
 replay bytes are held in separate private artifact tables; ordinary conversation
 rows store references and the artifact store verifies immutable metadata and

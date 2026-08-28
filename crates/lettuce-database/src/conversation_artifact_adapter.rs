@@ -660,7 +660,7 @@ impl ConversationArtifactStore for Database {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
-        transaction.execute("DELETE FROM conversation_replay_artifacts WHERE artifact_id = ?1 AND NOT EXISTS (SELECT 1 FROM conversation_message_revisions WHERE provider_replay_artifact_id = ?1) AND NOT EXISTS (SELECT 1 FROM conversation_message_candidates WHERE provider_replay_artifact_id = ?1)", [artifact_id.to_string()]).map_err(db_error)?;
+        transaction.execute("DELETE FROM conversation_replay_artifacts WHERE artifact_id = ?1 AND NOT EXISTS (SELECT 1 FROM conversation_message_revisions WHERE provider_replay_artifact_id = ?1) AND NOT EXISTS (SELECT 1 FROM conversation_message_candidates WHERE provider_replay_artifact_id = ?1) AND NOT EXISTS (SELECT 1 FROM tool_executions WHERE provider_replay_artifact_id = ?1)", [artifact_id.to_string()]).map_err(db_error)?;
         transaction.commit().map_err(db_error)?;
         Ok(())
     }

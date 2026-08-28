@@ -282,7 +282,9 @@ fn wire_messages(
             for part in &message.parts {
                 match part {
                     ProviderContextPart::Text { text } => content.push_str(text),
-                    ProviderContextPart::MediaAsset { .. } => return Err(AdapterError::Rejected),
+                    ProviderContextPart::MediaAsset { .. }
+                    | ProviderContextPart::ToolCall(_)
+                    | ProviderContextPart::ToolResult(_) => return Err(AdapterError::Rejected),
                 }
             }
             Ok(WireMessage {
@@ -521,6 +523,7 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
         candidates.push(InferenceCandidate {
             ordinal,
             parts,
+            tool_calls: Vec::new(),
             provider_replay: None,
         });
     }

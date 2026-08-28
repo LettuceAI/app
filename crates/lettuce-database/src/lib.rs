@@ -13,6 +13,7 @@ mod group_adapter;
 mod lorebook_adapter;
 mod persona_adapter;
 mod prompt_adapter;
+mod tool_adapter;
 
 use std::{path::Path, str::FromStr, sync::Mutex, time::Duration};
 
@@ -3772,6 +3773,7 @@ mod tests {
                 "scenes",
                 "schema_migrations",
                 "starter_messages",
+                "tool_executions",
                 "turn_lorebooks",
             ]
         );

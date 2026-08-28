@@ -1546,17 +1546,22 @@ pub enum ProviderContextPart {
         asset_id: AssetId,
         role: MediaAssetRole,
     },
+    ToolCall(crate::TranscriptToolCall),
+    ToolResult(crate::TranscriptToolResult),
 }
 
 impl ProviderContextPart {
     fn validate(&self) -> Result<(), crate::ValidationError> {
-        if let Self::Text { text } = self {
-            crate::validation::validate_text(
+        match self {
+            Self::Text { text } => crate::validation::validate_text(
                 "provider_context_part.text",
                 text,
                 crate::validation::MAX_AUTHORED_TEXT_BYTES,
                 false,
-            )?;
+            )?,
+            Self::ToolCall(call) => call.validate()?,
+            Self::ToolResult(result) => result.validate()?,
+            Self::MediaAsset { .. } => {}
         }
         Ok(())
     }
@@ -1617,6 +1622,8 @@ impl ProviderNeutralContext {
                 lorebook.activated_entry_ids.iter().copied(),
             )?;
         }
+        let mut tool_calls = std::collections::HashMap::new();
+        let mut tool_results = std::collections::HashSet::new();
         for message in &self.messages {
             if message.parts.len() > crate::validation::MAX_PARTS {
                 return Err(crate::ValidationError::TooMany {
@@ -1626,6 +1633,52 @@ impl ProviderNeutralContext {
             }
             for part in &message.parts {
                 part.validate()?;
+                match part {
+                    ProviderContextPart::ToolCall(call) => {
+                        if message.role != MessageRole::Assistant {
+                            return Err(crate::ValidationError::Invariant {
+                                field: "provider_context.tool_call_role",
+                            });
+                        }
+                        if tool_calls
+                            .insert(
+                                call.execution_id,
+                                (call.name.as_str(), call.provider_call_id.as_deref()),
+                            )
+                            .is_some()
+                        {
+                            return Err(crate::ValidationError::Duplicate {
+                                field: "provider_context.tool_call",
+                            });
+                        }
+                    }
+                    ProviderContextPart::ToolResult(result) => {
+                        if message.role != MessageRole::User {
+                            return Err(crate::ValidationError::Invariant {
+                                field: "provider_context.tool_result_role",
+                            });
+                        }
+                        let Some((name, provider_call_id)) = tool_calls.get(&result.execution_id)
+                        else {
+                            return Err(crate::ValidationError::InvalidReference {
+                                field: "provider_context.tool_result",
+                            });
+                        };
+                        if *name != result.name
+                            || *provider_call_id != result.provider_call_id.as_deref()
+                        {
+                            return Err(crate::ValidationError::Invariant {
+                                field: "provider_context.tool_result_identity",
+                            });
+                        }
+                        if !tool_results.insert(result.execution_id) {
+                            return Err(crate::ValidationError::Duplicate {
+                                field: "provider_context.tool_result",
+                            });
+                        }
+                    }
+                    ProviderContextPart::Text { .. } | ProviderContextPart::MediaAsset { .. } => {}
+                }
             }
         }
         Ok(())
@@ -1688,6 +1741,35 @@ pub struct InferenceRequest {
     pub cancellation: Option<JobId>,
     pub stream_sink: Option<lettuce_types::RequestId>,
     pub media_grants: Vec<lettuce_types::AssetId>,
+    pub tools: Option<crate::ToolRequest>,
+}
+
+impl InferenceRequest {
+    pub fn validate(&self) -> Result<(), crate::ValidationError> {
+        self.context.validate()?;
+        match (self.profile.tool_policy, &self.tools) {
+            (ToolPolicy::Disabled, None) => {}
+            (ToolPolicy::Disabled, Some(_))
+            | (ToolPolicy::Allowed | ToolPolicy::Required, None) => {
+                return Err(crate::ValidationError::Invariant {
+                    field: "inference_request.tools",
+                });
+            }
+            (ToolPolicy::Allowed, Some(tools)) => tools.validate()?,
+            (ToolPolicy::Required, Some(tools)) => {
+                tools.validate()?;
+                if !matches!(
+                    tools.choice,
+                    crate::ToolChoice::Required | crate::ToolChoice::Named { .. }
+                ) {
+                    return Err(crate::ValidationError::Invariant {
+                        field: "inference_request.tool_choice",
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1716,7 +1798,39 @@ pub enum OutputPolicy {
 pub struct InferenceCandidate {
     pub ordinal: u16,
     pub parts: Vec<MessagePart>,
+    pub tool_calls: Vec<crate::ProposedToolCall>,
     pub provider_replay: Option<ReplayArtifactRef>,
+}
+
+impl InferenceCandidate {
+    pub fn validate(&self) -> Result<(), crate::ValidationError> {
+        crate::validation::validate_collection(
+            "inference_candidate.parts",
+            &self.parts,
+            crate::validation::MAX_PARTS,
+        )?;
+        crate::validation::validate_collection(
+            "inference_candidate.tool_calls",
+            &self.tool_calls,
+            crate::MAX_TOOL_CALLS_PER_RESPONSE,
+        )?;
+        for part in &self.parts {
+            part.validate()?;
+        }
+        for call in &self.tool_calls {
+            call.validate()?;
+        }
+        crate::validation::validate_unique(
+            "inference_candidate.provider_call_ids",
+            self.tool_calls
+                .iter()
+                .filter_map(|call| call.provider_call_id.as_deref()),
+        )?;
+        if let Some(replay) = &self.provider_replay {
+            replay.validate()?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1735,6 +1849,34 @@ pub struct InferenceOutcome {
     /// Bounded request identifier returned in the provider's response headers.
     pub provider_request_id: Option<String>,
     pub warning_codes: Vec<InferenceWarningCode>,
+}
+
+impl InferenceOutcome {
+    pub fn validate(&self) -> Result<(), crate::ValidationError> {
+        if self.candidates.is_empty() {
+            return Err(crate::ValidationError::InvalidValue {
+                field: "inference_outcome.candidates",
+            });
+        }
+        for candidate in &self.candidates {
+            candidate.validate()?;
+        }
+        let candidates_with_tools = self
+            .candidates
+            .iter()
+            .filter(|candidate| !candidate.tool_calls.is_empty())
+            .count();
+        if candidates_with_tools > 0 && self.candidates.len() != 1 {
+            return Err(crate::ValidationError::Invariant {
+                field: "inference_outcome.tool_candidate",
+            });
+        }
+        crate::validation::validate_unique(
+            "inference_outcome.candidate_ordinals",
+            self.candidates.iter().map(|candidate| candidate.ordinal),
+        )?;
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

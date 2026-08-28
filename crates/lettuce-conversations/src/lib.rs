@@ -17,6 +17,7 @@ mod ports;
 mod service;
 mod snapshot;
 mod speaker_policy;
+mod tool;
 mod validation;
 
 pub use artifact::*;
@@ -31,6 +32,7 @@ pub use ports::*;
 pub use service::*;
 pub use snapshot::*;
 pub use speaker_policy::*;
+pub use tool::*;
 
 #[cfg(test)]
 mod tests {

@@ -596,6 +596,7 @@ mod integration_tests {
             cancellation: None,
             stream_sink: None,
             media_grants: Vec::new(),
+            tools: None,
         }
     }
 

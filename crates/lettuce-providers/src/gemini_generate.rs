@@ -344,7 +344,9 @@ fn build_request(
         for part in &message.parts {
             match part {
                 ProviderContextPart::Text { text: fragment } => text.push_str(fragment),
-                ProviderContextPart::MediaAsset { .. } => return Err(AdapterError::Rejected),
+                ProviderContextPart::MediaAsset { .. }
+                | ProviderContextPart::ToolCall(_)
+                | ProviderContextPart::ToolResult(_) => return Err(AdapterError::Rejected),
             }
         }
         let trimmed = text.trim();
@@ -469,6 +471,7 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
                 }
                 parts
             },
+            tool_calls: Vec::new(),
             provider_replay: None,
         });
     }
@@ -482,6 +485,7 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
         candidates.push(InferenceCandidate {
             ordinal: 0,
             parts: Vec::new(),
+            tool_calls: Vec::new(),
             provider_replay: None,
         });
     }

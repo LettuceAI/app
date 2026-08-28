@@ -526,6 +526,143 @@ BEFORE UPDATE OF status ON generation_attempts
 WHEN OLD.status IN ('succeeded', 'failed', 'cancelled', 'interrupted') AND NEW.status <> OLD.status
 BEGIN SELECT RAISE(ABORT, 'terminal generation attempt cannot regress'); END;
 
+CREATE TABLE tool_executions (
+    conversation_id TEXT NOT NULL,
+    turn_id TEXT NOT NULL,
+    attempt_id TEXT NOT NULL,
+    id TEXT NOT NULL,
+    ordinal INTEGER NOT NULL CHECK (ordinal >= 0 AND ordinal < 64),
+    definition_name TEXT NOT NULL CHECK (
+        length(definition_name) BETWEEN 1 AND 64
+        AND definition_name NOT GLOB '*[^A-Za-z0-9_-]*'
+    ),
+    definition_version INTEGER NOT NULL CHECK (definition_version >= 1),
+    provider_call_id TEXT CHECK (
+        provider_call_id IS NULL OR
+        (length(trim(provider_call_id)) > 0 AND length(CAST(provider_call_id AS BLOB)) <= 256)
+    ),
+    arguments_json TEXT NOT NULL CHECK (
+        json_valid(arguments_json)
+        AND json_extract(arguments_json, '$.format_version') = 1
+        AND json_type(arguments_json, '$.value') = 'object'
+        AND length(CAST(arguments_json AS BLOB)) <= 262208
+    ),
+    raw_arguments TEXT CHECK (
+        raw_arguments IS NULL OR length(CAST(raw_arguments AS BLOB)) <= 262144
+    ),
+    provider_replay_artifact_id TEXT,
+    provider_replay_retention TEXT CHECK (
+        provider_replay_retention IS NULL OR provider_replay_retention = 'conversation'
+    ),
+    status TEXT NOT NULL CHECK (
+        status IN ('requested', 'validated', 'running', 'succeeded', 'rejected', 'failed', 'cancelled', 'interrupted')
+    ),
+    output_json TEXT CHECK (
+        output_json IS NULL OR
+        (json_valid(output_json)
+         AND json_extract(output_json, '$.format_version') = 1
+         AND length(CAST(output_json AS BLOB)) <= 1048640)
+    ),
+    failure_code TEXT CHECK (
+        failure_code IS NULL OR failure_code IN (
+            'invalid_arguments', 'undeclared_tool', 'permission_denied',
+            'handler_failed', 'result_invalid', 'internal'
+        )
+    ),
+    failure_message TEXT CHECK (
+        failure_message IS NULL OR
+        (length(trim(failure_message)) > 0 AND length(CAST(failure_message AS BLOB)) <= 4096)
+    ),
+    revision INTEGER NOT NULL CHECK (revision >= 1),
+    requested_at INTEGER NOT NULL,
+    started_at INTEGER,
+    finished_at INTEGER,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (conversation_id, turn_id, attempt_id, id),
+    UNIQUE (conversation_id, turn_id, attempt_id, ordinal),
+    UNIQUE (conversation_id, id),
+    FOREIGN KEY (conversation_id, turn_id, attempt_id)
+        REFERENCES generation_attempts(conversation_id, turn_id, id) ON DELETE RESTRICT,
+    FOREIGN KEY (provider_replay_artifact_id, provider_replay_retention)
+        REFERENCES conversation_replay_artifacts(artifact_id, retention)
+        ON DELETE RESTRICT,
+    CHECK ((provider_replay_artifact_id IS NULL) = (provider_replay_retention IS NULL)),
+    CHECK (requested_at <= updated_at),
+    CHECK (started_at IS NULL OR started_at >= requested_at),
+    CHECK (finished_at IS NULL OR finished_at >= requested_at),
+    CHECK (started_at IS NULL OR started_at <= updated_at),
+    CHECK (finished_at IS NULL OR finished_at <= updated_at),
+    CHECK (started_at IS NULL OR finished_at IS NULL OR started_at <= finished_at),
+    CHECK ((status IN ('requested', 'validated')) = (started_at IS NULL AND finished_at IS NULL)),
+    CHECK ((status = 'running') = (started_at IS NOT NULL AND finished_at IS NULL)),
+    CHECK ((status IN ('succeeded', 'rejected', 'failed', 'cancelled', 'interrupted')) = (finished_at IS NOT NULL)),
+    CHECK (status NOT IN ('succeeded', 'failed', 'interrupted') OR started_at IS NOT NULL),
+    CHECK ((status = 'succeeded') = (output_json IS NOT NULL)),
+    CHECK ((status IN ('rejected', 'failed')) = (failure_code IS NOT NULL)),
+    CHECK (failure_message IS NULL OR failure_code IS NOT NULL)
+) STRICT;
+CREATE UNIQUE INDEX tool_executions_provider_call_uq
+    ON tool_executions(conversation_id, turn_id, attempt_id, provider_call_id)
+    WHERE provider_call_id IS NOT NULL;
+CREATE INDEX tool_executions_attempt_idx
+    ON tool_executions(conversation_id, turn_id, attempt_id, ordinal);
+CREATE UNIQUE INDEX tool_executions_id_uq ON tool_executions(id);
+CREATE TRIGGER tool_execution_identity_immutable
+BEFORE UPDATE OF conversation_id, turn_id, attempt_id, id, ordinal, definition_name, definition_version, provider_call_id, arguments_json, raw_arguments, provider_replay_artifact_id, provider_replay_retention ON tool_executions
+WHEN NEW.conversation_id <> OLD.conversation_id
+  OR NEW.turn_id <> OLD.turn_id
+  OR NEW.attempt_id <> OLD.attempt_id
+  OR NEW.id <> OLD.id
+  OR NEW.ordinal <> OLD.ordinal
+  OR NEW.definition_name <> OLD.definition_name
+  OR NEW.definition_version <> OLD.definition_version
+  OR coalesce(NEW.provider_call_id, '') <> coalesce(OLD.provider_call_id, '')
+  OR NEW.arguments_json <> OLD.arguments_json
+  OR coalesce(NEW.raw_arguments, '') <> coalesce(OLD.raw_arguments, '')
+  OR coalesce(NEW.provider_replay_artifact_id, '') <> coalesce(OLD.provider_replay_artifact_id, '')
+  OR coalesce(NEW.provider_replay_retention, '') <> coalesce(OLD.provider_replay_retention, '')
+BEGIN SELECT RAISE(ABORT, 'tool execution request is immutable'); END;
+CREATE TRIGGER tool_execution_terminal_immutable
+BEFORE UPDATE ON tool_executions
+WHEN OLD.status IN ('succeeded', 'rejected', 'failed', 'cancelled', 'interrupted')
+BEGIN SELECT RAISE(ABORT, 'terminal tool execution cannot regress'); END;
+CREATE TRIGGER tool_execution_started_at_immutable
+BEFORE UPDATE OF started_at ON tool_executions
+WHEN OLD.started_at IS NOT NULL AND NEW.started_at <> OLD.started_at
+BEGIN SELECT RAISE(ABORT, 'tool execution start is immutable'); END;
+CREATE TRIGGER tool_execution_transition_valid
+BEFORE UPDATE OF status ON tool_executions
+WHEN NEW.status <> OLD.status AND NOT (
+    (OLD.status = 'requested' AND NEW.status IN ('validated', 'rejected', 'cancelled')) OR
+    (OLD.status = 'validated' AND NEW.status IN ('running', 'rejected', 'cancelled')) OR
+    (OLD.status = 'running' AND NEW.status IN ('succeeded', 'failed', 'cancelled', 'interrupted'))
+)
+BEGIN SELECT RAISE(ABORT, 'invalid tool execution transition'); END;
+CREATE TRIGGER tool_execution_revision_valid
+BEFORE UPDATE ON tool_executions
+WHEN NEW.revision <> OLD.revision + 1 OR NEW.updated_at < OLD.updated_at
+BEGIN SELECT RAISE(ABORT, 'invalid tool execution revision'); END;
+CREATE TRIGGER tool_execution_live_attempt_insert
+BEFORE INSERT ON tool_executions
+WHEN NOT EXISTS (
+    SELECT 1 FROM generation_attempts
+     WHERE conversation_id = NEW.conversation_id
+       AND turn_id = NEW.turn_id
+       AND id = NEW.attempt_id
+       AND status = 'running'
+)
+BEGIN SELECT RAISE(ABORT, 'tool execution requires a running generation attempt'); END;
+CREATE TRIGGER generation_attempt_requires_settled_tools
+BEFORE UPDATE OF status ON generation_attempts
+WHEN NEW.status IN ('succeeded', 'failed', 'cancelled', 'interrupted') AND EXISTS (
+    SELECT 1 FROM tool_executions
+     WHERE conversation_id = NEW.conversation_id
+       AND turn_id = NEW.turn_id
+       AND attempt_id = NEW.id
+       AND status NOT IN ('succeeded', 'rejected', 'failed', 'cancelled', 'interrupted')
+)
+BEGIN SELECT RAISE(ABORT, 'terminal generation attempt requires settled tools'); END;
+
 CREATE TABLE turn_lorebooks (
     conversation_id TEXT NOT NULL,
     turn_id TEXT NOT NULL,

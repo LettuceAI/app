@@ -191,17 +191,16 @@ pub(crate) enum AuthPlan {
 }
 
 pub(crate) fn validate_common_request(request: &InferenceRequest) -> Result<(), AdapterError> {
+    request.validate().map_err(|_| AdapterError::Rejected)?;
     let profile = &request.profile;
     if profile.tool_policy != lettuce_conversations::ToolPolicy::Disabled
+        || request.tools.is_some()
         || profile.output_policy != lettuce_conversations::OutputPolicy::Plain
         || !request.media_grants.is_empty()
     {
         return Err(AdapterError::Rejected);
     }
-    request
-        .context
-        .validate()
-        .map_err(|_| AdapterError::Rejected)
+    Ok(())
 }
 
 pub(crate) fn reject_unsupported_features(
