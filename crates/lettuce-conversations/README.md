@@ -108,6 +108,13 @@ coordinator and legacy memory/creation/companion/lorebook handler migrations are
 separate usable slices; arbitrary shell, filesystem, plugin, and general-chat
 tools are not implied by this contract.
 
+The direct/group dynamic-memory scenario audit is pinned in
+`fixtures/legacy-import/dynamic-memory-tool-scenarios-v1.json`. Conversation
+ownership ends at durable call admission and execution lifecycle: memory
+operation semantics and atomic memory-space changes belong to `lettuce-memory`,
+while continuation and recovery orchestration belong to `lettuce-app` and
+durable jobs.
+
 Launch snapshots stay frozen for the conversation lifetime. Current participant
 policy and settings are explicit mutable state; this contract does not derive
 live values from cross-conversation sources.

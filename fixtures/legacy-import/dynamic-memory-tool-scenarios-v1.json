@@ -1,0 +1,213 @@
+{
+  "schemaVersion": 1,
+  "scope": "direct_and_group_dynamic_memory",
+  "auditedDimensions": [
+    "trigger",
+    "definitions_and_choice",
+    "model_and_profile_resolution",
+    "prompt_and_context",
+    "multiple_calls",
+    "mutation_boundary",
+    "result_replay",
+    "continuation_and_finalization",
+    "events",
+    "cancellation",
+    "retry",
+    "failure",
+    "recovery"
+  ],
+  "workflowDecisions": [
+    {
+      "dimension": "trigger",
+      "direct": "effective character memory policy is enabled and dynamic",
+      "group": "group session memory policy is dynamic",
+      "classification": "preserved"
+    },
+    {
+      "dimension": "scheduling",
+      "direct": "background work after a completed assistant response",
+      "group": "awaited after a completed group response with warning-only failure",
+      "classification": "corrected",
+      "decision": "both are durable derived jobs and cannot roll back the response"
+    },
+    {
+      "dimension": "definitions_and_choice",
+      "direct": "write_summary required; memory operations required; companion mode adds source and supersession fields",
+      "group": "same summary and core memory operations without companion-only fields",
+      "classification": "preserved"
+    },
+    {
+      "dimension": "model_and_profile_resolution",
+      "direct": "explicit override, dynamic-memory model, then application default; feature sampling overrides apply",
+      "group": "dynamic-memory model then application default; feature sampling overrides apply",
+      "classification": "preserved"
+    },
+    {
+      "dimension": "prompt_and_context",
+      "direct": "rendered editable templates receive prior summary, bounded transcript, current memories, and direct or companion context",
+      "group": "rendered editable templates receive prior summary, speaker-labelled bounded transcript, and group memories",
+      "classification": "preserved"
+    },
+    {
+      "dimension": "mutation_boundary",
+      "direct": "mutates session or character-shared companion projections before coupled save",
+      "group": "mutates group-session projections before coupled save",
+      "classification": "corrected",
+      "decision": "apply one typed compare-and-swap change set to an explicit memory space"
+    },
+    {
+      "dimension": "events",
+      "direct": "session processing state, four progress steps, actions, errors, and at most 50 events",
+      "group": "parallel group-specific state and events",
+      "classification": "corrected",
+      "decision": "durable job checkpoints and redacted product events replace raw tool and prompt content"
+    },
+    {
+      "dimension": "cancellation",
+      "direct": "one active run per owner and cancellation of the active provider request",
+      "group": "same with a group run key",
+      "classification": "preserved"
+    },
+    {
+      "dimension": "recovery",
+      "direct": "message-anchored events can undo dropped cycles but in-flight work is not restart-safe",
+      "group": "shares cursor recovery but has less complete mutation replay",
+      "classification": "corrected",
+      "decision": "preserve rewind rules and add idempotent durable execution and change application"
+    }
+  ],
+  "firstSlice": {
+    "owner": "lettuce-memory",
+    "includes": [
+      "versioned direct and group core declarations",
+      "typed create delete pin unpin and done arguments and outcomes",
+      "ordered reduction against a revisioned memory-space snapshot",
+      "duplicate delete-safeguard pin budget and capacity policy",
+      "atomic compare-and-apply repository port"
+    ],
+    "excludes": [
+      "provider continuation",
+      "prompt rendering",
+      "companion source and supersession",
+      "provider-driven category repair",
+      "embedded embedding runtime",
+      "frontend events"
+    ]
+  },
+  "scenarios": [
+    {
+      "id": "window_waits_for_complete_interval",
+      "classification": "preserved",
+      "owner": "coordinator",
+      "expected": "automatic run remains pending until a complete fixed-size interval exists"
+    },
+    {
+      "id": "rewind_uses_latest_surviving_message_anchor",
+      "classification": "preserved",
+      "owner": "memory",
+      "expected": "dropped cycles are undone and processing resumes after the newest surviving successful anchor"
+    },
+    {
+      "id": "required_summary_falls_back_to_plain_text_once",
+      "classification": "preserved",
+      "owner": "coordinator",
+      "expected": "invalid or absent write_summary output causes one tool-free retry"
+    },
+    {
+      "id": "provider_round_is_admitted_before_mutation",
+      "classification": "corrected",
+      "owner": "conversations",
+      "expected": "all calls receive durable executions atomically before the first handler mutation"
+    },
+    {
+      "id": "multiple_calls_apply_in_provider_order",
+      "classification": "preserved",
+      "owner": "memory",
+      "expected": "each executable call observes prior successful calls from the same response"
+    },
+    {
+      "id": "done_stops_remaining_calls",
+      "classification": "preserved",
+      "owner": "memory",
+      "expected": "calls after done in the same response are not executed"
+    },
+    {
+      "id": "recursive_continuation_is_bounded",
+      "classification": "preserved",
+      "owner": "coordinator",
+      "expected": "continuation stops on done, no calls, no executable results, or the pinned hard cap"
+    },
+    {
+      "id": "continuation_replay_is_provider_neutral",
+      "classification": "corrected",
+      "owner": "coordinator",
+      "expected": "transcript calls and results are adapted per provider instead of stored as OpenAI-shaped JSON"
+    },
+    {
+      "id": "create_survives_embedding_failure",
+      "classification": "preserved",
+      "owner": "memory",
+      "expected": "item creation succeeds and embedding repair remains pending"
+    },
+    {
+      "id": "duplicate_create_is_skipped",
+      "classification": "preserved",
+      "owner": "memory",
+      "expected": "normalized text or policy-qualified vector duplication returns a non-mutating result"
+    },
+    {
+      "id": "invalid_category_requires_repair",
+      "classification": "deferred",
+      "owner": "memory_extraction_coordinator",
+      "expected": "core handler rejects with repair-needed; provider-driven category repair is a later slice"
+    },
+    {
+      "id": "low_confidence_delete_demotes",
+      "classification": "preserved",
+      "owner": "memory",
+      "expected": "confidence below 0.7 makes the target cold at the configured threshold"
+    },
+    {
+      "id": "hard_delete_ratio_forces_later_soft_delete",
+      "classification": "preserved",
+      "owner": "memory",
+      "expected": "hard deletes are capped from the cycle-start active count and overflow deletes demote"
+    },
+    {
+      "id": "missing_pin_target_is_explicit",
+      "classification": "corrected",
+      "owner": "memory",
+      "expected": "missing target returns a typed non-mutating output instead of disappearing from replay"
+    },
+    {
+      "id": "pinned_items_survive_budget_and_capacity",
+      "classification": "preserved",
+      "owner": "memory",
+      "expected": "pinned items remain hot and may make active count exceed the configured maximum"
+    },
+    {
+      "id": "undeclared_tool_fails_before_handler",
+      "classification": "corrected",
+      "owner": "conversations",
+      "expected": "exact request validation rejects the entire provider call round"
+    },
+    {
+      "id": "post_turn_failure_does_not_rollback_chat",
+      "classification": "preserved",
+      "owner": "jobs",
+      "expected": "assistant response stays complete while the memory job becomes explicitly failed and retryable"
+    },
+    {
+      "id": "interrupted_execution_recovers_idempotently",
+      "classification": "corrected",
+      "owner": "coordinator",
+      "expected": "recovery resumes from durable execution and memory revision state without duplicating mutation or continuation"
+    },
+    {
+      "id": "companion_source_and_supersession",
+      "classification": "deferred",
+      "owner": "companion_memory",
+      "expected": "time-aware source evidence and supersession edges are implemented after the direct/group core handler"
+    }
+  ]
+}
