@@ -64,6 +64,11 @@ database revalidates their immutable plan against the attached job, exact tool
 arguments/order, create source text, and unchanged memory revision. Semantic
 duplicate evidence is replayed from that plan rather than recomputed against
 newer mutable state. Missing, stale, or mixed recovery state fails closed.
+An interrupted attempt is never reopened: after conversation recovery creates
+and starts its immediate child attempt with a distinct job, the dynamic-memory
+coordinator asks storage to atomically remap the verified parent calls and
+preparations into new child execution IDs. Exact retries return the same child
+round; parent evidence and terminal execution rows remain untouched.
 
 ## Bundled prompts
 

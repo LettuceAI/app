@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use lettuce_memory::{
     DynamicMemoryPreparationPlan, DynamicMemoryPreparationPlanError,
-    DynamicMemoryPreparationRepository, MemoryToolArguments,
+    DynamicMemoryPreparationRepository, DynamicMemoryRecoveredChild, MemoryToolArguments,
 };
 use lettuce_types::{ConversationId, GenerationAttemptId, GenerationTurnId, Revision};
 use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
@@ -192,13 +192,102 @@ fn hydrate_verified(
     Ok(Some(plan))
 }
 
+fn insert_plan_in(
+    transaction: &Transaction<'_>,
+    plan: &DynamicMemoryPreparationPlan,
+) -> Result<(), DynamicMemoryPreparationPlanError> {
+    let (document, digest) = encoded(plan)?;
+    transaction
+        .execute(
+            "INSERT INTO dynamic_memory_preparation_plans (
+                conversation_id, turn_id, attempt_id, job_id, space_id,
+                expected_memory_revision, plan_json, plan_digest
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                plan.conversation_id.to_string(),
+                plan.turn_id.to_string(),
+                plan.attempt_id.to_string(),
+                plan.job_id.to_string(),
+                plan.space_id.to_string(),
+                i64::try_from(plan.expected_memory_revision.get()).map_err(storage)?,
+                document,
+                digest,
+            ],
+        )
+        .map_err(storage)?;
+    Ok(())
+}
+
+fn executions_in(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    turn_id: GenerationTurnId,
+    attempt_id: GenerationAttemptId,
+) -> Result<Vec<lettuce_conversations::ToolExecution>, DynamicMemoryPreparationPlanError> {
+    let ids = {
+        let mut statement = transaction
+            .prepare(
+                "SELECT id FROM tool_executions
+                  WHERE conversation_id = ?1 AND turn_id = ?2 AND attempt_id = ?3
+                  ORDER BY ordinal",
+            )
+            .map_err(storage)?;
+        statement
+            .query_map(
+                params![
+                    conversation_id.to_string(),
+                    turn_id.to_string(),
+                    attempt_id.to_string(),
+                ],
+                |row| row.get::<_, String>(0),
+            )
+            .map_err(storage)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(storage)?
+    };
+    ids.into_iter()
+        .map(|id| {
+            let id = id.parse().map_err(storage)?;
+            tool_adapter::get_in(transaction, id).map_err(conflict)
+        })
+        .collect()
+}
+
+fn remap_plan(
+    parent: &DynamicMemoryPreparationPlan,
+    child_attempt_id: GenerationAttemptId,
+    child_job_id: lettuce_types::JobId,
+    child_ids: &[lettuce_types::ToolExecutionId],
+) -> Result<DynamicMemoryPreparationPlan, DynamicMemoryPreparationPlanError> {
+    if child_ids.len() != parent.execution_ids.len() {
+        return Err(DynamicMemoryPreparationPlanError::Conflict);
+    }
+    let remap = parent
+        .execution_ids
+        .iter()
+        .copied()
+        .zip(child_ids.iter().copied())
+        .collect::<HashMap<_, _>>();
+    let mut child = parent.clone();
+    child.attempt_id = child_attempt_id;
+    child.job_id = child_job_id;
+    child.execution_ids = child_ids.to_vec();
+    for create in &mut child.creates {
+        create.execution_id = remap
+            .get(&create.execution_id)
+            .copied()
+            .ok_or(DynamicMemoryPreparationPlanError::Conflict)?;
+    }
+    child.validate()?;
+    Ok(child)
+}
+
 impl DynamicMemoryPreparationRepository for Database {
     fn put_preparation_plan(
         &self,
         plan: DynamicMemoryPreparationPlan,
     ) -> Result<DynamicMemoryPreparationPlan, DynamicMemoryPreparationPlanError> {
         plan.validate()?;
-        let (document, digest) = encoded(&plan)?;
         let mut connection = self.connection().map_err(storage)?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -232,24 +321,7 @@ impl DynamicMemoryPreparationRepository for Database {
             return Err(DynamicMemoryPreparationPlanError::Conflict);
         }
         verify_durable_identity(&transaction, &plan, true)?;
-        transaction
-            .execute(
-                "INSERT INTO dynamic_memory_preparation_plans (
-                    conversation_id, turn_id, attempt_id, job_id, space_id,
-                    expected_memory_revision, plan_json, plan_digest
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-                params![
-                    plan.conversation_id.to_string(),
-                    plan.turn_id.to_string(),
-                    plan.attempt_id.to_string(),
-                    plan.job_id.to_string(),
-                    plan.space_id.to_string(),
-                    i64::try_from(plan.expected_memory_revision.get()).map_err(storage)?,
-                    document,
-                    digest,
-                ],
-            )
-            .map_err(storage)?;
+        insert_plan_in(&transaction, &plan)?;
         transaction.commit().map_err(storage)?;
         Ok(plan)
     }
@@ -267,6 +339,154 @@ impl DynamicMemoryPreparationRepository for Database {
         let plan = hydrate_verified(&transaction, conversation_id, turn_id, attempt_id)?;
         transaction.commit().map_err(storage)?;
         Ok(plan)
+    }
+
+    fn recover_preparation_into_child(
+        &self,
+        conversation_id: ConversationId,
+        turn_id: GenerationTurnId,
+        parent_attempt_id: GenerationAttemptId,
+        child_attempt_id: GenerationAttemptId,
+        child_job_id: lettuce_types::JobId,
+        at: lettuce_types::TimestampMillis,
+    ) -> Result<DynamicMemoryRecoveredChild, DynamicMemoryPreparationPlanError> {
+        let mut connection = self.connection().map_err(storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(storage)?;
+        let parent = hydrate_verified(&transaction, conversation_id, turn_id, parent_attempt_id)?
+            .ok_or(DynamicMemoryPreparationPlanError::Conflict)?;
+        let child_identity = transaction
+            .query_row(
+                "SELECT parent_attempt_id, status, job_id
+                   FROM generation_attempts
+                  WHERE conversation_id = ?1 AND turn_id = ?2 AND id = ?3",
+                params![
+                    conversation_id.to_string(),
+                    turn_id.to_string(),
+                    child_attempt_id.to_string(),
+                ],
+                |row| {
+                    Ok((
+                        row.get::<_, Option<String>>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(storage)?;
+        if child_identity
+            != Some((
+                Some(parent_attempt_id.to_string()),
+                "running".to_owned(),
+                Some(child_job_id.to_string()),
+            ))
+        {
+            return Err(DynamicMemoryPreparationPlanError::Conflict);
+        }
+        let parent_executions =
+            executions_in(&transaction, conversation_id, turn_id, parent_attempt_id)?;
+        if parent_executions.iter().any(|execution| {
+            execution.status != lettuce_conversations::ToolExecutionStatus::Interrupted
+        }) {
+            return Err(DynamicMemoryPreparationPlanError::Conflict);
+        }
+        let existing_child =
+            executions_in(&transaction, conversation_id, turn_id, child_attempt_id)?;
+        if !existing_child.is_empty() {
+            let stored =
+                hydrate_verified(&transaction, conversation_id, turn_id, child_attempt_id)?
+                    .ok_or(DynamicMemoryPreparationPlanError::Conflict)?;
+            let expected = remap_plan(
+                &parent,
+                child_attempt_id,
+                child_job_id,
+                &existing_child
+                    .iter()
+                    .map(|execution| execution.id)
+                    .collect::<Vec<_>>(),
+            )?;
+            if stored != expected {
+                return Err(DynamicMemoryPreparationPlanError::Conflict);
+            }
+            transaction.commit().map_err(storage)?;
+            return Ok(DynamicMemoryRecoveredChild {
+                plan: stored,
+                executions: existing_child,
+            });
+        }
+
+        let mut requested = Vec::with_capacity(parent_executions.len());
+        for (ordinal, parent_execution) in parent_executions.iter().enumerate() {
+            let execution = lettuce_conversations::ToolExecution {
+                id: lettuce_types::ToolExecutionId::new(),
+                conversation_id,
+                turn_id,
+                attempt_id: child_attempt_id,
+                ordinal: u16::try_from(ordinal).map_err(storage)?,
+                definition_name: parent_execution.definition_name.clone(),
+                definition_version: parent_execution.definition_version,
+                provider_call_id: parent_execution.provider_call_id.clone(),
+                arguments: parent_execution.arguments.clone(),
+                raw_arguments: parent_execution.raw_arguments.clone(),
+                provider_replay: parent_execution.provider_replay.clone(),
+                status: lettuce_conversations::ToolExecutionStatus::Requested,
+                output: None,
+                failure: None,
+                revision: Revision::INITIAL,
+                requested_at: at,
+                started_at: None,
+                finished_at: None,
+                updated_at: at,
+            };
+            requested.push(tool_adapter::insert_in(&transaction, &execution).map_err(conflict)?);
+        }
+        let mut running = Vec::with_capacity(requested.len());
+        for execution in requested {
+            let validated = tool_adapter::transition_in(
+                &transaction,
+                &lettuce_conversations::ToolExecutionTransition {
+                    id: execution.id,
+                    expected_revision: execution.revision,
+                    next: lettuce_conversations::ToolExecutionStatus::Validated,
+                    output: None,
+                    failure: None,
+                },
+                at,
+            )
+            .map_err(conflict)?;
+            running.push(
+                tool_adapter::transition_in(
+                    &transaction,
+                    &lettuce_conversations::ToolExecutionTransition {
+                        id: validated.id,
+                        expected_revision: validated.revision,
+                        next: lettuce_conversations::ToolExecutionStatus::Running,
+                        output: None,
+                        failure: None,
+                    },
+                    at,
+                )
+                .map_err(conflict)?,
+            );
+        }
+        let plan = remap_plan(
+            &parent,
+            child_attempt_id,
+            child_job_id,
+            &running
+                .iter()
+                .map(|execution| execution.id)
+                .collect::<Vec<_>>(),
+        )?;
+        verify_durable_identity(&transaction, &plan, true)?;
+        insert_plan_in(&transaction, &plan)?;
+        transaction.commit().map_err(storage)?;
+        Ok(DynamicMemoryRecoveredChild {
+            plan,
+            executions: running,
+        })
     }
 }
 
@@ -536,6 +756,140 @@ mod tests {
                 fixture.plan.conversation_id,
                 fixture.plan.turn_id,
                 fixture.plan.attempt_id,
+            ),
+            Err(DynamicMemoryPreparationPlanError::Conflict)
+        );
+    }
+
+    #[test]
+    fn interrupted_plan_remaps_atomically_into_immediate_running_child() {
+        let fixture = fixture();
+        fixture
+            .database
+            .put_preparation_plan(fixture.plan.clone())
+            .expect("parent plan");
+        let parent_executions = fixture
+            .database
+            .list_tool_executions(
+                fixture.plan.conversation_id,
+                fixture.plan.turn_id,
+                fixture.plan.attempt_id,
+            )
+            .expect("parent executions");
+        fixture
+            .database
+            .transition_tool_execution_batch(
+                &parent_executions
+                    .iter()
+                    .map(|execution| ToolExecutionTransition {
+                        id: execution.id,
+                        expected_revision: execution.revision,
+                        next: ToolExecutionStatus::Interrupted,
+                        output: None,
+                        failure: None,
+                    })
+                    .collect::<Vec<_>>(),
+                TimestampMillis::new(5),
+            )
+            .expect("interrupt tools");
+        let child_attempt_id = GenerationAttemptId::new();
+        let child_job_id = JobId::new();
+        {
+            let connection = fixture.database.connection().expect("connection");
+            connection
+                .execute(
+                    "UPDATE generation_attempts
+                        SET status = 'interrupted', finished_at = 5,
+                            usage_event_id = ?2, usage_outcome = 'interrupted'
+                      WHERE id = ?1",
+                    rusqlite::params![
+                        fixture.plan.attempt_id.to_string(),
+                        lettuce_types::UsageEventId::new().to_string(),
+                    ],
+                )
+                .expect("interrupt parent attempt");
+            connection
+                .execute(
+                    "INSERT INTO generation_attempts (
+                        conversation_id, turn_id, id, ordinal, parent_attempt_id,
+                        status, job_idempotency_key, job_id, started_at, finished_at,
+                        usage_event_id, usage_outcome, failure
+                     ) VALUES (?1, ?2, ?3, 1, ?4, 'running', ?5, ?6, 6, NULL,
+                               NULL, NULL, NULL)",
+                    rusqlite::params![
+                        fixture.plan.conversation_id.to_string(),
+                        fixture.plan.turn_id.to_string(),
+                        child_attempt_id.to_string(),
+                        fixture.plan.attempt_id.to_string(),
+                        format!("generation.{}.{child_attempt_id}", fixture.plan.turn_id),
+                        child_job_id.to_string(),
+                    ],
+                )
+                .expect("running child");
+        }
+
+        let recovered = fixture
+            .database
+            .recover_preparation_into_child(
+                fixture.plan.conversation_id,
+                fixture.plan.turn_id,
+                fixture.plan.attempt_id,
+                child_attempt_id,
+                child_job_id,
+                TimestampMillis::new(7),
+            )
+            .expect("recover child");
+        assert_eq!(recovered.plan.attempt_id, child_attempt_id);
+        assert_eq!(recovered.plan.job_id, child_job_id);
+        assert_eq!(recovered.executions.len(), parent_executions.len());
+        assert!(
+            recovered
+                .executions
+                .iter()
+                .all(|execution| execution.status == ToolExecutionStatus::Running)
+        );
+        assert_eq!(
+            recovered
+                .executions
+                .iter()
+                .map(|execution| &execution.arguments)
+                .collect::<Vec<_>>(),
+            parent_executions
+                .iter()
+                .map(|execution| &execution.arguments)
+                .collect::<Vec<_>>()
+        );
+        assert!(
+            recovered
+                .executions
+                .iter()
+                .zip(&parent_executions)
+                .all(|(child, parent)| child.id != parent.id)
+        );
+        assert_eq!(
+            recovered.plan.creates[0].execution_id,
+            recovered.executions[0].id
+        );
+        let retry = fixture
+            .database
+            .recover_preparation_into_child(
+                fixture.plan.conversation_id,
+                fixture.plan.turn_id,
+                fixture.plan.attempt_id,
+                child_attempt_id,
+                child_job_id,
+                TimestampMillis::new(70),
+            )
+            .expect("exact retry");
+        assert_eq!(retry, recovered);
+        assert_eq!(
+            fixture.database.recover_preparation_into_child(
+                fixture.plan.conversation_id,
+                fixture.plan.turn_id,
+                fixture.plan.attempt_id,
+                child_attempt_id,
+                JobId::new(),
+                TimestampMillis::new(8),
             ),
             Err(DynamicMemoryPreparationPlanError::Conflict)
         );

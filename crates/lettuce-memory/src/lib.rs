@@ -11,9 +11,9 @@ pub use model::{
 };
 pub use port::{
     DynamicMemoryPreparationPlan, DynamicMemoryPreparationPlanError,
-    DynamicMemoryPreparationRepository, DynamicMemoryRoundCommit, DynamicMemoryRoundCommitError,
-    DynamicMemoryRoundCommitResult, DynamicMemoryRoundRepository, MemoryChangeSet,
-    MemoryRepository, MemoryRepositoryError, PersistedMemoryCreatePreparation,
+    DynamicMemoryPreparationRepository, DynamicMemoryRecoveredChild, DynamicMemoryRoundCommit,
+    DynamicMemoryRoundCommitError, DynamicMemoryRoundCommitResult, DynamicMemoryRoundRepository,
+    MemoryChangeSet, MemoryRepository, MemoryRepositoryError, PersistedMemoryCreatePreparation,
 };
 pub use tool::{
     CreateMemoryPreparation, MemoryBatchResult, MemoryToolArguments, MemoryToolCall,

@@ -81,6 +81,11 @@ every read, while the adapter verifies the attached job, exact ordered durable
 tool executions and create arguments, and unchanged memory revision. An exact
 insert retry returns the stored plan; any changed plan or mutable dependency
 conflicts before recovery can restart the handler.
+Interrupted recovery validates the existing conversation child-attempt link and
+attached child job, then clones the exact parent call payloads under new child
+execution IDs, advances them to running, remaps create preparations, and inserts
+the child plan in one immediate transaction. Existing partial child state fails
+closed; an exact committed retry hydrates the same rows.
 Possession of `Database` is a trusted application-composition capability: ordinary
 conversation repositories and DTOs expose artifact references only and cannot
 export protected bytes. Trusted transfer remains a separate composition-only

@@ -1,6 +1,6 @@
 use lettuce_types::{
     ConversationId, GenerationAttemptId, GenerationTurnId, JobId, MemorySpaceId, Revision,
-    ToolExecutionId,
+    TimestampMillis, ToolExecutionId,
 };
 use serde::{Deserialize, Serialize};
 
@@ -161,6 +161,24 @@ pub trait DynamicMemoryPreparationRepository: Send + Sync {
         turn_id: GenerationTurnId,
         attempt_id: GenerationAttemptId,
     ) -> Result<Option<DynamicMemoryPreparationPlan>, DynamicMemoryPreparationPlanError>;
+
+    /// Atomically clones an interrupted parent's exact tool calls and
+    /// preparation into its already-running immediate recovery child.
+    fn recover_preparation_into_child(
+        &self,
+        conversation_id: ConversationId,
+        turn_id: GenerationTurnId,
+        parent_attempt_id: GenerationAttemptId,
+        child_attempt_id: GenerationAttemptId,
+        child_job_id: JobId,
+        at: TimestampMillis,
+    ) -> Result<DynamicMemoryRecoveredChild, DynamicMemoryPreparationPlanError>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DynamicMemoryRecoveredChild {
+    pub plan: DynamicMemoryPreparationPlan,
+    pub executions: Vec<ToolExecution>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

@@ -308,7 +308,7 @@ fn validate_new_batch(executions: &[ToolExecution]) -> Result<(), ConversationRe
     Ok(())
 }
 
-fn insert_in(
+pub(super) fn insert_in(
     transaction: &Transaction<'_>,
     execution: &ToolExecution,
 ) -> Result<ToolExecution, ConversationRepositoryError> {

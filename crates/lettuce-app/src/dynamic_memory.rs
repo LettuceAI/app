@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
 use lettuce_conversations::{
-    GenerationAttempt, ToolExecution, ToolExecutionRepository, ToolExecutionStatus,
-    ToolExecutionTransition, ToolFailure, ToolOutput,
+    GenerationAttempt, GenerationAttemptStatus, ToolExecution, ToolExecutionRepository,
+    ToolExecutionStatus, ToolExecutionTransition, ToolFailure, ToolOutput,
 };
 use lettuce_embeddings::{
     EmbeddingDimensions, EmbeddingProjectionError, EmbeddingRequest, MemoryEmbeddingProjection,
@@ -11,10 +11,11 @@ use lettuce_embeddings::{
 use lettuce_jobs::{Claim, ResourceClass, handle::JobHandle};
 use lettuce_memory::{
     CreateMemoryPreparation, DynamicMemoryPreparationPlan, DynamicMemoryPreparationPlanError,
-    DynamicMemoryPreparationRepository, DynamicMemoryRoundCommit, DynamicMemoryRoundCommitError,
-    DynamicMemoryRoundRepository, MemoryBatchResult, MemoryPolicy, MemoryRepository,
-    MemoryRepositoryError, MemorySpaceSnapshot, MemoryToolArguments, MemoryToolCall,
-    MemoryToolError, MemoryToolOutcome, MemoryToolReducer, PersistedMemoryCreatePreparation,
+    DynamicMemoryPreparationRepository, DynamicMemoryRecoveredChild, DynamicMemoryRoundCommit,
+    DynamicMemoryRoundCommitError, DynamicMemoryRoundRepository, MemoryBatchResult, MemoryPolicy,
+    MemoryRepository, MemoryRepositoryError, MemorySpaceSnapshot, MemoryToolArguments,
+    MemoryToolCall, MemoryToolError, MemoryToolOutcome, MemoryToolReducer,
+    PersistedMemoryCreatePreparation,
 };
 use lettuce_types::{ConversationId, MemoryId, MemorySpaceId, TimestampMillis, ToolExecutionId};
 
@@ -262,6 +263,39 @@ impl<
             recovery => Ok(recovery),
         }
     }
+
+    pub fn recover_interrupted_round_into_child(
+        &self,
+        conversation_id: ConversationId,
+        parent: &GenerationAttempt,
+        child: &GenerationAttempt,
+        child_handle: &JobHandle,
+        at: TimestampMillis,
+    ) -> Result<DynamicMemoryRecoveredChild, DynamicMemoryCoordinatorError> {
+        if parent.turn_id != child.turn_id
+            || parent.status != GenerationAttemptStatus::Interrupted
+            || child.status != GenerationAttemptStatus::Running
+            || child.parent_attempt_id != Some(parent.id)
+            || child.ordinal
+                != parent
+                    .ordinal
+                    .checked_add(1)
+                    .ok_or(DynamicMemoryCoordinatorError::InvalidRecoveryChild)?
+            || child.job_id != Some(child_handle.id())
+        {
+            return Err(DynamicMemoryCoordinatorError::InvalidRecoveryChild);
+        }
+        self.repository
+            .recover_preparation_into_child(
+                conversation_id,
+                parent.turn_id,
+                parent.id,
+                child.id,
+                child_handle.id(),
+                at,
+            )
+            .map_err(Into::into)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -363,6 +397,8 @@ pub enum DynamicMemoryCoordinatorError {
     RestartPlanUnavailable,
     #[error("dynamic-memory restart plan does not match its execution round")]
     InvalidRestartPlan,
+    #[error("dynamic-memory recovery child does not immediately follow its interrupted parent")]
+    InvalidRecoveryChild,
     #[error("dynamic-memory handler failed: {0}")]
     Handler(#[from] DynamicMemoryHandlerError),
     #[error("conversation repository failed: {0}")]

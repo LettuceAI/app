@@ -42,3 +42,7 @@ ordered execution IDs, and every create seed, exact source text, embedding
 source/dimensions, and qualified semantic evidence. Exact retries are
 idempotent; changed identity conflicts so interrupted recovery cannot silently
 recompute evidence against a different snapshot.
+The same port exposes one atomic interrupted-parent to immediate-child recovery
+operation. It returns newly identified running child executions plus their
+remapped immutable plan, while preserving exact call arguments and prepared
+semantic evidence from the terminal parent.
