@@ -60,6 +60,10 @@ provenance/value pairing, and branch/message topology.
 Global ID indexes support recovery lookups without weakening conversation-local
 composite ownership. Outbox consumer leases, usage ledgers, and memory join
 tables are intentionally outside this migration.
+Migration 9 adds revisioned memory spaces and strictly typed ordered memory
+items. The adapter creates spaces atomically and replaces a complete item set
+under one immediate-transaction revision comparison, so a stale or failed
+dynamic-memory round cannot partially alter the stored snapshot.
 Possession of `Database` is a trusted application-composition capability: ordinary
 conversation repositories and DTOs expose artifact references only and cannot
 export protected bytes. Trusted transfer remains a separate composition-only

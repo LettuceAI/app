@@ -26,3 +26,8 @@ supersession, provider-driven category repair, repository SQL, ONNX embedding
 inference, and UI events remain later slices. ONNX runtime ownership belongs in
 `lettuce-embeddings`; this crate consumes typed duplicate evidence through the
 application coordinator.
+
+The SQLite `MemoryRepository` implementation and first admitted-round
+application handler are now wired through `lettuce-database` and `lettuce-app`.
+Tool-execution lifecycle transitions and provider continuation remain owned by
+the future conversation coordinator rather than this domain reducer.

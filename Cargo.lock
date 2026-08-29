@@ -675,6 +675,7 @@ dependencies = [
  "lettuce-conversations",
  "lettuce-jobs",
  "lettuce-media",
+ "lettuce-memory",
  "lettuce-models",
  "lettuce-settings",
  "lettuce-types",

@@ -23,6 +23,11 @@ impl MemoryChangeSet {
 }
 
 pub trait MemoryRepository: Send + Sync {
+    fn create(
+        &self,
+        snapshot: MemorySpaceSnapshot,
+    ) -> Result<MemorySpaceSnapshot, MemoryRepositoryError>;
+
     fn get(&self, id: MemorySpaceId) -> Result<Option<MemorySpaceSnapshot>, MemoryRepositoryError>;
 
     /// Atomically verifies `expected_revision`, replaces the complete item set,
@@ -39,6 +44,8 @@ pub enum MemoryRepositoryError {
     Invalid(#[from] MemoryValidationError),
     #[error("memory space was not found")]
     NotFound,
+    #[error("memory space already exists")]
+    AlreadyExists,
     #[error("memory space revision conflict")]
     Conflict,
     #[error("memory repository failure: {0}")]

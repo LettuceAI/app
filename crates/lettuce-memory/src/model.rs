@@ -93,6 +93,9 @@ pub struct MemorySpaceSnapshot {
 
 impl MemorySpaceSnapshot {
     pub fn validate(&self) -> Result<(), MemoryValidationError> {
+        if self.revision.get() == 0 {
+            return Err(MemoryValidationError::InvalidRevision);
+        }
         if self.items.len() > MAX_MEMORY_ITEMS {
             return Err(MemoryValidationError::TooManyItems);
         }
@@ -140,8 +143,12 @@ pub enum MemoryValidationError {
     DuplicateItemId,
     #[error("memory space contains too many items")]
     TooManyItems,
+    #[error("memory space revision must be positive")]
+    InvalidRevision,
     #[error("memory policy max entries is invalid")]
     InvalidMaxEntries,
+    #[error("new memory space must start at revision one")]
+    InvalidInitialRevision,
 }
 
 pub(crate) fn validate_memory_text(value: &str) -> Result<&str, MemoryValidationError> {
@@ -157,7 +164,9 @@ pub(crate) fn validate_memory_text(value: &str) -> Result<&str, MemoryValidation
 
 #[cfg(test)]
 mod tests {
-    use super::{MemoryValidationError, Score};
+    use lettuce_types::{MemorySpaceId, Revision};
+
+    use super::{MemorySpaceSnapshot, MemoryValidationError, Score};
 
     #[test]
     fn score_conversion_is_bounded() {
@@ -169,6 +178,19 @@ mod tests {
         assert_eq!(
             Score::from_ratio(1.1),
             Err(MemoryValidationError::InvalidScore)
+        );
+    }
+
+    #[test]
+    fn memory_space_revision_must_be_positive() {
+        let snapshot = MemorySpaceSnapshot {
+            id: MemorySpaceId::new(),
+            revision: Revision::new(0),
+            items: vec![],
+        };
+        assert_eq!(
+            snapshot.validate(),
+            Err(MemoryValidationError::InvalidRevision)
         );
     }
 }

@@ -23,6 +23,13 @@ and exposes the matching `InferenceRuntime`, so later generation workflows can
 register bounded stream receivers and cancellation tokens against the same
 runtime used by the provider adapters.
 
+The first direct/group dynamic-memory handler path accepts an already admitted
+and running ordered tool round, validates the exact v1 feature contract, joins
+precomputed create metadata, reduces it against one stored memory-space
+snapshot, and compare-and-applies at most one change. It returns ordered typed
+provider-neutral outputs for the conversation coordinator to settle durably;
+continuation and job recovery remain later coordinator work.
+
 ## Bundled prompts
 
 The app owns the closed, versioned built-in prompt catalog in

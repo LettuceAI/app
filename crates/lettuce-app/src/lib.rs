@@ -9,12 +9,14 @@
 mod built_in_prompts;
 mod composition;
 mod context_assembler;
+mod dynamic_memory;
 mod launch;
 mod provider_runtime;
 
 pub use built_in_prompts::*;
 pub use composition::*;
 pub use context_assembler::*;
+pub use dynamic_memory::*;
 pub use launch::*;
 pub use provider_runtime::*;
 
