@@ -1,0 +1,231 @@
+{
+  "schemaVersion": 1,
+  "scope": "companion_growth_consolidation_and_soul_writer",
+  "auditedDimensions": [
+    "trigger",
+    "definitions_and_choice",
+    "model_and_profile_resolution",
+    "prompt_and_context",
+    "multiple_calls",
+    "mutation_boundary",
+    "result_replay",
+    "continuation_and_finalization",
+    "events",
+    "cancellation",
+    "retry",
+    "failure",
+    "recovery"
+  ],
+  "workflows": [
+    {
+      "id": "growth",
+      "trigger": "post-memory-cycle companion turn with at least one new nonblank memory; at most sixteen new memories are considered",
+      "definitionsAndChoice": "one required record_growth call",
+      "modelResolution": "dynamic-memory summarization model with companion-memory feature sampling",
+      "promptContext": "changeable authored snapshot active growth and indexed fresh memories",
+      "multipleCalls": "first record_growth call is parsed; no provider continuation",
+      "mutationBoundary": "validated entries are appended to session companion JSON and saved after the provider call",
+      "failure": "warning-only and does not roll back chat or memory",
+      "classification": "preserved"
+    },
+    {
+      "id": "consolidation",
+      "trigger": "after applied growth when at least twelve active changeable facts exist",
+      "definitionsAndChoice": "one required consolidate_soul call",
+      "modelResolution": "dynamic-memory summarization model with companion-memory feature sampling",
+      "promptContext": "authored core current core overlays and accumulated changeable facts",
+      "multipleCalls": "first consolidate_soul call is parsed; no provider continuation",
+      "mutationBoundary": "core additions and retirements mutate one session companion JSON projection before save",
+      "failure": "warning-only and does not roll back earlier work",
+      "classification": "preserved"
+    },
+    {
+      "id": "soul_writer",
+      "trigger": "explicit companion Soul preview request with authored context and optional current Soul",
+      "definitionsAndChoice": "required set_identity set_authored_facts set_baseline_affect set_regulation_style set_relationship_defaults and done tools",
+      "modelResolution": "explicit model then configured model then default then first text-capable model; optional distinct fallback model",
+      "promptContext": "editable template receives definition description opening context notes and normalized current Soul",
+      "multipleCalls": "calls apply sequentially and done stops remaining calls",
+      "mutationBoundary": "pure working Soul value is returned and not persisted by the writer",
+      "continuation": "up to eight provider iterations with call and result replay",
+      "failure": "structured JSON or XML retry occurs only when no usable native calls were produced",
+      "classification": "preserved"
+    }
+  ],
+  "boundaryDecisions": [
+    {
+      "dimension": "ownership",
+      "classification": "corrected",
+      "decision": "lettuce-companions owns typed authored Soul facts growth policy consolidation and relationship defaults; it does not read conversations or invoke models"
+    },
+    {
+      "dimension": "derived_jobs",
+      "classification": "corrected",
+      "decision": "growth and consolidation are durable idempotent jobs with explicit failure and checkpoints rather than warning-only background calls"
+    },
+    {
+      "dimension": "mutation_boundary",
+      "classification": "corrected",
+      "decision": "growth additions supersession consolidation and retirement apply as one expected-revision companion change set"
+    },
+    {
+      "dimension": "provider_replay",
+      "classification": "corrected",
+      "decision": "continuation uses provider-neutral executions and adapter replay rather than manually shaped provider messages"
+    },
+    {
+      "dimension": "partial_soul_writer_success",
+      "classification": "corrected",
+      "decision": "a later provider failure or hard-cap exit without explicit completion returns an incomplete proposal state instead of silently succeeding"
+    },
+    {
+      "dimension": "events",
+      "classification": "corrected",
+      "decision": "ordinary events contain ids stages operation names and safe errors only"
+    },
+    {
+      "dimension": "cancellation_and_recovery",
+      "classification": "corrected",
+      "decision": "all three workflows receive durable cancellation settlement and restart-safe attempt state"
+    }
+  ],
+  "firstSlice": {
+    "owner": "lettuce-companions",
+    "includes": [
+      "typed Soul authored and growth facts",
+      "category mutability and minimum-confidence policy",
+      "current-slot and explicit supersession",
+      "locked-fact protection",
+      "consolidation additions and retirement as one pure change set"
+    ],
+    "excludes": [
+      "provider requests and prompt rendering",
+      "durable job coordinator",
+      "conversation and memory reads",
+      "database adapter",
+      "frontend events"
+    ]
+  },
+  "scenarios": [
+    {
+      "id": "growth_skips_non_companion_turn",
+      "classification": "preserved",
+      "owner": "companions",
+      "expected": "no provider request and no mutation"
+    },
+    {
+      "id": "growth_uses_at_most_sixteen_fresh_memories",
+      "classification": "preserved",
+      "owner": "coordinator",
+      "expected": "empty memories are removed and the bounded fresh prefix is indexed for evidence"
+    },
+    {
+      "id": "growth_rejects_non_changeable_categories",
+      "classification": "preserved",
+      "owner": "companions",
+      "expected": "authored immutable categories cannot enter ordinary growth"
+    },
+    {
+      "id": "growth_enforces_confidence_weight_policy_and_validity",
+      "classification": "preserved",
+      "owner": "companions",
+      "expected": "low confidence zero weight invalid policy and invalid validity windows do not mutate state"
+    },
+    {
+      "id": "growth_source_indices_map_to_memory_ids",
+      "classification": "preserved",
+      "owner": "companions",
+      "expected": "valid indices become evidence ids and an empty valid mapping falls back to all supplied memory ids"
+    },
+    {
+      "id": "current_growth_supersedes_same_unlocked_slot",
+      "classification": "preserved",
+      "owner": "companions",
+      "expected": "older active same-category same-slot fact receives superseded linkage"
+    },
+    {
+      "id": "locked_slot_rejects_current_replacement",
+      "classification": "preserved",
+      "owner": "companions",
+      "expected": "current facts cannot replace an active locked fact in the same semantic slot"
+    },
+    {
+      "id": "consolidation_waits_for_twelve_active_facts",
+      "classification": "preserved",
+      "owner": "companions",
+      "expected": "fewer than twelve active changeable facts skip provider work"
+    },
+    {
+      "id": "consolidation_accepts_core_categories_only",
+      "classification": "preserved",
+      "owner": "companions",
+      "expected": "core adjustments outside the consolidatable category set are ignored"
+    },
+    {
+      "id": "consolidation_never_retires_locked_fact",
+      "classification": "preserved",
+      "owner": "companions",
+      "expected": "retirement ids affect active unlocked facts only"
+    },
+    {
+      "id": "consolidation_change_set_is_atomic",
+      "classification": "corrected",
+      "owner": "companions",
+      "expected": "core additions and retirements commit together at one expected relationship revision"
+    },
+    {
+      "id": "soul_writer_normalizes_partial_current_value",
+      "classification": "preserved",
+      "owner": "companions",
+      "expected": "known text numeric relationship and authored-fact fields seed a complete default working value"
+    },
+    {
+      "id": "soul_writer_clamps_numeric_sections",
+      "classification": "preserved",
+      "owner": "companions",
+      "expected": "affect and regulation clamp to zero through one while closeness trust and affection clamp to negative one through one"
+    },
+    {
+      "id": "authored_historical_facts_are_locked",
+      "classification": "preserved",
+      "owner": "companions",
+      "expected": "historical policy forces locked true"
+    },
+    {
+      "id": "authored_facts_drop_confidence_below_point_seven",
+      "classification": "preserved",
+      "owner": "companions",
+      "expected": "low-confidence authored claims are excluded"
+    },
+    {
+      "id": "soul_writer_done_stops_later_calls",
+      "classification": "preserved",
+      "owner": "companions",
+      "expected": "operations after done in the same response are not applied"
+    },
+    {
+      "id": "soul_writer_requires_explicit_terminal_state",
+      "classification": "corrected",
+      "owner": "coordinator",
+      "expected": "hard cap or later provider failure yields an incomplete proposal unless done was durably admitted"
+    },
+    {
+      "id": "soul_writer_structured_fallback_is_exactly_validated",
+      "classification": "corrected",
+      "owner": "coordinator",
+      "expected": "JSON and XML operations obey native declaration argument and call bounds"
+    },
+    {
+      "id": "growth_and_consolidation_failures_do_not_rollback_chat",
+      "classification": "preserved",
+      "owner": "jobs",
+      "expected": "completed response and memory remain complete while the derived companion job fails visibly and retryably"
+    },
+    {
+      "id": "group_companion_growth",
+      "classification": "deferred",
+      "owner": "companion_group",
+      "expected": "group companion capability requires explicit participant policy and cannot be silently omitted"
+    }
+  ]
+}
