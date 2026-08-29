@@ -61,3 +61,37 @@ CREATE TABLE memory_embedding_projections (
 
 CREATE INDEX memory_embedding_projections_lookup_idx
     ON memory_embedding_projections(space_id, source_revision, dimensions, status, memory_id);
+
+-- Authoritative restart input for a dynamic-memory tool round. The JSON owns
+-- the full versioned plan; relational projections bind it to the exact
+-- attempt, job, and memory revision that were used to prepare it.
+CREATE TABLE dynamic_memory_preparation_plans (
+    conversation_id TEXT NOT NULL,
+    turn_id TEXT NOT NULL,
+    attempt_id TEXT NOT NULL,
+    job_id TEXT NOT NULL,
+    space_id TEXT NOT NULL REFERENCES memory_spaces(id) ON DELETE RESTRICT,
+    expected_memory_revision INTEGER NOT NULL CHECK (expected_memory_revision >= 1),
+    plan_json TEXT NOT NULL CHECK (
+        json_valid(plan_json)
+        AND json_extract(plan_json, '$.format_version') = 1
+        AND length(CAST(plan_json AS BLOB)) <= 2097152
+    ),
+    plan_digest TEXT NOT NULL CHECK (
+        length(plan_digest) = 64
+        AND lower(plan_digest) = plan_digest
+        AND plan_digest NOT GLOB '*[^0-9a-f]*'
+    ),
+    PRIMARY KEY (conversation_id, turn_id, attempt_id),
+    FOREIGN KEY (conversation_id, turn_id, attempt_id, job_id)
+        REFERENCES generation_attempts(conversation_id, turn_id, id, job_id)
+        ON DELETE RESTRICT
+) STRICT;
+
+CREATE TRIGGER dynamic_memory_preparation_plan_immutable
+BEFORE UPDATE ON dynamic_memory_preparation_plans
+BEGIN SELECT RAISE(ABORT, 'dynamic-memory preparation plan is immutable'); END;
+
+CREATE TRIGGER dynamic_memory_preparation_plan_delete_restricted
+BEFORE DELETE ON dynamic_memory_preparation_plans
+BEGIN SELECT RAISE(ABORT, 'dynamic-memory preparation plan cannot be deleted'); END;

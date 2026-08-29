@@ -75,6 +75,12 @@ stale derived rows cannot affect similarity, while unchanged projections
 survive the complete item-set CAS without rewriting their BLOBs. Repair queries
 also synthesize work for live items with no matching projection, closing the
 crash window between authoritative memory commit and derived-data persistence.
+Migration 9 also stores one immutable versioned dynamic-memory preparation plan
+per generation attempt. Its digest and relational projections are checked on
+every read, while the adapter verifies the attached job, exact ordered durable
+tool executions and create arguments, and unchanged memory revision. An exact
+insert retry returns the stored plan; any changed plan or mutable dependency
+conflicts before recovery can restart the handler.
 Possession of `Database` is a trusted application-composition capability: ordinary
 conversation repositories and DTOs expose artifact references only and cannot
 export protected bytes. Trusted transfer remains a separate composition-only

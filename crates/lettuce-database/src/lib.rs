@@ -13,6 +13,7 @@ mod group_adapter;
 mod lorebook_adapter;
 mod memory_adapter;
 mod memory_embedding_adapter;
+mod memory_preparation_adapter;
 mod memory_round_adapter;
 mod persona_adapter;
 mod prompt_adapter;
@@ -3756,6 +3757,7 @@ mod tests {
                 "conversation_turns",
                 "conversation_usage_refs",
                 "conversations",
+                "dynamic_memory_preparation_plans",
                 "generation_attempts",
                 "generation_checkpoints",
                 "group_lorebook_bindings",

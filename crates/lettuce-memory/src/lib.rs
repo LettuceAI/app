@@ -10,8 +10,10 @@ pub use model::{
     MemoryCategory, MemoryItem, MemoryPolicy, MemorySpaceSnapshot, MemoryValidationError, Score,
 };
 pub use port::{
-    DynamicMemoryRoundCommit, DynamicMemoryRoundCommitError, DynamicMemoryRoundCommitResult,
-    DynamicMemoryRoundRepository, MemoryChangeSet, MemoryRepository, MemoryRepositoryError,
+    DynamicMemoryPreparationPlan, DynamicMemoryPreparationPlanError,
+    DynamicMemoryPreparationRepository, DynamicMemoryRoundCommit, DynamicMemoryRoundCommitError,
+    DynamicMemoryRoundCommitResult, DynamicMemoryRoundRepository, MemoryChangeSet,
+    MemoryRepository, MemoryRepositoryError, PersistedMemoryCreatePreparation,
 };
 pub use tool::{
     CreateMemoryPreparation, MemoryBatchResult, MemoryToolArguments, MemoryToolCall,

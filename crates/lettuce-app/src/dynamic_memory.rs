@@ -10,10 +10,11 @@ use lettuce_embeddings::{
 };
 use lettuce_jobs::{Claim, ResourceClass, handle::JobHandle};
 use lettuce_memory::{
-    CreateMemoryPreparation, DynamicMemoryRoundCommit, DynamicMemoryRoundCommitError,
+    CreateMemoryPreparation, DynamicMemoryPreparationPlan, DynamicMemoryPreparationPlanError,
+    DynamicMemoryPreparationRepository, DynamicMemoryRoundCommit, DynamicMemoryRoundCommitError,
     DynamicMemoryRoundRepository, MemoryBatchResult, MemoryPolicy, MemoryRepository,
     MemoryRepositoryError, MemorySpaceSnapshot, MemoryToolArguments, MemoryToolCall,
-    MemoryToolError, MemoryToolOutcome, MemoryToolReducer,
+    MemoryToolError, MemoryToolOutcome, MemoryToolReducer, PersistedMemoryCreatePreparation,
 };
 use lettuce_types::{ConversationId, MemoryId, MemorySpaceId, TimestampMillis, ToolExecutionId};
 
@@ -104,7 +105,11 @@ impl<'a, R: MemoryRepository + MemoryEmbeddingRepository + ?Sized> DynamicMemory
 
 impl<
     'a,
-    R: DynamicMemoryRoundRepository + MemoryEmbeddingRepository + ToolExecutionRepository + ?Sized,
+    R: DynamicMemoryRoundRepository
+        + DynamicMemoryPreparationRepository
+        + MemoryEmbeddingRepository
+        + ToolExecutionRepository
+        + ?Sized,
 > DynamicMemoryHandler<'a, R>
 {
     pub fn start_validated_round(
@@ -237,15 +242,43 @@ impl<
         let executions =
             self.repository
                 .list_tool_executions(conversation_id, attempt.turn_id, attempt.id)?;
-        classify_recovery(executions)
+        match classify_recovery(executions)? {
+            DynamicMemoryRecovery::RestartBlocked { executions } => {
+                let plan = self
+                    .repository
+                    .get_preparation_plan(conversation_id, attempt.turn_id, attempt.id)?
+                    .ok_or(DynamicMemoryCoordinatorError::RestartPlanUnavailable)?;
+                if plan.job_id != handle.id()
+                    || plan.execution_ids
+                        != executions
+                            .iter()
+                            .map(|execution| execution.id)
+                            .collect::<Vec<_>>()
+                {
+                    return Err(DynamicMemoryCoordinatorError::InvalidRestartPlan);
+                }
+                Ok(DynamicMemoryRecovery::VerifiedRestart { executions, plan })
+            }
+            recovery => Ok(recovery),
+        }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DynamicMemoryRecovery {
-    TerminalReplay { executions: Vec<ToolExecution> },
-    ValidatedStart { executions: Vec<ToolExecution> },
-    RestartBlocked { executions: Vec<ToolExecution> },
+    TerminalReplay {
+        executions: Vec<ToolExecution>,
+    },
+    ValidatedStart {
+        executions: Vec<ToolExecution>,
+    },
+    RestartBlocked {
+        executions: Vec<ToolExecution>,
+    },
+    VerifiedRestart {
+        executions: Vec<ToolExecution>,
+        plan: DynamicMemoryPreparationPlan,
+    },
 }
 
 fn classify_recovery(
@@ -254,10 +287,15 @@ fn classify_recovery(
     if executions.is_empty() {
         return Err(DynamicMemoryCoordinatorError::InvalidRound);
     }
-    if executions
-        .iter()
-        .all(|execution| execution.status.is_terminal())
-    {
+    if executions.iter().all(|execution| {
+        matches!(
+            execution.status,
+            ToolExecutionStatus::Succeeded
+                | ToolExecutionStatus::Rejected
+                | ToolExecutionStatus::Failed
+                | ToolExecutionStatus::Cancelled
+        )
+    }) {
         return Ok(DynamicMemoryRecovery::TerminalReplay { executions });
     }
     if executions
@@ -321,6 +359,10 @@ pub enum DynamicMemoryCoordinatorError {
     OutputMismatch,
     #[error("dynamic-memory recovery job does not own the generation attempt")]
     InvalidJobOwnership,
+    #[error("dynamic-memory restart has no durable preparation plan")]
+    RestartPlanUnavailable,
+    #[error("dynamic-memory restart plan does not match its execution round")]
+    InvalidRestartPlan,
     #[error("dynamic-memory handler failed: {0}")]
     Handler(#[from] DynamicMemoryHandlerError),
     #[error("conversation repository failed: {0}")]
@@ -329,6 +371,8 @@ pub enum DynamicMemoryCoordinatorError {
     Commit(#[from] DynamicMemoryRoundCommitError),
     #[error("dynamic-memory repository failed: {0}")]
     Repository(#[from] MemoryRepositoryError),
+    #[error("dynamic-memory preparation plan failed: {0}")]
+    PreparationPlan(#[from] DynamicMemoryPreparationPlanError),
     #[error("dynamic-memory tool call is invalid: {0}")]
     Tool(#[from] MemoryToolError),
 }
@@ -400,7 +444,7 @@ impl<'a, E: MemoryEmbeddingEngine + ?Sized, R: MemoryEmbeddingRepository + ?Size
         Self { engine, repository }
     }
 
-    pub fn prepare_admitted(
+    fn prepare_inner(
         &self,
         space_id: MemorySpaceId,
         executions: &[ToolExecution],
@@ -512,6 +556,86 @@ impl<'a, E: MemoryEmbeddingEngine + ?Sized, R: MemoryEmbeddingRepository + ?Size
     }
 }
 
+impl<
+    'a,
+    E: MemoryEmbeddingEngine + ?Sized,
+    R: MemoryEmbeddingRepository + DynamicMemoryPreparationRepository + ?Sized,
+> DynamicMemoryCreatePreparer<'a, E, R>
+{
+    #[allow(clippy::too_many_arguments)]
+    pub fn prepare_and_persist_admitted(
+        &self,
+        space_id: MemorySpaceId,
+        expected_memory_revision: lettuce_types::Revision,
+        policy: &MemoryPolicy,
+        executions: &[ToolExecution],
+        seeds: &[MemoryCreateSeed],
+        duplicate_threshold: lettuce_memory::Score,
+        claim: &Claim,
+        handle: &JobHandle,
+    ) -> Result<Vec<PreparedMemoryCreate>, DynamicMemoryPreparationError> {
+        validate_round(executions, ToolExecutionStatus::Running)
+            .map_err(|_| DynamicMemoryPreparationError::InvalidExecution)?;
+        let prepared = self.prepare_inner(
+            space_id,
+            executions,
+            seeds,
+            duplicate_threshold,
+            claim,
+            handle,
+        )?;
+        let owner = &executions[0];
+        let creates = prepared
+            .iter()
+            .map(|prepared| {
+                let execution = executions
+                    .iter()
+                    .find(|execution| execution.id == prepared.execution_id)
+                    .ok_or(DynamicMemoryPreparationError::InvalidExecution)?;
+                let MemoryToolArguments::CreateMemory { text, .. } =
+                    MemoryToolArguments::parse(&execution.definition_name, &execution.arguments)?
+                else {
+                    return Err(DynamicMemoryPreparationError::InvalidExecution);
+                };
+                let (embedding_source_revision, embedding_dimensions) = match &prepared.projection {
+                    Some(PreparedMemoryProjection::Ready(projection)) => (
+                        projection.vector.source_revision.clone(),
+                        u16::try_from(projection.dimensions.get())
+                            .map_err(|_| DynamicMemoryPreparationError::InvalidExecution)?,
+                    ),
+                    Some(PreparedMemoryProjection::RepairNeeded(repair)) => (
+                        repair.source_revision.clone(),
+                        u16::try_from(repair.dimensions.get())
+                            .map_err(|_| DynamicMemoryPreparationError::InvalidExecution)?,
+                    ),
+                    None => return Err(DynamicMemoryPreparationError::InvalidExecution),
+                };
+                Ok(PersistedMemoryCreatePreparation {
+                    execution_id: prepared.execution_id,
+                    source_text: text,
+                    preparation: prepared.preparation.clone(),
+                    embedding_source_revision,
+                    embedding_dimensions,
+                })
+            })
+            .collect::<Result<Vec<_>, DynamicMemoryPreparationError>>()?;
+        self.repository
+            .put_preparation_plan(DynamicMemoryPreparationPlan {
+                conversation_id: owner.conversation_id,
+                turn_id: owner.turn_id,
+                attempt_id: owner.attempt_id,
+                job_id: handle.id(),
+                space_id,
+                expected_memory_revision,
+                policy: policy.clone(),
+                duplicate_threshold,
+                execution_ids: executions.iter().map(|execution| execution.id).collect(),
+                creates,
+            })?;
+        Ok(prepared)
+    }
+}
+
 fn validate_embedding_admission(
     claim: &Claim,
     handle: &JobHandle,
@@ -546,6 +670,8 @@ pub enum DynamicMemoryPreparationError {
     Tool(#[from] MemoryToolError),
     #[error("embedding projection repository failed: {0}")]
     Projection(#[from] EmbeddingProjectionError),
+    #[error("dynamic-memory preparation plan failed: {0}")]
+    Plan(#[from] DynamicMemoryPreparationPlanError),
 }
 
 fn prepare_calls(
@@ -949,7 +1075,7 @@ mod tests {
         let (claim, handle) = admitted_embedding_job();
         let engine = FakeEmbeddingEngine { unavailable: false };
         let prepared = DynamicMemoryCreatePreparer::new(&engine, backend.database())
-            .prepare_admitted(
+            .prepare_inner(
                 space_id,
                 std::slice::from_ref(&execution),
                 &[MemoryCreateSeed {
@@ -1000,7 +1126,7 @@ mod tests {
         let (claim, handle) = admitted_embedding_job();
         let engine = FakeEmbeddingEngine { unavailable: true };
         let prepared = DynamicMemoryCreatePreparer::new(&engine, backend.database())
-            .prepare_admitted(
+            .prepare_inner(
                 space_id,
                 std::slice::from_ref(&execution),
                 &[MemoryCreateSeed {
@@ -1071,7 +1197,7 @@ mod tests {
         let (claim, handle) = admitted_embedding_job();
         let engine = FakeEmbeddingEngine { unavailable: false };
         let prepared = DynamicMemoryCreatePreparer::new(&engine, backend.database())
-            .prepare_admitted(
+            .prepare_inner(
                 space_id,
                 std::slice::from_ref(&execution),
                 &[MemoryCreateSeed {
@@ -1119,20 +1245,19 @@ mod tests {
         let (claim, handle) = admitted_embedding_job();
         handle.request_cancel();
         let engine = FakeEmbeddingEngine { unavailable: false };
-        let result = DynamicMemoryCreatePreparer::new(&engine, backend.database())
-            .prepare_admitted(
-                space_id,
-                std::slice::from_ref(&execution),
-                &[MemoryCreateSeed {
-                    execution_id: execution.id,
-                    id: MemoryId::new(),
-                    token_count: 4,
-                    created_at: TimestampMillis::new(4),
-                }],
-                score(9_000),
-                &claim,
-                &handle,
-            );
+        let result = DynamicMemoryCreatePreparer::new(&engine, backend.database()).prepare_inner(
+            space_id,
+            std::slice::from_ref(&execution),
+            &[MemoryCreateSeed {
+                execution_id: execution.id,
+                id: MemoryId::new(),
+                token_count: 4,
+                created_at: TimestampMillis::new(4),
+            }],
+            score(9_000),
+            &claim,
+            &handle,
+        );
 
         assert!(matches!(
             result,
@@ -1163,6 +1288,19 @@ mod tests {
             .expect("running");
         assert!(matches!(
             classify_recovery(vec![running.clone()]),
+            Ok(DynamicMemoryRecovery::RestartBlocked { .. })
+        ));
+        let interrupted = running
+            .clone()
+            .transition(
+                ToolExecutionStatus::Interrupted,
+                None,
+                None,
+                TimestampMillis::new(4),
+            )
+            .expect("interrupted");
+        assert!(matches!(
+            classify_recovery(vec![interrupted]),
             Ok(DynamicMemoryRecovery::RestartBlocked { .. })
         ));
         let terminal = running

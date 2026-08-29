@@ -28,7 +28,7 @@ and running ordered tool round, validates the exact v1 feature contract, joins
 precomputed create metadata, reduces it against one stored memory-space
 snapshot, and compare-and-applies at most one change. It returns ordered typed
 provider-neutral outputs for the conversation coordinator to settle durably;
-continuation and job recovery remain later coordinator work.
+provider continuation remains later coordinator work.
 
 The composition layer can also verify an installed embedding manifest through
 `lettuce-model-hub`, load one serialized ONNX embedding runtime, and execute
@@ -43,7 +43,10 @@ the reducer, and persists a projection only after the memory CAS confirms the
 item survived. ONNX unavailability does not discard authoritative memory: the
 create proceeds without semantic evidence and leaves rebuildable repair state.
 Cancellation still stops preparation instead of degrading to an unembedded
-write.
+write. The production preparation entry point persists one immutable versioned
+plan before returning: exact execution order, create seeds and semantic
+evidence, source text, embedding source/dimensions, policy, memory revision,
+and attempt/job ownership are all bound together.
 
 The durable coordinator starts every validated execution with one batch CAS.
 For a successful handler round, the optional memory-space CAS and every exact
@@ -54,10 +57,13 @@ reducer-only application helper is test-private so production callers cannot
 accidentally bypass settlement.
 
 Recovery verifies that the supplied job handle owns the generation attempt,
-then loads the attempt's durable ordered executions. Fully terminal rounds are
-returned for exact replay, uniformly validated rounds may enter the atomic
-start path, and running/interrupted rounds are explicitly restart-blocked until
-their preparation identity is persisted. Mixed lifecycle states fail closed.
+then loads the attempt's durable ordered executions. Fully settled rounds are
+returned for exact replay and uniformly validated rounds may enter the atomic
+start path. Running/interrupted rounds become restart-eligible only after the
+database revalidates their immutable plan against the attached job, exact tool
+arguments/order, create source text, and unchanged memory revision. Semantic
+duplicate evidence is replayed from that plan rather than recomputed against
+newer mutable state. Missing, stale, or mixed recovery state fails closed.
 
 ## Bundled prompts
 
