@@ -53,6 +53,12 @@ the whole running round atomically without mutating memory. The earlier
 reducer-only application helper is test-private so production callers cannot
 accidentally bypass settlement.
 
+Recovery verifies that the supplied job handle owns the generation attempt,
+then loads the attempt's durable ordered executions. Fully terminal rounds are
+returned for exact replay, uniformly validated rounds may enter the atomic
+start path, and running/interrupted rounds are explicitly restart-blocked until
+their preparation identity is persisted. Mixed lifecycle states fail closed.
+
 ## Bundled prompts
 
 The app owns the closed, versioned built-in prompt catalog in

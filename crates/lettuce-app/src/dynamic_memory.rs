@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
 use lettuce_conversations::{
-    ToolExecution, ToolExecutionRepository, ToolExecutionStatus, ToolExecutionTransition,
-    ToolFailure, ToolOutput,
+    GenerationAttempt, ToolExecution, ToolExecutionRepository, ToolExecutionStatus,
+    ToolExecutionTransition, ToolFailure, ToolOutput,
 };
 use lettuce_embeddings::{
     EmbeddingDimensions, EmbeddingProjectionError, EmbeddingRequest, MemoryEmbeddingProjection,
@@ -15,7 +15,7 @@ use lettuce_memory::{
     MemoryRepositoryError, MemorySpaceSnapshot, MemoryToolArguments, MemoryToolCall,
     MemoryToolError, MemoryToolOutcome, MemoryToolReducer,
 };
-use lettuce_types::{MemoryId, MemorySpaceId, TimestampMillis, ToolExecutionId};
+use lettuce_types::{ConversationId, MemoryId, MemorySpaceId, TimestampMillis, ToolExecutionId};
 
 use crate::{EmbeddingGenerationError, EmbeddingService, MemoryEmbeddingEngine};
 
@@ -224,6 +224,58 @@ impl<
             .map(|committed| committed.executions)
             .map_err(Into::into)
     }
+
+    pub fn recover_attempt_round(
+        &self,
+        conversation_id: ConversationId,
+        attempt: &GenerationAttempt,
+        handle: &JobHandle,
+    ) -> Result<DynamicMemoryRecovery, DynamicMemoryCoordinatorError> {
+        if attempt.job_id != Some(handle.id()) {
+            return Err(DynamicMemoryCoordinatorError::InvalidJobOwnership);
+        }
+        let executions =
+            self.repository
+                .list_tool_executions(conversation_id, attempt.turn_id, attempt.id)?;
+        classify_recovery(executions)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DynamicMemoryRecovery {
+    TerminalReplay { executions: Vec<ToolExecution> },
+    ValidatedStart { executions: Vec<ToolExecution> },
+    RestartBlocked { executions: Vec<ToolExecution> },
+}
+
+fn classify_recovery(
+    executions: Vec<ToolExecution>,
+) -> Result<DynamicMemoryRecovery, DynamicMemoryCoordinatorError> {
+    if executions.is_empty() {
+        return Err(DynamicMemoryCoordinatorError::InvalidRound);
+    }
+    if executions
+        .iter()
+        .all(|execution| execution.status.is_terminal())
+    {
+        return Ok(DynamicMemoryRecovery::TerminalReplay { executions });
+    }
+    if executions
+        .iter()
+        .all(|execution| execution.status == ToolExecutionStatus::Validated)
+    {
+        validate_round(&executions, ToolExecutionStatus::Validated)?;
+        return Ok(DynamicMemoryRecovery::ValidatedStart { executions });
+    }
+    if executions.iter().all(|execution| {
+        matches!(
+            execution.status,
+            ToolExecutionStatus::Running | ToolExecutionStatus::Interrupted
+        )
+    }) {
+        return Ok(DynamicMemoryRecovery::RestartBlocked { executions });
+    }
+    Err(DynamicMemoryCoordinatorError::InvalidRound)
 }
 
 fn validate_round(
@@ -267,6 +319,8 @@ pub enum DynamicMemoryCoordinatorError {
     InvalidRound,
     #[error("dynamic-memory result does not cover every execution")]
     OutputMismatch,
+    #[error("dynamic-memory recovery job does not own the generation attempt")]
+    InvalidJobOwnership,
     #[error("dynamic-memory handler failed: {0}")]
     Handler(#[from] DynamicMemoryHandlerError),
     #[error("conversation repository failed: {0}")]
@@ -622,7 +676,7 @@ mod tests {
 
     use super::{
         DynamicMemoryCreatePreparer, DynamicMemoryHandlerError, DynamicMemoryPreparationError,
-        MemoryCreateSeed, PreparedMemoryCreate,
+        DynamicMemoryRecovery, MemoryCreateSeed, PreparedMemoryCreate, classify_recovery,
     };
     use crate::{AppBackend, EmbeddingGenerationError, MemoryEmbeddingEngine};
 
@@ -714,7 +768,7 @@ mod tests {
         }
     }
 
-    fn running_execution(
+    fn validated_execution(
         owner: ToolExecutionOwner,
         ordinal: u16,
         name: &str,
@@ -746,16 +800,24 @@ mod tests {
             Ok(execution) => execution,
             Err(error) => panic!("request failed: {error}"),
         };
-        let validated = requested.transition(
+        match requested.transition(
             ToolExecutionStatus::Validated,
             None,
             None,
             TimestampMillis::new(2),
-        );
-        let validated = match validated {
+        ) {
             Ok(execution) => execution,
             Err(error) => panic!("validation failed: {error}"),
-        };
+        }
+    }
+
+    fn running_execution(
+        owner: ToolExecutionOwner,
+        ordinal: u16,
+        name: &str,
+        arguments: Value,
+    ) -> ToolExecution {
+        let validated = validated_execution(owner, ordinal, name, arguments);
         match validated.transition(
             ToolExecutionStatus::Running,
             None,
@@ -1080,6 +1142,46 @@ mod tests {
             MemoryRepository::get(backend.database(), space_id)
                 .expect("space")
                 .is_some_and(|snapshot| snapshot.items.is_empty())
+        );
+    }
+
+    #[test]
+    fn recovery_classifies_terminal_validated_and_running_without_rerunning() {
+        let owner = owner();
+        let validated = validated_execution(owner, 0, "done", json!({"summary": "complete"}));
+        assert!(matches!(
+            classify_recovery(vec![validated.clone()]),
+            Ok(DynamicMemoryRecovery::ValidatedStart { .. })
+        ));
+        let running = validated
+            .transition(
+                ToolExecutionStatus::Running,
+                None,
+                None,
+                TimestampMillis::new(3),
+            )
+            .expect("running");
+        assert!(matches!(
+            classify_recovery(vec![running.clone()]),
+            Ok(DynamicMemoryRecovery::RestartBlocked { .. })
+        ));
+        let terminal = running
+            .transition(
+                ToolExecutionStatus::Succeeded,
+                Some(lettuce_conversations::ToolOutput {
+                    value: json!({"kind": "done", "summary": "complete"}),
+                    is_error: false,
+                }),
+                None,
+                TimestampMillis::new(4),
+            )
+            .expect("terminal");
+        let recovered = classify_recovery(vec![terminal.clone()]).expect("recovery");
+        assert_eq!(
+            recovered,
+            DynamicMemoryRecovery::TerminalReplay {
+                executions: vec![terminal]
+            }
         );
     }
 }
